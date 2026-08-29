@@ -77,8 +77,13 @@
                 }
             </select>
             <select [(ngModel)]="Editing.AccountID" [disabled]="Saving || Editing.Applied" aria-label="GL account">
-                @for (a of Accounts; track a.ID) {
-                    <option [value]="a.ID">{{ a.Label }}</option>
+                @for (a of EditAccounts; track a.ID) {
+                    <!--
+                        A disabled option is the link's CURRENT account when this product's company
+                        cannot use it. Shown so the picker never reads as "this link has no account";
+                        unselectable so the repair path cannot write the unreachable link back.
+                    -->
+                    <option [value]="a.ID" [disabled]="a.Disabled === true">{{ a.Label }}</option>
                 }
             </select>
             <label class="mjo-gl-links__lbl">from

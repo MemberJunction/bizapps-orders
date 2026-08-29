@@ -22,6 +22,7 @@ import { pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
 import {
     AccountIsOfferable,
     BizAppsProductGLLinksComponent,
+    idKey,
     type ProductGLLinkRow,
 } from '../lib/custom/Product/widgets/product-gl-links.component';
 
@@ -185,10 +186,19 @@ describe('#113 — the write half refuses to act on an incomplete draft', () => 
     });
 
     it('does nothing when there is no product to point at', async () => {
+        /**
+         * This asserted `Saving === false` — four lines below the sibling test's comment explaining why
+         * that exact assertion proves nothing. `Saving` is reset in a `finally`, so it reads false
+         * whether the guard returned early or the attempt ran and threw. An audit caught it still here.
+         *
+         * `WriteError` is the discriminator: a guarded call never enters the try, so it cannot have
+         * recorded an error, whereas an unguarded one reaches `new Metadata()` and throws.
+         */
         const c = panel();
         c.Draft = { RoleID: 'r1', AccountID: 'a1', StartedAt: '2026-01-01' };
         await c.AddLink();
-        expect(c.Saving).toBe(false);
+        expect(c.WriteError, 'the guard means no attempt was made, so there is nothing to report').toBeNull();
+        expect(c.Draft, 'and the draft stays open rather than being silently discarded').toBeTruthy();
     });
 });
 
@@ -291,6 +301,117 @@ describe('#113 — which accounts the picker may offer (PR #125 review)', () => 
     });
 });
 
+describe('#113 — what a row that is NOT in force says about itself', () => {
+    const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({
+        ID: 'link-1', RoleID: 'role-rev', AccountID: 'acct-4000',
+        RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',
+        Status: 'Active', StartedAt: null, EndedAt: null, Active: false, ...over,
+    });
+
+    it('says In force when it is the one resolution would pick', () => {
+        expect(panel().StatusLabel(row({ Active: true }))).toBe('In force');
+    });
+
+    it('says Not started — NOT Superseded — for a link whose start is in the future', () => {
+        /**
+         * It used to print "Superseded" for every inactive Active-status row. A link added to take over
+         * next quarter therefore read as superseded — it supersedes something, nothing supersedes it —
+         * beside a Remove button saying it had not started. Two controls in one row telling opposite
+         * stories is how a user concludes the save was rejected and adds another link.
+         */
+        expect(panel().StatusLabel(row({ StartedAt: '2099-01-01' }))).toBe('Not started');
+    });
+
+    it('still says Superseded when a later link took over', () => {
+        expect(panel().StatusLabel(row({ StartedAt: '2020-01-01' }))).toBe('Superseded');
+    });
+
+    it('defers to the row status when it is not Active at all', () => {
+        expect(panel().StatusLabel(row({ Status: 'Disabled' }))).toBe('Disabled');
+        expect(panel().StatusLabel(row({ Status: 'Pending' }))).toBe('Pending');
+    });
+});
+
+describe('#113 — a write must not leave an edit form bound to the row it changed', () => {
+    /**
+     * Retire and Remove used to leave the form open, and the template only hides a row's EDIT button
+     * while that row is being edited — Retire and Remove stayed live. Both orderings corrupted:
+     * Retire then Save wrote `EndedAt = null` from the stale form and silently UN-RETIRED the link;
+     * Remove then Save threw "could not be re-read" on a record that no longer existed.
+     */
+    function withEdit(id: string) {
+        const c = panel();
+        (c as unknown as { Editing: unknown }).Editing = { ID: id, RoleID: 'r', AccountID: 'a', StartedAt: '', EndedAt: '', Applied: false };
+        return c as unknown as { Editing: { ID: string } | null; closeEditFor(id: string): void };
+    }
+
+    it('closes the form when the row it points at is the one that changed', () => {
+        const c = withEdit('link-1');
+        c.closeEditFor('link-1');
+        expect(c.Editing).toBeNull();
+    });
+
+    it('matches the row regardless of the case the id arrived in', () => {
+        const c = withEdit('9F3A1C2D-0000-4000-8000-00000000ABCD');
+        c.closeEditFor('9f3a1c2d-0000-4000-8000-00000000abcd');
+        expect(c.Editing, 'a case difference must not leave a stale form open').toBeNull();
+    });
+
+    it('leaves a form open that is editing a DIFFERENT row', () => {
+        const c = withEdit('link-1');
+        c.closeEditFor('link-2');
+        expect(c.Editing, 'retiring one row must not discard an unrelated edit in progress').not.toBeNull();
+    });
+});
+
+describe('#113 — ids compare by VALUE, not by the case they arrive in', () => {
+    /**
+     * ── THE DEFECT THIS PINS ───────────────────────────────────────────────────────────────────
+     *
+     * Ids reach this panel from two sources that disagree on case. The engine cache lowercases; a
+     * direct view read returns SQL Server's uppercase `uniqueidentifier` rendering. Accounting's own
+     * engine normalises every id comparison for exactly this reason.
+     *
+     * When the row carried its ids raw, a case difference meant:
+     *   - the edit select matched no `<option>` and rendered BLANK on a link that plainly has an
+     *     account, which is the #112 confusion the template forbids; and
+     *   - the same account appeared TWICE, the second copy labelled "not available", telling the user
+     *     a correctly-configured account was invalid.
+     *
+     * Neither is visible from a test that uses one casing throughout, which is why the original suite
+     * passed while the bug was live.
+     */
+    const UPPER = '9F3A1C2D-0000-4000-8000-00000000ABCD';
+    const lower = UPPER.toLowerCase();
+
+    it('idKey normalises case and surrounding whitespace', () => {
+        expect(idKey(UPPER)).toBe(lower);
+        expect(idKey(`  ${UPPER} `)).toBe(lower);
+        expect(idKey(null)).toBe('');
+        expect(idKey(undefined)).toBe('');
+    });
+
+    it('AccountIsOfferable matches ids that differ only in case', () => {
+        expect(AccountIsOfferable(UPPER, lower)).toBe(true);
+        expect(AccountIsOfferable(lower, UPPER)).toBe(true);
+    });
+
+    it('does NOT re-admit an account as unavailable merely because the row spelled its id in caps', () => {
+        const c = Object.create(BizAppsProductGLLinksComponent.prototype) as BizAppsProductGLLinksComponent;
+        c.Accounts = [{ ID: lower, Label: '40000 Sales — Blue Cypress' }];
+        c.OpenEdit({
+            ID: 'link-1', RoleID: 'role-rev', AccountID: UPPER,
+            RoleName: 'Revenue', AccountCode: '40000', AccountName: 'Sales',
+            Status: 'Active', StartedAt: null, EndedAt: null, Active: true,
+        });
+        expect(c.EditAccounts, 'one account, not two').toHaveLength(1);
+        expect(c.EditAccounts.some((a) => a.Disabled), 'and it is not flagged unavailable').toBe(false);
+        expect(c.Editing?.AccountID, 'and the model value matches an option, so the select is not blank').toBe(
+            c.EditAccounts[0].ID,
+        );
+    });
+});
+
 describe('#113 — editing, and how much of a link may change', () => {
     const utcToday = () => {
         const n = new Date();
@@ -356,6 +477,39 @@ describe('#113 — editing, and how much of a link may change', () => {
         c.Roles = [{ ID: 'role-a', Name: 'Revenue' }, { ID: 'role-b', Name: 'Revenue' }];
         c.OpenEdit(row({ RoleID: 'role-b', StartedAt: utcToday() }));
         expect(c.Editing?.RoleID).toBe('role-b');
+    });
+
+    it('keeps the CURRENT account of the link in the edit options when it is outside the company', () => {
+        /**
+         * Scoping the picker (above) is right for CHOOSING but must not hide what a link ALREADY points
+         * at. Cross-company links exist — nothing stopped the panel creating them before the scoping
+         * change. Offering only the scoped list would render the select blank on a link that plainly has
+         * an account, which the template itself calls out as the #112 confusion.
+         */
+        const c = ready();
+        c.Accounts = [{ ID: 'acct-bc-40000', Label: '40000 Sales — Blue Cypress' }];
+        c.OpenEdit(row({ AccountID: 'acct-betty-9999', AccountCode: '9999', AccountName: 'Betty Revenue', StartedAt: utcToday() }));
+        const ids = c.EditAccounts.map((a) => a.ID);
+        expect(ids, 'the current account must still be selectable, or the picker reads as empty').toContain('acct-betty-9999');
+        // LAST and DISABLED, not first and selectable. Re-admitting it as a choosable option at the top
+        // of the list would let the repair path write back the very link the scoping exists to prevent —
+        // and nothing downstream refuses it, because the tie guard only rejects ties WITHIN a company.
+        const readmitted = c.EditAccounts[c.EditAccounts.length - 1];
+        expect(readmitted.ID).toBe('acct-betty-9999');
+        expect(readmitted.Label, 'it names the account, so the reader can see what the link points at').toContain(
+            '9999 Betty Revenue',
+        );
+        expect(
+            readmitted.Disabled,
+            'visible so the picker never reads as empty, unselectable so the repair cannot rewrite it',
+        ).toBe(true);
+    });
+
+    it('does NOT duplicate the current account when it is already offered', () => {
+        const c = ready();
+        c.OpenEdit(row({ StartedAt: utcToday() }));
+        expect(c.EditAccounts.filter((a) => a.ID === 'acct-4000')).toHaveLength(1);
+        expect(c.EditAccounts).toBe(c.Accounts);
     });
 
     it('an APPLIED link opens marked so only its end date may change', () => {

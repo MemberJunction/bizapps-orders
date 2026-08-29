@@ -44,13 +44,39 @@ export interface GLLinkLike {
  * "no accounts exist" and give the user nothing to act on, where the unfiltered list is at worst what
  * shipped before.
  */
+/**
+ * The comparable form of an id.
+ *
+ * Ids reach this component from two sources that disagree on case: the engine cache lowercases, while
+ * a direct view read returns SQL Server's uppercase `uniqueidentifier` rendering. Accounting's own
+ * engine routes every id comparison through the same normalisation for exactly this reason, and the
+ * audit caught the one comparison here that did not — it rendered both edit pickers blank and warned
+ * that a correctly-configured account was "not offered".
+ */
+/**
+ * One entry in the GL-account picker.
+ *
+ * `Disabled` exists for exactly one case: a link that already points at an account this product's
+ * company cannot use. That option must be VISIBLE, so the select never renders blank on a link that
+ * has an account, and UNSELECTABLE, so the repair path cannot re-create the unreachable link.
+ */
+export interface AccountOption {
+    ID: string;
+    Label: string;
+    Disabled?: boolean;
+}
+
+export function idKey(id: unknown): string {
+    return String(id ?? '').trim().toLowerCase();
+}
+
 export function AccountIsOfferable(
     accountCompanyID: string | null | undefined,
     productCompanyID: string | null | undefined,
 ): boolean {
-    const product = String(productCompanyID ?? '').trim().toLowerCase();
+    const product = idKey(productCompanyID);
     if (!product) return true;
-    return String(accountCompanyID ?? '').trim().toLowerCase() === product;
+    return idKey(accountCompanyID) === product;
 }
 
 /** One link, flattened for display. Nothing here is computed — every field is read off the row. */
@@ -183,11 +209,24 @@ export class BizAppsProductGLLinksComponent implements OnInit {
      * column would put the word "Active" on both rows. Saying SUPERSEDED is the whole reason this panel
      * resolves through accounting's picker rather than reading a flag.
      */
+    /**
+     * Why a row is not the one in force.
+     *
+     * `Active === false` has three causes and this used to print "Superseded" for all of them. A link
+     * added to take over next quarter therefore rendered as "Superseded" — it supersedes something, it
+     * is not superseded — beside a Remove button saying it had not started. Two controls in one row
+     * telling opposite stories is how a user concludes the save was rejected and adds another link.
+     */
     public StatusLabel(row: ProductGLLinkRow): string {
         if (row.Active) {
             return 'In force';
         }
-        return row.Status === 'Active' ? 'Superseded' : row.Status;
+        if (row.Status !== 'Active') {
+            // Disabled or Pending — the row's own status is the honest answer.
+            return row.Status;
+        }
+        // Active, but not the winner. Which of the two remaining reasons applies is a date question.
+        return this.HasApplied(row) ? 'Superseded' : 'Not started';
     }
 
     /** Opens accounting's Account Links screen, which is where a link is created or retired. */
@@ -203,7 +242,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
 
     /** Roles and accounts to choose from, filled by {@link Refresh} off the same engine the reader uses. */
     public Roles: Array<{ ID: string; Name: string }> = [];
-    public Accounts: Array<{ ID: string; Label: string }> = [];
+    public Accounts: AccountOption[] = [];
 
     /** The add form. Null when closed — opening it is a deliberate act, not the default state. */
     public Draft: { RoleID: string; AccountID: string; StartedAt: string } | null = null;
@@ -240,6 +279,60 @@ export class BizAppsProductGLLinksComponent implements OnInit {
     } | null = null;
 
     /**
+     * The options the EDIT picker shows: the company-scoped list, plus this link's CURRENT account when
+     * that account is not in it.
+     *
+     * ── WHY THE SCOPED LIST IS NOT ENOUGH ON ITS OWN ──────────────────────────────────────────────
+     *
+     * Scoping accounts to the product's company (PR #125 review) is right for CHOOSING, but a link that
+     * already points somewhere else still has to render. Such links exist: nothing stopped the panel
+     * creating them before this change, and nothing stops another tool creating one now. Showing only
+     * the scoped list would leave the select with no matching option — blank — on a link that plainly
+     * has an account.
+     *
+     * The template a few lines above already states the rule this would break: hiding a value "would
+     * read as 'this link has no account', which is the confusion #112 was". A filtered picker on an
+     * existing record must never hide that record's current value.
+     *
+     * The current account is labelled so the reader can tell it apart from the offerable ones, and the
+     * ordinary edit rules still apply — an applied link cannot change its account at all, and a
+     * not-yet-applied one can be moved onto a valid account, which is the repair path.
+     */
+    public get EditAccounts(): ReadonlyArray<AccountOption> {
+        return this.EditAccountOptions;
+    }
+
+    /**
+     * Frozen when the edit opens, NOT derived from the live `ngModel` value.
+     *
+     * Deriving it was wrong twice. It allocated a fresh array and object on every change-detection
+     * pass — the hazard this codebase already documents with its frozen-empty constant elsewhere — and,
+     * worse, the option deleted itself: the moment a user picked a valid account to repair a
+     * cross-company link, `current` matched the scoped list and the original option vanished, so they
+     * could neither compare the two nor change their mind without cancelling the whole edit.
+     */
+    private EditAccountOptions: ReadonlyArray<AccountOption> = [];
+
+    /** The options for one edit, with the link's current account re-admitted when it is not offerable. */
+    private optionsForEditing(row: ProductGLLinkRow): ReadonlyArray<AccountOption> {
+        const current = idKey(row.AccountID);
+        if (!current || this.Accounts.some((a) => idKey(a.ID) === current)) return this.Accounts;
+        /**
+         * Re-admitted so the picker cannot render blank on a link that plainly has an account — the
+         * template states that rule a few lines above the select, and it is the #112 confusion.
+         *
+         * DISABLED, though, and appended rather than prepended. Re-admitting it as a selectable option
+         * at the top of the list would let the repair path re-create the very link the scoping exists to
+         * prevent, and nothing downstream would stop it: accounting's tie guard only refuses ties WITHIN
+         * a company. The user may see what the link points at; they may not choose it again.
+         *
+         * The label names the company, because on this one option the company is the whole point.
+         */
+        const label = `${row.AccountCode} ${row.AccountName}`.trim() || current;
+        return [...this.Accounts, { ID: current, Label: `${label} — not available for this product's company`, Disabled: true }];
+    }
+
+    /**
      * Opens an edit for one link.
      *
      * ── WHAT MAY CHANGE DEPENDS ON WHETHER IT HAS BOOKED ──
@@ -262,10 +355,13 @@ export class BizAppsProductGLLinksComponent implements OnInit {
     public OpenEdit(row: ProductGLLinkRow): void {
         this.WriteError = null;
         this.Draft = null;
+        this.EditAccountOptions = this.optionsForEditing(row);
         this.Editing = {
             ID: row.ID,
-            RoleID: row.RoleID,
-            AccountID: row.AccountID,
+            // Normalised HERE too, not only in load(): this is the boundary that feeds the select,
+            // and a row assembled anywhere else must not be able to render it blank.
+            RoleID: idKey(row.RoleID),
+            AccountID: idKey(row.AccountID),
             StartedAt: this.asDateInput(row.StartedAt),
             EndedAt: this.asDateInput(row.EndedAt),
             Applied: this.HasApplied(row),
@@ -274,6 +370,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
 
     public CancelEdit(): void {
         this.Editing = null;
+        this.EditAccountOptions = [];
         this.WriteError = null;
     }
 
@@ -299,7 +396,27 @@ export class BizAppsProductGLLinksComponent implements OnInit {
                 throw new Error(`link ${edit.ID} could not be re-read`);
             }
 
-            if (!edit.Applied) {
+            /**
+             * RE-DERIVED, not read off the snapshot.
+             *
+             * This used to test `edit.Applied`, captured once in `OpenEdit`. The comment claimed it was a
+             * second line of defence behind the template's `[disabled]`, but both read the SAME frozen
+             * boolean, so it could not disagree with the template and defended nothing. Open the form at
+             * 23:58 on a link starting today, save at 00:02, and the link had come into force while the
+             * snapshot still said otherwise — so role, account and start were rewritten on a link that
+             * was by then explaining real journal entries.
+             *
+             * `RemoveLink` already re-evaluated live; the asymmetry was the bug.
+             */
+            /**
+             * The stored row, not the form. The form's `StartedAt` is what the user is proposing; the
+             * question here is whether the link AS STORED has come into force since the form opened.
+             * If the row has disappeared underneath us the snapshot is the safer answer — treat it as
+             * applied and write nothing but the end date.
+             */
+            const live = this.Rows.find((r) => idKey(r.ID) === idKey(edit.ID));
+            const appliedNow = live ? this.HasApplied(live) : true;
+            if (!appliedNow) {
                 link.Set('GLAccountRoleID', edit.RoleID);
                 link.Set('GLAccountID', edit.AccountID);
                 link.Set('StartedAt', edit.StartedAt ? new Date(`${edit.StartedAt}T00:00:00.000Z`) : null);
@@ -438,6 +555,22 @@ export class BizAppsProductGLLinksComponent implements OnInit {
      * tomorrow" — and the button's tooltip said so too. The behaviour is the defensible one; the
      * description was wrong, and it is the description that changed.
      */
+    /**
+     * Closes an edit form that is bound to `id`.
+     *
+     * Retire and Remove used to leave it open, and the template only hides a row's EDIT button while
+     * that row is being edited — Retire and Remove stayed live. So the two orderings both corrupted:
+     * Retire then Save wrote `EndedAt = null` from the stale form and silently UN-RETIRED the link;
+     * Remove then Save threw "could not be re-read" on a record that no longer existed, which reads as
+     * a broken screen rather than "that record is gone".
+     */
+    private closeEditFor(id: string): void {
+        if (this.Editing && idKey(this.Editing.ID) === idKey(id)) {
+            this.Editing = null;
+            this.EditAccountOptions = [];
+        }
+    }
+
     public async RetireLink(row: ProductGLLinkRow): Promise<void> {
         this.Saving = true;
         this.WriteError = null;
@@ -453,6 +586,8 @@ export class BizAppsProductGLLinksComponent implements OnInit {
                 this.WriteError = this.readableError(link) ?? 'the link could not be retired';
                 return;
             }
+            // The row this form was bound to has just changed underneath it; see closeEditFor.
+            this.closeEditFor(row.ID);
             await this.Refresh(true);
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
@@ -493,6 +628,8 @@ export class BizAppsProductGLLinksComponent implements OnInit {
                 this.WriteError = this.readableError(link) ?? 'the link could not be removed';
                 return;
             }
+            // The row this form was bound to has just changed underneath it; see closeEditFor.
+            this.closeEditFor(row.ID);
             await this.Refresh(true);
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
@@ -592,16 +729,25 @@ export class BizAppsProductGLLinksComponent implements OnInit {
          * against, so it keeps saying which company it belongs to.
          */
         this.Roles = engine.GLAccountRoles
-            .map((r) => ({ ID: String(r.ID), Name: String(r.Name ?? '(unnamed role)') }))
+            .map((r) => ({ ID: idKey(r.ID), Name: String(r.Name ?? '(unnamed role)') }))
             .sort((a, b) => a.Name.localeCompare(b.Name));
+        /**
+         * `CompanyID` and `IsActive` are read WITHOUT a cast, deliberately.
+         *
+         * They used to be cast through `as unknown`, which was both unnecessary — they are real typed
+         * accessors on the entity — and precisely backwards: the two fields that decide whether an
+         * account is offered were the two the compiler could not check, while `Code` and `Name`, which
+         * only decide the label, were checked. A rename would have emptied the picker silently instead
+         * of failing the build.
+         *
+         * `Company` keeps its cast because it genuinely is a virtual field, absent from the entity type.
+         */
         this.Accounts = engine.GLAccounts
-            .filter((a) =>
-                AccountIsOfferable((a as unknown as { CompanyID?: string }).CompanyID, this.Product?.CompanyID),
-            )
+            .filter((a) => AccountIsOfferable(a.CompanyID, this.Product?.CompanyID) && a.IsActive !== false)
             .map((a) => {
                 const company = (a as unknown as { Company?: string }).Company;
                 return {
-                    ID: String(a.ID),
+                    ID: idKey(a.ID),
                     Label: `${a.Code ?? '(no code)'} ${a.Name ?? ''}${company ? ` — ${company}` : ''}`.trim(),
                 };
             })
@@ -630,8 +776,9 @@ export class BizAppsProductGLLinksComponent implements OnInit {
                 );
                 return {
                     ID: String(l.ID),
-                    RoleID: String(l.GLAccountRoleID ?? ''),
-                    AccountID: String(l.GLAccountID ?? ''),
+                    // Normalised, because these are matched against option values with `Object.is`.
+                    RoleID: idKey(l.GLAccountRoleID),
+                    AccountID: idKey(l.GLAccountID),
                     RoleName: role?.Name ?? '(unknown role)',
                     AccountCode: account?.Code ?? '(unknown)',
                     AccountName: account?.Name ?? '',
