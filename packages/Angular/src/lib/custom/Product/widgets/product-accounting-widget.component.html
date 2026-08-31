@@ -44,4 +44,24 @@
             ></mj-form-field>
         </div>
     </div>
+
+    <!--
+        bizapps-orders#113 — the GL accounts this product books to.
+
+        Andrew expected these HERE, under Accounting, and the section showed only the
+        product's own columns. The links live in accounting, but they are polymorphic
+        ((EntityID, RecordID)) and accounting must not depend on orders, so its own screen
+        cannot even name a product. Rendering them from this side is what makes the pair
+        something nobody has to type.
+    -->
+    <div class="mjo-acct-card">
+        <div class="mjo-card-body">
+            <bizapps-product-gl-links
+                [Product]="Product"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                (Navigate)="Navigate.emit($event)">
+            </bizapps-product-gl-links>
+        </div>
+    </div>
 </div>

@@ -21,6 +21,7 @@ import { BizAppsProductFormComponent, LoadProductFormComponent } from './Product
 import { BizAppsProductPricingWidgetComponent } from './Product/widgets/product-pricing-widget.component';
 import { BizAppsProductPromotionsWidgetComponent } from './Product/widgets/product-promotions-widget.component';
 import { BizAppsProductAccountingWidgetComponent } from './Product/widgets/product-accounting-widget.component';
+import { BizAppsProductGLLinksComponent } from './Product/widgets/product-gl-links.component';
 import { BizAppsProductFulfillmentWidgetComponent } from './Product/widgets/product-fulfillment-widget.component';
 import { BizAppsProductSubscriptionWidgetComponent } from './Product/widgets/product-subscription-widget.component';
 import { BizAppsPriceListFormComponent, LoadPriceListFormComponent } from './PriceList/price-list-form.component';
@@ -37,6 +38,7 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
         BizAppsProductPricingWidgetComponent,
         BizAppsProductPromotionsWidgetComponent,
         BizAppsProductAccountingWidgetComponent,
+        BizAppsProductGLLinksComponent,
         BizAppsProductFulfillmentWidgetComponent,
         BizAppsProductSubscriptionWidgetComponent,
         BizAppsPriceListFormComponent,
@@ -62,6 +64,7 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
         BizAppsProductPricingWidgetComponent,
         BizAppsProductPromotionsWidgetComponent,
         BizAppsProductAccountingWidgetComponent,
+        BizAppsProductGLLinksComponent,
         BizAppsProductFulfillmentWidgetComponent,
         BizAppsProductSubscriptionWidgetComponent,
         BizAppsPriceListFormComponent,
