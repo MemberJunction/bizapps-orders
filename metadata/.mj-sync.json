@@ -10,7 +10,9 @@
     "payment-types",
     "remote-operation-categories",
     "remote-operations",
-    "applications"
+    "applications",
+    "entity-fields",
+    "user-views"
   ],
   "sqlLogging": {
     "enabled": true,
