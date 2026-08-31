@@ -742,6 +742,115 @@ describe('#113 — the sentence a refused write shows', () => {
     });
 });
 
+describe('#113 — a save decides from the LIVE row, not from the form it opened with', () => {
+    /**
+     * `Editing.Applied` is captured when the form opens, and the template reads that same captured
+     * value. Fine for deciding what to RENDER; wrong for deciding what to WRITE. A form opened at
+     * 23:59 on a link starting tomorrow is still open at 00:01, by which time the link is in force —
+     * and the snapshot still says it is not. `SaveEdit` used to trust it and rewrite the role, account
+     * and start date of a link that was by then explaining journal entries.
+     *
+     * Asserted through `appliedNowFor`, which is the whole decision. Driving `SaveEdit` itself would
+     * need a Metadata provider and an entity to load, and would test the plumbing rather than the rule.
+     */
+    function withRows(rows: Array<Partial<ProductGLLinkRow> & { ID: string }>) {
+        const c = panel();
+        (c as unknown as { Rows: unknown[] }).Rows = rows;
+        return c as unknown as { appliedNowFor(id: string): boolean };
+    }
+
+    it('reports APPLIED for a link the live row shows as started, whatever the form captured', () => {
+        const c = withRows([{ ID: 'link-1', StartedAt: '2020-01-01' } as never]);
+        expect(
+            c.appliedNowFor('link-1'),
+            'the live row started in the past, so the edit must be narrowed to the end date',
+        ).toBe(true);
+    });
+
+    it('reports NOT applied for a link that genuinely has not started', () => {
+        // The other direction matters too: if this returned true for everything, the fix would be a
+        // guard that never lets anyone correct a mistake they made a minute ago.
+        const c = withRows([{ ID: 'link-1', StartedAt: '2099-01-01' } as never]);
+        expect(c.appliedNowFor('link-1')).toBe(false);
+    });
+
+    it('matches the row regardless of the case the id arrived in', () => {
+        const c = withRows([{ ID: '9F3A1C2D-0000-4000-8000-00000000ABCD', StartedAt: '2020-01-01' } as never]);
+        expect(
+            c.appliedNowFor('9f3a1c2d-0000-4000-8000-00000000abcd'),
+            'a case difference must not make an applied link look editable',
+        ).toBe(true);
+    });
+
+    it('treats a VANISHED row as applied, which is the safe direction', () => {
+        // Refusing an edit that might have been allowed is recoverable. Permitting one that rewrites
+        // history because the row could not be found is not.
+        const c = withRows([{ ID: 'link-1', StartedAt: '2099-01-01' } as never]);
+        expect(c.appliedNowFor('link-2')).toBe(true);
+    });
+});
+
+describe('#113 — the direct read refuses an id it cannot vouch for', () => {
+    /**
+     * `readDirect` builds an `ExtraFilter` string. It used to inline `.replace(/'/g, "''")`, which
+     * CLAUDE.md:67 forbids — escaping at the call site is how one missed call site becomes an
+     * injection. Both values are UUIDs by construction (an entity id from metadata, and the product's
+     * primary key), so anything else is a bug upstream and is REFUSED rather than sanitised.
+     *
+     * The assertion is on the MESSAGE, deliberately. Without the guard the call proceeds and fails
+     * later for want of a provider — also a rejection, and a green test that proves nothing. Only the
+     * refusal sentence distinguishes "we declined to build that filter" from "the read broke anyway".
+     */
+    function readDirect(entityID: string, recordID: string): Promise<unknown> {
+        const c = panel() as unknown as { readDirect(a: string, b: string): Promise<unknown> };
+        return c.readDirect(entityID, recordID);
+    }
+
+    const GOOD = '9f3a1c2d-0000-4000-8000-00000000abcd';
+
+    it('refuses a record id that is not UUID-shaped', async () => {
+        await expect(readDirect(GOOD, "' OR 1=1 --")).rejects.toThrow(/could not be identified/);
+    });
+
+    it('refuses an entity id that is not UUID-shaped', async () => {
+        await expect(readDirect('not-a-uuid', GOOD)).rejects.toThrow(/could not be identified/);
+    });
+
+    it('refuses an empty id rather than reading every link in the table', async () => {
+        await expect(readDirect(GOOD, '')).rejects.toThrow(/could not be identified/);
+    });
+
+    it('accepts UUIDs in either case, since ids arrive from several sources', async () => {
+        // Not asserting success — there is no provider here, so it fails afterwards. Asserting that it
+        // fails with something OTHER than the refusal, i.e. that the guard let it through.
+        await expect(readDirect(GOOD.toUpperCase(), GOOD)).rejects.not.toThrow(/could not be identified/);
+    });
+});
+
+/**
+ * NOT ASSERTED HERE: `Refresh(reloadEngine)` reconfiguring the engine.
+ *
+ * The round-2 audit fixed a refresh that re-rendered from `AccountingEngineBase`'s cached config, so
+ * a link added on another screen stayed invisible. The fix is real — `Refresh(true)` calls
+ * `Config(true, ...)` — and it has no check, deliberately rather than by oversight.
+ *
+ * It cannot be reached from this tier. The call is
+ * `Config(true, new Metadata().CurrentUser)`, and the argument is evaluated BEFORE the call, so with
+ * no provider configured `new Metadata().CurrentUser` throws and `Config` is never reached at all —
+ * measured: `LoadError = "Cannot read properties of undefined (reading 'CurrentUser')"`, with the
+ * spy recording zero calls.
+ *
+ * Two ways to force it, both rejected. Adding a user-resolution seam to the component would be
+ * restructuring product code to suit a test, and inconsistent with the seven other `new Metadata()`
+ * call sites in the same file. Asserting instead that `Refresh(true)` sets `LoadError` while
+ * `Refresh(false)` does not would pass today for a reason unrelated to the rule, and would flip the
+ * day a provider exists in this tier — a check that passes for the wrong reason is worse than no
+ * check, because it reads as coverage.
+ *
+ * It belongs in the integration tier, where a provider exists. Left named here so the gap is visible
+ * rather than merely absent.
+ */
+
 describe('#113 — what the status chip says', () => {
     const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({
         ID: 'x', RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',

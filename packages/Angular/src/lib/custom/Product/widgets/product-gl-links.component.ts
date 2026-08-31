@@ -496,6 +496,23 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
      * stale render cannot rewrite an applied link's account by being clicked after the boundary moved.
      * An empty end date clears it, which is how a retire applied by mistake is undone.
      */
+    /**
+     * Has this link applied AS OF NOW — read from the LIVE row, never from the edit snapshot.
+     *
+     * `Editing.Applied` is captured when the form opens and the template reads the same captured
+     * value. That is fine for deciding what to RENDER, and wrong for deciding what to WRITE: a form
+     * opened at 23:59 on a link starting tomorrow is still open at 00:01, when the link has come into
+     * force. Trusting the snapshot there let a save rewrite the role, account and start date of a link
+     * that was by then explaining journal entries.
+     *
+     * A row that has vanished counts as APPLIED. The safe direction is refusing an edit that might
+     * have been allowed, not permitting one that rewrites history because the row could not be found.
+     */
+    private appliedNowFor(id: string): boolean {
+        const live = this.Rows.find((r) => idKey(r.ID) === idKey(id));
+        return live ? this.HasApplied(live) : true;
+    }
+
     public async SaveEdit(): Promise<void> {
         const edit = this.Editing;
         if (!edit) {
@@ -529,8 +546,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
              * If the row has disappeared underneath us the snapshot is the safer answer — treat it as
              * applied and write nothing but the end date.
              */
-            const live = this.Rows.find((r) => idKey(r.ID) === idKey(edit.ID));
-            const appliedNow = live ? this.HasApplied(live) : true;
+            const appliedNow = this.appliedNowFor(edit.ID);
             if (!appliedNow) {
                 link.Set('GLAccountRoleID', edit.RoleID);
                 link.Set('GLAccountID', edit.AccountID);
