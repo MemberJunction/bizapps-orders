@@ -170,6 +170,72 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return this.ProductFor(line)?.MaxQuantityPerLine === 1;
     }
 
+    /* ── Term start (D-TERMSTART) ───────────────────────────────────────────
+     *
+     * Only a subscription line has a term, so only a subscription line shows the field. The rest
+     * of the card is about the sale; this is about the coverage the sale buys, and the two dates
+     * genuinely differ — an order booked 8/27 can sell a membership running 8/1–7/31.
+     *
+     * The stored value is `OrderLine.ServicePeriodStart`, which the server treats as an INPUT to
+     * the term rather than the settled window (see `decideSubscriptions`). NULL means "follow the
+     * order date", which is why clearing writes null rather than writing today.
+     */
+
+    public IsSubscriptionLine(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !!this.ProductFor(line)?.SubscriptionTypeID;
+    }
+
+    /**
+     * What the date input shows: the stated start, or the order date as a DEFAULT when nothing is
+     * stated. Rendering an empty field instead would misreport the outcome — an untouched line
+     * still gets a term, and it starts on the order date.
+     */
+    public TermStartValue(line: mjBizAppsOrdersOrderLineEntity): string {
+        return this.dateInputValue(line.ServicePeriodStart ?? this._order?.OrderDate ?? null);
+    }
+
+    /** True while the field is only showing the default, which is what the hint explains. */
+    public TermStartFollowsOrderDate(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !line.ServicePeriodStart;
+    }
+
+    public SetTermStart(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+
+        // An emptied field is a RESET, not a date of zero — the same rule the button applies, so
+        // clearing by keyboard and clearing by button agree.
+        if (!target.value) {
+            this.ResetTermStart(line);
+            return;
+        }
+
+        // Parsed as UTC midnight from the input's own `yyyy-MM-dd`. `new Date('2026-08-01')` is
+        // already UTC, but building from parts states it rather than relying on that, and keeps the
+        // browser's zone from moving a date the user typed as a calendar day.
+        const [year, month, day] = target.value.split('-').map(Number);
+        if (!year || !month || !day) return;
+        line.ServicePeriodStart = new Date(Date.UTC(year, month - 1, day));
+
+        // NOT priced again: the term start moves no money on the client. A CalendarAnchored type
+        // can prorate a partial first period, but that is settled inside the confirm transaction
+        // and was never part of the client's price preview.
+    }
+
+    /** Hand the line back to the order date — the term start stops being stated at all. */
+    public ResetTermStart(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (!this.EditMode) return;
+        line.ServicePeriodStart = null;
+    }
+
+    /** `<input type="date">` speaks `yyyy-MM-dd` and nothing else. */
+    private dateInputValue(value: Date | null): string {
+        if (!value) return '';
+        const date = value instanceof Date ? value : new Date(value);
+        return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+    }
+
     public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
         if (!this.EditMode) return;
         this.expandedLineIds.delete(line.ID);

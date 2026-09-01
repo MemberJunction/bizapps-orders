@@ -65,6 +65,49 @@
                 }
             </div>
 
+            <!--
+                TERM START — subscription lines only (D-TERMSTART).
+                The order date says when the sale was booked; this says when coverage begins, and an
+                agreement settles the two independently. Shown on the card rather than behind the
+                extension disclosure because it is a term fact, and not every subscription product
+                type has an extension form to hide it in.
+            -->
+            @if (IsSubscriptionLine(line)) {
+                <div class="mjo-ol-term">
+                    <label class="mjo-ol-term__label" [attr.for]="'mjo-ol-term-' + line.ID">Term start</label>
+                    @if (EditMode) {
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            [class.is-default]="TermStartFollowsOrderDate(line)"
+                            [id]="'mjo-ol-term-' + line.ID"
+                            [value]="TermStartValue(line)"
+                            (change)="SetTermStart(line, $event)">
+                        <!-- Offered only when there is something to reset. A button that clears a
+                             value the line never stated does nothing and invites the reader to
+                             wonder what it did. -->
+                        @if (!TermStartFollowsOrderDate(line)) {
+                            <button
+                                type="button"
+                                class="mjo-ol-term__reset"
+                                (click)="ResetTermStart(line)">
+                                Reset to order date
+                            </button>
+                        }
+                    } @else {
+                        <span class="mjo-ol-term__value">{{ TermStartValue(line) }}</span>
+                    }
+                    <span class="mjo-ol-term__hint">
+                        @if (TermStartFollowsOrderDate(line)) {
+                            Following the order date. The subscription type's rules may still adjust
+                            the actual start.
+                        } @else {
+                            Stated on this line, so a later change to the order date leaves it alone.
+                        }
+                    </span>
+                </div>
+            }
+
             @if (ExtensionFor(line); as ext) {
                 <div class="mjo-ol-ext" [class.is-open]="IsExtensionOpen(line)">
                     <button

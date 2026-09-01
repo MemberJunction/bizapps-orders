@@ -1085,13 +1085,32 @@ export interface MJOProductOption {
     Taxable: boolean;
     /** NULL = no cap. 1 = one unit per line (conference tickets). */
     MaxQuantityPerLine: number | null;
+    /**
+     * Set when buying this product starts a subscription — the same column the server reads to
+     * decide which lines get a term (`OrderEntityServer.subscriptionLines`).
+     *
+     * The catalog row carries it because a line editor otherwise cannot tell a membership from a
+     * mug: `TypeName` is the product TYPE, and a subscription is a property of the product. Fields
+     * that only apply to a term — the term start — would either have to render on every line or
+     * force a per-line catalog lookup in the browser.
+     */
+    SubscriptionTypeID: string | null;
 }
 
 /** Flatten a product + its type into the picker row. */
 export function CatalogOptionFrom(
     product: Pick<
         mjBizAppsOrdersProductEntity,
-        'ID' | 'Name' | 'SKU' | 'ProductType' | 'ProductTypeID' | 'Company' | 'StandaloneSellingPrice' | 'IsTaxable' | 'MaxQuantityPerLine'
+        | 'ID'
+        | 'Name'
+        | 'SKU'
+        | 'ProductType'
+        | 'ProductTypeID'
+        | 'Company'
+        | 'StandaloneSellingPrice'
+        | 'IsTaxable'
+        | 'MaxQuantityPerLine'
+        | 'SubscriptionTypeID'
     >,
     type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
     listPrice: number,
@@ -1107,6 +1126,7 @@ export function CatalogOptionFrom(
         ListPrice: product.StandaloneSellingPrice || listPrice || 0,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
+        SubscriptionTypeID: product.SubscriptionTypeID ?? null,
     };
 }
 
