@@ -71,7 +71,7 @@ SET
   @Sequence_83a57164 = 10
 SET
   @IsActive_83a57164 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[RevenueRecognitionType] WHERE [ID] = @ID_83a57164)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateRevenueRecognitionType @ID = @ID_83a57164,
   @Code = @Code_83a57164,
   @Name = @Name_83a57164,
@@ -81,6 +81,13 @@ EXEC [${flyway:defaultSchema}].spCreateRevenueRecognitionType @ID = @ID_83a57164
   @RequiresServicePeriod = @RequiresServicePeriod_83a57164,
   @Sequence = @Sequence_83a57164,
   @IsActive = @IsActive_83a57164;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -112,7 +119,7 @@ SET
   @Sequence_7f0e60ed = 20
 SET
   @IsActive_7f0e60ed = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[RevenueRecognitionType] WHERE [ID] = @ID_7f0e60ed)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateRevenueRecognitionType @ID = @ID_7f0e60ed,
   @Code = @Code_7f0e60ed,
   @Name = @Name_7f0e60ed,
@@ -122,6 +129,13 @@ EXEC [${flyway:defaultSchema}].spCreateRevenueRecognitionType @ID = @ID_7f0e60ed
   @RequiresServicePeriod = @RequiresServicePeriod_7f0e60ed,
   @Sequence = @Sequence_7f0e60ed,
   @IsActive = @IsActive_7f0e60ed;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -153,7 +167,7 @@ SET
   @Sequence_7b812ecd = 30
 SET
   @IsActive_7b812ecd = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[RevenueRecognitionType] WHERE [ID] = @ID_7b812ecd)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateRevenueRecognitionType @ID = @ID_7b812ecd,
   @Code = @Code_7b812ecd,
   @Name = @Name_7b812ecd,
@@ -163,6 +177,13 @@ EXEC [${flyway:defaultSchema}].spCreateRevenueRecognitionType @ID = @ID_7b812ecd
   @RequiresServicePeriod = @RequiresServicePeriod_7b812ecd,
   @Sequence = @Sequence_7b812ecd,
   @IsActive = @IsActive_7b812ecd;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -237,7 +258,7 @@ SET
   @Sequence_78a75287 = 10
 SET
   @IsActive_78a75287 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[SubscriptionType] WHERE [ID] = @ID_78a75287)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateSubscriptionType @ID = @ID_78a75287,
   @Code = @Code_78a75287,
   @Name = @Name_78a75287,
@@ -273,6 +294,13 @@ EXEC [${flyway:defaultSchema}].spCreateSubscriptionType @ID = @ID_78a75287,
   @GracePeriodDays = @GracePeriodDays_78a75287,
   @Sequence = @Sequence_78a75287,
   @IsActive = @IsActive_78a75287;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -353,7 +381,7 @@ SET
   @Sequence_be150700 = 20
 SET
   @IsActive_be150700 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[SubscriptionType] WHERE [ID] = @ID_be150700)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateSubscriptionType @ID = @ID_be150700,
   @Code = @Code_be150700,
   @Name = @Name_be150700,
@@ -386,6 +414,13 @@ EXEC [${flyway:defaultSchema}].spCreateSubscriptionType @ID = @ID_be150700,
   @GracePeriodDays = @GracePeriodDays_be150700,
   @Sequence = @Sequence_be150700,
   @IsActive = @IsActive_be150700;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -464,7 +499,7 @@ SET
   @Sequence_1d959d42 = 30
 SET
   @IsActive_1d959d42 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[SubscriptionType] WHERE [ID] = @ID_1d959d42)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateSubscriptionType @ID = @ID_1d959d42,
   @Code = @Code_1d959d42,
   @Name = @Name_1d959d42,
@@ -498,6 +533,13 @@ EXEC [${flyway:defaultSchema}].spCreateSubscriptionType @ID = @ID_1d959d42,
   @GracePeriodDays = @GracePeriodDays_1d959d42,
   @Sequence = @Sequence_1d959d42,
   @IsActive = @IsActive_1d959d42;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -572,7 +614,7 @@ SET
   @Sequence_f863f2ba = 40
 SET
   @IsActive_f863f2ba = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[SubscriptionType] WHERE [ID] = @ID_f863f2ba)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateSubscriptionType @ID = @ID_f863f2ba,
   @Code = @Code_f863f2ba,
   @Name = @Name_f863f2ba,
@@ -608,6 +650,13 @@ EXEC [${flyway:defaultSchema}].spCreateSubscriptionType @ID = @ID_f863f2ba,
   @GracePeriodDays = @GracePeriodDays_f863f2ba,
   @Sequence = @Sequence_f863f2ba,
   @IsActive = @IsActive_f863f2ba;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -680,7 +729,7 @@ SET
   @Sequence_7bfb213b = 5
 SET
   @IsActive_7bfb213b = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[SubscriptionType] WHERE [ID] = @ID_7bfb213b)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateSubscriptionType @ID = @ID_7bfb213b,
   @Code = @Code_7bfb213b,
   @Name = @Name_7bfb213b,
@@ -717,6 +766,13 @@ EXEC [${flyway:defaultSchema}].spCreateSubscriptionType @ID = @ID_7bfb213b,
   @GracePeriodDays = @GracePeriodDays_7bfb213b,
   @Sequence = @Sequence_7bfb213b,
   @IsActive = @IsActive_7bfb213b;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -751,7 +807,7 @@ SET
   @Sequence_faf62d1f = 10
 SET
   @IsActive_faf62d1f = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentProviderType] WHERE [ID] = @ID_faf62d1f)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentProviderType @ID = @ID_faf62d1f,
   @Code = @Code_faf62d1f,
   @Name = @Name_faf62d1f,
@@ -762,6 +818,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentProviderType @ID = @ID_faf62d1f,
   @SupportsWebhooks = @SupportsWebhooks_faf62d1f,
   @Sequence = @Sequence_faf62d1f,
   @IsActive = @IsActive_faf62d1f;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -796,7 +859,7 @@ SET
   @Sequence_7f44b957 = 15
 SET
   @IsActive_7f44b957 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentProviderType] WHERE [ID] = @ID_7f44b957)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentProviderType @ID = @ID_7f44b957,
   @Code = @Code_7f44b957,
   @Name = @Name_7f44b957,
@@ -807,6 +870,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentProviderType @ID = @ID_7f44b957,
   @SupportsWebhooks = @SupportsWebhooks_7f44b957,
   @Sequence = @Sequence_7f44b957,
   @IsActive = @IsActive_7f44b957;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -841,7 +911,7 @@ SET
   @Sequence_a24c4961 = 20
 SET
   @IsActive_a24c4961 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentProviderType] WHERE [ID] = @ID_a24c4961)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentProviderType @ID = @ID_a24c4961,
   @Code = @Code_a24c4961,
   @Name = @Name_a24c4961,
@@ -852,6 +922,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentProviderType @ID = @ID_a24c4961,
   @SupportsWebhooks = @SupportsWebhooks_a24c4961,
   @Sequence = @Sequence_a24c4961,
   @IsActive = @IsActive_a24c4961;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -886,7 +963,7 @@ SET
   @Sequence_75852f22 = 30
 SET
   @IsActive_75852f22 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentProviderType] WHERE [ID] = @ID_75852f22)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentProviderType @ID = @ID_75852f22,
   @Code = @Code_75852f22,
   @Name = @Name_75852f22,
@@ -897,6 +974,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentProviderType @ID = @ID_75852f22,
   @SupportsWebhooks = @SupportsWebhooks_75852f22,
   @Sequence = @Sequence_75852f22,
   @IsActive = @IsActive_75852f22;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -931,7 +1015,7 @@ SET
   @Sequence_a72ca4d9 = 40
 SET
   @IsActive_a72ca4d9 = 0
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentProviderType] WHERE [ID] = @ID_a72ca4d9)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentProviderType @ID = @ID_a72ca4d9,
   @Code = @Code_a72ca4d9,
   @Name = @Name_a72ca4d9,
@@ -942,6 +1026,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentProviderType @ID = @ID_a72ca4d9,
   @SupportsWebhooks = @SupportsWebhooks_a72ca4d9,
   @Sequence = @Sequence_a72ca4d9,
   @IsActive = @IsActive_a72ca4d9;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -980,7 +1071,7 @@ SET
   @Sequence_9aada59a = 10
 SET
   @IsActive_9aada59a = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_9aada59a)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_9aada59a,
   @Code = @Code_9aada59a,
   @Name = @Name_9aada59a,
@@ -994,6 +1085,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_9aada59a,
   @BookProcessingFeeInline = @BookProcessingFeeInline_9aada59a,
   @Sequence = @Sequence_9aada59a,
   @IsActive = @IsActive_9aada59a;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1032,7 +1130,7 @@ SET
   @Sequence_c665c2fe = 20
 SET
   @IsActive_c665c2fe = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_c665c2fe)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_c665c2fe,
   @Code = @Code_c665c2fe,
   @Name = @Name_c665c2fe,
@@ -1046,6 +1144,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_c665c2fe,
   @BookProcessingFeeInline = @BookProcessingFeeInline_c665c2fe,
   @Sequence = @Sequence_c665c2fe,
   @IsActive = @IsActive_c665c2fe;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1084,7 +1189,7 @@ SET
   @Sequence_e965e931 = 30
 SET
   @IsActive_e965e931 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_e965e931)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_e965e931,
   @Code = @Code_e965e931,
   @Name = @Name_e965e931,
@@ -1098,6 +1203,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_e965e931,
   @BookProcessingFeeInline = @BookProcessingFeeInline_e965e931,
   @Sequence = @Sequence_e965e931,
   @IsActive = @IsActive_e965e931;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1136,7 +1248,7 @@ SET
   @Sequence_75f11443 = 40
 SET
   @IsActive_75f11443 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_75f11443)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_75f11443,
   @Code = @Code_75f11443,
   @Name = @Name_75f11443,
@@ -1150,6 +1262,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_75f11443,
   @BookProcessingFeeInline = @BookProcessingFeeInline_75f11443,
   @Sequence = @Sequence_75f11443,
   @IsActive = @IsActive_75f11443;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1188,7 +1307,7 @@ SET
   @Sequence_074a59cf = 50
 SET
   @IsActive_074a59cf = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_074a59cf)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_074a59cf,
   @Code = @Code_074a59cf,
   @Name = @Name_074a59cf,
@@ -1202,6 +1321,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_074a59cf,
   @BookProcessingFeeInline = @BookProcessingFeeInline_074a59cf,
   @Sequence = @Sequence_074a59cf,
   @IsActive = @IsActive_074a59cf;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1240,7 +1366,7 @@ SET
   @Sequence_009031b1 = 60
 SET
   @IsActive_009031b1 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_009031b1)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_009031b1,
   @Code = @Code_009031b1,
   @Name = @Name_009031b1,
@@ -1254,6 +1380,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_009031b1,
   @BookProcessingFeeInline = @BookProcessingFeeInline_009031b1,
   @Sequence = @Sequence_009031b1,
   @IsActive = @IsActive_009031b1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1292,7 +1425,7 @@ SET
   @Sequence_a7cbd9b0 = 70
 SET
   @IsActive_a7cbd9b0 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_a7cbd9b0)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_a7cbd9b0,
   @Code = @Code_a7cbd9b0,
   @Name = @Name_a7cbd9b0,
@@ -1306,6 +1439,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_a7cbd9b0,
   @BookProcessingFeeInline = @BookProcessingFeeInline_a7cbd9b0,
   @Sequence = @Sequence_a7cbd9b0,
   @IsActive = @IsActive_a7cbd9b0;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1344,7 +1484,7 @@ SET
   @Sequence_6b090ea6 = 80
 SET
   @IsActive_6b090ea6 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_6b090ea6)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_6b090ea6,
   @Code = @Code_6b090ea6,
   @Name = @Name_6b090ea6,
@@ -1358,6 +1498,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_6b090ea6,
   @BookProcessingFeeInline = @BookProcessingFeeInline_6b090ea6,
   @Sequence = @Sequence_6b090ea6,
   @IsActive = @IsActive_6b090ea6;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1396,7 +1543,7 @@ SET
   @Sequence_ea8f4ab2 = 90
 SET
   @IsActive_ea8f4ab2 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_ea8f4ab2)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_ea8f4ab2,
   @Code = @Code_ea8f4ab2,
   @Name = @Name_ea8f4ab2,
@@ -1410,6 +1557,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_ea8f4ab2,
   @BookProcessingFeeInline = @BookProcessingFeeInline_ea8f4ab2,
   @Sequence = @Sequence_ea8f4ab2,
   @IsActive = @IsActive_ea8f4ab2;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1448,7 +1602,7 @@ SET
   @Sequence_f213e8cd = 100
 SET
   @IsActive_f213e8cd = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_f213e8cd)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_f213e8cd,
   @Code = @Code_f213e8cd,
   @Name = @Name_f213e8cd,
@@ -1462,6 +1616,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_f213e8cd,
   @BookProcessingFeeInline = @BookProcessingFeeInline_f213e8cd,
   @Sequence = @Sequence_f213e8cd,
   @IsActive = @IsActive_f213e8cd;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1500,7 +1661,7 @@ SET
   @Sequence_00e37666 = 110
 SET
   @IsActive_00e37666 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentType] WHERE [ID] = @ID_00e37666)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_00e37666,
   @Code = @Code_00e37666,
   @Name = @Name_00e37666,
@@ -1514,6 +1675,13 @@ EXEC [${flyway:defaultSchema}].spCreatePaymentType @ID = @ID_00e37666,
   @BookProcessingFeeInline = @BookProcessingFeeInline_00e37666,
   @Sequence = @Sequence_00e37666,
   @IsActive = @IsActive_00e37666;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1536,13 +1704,20 @@ SET
   @Description_c6e8dc24 = N'Payable when the invoice arrives. The terminal default of the terms walk (D83) — an order that resolves to nothing lands here rather than on a null due date.'
 SET
   @IsActive_c6e8dc24 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentTermsType] WHERE [ID] = @ID_c6e8dc24)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentTermsType @ID = @ID_c6e8dc24,
   @Code = @Code_c6e8dc24,
   @Name = @Name_c6e8dc24,
   @NetDays = @NetDays_c6e8dc24,
   @Description = @Description_c6e8dc24,
   @IsActive = @IsActive_c6e8dc24;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1565,13 +1740,20 @@ SET
   @Description_794a87bc = N'Payable fifteen days from the order date.'
 SET
   @IsActive_794a87bc = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentTermsType] WHERE [ID] = @ID_794a87bc)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentTermsType @ID = @ID_794a87bc,
   @Code = @Code_794a87bc,
   @Name = @Name_794a87bc,
   @NetDays = @NetDays_794a87bc,
   @Description = @Description_794a87bc,
   @IsActive = @IsActive_794a87bc;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1594,13 +1776,20 @@ SET
   @Description_6aa6fc59 = N'Payable thirty days from the order date. The most common commercial terms, and the usual company default.'
 SET
   @IsActive_6aa6fc59 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentTermsType] WHERE [ID] = @ID_6aa6fc59)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentTermsType @ID = @ID_6aa6fc59,
   @Code = @Code_6aa6fc59,
   @Name = @Name_6aa6fc59,
   @NetDays = @NetDays_6aa6fc59,
   @Description = @Description_6aa6fc59,
   @IsActive = @IsActive_6aa6fc59;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1623,13 +1812,20 @@ SET
   @Description_1645ff8a = N'Payable forty-five days from the order date.'
 SET
   @IsActive_1645ff8a = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentTermsType] WHERE [ID] = @ID_1645ff8a)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentTermsType @ID = @ID_1645ff8a,
   @Code = @Code_1645ff8a,
   @Name = @Name_1645ff8a,
   @NetDays = @NetDays_1645ff8a,
   @Description = @Description_1645ff8a,
   @IsActive = @IsActive_1645ff8a;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1652,13 +1848,20 @@ SET
   @Description_e2713bd2 = N'Payable sixty days from the order date. Typically negotiated per customer rather than set company-wide.'
 SET
   @IsActive_e2713bd2 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentTermsType] WHERE [ID] = @ID_e2713bd2)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentTermsType @ID = @ID_e2713bd2,
   @Code = @Code_e2713bd2,
   @Name = @Name_e2713bd2,
   @NetDays = @NetDays_e2713bd2,
   @Description = @Description_e2713bd2,
   @IsActive = @IsActive_e2713bd2;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1681,13 +1884,20 @@ SET
   @Description_699f3a27 = N'Payable ninety days from the order date.'
 SET
   @IsActive_699f3a27 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PaymentTermsType] WHERE [ID] = @ID_699f3a27)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePaymentTermsType @ID = @ID_699f3a27,
   @Code = @Code_699f3a27,
   @Name = @Name_699f3a27,
   @NetDays = @NetDays_699f3a27,
   @Description = @Description_699f3a27,
   @IsActive = @IsActive_699f3a27;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1719,7 +1929,7 @@ SET
   @AllowsOverride_2271c549 = 1
 SET
   @IsActive_2271c549 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ChargeType] WHERE [ID] = @ID_2271c549)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateChargeType @ID = @ID_2271c549,
   @Code = @Code_2271c549,
   @Name = @Name_2271c549,
@@ -1729,6 +1939,13 @@ EXEC [${flyway:defaultSchema}].spCreateChargeType @ID = @ID_2271c549,
   @Sequence = @Sequence_2271c549,
   @AllowsOverride = @AllowsOverride_2271c549,
   @IsActive = @IsActive_2271c549;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1760,7 +1977,7 @@ SET
   @AllowsOverride_2bc4c865 = 1
 SET
   @IsActive_2bc4c865 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ChargeType] WHERE [ID] = @ID_2bc4c865)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateChargeType @ID = @ID_2bc4c865,
   @Code = @Code_2bc4c865,
   @Name = @Name_2bc4c865,
@@ -1770,6 +1987,13 @@ EXEC [${flyway:defaultSchema}].spCreateChargeType @ID = @ID_2bc4c865,
   @Sequence = @Sequence_2bc4c865,
   @AllowsOverride = @AllowsOverride_2bc4c865,
   @IsActive = @IsActive_2bc4c865;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1801,7 +2025,7 @@ SET
   @AllowsOverride_ed6bea2f = 0
 SET
   @IsActive_ed6bea2f = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ChargeType] WHERE [ID] = @ID_ed6bea2f)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateChargeType @ID = @ID_ed6bea2f,
   @Code = @Code_ed6bea2f,
   @Name = @Name_ed6bea2f,
@@ -1811,6 +2035,13 @@ EXEC [${flyway:defaultSchema}].spCreateChargeType @ID = @ID_ed6bea2f,
   @Sequence = @Sequence_ed6bea2f,
   @AllowsOverride = @AllowsOverride_ed6bea2f,
   @IsActive = @IsActive_ed6bea2f;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1842,7 +2073,7 @@ SET
   @AllowsOverride_982e3002 = 0
 SET
   @IsActive_982e3002 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ChargeType] WHERE [ID] = @ID_982e3002)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateChargeType @ID = @ID_982e3002,
   @Code = @Code_982e3002,
   @Name = @Name_982e3002,
@@ -1852,6 +2083,13 @@ EXEC [${flyway:defaultSchema}].spCreateChargeType @ID = @ID_982e3002,
   @Sequence = @Sequence_982e3002,
   @AllowsOverride = @AllowsOverride_982e3002,
   @IsActive = @IsActive_982e3002;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1883,7 +2121,7 @@ SET
   @AllowsOverride_e917c646 = 1
 SET
   @IsActive_e917c646 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ChargeType] WHERE [ID] = @ID_e917c646)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateChargeType @ID = @ID_e917c646,
   @Code = @Code_e917c646,
   @Name = @Name_e917c646,
@@ -1893,6 +2131,13 @@ EXEC [${flyway:defaultSchema}].spCreateChargeType @ID = @ID_e917c646,
   @Sequence = @Sequence_e917c646,
   @AllowsOverride = @AllowsOverride_e917c646,
   @IsActive = @IsActive_e917c646;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1918,7 +2163,7 @@ SET
   @IsJournalEntryBatchSummary_0f56cffe = 0
 SET
   @IsActive_0f56cffe = 1
-IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsAccounting].[JournalEntryType] WHERE [ID] = @ID_0f56cffe)
+BEGIN TRY
 EXEC [__mj_BizAppsAccounting].spCreateJournalEntryType @ID = @ID_0f56cffe,
   @Code = @Code_0f56cffe,
   @Name = @Name_0f56cffe,
@@ -1926,6 +2171,13 @@ EXEC [__mj_BizAppsAccounting].spCreateJournalEntryType @ID = @ID_0f56cffe,
   @IsSystem = @IsSystem_0f56cffe,
   @IsJournalEntryBatchSummary = @IsJournalEntryBatchSummary_0f56cffe,
   @IsActive = @IsActive_0f56cffe;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1951,7 +2203,7 @@ SET
   @IsJournalEntryBatchSummary_f6e3dbf4 = 0
 SET
   @IsActive_f6e3dbf4 = 1
-IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsAccounting].[JournalEntryType] WHERE [ID] = @ID_f6e3dbf4)
+BEGIN TRY
 EXEC [__mj_BizAppsAccounting].spCreateJournalEntryType @ID = @ID_f6e3dbf4,
   @Code = @Code_f6e3dbf4,
   @Name = @Name_f6e3dbf4,
@@ -1959,6 +2211,13 @@ EXEC [__mj_BizAppsAccounting].spCreateJournalEntryType @ID = @ID_f6e3dbf4,
   @IsSystem = @IsSystem_f6e3dbf4,
   @IsJournalEntryBatchSummary = @IsJournalEntryBatchSummary_f6e3dbf4,
   @IsActive = @IsActive_f6e3dbf4;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -1984,7 +2243,7 @@ SET
   @IsJournalEntryBatchSummary_a71a9d75 = 0
 SET
   @IsActive_a71a9d75 = 1
-IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsAccounting].[JournalEntryType] WHERE [ID] = @ID_a71a9d75)
+BEGIN TRY
 EXEC [__mj_BizAppsAccounting].spCreateJournalEntryType @ID = @ID_a71a9d75,
   @Code = @Code_a71a9d75,
   @Name = @Name_a71a9d75,
@@ -1992,6 +2251,13 @@ EXEC [__mj_BizAppsAccounting].spCreateJournalEntryType @ID = @ID_a71a9d75,
   @IsSystem = @IsSystem_a71a9d75,
   @IsJournalEntryBatchSummary = @IsJournalEntryBatchSummary_a71a9d75,
   @IsActive = @IsActive_a71a9d75;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2017,7 +2283,7 @@ SET
   @IsJournalEntryBatchSummary_c7cbee94 = 0
 SET
   @IsActive_c7cbee94 = 1
-IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsAccounting].[JournalEntryType] WHERE [ID] = @ID_c7cbee94)
+BEGIN TRY
 EXEC [__mj_BizAppsAccounting].spCreateJournalEntryType @ID = @ID_c7cbee94,
   @Code = @Code_c7cbee94,
   @Name = @Name_c7cbee94,
@@ -2025,6 +2291,13 @@ EXEC [__mj_BizAppsAccounting].spCreateJournalEntryType @ID = @ID_c7cbee94,
   @IsSystem = @IsSystem_c7cbee94,
   @IsJournalEntryBatchSummary = @IsJournalEntryBatchSummary_c7cbee94,
   @IsActive = @IsActive_c7cbee94;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2047,13 +2320,20 @@ SET
   @Sequence_dc35c9ec = 10
 SET
   @IsActive_dc35c9ec = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PromotionType] WHERE [ID] = @ID_dc35c9ec)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePromotionType @ID = @ID_dc35c9ec,
   @Code = @Code_dc35c9ec,
   @Name = @Name_dc35c9ec,
   @Description = @Description_dc35c9ec,
   @Sequence = @Sequence_dc35c9ec,
   @IsActive = @IsActive_dc35c9ec;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2076,13 +2356,20 @@ SET
   @Sequence_922af3dc = 20
 SET
   @IsActive_922af3dc = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PromotionType] WHERE [ID] = @ID_922af3dc)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePromotionType @ID = @ID_922af3dc,
   @Code = @Code_922af3dc,
   @Name = @Name_922af3dc,
   @Description = @Description_922af3dc,
   @Sequence = @Sequence_922af3dc,
   @IsActive = @IsActive_922af3dc;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2105,13 +2392,20 @@ SET
   @Sequence_dbcce5ed = 30
 SET
   @IsActive_dbcce5ed = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PromotionType] WHERE [ID] = @ID_dbcce5ed)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePromotionType @ID = @ID_dbcce5ed,
   @Code = @Code_dbcce5ed,
   @Name = @Name_dbcce5ed,
   @Description = @Description_dbcce5ed,
   @Sequence = @Sequence_dbcce5ed,
   @IsActive = @IsActive_dbcce5ed;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2134,13 +2428,20 @@ SET
   @Sequence_9443e6a3 = 40
 SET
   @IsActive_9443e6a3 = 1
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[PromotionType] WHERE [ID] = @ID_9443e6a3)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreatePromotionType @ID = @ID_9443e6a3,
   @Code = @Code_9443e6a3,
   @Name = @Name_9443e6a3,
   @Description = @Description_9443e6a3,
   @Sequence = @Sequence_9443e6a3,
   @IsActive = @IsActive_9443e6a3;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2248,7 +2549,7 @@ SET
   @DefaultEntitlementQuantityMode_8d1cd9e5 = N'PerUnit'
 SET
   @DefaultEntitlementValidityMode_8d1cd9e5 = N'EventWindow'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_8d1cd9e5)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_8d1cd9e5,
   @Code = @Code_8d1cd9e5,
   @Name = @Name_8d1cd9e5,
@@ -2270,6 +2571,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_8d1cd9e5,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_8d1cd9e5,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2313,7 +2621,7 @@ SET
   @DefaultEntitlementQuantityMode_5b487169 = N'PerUnit'
 SET
   @DefaultEntitlementValidityMode_5b487169 = N'Perpetual'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_5b487169)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_5b487169,
   @Code = @Code_5b487169,
   @Name = @Name_5b487169,
@@ -2337,6 +2645,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_5b487169,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_5b487169,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2380,7 +2695,7 @@ SET
   @DefaultEntitlementQuantityMode_8a24366d = N'PerUnit'
 SET
   @DefaultEntitlementValidityMode_8a24366d = N'Perpetual'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_8a24366d)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_8a24366d,
   @Code = @Code_8a24366d,
   @Name = @Name_8a24366d,
@@ -2404,6 +2719,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_8a24366d,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_8a24366d,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2447,7 +2769,7 @@ SET
   @DefaultEntitlementQuantityMode_a8920258 = N'PerUnit'
 SET
   @DefaultEntitlementValidityMode_a8920258 = N'Perpetual'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_a8920258)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_a8920258,
   @Code = @Code_a8920258,
   @Name = @Name_a8920258,
@@ -2471,6 +2793,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_a8920258,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_a8920258,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2514,7 +2843,7 @@ SET
   @DefaultEntitlementQuantityMode_21983f2e = N'Flat'
 SET
   @DefaultEntitlementValidityMode_21983f2e = N'Perpetual'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_21983f2e)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_21983f2e,
   @Code = @Code_21983f2e,
   @Name = @Name_21983f2e,
@@ -2538,6 +2867,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_21983f2e,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_21983f2e,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2581,7 +2917,7 @@ SET
   @DefaultEntitlementQuantityMode_4f8ee7cc = N'PerUnit'
 SET
   @DefaultEntitlementValidityMode_4f8ee7cc = N'Perpetual'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_4f8ee7cc)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_4f8ee7cc,
   @Code = @Code_4f8ee7cc,
   @Name = @Name_4f8ee7cc,
@@ -2605,6 +2941,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_4f8ee7cc,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_4f8ee7cc,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2648,7 +2991,7 @@ SET
   @DefaultEntitlementQuantityMode_6c07ed7a = N'PerUnit'
 SET
   @DefaultEntitlementValidityMode_6c07ed7a = N'Perpetual'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_6c07ed7a)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_6c07ed7a,
   @Code = @Code_6c07ed7a,
   @Name = @Name_6c07ed7a,
@@ -2672,6 +3015,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_6c07ed7a,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_6c07ed7a,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2715,7 +3065,7 @@ SET
   @DefaultEntitlementQuantityMode_32bcd4e4 = N'PerUnit'
 SET
   @DefaultEntitlementValidityMode_32bcd4e4 = N'Perpetual'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_32bcd4e4)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_32bcd4e4,
   @Code = @Code_32bcd4e4,
   @Name = @Name_32bcd4e4,
@@ -2739,6 +3089,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_32bcd4e4,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_32bcd4e4,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2784,7 +3141,7 @@ SET
   @DefaultEntitlementQuantityMode_0a0b37d8 = N'Flat'
 SET
   @DefaultEntitlementValidityMode_0a0b37d8 = N'SubscriptionTerm'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_0a0b37d8)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_0a0b37d8,
   @Code = @Code_0a0b37d8,
   @Name = @Name_0a0b37d8,
@@ -2807,6 +3164,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_0a0b37d8,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_0a0b37d8,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2852,7 +3216,7 @@ SET
   @DefaultEntitlementQuantityMode_861de11c = N'Flat'
 SET
   @DefaultEntitlementValidityMode_861de11c = N'SubscriptionTerm'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_861de11c)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_861de11c,
   @Code = @Code_861de11c,
   @Name = @Name_861de11c,
@@ -2875,6 +3239,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_861de11c,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_861de11c,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2918,7 +3289,7 @@ SET
   @DefaultEntitlementQuantityMode_50d303ee = N'PerUnit'
 SET
   @DefaultEntitlementValidityMode_50d303ee = N'FixedDuration'
-IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductType] WHERE [ID] = @ID_50d303ee)
+BEGIN TRY
 EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_50d303ee,
   @Code = @Code_50d303ee,
   @Name = @Name_50d303ee,
@@ -2942,6 +3313,13 @@ EXEC [${flyway:defaultSchema}].spCreateProductType @ID = @ID_50d303ee,
   @PricingDriverClass_Clear = 1,
   @Configuration = @Configuration_50d303ee,
   @Configuration_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2956,12 +3334,19 @@ SET
   @Name_d7dff2f2 = N'Order Lifecycle'
 SET
   @Description_d7dff2f2 = N'Create, price, preview and confirm orders. The order is the transactional substrate and the A/R primitive, so these are the operations every other surface is built on.'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperationCategory] WHERE [ID] = @ID_d7dff2f2)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperationCategory @ID = @ID_d7dff2f2,
   @Name = @Name_d7dff2f2,
   @Description = @Description_d7dff2f2,
   @ParentID = @ParentID_d7dff2f2,
   @ParentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2976,12 +3361,19 @@ SET
   @Name_9b0fcbe4 = N'Order Pricing'
 SET
   @Description_9b0fcbe4 = N'Resolve prices and explain how they were resolved. Read-only — nothing here writes.'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperationCategory] WHERE [ID] = @ID_9b0fcbe4)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperationCategory @ID = @ID_9b0fcbe4,
   @Name = @Name_9b0fcbe4,
   @Description = @Description_9b0fcbe4,
   @ParentID = @ParentID_9b0fcbe4,
   @ParentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -2996,12 +3388,19 @@ SET
   @Name_ebbd4225 = N'Payments and Credits'
 SET
   @Description_ebbd4225 = N'Refunds, reversals and account credits. Every one of these creates a NEW payment rather than editing a captured one.'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperationCategory] WHERE [ID] = @ID_ebbd4225)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperationCategory @ID = @ID_ebbd4225,
   @Name = @Name_ebbd4225,
   @Description = @Description_ebbd4225,
   @ParentID = @ParentID_ebbd4225,
   @ParentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -3016,12 +3415,19 @@ SET
   @Name_7b265b36 = N'Subscriptions'
 SET
   @Description_7b265b36 = N'Cancellation and renewal spawning — the lifecycle events a subscription has beyond being purchased.'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperationCategory] WHERE [ID] = @ID_7b265b36)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperationCategory @ID = @ID_7b265b36,
   @Name = @Name_7b265b36,
   @Description = @Description_7b265b36,
   @ParentID = @ParentID_7b265b36,
   @ParentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -3036,12 +3442,19 @@ SET
   @Name_46839162 = N'Receivables'
 SET
   @Description_46839162 = N'Collections surfaces that cannot be expressed as a view because their predicate depends on the clock rather than on a stored value.'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperationCategory] WHERE [ID] = @ID_46839162)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperationCategory @ID = @ID_46839162,
   @Name = @Name_46839162,
   @Description = @Description_46839162,
   @ParentID = @ParentID_46839162,
   @ParentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -3056,12 +3469,19 @@ SET
   @Name_0c4aa168 = N'Fulfillment'
 SET
   @Description_0c4aa168 = N'Getting goods out of the door. Fulfilment is a LOGISTICS fact, deliberately disconnected from revenue (D15) - no journal entry fires on Posted to Fulfilled.'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperationCategory] WHERE [ID] = @ID_0c4aa168)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperationCategory @ID = @ID_0c4aa168,
   @Name = @Name_0c4aa168,
   @Description = @Description_0c4aa168,
   @ParentID = @ParentID_0c4aa168,
   @ParentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -3076,12 +3496,19 @@ SET
   @Name_7b0e5159 = N'Entitlements'
 SET
   @Description_7b0e5159 = N'Ask/answer access checks and library lists. The read contract for downstream apps (the LXP). Grants are created at booking — nothing here writes one.'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperationCategory] WHERE [ID] = @ID_7b0e5159)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperationCategory @ID = @ID_7b0e5159,
   @Name = @Name_7b0e5159,
   @Description = @Description_7b0e5159,
   @ParentID = @ParentID_7b0e5159,
   @ParentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -3208,7 +3635,7 @@ SET
   @Status_e12bbafb = N'Active'
 SET
   @CodeLocked_e12bbafb = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_e12bbafb)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_e12bbafb,
   @Name = @Name_e12bbafb,
   @OperationKey = @OperationKey_e12bbafb,
@@ -3245,6 +3672,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_e12bbafb,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_e12bbafb,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -3358,7 +3792,7 @@ SET
   @Status_27e7fcad = N'Active'
 SET
   @CodeLocked_27e7fcad = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_27e7fcad)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_27e7fcad,
   @Name = @Name_27e7fcad,
   @OperationKey = @OperationKey_27e7fcad,
@@ -3395,6 +3829,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_27e7fcad,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_27e7fcad,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -3517,7 +3958,7 @@ SET
   @Status_7b63d5f5 = N'Active'
 SET
   @CodeLocked_7b63d5f5 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_7b63d5f5)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_7b63d5f5,
   @Name = @Name_7b63d5f5,
   @OperationKey = @OperationKey_7b63d5f5,
@@ -3554,6 +3995,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_7b63d5f5,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_7b63d5f5,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -3669,7 +4117,7 @@ SET
   @Status_c1bb7a2b = N'Active'
 SET
   @CodeLocked_c1bb7a2b = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_c1bb7a2b)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_c1bb7a2b,
   @Name = @Name_c1bb7a2b,
   @OperationKey = @OperationKey_c1bb7a2b,
@@ -3706,6 +4154,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_c1bb7a2b,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_c1bb7a2b,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -3873,7 +4328,7 @@ SET
   @Status_9ff791ba = N'Active'
 SET
   @CodeLocked_9ff791ba = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_9ff791ba)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_9ff791ba,
   @Name = @Name_9ff791ba,
   @OperationKey = @OperationKey_9ff791ba,
@@ -3910,6 +4365,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_9ff791ba,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_9ff791ba,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -4061,7 +4523,7 @@ SET
   @Status_f7470cc3 = N'Active'
 SET
   @CodeLocked_f7470cc3 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_f7470cc3)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_f7470cc3,
   @Name = @Name_f7470cc3,
   @OperationKey = @OperationKey_f7470cc3,
@@ -4098,6 +4560,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_f7470cc3,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_f7470cc3,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -4243,7 +4712,7 @@ SET
   @Status_e4878d8c = N'Active'
 SET
   @CodeLocked_e4878d8c = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_e4878d8c)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_e4878d8c,
   @Name = @Name_e4878d8c,
   @OperationKey = @OperationKey_e4878d8c,
@@ -4280,6 +4749,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_e4878d8c,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_e4878d8c,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -4401,7 +4877,7 @@ SET
   @Status_bcccb653 = N'Active'
 SET
   @CodeLocked_bcccb653 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_bcccb653)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_bcccb653,
   @Name = @Name_bcccb653,
   @OperationKey = @OperationKey_bcccb653,
@@ -4438,6 +4914,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_bcccb653,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_bcccb653,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -4715,7 +5198,7 @@ SET
   @Status_1c86ce30 = N'Active'
 SET
   @CodeLocked_1c86ce30 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_1c86ce30)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_1c86ce30,
   @Name = @Name_1c86ce30,
   @OperationKey = @OperationKey_1c86ce30,
@@ -4752,6 +5235,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_1c86ce30,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_1c86ce30,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -4935,7 +5425,7 @@ SET
   @Status_fd66fec3 = N'Active'
 SET
   @CodeLocked_fd66fec3 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_fd66fec3)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_fd66fec3,
   @Name = @Name_fd66fec3,
   @OperationKey = @OperationKey_fd66fec3,
@@ -4972,6 +5462,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_fd66fec3,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_fd66fec3,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5093,7 +5590,7 @@ SET
   @Status_49e5cfb3 = N'Active'
 SET
   @CodeLocked_49e5cfb3 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_49e5cfb3)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_49e5cfb3,
   @Name = @Name_49e5cfb3,
   @OperationKey = @OperationKey_49e5cfb3,
@@ -5130,6 +5627,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_49e5cfb3,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_49e5cfb3,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5248,7 +5752,7 @@ SET
   @Status_2e882c87 = N'Active'
 SET
   @CodeLocked_2e882c87 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_2e882c87)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_2e882c87,
   @Name = @Name_2e882c87,
   @OperationKey = @OperationKey_2e882c87,
@@ -5285,6 +5789,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_2e882c87,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_2e882c87,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5477,7 +5988,7 @@ SET
   @Status_c59407b3 = N'Active'
 SET
   @CodeLocked_c59407b3 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[RemoteOperation] WHERE [ID] = @ID_c59407b3)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_c59407b3,
   @Name = @Name_c59407b3,
   @OperationKey = @OperationKey_c59407b3,
@@ -5514,6 +6025,13 @@ EXEC [${mjSchema}].spCreateRemoteOperation @ID = @ID_c59407b3,
   @CodeComments_Clear = 1,
   @Libraries = @Libraries_c59407b3,
   @Libraries_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5588,7 +6106,7 @@ SET
   @Path_98421f40 = N'orders'
 SET
   @AutoUpdatePath_98421f40 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[Application] WHERE [ID] = @ID_98421f40)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateApplication @ID = @ID_98421f40,
   @Name = @Name_98421f40,
   @Description = @Description_98421f40,
@@ -5611,6 +6129,13 @@ EXEC [${mjSchema}].spCreateApplication @ID = @ID_98421f40,
   @AutoUpdatePath = @AutoUpdatePath_98421f40,
   @AgentSettings = @AgentSettings_98421f40,
   @AgentSettings_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5630,12 +6155,19 @@ SET
   @Sequence_a59020f2 = 100
 SET
   @IsActive_a59020f2 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[UserApplication] WHERE [ID] = @ID_a59020f2)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateUserApplication @ID = @ID_a59020f2,
   @UserID = @UserID_a59020f2,
   @ApplicationID = @ApplicationID_a59020f2,
   @Sequence = @Sequence_a59020f2,
   @IsActive = @IsActive_a59020f2;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5655,12 +6187,19 @@ SET
   @Sequence_00c472e0 = 100
 SET
   @IsActive_00c472e0 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[UserApplication] WHERE [ID] = @ID_00c472e0)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateUserApplication @ID = @ID_00c472e0,
   @UserID = @UserID_00c472e0,
   @ApplicationID = @ApplicationID_00c472e0,
   @Sequence = @Sequence_00c472e0,
   @IsActive = @IsActive_00c472e0;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5680,12 +6219,19 @@ SET
   @Value_9b7f7992 = N'true'
 SET
   @Comments_9b7f7992 = N'When an order names a ship-to/customer PERSON but no organization, stamp the organization that person was affiliated with as of the order date (D64). Zero affiliations leaves it blank, which is a personal order; exactly one is used; more than one takes the most recent by StartDate. Set to false to store only what the caller supplies.'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ApplicationSetting] WHERE [ID] = @ID_9b7f7992)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateApplicationSetting @ID = @ID_9b7f7992,
   @ApplicationID = @ApplicationID_9b7f7992,
   @Name = @Name_9b7f7992,
   @Value = @Value_9b7f7992,
   @Comments = @Comments_9b7f7992;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5705,12 +6251,19 @@ SET
   @Value_2ed4eec9 = N'Employee'
 SET
   @Comments_2ed4eec9 = N'Comma-separated bizapps-common RelationshipType NAMES that count as an organizational affiliation for the setting above. Employee only by default: the seeded types also include Vendor, Customer and Friend, and being a vendor to an organization must not make it your bill-to. RelationshipType is a lookup table, so a deployment can add its own type and list it here without a schema change. An empty value disables the inference.'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ApplicationSetting] WHERE [ID] = @ID_2ed4eec9)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateApplicationSetting @ID = @ID_2ed4eec9,
   @ApplicationID = @ApplicationID_2ed4eec9,
   @Name = @Name_2ed4eec9,
   @Value = @Value_2ed4eec9,
   @Comments = @Comments_2ed4eec9;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5730,12 +6283,19 @@ SET
   @ParentID_a211bb1e = '0DC7433E-F36B-1410-8DB6-00021F8B792E'
 SET
   @Status_a211bb1e = N'Active'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionCategory] WHERE [ID] = @ID_a211bb1e)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionCategory @ID = @ID_a211bb1e,
   @Name = @Name_a211bb1e,
   @Description = @Description_a211bb1e,
   @ParentID = @ParentID_a211bb1e,
   @Status = @Status_a211bb1e;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5789,7 +6349,7 @@ SET
   @DriverClass_4020538f = N'Orders.GenerateInvoice'
 SET
   @IconClass_4020538f = N'fa-regular fa-file-lines'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[Action] WHERE [ID] = @ID_4020538f)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateAction @ID = @ID_4020538f,
   @CategoryID = @CategoryID_4020538f,
   @Name = @Name_4020538f,
@@ -5828,6 +6388,13 @@ EXEC [${mjSchema}].spCreateAction @ID = @ID_4020538f,
   @MaxExecutionTimeMS_Clear = 1,
   @CreatedByAgentID = @CreatedByAgentID_4020538f,
   @CreatedByAgentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5881,7 +6448,7 @@ SET
   @DriverClass_c7b12b81 = N'Orders.SendDocument'
 SET
   @IconClass_c7b12b81 = N'fa-regular fa-paper-plane'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[Action] WHERE [ID] = @ID_c7b12b81)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateAction @ID = @ID_c7b12b81,
   @CategoryID = @CategoryID_c7b12b81,
   @Name = @Name_c7b12b81,
@@ -5920,6 +6487,13 @@ EXEC [${mjSchema}].spCreateAction @ID = @ID_c7b12b81,
   @MaxExecutionTimeMS_Clear = 1,
   @CreatedByAgentID = @CreatedByAgentID_c7b12b81,
   @CreatedByAgentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -5973,7 +6547,7 @@ SET
   @DriverClass_e28f782e = N'Orders.OpenPaymentIntent'
 SET
   @IconClass_e28f782e = N'fa-regular fa-hourglass-start'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[Action] WHERE [ID] = @ID_e28f782e)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateAction @ID = @ID_e28f782e,
   @CategoryID = @CategoryID_e28f782e,
   @Name = @Name_e28f782e,
@@ -6012,6 +6586,13 @@ EXEC [${mjSchema}].spCreateAction @ID = @ID_e28f782e,
   @MaxExecutionTimeMS_Clear = 1,
   @CreatedByAgentID = @CreatedByAgentID_e28f782e,
   @CreatedByAgentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6045,7 +6626,7 @@ SET
   @IsRequired_11cf64d7 = 1
 SET
   @LogValue_11cf64d7 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_11cf64d7)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_11cf64d7,
   @ActionID = @ActionID_11cf64d7,
   @Name = @Name_11cf64d7,
@@ -6059,6 +6640,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_11cf64d7,
   @MediaModality = @MediaModality_11cf64d7,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_11cf64d7;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6092,7 +6680,7 @@ SET
   @IsRequired_5c14c1f4 = 0
 SET
   @LogValue_5c14c1f4 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_5c14c1f4)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_5c14c1f4,
   @ActionID = @ActionID_5c14c1f4,
   @Name = @Name_5c14c1f4,
@@ -6106,6 +6694,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_5c14c1f4,
   @MediaModality = @MediaModality_5c14c1f4,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_5c14c1f4;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6139,7 +6734,7 @@ SET
   @IsRequired_104aff4e = 0
 SET
   @LogValue_104aff4e = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_104aff4e)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_104aff4e,
   @ActionID = @ActionID_104aff4e,
   @Name = @Name_104aff4e,
@@ -6153,6 +6748,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_104aff4e,
   @MediaModality = @MediaModality_104aff4e,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_104aff4e;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6188,7 +6790,7 @@ SET
   @IsRequired_b6fa68f6 = 0
 SET
   @LogValue_b6fa68f6 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_b6fa68f6)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_b6fa68f6,
   @ActionID = @ActionID_b6fa68f6,
   @Name = @Name_b6fa68f6,
@@ -6201,6 +6803,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_b6fa68f6,
   @MediaModality = @MediaModality_b6fa68f6,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_b6fa68f6;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6236,7 +6845,7 @@ SET
   @IsRequired_02b4b361 = 0
 SET
   @LogValue_02b4b361 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_02b4b361)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_02b4b361,
   @ActionID = @ActionID_02b4b361,
   @Name = @Name_02b4b361,
@@ -6249,6 +6858,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_02b4b361,
   @MediaModality = @MediaModality_02b4b361,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_02b4b361;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6282,7 +6898,7 @@ SET
   @IsRequired_69a93e89 = 0
 SET
   @LogValue_69a93e89 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_69a93e89)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_69a93e89,
   @ActionID = @ActionID_69a93e89,
   @Name = @Name_69a93e89,
@@ -6296,6 +6912,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_69a93e89,
   @MediaModality = @MediaModality_69a93e89,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_69a93e89;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6331,7 +6954,7 @@ SET
   @IsRequired_574da163 = 0
 SET
   @LogValue_574da163 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_574da163)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_574da163,
   @ActionID = @ActionID_574da163,
   @Name = @Name_574da163,
@@ -6344,6 +6967,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_574da163,
   @MediaModality = @MediaModality_574da163,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_574da163;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6379,7 +7009,7 @@ SET
   @IsRequired_4a8fb3e2 = 0
 SET
   @LogValue_4a8fb3e2 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_4a8fb3e2)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_4a8fb3e2,
   @ActionID = @ActionID_4a8fb3e2,
   @Name = @Name_4a8fb3e2,
@@ -6392,6 +7022,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_4a8fb3e2,
   @MediaModality = @MediaModality_4a8fb3e2,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_4a8fb3e2;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6425,7 +7062,7 @@ SET
   @IsRequired_c2ef3a62 = 0
 SET
   @LogValue_c2ef3a62 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_c2ef3a62)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_c2ef3a62,
   @ActionID = @ActionID_c2ef3a62,
   @Name = @Name_c2ef3a62,
@@ -6439,6 +7076,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_c2ef3a62,
   @MediaModality = @MediaModality_c2ef3a62,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_c2ef3a62;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6472,7 +7116,7 @@ SET
   @IsRequired_951c0d55 = 0
 SET
   @LogValue_951c0d55 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_951c0d55)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_951c0d55,
   @ActionID = @ActionID_951c0d55,
   @Name = @Name_951c0d55,
@@ -6486,6 +7130,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_951c0d55,
   @MediaModality = @MediaModality_951c0d55,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_951c0d55;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6519,7 +7170,7 @@ SET
   @IsRequired_48b61b2b = 0
 SET
   @LogValue_48b61b2b = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_48b61b2b)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_48b61b2b,
   @ActionID = @ActionID_48b61b2b,
   @Name = @Name_48b61b2b,
@@ -6533,6 +7184,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_48b61b2b,
   @MediaModality = @MediaModality_48b61b2b,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_48b61b2b;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6566,7 +7224,7 @@ SET
   @IsRequired_50703298 = 0
 SET
   @LogValue_50703298 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_50703298)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_50703298,
   @ActionID = @ActionID_50703298,
   @Name = @Name_50703298,
@@ -6580,6 +7238,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_50703298,
   @MediaModality = @MediaModality_50703298,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_50703298;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6613,7 +7278,7 @@ SET
   @IsRequired_f8d13c16 = 1
 SET
   @LogValue_f8d13c16 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_f8d13c16)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_f8d13c16,
   @ActionID = @ActionID_f8d13c16,
   @Name = @Name_f8d13c16,
@@ -6627,6 +7292,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_f8d13c16,
   @MediaModality = @MediaModality_f8d13c16,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_f8d13c16;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6660,7 +7332,7 @@ SET
   @IsRequired_5f7dc667 = 0
 SET
   @LogValue_5f7dc667 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_5f7dc667)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_5f7dc667,
   @ActionID = @ActionID_5f7dc667,
   @Name = @Name_5f7dc667,
@@ -6674,6 +7346,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_5f7dc667,
   @MediaModality = @MediaModality_5f7dc667,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_5f7dc667;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6707,7 +7386,7 @@ SET
   @IsRequired_14354ae9 = 0
 SET
   @LogValue_14354ae9 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_14354ae9)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_14354ae9,
   @ActionID = @ActionID_14354ae9,
   @Name = @Name_14354ae9,
@@ -6721,6 +7400,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_14354ae9,
   @MediaModality = @MediaModality_14354ae9,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_14354ae9;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6754,7 +7440,7 @@ SET
   @IsRequired_3f6ef772 = 0
 SET
   @LogValue_3f6ef772 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_3f6ef772)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_3f6ef772,
   @ActionID = @ActionID_3f6ef772,
   @Name = @Name_3f6ef772,
@@ -6768,6 +7454,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_3f6ef772,
   @MediaModality = @MediaModality_3f6ef772,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_3f6ef772;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6801,7 +7494,7 @@ SET
   @IsRequired_ecce8aaf = 0
 SET
   @LogValue_ecce8aaf = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_ecce8aaf)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_ecce8aaf,
   @ActionID = @ActionID_ecce8aaf,
   @Name = @Name_ecce8aaf,
@@ -6815,6 +7508,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_ecce8aaf,
   @MediaModality = @MediaModality_ecce8aaf,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_ecce8aaf;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6848,7 +7548,7 @@ SET
   @IsRequired_e5e9007b = 0
 SET
   @LogValue_e5e9007b = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_e5e9007b)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_e5e9007b,
   @ActionID = @ActionID_e5e9007b,
   @Name = @Name_e5e9007b,
@@ -6862,6 +7562,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_e5e9007b,
   @MediaModality = @MediaModality_e5e9007b,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_e5e9007b;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6895,7 +7602,7 @@ SET
   @IsRequired_fcbc2410 = 0
 SET
   @LogValue_fcbc2410 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_fcbc2410)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_fcbc2410,
   @ActionID = @ActionID_fcbc2410,
   @Name = @Name_fcbc2410,
@@ -6909,6 +7616,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_fcbc2410,
   @MediaModality = @MediaModality_fcbc2410,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_fcbc2410;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6942,7 +7656,7 @@ SET
   @IsRequired_fe0f4d4e = 0
 SET
   @LogValue_fe0f4d4e = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_fe0f4d4e)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_fe0f4d4e,
   @ActionID = @ActionID_fe0f4d4e,
   @Name = @Name_fe0f4d4e,
@@ -6956,6 +7670,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_fe0f4d4e,
   @MediaModality = @MediaModality_fe0f4d4e,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_fe0f4d4e;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -6989,7 +7710,7 @@ SET
   @IsRequired_dc9dc207 = 0
 SET
   @LogValue_dc9dc207 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_dc9dc207)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_dc9dc207,
   @ActionID = @ActionID_dc9dc207,
   @Name = @Name_dc9dc207,
@@ -7003,6 +7724,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_dc9dc207,
   @MediaModality = @MediaModality_dc9dc207,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_dc9dc207;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7036,7 +7764,7 @@ SET
   @IsRequired_04ec16ea = 0
 SET
   @LogValue_04ec16ea = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_04ec16ea)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_04ec16ea,
   @ActionID = @ActionID_04ec16ea,
   @Name = @Name_04ec16ea,
@@ -7050,6 +7778,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_04ec16ea,
   @MediaModality = @MediaModality_04ec16ea,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_04ec16ea;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7083,7 +7818,7 @@ SET
   @IsRequired_c731cd0d = 0
 SET
   @LogValue_c731cd0d = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_c731cd0d)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_c731cd0d,
   @ActionID = @ActionID_c731cd0d,
   @Name = @Name_c731cd0d,
@@ -7097,6 +7832,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_c731cd0d,
   @MediaModality = @MediaModality_c731cd0d,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_c731cd0d;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7130,7 +7872,7 @@ SET
   @IsRequired_d7155085 = 0
 SET
   @LogValue_d7155085 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_d7155085)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_d7155085,
   @ActionID = @ActionID_d7155085,
   @Name = @Name_d7155085,
@@ -7144,6 +7886,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_d7155085,
   @MediaModality = @MediaModality_d7155085,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_d7155085;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7177,7 +7926,7 @@ SET
   @IsRequired_ca67ddfd = 0
 SET
   @LogValue_ca67ddfd = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_ca67ddfd)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_ca67ddfd,
   @ActionID = @ActionID_ca67ddfd,
   @Name = @Name_ca67ddfd,
@@ -7191,6 +7940,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_ca67ddfd,
   @MediaModality = @MediaModality_ca67ddfd,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_ca67ddfd;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7224,7 +7980,7 @@ SET
   @IsRequired_61fc7452 = 0
 SET
   @LogValue_61fc7452 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_61fc7452)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_61fc7452,
   @ActionID = @ActionID_61fc7452,
   @Name = @Name_61fc7452,
@@ -7238,6 +7994,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_61fc7452,
   @MediaModality = @MediaModality_61fc7452,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_61fc7452;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7271,7 +8034,7 @@ SET
   @IsRequired_4e91587d = 0
 SET
   @LogValue_4e91587d = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_4e91587d)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_4e91587d,
   @ActionID = @ActionID_4e91587d,
   @Name = @Name_4e91587d,
@@ -7285,6 +8048,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_4e91587d,
   @MediaModality = @MediaModality_4e91587d,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_4e91587d;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7318,7 +8088,7 @@ SET
   @IsRequired_8478e415 = 1
 SET
   @LogValue_8478e415 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_8478e415)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_8478e415,
   @ActionID = @ActionID_8478e415,
   @Name = @Name_8478e415,
@@ -7332,6 +8102,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_8478e415,
   @MediaModality = @MediaModality_8478e415,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_8478e415;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7365,7 +8142,7 @@ SET
   @IsRequired_54315bc8 = 1
 SET
   @LogValue_54315bc8 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_54315bc8)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_54315bc8,
   @ActionID = @ActionID_54315bc8,
   @Name = @Name_54315bc8,
@@ -7379,6 +8156,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_54315bc8,
   @MediaModality = @MediaModality_54315bc8,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_54315bc8;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7412,7 +8196,7 @@ SET
   @IsRequired_571258e4 = 0
 SET
   @LogValue_571258e4 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_571258e4)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_571258e4,
   @ActionID = @ActionID_571258e4,
   @Name = @Name_571258e4,
@@ -7426,6 +8210,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_571258e4,
   @MediaModality = @MediaModality_571258e4,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_571258e4;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7459,7 +8250,7 @@ SET
   @IsRequired_92df9cb6 = 0
 SET
   @LogValue_92df9cb6 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_92df9cb6)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_92df9cb6,
   @ActionID = @ActionID_92df9cb6,
   @Name = @Name_92df9cb6,
@@ -7473,6 +8264,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_92df9cb6,
   @MediaModality = @MediaModality_92df9cb6,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_92df9cb6;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7506,7 +8304,7 @@ SET
   @IsRequired_4af069ce = 0
 SET
   @LogValue_4af069ce = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_4af069ce)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_4af069ce,
   @ActionID = @ActionID_4af069ce,
   @Name = @Name_4af069ce,
@@ -7520,6 +8318,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_4af069ce,
   @MediaModality = @MediaModality_4af069ce,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_4af069ce;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7553,7 +8358,7 @@ SET
   @IsRequired_3fe20028 = 0
 SET
   @LogValue_3fe20028 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_3fe20028)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_3fe20028,
   @ActionID = @ActionID_3fe20028,
   @Name = @Name_3fe20028,
@@ -7567,6 +8372,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_3fe20028,
   @MediaModality = @MediaModality_3fe20028,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_3fe20028;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7600,7 +8412,7 @@ SET
   @IsRequired_de8de732 = 0
 SET
   @LogValue_de8de732 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_de8de732)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_de8de732,
   @ActionID = @ActionID_de8de732,
   @Name = @Name_de8de732,
@@ -7614,6 +8426,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_de8de732,
   @MediaModality = @MediaModality_de8de732,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_de8de732;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7647,7 +8466,7 @@ SET
   @IsRequired_4dd4f87c = 0
 SET
   @LogValue_4dd4f87c = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_4dd4f87c)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_4dd4f87c,
   @ActionID = @ActionID_4dd4f87c,
   @Name = @Name_4dd4f87c,
@@ -7661,6 +8480,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_4dd4f87c,
   @MediaModality = @MediaModality_4dd4f87c,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_4dd4f87c;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7694,7 +8520,7 @@ SET
   @IsRequired_58ee52c5 = 0
 SET
   @LogValue_58ee52c5 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_58ee52c5)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_58ee52c5,
   @ActionID = @ActionID_58ee52c5,
   @Name = @Name_58ee52c5,
@@ -7708,6 +8534,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_58ee52c5,
   @MediaModality = @MediaModality_58ee52c5,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_58ee52c5;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7741,7 +8574,7 @@ SET
   @IsRequired_0ba993ef = 0
 SET
   @LogValue_0ba993ef = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_0ba993ef)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_0ba993ef,
   @ActionID = @ActionID_0ba993ef,
   @Name = @Name_0ba993ef,
@@ -7755,6 +8588,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_0ba993ef,
   @MediaModality = @MediaModality_0ba993ef,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_0ba993ef;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7788,7 +8628,7 @@ SET
   @IsRequired_3b805b0f = 0
 SET
   @LogValue_3b805b0f = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_3b805b0f)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_3b805b0f,
   @ActionID = @ActionID_3b805b0f,
   @Name = @Name_3b805b0f,
@@ -7802,6 +8642,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_3b805b0f,
   @MediaModality = @MediaModality_3b805b0f,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_3b805b0f;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7835,7 +8682,7 @@ SET
   @IsRequired_4566f0e7 = 0
 SET
   @LogValue_4566f0e7 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_4566f0e7)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_4566f0e7,
   @ActionID = @ActionID_4566f0e7,
   @Name = @Name_4566f0e7,
@@ -7849,6 +8696,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_4566f0e7,
   @MediaModality = @MediaModality_4566f0e7,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_4566f0e7;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7882,7 +8736,7 @@ SET
   @IsRequired_61215343 = 0
 SET
   @LogValue_61215343 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_61215343)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_61215343,
   @ActionID = @ActionID_61215343,
   @Name = @Name_61215343,
@@ -7896,6 +8750,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_61215343,
   @MediaModality = @MediaModality_61215343,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_61215343;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7929,7 +8790,7 @@ SET
   @IsRequired_b1c108e0 = 0
 SET
   @LogValue_b1c108e0 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_b1c108e0)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_b1c108e0,
   @ActionID = @ActionID_b1c108e0,
   @Name = @Name_b1c108e0,
@@ -7943,6 +8804,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_b1c108e0,
   @MediaModality = @MediaModality_b1c108e0,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_b1c108e0;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -7976,7 +8844,7 @@ SET
   @IsRequired_f4eeb7c1 = 0
 SET
   @LogValue_f4eeb7c1 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[ActionParam] WHERE [ID] = @ID_f4eeb7c1)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateActionParam @ID = @ID_f4eeb7c1,
   @ActionID = @ActionID_f4eeb7c1,
   @Name = @Name_f4eeb7c1,
@@ -7990,6 +8858,13 @@ EXEC [${mjSchema}].spCreateActionParam @ID = @ID_f4eeb7c1,
   @MediaModality = @MediaModality_f4eeb7c1,
   @MediaModality_Clear = 1,
   @LogValue = @LogValue_f4eeb7c1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8017,7 +8892,7 @@ SET
   @LoggingMode_e46e913a = N'FailuresOnly'
 SET
   @RunMode_e46e913a = N'Inline'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityAction] WHERE [ID] = @ID_e46e913a)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateEntityAction @EntityID = @EntityID_e46e913a,
   @ActionID = @ActionID_e46e913a,
   @Status = @Status_e46e913a,
@@ -8029,6 +8904,13 @@ EXEC [${mjSchema}].spCreateEntityAction @EntityID = @EntityID_e46e913a,
   @ScopeRecordID_Clear = 1,
   @LoggingMode = @LoggingMode_e46e913a,
   @RunMode = @RunMode_e46e913a;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8052,7 +8934,7 @@ SET
   @Value_f6e9e97d = N'ID'
 SET
   @Comments_f6e9e97d = N'The confirmed order being billed.'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityActionParam] WHERE [ID] = @ID_f6e9e97d)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateEntityActionParam @ID = @ID_f6e9e97d,
   @EntityActionID = @EntityActionID_f6e9e97d,
   @ActionParamID = @ActionParamID_f6e9e97d,
@@ -8061,6 +8943,13 @@ EXEC [${mjSchema}].spCreateEntityActionParam @ID = @ID_f6e9e97d,
   @Comments = @Comments_f6e9e97d,
   @LogValue = @LogValue_f6e9e97d,
   @LogValue_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8078,13 +8967,20 @@ SET
   @InvocationTypeID_6f70f2ed = '9FAECCEC-6A37-EF11-86D4-000D3A4E707E'
 SET
   @Status_6f70f2ed = N'Pending'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityActionInvocation] WHERE [ID] = @ID_6f70f2ed)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateEntityActionInvocation @ID = @ID_6f70f2ed,
   @EntityActionID = @EntityActionID_6f70f2ed,
   @InvocationTypeID = @InvocationTypeID_6f70f2ed,
   @Status = @Status_6f70f2ed,
   @RuntimeUXDriverClass = @RuntimeUXDriverClass_6f70f2ed,
   @RuntimeUXDriverClass_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8110,7 +9006,7 @@ SET
   @DefaultCacheEnabled_2f5dd422 = 0
 SET
   @CacheInheritanceEnabled_2f5dd422 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryCategory] WHERE [ID] = @ID_2f5dd422)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryCategory @ID = @ID_2f5dd422,
   @Name = @Name_2f5dd422,
   @ParentID = @ParentID_2f5dd422,
@@ -8123,6 +9019,13 @@ EXEC [${mjSchema}].spCreateQueryCategory @ID = @ID_2f5dd422,
   @DefaultCacheMaxSize = @DefaultCacheMaxSize_2f5dd422,
   @DefaultCacheMaxSize_Clear = 1,
   @CacheInheritanceEnabled = @CacheInheritanceEnabled_2f5dd422;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8225,7 +9128,7 @@ SET
   @Reusable_85f6bd5e = 0
 SET
   @IsMaterialized_85f6bd5e = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[Query] WHERE [ID] = @ID_85f6bd5e)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQuery @ID = @ID_85f6bd5e,
   @Name = @Name_85f6bd5e,
   @CategoryID = @CategoryID_85f6bd5e,
@@ -8256,6 +9159,13 @@ EXEC [${mjSchema}].spCreateQuery @ID = @ID_85f6bd5e,
   @ExternalDataSourceID = @ExternalDataSourceID_85f6bd5e,
   @ExternalDataSourceID_Clear = 1,
   @IsMaterialized = @IsMaterialized_85f6bd5e;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8287,7 +9197,7 @@ SET
   @SampleValue_e2dce1d9 = N'Example'
 SET
   @DetectionMethod_e2dce1d9 = N'AI'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryParameter] WHERE [ID] = @ID_e2dce1d9)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryParameter @ID = @ID_e2dce1d9,
   @QueryID = @QueryID_e2dce1d9,
   @Name = @Name_e2dce1d9,
@@ -8302,6 +9212,13 @@ EXEC [${mjSchema}].spCreateQueryParameter @ID = @ID_e2dce1d9,
   @DetectionMethod = @DetectionMethod_e2dce1d9,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_e2dce1d9,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8333,7 +9250,7 @@ SET
   @SampleValue_9e074cf6 = N'Example'
 SET
   @DetectionMethod_9e074cf6 = N'AI'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryParameter] WHERE [ID] = @ID_9e074cf6)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryParameter @ID = @ID_9e074cf6,
   @QueryID = @QueryID_9e074cf6,
   @Name = @Name_9e074cf6,
@@ -8348,6 +9265,13 @@ EXEC [${mjSchema}].spCreateQueryParameter @ID = @ID_9e074cf6,
   @DetectionMethod = @DetectionMethod_9e074cf6,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_9e074cf6,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8387,7 +9311,7 @@ SET
   @IsSummary_6043d768 = 0
 SET
   @DetectionMethod_6043d768 = N'Manual'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryField] WHERE [ID] = @ID_6043d768)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryField @ID = @ID_6043d768,
   @QueryID = @QueryID_6043d768,
   @Name = @Name_6043d768,
@@ -8408,6 +9332,13 @@ EXEC [${mjSchema}].spCreateQueryField @ID = @ID_6043d768,
   @DetectionMethod = @DetectionMethod_6043d768,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_6043d768,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8447,7 +9378,7 @@ SET
   @IsSummary_bcfe6b2e = 0
 SET
   @DetectionMethod_bcfe6b2e = N'Manual'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryField] WHERE [ID] = @ID_bcfe6b2e)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryField @ID = @ID_bcfe6b2e,
   @QueryID = @QueryID_bcfe6b2e,
   @Name = @Name_bcfe6b2e,
@@ -8468,6 +9399,13 @@ EXEC [${mjSchema}].spCreateQueryField @ID = @ID_bcfe6b2e,
   @DetectionMethod = @DetectionMethod_bcfe6b2e,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_bcfe6b2e,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8507,7 +9445,7 @@ SET
   @IsSummary_6f7e5301 = 0
 SET
   @DetectionMethod_6f7e5301 = N'Manual'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryField] WHERE [ID] = @ID_6f7e5301)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryField @ID = @ID_6f7e5301,
   @QueryID = @QueryID_6f7e5301,
   @Name = @Name_6f7e5301,
@@ -8528,6 +9466,13 @@ EXEC [${mjSchema}].spCreateQueryField @ID = @ID_6f7e5301,
   @DetectionMethod = @DetectionMethod_6f7e5301,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_6f7e5301,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8567,7 +9512,7 @@ SET
   @IsSummary_1bea1063 = 0
 SET
   @DetectionMethod_1bea1063 = N'Manual'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryField] WHERE [ID] = @ID_1bea1063)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryField @ID = @ID_1bea1063,
   @QueryID = @QueryID_1bea1063,
   @Name = @Name_1bea1063,
@@ -8588,6 +9533,13 @@ EXEC [${mjSchema}].spCreateQueryField @ID = @ID_1bea1063,
   @DetectionMethod = @DetectionMethod_1bea1063,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_1bea1063,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8629,7 +9581,7 @@ SET
   @IsSummary_f8af889d = 0
 SET
   @DetectionMethod_f8af889d = N'Manual'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryField] WHERE [ID] = @ID_f8af889d)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryField @ID = @ID_f8af889d,
   @QueryID = @QueryID_f8af889d,
   @Name = @Name_f8af889d,
@@ -8649,6 +9601,13 @@ EXEC [${mjSchema}].spCreateQueryField @ID = @ID_f8af889d,
   @DetectionMethod = @DetectionMethod_f8af889d,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_f8af889d,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8688,7 +9647,7 @@ SET
   @IsSummary_663e577a = 0
 SET
   @DetectionMethod_663e577a = N'Manual'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryField] WHERE [ID] = @ID_663e577a)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryField @ID = @ID_663e577a,
   @QueryID = @QueryID_663e577a,
   @Name = @Name_663e577a,
@@ -8709,6 +9668,13 @@ EXEC [${mjSchema}].spCreateQueryField @ID = @ID_663e577a,
   @DetectionMethod = @DetectionMethod_663e577a,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_663e577a,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8748,7 +9714,7 @@ SET
   @IsSummary_1794d500 = 0
 SET
   @DetectionMethod_1794d500 = N'Manual'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryField] WHERE [ID] = @ID_1794d500)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryField @ID = @ID_1794d500,
   @QueryID = @QueryID_1794d500,
   @Name = @Name_1794d500,
@@ -8769,6 +9735,13 @@ EXEC [${mjSchema}].spCreateQueryField @ID = @ID_1794d500,
   @DetectionMethod = @DetectionMethod_1794d500,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_1794d500,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8788,12 +9761,19 @@ SET
   @DetectionMethod_f6666c59 = N'AI'
 SET
   @AutoDetectConfidenceScore_f6666c59 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryEntity] WHERE [ID] = @ID_f6666c59)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryEntity @ID = @ID_f6666c59,
   @QueryID = @QueryID_f6666c59,
   @EntityID = @EntityID_f6666c59,
   @DetectionMethod = @DetectionMethod_f6666c59,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_f6666c59;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -8813,12 +9793,19 @@ SET
   @DetectionMethod_fc55c5d3 = N'AI'
 SET
   @AutoDetectConfidenceScore_fc55c5d3 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryEntity] WHERE [ID] = @ID_fc55c5d3)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryEntity @ID = @ID_fc55c5d3,
   @QueryID = @QueryID_fc55c5d3,
   @EntityID = @EntityID_fc55c5d3,
   @DetectionMethod = @DetectionMethod_fc55c5d3,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_fc55c5d3;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9001,7 +9988,7 @@ SET
   @Reusable_63752e79 = 0
 SET
   @IsMaterialized_63752e79 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[Query] WHERE [ID] = @ID_63752e79)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQuery @ID = @ID_63752e79,
   @Name = @Name_63752e79,
   @CategoryID = @CategoryID_63752e79,
@@ -9032,6 +10019,13 @@ EXEC [${mjSchema}].spCreateQuery @ID = @ID_63752e79,
   @ExternalDataSourceID = @ExternalDataSourceID_63752e79,
   @ExternalDataSourceID_Clear = 1,
   @IsMaterialized = @IsMaterialized_63752e79;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9063,7 +10057,7 @@ SET
   @SampleValue_13716ab6 = N'Example'
 SET
   @DetectionMethod_13716ab6 = N'AI'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryParameter] WHERE [ID] = @ID_13716ab6)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryParameter @ID = @ID_13716ab6,
   @QueryID = @QueryID_13716ab6,
   @Name = @Name_13716ab6,
@@ -9078,6 +10072,13 @@ EXEC [${mjSchema}].spCreateQueryParameter @ID = @ID_13716ab6,
   @DetectionMethod = @DetectionMethod_13716ab6,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_13716ab6,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9109,7 +10110,7 @@ SET
   @SampleValue_6ad55ed2 = N'Example'
 SET
   @DetectionMethod_6ad55ed2 = N'AI'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryParameter] WHERE [ID] = @ID_6ad55ed2)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryParameter @ID = @ID_6ad55ed2,
   @QueryID = @QueryID_6ad55ed2,
   @Name = @Name_6ad55ed2,
@@ -9124,6 +10125,13 @@ EXEC [${mjSchema}].spCreateQueryParameter @ID = @ID_6ad55ed2,
   @DetectionMethod = @DetectionMethod_6ad55ed2,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_6ad55ed2,
   @AutoDetectConfidenceScore_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9143,12 +10151,19 @@ SET
   @DetectionMethod_982aa9eb = N'AI'
 SET
   @AutoDetectConfidenceScore_982aa9eb = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryEntity] WHERE [ID] = @ID_982aa9eb)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryEntity @ID = @ID_982aa9eb,
   @QueryID = @QueryID_982aa9eb,
   @EntityID = @EntityID_982aa9eb,
   @DetectionMethod = @DetectionMethod_982aa9eb,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_982aa9eb;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9168,12 +10183,19 @@ SET
   @DetectionMethod_1c7ef9aa = N'AI'
 SET
   @AutoDetectConfidenceScore_1c7ef9aa = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[QueryEntity] WHERE [ID] = @ID_1c7ef9aa)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateQueryEntity @ID = @ID_1c7ef9aa,
   @QueryID = @QueryID_1c7ef9aa,
   @EntityID = @EntityID_1c7ef9aa,
   @DetectionMethod = @DetectionMethod_1c7ef9aa,
   @AutoDetectConfidenceScore = @AutoDetectConfidenceScore_1c7ef9aa;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9191,13 +10213,20 @@ SET
   @Description_b11ac079 = N'Customer-facing documents rendered from orders — invoices, quotes and credit memos. Edited here rather than in code so the wording and the styling can change without a deploy.'
 SET
   @UserID_b11ac079 = 'ECAFCCEC-6A37-EF11-86D4-000D3A4E707E'
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[TemplateCategory] WHERE [ID] = @ID_b11ac079)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateTemplateCategory @ID = @ID_b11ac079,
   @Name = @Name_b11ac079,
   @Description = @Description_b11ac079,
   @ParentID = @ParentID_b11ac079,
   @ParentID_Clear = 1,
   @UserID = @UserID_b11ac079;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9225,7 +10254,7 @@ SET
   @UserID_97a1cf96 = 'ECAFCCEC-6A37-EF11-86D4-000D3A4E707E'
 SET
   @IsActive_97a1cf96 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[Template] WHERE [ID] = @ID_97a1cf96)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateTemplate @ID = @ID_97a1cf96,
   @Name = @Name_97a1cf96,
   @Description = @Description_97a1cf96,
@@ -9237,6 +10266,13 @@ EXEC [${mjSchema}].spCreateTemplate @ID = @ID_97a1cf96,
   @DisabledAt = @DisabledAt_97a1cf96,
   @DisabledAt_Clear = 1,
   @IsActive = @IsActive_97a1cf96;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9795,13 +10831,20 @@ SET
   @Priority_5b90e873 = 1
 SET
   @IsActive_5b90e873 = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[TemplateContent] WHERE [ID] = @ID_5b90e873)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateTemplateContent @ID = @ID_5b90e873,
   @TemplateID = @TemplateID_5b90e873,
   @TypeID = @TypeID_5b90e873,
   @TemplateText = @TemplateText_5b90e873,
   @Priority = @Priority_5b90e873,
   @IsActive = @IsActive_5b90e873;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9832,7 +10875,7 @@ SET
   @Type_ba4501be = N'Object'
 SET
   @IsRequired_ba4501be = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[TemplateParam] WHERE [ID] = @ID_ba4501be)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateTemplateParam @ID = @ID_ba4501be,
   @TemplateID = @TemplateID_ba4501be,
   @Name = @Name_ba4501be,
@@ -9855,6 +10898,13 @@ EXEC [${mjSchema}].spCreateTemplateParam @ID = @ID_ba4501be,
   @OrderBy_Clear = 1,
   @TemplateContentID = @TemplateContentID_ba4501be,
   @TemplateContentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9885,7 +10935,7 @@ SET
   @Type_9bd1813f = N'Scalar'
 SET
   @IsRequired_9bd1813f = 1
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[TemplateParam] WHERE [ID] = @ID_9bd1813f)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateTemplateParam @ID = @ID_9bd1813f,
   @TemplateID = @TemplateID_9bd1813f,
   @Name = @Name_9bd1813f,
@@ -9908,6 +10958,13 @@ EXEC [${mjSchema}].spCreateTemplateParam @ID = @ID_9bd1813f,
   @OrderBy_Clear = 1,
   @TemplateContentID = @TemplateContentID_9bd1813f,
   @TemplateContentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -9938,7 +10995,7 @@ SET
   @Type_d12e4654 = N'Object'
 SET
   @IsRequired_d12e4654 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[TemplateParam] WHERE [ID] = @ID_d12e4654)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateTemplateParam @ID = @ID_d12e4654,
   @TemplateID = @TemplateID_d12e4654,
   @Name = @Name_d12e4654,
@@ -9961,6 +11018,13 @@ EXEC [${mjSchema}].spCreateTemplateParam @ID = @ID_d12e4654,
   @OrderBy_Clear = 1,
   @TemplateContentID = @TemplateContentID_d12e4654,
   @TemplateContentID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -22015,7 +23079,7 @@ SET
   @WhereClause_976a8f49 = N''
 SET
   @CustomWhereClause_976a8f49 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[UserView] WHERE [ID] = @ID_976a8f49)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateUserView @ID = @ID_976a8f49,
   @UserID = @UserID_976a8f49,
   @EntityID = @EntityID_976a8f49,
@@ -22047,6 +23111,13 @@ EXEC [${mjSchema}].spCreateUserView @ID = @ID_976a8f49,
   @DisplayState_Clear = 1,
   @ViewTypeID = @ViewTypeID_976a8f49,
   @ViewTypeID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
@@ -22099,7 +23170,7 @@ SET
   @WhereClause_3a689eb2 = N''
 SET
   @CustomWhereClause_3a689eb2 = 0
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[UserView] WHERE [ID] = @ID_3a689eb2)
+BEGIN TRY
 EXEC [${mjSchema}].spCreateUserView @ID = @ID_3a689eb2,
   @UserID = @UserID_3a689eb2,
   @EntityID = @EntityID_3a689eb2,
@@ -22131,6 +23202,13 @@ EXEC [${mjSchema}].spCreateUserView @ID = @ID_3a689eb2,
   @DisplayState_Clear = 1,
   @ViewTypeID = @ViewTypeID_3a689eb2,
   @ViewTypeID_Clear = 1;
+END TRY
+BEGIN CATCH
+  -- 2627 = PK/unique constraint, 2601 = unique index. The seed is re-runnable:
+  -- a row that is already present is the expected case on a host that ran
+  -- `mj sync push`. Anything else is a real error and is re-thrown.
+  IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+END CATCH
 
 GO
 
