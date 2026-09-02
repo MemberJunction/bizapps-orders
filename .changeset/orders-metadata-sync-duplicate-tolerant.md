@@ -1,5 +1,5 @@
 ---
-"@mj-biz-apps/orders": minor
+"@mj-biz-apps/orders-entities": minor
 ---
 
 Stop the Metadata_Sync seed from writing host-owned user rows, and guard the rest by natural key.
