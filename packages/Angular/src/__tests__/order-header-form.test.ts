@@ -5,6 +5,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import type { mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import type {
+    MJOPricingResult,
+    MJOPricingState,
+} from '../lib/services/pricing-scheduler.service';
 import { mjBizAppsOrdersOrderHeaderFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component';
 import {
     BizAppsOrderHeaderFormComponent,
@@ -160,6 +165,77 @@ describe('order header link wiring', () => {
         expect(header).toContain('Check / ACH reference');
         expect(header).toMatch(/FieldName="Status"[\s\S]*?\[EditMode\]="false"/);
         expect(header).toMatch(/FieldName="FulfillmentStatus"[\s\S]*?\[EditMode\]="false"/);
+    });
+
+    // Issue #147 — an unpaid $895 order rendered its Balance as `—`. The dash is the
+    // "not computed yet" marker, so a screen showing it for a real debt is claiming not to
+    // know. These pin the two halves: a real zero prints, and an unknown falls back.
+    describe('hero money trio (issue #147)', () => {
+        const form = (
+            record: Partial<mjBizAppsOrdersOrderHeaderEntity> | null,
+            pricing: MJOPricingState = { Result: null, Loading: false, Error: null },
+        ): BizAppsOrderHeaderFormComponent => {
+            const instance = Object.create(
+                BizAppsOrderHeaderFormComponent.prototype,
+            ) as BizAppsOrderHeaderFormComponent;
+            instance.record = record as mjBizAppsOrdersOrderHeaderEntity;
+            instance.Pricing = pricing;
+            return instance;
+        };
+
+        const priced = (net: number, gross: number): MJOPricingState => ({
+            Result: { Lines: [], Totals: { NetTotal: net, GrossTotal: gross } } as unknown as MJOPricingResult,
+            Loading: false,
+            Error: null,
+        });
+
+        it('shows the amount owed on a confirmed unpaid order', () => {
+            const instance = form({ IsSaved: true, TotalGross: 895, AmountPaid: 0, Balance: 895 });
+            expect(instance.Money('balance')).toBe('$895');
+            expect(instance.Money('paid')).toBe('$0');
+        });
+
+        it('prints a genuine zero balance rather than a dash', () => {
+            const instance = form({ IsSaved: true, TotalGross: 200, AmountPaid: 200, Balance: 0 });
+            expect(instance.Money('balance')).toBe('$0');
+        });
+
+        it('derives the balance when the rollup has not landed yet', () => {
+            // The server used to hand back Balance = null on a freshly-confirmed order, which is
+            // what produced the reported dash. Even if that ever recurs, the tile owes a number.
+            const instance = form(
+                { IsSaved: true, TotalGross: null, AmountPaid: 0, Balance: null },
+                priced(895, 895),
+            );
+            expect(instance.Money('balance')).toBe('$895');
+        });
+
+        it('shows paid and balance on an unsaved draft instead of two dashes', () => {
+            const instance = form({ IsSaved: false, AmountPaid: 0, Balance: null }, priced(895, 895));
+            expect(instance.Money('paid')).toBe('$0');
+            expect(instance.Money('balance')).toBe('$895');
+        });
+
+        it('keeps cents across the trio when any figure has them', () => {
+            const instance = form({ IsSaved: true, TotalGross: 895.5, AmountPaid: 100, Balance: 795.5 });
+            expect(instance.Money('total')).toBe('$895.50');
+            expect(instance.Money('paid')).toBe('$100.00');
+            expect(instance.Money('balance')).toBe('$795.50');
+        });
+
+        it('says loading, not unknown, while the first price is in flight', () => {
+            const instance = form(
+                { IsSaved: false, AmountPaid: 0, Balance: null },
+                { Result: null, Loading: true, Error: null },
+            );
+            expect(instance.Money('balance')).toBe('…');
+        });
+
+        it('still shows a dash when there is no record at all', () => {
+            const instance = form(null);
+            expect(instance.Money('balance')).toBe('—');
+            expect(instance.Money('paid')).toBe('—');
+        });
     });
 
     it('keeps existing line extensions collapsed behind a disclosure', () => {

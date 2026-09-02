@@ -438,19 +438,50 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return value ? FormatMoney(value) : '';
     }
 
+    /**
+     * One of the three hero amounts, as text.
+     *
+     * A DASH HERE MEANS "NOT COMPUTED YET" AND NOTHING ELSE. `FormatMoney` renders null as an
+     * em-dash for loading states; a real zero prints `$0.00`. So an unpaid $895 order that showed
+     * `—` for Balance was not saying "nothing due", it was saying "I don't know" — and a collections
+     * screen that cannot tell those apart is worse than one that guesses (issue #147).
+     *
+     * Both figures therefore fall back rather than give up. `AmountPaid` is NOT NULL in the schema,
+     * so nothing but an absent record can make it unknown. `Balance` is the rollup the database
+     * owns, and until a line is persisted there is no row to own it — before then the answer is
+     * arithmetic the pricing preview already has: everything billed, less anything paid.
+     */
     public Money(kind: 'total' | 'paid' | 'balance'): string {
         const opts = this.heroMoneyOptions();
         if (kind === 'paid') {
-            if (!this.record?.IsSaved) return '—';
-            return FormatMoney(this.record.AmountPaid, opts);
+            if (!this.record) return '—';
+            return FormatMoney(this.AmountPaidAmount, opts);
         }
         if (kind === 'balance') {
-            if (!this.record?.IsSaved) return '—';
-            return FormatMoney(this.record.Balance, opts);
+            if (!this.record) return '—';
+            const balance = this.balanceAmount();
+            if (balance == null) return this.Pricing.Loading ? '…' : '—';
+            return FormatMoney(balance, opts);
         }
         const total = this.heroTotalAmount();
         if (total == null) return this.Pricing.Loading ? '…' : '—';
         return FormatMoney(total, opts);
+    }
+
+    /** Never null on a record that exists — `AmountPaid` is NOT NULL, and an unsaved order is at zero. */
+    private get AmountPaidAmount(): number {
+        return this.record?.AmountPaid ?? 0;
+    }
+
+    /**
+     * What is owed. The persisted rollup when the row has one, otherwise derived from the same
+     * total the header is already showing — so the trio stays internally consistent on a draft
+     * that has not been saved yet. Null only while pricing has produced no total at all.
+     */
+    private balanceAmount(): number | null {
+        if (this.record?.Balance != null) return this.record.Balance;
+        const total = this.heroTotalAmount();
+        return total == null ? null : total - this.AmountPaidAmount;
     }
 
     /** Hide `.00` only when every visible hero amount is a whole dollar. */
@@ -460,8 +491,10 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     private heroMoneyAmounts(): Array<number | null | undefined> {
         const amounts: Array<number | null | undefined> = [this.heroTotalAmount()];
-        if (this.record?.IsSaved) {
-            amounts.push(this.record.AmountPaid, this.record.Balance);
+        // The two derived figures are visible on an unsaved order now, so they get a vote on
+        // whether the trio hides its cents — otherwise a $45.50 balance renders as `$46`.
+        if (this.record) {
+            amounts.push(this.AmountPaidAmount, this.balanceAmount());
         }
         return amounts;
     }
