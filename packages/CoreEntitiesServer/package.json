@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-core-entities-server",
   "type": "module",
-  "version": "5.2.0",
+  "version": "5.2.1",
   "description": "Server-side entity subclasses for BizApps Orders — order booking (one JE per line), line computation, and lifecycle hooks.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,7 +27,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "5.2.0"
+    "@mj-biz-apps/orders-entities": "5.2.1"
   },
   "peerDependencies": {
     "@memberjunction/communication-engine": "^6.1.0-edge.4",

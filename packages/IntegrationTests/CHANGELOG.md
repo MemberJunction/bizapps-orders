@@ -1,5 +1,13 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.2.1
+
+### Patch Changes
+
+- @mj-biz-apps/orders-core-entities-server@5.2.1
+- @mj-biz-apps/orders-entities@5.2.1
+- @mj-biz-apps/orders-server@5.2.1
+
 ## 5.2.0
 
 ### Patch Changes
