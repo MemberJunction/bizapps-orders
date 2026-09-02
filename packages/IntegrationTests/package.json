@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-integration-tests",
   "type": "module",
-  "version": "5.2.1",
+  "version": "5.3.0",
   "private": true,
   "description": "Integration check bundles for BizApps Orders, dispatched by `mj test` via MJ's testing framework.",
   "main": "dist/index.js",
@@ -26,9 +26,9 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "5.2.1",
-    "@mj-biz-apps/orders-server": "5.2.1",
-    "@mj-biz-apps/orders-core-entities-server": "5.2.1"
+    "@mj-biz-apps/orders-entities": "5.3.0",
+    "@mj-biz-apps/orders-server": "5.3.0",
+    "@mj-biz-apps/orders-core-entities-server": "5.3.0"
   },
   "peerDependencies": {
     "@memberjunction/core": "^6.1.0-edge.5",
