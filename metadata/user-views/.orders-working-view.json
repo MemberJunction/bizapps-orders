@@ -1,0 +1,34 @@
+[
+  {
+    "_comments": [
+      "Shared working view for the Orders dashboard Active Orders explorer and the All Orders page."
+    ],
+    "fields": {
+      "Name": "Orders: Working",
+      "Description": "Number, status, totals, balance, due date, and who it bills — currency formatted.",
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers",
+      "UserID": "ECAFCCEC-6A37-EF11-86D4-000D3A4E707E",
+      "IsShared": true,
+      "GridState": "{\"sortSettings\":[{\"field\":\"OrderDate\",\"dir\":\"desc\"}],\"columnSettings\":[{\"Name\":\"OrderNumber\",\"DisplayName\":\"Number\",\"orderIndex\":0,\"width\":130,\"pinned\":\"left\"},{\"Name\":\"Status\",\"DisplayName\":\"Status\",\"orderIndex\":1,\"width\":110},{\"Name\":\"BillToOrganization\",\"DisplayName\":\"Bill to\",\"orderIndex\":2,\"width\":200},{\"Name\":\"OrderDate\",\"DisplayName\":\"Ordered\",\"orderIndex\":3,\"width\":120,\"format\":{\"type\":\"date\",\"dateFormat\":\"medium\"}},{\"Name\":\"DueDate\",\"DisplayName\":\"Due\",\"orderIndex\":4,\"width\":120,\"format\":{\"type\":\"date\",\"dateFormat\":\"medium\"}},{\"Name\":\"TotalGross\",\"DisplayName\":\"Total\",\"orderIndex\":5,\"width\":120,\"format\":{\"type\":\"currency\",\"currencyCode\":\"USD\",\"decimals\":2,\"align\":\"right\"}},{\"Name\":\"Balance\",\"DisplayName\":\"Balance\",\"orderIndex\":6,\"width\":120,\"format\":{\"type\":\"currency\",\"currencyCode\":\"USD\",\"decimals\":2,\"align\":\"right\",\"conditionalRules\":[{\"condition\":\"greaterThan\",\"value\":0,\"style\":{\"color\":\"#b45309\",\"bold\":true}}]}},{\"Name\":\"Company\",\"DisplayName\":\"Company\",\"orderIndex\":7,\"width\":140}]}"
+    },
+    "primaryKey": {
+      "ID": "0dd3a50b-0001-4e71-b0a8-3f17c5e2d803"
+    }
+  },
+  {
+    "_comments": [
+      "Catalog products. DefaultInView already covers Name/SKU/Status/category/company; this view pins order and widths."
+    ],
+    "fields": {
+      "Name": "Orders: Catalog",
+      "Description": "Products as a working catalog: SKU, name, status, category, company.",
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products",
+      "UserID": "ECAFCCEC-6A37-EF11-86D4-000D3A4E707E",
+      "IsShared": true,
+      "GridState": "{\"sortSettings\":[{\"field\":\"Name\",\"dir\":\"asc\"}],\"columnSettings\":[{\"Name\":\"SKU\",\"DisplayName\":\"SKU\",\"orderIndex\":0,\"width\":120,\"pinned\":\"left\"},{\"Name\":\"Name\",\"DisplayName\":\"Product\",\"orderIndex\":1,\"width\":240},{\"Name\":\"Status\",\"DisplayName\":\"Status\",\"orderIndex\":2,\"width\":110},{\"Name\":\"ProductCategory\",\"DisplayName\":\"Category\",\"orderIndex\":3,\"width\":160},{\"Name\":\"Company\",\"DisplayName\":\"Company\",\"orderIndex\":4,\"width\":140}]}"
+    },
+    "primaryKey": {
+      "ID": "ca7a1095-0001-4e71-b0a8-3f17c5e2d803"
+    }
+  }
+]

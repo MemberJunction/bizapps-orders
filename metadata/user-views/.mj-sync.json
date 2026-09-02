@@ -1,0 +1,16 @@
+{
+  "entity": "MJ: User Views",
+  "filePattern": "**/.*.json",
+  "push": { "autoCreateMissingRecords": true },
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".user-views.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true,
+    "lookupFields": {
+      "EntityID": { "entity": "MJ: Entities", "field": "Name" }
+    }
+  }
+}

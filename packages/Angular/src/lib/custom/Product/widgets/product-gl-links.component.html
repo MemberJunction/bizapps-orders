@@ -1,0 +1,224 @@
+<div class="mjo-gl-links">
+    <div class="mjo-gl-links__head">
+        <span class="mjo-gl-links__title">
+            <i class="fa-solid fa-link"></i>
+            GL Accounts
+        </span>
+        <span class="mjo-gl-links__actions">
+            <!--
+                ADD is offered only on a SAVED product. A link stores the product's primary key in
+                RecordID, so there is nothing to point at until the record exists — the same reason
+                sales blocks Add line on an unsaved deal rather than failing at save time.
+            -->
+            @if (CanWrite && !Draft) {
+                <button
+                    type="button"
+                    class="mjo-gl-links__refresh"
+                    title="Link a GL account to this product"
+                    (click)="OpenDraft()">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
+            }
+            <button
+                type="button"
+                class="mjo-gl-links__refresh"
+                title="Re-read this product's GL account links"
+                (click)="Refresh()">
+                <i class="fa-solid fa-rotate"></i>
+            </button>
+        </span>
+    </div>
+
+    <!--
+        A REFUSED WRITE IS SHOWN VERBATIM. GLAccountLinkEntityServer explains why it refused — usually
+        that an Active link already exists for this role, same company, same start date — and that
+        sentence is what teaches the reader to supersede with a LATER date instead. Replacing it with a
+        friendlier summary would remove the only part that says what to do next.
+    -->
+    @if (WriteError) {
+        <p class="mjo-gl-links__error">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            {{ WriteError }}
+        </p>
+    }
+
+    @if (Draft) {
+        <div class="mjo-gl-links__draft">
+            <select [(ngModel)]="Draft.RoleID" [disabled]="Saving" aria-label="Role">
+                <option value="">— role —</option>
+                @for (r of Roles; track r.ID) {
+                    <option [value]="r.ID">{{ r.Name }}</option>
+                }
+            </select>
+            @if (Accounts.length === 0) {
+                <!--
+                    An empty picker and "no accounts exist" look identical to a reader and mean opposite
+                    things — the same distinction the load-error message below is careful about. Scoping
+                    to the product's company made this reachable: a company whose chart has not been
+                    seeded yields nothing, and without this the form renders a permanently disabled Link
+                    button with no explanation.
+                -->
+                <span class="mjo-gl-links__note">
+                    No GL accounts exist for this product's company yet, so there is nothing to link to.
+                    They are created in Accounting.
+                </span>
+            }
+            <select [(ngModel)]="Draft.AccountID" [disabled]="Saving" aria-label="GL account">
+                <option value="">— account —</option>
+                @for (a of Accounts; track a.ID) {
+                    <option [value]="a.ID">{{ a.Label }}</option>
+                }
+            </select>
+            <!-- Starts today by default; a LATER date is how an existing mapping is superseded. -->
+            <input type="date" [(ngModel)]="Draft.StartedAt" [disabled]="Saving" aria-label="In force from" />
+            <button type="button" class="mjo-gl-links__btn" [disabled]="Saving || !Draft.RoleID || !Draft.AccountID"
+                    (click)="AddLink()">{{ Saving ? 'Linking…' : 'Link' }}</button>
+            <button type="button" class="mjo-gl-links__btn" [disabled]="Saving" (click)="CancelDraft()">Cancel</button>
+        </div>
+    }
+
+    @if (Editing) {
+        <div class="mjo-gl-links__draft">
+            <!--
+                On a link that has ALREADY applied, role / account / start are disabled rather than
+                hidden: seeing what the mapping is, and that it cannot be changed here, is the point.
+                Hiding them would read as "this link has no account", which is the confusion #112 was.
+            -->
+            <select [(ngModel)]="Editing.RoleID" [disabled]="Saving || Editing.Applied" aria-label="Role">
+                @for (r of EditRoles; track r.ID) {
+                    <option [value]="r.ID" [disabled]="r.Disabled === true">{{ r.Label }}</option>
+                }
+            </select>
+            <select [(ngModel)]="Editing.AccountID" [disabled]="Saving || Editing.Applied" aria-label="GL account">
+                @for (a of EditAccounts; track a.ID) {
+                    <!--
+                        A disabled option is the link's CURRENT account when this product's company
+                        cannot use it. Shown so the picker never reads as "this link has no account";
+                        unselectable so the repair path cannot write the unreachable link back.
+                    -->
+                    <option [value]="a.ID" [disabled]="a.Disabled === true">{{ a.Label }}</option>
+                }
+            </select>
+            <label class="mjo-gl-links__lbl">from
+                <input type="date" [(ngModel)]="Editing.StartedAt"
+                       [disabled]="Saving || Editing.Applied" aria-label="In force from" />
+            </label>
+            <!-- Always editable, and clearable: emptying it undoes a retire applied by mistake. -->
+            <label class="mjo-gl-links__lbl">to
+                <input type="date" [(ngModel)]="Editing.EndedAt" [disabled]="Saving" aria-label="In force to" />
+            </label>
+            <button type="button" class="mjo-gl-links__btn" [disabled]="Saving"
+                    (click)="SaveEdit()">{{ Saving ? 'Saving…' : 'Save' }}</button>
+            <button type="button" class="mjo-gl-links__btn" [disabled]="Saving" (click)="CancelEdit()">Cancel</button>
+            @if (Editing.Applied) {
+                <span class="mjo-gl-links__note">
+                    This link has been in force, so only its end date can change here. To book a
+                    different account, add a link with a later start date.
+                </span>
+            }
+        </div>
+    }
+
+    @if (Loading) {
+        <p class="mjo-gl-links__note">Loading…</p>
+    } @else if (LoadError) {
+        <!--
+            An error is shown INSTEAD of the empty state, never alongside it. "No accounts assigned" and
+            "the accounts could not be read" look identical to a reader and mean opposite things — one
+            is a setup task, the other is a broken screen.
+        -->
+        <p class="mjo-gl-links__error">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            The GL account links could not be read: {{ LoadError }}
+        </p>
+    } @else if (!Rows.length) {
+        <p class="mjo-gl-links__note">
+            No GL accounts are linked directly to this product. It may still book through its category
+            or the company default — open Accounting → Account Links to see the full chain.
+        </p>
+    } @else {
+        <div class="mjo-gl-links__scroll">
+            <table class="mjo-gl-links__table">
+                <thead>
+                    <tr>
+                        <th>Role</th>
+                        <th>Account</th>
+                        <th>Status</th>
+                        <!--
+                            RENDERED IN UTC, EXPLICITLY. Angular's date pipe formats in the browser's LOCAL
+                            zone by default, and StartedAt/EndedAt are datetimeoffset stored as UTC midnight —
+                            so west of Greenwich a link starting 2026-01-01 renders as 2025-12-31. Observed
+                            exactly that on this panel before the timezone argument was added. Sales'
+                            deal-workspace.dates.ts records the same hazard: "a stored 20 November renders
+                            as the 19th".
+                        -->
+                        <th>From</th>
+                        <th>To</th>
+                        <th><span class="mjo-gl-links__sr">Row actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (row of Rows; track row.ID) {
+                        <tr [class.mjo-gl-links__row--inactive]="!row.Active">
+                            <td>{{ row.RoleName }}</td>
+                            <td>
+                                <button type="button" class="mjo-gl-links__link" (click)="OpenLink(row)">
+                                    {{ row.AccountCode }}<span class="mjo-gl-links__name"> {{ row.AccountName }}</span>
+                                </button>
+                            </td>
+                            <td>
+                                <span
+                                    class="mjo-gl-links__chip"
+                                    [class.mjo-gl-links__chip--on]="row.Active">
+                                    {{ StatusLabel(row) }}
+                                </span>
+                            </td>
+                            <td>{{ row.StartedAt ? (row.StartedAt | date: 'yyyy-MM-dd' : 'UTC') : '—' }}</td>
+                            <td>{{ row.EndedAt ? (row.EndedAt | date: 'yyyy-MM-dd' : 'UTC') : '—' }}</td>
+                            <td>
+                                <!--
+                                    Retire, not delete — the link explains where money went, and ending
+                                    its window stops it applying while keeping the record. Offered only
+                                    on the link actually IN FORCE: retiring one already superseded or
+                                    ended changes nothing a reader can see, so the control would be a
+                                    button that appears to do nothing.
+                                -->
+                                <!--
+                                    EDIT is offered on every link, but it does not mean the same thing
+                                    on both sides of HasApplied — see OpenEdit. On a link that has
+                                    booked, only the end date opens; the rest is history.
+                                -->
+                                @if (CanWrite && Editing?.ID !== row.ID) {
+                                    <button type="button" class="mjo-gl-links__btn" [disabled]="Saving"
+                                            title="Edit this link"
+                                            (click)="OpenEdit(row)">Edit</button>
+                                }
+                                @if (CanWrite && row.Active && HasApplied(row)) {
+                                    <button type="button" class="mjo-gl-links__btn" [disabled]="Saving"
+                                            title="End this link's window as of today. It stops applying immediately, and the record stays on the product as history."
+                                            (click)="RetireLink(row)">Retire</button>
+                                }
+                                <!--
+                                    Remove exists because retiring is impossible for a link that starts
+                                    today: CK_GLAccountLink_Window enforces EndedAt > StartedAt, so a
+                                    mistake made today has no other undo.
+
+                                    The WARNING is conditional, because the two cases are not the same. A
+                                    future-dated link has explained nothing. A link dated TODAY is already
+                                    in force — pickActiveLinkIndex includes t === started — so orders
+                                    booked today may have resolved through it. The button used to claim
+                                    otherwise on both.
+                                -->
+                                @if (CanWrite && !HasApplied(row)) {
+                                    <button type="button" class="mjo-gl-links__btn" [disabled]="Saving"
+                                            [title]="RemoveWarning(row)"
+                                            (click)="RemoveLink(row)">Remove</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

@@ -1,0 +1,13 @@
+[
+  {
+    "_comments": [
+      "DueDate and Company were off DefaultInView, so the Orders explorer hid the two columns a collections person actually scans."
+    ],
+    "fields": { "DefaultInView": true },
+    "primaryKey": { "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Headers&Name=DueDate" }
+  },
+  {
+    "fields": { "DefaultInView": true },
+    "primaryKey": { "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Headers&Name=Company" }
+  }
+]
