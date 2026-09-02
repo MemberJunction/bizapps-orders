@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-entities",
   "type": "module",
-  "version": "5.2.1",
+  "version": "5.3.0",
   "description": "MJ BizApps Orders Entity Subclasses",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -23,12 +23,12 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@mj-biz-apps/common-entities": ">=5.35.0",
+    "@mj-biz-apps/common-entities": ">=5.37.0",
     "zod": "^3.25.28"
   },
   "peerDependencies": {
-    "@memberjunction/core": "^6.1.0-edge.4",
-    "@memberjunction/global": "^6.1.0-edge.4"
+    "@memberjunction/core": "^6.1.0-edge.5",
+    "@memberjunction/global": "^6.1.0-edge.5"
   },
   "repository": {
     "type": "git",
