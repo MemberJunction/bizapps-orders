@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-ng",
   "type": "module",
-  "version": "5.2.0",
+  "version": "5.2.1",
   "description": "BizApps Orders Angular bootstrap - generated form components and module for the unified order-management Open App",
   "main": "dist/public-api.js",
   "types": "dist/public-api.d.ts",
@@ -27,7 +27,7 @@
     "@mj-biz-apps/accounting-ng": ">=0.1.0",
     "@mj-biz-apps/common-entities": ">=5.35.0",
     "@mj-biz-apps/common-ng": ">=5.35.0",
-    "@mj-biz-apps/orders-entities": "5.2.0",
+    "@mj-biz-apps/orders-entities": "5.2.1",
     "ag-grid-angular": "^35.0.1",
     "ag-grid-community": "^35.0.1"
   },
