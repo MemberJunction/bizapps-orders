@@ -1,5 +1,5 @@
 ---
-'@mj-biz-apps/orders-entities': patch
+'@mj-biz-apps/orders-entities': minor
 ---
 
 Make the Metadata_Sync migration idempotent — it cannot upgrade a host that ever ran `mj sync push`.
@@ -38,3 +38,8 @@ Verified both directions on SQL Server 2022 with MJ core v6.1.0-edge.5:
 - **Fresh install** (core 69 + common 22 + tasks 7 + accounting 8 + orders 16): still seeds everything
   — Application 1, Remote Operations 44, ProductType 11, PaymentType 11, both party-order queries.
   Release seed coverage still passes.
+
+Minor, not patch: this repo requires a minor-or-higher bump for any change under `migrations/`
+(`changes_and_migrations` enforces it), and the rule holds here — on a host that took the sanctioned
+`mj sync push` shortcut this migration now *does* something it previously could not, creating the rows
+that were missing. On a fresh install its effect is unchanged.
