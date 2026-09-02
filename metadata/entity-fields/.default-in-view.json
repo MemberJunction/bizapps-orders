@@ -3,11 +3,27 @@
     "_comments": [
       "DueDate and Company were off DefaultInView, so the Orders explorer hid the two columns a collections person actually scans."
     ],
-    "fields": { "DefaultInView": true },
-    "primaryKey": { "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Headers&Name=DueDate" }
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Headers&Name=DueDate"
+    },
+    "sync": {
+      "lastModified": "2026-09-02T03:26:36.469Z",
+      "checksum": "3980a054b5d6fcb2805ae6a0b030e114ef8da0fb49036cc2ea1cd1b3823228cd"
+    }
   },
   {
-    "fields": { "DefaultInView": true },
-    "primaryKey": { "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Headers&Name=Company" }
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Headers&Name=Company"
+    },
+    "sync": {
+      "lastModified": "2026-09-02T03:26:36.492Z",
+      "checksum": "3980a054b5d6fcb2805ae6a0b030e114ef8da0fb49036cc2ea1cd1b3823228cd"
+    }
   }
 ]
