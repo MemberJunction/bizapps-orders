@@ -95,8 +95,11 @@ export interface SubscriptionDecision {
     /** Populated when Action = 'Reject'. */
     RejectReason?: string;
     /**
-     * True when a `RequestedStartDate` was supplied and the term could not honor it, because an
-     * extension continues existing coverage and must start the day after it ends.
+     * True when a `RequestedStartDate` was supplied and the term begins on a DIFFERENT date,
+     * because an extension continues existing coverage and must start the day after it ends.
+     *
+     * A stated start that matches the continuation date is not reported: the rule and the request
+     * agree, so there is nothing to tell anyone.
      *
      * Reported rather than rejected: a renewal line carrying a stated start is a legitimate order
      * — often the same date the original term started — and refusing it would block the renewal
@@ -300,10 +303,16 @@ export class SubscriptionBehavior {
         return {
             Action: action,
             SubscriptionID: action === 'CreateNew' ? undefined : ctx.Existing?.ID,
-            // Only when a start was actually stated AND existing coverage displaced it. An
-            // extension with no prior term end still runs the ordinary start rules, so it honors
-            // the stated date and has nothing to report.
-            StartOverrideIgnored: !!ctx.RequestedStartDate && existingCoverageEnd !== null,
+            // Only when a start was actually stated, existing coverage displaced it, AND the term
+            // genuinely begins somewhere else. An extension with no prior term end still runs the
+            // ordinary start rules, so it honors the stated date and has nothing to report — and
+            // the likeliest thing a diligent order taker types is exactly the continuation date,
+            // where the rule and the request agree and there is no discrepancy to report. Warning
+            // on that case teaches everyone to skim past the warning.
+            StartOverrideIgnored:
+                !!ctx.RequestedStartDate &&
+                existingCoverageEnd !== null &&
+                start.getTime() !== ctx.RequestedStartDate.getTime(),
             Term: {
                 StartDate: start,
                 EndDate: end,

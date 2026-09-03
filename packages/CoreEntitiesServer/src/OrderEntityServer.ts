@@ -1904,6 +1904,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // Readable here only because this method runs BEFORE `prepareLines`, which stamps the
             // settled term back onto the same column. Reading it after that point would find the
             // engine's own answer and treat it as the user's.
+            //
+            // The column therefore does double duty — the user's INPUT before confirm, the settled
+            // term after — and that is only sound because an order confirms exactly once and is
+            // locked afterward. That lock is load-bearing for this design: were an order ever made
+            // re-confirmable, the second pass would read the first pass's term as a stated start.
             const requestedStart = line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null;
 
             const decision = behavior.Decide({

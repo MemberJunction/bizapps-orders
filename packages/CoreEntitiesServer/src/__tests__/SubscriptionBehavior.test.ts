@@ -232,6 +232,21 @@ describe('a stated term start (D-TERMSTART)', () => {
         expect(decision.StartOverrideIgnored).toBe(true);
     });
 
+    it('reports nothing when the stated start already IS the continuation date', () => {
+        // The likeliest thing a diligent order taker types on a renewal is the right date. The
+        // rule and the request agree, so there is no discrepancy — reporting one would read "the
+        // term start 2027-07-01 was not used ... the term begins 2027-07-01", and a warning that
+        // fires on the normal case is a warning everyone learns to skim past.
+        const active = { ID: 'sub-1', Status: 'Active', LatestTermEnd: new Date('2027-06-30T00:00:00Z'), LatestTermNumber: 1 };
+        const decision = decide(rules(), BOOKED, 1200, {
+            Existing: active,
+            RequestedStartDate: new Date('2027-07-01T00:00:00Z'),
+        });
+        expect(decision.Action).toBe('ExtendExisting');
+        expect(iso(decision.Term!.StartDate)).toBe('2027-07-01');
+        expect(decision.StartOverrideIgnored).toBe(false);
+    });
+
     it('reports nothing when an extension had no stated start to drop', () => {
         const active = { ID: 'sub-1', Status: 'Active', LatestTermEnd: new Date('2027-06-30T00:00:00Z'), LatestTermNumber: 1 };
         const decision = decide(rules(), BOOKED, 1200, { Existing: active });
