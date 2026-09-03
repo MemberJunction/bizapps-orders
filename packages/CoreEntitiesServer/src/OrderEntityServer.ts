@@ -1317,8 +1317,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
      *     nullable column carrying NULL emits `@<Col>_Clear=1` — which `spUpdateOrderHeader` honours
      *     by writing NULL over the value the trigger computed. So the stale NULL does not merely
      *     display wrong, it ERASES `TotalGross` and `Balance` on the following save, and a stale
-     *     `AmountPaid = 0` overwrites a captured payment. That is how ORD-000023 ended up Confirmed,
-     *     with a line worth 240, and a header total of NULL.
+     *     `AmountPaid = 0` overwrites a captured payment. That is the shape the reported casualty
+     *     had: Confirmed, one line and a captured payment that agreed with each other, and a header
+     *     whose totals had been nulled out from under them.
      *
      * Reading four columns back is cheaper than either failure, so it happens on every path that
      * writes lines or payments — not only on booking.
