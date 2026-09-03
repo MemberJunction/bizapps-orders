@@ -61,27 +61,27 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
         expect(instance.ProductAvatarIcon).toBe('fa-solid fa-repeat');
     });
 
-    it('formats standalone selling price and status badges', () => {
+    it('formats list price from ProductPrice label and status badges', () => {
         const instance = Object.create(BizAppsProductFormComponent.prototype) as BizAppsProductFormComponent;
 
         instance.record = {
-            StandaloneSellingPrice: 895,
             Status: 'Active',
             ProductType: 'Standard',
             ISAChild: null,
         } as unknown as mjBizAppsOrdersProductEntity;
+        instance.ListPriceLabel = '$895.00';
 
         expect(instance.FormattedBasePrice).toBe('$895.00');
         expect(instance.StatusBadgeClass).toContain('mjo-status-chip--active');
 
         instance.record = {
-            StandaloneSellingPrice: null,
             Status: 'Draft',
             ProductType: 'Standard',
             ISAChild: null,
         } as unknown as mjBizAppsOrdersProductEntity;
+        instance.ListPriceLabel = 'No price';
 
-        expect(instance.FormattedBasePrice).toBe('$0.00');
+        expect(instance.FormattedBasePrice).toBe('No price');
         expect(instance.StatusBadgeClass).toContain('mjo-status-chip--draft');
     });
 

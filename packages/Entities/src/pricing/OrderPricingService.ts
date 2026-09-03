@@ -41,6 +41,7 @@ import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngin
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { RunCharges, SplitChargesByLine } from './ChargeEngine.js';
 import { ResolvePrice } from './PriceResolver.js';
+import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
 import { AllocateProRata, LineGross, NetAfterDiscount } from './PricingBehavior.js';
 /**
  * The one thing this walk needs from the SERVER line subclass: somewhere to record the extended
@@ -86,6 +87,9 @@ export interface OrderPricingContext {
     CompanyID: string;
     BillToPersonID: string | null;
     BillToOrganizationID: string | null;
+    ShipToPersonID?: string | null;
+    ShipToOrganizationID?: string | null;
+    BillToAddressID?: string | null;
     /** The date the price and tax rate are read AS OF. Null means today. */
     OrderDate: Date | string | null;
     ShipToAddressID: string | null;
@@ -150,6 +154,7 @@ export interface OrderPricingHost {
 export class OrderPricingService {
     private ctx!: OrderPricingContext;
     private out!: OrderPricingResult;
+    private partyContext: FilterEvalContext | null = null;
 
     constructor(private readonly host: OrderPricingHost) {}
 
@@ -166,6 +171,7 @@ export class OrderPricingService {
         skipPricingFor?: ReadonlySet<mjBizAppsOrdersOrderLineEntity>,
     ): Promise<OrderPricingResult> {
         this.ctx = ctx;
+        this.partyContext = null;
         this.out = {
             UnusableCodes: [],
             TaxReasons: new Map<number, string>(),
@@ -472,6 +478,7 @@ export class OrderPricingService {
                 AsOf: this.ctx.OrderDate ? new Date(this.ctx.OrderDate) : new Date(),
                 OrganizationID: this.ctx.BillToOrganizationID ?? null,
                 PersonID: this.ctx.BillToPersonID ?? null,
+                ApplicabilityContext: await this.applicabilityBag(line.ProductID),
                 ...(this.ctx.PriceListID !== undefined ? { PriceListID: this.ctx.PriceListID } : {}),
                 ...(this.ctx.FeeType ? { FeeType: this.ctx.FeeType } : {}),
             },
@@ -500,6 +507,44 @@ export class OrderPricingService {
         // the pricing answer is identical either way.
         (line as unknown as CarriesResolvedExtendedAmount).ResolvedExtendedAmount = resolved.ExtendedAmount;
         this.out.PriceComponents.set(line, resolved);
+    }
+
+    /**
+     * Parties once per walk; Product swapped per line so a When on Product.Type sees the SKU.
+     */
+    private async applicabilityBag(productID: string): Promise<FilterEvalContext> {
+        if (!this.partyContext) {
+            this.partyContext = await loadApplicabilityContext(
+                {
+                    OrderHeaderID: this.ctx.OrderHeaderID,
+                    BillToPersonID: this.ctx.BillToPersonID,
+                    BillToOrganizationID: this.ctx.BillToOrganizationID,
+                    ShipToPersonID: this.ctx.ShipToPersonID ?? null,
+                    ShipToOrganizationID: this.ctx.ShipToOrganizationID ?? null,
+                    BillToAddressID: this.ctx.BillToAddressID ?? null,
+                    ShipToAddressID: this.ctx.ShipToAddressID,
+                    OrderFallback: {
+                        ID: this.ctx.OrderHeaderID,
+                        CompanyID: this.ctx.CompanyID,
+                        BillToPersonID: this.ctx.BillToPersonID,
+                        BillToOrganizationID: this.ctx.BillToOrganizationID,
+                        ShipToPersonID: this.ctx.ShipToPersonID ?? null,
+                        ShipToOrganizationID: this.ctx.ShipToOrganizationID ?? null,
+                        BillToAddressID: this.ctx.BillToAddressID ?? null,
+                        ShipToAddressID: this.ctx.ShipToAddressID,
+                        OrderDate: this.ctx.OrderDate,
+                    },
+                },
+                this.host.Provider,
+                this.host.User,
+            );
+        }
+        const product = await loadApplicabilityContext(
+            { ProductID: productID },
+            this.host.Provider,
+            this.host.User,
+        );
+        return { ...this.partyContext, Product: product.Product };
     }
 
     /** Product facts pricing needs: its category (for the walk), its company, and whether it may be sold at all. */

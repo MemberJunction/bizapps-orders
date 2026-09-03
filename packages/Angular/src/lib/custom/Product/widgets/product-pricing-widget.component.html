@@ -1,5 +1,4 @@
 <div class="mjo-pricing-widget-wrap">
-    <!-- Toast Notification Banner -->
     @if (ActiveToast) {
         <div class="mjo-toast" [class]="'mjo-toast--' + ActiveToast.Type">
             <div class="mjo-toast-left">
@@ -12,83 +11,43 @@
         </div>
     }
 
-    <!-- 1. Top Commercial Parameters Card -->
     <div class="mjo-pricing-card">
         <div class="mjo-card-header">
             <div class="mjo-card-title">
-                <i class="fa-solid fa-calculator"></i>
-                <span>Base Commercial Terms &amp; ASC 606 Allocation</span>
+                <i class="fa-solid fa-tags"></i>
+                <span>Prices</span>
             </div>
-            <div class="mjo-base-pill">
-                Base List: <strong>{{ FormattedBasePrice }}</strong>
-            </div>
-        </div>
-        <div class="mjo-pricing-fields">
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="StandaloneSellingPrice"
-                Type="numerictextbox"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)">
-            </mj-form-field>
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="RevenueRecognitionTypeID"
-                Type="textbox"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                LinkType="Record"
-                (Navigate)="Navigate.emit($event)">
-            </mj-form-field>
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="IsTaxable"
-                Type="checkbox"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)">
-            </mj-form-field>
-        </div>
-    </div>
-
-    <!-- 2. Channel Segments & Volume Ladder Card -->
-    <div class="mjo-pricing-card">
-        <!-- Channel Segment Tabs Header -->
-        <div class="mjo-channel-bar">
-            <div class="mjo-channel-list">
-                @for (ch of Channels; track ch.ID) {
-                    <button 
-                        type="button" 
-                        class="mjo-channel-tab" 
-                        [class.active]="SelectedChannelID === ch.ID"
-                        (click)="SelectChannel(ch.ID)">
-                        <i [class]="ch.Icon"></i>
-                        <span>{{ ch.Name }}</span>
-                        <span class="mjo-channel-count">{{ ch.TierCount }} {{ ch.TierCount === 1 ? 'Tier' : 'Tiers' }}</span>
-                    </button>
-                }
-            </div>
-
-            <div class="mjo-channel-actions">
-                <button type="button" class="mjo-btn-subtle" (click)="ToggleAdvancedView()">
-                    <i [class]="IsAdvancedGridView ? 'fa-solid fa-stairs' : 'fa-solid fa-table-cells'"></i>
-                    <span>{{ IsAdvancedGridView ? 'View Quick Ladder' : 'Advanced Grid View' }}</span>
+            <div class="mjo-card-header-actions">
+                <button type="button" class="mjo-btn-subtle" (click)="OpenQuote()">
+                    <i class="fa-solid fa-flask"></i>
+                    <span>Test a quote</span>
                 </button>
-                @if (EditMode) {
-                    <button type="button" class="mjo-btn-subtle" (click)="OpenNewPriceDialog()">
-                        <i class="fa-solid fa-plus"></i>
-                        <span>Add Channel / Rule</span>
-                    </button>
-                }
+                <button type="button" class="mjo-btn-subtle" (click)="ToggleAdvancedView()">
+                    <i [class]="IsAdvancedGridView ? 'fa-solid fa-tags' : 'fa-solid fa-table-cells'"></i>
+                    <span>{{ IsAdvancedGridView ? 'Prices' : 'Advanced grid' }}</span>
+                </button>
             </div>
         </div>
+
+        @if (ShowChannelBar) {
+            <div class="mjo-channel-bar">
+                <div class="mjo-channel-list">
+                    @for (ch of Channels; track ch.ID) {
+                        <button
+                            type="button"
+                            class="mjo-channel-tab"
+                            [class.active]="SelectedChannelID === ch.ID"
+                            (click)="SelectChannel(ch.ID)">
+                            <i [class]="ch.Icon"></i>
+                            <span>{{ ch.Name }}</span>
+                            <span class="mjo-channel-count">{{ ch.TierCount }} {{ ch.TierCount === 1 ? 'price' : 'prices' }}</span>
+                        </button>
+                    }
+                </div>
+            </div>
+        }
 
         @if (IsAdvancedGridView) {
-            <!-- Full Advanced Entity Data Grid View -->
             @if (ProductPricesViewParams) {
                 <div class="mjo-grid-wrap">
                     <mj-explorer-entity-data-grid
@@ -104,192 +63,195 @@
                 </div>
             }
         } @else {
-            <!-- Option 1: Quick Tier Ladder View -->
             @if (IsLoading) {
                 <div class="mjo-loading-state">
                     <i class="fa-solid fa-spinner fa-spin"></i>
-                    <span>Loading price tiers…</span>
+                    <span>Loading prices…</span>
                 </div>
-            } @else if (LadderTiers.length === 0) {
+            } @else if (VisiblePrices.length === 0) {
                 <div class="mjo-empty-tiers">
                     <div class="mjo-empty-icon"><i class="fa-solid fa-tags"></i></div>
                     <div class="mjo-empty-text">
-                        <h4>No Pricing Tiers Configured for this Channel</h4>
+                        <h4>No prices on this channel</h4>
                         <p>
                             @if (EditMode) {
-                                Use the Quick Bracket builder below to add volume-discounted pricing.
+                                Add a price. When is optional — only if this rate is not for everyone.
                             } @else {
-                                Switch to Edit mode to configure pricing tiers and volume discounts.
+                                Switch to Edit to add prices.
                             }
                         </p>
                     </div>
                 </div>
             } @else {
-                <div class="mjo-ladder-table-wrap">
-                    <table class="mjo-ladder-table">
-                        <thead>
-                            <tr>
-                                <th>Tier Bracket</th>
-                                <th>Unit Range</th>
-                                <th class="mjo-th-num">Unit Price ($)</th>
-                                <th>Discount vs Base</th>
-                                <th>Unit Savings</th>
-                                <th>Model</th>
-                                <th>Status / Dates</th>
-                                <th class="mjo-th-actions">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @for (tier of LadderTiers; track tier.ID) {
-                                <tr>
-                                    <td>
-                                        <strong class="mjo-tier-title">{{ tier.BracketLabel }}</strong>
-                                    </td>
-                                    <td>
-                                        <span class="mjo-range-pill">{{ tier.UnitRangeText }}</span>
-                                    </td>
-                                    <td class="mjo-td-num">
+                <div class="mjo-price-list">
+                    @for (row of VisiblePrices; track row.ID) {
+                        <article class="mjo-offer" [class.open]="ExpandedPriceID === row.ID" [class.inherited]="row.Inherited">
+                            <button type="button" class="mjo-offer-h" (click)="TogglePrice(row.ID)">
+                                <span class="mjo-offer-amt">{{ FormatCurrency(row.Amount) }}</span>
+                                <span class="mjo-offer-copy">
+                                    <span class="mjo-offer-name">{{ row.Name }}</span>
+                                    @if (row.WhenText) {
+                                        <span class="mjo-offer-when">{{ row.WhenText }}</span>
+                                    }
+                                </span>
+                                <span class="mjo-offer-from" [class.inherited]="row.Inherited">{{ row.SourceLabel }}</span>
+                            </button>
+                            @if (ExpandedPriceID === row.ID) {
+                                <div class="mjo-offer-body" (click)="$event.stopPropagation()">
+                                    @if (row.Inherited) {
+                                        <p class="mjo-inherit-note">
+                                            Inherited. A price with this name on the product replaces it.
+                                            @if (EditMode) {
+                                                <button type="button" class="mjo-btn-subtle" (click)="OverrideInherited(row)">Override on this product</button>
+                                            }
+                                        </p>
+                                    } @else {
                                         @if (EditMode) {
-                                            <input 
-                                                type="text" 
-                                                class="mjo-price-input" 
-                                                [value]="FormatCurrency(tier.Amount)"
-                                                (blur)="OnPriceInputBlur(tier, $event)"
-                                                [title]="'Edit price for ' + tier.BracketLabel">
-                                        } @else {
-                                            <strong class="mjo-price-val">{{ FormatCurrency(tier.Amount) }}</strong>
+                                            <div class="mjo-offer-fields">
+                                                <label class="mjo-field-group">
+                                                    <span class="mjo-sub-label">Name</span>
+                                                    <input class="mjo-input-text" [(ngModel)]="row.Record.Name" (blur)="SavePrice(row.Record)">
+                                                </label>
+                                                <label class="mjo-field-group">
+                                                    <span class="mjo-sub-label">Amount</span>
+                                                    <input type="number" class="mjo-input-price" [(ngModel)]="row.Record.Amount" min="0" step="0.01" (blur)="SavePrice(row.Record)">
+                                                </label>
+                                                <label class="mjo-field-group">
+                                                    <span class="mjo-sub-label">Model</span>
+                                                    <select class="mjo-input-select" [(ngModel)]="row.Record.PricingModel" (change)="SavePrice(row.Record)">
+                                                        <option value="PerUnit">Per unit</option>
+                                                        <option value="Package">Package</option>
+                                                        <option value="Volume">Volume</option>
+                                                        <option value="Flat">Flat</option>
+                                                    </select>
+                                                </label>
+                                            </div>
                                         }
-                                    </td>
-                                    <td>
-                                        @if (tier.DiscountPercent > 0) {
-                                            <span class="mjo-disc-tag">
-                                                <i class="fa-solid fa-arrow-down"></i> {{ tier.DiscountPercent }}% off
-                                            </span>
-                                        } @else {
-                                            <span class="mjo-standard-tag">Standard Base</span>
+                                        @if (row.WhenText && WhenEditorPriceID !== row.ID) {
+                                            <div class="mjo-when-read">
+                                                <span>{{ row.WhenText }}</span>
+                                                @if (EditMode) {
+                                                    <button type="button" class="mjo-btn-subtle" (click)="OpenWhenEditor(row)">Edit When</button>
+                                                }
+                                            </div>
+                                        } @else if (EditMode && WhenEditorPriceID !== row.ID) {
+                                            <button type="button" class="mjo-btn-subtle" (click)="OpenWhenEditor(row)">+ When</button>
                                         }
-                                    </td>
-                                    <td>
-                                        @if (tier.UnitSavings > 0) {
-                                            <strong class="mjo-savings-val">{{ FormatCurrency(tier.UnitSavings) }} / unit</strong>
-                                        } @else {
-                                            <span style="color: var(--mj-text-muted, #94a3b8);">$0.00</span>
+                                        @if (EditMode && WhenEditorPriceID === row.ID) {
+                                            <div class="mjo-when-edit">
+                                                <div class="mjo-when-title">When this price applies</div>
+                                                <mj-filter-builder
+                                                    [fields]="WhenFields"
+                                                    [filter]="WhenFilter"
+                                                    [showSummary]="true"
+                                                    (filterChange)="OnWhenFilterChange($event)">
+                                                </mj-filter-builder>
+                                                <div class="mjo-when-actions">
+                                                    <button type="button" class="mjo-btn-subtle" (click)="ClearWhen(row)">Remove When</button>
+                                                    <button type="button" class="mjo-btn-subtle" (click)="CloseWhenEditor()">Cancel</button>
+                                                    <button type="button" class="mjo-btn-add" (click)="SaveWhen(row)">Save When</button>
+                                                </div>
+                                            </div>
                                         }
-                                    </td>
-                                    <td>
-                                        <span class="mjo-model-tag">{{ tier.PricingModel }}</span>
-                                    </td>
-                                    <td>
-                                        <span class="mjo-date-tag">{{ tier.EffectiveDatesText }}</span>
-                                    </td>
-                                    <td class="mjo-td-actions">
-                                        <button 
-                                            type="button" 
-                                            class="mjo-action-btn" 
-                                            title="Open full price rule" 
-                                            (click)="OpenTierRecord(tier)">
-                                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                                        </button>
-                                        @if (EditMode && !tier.IsBaseBracket) {
-                                            <button 
-                                                type="button" 
-                                                class="mjo-action-btn mjo-action-btn--delete" 
-                                                title="Delete tier" 
-                                                (click)="DeleteTier(tier)">
-                                                <i class="fa-solid fa-trash"></i>
-                                            </button>
+                                        @if (HasAdvanced(row.Record) || AdvancedEditingID === row.ID) {
+                                            <div class="mjo-adv">
+                                                <div class="mjo-when-title">Qty, dates, fee</div>
+                                                @if (EditMode) {
+                                                    <div class="mjo-adv-grid">
+                                                        <label class="mjo-field-group"><span class="mjo-sub-label">Min qty</span>
+                                                            <input type="number" class="mjo-input-num" [(ngModel)]="row.Record.MinQuantity" (blur)="SavePrice(row.Record)">
+                                                        </label>
+                                                        <label class="mjo-field-group"><span class="mjo-sub-label">Max qty</span>
+                                                            <input type="number" class="mjo-input-num" [(ngModel)]="row.Record.MaxQuantity" (blur)="SavePrice(row.Record)">
+                                                        </label>
+                                                        <label class="mjo-field-group"><span class="mjo-sub-label">Fee type</span>
+                                                            <input class="mjo-input-text" [(ngModel)]="row.Record.FeeType" (blur)="SavePrice(row.Record)">
+                                                        </label>
+                                                        <label class="mjo-field-group"><span class="mjo-sub-label">Priority</span>
+                                                            <input type="number" class="mjo-input-num" [(ngModel)]="row.Record.Priority" (blur)="SavePrice(row.Record)">
+                                                        </label>
+                                                    </div>
+                                                } @else {
+                                                    <div class="mjo-adv-read">
+                                                        @if (row.Record.MinQuantity != null) {
+                                                            <span>Min qty {{ row.Record.MinQuantity }}</span>
+                                                        }
+                                                        @if (row.Record.MaxQuantity != null) {
+                                                            <span>Max qty {{ row.Record.MaxQuantity }}</span>
+                                                        }
+                                                        @if (row.Record.FeeType && row.Record.FeeType !== 'Standard') {
+                                                            <span>{{ row.Record.FeeType }}</span>
+                                                        }
+                                                        @if (row.Record.EffectiveTo) {
+                                                            <span>Until {{ row.Record.EffectiveTo | date:'mediumDate' }}</span>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        } @else if (EditMode) {
+                                            <button type="button" class="mjo-btn-subtle" (click)="OpenAdvanced(row.ID, $event)">+ Qty, dates, fee</button>
                                         }
-                                    </td>
-                                </tr>
+                                    }
+                                </div>
                             }
-                        </tbody>
-                    </table>
+                        </article>
+                    }
                 </div>
             }
 
-            <!-- Quick Add Tier Bracket Bar (Only active when EditMode is true) -->
             @if (EditMode) {
                 <div class="mjo-quick-add-bar">
                     <div class="mjo-quick-add-inputs">
                         <span class="mjo-quick-add-label">
-                            <i class="fa-solid fa-plus-circle"></i> Add Volume Tier:
+                            <i class="fa-solid fa-plus-circle"></i> Add price
                         </span>
                         <label class="mjo-field-group">
-                            <span class="mjo-sub-label">Min:</span>
-                            <input 
-                                type="number" 
-                                class="mjo-input-num" 
-                                [(ngModel)]="NewTierMin" 
-                                min="1">
+                            <span class="mjo-sub-label">Name</span>
+                            <input class="mjo-input-text" [(ngModel)]="NewPriceName" placeholder="Base">
                         </label>
                         <label class="mjo-field-group">
-                            <span class="mjo-sub-label">Max:</span>
-                            <input 
-                                type="number" 
-                                class="mjo-input-num" 
-                                [(ngModel)]="NewTierMax" 
-                                placeholder="∞">
+                            <span class="mjo-sub-label">Amount</span>
+                            <input type="number" class="mjo-input-price" [(ngModel)]="NewPriceAmount" min="0" step="0.01">
                         </label>
-                        <label class="mjo-field-group">
-                            <span class="mjo-sub-label">Price ($):</span>
-                            <input 
-                                type="number" 
-                                class="mjo-input-price" 
-                                [(ngModel)]="NewTierPrice" 
-                                min="0" 
-                                step="0.01">
-                        </label>
-                        <label class="mjo-field-group">
-                            <span class="mjo-sub-label">Model:</span>
-                            <select class="mjo-input-select" [(ngModel)]="NewTierModel">
-                                <option value="Volume">Volume</option>
-                                <option value="PerUnit">PerUnit</option>
-                                <option value="Tiered">Tiered</option>
-                                <option value="Flat">Flat</option>
-                            </select>
-                        </label>
-                        <button 
-                            type="button" 
-                            class="mjo-btn-add" 
-                            [disabled]="IsSaving" 
-                            (click)="AddTierBracket()">
+                        <button type="button" class="mjo-btn-add" [disabled]="IsSaving" (click)="AddPrice()">
                             @if (IsSaving) {
                                 <i class="fa-solid fa-spinner fa-spin"></i>
                                 <span>Saving…</span>
                             } @else {
                                 <i class="fa-solid fa-plus"></i>
-                                <span>Add Bracket</span>
+                                <span>Add price</span>
                             }
                         </button>
-                    </div>
-
-                    <div class="mjo-guard-badge">
-                        <i class="fa-solid fa-shield-halved"></i>
-                        <span>Gap &amp; overlap protection active</span>
-                    </div>
-                </div>
-            }
-
-            <!-- Volume Step Curve Diagram -->
-            @if (StepBars.length > 0) {
-                <div class="mjo-step-curve-wrap">
-                    <div class="mjo-step-curve-title">
-                        <i class="fa-solid fa-chart-simple"></i>
-                        <span>Live Volume Step Curve (Base vs Tiers)</span>
-                    </div>
-                    <div class="mjo-step-curve-bars">
-                        @for (bar of StepBars; track bar.Label) {
-                            <div class="mjo-step-col">
-                                <span class="mjo-step-val">{{ bar.FormattedAmount }}</span>
-                                <div class="mjo-step-track">
-                                    <div class="mjo-step-fill" [style.height.%]="bar.Percentage"></div>
-                                </div>
-                                <span class="mjo-step-label">{{ bar.Label }} units</span>
-                            </div>
-                        }
                     </div>
                 </div>
             }
         }
     </div>
 </div>
+
+@if (QuoteDrawerOpen) {
+    <div class="mjo-quote-scrim" (click)="CloseQuote()"></div>
+    <aside class="mjo-quote-drawer" role="dialog" aria-label="Test a quote">
+        <div class="mjo-quote-drawer-h">
+            <h3>Test a quote</h3>
+            <button type="button" class="mjo-btn-subtle" (click)="CloseQuote()">Close</button>
+        </div>
+        <p class="mjo-quote-lede">Optional. Sample bill-to type against these prices. Same walk as GL — product then category.</p>
+        <label class="mjo-field-group">
+            <span class="mjo-sub-label">Bill-to organization Type</span>
+            <select class="mjo-input-select" [(ngModel)]="QuoteOrgType" (ngModelChange)="RunQuote()">
+                <option value="Member">Member</option>
+                <option value="Prospect">Prospect</option>
+            </select>
+        </label>
+        <label class="mjo-field-group">
+            <span class="mjo-sub-label">Qty</span>
+            <input type="number" class="mjo-input-num" [(ngModel)]="SimQuantity" min="1" (ngModelChange)="RunQuote()">
+        </label>
+        <div class="mjo-quote-amt">{{ QuoteResult.AmountText }}</div>
+        <p class="mjo-quote-why">{{ QuoteResult.Why }}</p>
+        @if (QuoteResult.Skipped) {
+            <p class="mjo-quote-why">{{ QuoteResult.Skipped }}</p>
+        }
+    </aside>
+}

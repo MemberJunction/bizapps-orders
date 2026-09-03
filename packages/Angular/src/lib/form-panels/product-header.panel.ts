@@ -1,8 +1,8 @@
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
 import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
-import { FormatMoney } from '../panels/money-format';
+import { LoadProductListPriceLabel } from '../panels/catalog-list-price';
 import { ProductAvatarIcon, ProductStatusChipClass } from './document-form.helpers';
 
 @RegisterClassEx(BaseFormPanel, {
@@ -12,6 +12,7 @@ import { ProductAvatarIcon, ProductStatusChipClass } from './document-form.helpe
         slot: 'before-fields',
         sortKey: 100,
         contributionKey: 'header',
+        replacesSectionKey: 'productIdentification',
     },
 })
 @Component({
@@ -21,6 +22,10 @@ import { ProductAvatarIcon, ProductStatusChipClass } from './document-form.helpe
     styleUrls: ['./document-hero.css'],
 })
 export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> {
+    public ListPriceLabel = '—';
+    private listPriceFor: string | null = null;
+    private cdr = inject(ChangeDetectorRef, { optional: true });
+
     public get Title(): string {
         return this.Record.Name || 'New product';
     }
@@ -38,7 +43,17 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
     }
 
     public get Price(): string {
-        return FormatMoney(this.Record.StandaloneSellingPrice);
+        const id = this.Record?.ID ?? null;
+        if (id && id !== this.listPriceFor) {
+            this.listPriceFor = id;
+            void this.refreshListPrice(id);
+        }
+        return this.ListPriceLabel;
+    }
+
+    private async refreshListPrice(productId: string): Promise<void> {
+        this.ListPriceLabel = await LoadProductListPriceLabel(productId);
+        this.cdr?.markForCheck();
     }
 
     public get RevRec(): string {

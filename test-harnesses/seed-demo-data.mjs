@@ -382,8 +382,8 @@ async function product(name, revRecCode, subTypeCode = null, typeID = servicesTy
                      '${revRec.get(revRecCode)}',${subTypeCode ? `'${subTypes.get(subTypeCode)}'` : 'NULL'},0)`);
     if (listPrice !== null) {
         await q(`INSERT INTO ${ORDERS}.ProductPrice
-                    (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
-                 VALUES ('${randomUUID()}','${id}','PerUnit','Standard',${listPrice},'2020-01-01',100,'Active')`);
+                    (ID, ProductID, Name, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
+                 VALUES ('${randomUUID()}','${id}','Base','PerUnit','Standard',${listPrice},'2020-01-01',100,'Active')`);
     }
     say(`  ${name}  (${revRecCode}${subTypeCode ? `, ${subTypeCode}` : ''})${listPrice !== null ? `  list ${listPrice}` : '  — no list price (priced by hand)'}`);
     return id;
@@ -431,8 +431,8 @@ await q(`INSERT INTO ${ORDERS}.Product
 // `product()` because that helper hard-codes the PRIMARY company; this product is the other
 // company's, which is the whole reason it exists.
 await q(`INSERT INTO ${ORDERS}.ProductPrice
-            (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
-         VALUES ('${randomUUID()}','${products.pressAnthology}','PerUnit','Standard',210,'2020-01-01',100,'Active')`);
+            (ID, ProductID, Name, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
+         VALUES ('${randomUUID()}','${products.pressAnthology}','Base','PerUnit','Standard',210,'2020-01-01',100,'Active')`);
 
 // A SUBSCRIPTION on the other company too, not just a one-off good.
 //
@@ -451,8 +451,8 @@ await q(`INSERT INTO ${ORDERS}.Product
                  '${DEMO_TAG} Partner Press Membership','Active','${revRec.get('EvenOverTime')}',
                  '${subTypes.get('AnnualRolling')}',0)`);
 await q(`INSERT INTO ${ORDERS}.ProductPrice
-            (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
-         VALUES ('${randomUUID()}','${products.pressMembership}','PerUnit','Standard',180,'2020-01-01',100,'Active')`);
+            (ID, ProductID, Name, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
+         VALUES ('${randomUUID()}','${products.pressMembership}','Base','PerUnit','Standard',180,'2020-01-01',100,'Active')`);
 say(`  ${DEMO_TAG} Partner Press Membership  (EvenOverTime, AnnualRolling)  list 180  — on the OTHER company`);
 say(`  ${DEMO_TAG} Partner Press Anthology  (UpFront, owned by ${press.Name})  list 210`);
 

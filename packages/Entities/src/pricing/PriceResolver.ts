@@ -10,6 +10,10 @@
  * shared rather than reimplemented, and the two cannot drift into disagreeing about what "the
  * product's category tree" means.
  *
+ * NAMED PRICES inherit on that same chain. A ProductPrice hangs on Product XOR Product Category.
+ * `DefaultPriceResolver` loads both, then `collapseInheritedPrices` keeps the most specific row
+ * per Name. Applicability JSON is CompositeFilterDescriptor, evaluated in memory.
+ *
  * TWO LAYERS, DO NOT CONFUSE THEM
  *   - `BasePriceResolver` subclasses are PLUGINS, registered by ClassFactory key. A company with
  *     genuinely bespoke pricing registers one for its ID and owns the whole decision.
@@ -38,6 +42,8 @@ import {
     type PriceTierRule,
     type PricingModel,
 } from './PricingBehavior.js';
+import { priceApplies, type FilterEvalContext } from './applicability.js';
+import { collapseInheritedPrices } from './inheritPrices.js';
 
 const PRICE_LIST_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assignments';
@@ -82,6 +88,11 @@ export interface PriceResolutionContext {
     /** Explicit list, overriding the customer's assignment. */
     PriceListID?: string | null;
     FeeType?: string;
+    /**
+     * Bag for ProductPrice.Applicability (`Source.Field`). Missing parties are null —
+     * a When on ship-to is then false unless the operator is empty.
+     */
+    ApplicabilityContext?: FilterEvalContext;
 }
 
 export interface ResolvedPrice {
@@ -94,6 +105,11 @@ export interface ResolvedPrice {
     /** ClassFactory key of the resolver that answered, for the audit trail. */
     ResolvedBy: string;
     Components: PriceComponentDraft[];
+    /** Staff-facing name of the winning ProductPrice (`Member`, `Non-member`, …). */
+    PriceName?: string | null;
+    /** Whether the winner hung on the product or was inherited from a category. */
+    InheritedFrom?: 'product' | 'category';
+    InheritedFromCategoryID?: string | null;
 }
 
 /**
@@ -115,7 +131,9 @@ export abstract class BasePriceResolver {
 
 interface ProductPriceRow {
     ID: string;
-    ProductID: string;
+    ProductID: string | null;
+    ProductCategoryID: string | null;
+    Name: string | null;
     PriceListID: string | null;
     PricingModel: string;
     FeeType: string;
@@ -134,6 +152,7 @@ interface ProductPriceRow {
     Priority: number;
     Status: string;
     Description: string | null;
+    Applicability: string | null;
 }
 
 interface TierRow {
@@ -145,6 +164,14 @@ interface TierRow {
 }
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
+
+function priceLabel(row: Pick<ProductPriceRow, 'Name' | 'Description' | 'ID' | 'PricingModel' | 'PriceListID'>): string {
+    const named = row.Name?.trim();
+    if (named) return named;
+    const described = row.Description?.trim();
+    if (described) return described;
+    return `${row.PricingModel} price${row.PriceListID ? ' (list)' : ' (base)'}`;
+}
 
 /**
  * The data-driven resolver everyone gets unless a plugin overrides them.
@@ -163,7 +190,9 @@ export class DefaultPriceResolver extends BasePriceResolver {
             ? (ctx.PriceListID ? [ctx.PriceListID] : [])
             : await ResolvePriceListsForCustomer(ctx, provider, user);
 
-        const rows = await this.loadRules(ctx, priceListIDs, provider, user);
+        const chain = await categoryChain(ctx.ProductCategoryID, provider, user);
+        const loaded = await this.loadRules(ctx, priceListIDs, chain, provider, user);
+        const rows = this.filterApplicable(collapseInheritedPrices(loaded, ctx.ProductID, chain), ctx);
         if (!rows.length) return null;
 
         const tiers = await this.loadTiers(rows.map((r) => r.ID), provider, user);
@@ -193,7 +222,7 @@ export class DefaultPriceResolver extends BasePriceResolver {
             // REFUSE rather than choose. Two equally-applicable rules would otherwise resolve by
             // whatever order the database returned — arbitrary, and invisible because a wrong price
             // still looks like a price.
-            const names = pick.AmbiguousWith.map((i) => `${rows[i].ID} (${rows[i].Description ?? 'no description'})`);
+            const names = pick.AmbiguousWith.map((i) => `${priceLabel(rows[i])} (${rows[i].ID})`);
             throw new PriceResolutionError(
                 ctx.ProductID,
                 `Pricing is ambiguous: ${pick.AmbiguousWith.length} rules apply to quantity ${ctx.Quantity} ` +
@@ -207,7 +236,7 @@ export class DefaultPriceResolver extends BasePriceResolver {
             // Nothing applied, but rules EXIST — say why the nearest one did not, because "no price
             // found" is far less useful than "there is a winter rate and it starts in November".
             const why = rules
-                .map((r, i) => `${rows[i].Description ?? rows[i].ID}: ${IsRuleApplicable(r, { Quantity: ctx.Quantity, AsOf: ctx.AsOf })}`)
+                .map((r, i) => `${priceLabel(rows[i])}: ${IsRuleApplicable(r, { Quantity: ctx.Quantity, AsOf: ctx.AsOf })}`)
                 .slice(0, 4);
             throw new PriceResolutionError(
                 ctx.ProductID,
@@ -221,9 +250,7 @@ export class DefaultPriceResolver extends BasePriceResolver {
         const extended = ComputeAmount(winner, ctx.Quantity);
         const unit = ctx.Quantity > 0 ? Money(extended / ctx.Quantity) : Money(extended);
 
-        const label = row.Description?.trim()
-            ? row.Description.trim()
-            : `${row.PricingModel} price${row.PriceListID ? ' (list)' : ' (base)'}`;
+        const label = priceLabel(row);
 
         return {
             UnitPrice: unit,
@@ -231,6 +258,9 @@ export class DefaultPriceResolver extends BasePriceResolver {
             ProductPriceID: row.ID,
             PriceListID: row.PriceListID,
             ResolvedBy: 'default',
+            PriceName: row.Name,
+            InheritedFrom: row.ProductID ? 'product' : 'category',
+            InheritedFromCategoryID: row.ProductID ? null : row.ProductCategoryID,
             Components: [
                 {
                     ComponentType: 'Base',
@@ -245,15 +275,15 @@ export class DefaultPriceResolver extends BasePriceResolver {
     }
 
     /**
-     * Rules for this product on the resolved list, PLUS the product's base rules.
+     * Active rules for this product AND its category ancestors, on the resolved list plus base.
      *
-     * Both are loaded because a list need not price every product: a wholesale list may set a rate
-     * for ten SKUs and leave the rest at base. Loading only the list's rows would make those SKUs
-     * unpriceable for exactly the customers who buy the most.
+     * A list need not price every SKU: wholesale may set ten products and leave the rest at base.
+     * Category rows fill in named prices (Member / Non-member) the product has not overridden.
      */
     private async loadRules(
         ctx: PriceResolutionContext,
         priceListIDs: string[],
+        categoryChainNearestFirst: string[],
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<ProductPriceRow[]> {
@@ -262,11 +292,15 @@ export class DefaultPriceResolver extends BasePriceResolver {
             ? `(PriceListID IN (${priceListIDs.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')}) OR PriceListID IS NULL)`
             : `PriceListID IS NULL`;
         const feeClause = `FeeType = '${(ctx.FeeType ?? 'Standard').replace(/'/g, "''")}'`;
+        const catClause = categoryChainNearestFirst.length
+            ? ` OR ProductCategoryID IN (${categoryChainNearestFirst.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`
+            : '';
+        const scopeClause = `(ProductID = '${ctx.ProductID.replace(/'/g, "''")}'${catClause})`;
 
         const res = await rv.RunView<ProductPriceRow>(
             {
                 EntityName: PRODUCT_PRICE_ENTITY,
-                ExtraFilter: `ProductID = '${ctx.ProductID}' AND Status = 'Active' AND ${listClause} AND ${feeClause}`,
+                ExtraFilter: `${scopeClause} AND Status = 'Active' AND ${listClause} AND ${feeClause}`,
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -288,7 +322,23 @@ export class DefaultPriceResolver extends BasePriceResolver {
         return rows;
     }
 
-    private async loadTiers(
+    private filterApplicable(rows: ProductPriceRow[], ctx: PriceResolutionContext): ProductPriceRow[] {
+        const bag = ctx.ApplicabilityContext ?? {};
+        const kept: ProductPriceRow[] = [];
+        for (const row of rows) {
+            try {
+                if (priceApplies(row.Applicability, bag)) kept.push(row);
+            } catch (err) {
+                throw new PriceResolutionError(
+                    ctx.ProductID,
+                    `Price '${priceLabel(row)}' has invalid Applicability JSON: ${err instanceof Error ? err.message : String(err)}`,
+                );
+            }
+        }
+        return kept;
+    }
+
+    public async loadTiers(
         priceIDs: string[],
         provider: IMetadataProvider,
         user: UserInfo,
@@ -318,6 +368,20 @@ export class DefaultPriceResolver extends BasePriceResolver {
             out.set(key, list);
         }
         return out;
+    }
+
+    /** Active, inherited, When-matching rows — the OverrideList set, before a winner is picked. */
+    public async CollectApplicable(
+        ctx: PriceResolutionContext,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<ProductPriceRow[]> {
+        const priceListIDs = ctx.PriceListID !== undefined
+            ? (ctx.PriceListID ? [ctx.PriceListID] : [])
+            : await ResolvePriceListsForCustomer(ctx, provider, user);
+        const chain = await categoryChain(ctx.ProductCategoryID, provider, user);
+        const loaded = await this.loadRules(ctx, priceListIDs, chain, provider, user);
+        return this.filterApplicable(collapseInheritedPrices(loaded, ctx.ProductID, chain), ctx);
     }
 }
 
@@ -478,6 +542,59 @@ async function categoryChain(
         current = parent.get(uuidKey(current)) ?? null;
     }
     return chain;
+}
+
+/** Named prices that apply to this context, before PickPriceRule chooses a winner. OverrideList uses this set. */
+export interface ApplicablePrice {
+    ID: string;
+    Name: string;
+    UnitPrice: number;
+    ExtendedAmount: number;
+    PriceListID: string | null;
+    InheritedFrom: 'product' | 'category';
+    InheritedFromCategoryID: string | null;
+}
+
+export async function ListApplicablePrices(
+    ctx: PriceResolutionContext,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<ApplicablePrice[]> {
+    const resolver = new DefaultPriceResolver();
+    const rows = await resolver.CollectApplicable(ctx, provider, user);
+    const tiers = await resolver.loadTiers(rows.map((r) => r.ID), provider, user);
+    return rows.map((r) => {
+        const rule: PriceRule = {
+            ID: r.ID,
+            PricingModel: r.PricingModel as PricingModel,
+            Amount: Number(r.Amount),
+            PackageQuantity: r.PackageQuantity == null ? null : Number(r.PackageQuantity),
+            MinQuantity: r.MinQuantity == null ? null : Number(r.MinQuantity),
+            MaxQuantity: r.MaxQuantity == null ? null : Number(r.MaxQuantity),
+            EffectiveFrom: new Date(r.EffectiveFrom),
+            EffectiveTo: r.EffectiveTo == null ? null : new Date(r.EffectiveTo),
+            RecurrenceMonths: r.RecurrenceMonths,
+            RecurrenceDaysOfWeek: r.RecurrenceDaysOfWeek,
+            RecurrenceDayOfMonthMin: r.RecurrenceDayOfMonthMin,
+            RecurrenceDayOfMonthMax: r.RecurrenceDayOfMonthMax,
+            TimeOfDayStart: r.TimeOfDayStart,
+            TimeOfDayEnd: r.TimeOfDayEnd,
+            Priority: r.Priority,
+            Status: r.Status,
+            Tiers: tiers.get(uuidKey(r.ID)) ?? [],
+        };
+        const extended = ComputeAmount(rule, ctx.Quantity);
+        const unit = ctx.Quantity > 0 ? Money(extended / ctx.Quantity) : Money(extended);
+        return {
+            ID: r.ID,
+            Name: priceLabel(r),
+            UnitPrice: unit,
+            ExtendedAmount: extended,
+            PriceListID: r.PriceListID,
+            InheritedFrom: r.ProductID ? 'product' as const : 'category' as const,
+            InheritedFromCategoryID: r.ProductID ? null : r.ProductCategoryID,
+        };
+    });
 }
 
 /** Tree-shaking anchor so the default resolver's registration survives bundling. */

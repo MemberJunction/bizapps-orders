@@ -13,6 +13,7 @@ import type {
 } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatMoney } from '../panels/money-format';
+import { FormatListPriceFromRows } from '../panels/catalog-list-price';
 import { FormatShortDate, YesNo } from './document-form.helpers';
 import type { MJOOverviewCard } from './overview-cards.component';
 import { CountOverviewRows, LoadOverviewRows } from './overview-load';
@@ -206,7 +207,7 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
                     { Label: 'Company', Value: this.Record.Company || '—' },
                     { Label: 'Available from', Value: FormatShortDate(this.Record.AvailableFrom) || 'Open' },
                     { Label: 'Available to', Value: FormatShortDate(this.Record.AvailableTo) || 'Open' },
-                    { Label: 'Standalone price', Value: FormatMoney(this.Record.StandaloneSellingPrice) },
+                    { Label: 'List price', Value: FormatListPriceFromRows(prices.map((row) => Number(row.Amount))) },
                 ],
             },
             {
