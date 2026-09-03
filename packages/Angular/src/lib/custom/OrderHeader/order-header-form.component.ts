@@ -444,7 +444,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
      * A DASH HERE MEANS "NOT COMPUTED YET" AND NOTHING ELSE. `FormatMoney` renders null as an
      * em-dash for loading states; a real zero prints `$0.00`. So an unpaid $895 order that showed
      * `—` for Balance was not saying "nothing due", it was saying "I don't know" — and a collections
-     * screen that cannot tell those apart is worse than one that guesses (issue #147).
+     * screen that cannot tell those apart is worse than one that guesses (bc-aidp-next-golive#186).
      *
      * Both figures therefore fall back rather than give up. `AmountPaid` is NOT NULL in the schema,
      * so nothing but an absent record can make it unknown. `Balance` is the rollup the database

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MergeOrderRollups, ORDER_ROLLUP_FIELDS } from '../OrderRollupBehavior.js';
 
 /**
- * Issue #147 — a confirmed, unpaid $895 order showed its Balance as `—`.
+ * Issue bc-aidp-next-golive#186 — a confirmed, unpaid $895 order showed its Balance as `—`.
  *
  * The header is written before its lines exist, so the entity holds `Balance = null` at that
  * moment; the OrderLine trigger then computes the real value onto the ROW. Whoever loses this

@@ -12,7 +12,7 @@
  * stale copy of something better — it is the absence of an answer. Once the lines land, the ROW is
  * the only thing that knows. Preferring the entity's own value there is how a freshly-confirmed $895
  * order reported a NULL balance, displayed it as a dash, and then erased the stored total on the
- * next save (issue #147).
+ * next save (bc-aidp-next-golive#186).
  *
  * So the row wins, unconditionally, whenever it has anything to say. Memory is a fallback for one
  * case only: the read came back empty because there is no row yet.

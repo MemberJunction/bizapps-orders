@@ -2,7 +2,7 @@
 "@mj-biz-apps/orders": minor
 ---
 
-Stop the order Balance rendering as a dash, and stop it erasing itself (#147).
+Stop the order Balance rendering as a dash, and stop it erasing itself (bc-aidp-next-golive#186).
 
 `TotalGross`, `AmountPaid`, `Balance` and `FulfillmentStatus` on `OrderHeader` are maintained by
 `spRecalcOrderHeaderTotals`, which the OrderLine and PaymentLine triggers fire. On a

@@ -1,5 +1,5 @@
 -- =====================================================================================
--- Repair OrderHeader money rollups erased by a stale client write (issue #147)
+-- Repair OrderHeader money rollups erased by a stale client write (bc-aidp-next-golive#186)
 -- =====================================================================================
 -- TotalGross, AmountPaid and Balance on OrderHeader are maintained by
 -- __mj_BizAppsOrders.spRecalcOrderHeaderTotals, fired by the OrderLine and PaymentLine

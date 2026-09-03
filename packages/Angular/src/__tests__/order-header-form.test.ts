@@ -167,10 +167,10 @@ describe('order header link wiring', () => {
         expect(header).toMatch(/FieldName="FulfillmentStatus"[\s\S]*?\[EditMode\]="false"/);
     });
 
-    // Issue #147 — an unpaid $895 order rendered its Balance as `—`. The dash is the
+    // Issue bc-aidp-next-golive#186 — an unpaid $895 order rendered its Balance as `—`. The dash is the
     // "not computed yet" marker, so a screen showing it for a real debt is claiming not to
     // know. These pin the two halves: a real zero prints, and an unknown falls back.
-    describe('hero money trio (issue #147)', () => {
+    describe('hero money trio (bc-aidp-next-golive#186)', () => {
         const form = (
             record: Partial<mjBizAppsOrdersOrderHeaderEntity> | null,
             pricing: MJOPricingState = { Result: null, Loading: false, Error: null },

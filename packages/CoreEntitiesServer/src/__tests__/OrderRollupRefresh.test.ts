@@ -7,7 +7,7 @@ import type { ResolvedOrderRollups } from '../OrderRollupBehavior.js';
 const here = import.meta.dirname;
 
 /**
- * The plumbing half of issue #147. `MergeOrderRollups` decides WHICH values win;
+ * The plumbing half of issue bc-aidp-next-golive#186. `MergeOrderRollups` decides WHICH values win;
  * `refreshRolledUpTotals` is what puts them back on the entity, and how it does that is
  * load-bearing twice over:
  *
