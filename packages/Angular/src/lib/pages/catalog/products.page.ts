@@ -5,7 +5,16 @@ import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-e
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
-import { GetChargeTypes, GetProducts, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
+import {
+    GetChargeTypes,
+    GetProductCategories,
+    GetProducts,
+    GetProductTypes,
+    GetTaxExemptions,
+    GetTaxJurisdictions,
+    GetTaxNexus,
+    GetTaxRates,
+} from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import {
     IsBefore,
@@ -198,6 +207,11 @@ export class MJOProductsPageComponent implements OnInit {
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
         this.ProductEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.Product) || null;
+        // `GetProductTypes` and `GetProductCategories` existed, were exported, and nothing called
+        // them -- so both panels rendered their empty state over a database that had rows.
+        const [types, categories] = await Promise.all([GetProductTypes(), GetProductCategories()]);
+        this.Types = types as unknown as Array<Record<string, unknown>>;
+        this.Categories = categories as unknown as Array<Record<string, unknown>>;
         this.cdr.detectChanges();
     }
 
