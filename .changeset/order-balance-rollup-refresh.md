@@ -1,5 +1,6 @@
 ---
-"@mj-biz-apps/orders": minor
+"@mj-biz-apps/orders-core-entities-server": minor
+"@mj-biz-apps/orders-ng": minor
 ---
 
 Stop the order Balance rendering as a dash, and stop it erasing itself (bc-aidp-next-golive#186).
