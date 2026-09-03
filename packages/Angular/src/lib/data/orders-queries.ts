@@ -1025,6 +1025,82 @@ export async function GetSubscriptionTerms(
     );
 }
 
+/**
+ * The two facts that decide whether a renewal's term start is dictated by the rules.
+ *
+ * Mirrors the server's `loadSubscriptionState` deliberately: a screen that predicts the term start
+ * differently from the engine that computes it is worse than a screen that predicts nothing.
+ */
+export interface MJOSubscriptionContinuation {
+    Status: string;
+    /** End of the LATEST coverage term — not `Subscription.EndDate`, which is something else. */
+    LatestTermEnd: Date | null;
+}
+
+/**
+ * Where coverage on `subscriptionID` currently ends, and whether it is live.
+ *
+ * `LatestTermEnd` comes from the highest-numbered `SubscriptionTerm` rather than from
+ * `Subscription.EndDate`, which is the reachable-looking wrong answer: that column is the FINAL
+ * service date after a cancellation or migration, so it is null on every healthy subscription and
+ * would read as "no coverage" for exactly the subscriptions that have some.
+ *
+ * Two reads because they answer two questions, and neither is derivable from the other: a canceled
+ * subscription still has terms, and a live one's coverage end lives only on its latest term.
+ */
+export async function GetSubscriptionContinuation(
+    subscriptionID: string,
+    user?: UserInfo,
+): Promise<MJOSubscriptionContinuation | null> {
+    if (!UUID_PATTERN.test(subscriptionID)) return null;
+
+    const subs = await run<mjBizAppsOrdersSubscriptionEntity>(
+        MJO_ENTITIES.Subscription,
+        [`ID = '${subscriptionID}'`],
+        'ID',
+        1,
+        user,
+    );
+    const sub = subs[0];
+    if (!sub) return null;
+
+    // Newest term first, one row: the same ordering the server reads, so the two agree about which
+    // term is "latest" even for a subscription whose terms were not written in order.
+    const terms = await run<mjBizAppsOrdersSubscriptionTermEntity>(
+        MJO_ENTITIES.SubscriptionTerm,
+        [`SubscriptionID = '${subscriptionID}'`],
+        'TermNumber DESC',
+        1,
+        user,
+    );
+
+    return { Status: sub.Status, LatestTermEnd: terms[0]?.EndDate ?? null };
+}
+
+/**
+ * When a term continuing this coverage would begin — the day after it ends — or null when no
+ * coverage dictates the start.
+ *
+ * Null is the answer for a subscription that is NOT live, and for a live one with no terms yet.
+ * Both cases run the ordinary start rules on the server (`ComputeAction` only forces
+ * `ExtendExisting` for an `Active`/`Trialing` target, and an extension with no prior term end falls
+ * through to `ComputeStartDate`), which means a stated start is honored and a caller must not
+ * present the start as dictated.
+ */
+export function ContinuationStartFrom(state: MJOSubscriptionContinuation | null): Date | null {
+    if (!state) return null;
+    if (state.Status !== 'Active' && state.Status !== 'Trialing') return null;
+    if (!state.LatestTermEnd) return null;
+
+    const end = state.LatestTermEnd instanceof Date ? state.LatestTermEnd : new Date(state.LatestTermEnd);
+    if (Number.isNaN(end.getTime())) return null;
+
+    // UTC components on purpose. A SQL `date` round-trips as UTC midnight, so reading LOCAL parts
+    // west of Greenwich would land a day early and hand back the day coverage ends as the day the
+    // next term starts.
+    return new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() + 1));
+}
+
 /** What happened to a subscription, newest first. */
 export async function GetSubscriptionEvents(
     subscriptionID: string,

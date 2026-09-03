@@ -190,6 +190,12 @@
     font-variant-numeric: tabular-nums;
 }
 
+/* A dictated date is a FACT, not a disabled input: shown in the read-mode weight in edit mode too,
+   so nothing on the card suggests a control that has been switched off. */
+.mjo-ol-term__value.is-dictated {
+    color: var(--mj-text-secondary);
+}
+
 .mjo-ol-term__reset {
     border: 0;
     background: transparent;
