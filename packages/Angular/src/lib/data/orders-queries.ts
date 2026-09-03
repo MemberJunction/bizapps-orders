@@ -1146,7 +1146,7 @@ async function loadCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> 
     ]);
     const byProduct = new Map<string, number>();
     for (const price of prices) {
-        if (!byProduct.has(price.ProductID)) byProduct.set(price.ProductID, price.Amount);
+        if (price.ProductID && !byProduct.has(price.ProductID)) byProduct.set(price.ProductID, price.Amount);
     }
     const typesById = new Map(types.map((type) => [type.ID, type]));
     return products.map((product) =>

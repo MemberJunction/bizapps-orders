@@ -183,8 +183,8 @@ async function addCollidingPriceRaw(
 ): Promise<void> {
   await TxQuery(ctx,
     `INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
-       (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status, Description)
-     VALUES ('${randomUUID()}','${productID}','PerUnit','Standard',${opts.amount},'2020-01-01',
+       (ID, ProductID, Name, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status, Description)
+     VALUES ('${randomUUID()}','${productID}','${opts.description}','PerUnit','Standard',${opts.amount},'2020-01-01',
              ${opts.priority},'Active','${opts.description}')`);
 }
 

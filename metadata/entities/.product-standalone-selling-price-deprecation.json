@@ -1,0 +1,38 @@
+[
+  {
+    "_comments": [
+      "Demotes MJ_BizApps_Orders: Products.StandaloneSellingPrice to descriptive-only.",
+      "Quoting and bundle allocation already read ProductPrice rows. This column was seeded as a",
+      "list price and shown on the product hero, which created a second source of truth.",
+      "NOT dropped: Open App no-break policy forbids dropping columns within a published major.",
+      "IncludeInGeneratedForm = 0 is what keeps it off new generated forms.",
+      "AutoUpdateDescription = 0 so CodeGen does not restore the old column comment."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Products"
+    },
+    "relatedEntities": {
+      "MJ: Entity Fields": [
+        {
+          "fields": {
+            "Status": "Deprecated",
+            "IncludeInGeneratedForm": false,
+            "DefaultInView": false,
+            "AutoUpdateDescription": false,
+            "Description": "DEPRECATED — do not use as a list price or quote. What someone pays is MJ_BizApps_Orders: Product Prices (Name, Amount, Applicability). Bundle SSP allocation already reads those rows. Column retained so historical SPs and existing data still validate; do not populate it for new products."
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products&Name=StandaloneSellingPrice"
+          },
+          "sync": {
+            "lastModified": "2026-09-03T22:33:23.201Z",
+            "checksum": "83e17f5b4cb3102ea3c77012bff521fd69748a4b076791ca4942d23276344d0e"
+          }
+        }
+      ]
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products"
+    }
+  }
+]

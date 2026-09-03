@@ -73,18 +73,23 @@ export class ProductPriceEntityServer extends mjBizAppsOrdersProductPriceEntity 
     public override async ValidateAsync(): Promise<ValidationResult> {
         const result = await super.ValidateAsync();
         if (this.Status !== 'Active') return result; // an inactive rule collides with nothing
+        const productCategoryID = this.Get('ProductCategoryID') as string | null;
+        if (!this.ProductID && !productCategoryID) return result;
 
         // Statically imported. A dynamic `import()` here violated the house rule and bought nothing:
         // `@memberjunction/core` is already imported at the top of this file for BaseEntity.
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const listClause = this.PriceListID ? `PriceListID = '${this.PriceListID}'` : `PriceListID IS NULL`;
         const notSelf = this.IsSaved ? ` AND ID <> '${this.ID}'` : '';
+        const scope = this.ProductID
+            ? `ProductID = '${this.ProductID}'`
+            : `ProductCategoryID = '${productCategoryID}'`;
 
         const res = await rv.RunView<SiblingRow>(
             {
                 EntityName: PRODUCT_PRICE_ENTITY,
                 ExtraFilter:
-                    `ProductID = '${this.ProductID}' AND Status = 'Active' AND ${listClause} ` +
+                    `${scope} AND Status = 'Active' AND ${listClause} ` +
                     `AND FeeType = '${String(this.FeeType).replace(/'/g, "''")}' ` +
                     `AND Priority = ${Number(this.Priority)}${notSelf}`,
                 ResultType: 'simple',
@@ -110,7 +115,7 @@ export class ProductPriceEntityServer extends mjBizAppsOrdersProductPriceEntity 
                 new ValidationErrorInfo(
                     'ProductPriceEntityServer.ValidateAsync',
                     `This price rule collides with an existing one: both have priority ${this.Priority}, overlapping ` +
-                        `quantity bands and overlapping effective windows for the same product, price list and fee ` +
+                        `quantity bands and overlapping effective windows for the same product or category, price list and fee ` +
                         `type. The other is ${clash.Description?.trim() || clash.ID}. Pricing resolves by highest ` +
                         `priority and refuses to break a tie, so an order using either quantity would fail. Give one ` +
                         `of them a different priority, narrow a quantity band, or separate the date windows.`,

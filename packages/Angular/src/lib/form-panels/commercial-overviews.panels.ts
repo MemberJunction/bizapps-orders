@@ -70,7 +70,7 @@ export class PriceListOverviewPanel extends BaseFormPanel<mjBizAppsOrdersPriceLi
                 Title: 'Sample prices',
                 Icon: 'fa-solid fa-list',
                 Headers: ['Product', 'Model', 'Amount', 'Status'],
-                Rows: prices.map((row) => [row.Product, row.PricingModel, FormatMoney(row.Amount), row.Status]),
+                Rows: prices.map((row) => [row.Product ?? '', row.PricingModel, FormatMoney(row.Amount), row.Status]),
             },
             {
                 Title: 'Resolution reminder',

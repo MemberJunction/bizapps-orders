@@ -25,5 +25,16 @@
       "lastModified": "2026-09-02T03:26:36.492Z",
       "checksum": "3980a054b5d6fcb2805ae6a0b030e114ef8da0fb49036cc2ea1cd1b3823228cd"
     }
+  },
+  {
+    "_comments": [
+      "ProductPrice.Name is the staff-facing identity of a price (Member, Non-member). Without DefaultInView the grid is still Description + amount."
+    ],
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Product Prices&Name=Name"
+    }
   }
 ]

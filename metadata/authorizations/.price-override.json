@@ -1,0 +1,50 @@
+[
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Price.Override",
+      "ParentID": null,
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Parent grant for changing an order line away from the engine price. Child authorizations are OverrideList (pick another named applicable price) and OverrideAny (type an amount)."
+    },
+    "primaryKey": {
+      "ID": "D77D8593-04A1-46E4-B443-66B954F095B9"
+    },
+    "sync": {
+      "lastModified": "2026-09-03T19:53:57.192Z",
+      "checksum": "630c7bdddeefe48742f0752a1aa4515e41ce0e9ec556a7254eb2b67105f38273"
+    }
+  },
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Price.OverrideList",
+      "ParentID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Price.Override",
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Pick another named applicable price (product or inherited category, When-matching). UnitPrice must match that row. Does not allow typing an arbitrary amount."
+    },
+    "primaryKey": {
+      "ID": "D43AC18D-EB2B-4DE4-9D95-050EA7501D5C"
+    },
+    "sync": {
+      "lastModified": "2026-09-03T19:53:57.204Z",
+      "checksum": "bf8c47fbdadcf442ecf240560513e11eaa7759d22c5c69cc2158994d523209fa"
+    }
+  },
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Price.OverrideAny",
+      "ParentID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Price.Override",
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Type any unit price on an unbooked line. Implies OverrideList. Clears ProductPriceID (or records OverrideKind=Amount) and still writes the engine price on the component breakdown."
+    },
+    "primaryKey": {
+      "ID": "A308824E-A9D1-45CD-8490-FE28B6284E3B"
+    },
+    "sync": {
+      "lastModified": "2026-09-03T19:53:57.216Z",
+      "checksum": "d073fc91957cd1d4e0c2e346f4b83f818df12e33a303f74afb32cd9932865a42"
+    }
+  }
+]

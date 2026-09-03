@@ -6,6 +6,7 @@
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { DragDropModule } from '@angular/cdk/drag-drop';
 
 // MemberJunction Form Primitives
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
@@ -14,6 +15,7 @@ import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 
 
 import { MJButtonDirective, MJTabNavComponent } from '@memberjunction/ng-ui-components';
+import { FilterBuilderModule } from '@memberjunction/ng-filter-builder';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
 
 // Custom Form Components
@@ -51,11 +53,13 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
     imports: [
         CommonModule,
         FormsModule,
+        DragDropModule,
         BaseFormsModule,
         EntityViewerModule,
         LinkDirectivesModule,
         MJButtonDirective,
         MJTabNavComponent,
+        FilterBuilderModule,
         MJOOrderLinesEditorComponent,
         DeferredRevenueWaterfallModule,
     ],

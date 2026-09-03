@@ -34,6 +34,7 @@ export * from './line-quantity';
  */
 export * from './OrderHeaderEntity';
 export * from './OrderLineEntity';
+export * from './ProductPriceEntity';
 export * from './OrderLineExtensionCompanion';
 export * from './CustomerPaymentMethodEntity';
 export * from './PaymentHeaderEntity';
@@ -86,8 +87,10 @@ export * from './pricing/PromotionBehavior';
 export * from './pricing/ChargeEngine';
 export * from './pricing/PromotionEngine';
 export * from './pricing/OrderPricingService';
+export * from './pricing/applicability';
+export * from './pricing/inheritPrices';
+export * from './pricing/priceOverride';
 
-/**
 /**
  * `ToISODate` and friends — reading a date cell that may be a string or a `Date` and getting the
  * same calendar day back, on both sides of the wire.
