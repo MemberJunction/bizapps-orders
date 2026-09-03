@@ -83,10 +83,25 @@
                     </div>
                 </div>
             } @else {
-                <div class="mjo-price-list">
+                <div
+                    class="mjo-price-list"
+                    cdkDropList
+                    [cdkDropListDisabled]="!EditMode"
+                    (cdkDropListDropped)="OnPriceDrop($event)">
                     @for (row of VisiblePrices; track row.ID) {
-                        <article class="mjo-offer" [class.open]="ExpandedPriceID === row.ID" [class.inherited]="row.Inherited">
-                            <button type="button" class="mjo-offer-h" (click)="TogglePrice(row.ID)">
+                        <article
+                            class="mjo-offer"
+                            cdkDrag
+                            [cdkDragDisabled]="!EditMode || row.Inherited"
+                            [class.open]="ExpandedPriceID === row.ID && PriceCanExpand(row)"
+                            [class.selected]="SelectedPriceID === row.ID"
+                            [class.inherited]="row.Inherited">
+                            <button type="button" class="mjo-offer-h" (click)="TogglePrice(row)">
+                                @if (EditMode && !row.Inherited) {
+                                    <span class="mjo-offer-grip" cdkDragHandle title="Drag to change rank">
+                                        <i class="fa-solid fa-grip-vertical"></i>
+                                    </span>
+                                }
                                 <span class="mjo-offer-amt">{{ FormatCurrency(row.Amount) }}</span>
                                 <span class="mjo-offer-copy">
                                     <span class="mjo-offer-name">{{ row.Name }}</span>
@@ -96,7 +111,7 @@
                                 </span>
                                 <span class="mjo-offer-from" [class.inherited]="row.Inherited">{{ row.SourceLabel }}</span>
                             </button>
-                            @if (ExpandedPriceID === row.ID) {
+                            @if (ExpandedPriceID === row.ID && PriceCanExpand(row)) {
                                 <div class="mjo-offer-body" (click)="$event.stopPropagation()">
                                     @if (row.Inherited) {
                                         <p class="mjo-inherit-note">
@@ -127,12 +142,9 @@
                                                 </label>
                                             </div>
                                         }
-                                        @if (row.WhenText && WhenEditorPriceID !== row.ID) {
+                                        @if (EditMode && row.WhenText && WhenEditorPriceID !== row.ID) {
                                             <div class="mjo-when-read">
-                                                <span>{{ row.WhenText }}</span>
-                                                @if (EditMode) {
-                                                    <button type="button" class="mjo-btn-subtle" (click)="OpenWhenEditor(row)">Edit When</button>
-                                                }
+                                                <button type="button" class="mjo-btn-subtle" (click)="OpenWhenEditor(row)">Edit When</button>
                                             </div>
                                         } @else if (EditMode && WhenEditorPriceID !== row.ID) {
                                             <button type="button" class="mjo-btn-subtle" (click)="OpenWhenEditor(row)">+ When</button>

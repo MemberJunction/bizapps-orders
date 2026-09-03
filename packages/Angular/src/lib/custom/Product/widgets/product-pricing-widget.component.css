@@ -597,6 +597,18 @@
     overflow: hidden;
 }
 
+.mjo-offer.selected {
+    border-color: var(--mj-brand-primary, #38bdf8);
+    box-shadow: inset 0 0 0 1px var(--mj-brand-primary, #38bdf8);
+}
+
+.mjo-offer-grip {
+    color: var(--mj-text-muted, #94a3b8);
+    cursor: grab;
+    padding: 0 4px 0 0;
+    display: inline-flex;
+}
+
 .mjo-offer-h {
     width: 100%;
     display: grid;
@@ -609,6 +621,10 @@
     color: inherit;
     text-align: left;
     cursor: pointer;
+}
+
+.mjo-offer-h:has(.mjo-offer-grip) {
+    grid-template-columns: 18px 108px 1fr auto;
 }
 
 .mjo-offer-h:hover {

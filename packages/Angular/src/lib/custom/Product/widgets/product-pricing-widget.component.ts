@@ -19,6 +19,7 @@ import {
 } from '@memberjunction/ng-filter-builder';
 import { GetGlobalObjectStore } from '@memberjunction/global';
 import { NavigationService } from '@memberjunction/ng-shared';
+import { CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import type { FormContext, FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import type { RunViewParams } from '@memberjunction/core';
 import type {
@@ -138,6 +139,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     public IsAdvancedGridView = false;
     public QuoteDrawerOpen = false;
     public ExpandedPriceID: string | null = null;
+    public SelectedPriceID: string | null = null;
     public WhenEditorPriceID: string | null = null;
     public AdvancedEditingID: string | null = null;
     public WhenFilter: CompositeFilterDescriptor | null = null;
@@ -247,10 +249,16 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             WhenText: this.WhenSentence(p),
             Record: p,
         });
-        return [
-            ...productRows.map((p) => toCard(p, false)),
-            ...inherited.map((p) => toCard(p, true)),
-        ];
+        const productCards = productRows
+            .map((p) => toCard(p, false))
+            .sort((a, b) => (Number(b.Record.Priority) || 0) - (Number(a.Record.Priority) || 0));
+        return [...productCards, ...inherited.map((p) => toCard(p, true))];
+    }
+
+    public PriceCanExpand(row: PriceCard): boolean {
+        if (row.Inherited) return this.EditMode;
+        if (this.EditMode) return true;
+        return this.HasAdvanced(row.Record);
     }
 
     public PriceDisplayName(p: mjBizAppsOrdersProductPriceEntity): string {
@@ -339,8 +347,30 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.cdr?.markForCheck();
     }
 
-    public TogglePrice(id: string): void {
-        this.ExpandedPriceID = this.ExpandedPriceID === id ? null : id;
+    public TogglePrice(row: PriceCard): void {
+        this.SelectedPriceID = row.ID;
+        if (!this.PriceCanExpand(row)) {
+            this.ExpandedPriceID = null;
+            this.cdr?.markForCheck();
+            return;
+        }
+        this.ExpandedPriceID = this.ExpandedPriceID === row.ID ? null : row.ID;
+        this.cdr?.markForCheck();
+    }
+
+    public async OnPriceDrop(event: CdkDragDrop<PriceCard[]>): Promise<void> {
+        if (!this.EditMode) return;
+        const ranked = this.VisiblePrices.filter((r) => !r.Inherited);
+        if (event.previousIndex === event.currentIndex) return;
+        if (event.previousIndex < 0 || event.currentIndex < 0) return;
+        if (event.previousIndex >= ranked.length || event.currentIndex >= ranked.length) return;
+        moveItemInArray(ranked, event.previousIndex, event.currentIndex);
+        let priority = ranked.length * 10;
+        for (const row of ranked) {
+            row.Record.Priority = priority;
+            priority -= 10;
+        }
+        await this.saveProductGraph();
         this.cdr?.markForCheck();
     }
 
