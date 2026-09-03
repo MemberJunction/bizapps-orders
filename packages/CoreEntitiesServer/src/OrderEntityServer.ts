@@ -67,6 +67,12 @@ import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID } from './sql-guards.js';
+import {
+    MergeOrderRollups,
+    ORDER_ROLLUP_FIELDS,
+    type OrderRollups,
+    type ResolvedOrderRollups,
+} from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
 import { AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
@@ -380,6 +386,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // full path below, inside the transaction, so a brand-new Draft with no lines must
         // not take this shortcut. Existing drafts with no line edits (Notes, payer, …) can.
         if (!booking && !this.Lines.Dirty && this.IsSaved) {
+            // A HEADER-ONLY UPDATE MUST NOT CARRY THE CALLER'S IDEA OF THE ROLLUPS.
+            //
+            // This is the path a browser takes to change Notes or a payer, and it is where the
+            // damage used to happen. `SaveEntityGraphOperation.rebuildRoot` loads the row and then
+            // overlays the client's fields on top, so a client holding a stale `Balance = null`
+            // reinstates that NULL here — and `spUpdateOrderHeader` obeys it, via `@Balance_Clear=1`,
+            // by erasing a total the trigger computed correctly. Re-reading the row first means the
+            // rollups this save sends are the rollups the row already holds, so the write is a no-op
+            // on those four columns no matter what the caller believed about them.
+            await this.refreshRolledUpTotals();
             return super.Save(options);
         }
 
@@ -541,6 +557,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // ordinary line issues, a reversal line voids what the origin issued.
                 await this.issueGiftCards(lines, options);
             }
+
+            // LAST WRITE WINS, AND THE DATABASE DID THE LAST WRITE.
+            //
+            // Everything above that touched a line or a payment moved a rollup the triggers own, and
+            // `this` has not heard about any of it — the header was written before the lines existed.
+            // Adopt the row's values before the transaction closes, or the entity handed back to the
+            // caller carries a NULL Balance that renders as a dash and erases itself on the next save.
+            await this.refreshRolledUpTotals();
 
             await dbProvider.CommitTransaction();
             return true;
@@ -1256,22 +1280,62 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /** The header's rollup columns as the DATABASE now holds them, after the payment triggers ran. */
-    private async readBalanceFromRow(): Promise<{ Balance: number | null; TotalGross: number | null }> {
+    private async readBalanceFromRow(): Promise<ResolvedOrderRollups> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const result = await rv.RunView<{ Balance: number | null; TotalGross: number | null }>(
+        const result = await rv.RunView<OrderRollups>(
             {
                 EntityName: ORDER_ENTITY,
-                ExtraFilter: `ID = '${this.ID}'`,
-                Fields: ['Balance', 'TotalGross'],
+                ExtraFilter: `ID = '${RequireUUID(this.ID, 'ID')}'`,
+                Fields: [...ORDER_ROLLUP_FIELDS],
                 ResultType: 'simple',
             },
             this.ContextCurrentUser,
         );
-        const row = result?.Results?.[0];
-        return {
-            Balance: row?.Balance ?? this.Balance ?? null,
-            TotalGross: row?.TotalGross ?? this.TotalGross ?? null,
-        };
+        return MergeOrderRollups(result?.Results?.[0], {
+            TotalGross: this.TotalGross,
+            AmountPaid: this.AmountPaid,
+            Balance: this.Balance,
+            FulfillmentStatus: this.FulfillmentStatus,
+        });
+    }
+
+    /**
+     * Copy the trigger-maintained rollups back onto THIS object, so the entity a caller is handed
+     * agrees with the row that was just written.
+     *
+     * ## Why this is not optional
+     *
+     * `TotalGross`, `AmountPaid`, `Balance` and `FulfillmentStatus` are maintained by
+     * `spRecalcOrderHeaderTotals`, which the OrderLine and PaymentLine triggers fire. The header is
+     * written BEFORE the lines exist (see `super.Save()` above), so at that moment `Balance` is
+     * legitimately NULL — and nothing since has told this object otherwise. Two consequences, and
+     * the second is the expensive one:
+     *
+     *  1. `SaveEntityGraphOperation` returns `root.GetAll()`, so a browser adopts that NULL and the
+     *     Balance tile renders the "not computed" dash on a freshly-confirmed $895 order.
+     *  2. Every SP-parameter field is sent on the NEXT update regardless of dirty state, and a
+     *     nullable column carrying NULL emits `@<Col>_Clear=1` — which `spUpdateOrderHeader` honours
+     *     by writing NULL over the value the trigger computed. So the stale NULL does not merely
+     *     display wrong, it ERASES `TotalGross` and `Balance` on the following save, and a stale
+     *     `AmountPaid = 0` overwrites a captured payment. That is the shape the reported casualty
+     *     had: Confirmed, one line and a captured payment that agreed with each other, and a header
+     *     whose totals had been nulled out from under them.
+     *
+     * Reading four columns back is cheaper than either failure, so it happens on every path that
+     * writes lines or payments — not only on booking.
+     *
+     * `ResetNeverSetFlag()` first because these are the kind of field that may be marked read-only
+     * at the metadata layer; the EntityField setter silently drops a write to a read-only field
+     * unless it has never been set. Same reason, and same call, as `BaseEntity.InnerLoad`. The
+     * values are applied with `replaceOldValues` so they land as the record's PRISTINE state — a
+     * rollup the database owns must never come back looking like a pending user edit.
+     */
+    private async refreshRolledUpTotals(): Promise<void> {
+        const fresh = await this.readBalanceFromRow();
+        for (const name of ORDER_ROLLUP_FIELDS) {
+            this.GetFieldByName(name)?.ResetNeverSetFlag();
+        }
+        this.SetMany(fresh, true, true, true);
     }
 
     /**
