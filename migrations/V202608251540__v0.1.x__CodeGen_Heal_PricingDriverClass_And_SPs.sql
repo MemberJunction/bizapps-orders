@@ -687,7 +687,11 @@ INSERT INTO [${mjSchema}].[EntityField] (
 
 
 END;
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE [ID] = '282102e7-ac8b-4d20-b92e-c23b11052cd3')
+-- Guarded on the UNIQUE INDEX as well as the ID, matching the MaxQuantityPerLine guard earlier in
+-- this same file. An ID-only test passes when the (EntityID, Name) pair already exists under a
+-- DIFFERENT ID, and the insert then violates UQ_EntityField_EntityID_Name and stops the chain.
+IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE [ID] = '282102e7-ac8b-4d20-b92e-c23b11052cd3'
+    OR ([EntityID] = 'B090A662-A97A-4748-B109-2FA716C14651' AND [Name] = 'MaxQuantityPerLine'))
 BEGIN
 /* Create IS-A parent field MaxQuantityPerLine on MJ_BizApps_Orders: Event Products */
 INSERT INTO [${mjSchema}].[EntityField] (
