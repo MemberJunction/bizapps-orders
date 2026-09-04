@@ -48,14 +48,12 @@
                 <span class="mjo-stat-label">Product Type</span>
                 <span class="mjo-stat-val">{{ ProductTypeName }}</span>
             </div>
-            <div class="mjo-stat-block">
-                <span class="mjo-stat-label">Revenue Recognition</span>
-                <span class="mjo-stat-val">{{ RevenueRecognitionName }}</span>
-            </div>
-            <div class="mjo-stat-block">
-                <span class="mjo-stat-label">{{ HasEventExtension ? 'Event Schedule' : 'Tax Status' }}</span>
-                <span class="mjo-stat-val">{{ HasEventExtension ? EventScheduleSummary : (record.IsTaxable ? 'Taxable' : 'Tax Exempt') }}</span>
-            </div>
+            @if (HasEventExtension) {
+                <div class="mjo-stat-block">
+                    <span class="mjo-stat-label">Event Schedule</span>
+                    <span class="mjo-stat-val">{{ EventScheduleSummary }}</span>
+                </div>
+            }
             <div class="mjo-stat-block">
                 <span class="mjo-stat-label">Price List Assignments</span>
                 <span class="mjo-stat-val">{{ GetSectionRowCount('productPrices') || 0 }} Rules</span>

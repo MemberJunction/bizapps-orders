@@ -11,7 +11,8 @@ describe('CatalogOptionFrom', () => {
                 ProductType: 'Event',
                 ProductTypeID: 'type-event',
                 Company: 'Meridian',
-                StandaloneSellingPrice: 0,
+                CompanyID: 'co-1',
+                ProductCategoryID: 'cat-1',
                 IsTaxable: true,
                 MaxQuantityPerLine: 1,
             },
@@ -22,6 +23,8 @@ describe('CatalogOptionFrom', () => {
         expect(option.ProductTypeID).toBe('type-event');
         expect(option.OrderLineExtensionEntity).toBe('MJ_BizApps_Orders: Event Order Lines');
         expect(option.ListPrice).toBe(450);
+        expect(option.CompanyID).toBe('co-1');
+        expect(option.ProductCategoryID).toBe('cat-1');
         expect(option.Taxable).toBe(true);
         expect(option.MaxQuantityPerLine).toBe(1);
     });
@@ -35,7 +38,8 @@ describe('CatalogOptionFrom', () => {
                 ProductType: '',
                 ProductTypeID: 'type-missing',
                 Company: 'Meridian',
-                StandaloneSellingPrice: 1,
+                CompanyID: 'co-1',
+                ProductCategoryID: null,
                 IsTaxable: false,
                 MaxQuantityPerLine: null,
             },
@@ -54,7 +58,8 @@ describe('CatalogOptionFrom', () => {
                 ProductType: 'Goods',
                 ProductTypeID: 'type-goods',
                 Company: 'Meridian',
-                StandaloneSellingPrice: 12,
+                CompanyID: 'co-1',
+                ProductCategoryID: null,
                 IsTaxable: false,
                 MaxQuantityPerLine: null,
             },
@@ -63,6 +68,26 @@ describe('CatalogOptionFrom', () => {
         );
 
         expect(option.OrderLineExtensionEntity).toBeNull();
-        expect(option.ListPrice).toBe(12);
+        expect(option.ListPrice).toBe(0);
+    });
+
+    it('uses the ProductPrice figure, not StandaloneSellingPrice', () => {
+        const option = CatalogOptionFrom(
+            {
+                ID: 'prod-4',
+                Name: 'Member Dues',
+                SKU: 'DUE-1',
+                ProductType: 'Dues',
+                ProductTypeID: 'type-dues',
+                Company: 'Meridian',
+                CompanyID: 'co-1',
+                ProductCategoryID: 'cat-dues',
+                IsTaxable: false,
+                MaxQuantityPerLine: null,
+            },
+            { OrderLineExtensionEntity: null },
+            150,
+        );
+        expect(option.ListPrice).toBe(150);
     });
 });

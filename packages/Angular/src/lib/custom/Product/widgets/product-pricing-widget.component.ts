@@ -11,11 +11,19 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Metadata, RunView, CompositeKey, EntityFieldTSType } from '@memberjunction/core';
 import {
-    createEmptyFilter,
+    Metadata,
+    RunView,
+    CompositeKey,
+    EntityFieldTSType,
+    type IMetadataProvider,
+    type UserInfo,
+} from '@memberjunction/core';
+import {
+    CreateEmptyFilter,
     type CompositeFilterDescriptor,
     type FilterFieldInfo,
+    type FilterSource,
 } from '@memberjunction/ng-filter-builder';
 import { GetGlobalObjectStore } from '@memberjunction/global';
 import { NavigationService } from '@memberjunction/ng-shared';
@@ -24,11 +32,18 @@ import type { FormContext, FormNavigationEvent } from '@memberjunction/ng-base-f
 import type { RunViewParams } from '@memberjunction/core';
 import type {
     mjBizAppsOrdersProductEntity,
-    mjBizAppsOrdersProductPriceEntity,
     mjBizAppsOrdersPriceListEntity
 } from '@mj-biz-apps/orders-entities';
+import {
+    ListApplicablePrices,
+    PRICE_APPLICABILITY_SOURCES,
+    PriceResolutionError,
+    ProductPriceEntity,
+    ResolvePrice,
+    loadApplicabilityContext,
+    priceApplies,
+} from '@mj-biz-apps/orders-entities';
 import { FormatMoney } from '../../../panels/money-format';
-import { PRICE_APPLICABILITY_SOURCES, priceApplies } from '@mj-biz-apps/orders-entities';
 
 export interface PriceChannel {
     ID: string | null;
@@ -39,7 +54,7 @@ export interface PriceChannel {
 }
 
 export interface LadderTierRow {
-    Record: mjBizAppsOrdersProductPriceEntity;
+    Record: ProductPriceEntity;
     ID: string;
     TierNumber: number;
     BracketLabel: string;
@@ -79,22 +94,18 @@ export interface PriceCard {
     Inherited: boolean;
     SourceLabel: string;
     WhenText: string;
-    Record: mjBizAppsOrdersProductPriceEntity;
+    Record: ProductPriceEntity;
 }
 
-/** Dotted Source.Field labels for the When sentence. */
-const PRICE_WHEN_FIELDS: Array<{ name: string; displayName: string }> = [
-    { name: 'BillToOrganization.Type', displayName: 'Bill-to organization · Type' },
-    { name: 'BillToOrganization.Status', displayName: 'Bill-to organization · Status' },
-    { name: 'BillToOrganization.Name', displayName: 'Bill-to organization · Name' },
-    { name: 'BillToPerson.Title', displayName: 'Bill-to person · Title' },
-    { name: 'BillToPerson.Status', displayName: 'Bill-to person · Status' },
-    { name: 'ShipToOrganization.Type', displayName: 'Ship-to organization · Type' },
-    { name: 'Order.Status', displayName: 'Order · Status' },
-    { name: 'Order.OrderDate', displayName: 'Order · Date' },
-    { name: 'Product.SKU', displayName: 'Product · SKU' },
-    { name: 'Product.Status', displayName: 'Product · Status' },
-];
+export interface QuotePartySlot {
+    key: string;
+    label: string;
+    entityName: string;
+    id: string | null;
+    display: string;
+    query: string;
+    hits: Array<{ ID: string; Label: string }>;
+}
 
 /**
  * World-Class Product Pricing Matrix & Volume Ladder Widget (Option 1).
@@ -116,7 +127,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     @Output() public Navigate = new EventEmitter<FormNavigationEvent>();
     @Output() public PriceChanged = new EventEmitter<void>();
-    @Output() public TierAdded = new EventEmitter<mjBizAppsOrdersProductPriceEntity>();
+    @Output() public TierAdded = new EventEmitter<ProductPriceEntity>();
 
     private cdr?: ChangeDetectorRef;
     private navService?: NavigationService;
@@ -143,12 +154,27 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     public WhenEditorPriceID: string | null = null;
     public AdvancedEditingID: string | null = null;
     public WhenFilter: CompositeFilterDescriptor | null = null;
-    public WhenFields: FilterFieldInfo[] = [];
+    public WhenBuilderSources: FilterSource[] = [];
+    public QuoteAsOf = new Date().toISOString().slice(0, 10);
+    public QuoteOrderStatus = '';
+    public QuoteBusy = false;
+    private quoteTimer?: ReturnType<typeof setTimeout>;
+    private readonly quoteSearchTimers = new Map<string, ReturnType<typeof setTimeout>>();
     public NewPriceName = 'Base';
     public NewPriceAmount = 0;
-    public QuoteOrgType = 'Member';
+    public QuoteParties: QuotePartySlot[] = PRICE_APPLICABILITY_SOURCES
+        .filter((s) => s.key !== 'Order' && s.key !== 'Product')
+        .map((s) => ({
+            key: s.key,
+            label: s.label,
+            entityName: s.entityName,
+            id: null,
+            display: '',
+            query: '',
+            hits: [],
+        }));
     public QuoteResult = { AmountText: '—', Why: '', Skipped: '' };
-    public InheritedRecords: mjBizAppsOrdersProductPriceEntity[] = [];
+    public InheritedRecords: ProductPriceEntity[] = [];
 
     public ActiveToast: WidgetToast | null = null;
     private toastTimer?: ReturnType<typeof setTimeout>;
@@ -158,7 +184,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     ];
     public SelectedChannelID: string | null = null;
 
-    public AllPriceRecords: mjBizAppsOrdersProductPriceEntity[] = [];
+    public AllPriceRecords: ProductPriceEntity[] = [];
     public LadderTiers: LadderTierRow[] = [];
     public StepBars: StepCurveBar[] = [];
 
@@ -226,21 +252,21 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         return this.Channels.some((c) => c.ID != null);
     }
 
-    public get PricesForChannel(): mjBizAppsOrdersProductPriceEntity[] {
+    public get PricesForChannel(): ProductPriceEntity[] {
         return this.AllPriceRecords.filter((p) =>
             this.SelectedChannelID === null ? !p.PriceListID : p.PriceListID === this.SelectedChannelID,
         );
     }
 
     public get VisiblePrices(): PriceCard[] {
-        const inChannel = (p: mjBizAppsOrdersProductPriceEntity) =>
+        const inChannel = (p: ProductPriceEntity) =>
             this.SelectedChannelID === null ? !p.PriceListID : p.PriceListID === this.SelectedChannelID;
         const productRows = this.AllPriceRecords.filter(inChannel);
         const names = new Set(productRows.map((p) => this.PriceDisplayName(p).trim().toLowerCase()));
         const inherited = this.InheritedRecords.filter(
             (p) => inChannel(p) && !names.has(this.PriceDisplayName(p).trim().toLowerCase()),
         );
-        const toCard = (p: mjBizAppsOrdersProductPriceEntity, inherited: boolean): PriceCard => ({
+        const toCard = (p: ProductPriceEntity, inherited: boolean): PriceCard => ({
             ID: p.ID,
             Name: this.PriceDisplayName(p),
             Amount: Number(p.Amount) || 0,
@@ -261,18 +287,18 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         return this.HasAdvanced(row.Record);
     }
 
-    public PriceDisplayName(p: mjBizAppsOrdersProductPriceEntity): string {
-        const n = (p as { Name?: string }).Name?.trim();
+    public PriceDisplayName(p: ProductPriceEntity): string {
+        const n = p.Name?.trim();
         if (n) return n;
         return p.Description?.trim() || 'Price';
     }
 
-    public HasWhen(p: mjBizAppsOrdersProductPriceEntity): boolean {
+    public HasWhen(p: ProductPriceEntity): boolean {
         return this.WhenSentence(p).length > 0;
     }
 
-    public WhenSentence(p: mjBizAppsOrdersProductPriceEntity): string {
-        const raw = (p as { Applicability?: string | null }).Applicability;
+    public WhenSentence(p: ProductPriceEntity): string {
+        const raw = p.Applicability;
         if (raw == null || String(raw).trim() === '') return '';
         try {
             const parsed = JSON.parse(String(raw)) as {
@@ -326,11 +352,15 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     private whenFieldLabel(stored: string): string {
-        const hit = PRICE_WHEN_FIELDS.find((f) => f.name === stored);
-        return hit?.displayName ?? stored.replace('.', ' · ');
+        const dot = stored.indexOf('.');
+        if (dot <= 0) return stored.replace('.', ' · ');
+        const key = stored.slice(0, dot);
+        const field = stored.slice(dot + 1);
+        const src = PRICE_APPLICABILITY_SOURCES.find((s) => s.key === key);
+        return src ? `${src.label} · ${field}` : stored.replace('.', ' · ');
     }
 
-    public OpenPriceRecord(p: mjBizAppsOrdersProductPriceEntity, event?: Event): void {
+    public OpenPriceRecord(p: ProductPriceEntity, event?: Event): void {
         event?.stopPropagation();
         this.Navigate.emit({
             Kind: 'record',
@@ -401,10 +431,10 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         try {
             if (this.Product.Prices) {
                 await this.Product.Prices.Load();
-                this.AllPriceRecords = [...this.Product.Prices.Items];
+                this.AllPriceRecords = [...this.Product.Prices.Items] as ProductPriceEntity[];
             } else {
                 const rv = new RunView();
-                const pricesResult = await rv.RunView<mjBizAppsOrdersProductPriceEntity>({
+                const pricesResult = await rv.RunView<ProductPriceEntity>({
                     EntityName: PRODUCT_PRICES_ENTITY,
                     ExtraFilter: `ProductID = '${this.Product.ID}'`,
                     OrderBy: 'MinQuantity ASC, __mj_CreatedAt ASC',
@@ -443,7 +473,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     private countPricesOnChannel(listId: string | null): number {
-        const match = (p: mjBizAppsOrdersProductPriceEntity) =>
+        const match = (p: ProductPriceEntity) =>
             listId === null ? !p.PriceListID : p.PriceListID === listId;
         const product = this.AllPriceRecords.filter(match);
         const names = new Set(product.map((p) => this.PriceDisplayName(p).trim().toLowerCase()));
@@ -626,13 +656,13 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             }
 
             // 2. Instantiate and save the new tier bracket
-            let newPrice: mjBizAppsOrdersProductPriceEntity;
+            let newPrice: ProductPriceEntity;
 
             if (this.Product.Prices) {
-                newPrice = await this.Product.Prices.Create();
+                newPrice = await this.Product.Prices.Create() as ProductPriceEntity;
             } else {
                 const md = new Metadata();
-                const obj = await md.GetEntityObject<mjBizAppsOrdersProductPriceEntity>(PRODUCT_PRICES_ENTITY);
+                const obj = await md.GetEntityObject<ProductPriceEntity>(PRODUCT_PRICES_ENTITY);
                 if (!obj) throw new Error(`Failed to create entity object for ${PRODUCT_PRICES_ENTITY}`);
                 newPrice = obj;
             }
@@ -807,7 +837,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     /** Qty bands, end date, non-standard fee, recurrence — not a default List/Base row. */
-    public HasAdvanced(p: mjBizAppsOrdersProductPriceEntity | null | undefined): boolean {
+    public HasAdvanced(p: ProductPriceEntity | null | undefined): boolean {
         if (!p) return false;
         const min = p.MinQuantity;
         const max = p.MaxQuantity;
@@ -839,8 +869,8 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     public OpenWhenEditor(row: PriceCard): void {
-        this.WhenFields = this.buildWhenFields();
-        this.WhenFilter = this.parseWhenFilter(row.Record) ?? createEmptyFilter();
+        this.WhenBuilderSources = this.buildWhenSources();
+        this.WhenFilter = this.parseWhenFilter(row.Record) ?? CreateEmptyFilter();
         this.WhenEditorPriceID = row.ID;
         this.cdr?.markForCheck();
     }
@@ -849,8 +879,8 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.WhenFilter = filter;
     }
 
-    private parseWhenFilter(p: mjBizAppsOrdersProductPriceEntity): CompositeFilterDescriptor | null {
-        const raw = (p as { Applicability?: string | null }).Applicability;
+    private parseWhenFilter(p: ProductPriceEntity): CompositeFilterDescriptor | null {
+        const raw = p.Applicability;
         if (raw == null || String(raw).trim() === '') return null;
         try {
             const parsed = JSON.parse(String(raw)) as CompositeFilterDescriptor;
@@ -861,22 +891,42 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         return null;
     }
 
-    private buildWhenFields(): FilterFieldInfo[] {
+    private buildWhenSources(): FilterSource[] {
         const md = new Metadata();
-        const out: FilterFieldInfo[] = [];
-        for (const src of PRICE_APPLICABILITY_SOURCES) {
+        return PRICE_APPLICABILITY_SOURCES.map((src) => {
             const ent = md.EntityByName(src.entityName);
-            if (!ent) continue;
-            for (const f of ent.Fields) {
-                if (f.Name.startsWith('__mj')) continue;
-                out.push({
-                    name: `${src.key}.${f.Name}`,
-                    displayName: `${src.label} · ${f.DisplayName || f.Name}`,
-                    type: this.filterTypeFor(f.TSType),
-                });
+            const fields: FilterFieldInfo[] = [];
+            if (ent) {
+                for (const f of ent.Fields) {
+                    if (f.Name.startsWith('__mj')) continue;
+                    fields.push(this.filterFieldFromEntity(f));
+                }
             }
-        }
-        return out;
+            return { key: src.key, label: src.label, entityName: src.entityName, fields };
+        });
+    }
+
+    private filterFieldFromEntity(f: {
+        Name: string;
+        DisplayName?: string | null;
+        TSType: EntityFieldTSType;
+        RelatedEntity?: string | null;
+        EntityFieldValues?: Array<{ Value: string }>;
+    }): FilterFieldInfo {
+        const values = (f.EntityFieldValues ?? [])
+            .map((v) => v.Value)
+            .filter((v) => v != null && String(v).trim() !== '')
+            .map((v) => ({ value: v, label: String(v) }));
+        const related = f.RelatedEntity?.trim();
+        let type: FilterFieldInfo['type'] = this.filterTypeFor(f.TSType);
+        if (related) type = 'lookup';
+        return {
+            name: f.Name,
+            displayName: f.DisplayName || f.Name,
+            type,
+            lookupEntityName: related || undefined,
+            valueList: values.length ? values : undefined,
+        };
     }
 
     private filterTypeFor(ts: EntityFieldTSType): FilterFieldInfo['type'] {
@@ -895,7 +945,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     public async SaveWhen(row: PriceCard): Promise<void> {
         const filter = this.WhenFilter;
         const empty = !filter?.filters?.length;
-        (row.Record as { Applicability?: string | null }).Applicability = empty ? null : JSON.stringify(filter);
+        row.Record.Applicability = empty ? null : JSON.stringify(filter);
         await this.SavePrice(row.Record);
         this.WhenEditorPriceID = null;
         this.WhenFilter = null;
@@ -903,7 +953,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     public async ClearWhen(row: PriceCard): Promise<void> {
-        (row.Record as { Applicability?: string | null }).Applicability = null;
+        row.Record.Applicability = null;
         await this.SavePrice(row.Record);
         this.WhenEditorPriceID = null;
         await this.LoadPricingData();
@@ -911,7 +961,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     private syncFromCollection(): void {
         if (this.Product?.Prices) {
-            this.AllPriceRecords = [...this.Product.Prices.Items];
+            this.AllPriceRecords = [...this.Product.Prices.Items] as ProductPriceEntity[];
         }
     }
 
@@ -947,7 +997,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         return max + 10;
     }
 
-    public async SavePrice(p: mjBizAppsOrdersProductPriceEntity): Promise<void> {
+    public async SavePrice(p: ProductPriceEntity): Promise<void> {
         if (!this.EditMode) return;
         await this.saveProductGraph();
         this.cdr?.markForCheck();
@@ -967,10 +1017,10 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.IsSaving = true;
         this.cdr?.markForCheck();
         try {
-            const newPrice = await this.Product.Prices.Create();
+            const newPrice = await this.Product.Prices.Create() as ProductPriceEntity;
             newPrice.ProductID = this.Product.ID;
             newPrice.PriceListID = this.SelectedChannelID;
-            (newPrice as { Name?: string }).Name = name;
+            newPrice.Name = name;
             newPrice.Amount = Number.isFinite(amount) ? amount : 0;
             newPrice.PricingModel = 'PerUnit';
             newPrice.FeeType = 'Standard';
@@ -1000,35 +1050,214 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     public OpenQuote(): void {
         this.QuoteDrawerOpen = true;
-        this.RunQuote();
+        void this.RunQuote();
         this.cdr?.markForCheck();
     }
 
-    public RunQuote(): void {
-        const ctx = { BillToOrganization: { Type: this.QuoteOrgType } };
-        const hits: PriceCard[] = [];
-        const skip: string[] = [];
-        for (const row of this.VisiblePrices) {
-            const raw = (row.Record as { Applicability?: string | null }).Applicability;
-            let ok = true;
-            try {
-                ok = priceApplies(raw, ctx);
-            } catch {
-                ok = false;
-            }
-            if (ok) hits.push(row);
-            else skip.push(`${row.Name} (When did not match)`);
+    public ScheduleQuote(): void {
+        if (this.quoteTimer) clearTimeout(this.quoteTimer);
+        this.quoteTimer = setTimeout(() => void this.RunQuote(), 250);
+    }
+
+    public SearchQuoteParty(slot: QuotePartySlot): void {
+        const prev = this.quoteSearchTimers.get(slot.key);
+        if (prev) clearTimeout(prev);
+        this.quoteSearchTimers.set(
+            slot.key,
+            setTimeout(() => void this.runQuoteSearch(slot), 200),
+        );
+    }
+
+    private async runQuoteSearch(slot: QuotePartySlot): Promise<void> {
+        const q = slot.query.trim();
+        if (q.length < 1) {
+            slot.hits = [];
+            this.cdr?.markForCheck();
+            return;
         }
-        hits.sort((a, b) => Number(b.Record.Priority || 0) - Number(a.Record.Priority || 0));
-        const win = hits[0];
-        this.QuoteResult = win
-            ? {
-                  AmountText: this.FormatCurrency(win.Amount),
-                  Why: `${win.Name} · ${win.SourceLabel}${win.WhenText ? ' · ' + win.WhenText : ''}`,
-                  Skipped: skip.length ? `Didn’t apply: ${skip.join(' · ')}` : '',
-              }
-            : { AmountText: '—', Why: 'No price applied for this sample.', Skipped: skip.join(' · ') };
+        const rv = new RunView();
+        const extra = this.quoteSearchFilter(slot.entityName, q);
+        const res = await rv.RunView<Record<string, unknown>>({
+            EntityName: slot.entityName,
+            ExtraFilter: extra,
+            ResultType: 'simple',
+            MaxRows: 12,
+        });
+        const rows = res.Success && res.Results ? res.Results : [];
+        slot.hits = rows.map((row) => ({
+            ID: String(row['ID'] ?? ''),
+            Label: this.quoteRowLabel(slot.entityName, row),
+        })).filter((h) => h.ID);
         this.cdr?.markForCheck();
+    }
+
+    public PickQuoteParty(slot: QuotePartySlot, hit: { ID: string; Label: string }): void {
+        slot.id = hit.ID;
+        slot.display = hit.Label;
+        slot.query = hit.Label;
+        slot.hits = [];
+        void this.RunQuote();
+    }
+
+    public ClearQuoteParty(slot: QuotePartySlot): void {
+        slot.id = null;
+        slot.display = '';
+        slot.query = '';
+        slot.hits = [];
+        void this.RunQuote();
+    }
+
+    private quoteSearchFilter(entityName: string, q: string): string {
+        const e = q.replace(/'/g, "''");
+        if (entityName.includes('People')) return `(FirstName LIKE '%${e}%' OR LastName LIKE '%${e}%')`;
+        if (entityName.includes('Addresses')) return `(Line1 LIKE '%${e}%' OR City LIKE '%${e}%')`;
+        return `Name LIKE '%${e}%'`;
+    }
+
+    private quoteRowLabel(entityName: string, row: Record<string, unknown>): string {
+        if (entityName.includes('People')) {
+            return `${row['FirstName'] ?? ''} ${row['LastName'] ?? ''}`.trim() || String(row['ID'] ?? '');
+        }
+        if (entityName.includes('Addresses')) {
+            return [row['Line1'], row['City']].filter(Boolean).join(', ') || String(row['ID'] ?? '');
+        }
+        return String(row['Name'] ?? row['ID'] ?? '');
+    }
+
+    private quotePartyId(key: string): string | null {
+        return this.QuoteParties.find((p) => p.key === key)?.id ?? null;
+    }
+
+    public async RunQuote(): Promise<void> {
+        if (!this.Product?.ID) {
+            this.QuoteResult = { AmountText: '—', Why: 'Save the product first.', Skipped: '' };
+            this.cdr?.markForCheck();
+            return;
+        }
+        const md = new Metadata();
+        const user = md.CurrentUser as UserInfo | null;
+        const provider = Metadata.Provider as unknown as IMetadataProvider | undefined;
+        if (!user || !provider) {
+            this.QuoteResult = { AmountText: '—', Why: 'Metadata is not ready.', Skipped: '' };
+            this.cdr?.markForCheck();
+            return;
+        }
+
+        this.QuoteBusy = true;
+        this.cdr?.markForCheck();
+        try {
+            const qty = Number(this.SimQuantity) || 1;
+            const asOf = this.QuoteAsOf ? new Date(this.QuoteAsOf) : new Date();
+            const billToOrg = this.quotePartyId('BillToOrganization');
+            const billToPerson = this.quotePartyId('BillToPerson');
+            const shipToOrg = this.quotePartyId('ShipToOrganization');
+            const shipToPerson = this.quotePartyId('ShipToPerson');
+            const billToAddr = this.quotePartyId('BillToAddress');
+            const shipToAddr = this.quotePartyId('ShipToAddress');
+            const bag = await loadApplicabilityContext(
+                {
+                    ProductID: this.Product.ID,
+                    BillToPersonID: billToPerson,
+                    BillToOrganizationID: billToOrg,
+                    ShipToPersonID: shipToPerson,
+                    ShipToOrganizationID: shipToOrg,
+                    BillToAddressID: billToAddr,
+                    ShipToAddressID: shipToAddr,
+                    OrderFallback: {
+                        OrderDate: asOf,
+                        Status: this.QuoteOrderStatus || null,
+                        BillToPersonID: billToPerson,
+                        BillToOrganizationID: billToOrg,
+                        ShipToPersonID: shipToPerson,
+                        ShipToOrganizationID: shipToOrg,
+                        BillToAddressID: billToAddr,
+                        ShipToAddressID: shipToAddr,
+                    },
+                },
+                provider,
+                user,
+            );
+
+            const skip: string[] = [];
+            for (const row of this.VisiblePrices) {
+                const raw = row.Record.Applicability;
+                try {
+                    if (!priceApplies(raw, bag)) skip.push(`${row.Name} (When did not match)`);
+                } catch {
+                    skip.push(`${row.Name} (invalid When)`);
+                }
+            }
+
+            const companyId = this.Product.CompanyID;
+            if (!companyId) {
+                this.QuoteResult = {
+                    AmountText: '—',
+                    Why: 'This product has no company, so the engine cannot resolve a price. When matching still ran against the bag.',
+                    Skipped: skip.join(' · '),
+                };
+                return;
+            }
+
+            const ctx = {
+                ProductID: this.Product.ID,
+                ProductCategoryID: this.Product.ProductCategoryID ?? null,
+                CompanyID: companyId,
+                Quantity: qty,
+                AsOf: asOf,
+                OrganizationID: billToOrg,
+                PersonID: billToPerson,
+                ApplicabilityContext: bag,
+            };
+
+            const applicable = await ListApplicablePrices(ctx, provider, user);
+            let engineName = '';
+            let engineAmount: number | null = null;
+            try {
+                const engine = await ResolvePrice(ctx, provider, user);
+                if (engine) {
+                    engineAmount = engine.UnitPrice;
+                    engineName = engine.PriceName ?? engine.ProductPriceID ?? 'Resolved price';
+                }
+            } catch (err) {
+                if (err instanceof PriceResolutionError) {
+                    this.QuoteResult = {
+                        AmountText: '—',
+                        Why: err.message,
+                        Skipped: skip.join(' · '),
+                    };
+                    return;
+                }
+                throw err;
+            }
+
+            const others = applicable
+                .filter((p) => engineName === '' || p.Name !== engineName)
+                .map((p) => `${p.Name} · ${this.FormatCurrency(p.UnitPrice)}`)
+                .join(' · ');
+
+            this.QuoteResult = engineAmount != null
+                ? {
+                      AmountText: this.FormatCurrency(engineAmount),
+                      Why: `${engineName}${others ? ` · also: ${others}` : ''}`,
+                      Skipped: skip.length ? `Didn’t apply: ${skip.join(' · ')}` : '',
+                  }
+                : {
+                      AmountText: '—',
+                      Why: applicable.length
+                          ? `Named prices matched When but none won for qty ${qty} on ${this.QuoteAsOf}.`
+                          : 'No price applied for this bag.',
+                      Skipped: skip.join(' · '),
+                  };
+        } catch (err) {
+            this.QuoteResult = {
+                AmountText: '—',
+                Why: err instanceof Error ? err.message : String(err),
+                Skipped: '',
+            };
+        } finally {
+            this.QuoteBusy = false;
+            this.cdr?.markForCheck();
+        }
     }
 
     private async loadInheritedPrices(): Promise<void> {
@@ -1055,12 +1284,12 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         }
         if (!chain.length) return;
         const inList = chain.map((id) => `'${id.replace(/'/g, "''")}'`).join(',');
-        const prices = await rv.RunView<mjBizAppsOrdersProductPriceEntity>({
+        const prices = await rv.RunView<ProductPriceEntity>({
             EntityName: PRODUCT_PRICES_ENTITY,
             ExtraFilter: `ProductCategoryID IN (${inList}) AND Status = 'Active'`,
             ResultType: 'entity_object',
             MaxRows: 200,
         });
-        this.InheritedRecords = prices.Success && prices.Results ? prices.Results : [];
+        this.InheritedRecords = (prices.Success && prices.Results ? prices.Results : []) as ProductPriceEntity[];
     }
 }

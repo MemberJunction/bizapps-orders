@@ -25,7 +25,7 @@ const ACTIVE_PANE_SETTING = 'mj.orders.productForm.activePane';
  *
  * Structure:
  * 1. Product Hero Identity Header: Dynamic type-aware avatar, title, entity/SKU/status
- *    badge strip, and live 5-metric summary bar (SSP, Type, Rev-Rec, Capacity, Price Lists).
+ *    badge strip, and list price from ProductPrice (Rev-rec and tax live on Accounting).
  * 2. Responsive Left Navigation Workspace: Replaces heavy accordion stacking with a clean
  *    left navigation rail permitting instant navigation between modular droppable widgets.
  * 3. Dynamic Specialized Profile: Automatically mounts domain-specific fields (such as

@@ -248,4 +248,16 @@ describe('order header link wiring', () => {
         expect(lines).toContain('[class.is-open]="IsExtensionOpen(line)"');
         expect(lines).toContain('ToggleExtension(line)');
     });
+
+    it('offers OverrideList named-price pick and OverrideAny amount on a line', () => {
+        const lines = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
+            'utf8',
+        );
+        expect(lines).toContain('CanPickNamedPrice');
+        expect(lines).toContain('OnPickNamedPrice(line, $event)');
+        expect(lines).toContain('CanTypeAmount');
+        expect(lines).toContain('OnTypeAmount(line, $event)');
+        expect(lines).toContain('Engine price');
+    });
 });

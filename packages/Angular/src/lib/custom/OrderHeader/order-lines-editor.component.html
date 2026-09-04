@@ -33,6 +33,28 @@
                         [Source]="PricedLine(line)?.PriceSource ?? null"
                         [Settled]="!Pricing.Loading"
                         [Overridden]="!!PricedLine(line)?.WasStated" />
+                    @if (EditMode && CanPickNamedPrice) {
+                        <select
+                            class="mjo-ol-price-pick"
+                            [value]="SelectedNamedPriceID(line)"
+                            (change)="OnPickNamedPrice(line, $event)"
+                            aria-label="Named price">
+                            <option value="">Engine price</option>
+                            @for (price of ApplicableFor(line); track price.ID) {
+                                <option [value]="price.ID">{{ price.Name }} · {{ price.UnitPrice | mjoMoney }}</option>
+                            }
+                        </select>
+                    }
+                    @if (EditMode && CanTypeAmount) {
+                        <input
+                            type="number"
+                            class="mjo-ol-price-any"
+                            [value]="StatedAmountValue(line)"
+                            (change)="OnTypeAmount(line, $event)"
+                            min="0"
+                            step="0.01"
+                            aria-label="Override unit price">
+                    }
                     @if (PricedLine(line)?.Error; as why) {
                         <div class="mjo-ol-card__err">{{ why }}</div>
                     }

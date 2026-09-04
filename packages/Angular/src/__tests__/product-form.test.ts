@@ -1,13 +1,17 @@
 import '@angular/compiler';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
-import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
+import type { mjBizAppsOrdersProductEntity, mjBizAppsOrdersProductPriceEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersProductFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
 import { BizAppsProductFormComponent } from '../lib/custom/Product/product-form.component';
 import { BizAppsProductPricingWidgetComponent } from '../lib/custom/Product/widgets/product-pricing-widget.component';
 import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
 import '../public-api';
+
+const here = import.meta.dirname;
 
 describe('BizAppsProductFormComponent Custom Form Registration & Getters', () => {
     it('subclasses the generated mjBizAppsOrdersProductFormComponent', () => {
@@ -88,10 +92,14 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
     it('simulates volume pricing in BizAppsProductPricingWidgetComponent', () => {
         const widget = new BizAppsProductPricingWidgetComponent();
         widget.Product = {
-            StandaloneSellingPrice: 1200,
             IsSaved: true,
             ID: 'prod-1',
         } as unknown as mjBizAppsOrdersProductEntity;
+        widget.AllPriceRecords = [{
+            PriceListID: null,
+            MinQuantity: 1,
+            Amount: 1200,
+        }] as unknown as mjBizAppsOrdersProductPriceEntity[];
 
         widget.SimQuantity = 25;
         widget.RecalculateSimulation();
@@ -128,5 +136,48 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
 
         expect(openedEntity).toBe('MJ_BizApps_Orders: Product Categories');
         expect(openedKey.ToURLSegment()).toBe('cat-123');
+    });
+
+    it('hero shows list price from ProductPrice and does not treat Rev-rec or Tax as a price', () => {
+        const header = readFileSync(
+            join(here, '../lib/form-panels/product-header.panel.html'),
+            'utf8',
+        );
+        expect(header).toContain('List price');
+        expect(header).toContain('{{ Price }}');
+        expect(header).not.toContain('Rev-rec');
+        expect(header).not.toContain('IsTaxable');
+        expect(header).not.toContain('Taxable');
+    });
+
+    it('When editor binds mj-filter-builder sources, not a dotted fields fallback', () => {
+        const html = readFileSync(
+            join(here, '../lib/custom/Product/widgets/product-pricing-widget.component.html'),
+            'utf8',
+        );
+        expect(html).toContain('[sources]="WhenBuilderSources"');
+        expect(html).not.toContain('[fields]="WhenFields"');
+        expect(html).not.toContain('QuoteOrgType');
+        expect(html).toContain('QuoteParties');
+        expect(html).toContain('SearchQuoteParty');
+    });
+
+    it('renders When sentences with Source.Field labels from the applicability bag', () => {
+        const widget = new BizAppsProductPricingWidgetComponent();
+        const record = {
+            Applicability: JSON.stringify({
+                logic: 'and',
+                filters: [{ field: 'BillToOrganization.Type', operator: 'eq', value: 'Member' }],
+            }),
+        } as unknown as mjBizAppsOrdersProductPriceEntity;
+        expect(widget.WhenSentence(record)).toBe('Bill-to organization · Type equals Member');
+        expect(widget.QuoteParties.map((p) => p.key)).toEqual([
+            'BillToPerson',
+            'BillToOrganization',
+            'ShipToPerson',
+            'ShipToOrganization',
+            'BillToAddress',
+            'ShipToAddress',
+        ]);
     });
 });
