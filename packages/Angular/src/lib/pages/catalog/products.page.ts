@@ -50,6 +50,7 @@ import {
             @if (ProductEntityInfo) {
                 <mj-entity-viewer
                     [Entity]="ProductEntityInfo"
+                    (CreateRecordRequested)="OnCreateRequested()"
                     (RecordOpened)="OnRecordOpened($event)">
                 </mj-entity-viewer>
             } @else {
@@ -191,6 +192,18 @@ export class MJOProductsPageComponent implements OnInit {
 
     @Output() ProductOpened = new EventEmitter<mjBizAppsOrdersProductEntity>();
 
+    /**
+     * The grid's New button EMITS -- it does not create. `mj-entity-viewer` raises
+     * `CreateRecordRequested` and leaves the host to act; nothing bound it here, so every New
+     * button on this screen did nothing at all, silently and with no console error. The entity
+     * name travels with the event so the section needs one handler rather than one per grid.
+     */
+    @Output() CreateRecordRequested = new EventEmitter<string>();
+
+    public OnCreateRequested(): void {
+        this.CreateRecordRequested.emit(MJO_ENTITIES.Product);
+    }
+
     public ProductEntityInfo: EntityInfo | null = null;
     public Categories: Array<Record<string, unknown>> = [];
     public Types: Array<Record<string, unknown>> = [];
@@ -248,7 +261,8 @@ export class MJOProductsPageComponent implements OnInit {
         <div class="mjo-tax__viewer-host">
             @if (ChargeTypeEntityInfo) {
                 <mj-entity-viewer
-                    [Entity]="ChargeTypeEntityInfo">
+                    [Entity]="ChargeTypeEntityInfo"
+                    (CreateRecordRequested)="OnCreateRequested()">
                 </mj-entity-viewer>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading charge types...</div>
@@ -451,6 +465,12 @@ export class MJOProductsPageComponent implements OnInit {
 })
 export class MJOChargesTaxPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
+
+    @Output() CreateRecordRequested = new EventEmitter<string>();
+
+    public OnCreateRequested(): void {
+        this.CreateRecordRequested.emit(MJO_ENTITIES.ChargeType);
+    }
 
     public ChargeTypeEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersChargeTypeEntity[] = [];
