@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { priceApplies } from '../pricing/applicability.js';
-import { evaluateFilter } from '../pricing/mj-filter-eval.js';
+import { EvaluateFilter } from '../pricing/mj-filter-eval.js';
 
 const memberWhen = {
     logic: 'and' as const,
@@ -32,7 +32,7 @@ describe('priceApplies', () => {
     });
 });
 
-describe('evaluateFilter — groups', () => {
+describe('EvaluateFilter — groups', () => {
     it('ANDs within a group and ORs between groups', () => {
         const filter = {
             logic: 'or' as const,
@@ -48,21 +48,21 @@ describe('evaluateFilter — groups', () => {
             ],
         };
         expect(
-            evaluateFilter(filter, {
+            EvaluateFilter(filter, {
                 BillToOrganization: { Type: 'Member' },
                 Order: { CompanyID: 'co-1' },
                 BillToPerson: { Title: 'Staff' },
             }),
         ).toBe(true);
         expect(
-            evaluateFilter(filter, {
+            EvaluateFilter(filter, {
                 BillToOrganization: { Type: 'Prospect' },
                 Order: { CompanyID: 'co-1' },
                 BillToPerson: { Title: 'Board' },
             }),
         ).toBe(true);
         expect(
-            evaluateFilter(filter, {
+            EvaluateFilter(filter, {
                 BillToOrganization: { Type: 'Prospect' },
                 Order: { CompanyID: 'co-1' },
                 BillToPerson: { Title: 'Staff' },

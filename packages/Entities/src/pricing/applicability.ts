@@ -7,7 +7,7 @@
 import { BaseEntity, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import {
-    evaluateFilter,
+    EvaluateFilter,
     type CompositeFilterDescriptor,
     type FilterDescriptor,
     type FilterEvalContext,
@@ -43,7 +43,7 @@ export function parseApplicability(
 /** Null / empty Applicability always applies. Invalid JSON throws (catalog is broken). */
 export function priceApplies(applicabilityJson: string | null | undefined, context: FilterEvalContext): boolean {
     const filter = parseApplicability(applicabilityJson);
-    return evaluateFilter(filter, context);
+    return EvaluateFilter(filter, context);
 }
 
 export interface ApplicabilityPartyIDs {
@@ -90,7 +90,7 @@ async function loadRow(
 }
 
 /**
- * Load the eight-record bag `evaluateFilter` reads. Missing parties are `null`,
+ * Load the eight-record bag `EvaluateFilter` reads. Missing parties are `null`,
  * so a When on ship-to is false unless the operator is empty/null.
  */
 export async function loadApplicabilityContext(
