@@ -101,6 +101,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public OverrideKind: PriceOverrideKind = 'none';
     private readonly applicableByLine = new Map<string, ApplicablePrice[]>();
     private readonly overrideEditorLineIds = new Set<string>();
+    private readonly customAmountLineIds = new Set<string>();
     private readonly defaultUnitByLine = new Map<string, number | null>();
 
     public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
@@ -202,6 +203,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!this.EditMode) return;
         this.expandedLineIds.delete(line.ID);
         this.overrideEditorLineIds.delete(line.ID);
+        this.customAmountLineIds.delete(line.ID);
         this._order?.Lines.Remove(line);
         this.schedulePricing();
     }
@@ -223,6 +225,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public SelectedPriceID(line: mjBizAppsOrdersOrderLineEntity): string {
+        if (this.customAmountLineIds.has(line.ID)) return '__custom__';
         if (!this.IsOverridden(line)) return '';
         if (line.ProductPriceID) return String(line.ProductPriceID);
         return this.OverrideKind === 'any' ? '__custom__' : '';
@@ -269,16 +272,20 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             return;
         }
         if (id === '__custom__') {
+            this.customAmountLineIds.add(line.ID);
             this.stamp(line, 'ProductPriceID', null);
             this.markOverridden(line);
+            this.cdr.detectChanges();
             return;
         }
+        this.customAmountLineIds.delete(line.ID);
         const hit = this.ApplicableFor(line).find((p) => UUIDsEqual(p.ID, id));
         if (!hit) return;
         this.stamp(line, 'ProductPriceID', hit.ID);
         this.stamp(line, 'UnitPrice', hit.UnitPrice);
         this.markOverridden(line);
         this.schedulePricing();
+        this.cdr.detectChanges();
     }
 
     public TypeAmount(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -287,6 +294,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!(target instanceof HTMLInputElement)) return;
         const amount = Number.parseFloat(target.value);
         if (!Number.isFinite(amount) || amount < 0) return;
+        this.customAmountLineIds.add(line.ID);
         this.stamp(line, 'ProductPriceID', null);
         this.stamp(line, 'UnitPrice', amount);
         this.markOverridden(line);
@@ -304,6 +312,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             return;
         }
         this.overrideEditorLineIds.add(line.ID);
+        if (this.OverrideKind === 'any' && this.IsOverridden(line) && !line.ProductPriceID) {
+            this.customAmountLineIds.add(line.ID);
+        }
         void this.refreshApplicable(line);
     }
 
@@ -313,6 +324,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     public ResetOverride(line: mjBizAppsOrdersOrderLineEntity): void {
         this.clearOverride(line);
+        this.customAmountLineIds.delete(line.ID);
         this.overrideEditorLineIds.delete(line.ID);
         this.schedulePricing();
     }
@@ -424,6 +436,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.hydratingLineIds.clear();
         this.applicableByLine.clear();
         this.overrideEditorLineIds.clear();
+        this.customAmountLineIds.clear();
         this.defaultUnitByLine.clear();
         this.OverrideKind = 'none';
     }
