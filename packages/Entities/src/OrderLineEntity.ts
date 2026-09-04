@@ -18,6 +18,7 @@ import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderLineEntity } from './generated/entity_subclasses';
 import { OrderLineExtensionCompanion } from './OrderLineExtensionCompanion';
 import { ORDER_LINE_MONEY_FIELDS } from './booked-money';
+import { anyFieldIsDirty } from './field-dirty';
 import { loadApplicabilityContext } from './pricing/applicability';
 import {
     isEnginePrice,
@@ -34,6 +35,13 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
      * Extension entity (e.g. `EventOrderLine`) companion riding with this line.
      */
     public readonly Extension = this.RegisterCompanion(new OrderLineExtensionCompanion(this));
+
+    /**
+     * True when any of the named fields has unsaved changes. See {@link anyFieldIsDirty}.
+     */
+    public FieldIsDirty(...fieldNames: string[]): boolean {
+        return anyFieldIsDirty(this, fieldNames);
+    }
 
     /**
      * Runs validation on this line and fans out to the extension companion.

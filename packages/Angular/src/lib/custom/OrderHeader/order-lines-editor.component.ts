@@ -41,6 +41,7 @@ import {
     ExtensionToggleLabel,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
+import { anyFieldIsDirty } from '@mj-biz-apps/orders-entities';
 
 /**
  * Inline catalog picker + line cards for an order header.
@@ -343,7 +344,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public IsOverridden(line: mjBizAppsOrdersOrderLineEntity): boolean {
         const flag = line.GetFieldByName('PriceOverridden');
         if (flag && (flag.Value === true || flag.Value === 1 || flag.Value === '1')) return true;
-        return line.FieldIsDirty('UnitPrice', 'ProductPriceID');
+        return anyFieldIsDirty(line, ['UnitPrice', 'ProductPriceID']);
     }
 
     public OverrideReasonText(line: mjBizAppsOrdersOrderLineEntity): string {

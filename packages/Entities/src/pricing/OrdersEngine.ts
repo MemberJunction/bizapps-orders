@@ -30,6 +30,7 @@
  * @module @mj-biz-apps/orders-entities
  */
 import { BaseEngine, RegisterForStartup, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import type { Observable } from 'rxjs';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersPaymentProviderTypeEntity,
@@ -124,10 +125,10 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         return this.GetConfigData<mjBizAppsOrdersProductCategoryEntity>('_productCategories');
     }
 
-    public get Products$() {
+    public get Products$(): Observable<mjBizAppsOrdersProductEntity[]> {
         return this.ObserveProperty<mjBizAppsOrdersProductEntity>('_products');
     }
-    public get ProductPrices$() {
+    public get ProductPrices$(): Observable<mjBizAppsOrdersProductPriceEntity[]> {
         return this.ObserveProperty<mjBizAppsOrdersProductPriceEntity>('_productPrices');
     }
 

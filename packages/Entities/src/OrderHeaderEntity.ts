@@ -38,6 +38,7 @@ import { ResolveActiveEmployerOrganization } from './PartyAffiliationBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
+import { anyFieldIsDirty } from './field-dirty';
 import {
     BookedMoneyEditMessage,
     ORDER_HEADER_MONEY_FIELDS,
@@ -52,6 +53,13 @@ const BOOKED_STATUSES = new Set(['Confirmed']);
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Headers')
 export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
+    /**
+     * True when any of the named fields has unsaved changes. See {@link anyFieldIsDirty}.
+     */
+    public FieldIsDirty(...fieldNames: string[]): boolean {
+        return anyFieldIsDirty(this, fieldNames);
+    }
+
     /**
      * Promotion codes the customer presented, riding with the order across the wire.
      *
@@ -337,8 +345,10 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 newLineCount += 1;
                 continue;
             }
+            // `Lines.Items` is typed as the GENERATED line class, not the OrderLineEntity
+            // subclass that carries FieldIsDirty, so go through the helper directly.
             for (const name of ORDER_LINE_MONEY_FIELDS) {
-                if (line.FieldIsDirty(name)) {
+                if (anyFieldIsDirty(line, [name])) {
                     dirtyLineMoney.push(name);
                 }
             }
