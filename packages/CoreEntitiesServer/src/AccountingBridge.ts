@@ -6,13 +6,12 @@
  * engine, and the MJ entity IDs the polymorphic `GLAccountLink` rows hang off. This module owns
  * both so there is exactly one copy of the coupling rather than one per entity server.
  *
- * `@mj-biz-apps/accounting-engine-base` is imported STATICALLY, like every other import in the repo
- * (CLAUDE.md forbids dynamic require/import). This file used to load the engine through
- * `await import(...)`, justified as keeping a peer dependency out of bundles that do not already
- * have it — but the justification never held, because `pickActiveLinkIndex` below has always been a
- * static import from the same package. The module was therefore already resolved and evaluated at
- * load time; the dynamic form bought nothing and only cost us a lazy failure mode, where a missing
- * peer surfaced deep inside a booking call instead of at import.
+ * `@mj-biz-apps/accounting-engine-base` is a real `dependencies` entry on this package and a
+ * static import, like every other import in the repo (CLAUDE.md forbids dynamic require/import).
+ * This file used to load the engine through `await import(...)` so the package could stay a peer;
+ * `pickActiveLinkIndex` below has always been a static import from the same package, so the
+ * dynamic form never kept it out of the graph. It is now declared in `package.json` so pnpm
+ * resolves it as an owned dependency instead of a host-provided peer.
  *
  * Load ORDER still matters — accounting's server package registers the remote operation this class
  * resolves by key — but that is a different package (`accounting-server`, wired up by the host app's
@@ -85,12 +84,10 @@ export async function LoadAccountingEngine(
     user: UserInfo,
 ): Promise<AccountingEngineSurface> {
     const engine = (AccountingEngineBase as unknown as { Instance: AccountingEngineSurface }).Instance;
-    // Force a refresh. ORD-WORLD (and any other process) writes links through BaseEntity
-    // in a different Node process than MJAPI; those events never reach this cache, so a
-    // Config(false) after startup keeps serving an empty link set and every confirm
-    // reports "No GL account is linked for role 'Accounts Receivable'". Reloading a few
-    // dozen link rows on a booking is cheaper than a silent miss.
-    await engine.ConfigEx({ forceRefresh: true, contextUser: user, provider });
+    // GL Account Roles, accounts, and links already live in AccountingEngineBase. Config is
+    // idempotent; BaseEngine save/delete events keep the arrays current. Do not force-refresh
+    // on every booking — that throws away the cache the engine exists to provide.
+    await engine.ConfigEx({ forceRefresh: false, contextUser: user, provider });
     return engine;
 }
 

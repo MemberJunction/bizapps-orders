@@ -30,6 +30,8 @@ import {
     type UserInfo,
 } from '@memberjunction/core';
 import {
+    LoadOrdersEngine,
+    OrdersEngine,
     mjBizAppsOrdersOrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
@@ -52,8 +54,6 @@ import { RequireUUID } from './sql-guards.js';
 
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
-const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
-const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 
 const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${RequireUUID(i, 'OrderLineID')}'`))].join(',');
@@ -116,7 +116,7 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
             : { Results: [] };
         const allLineRows = allLines.Results ?? [];
 
-        const requiresFulfillment = await this.buildRequiresFulfillment(rv, allLineRows, user);
+        const requiresFulfillment = await this.buildRequiresFulfillment(allLineRows, user, provider);
 
         const shape = (l: (typeof allLineRows)[number]): FulfillableLine => ({
             ID: l.ID,
@@ -241,31 +241,15 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
         };
     }
 
-    /** product id → does its type require fulfilment. Two queries, not one per line. */
+    /** product id → does its type require fulfilment. Catalog is in OrdersEngine. */
     private async buildRequiresFulfillment(
-        rv: RunView,
         lines: Array<{ ProductID: string }>,
         user: UserInfo,
+        provider: IMetadataProvider,
     ): Promise<(productID: string) => boolean> {
-        const productIDs = [...new Set(lines.map((l) => l.ProductID))].filter(Boolean);
-        if (!productIDs.length) return () => false;
-
-        const products = await rv.RunView<{ ID: string; ProductTypeID: string }>(
-            { EntityName: PRODUCT_ENTITY, ExtraFilter: `ID IN (${quote(productIDs)})`, ResultType: 'simple' },
-            user,
-        );
-        const rows = products.Results ?? [];
-        const typeIDs = [...new Set(rows.map((p) => p.ProductTypeID))].filter(Boolean);
-        if (!typeIDs.length) return () => false;
-
-        const types = await rv.RunView<{ ID: string; RequiresFulfillment: boolean }>(
-            { EntityName: PRODUCT_TYPE_ENTITY, ExtraFilter: `ID IN (${quote(typeIDs)})`, ResultType: 'simple' },
-            user,
-        );
-        const requiresByType = new Map((types.Results ?? []).map((t) => [key(t.ID), !!t.RequiresFulfillment]));
-        const typeByProduct = new Map(rows.map((p) => [key(p.ID), key(p.ProductTypeID)]));
-
-        return (productID: string) => requiresByType.get(typeByProduct.get(key(productID)) ?? '') ?? false;
+        if (!lines.length) return () => false;
+        await LoadOrdersEngine(provider, user);
+        return (productID: string) => OrdersEngine.Instance.ProductRequiresFulfillment(productID);
     }
 
     private refuseAll(message: string): OrdersFulfillOrderLinesOutput {

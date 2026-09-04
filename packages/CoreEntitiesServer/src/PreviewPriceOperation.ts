@@ -26,7 +26,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { OrderPricingService, PriceResolutionError, ResolvePriceListForCustomer } from '@mj-biz-apps/orders-entities';
+import { LoadOrdersEngine, OrderPricingService, OrdersEngine, PriceResolutionError, ResolvePriceListForCustomer } from '@mj-biz-apps/orders-entities';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
@@ -189,18 +189,9 @@ export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceIn
         user: UserInfo,
         id: string,
     ): Promise<{ Name: string; ProductCategoryID: string | null; CompanyID: string } | null> {
-        const rv = new RunView(provider as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ Name: string; ProductCategoryID: string | null; CompanyID: string }>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Products',
-                ExtraFilter: `ID = '${id}'`,
-                Fields: ['Name', 'ProductCategoryID', 'CompanyID'],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            user,
-        );
-        return res?.Results?.[0] ?? null;
+        await LoadOrdersEngine(provider, user);
+        const p = OrdersEngine.Instance.ProductByID(id);
+        return p ? { Name: p.Name, ProductCategoryID: p.ProductCategoryID ?? null, CompanyID: p.CompanyID } : null;
     }
 
     private async loadPriceListName(provider: IMetadataProvider, user: UserInfo, id: string): Promise<string | null> {

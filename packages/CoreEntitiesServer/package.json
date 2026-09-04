@@ -20,13 +20,13 @@
   "license": "BUSL-1.1",
   "devDependencies": {
     "@mj-biz-apps/accounting-core-entities-server": ">=0.5.0",
-    "@mj-biz-apps/accounting-engine-base": ">=0.5.0",
     "@mj-biz-apps/tasks-entities": ">=1.4.1",
     "typescript": "^5.9.3",
     "vite": "^7.1.5",
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@mj-biz-apps/accounting-engine-base": ">=0.5.0",
     "@mj-biz-apps/orders-entities": "5.6.0"
   },
   "peerDependencies": {
@@ -38,7 +38,6 @@
     "@memberjunction/global": "^6.1.0-edge.5",
     "@memberjunction/sqlserver-dataprovider": "^6.1.0-edge.5",
     "@mj-biz-apps/accounting-core-entities-server": ">=0.5.0",
-    "@mj-biz-apps/accounting-engine-base": ">=0.5.0",
     "@mj-biz-apps/tasks-entities": ">=1.4.1"
   },
   "peerDependenciesMeta": {

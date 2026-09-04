@@ -47,7 +47,9 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 });
 
 vi.mock('@mj-biz-apps/orders-entities', () => ({
-    mjBizAppsOrdersEntitlementGrantEntity: MockEntitlementGrant
+    mjBizAppsOrdersEntitlementGrantEntity: MockEntitlementGrant,
+    LoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
+    OrdersEngine: { Instance: {} },
 }));
 
 import { EntitlementGrantClaimDriver } from '../EntitlementGrantClaimDriver.js';
