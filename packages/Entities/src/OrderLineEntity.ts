@@ -18,6 +18,7 @@ import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderLineEntity } from './generated/entity_subclasses';
 import { OrderLineExtensionCompanion } from './OrderLineExtensionCompanion';
 import { ORDER_LINE_MONEY_FIELDS } from './booked-money';
+import { FieldIsDirty } from './fieldIsDirty';
 import { loadApplicabilityContext } from './pricing/applicability';
 import {
     isEnginePrice,
@@ -61,7 +62,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
      * authorization catalog is not synced, and when money fields did not change.
      */
     private async assertPriceOverride(result: ValidationResult): Promise<void> {
-        const priceDirty = this.FieldIsDirty('UnitPrice', 'ProductPriceID');
+        const priceDirty = FieldIsDirty(this, 'UnitPrice', 'ProductPriceID');
         if (this.IsSaved && !priceDirty) return;
         if (!this.ProductID) return;
 
@@ -70,7 +71,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
         if (!provider || !user) return;
         if (!priceOverrideCatalogInstalled(provider)) return;
 
-        const stated = this.FieldIsDirty('UnitPrice') || (this.UnitPrice ?? 0) > 0;
+        const stated = FieldIsDirty(this, 'UnitPrice') || (this.UnitPrice ?? 0) > 0;
         if (!stated && !this.ProductPriceID) return;
 
         try {
@@ -203,7 +204,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
      */
     private refuseBookedMoneyEdits(result: ValidationResult): void {
         if (!this.JournalEntryID) return;
-        const dirty = ORDER_LINE_MONEY_FIELDS.filter((name) => this.FieldIsDirty(name));
+        const dirty = ORDER_LINE_MONEY_FIELDS.filter((name) => FieldIsDirty(this, name));
         if (dirty.length === 0) return;
         result.Success = false;
         result.Errors.push(

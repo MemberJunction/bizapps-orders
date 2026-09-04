@@ -43,6 +43,7 @@ import {
     ORDER_HEADER_MONEY_FIELDS,
     ORDER_LINE_MONEY_FIELDS,
 } from './booked-money';
+import { FieldIsDirty } from './fieldIsDirty';
 
 /** The order editor's sections, in the order the screen shows them. */
 export type OrderEditorSection = 'header' | 'parties' | 'lines' | 'charges' | 'payment';
@@ -338,7 +339,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 continue;
             }
             for (const name of ORDER_LINE_MONEY_FIELDS) {
-                if (line.FieldIsDirty(name)) {
+                if (FieldIsDirty(line, name)) {
                     dirtyLineMoney.push(name);
                 }
             }
@@ -346,7 +347,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
         const dirtyHeaderMoney: string[] = [];
         for (const name of ORDER_HEADER_MONEY_FIELDS) {
-            if (this.FieldIsDirty(name)) {
+            if (FieldIsDirty(this, name)) {
                 dirtyHeaderMoney.push(name);
             }
         }
