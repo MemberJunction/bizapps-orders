@@ -14,15 +14,23 @@
 # backtrack this is meant to prevent. A PR check is visible where the decision is made, and
 # can be made blocking via required status checks.
 #
-# KNOWN GAP until the GitHub App token lands: PRs opened by GITHUB_TOKEN do not trigger
-# workflows, so the `next` half of this will not fire yet. The `main` half does, so the
-# release stays protected in the meantime — it just costs the longer recovery.
+# Both halves of this now hold: PRs are opened by a GitHub App (see version.yml), and
+# App-created PRs trigger workflows, so the `next` half fires on the Version Packages PR
+# like any other check. Before the App token, runs on `changeset-release/next` were created
+# in `action_required` and did not start until a maintainer clicked "Approve and run". That
+# is friction, not a wall -- approving starts the run and the check reports normally -- but
+# it recurs on every push to the PR, and until someone clicks, a required check has nothing
+# to report (accounting #97 read mergeStateStatus=BLOCKED with "no checks reported").
 #
 # Bypass: label the PR `bump-level-exempt`.
 name: Release readiness
 
 on:
   pull_request:
+    # `ready_for_review` is NOT in the default type set (opened/synchronize/reopened),
+    # and the job below skips while the PR is a draft — without it, marking a PR ready
+    # would not re-trigger anything and the check would never report.
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [next, main]
 
 permissions:
@@ -33,7 +41,11 @@ jobs:
     # On `next`, only the bot's version PR is in scope — ordinary feature PRs have changesets
     # pending by design and must not be judged on bump level, since one minor anywhere in the
     # release window covers the release.
-    if: github.base_ref == 'main' || github.head_ref == 'changeset-release/next'
+    # Drafts DO fire opened/synchronize, so a draft otherwise burns a full run on every
+    # push. Skip while draft; the `ready_for_review` trigger above brings it back. A job
+    # skipped by `if:` still reports a conclusion, so this is safe as a required check.
+    # The event_name arm keeps the job running on `push`, where pull_request is null.
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.base_ref == 'main' || github.head_ref == 'changeset-release/next')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
