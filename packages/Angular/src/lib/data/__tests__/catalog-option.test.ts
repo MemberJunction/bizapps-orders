@@ -14,6 +14,7 @@ describe('CatalogOptionFrom', () => {
                 StandaloneSellingPrice: 0,
                 IsTaxable: true,
                 MaxQuantityPerLine: 1,
+                SubscriptionTypeID: null,
             },
             { OrderLineExtensionEntity: 'MJ_BizApps_Orders: Event Order Lines' },
             450,
@@ -38,6 +39,7 @@ describe('CatalogOptionFrom', () => {
                 StandaloneSellingPrice: 1,
                 IsTaxable: false,
                 MaxQuantityPerLine: null,
+                SubscriptionTypeID: null,
             },
             undefined,
             0,
@@ -57,6 +59,7 @@ describe('CatalogOptionFrom', () => {
                 StandaloneSellingPrice: 12,
                 IsTaxable: false,
                 MaxQuantityPerLine: null,
+                SubscriptionTypeID: null,
             },
             { OrderLineExtensionEntity: null },
             0,
@@ -64,5 +67,28 @@ describe('CatalogOptionFrom', () => {
 
         expect(option.OrderLineExtensionEntity).toBeNull();
         expect(option.ListPrice).toBe(12);
+        // A mug starts no term, which is what keeps term-only fields off its line.
+        expect(option.SubscriptionTypeID).toBeNull();
+    });
+
+    it("carries the product's subscription type, so a line editor can tell a membership apart", () => {
+        const option = CatalogOptionFrom(
+            {
+                ID: 'prod-4',
+                Name: 'Sidecar Membership',
+                SKU: 'MEM-SIDECAR',
+                ProductType: 'Membership',
+                ProductTypeID: 'type-membership',
+                Company: 'Meridian',
+                StandaloneSellingPrice: 1200,
+                IsTaxable: false,
+                MaxQuantityPerLine: null,
+                SubscriptionTypeID: 'subtype-annual',
+            },
+            { OrderLineExtensionEntity: null },
+            0,
+        );
+
+        expect(option.SubscriptionTypeID).toBe('subtype-annual');
     });
 });

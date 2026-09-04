@@ -33,7 +33,14 @@ export interface LineSpec {
     UnitPrice?: number;
     /** 0–1. A discount with no linked contra account nets into the sales credit (D11). */
     DiscountPct?: number;
-    /** Coverage window for deferred lines that have no subscription (events, plain deferred services). */
+    /**
+     * Coverage window for deferred lines that have no subscription (events, plain deferred
+     * services).
+     *
+     * On a SUBSCRIPTION line, `ServicePeriodStart` states where the TERM begins (D-TERMSTART) and
+     * the type's rules compute the end from it; a stated end is ignored there, since term length,
+     * anchor and proration belong to the type.
+     */
     ServicePeriodStart?: string;
     ServicePeriodEnd?: string;
     /**

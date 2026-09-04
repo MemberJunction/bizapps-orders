@@ -36,6 +36,7 @@ import {
     IMetadataProvider,
     IRunViewProvider,
     LogError,
+    LogStatus,
     Metadata,
     RunView,
     UserInfo,
@@ -1575,8 +1576,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
      *
      * An explicitly-set period WINS and is never overwritten: a line covering only part of a
      * multi-day event, or a deliberate override, is a legitimate thing to express. Subscription
-     * lines are untouched — their period comes from the term, which is decided later and is
-     * authoritative over anything typed (see `materializeSubscriptions`).
+     * lines are untouched here and follow the same principle by a different route (D-TERMSTART): a
+     * stated `ServicePeriodStart` is an INPUT to the term rather than the final word, so
+     * `decideSubscriptions` starts the term on that date and the type's rules compute the end from
+     * it. The period this column ends up holding is the settled term (see
+     * `materializeSubscriptions`), which for a stated start begins on the very date that was typed.
      *
      * A product with no `EventProduct` row is simply not an event; nothing happens.
      */
@@ -1887,7 +1891,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
             });
             out.RecognitionMonthsByLine.set(line.ID, decided.Behavior.RecognitionMonths(rules));
 
-            // The line's stored service period reflects the TERM, not what a user typed.
+            // The line's stored service period is the SETTLED term — the coverage actually sold.
+            //
+            // Where the line stated a start, the term already begins on that date, so this stamp
+            // simply confirms it. Where it stated none, this is how the derived window becomes
+            // readable on the line. And where the rules overrode the stated date (an extension
+            // continuing existing coverage), the stored period must follow the term rather than the
+            // request, or the line would advertise coverage the subscription does not have.
+            //
+            // The END is always the computed one: term length, anchor and proration are the type's
+            // to decide, and a stated end has no rule to reconcile it against.
             line.ServicePeriodStart = term.StartDate;
             line.ServicePeriodEnd = term.EndDate;
             // The forward link, which nothing was writing. Subscription.OrderLineID
@@ -1949,6 +1962,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 };
             }
 
+            // WHEN COVERAGE BEGINS, when the line states it (D-TERMSTART) — a different question
+            // from `PurchaseDate` below, which stays the booking date.
+            //
+            // Readable here only because this method runs BEFORE `prepareLines`, which stamps the
+            // settled term back onto the same column. Reading it after that point would find the
+            // engine's own answer and treat it as the user's.
+            //
+            // The column therefore does double duty — the user's INPUT before confirm, the settled
+            // term after — and that is only sound because an order confirms exactly once and is
+            // locked afterward. That lock is load-bearing for this design: were an order ever made
+            // re-confirmable, the second pass would read the first pass's term as a stated start.
+            const requestedStart = line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null;
+
             const decision = behavior.Decide({
                 Rules: rules,
                 PurchaseDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
@@ -1960,6 +1986,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // A renewal continues the NAMED subscription rather than starting one, so the
                 // concurrency rule must not refuse it (D55).
                 IsRenewal: !!line.RenewsSubscriptionID,
+                RequestedStartDate: requestedStart,
             });
 
             if (decision.Action === 'Reject') {
@@ -1967,6 +1994,20 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // silently-dropped subscription would leave a paid-for line with no coverage.
                 throw new Error(
                     `Order line ${line.LineNumber} (${product.Name}) cannot be subscribed: ${decision.RejectReason}`,
+                );
+            }
+
+            // A stated start that existing coverage displaced. NOT an error: extending a
+            // subscription mid-term and stating where the new term begins are both reasonable,
+            // and only one of them can win — coverage cannot overlap or gap. Reported rather than
+            // swallowed so the date's disappearance is traceable to a rule instead of looking
+            // like the field was never saved.
+            if (decision.StartOverrideIgnored && decision.Term && requestedStart) {
+                LogStatus(
+                    `Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber} (${product.Name}): the term start ` +
+                        `${requestedStart.toISOString().slice(0, 10)} stated on the line was not used. This line ` +
+                        `extends an existing subscription, so its term begins the day after current coverage ends — ` +
+                        `${decision.Term.StartDate.toISOString().slice(0, 10)}.`,
                 );
             }
 

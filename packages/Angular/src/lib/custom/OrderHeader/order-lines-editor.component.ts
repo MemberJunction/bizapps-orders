@@ -23,7 +23,12 @@ import {
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
-import { GetCatalogOptions, type MJOProductOption } from '../../data/orders-queries';
+import {
+    ContinuationStartFrom,
+    GetCatalogOptions,
+    GetSubscriptionContinuation,
+    type MJOProductOption,
+} from '../../data/orders-queries';
 import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 import {
     ExtensionCollapsedHint,
@@ -170,6 +175,150 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return this.ProductFor(line)?.MaxQuantityPerLine === 1;
     }
 
+    /* ── Term start (D-TERMSTART) ───────────────────────────────────────────
+     *
+     * Only a subscription line has a term, so only a subscription line shows the field. The rest
+     * of the card is about the sale; this is about the coverage the sale buys, and the two dates
+     * genuinely differ — an order booked 8/27 can sell a membership running 8/1–7/31.
+     *
+     * The stored value is `OrderLine.ServicePeriodStart`, which the server treats as an INPUT to
+     * the term rather than the settled window (see `decideSubscriptions`). NULL means "follow the
+     * order date", which is why clearing writes null rather than writing today.
+     */
+
+    public IsSubscriptionLine(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !!this.ProductFor(line)?.SubscriptionTypeID;
+    }
+
+    /**
+     * What the date input shows: the stated start, or the order date as a DEFAULT when nothing is
+     * stated. Rendering an empty field instead would misreport the outcome — an untouched line
+     * still gets a term, and it starts on the order date.
+     */
+    public TermStartValue(line: mjBizAppsOrdersOrderLineEntity): string {
+        return this.dateInputValue(line.ServicePeriodStart ?? this._order?.OrderDate ?? null);
+    }
+
+    /** True while the field is only showing the default, which is what the hint explains. */
+    public TermStartFollowsOrderDate(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !line.ServicePeriodStart;
+    }
+
+    /* ── Renewal lines: the start is dictated, so it is shown rather than asked ──
+     *
+     * A line naming `RenewsSubscriptionID` whose target is LIVE will extend that coverage, and an
+     * extension has to begin the day after the current term ends — coverage may neither overlap
+     * nor gap. Offering an editable field there invites an input that will be ignored, so the field
+     * goes read-only and shows the date the rules will actually use.
+     *
+     * The gate is deliberately narrower than "the line names a subscription": on the server,
+     * `ComputeAction` only forces `ExtendExisting` for an `Active`/`Trialing` target, and an
+     * extension with no prior term end falls through to the ordinary start rules. A lapsed target
+     * REACTIVATES, which honors a stated start — so on those lines the field stays editable,
+     * because there the input is not ignored. `ContinuationStartFrom` holds that rule.
+     *
+     * An ordinary subscription line stays editable even though it may turn out to be an implicit
+     * extension at confirm. The client cannot detect that case — the server dedupes by subscriber
+     * and product — which is what the `StartOverrideIgnored` notice exists for.
+     */
+
+    /** Continuation dates by subscription id. A present key with `null` means "nothing dictated". */
+    private readonly continuationStarts = new Map<string, Date | null>();
+    private readonly loadingContinuations = new Set<string>();
+
+    /**
+     * The date a renewal line's term will begin, or null when nothing dictates it.
+     *
+     * Sync because the template asks per line on every change detection, so the lookup is fired
+     * once per subscription and cached — the same shape `ExtensionFor` uses. A cached `null` is a
+     * real answer and is NOT retried; only an unseen id starts a read.
+     */
+    public ContinuationStartFor(line: mjBizAppsOrdersOrderLineEntity): Date | null {
+        const subscriptionID = line.RenewsSubscriptionID;
+        if (!subscriptionID) return null;
+
+        if (this.continuationStarts.has(subscriptionID)) {
+            return this.continuationStarts.get(subscriptionID) ?? null;
+        }
+        void this.loadContinuation(subscriptionID);
+        return null;
+    }
+
+    /**
+     * True once the term start is known to be the rules' to decide, which is when the field stops
+     * being an input.
+     *
+     * False while the lookup is still in flight, so the field renders editable for that moment
+     * rather than read-only-and-blank. An edit landing in that window is harmless: it writes the
+     * same column, and the server would ignore it exactly as it ignores any other stated start on
+     * a live extension.
+     */
+    public TermStartIsDictated(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.ContinuationStartFor(line) !== null;
+    }
+
+    /** What the read-only field shows on a renewal line. */
+    public ContinuationStartValue(line: mjBizAppsOrdersOrderLineEntity): string {
+        return this.dateInputValue(this.ContinuationStartFor(line));
+    }
+
+    private async loadContinuation(subscriptionID: string): Promise<void> {
+        if (this.loadingContinuations.has(subscriptionID)) return;
+        this.loadingContinuations.add(subscriptionID);
+        try {
+            let start: Date | null = null;
+            try {
+                start = ContinuationStartFrom(await GetSubscriptionContinuation(subscriptionID));
+            } finally {
+                // Cached even when the read failed. Leaving the key absent would restart the read
+                // on the next change detection, and a failing read would then loop for as long as
+                // the card is on screen. A failure means the field stays editable — the server
+                // still applies the rule, so the outcome is right either way.
+                this.continuationStarts.set(subscriptionID, start);
+            }
+            this.cdr.detectChanges();
+        } finally {
+            this.loadingContinuations.delete(subscriptionID);
+        }
+    }
+
+    public SetTermStart(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+
+        // An emptied field is a RESET, not a date of zero — the same rule the button applies, so
+        // clearing by keyboard and clearing by button agree.
+        if (!target.value) {
+            this.ResetTermStart(line);
+            return;
+        }
+
+        // Parsed as UTC midnight from the input's own `yyyy-MM-dd`. `new Date('2026-08-01')` is
+        // already UTC, but building from parts states it rather than relying on that, and keeps the
+        // browser's zone from moving a date the user typed as a calendar day.
+        const [year, month, day] = target.value.split('-').map(Number);
+        if (!year || !month || !day) return;
+        line.ServicePeriodStart = new Date(Date.UTC(year, month - 1, day));
+
+        // NOT priced again: the term start moves no money on the client. A CalendarAnchored type
+        // can prorate a partial first period, but that is settled inside the confirm transaction
+        // and was never part of the client's price preview.
+    }
+
+    /** Hand the line back to the order date — the term start stops being stated at all. */
+    public ResetTermStart(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (!this.EditMode) return;
+        line.ServicePeriodStart = null;
+    }
+
+    /** `<input type="date">` speaks `yyyy-MM-dd` and nothing else. */
+    private dateInputValue(value: Date | null): string {
+        if (!value) return '';
+        const date = value instanceof Date ? value : new Date(value);
+        return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+    }
+
     public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
         if (!this.EditMode) return;
         this.expandedLineIds.delete(line.ID);
@@ -269,6 +418,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     private unbindOrder(): void {
         this.expandedLineIds.clear();
         this.hydratingLineIds.clear();
+        // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
+        // a cached continuation date is only trustworthy for as long as one order is open.
+        this.continuationStarts.clear();
     }
 
     private async addPlainLine(product: MJOProductOption): Promise<void> {

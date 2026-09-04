@@ -65,6 +65,62 @@
                 }
             </div>
 
+            <!--
+                TERM START — subscription lines only (D-TERMSTART).
+                The order date says when the sale was booked; this says when coverage begins, and an
+                agreement settles the two independently. Shown on the card rather than behind the
+                extension disclosure because it is a term fact, and not every subscription product
+                type has an extension form to hide it in.
+            -->
+            @if (IsSubscriptionLine(line)) {
+                <div class="mjo-ol-term">
+                    <!-- `for` only when there IS an input to point at. A label targeting a missing
+                         id is a dead control to a screen reader. -->
+                    <label
+                        class="mjo-ol-term__label"
+                        [attr.for]="EditMode && !TermStartIsDictated(line) ? 'mjo-ol-term-' + line.ID : null">
+                        Term start
+                    </label>
+                    <!-- A renewal of LIVE coverage has no choice to offer: the term begins the day
+                         after the current one ends. Read-only rather than editable-and-ignored. -->
+                    @if (TermStartIsDictated(line)) {
+                        <span class="mjo-ol-term__value is-dictated">{{ ContinuationStartValue(line) }}</span>
+                    } @else if (EditMode) {
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            [class.is-default]="TermStartFollowsOrderDate(line)"
+                            [id]="'mjo-ol-term-' + line.ID"
+                            [value]="TermStartValue(line)"
+                            (change)="SetTermStart(line, $event)">
+                        <!-- Offered only when there is something to reset. A button that clears a
+                             value the line never stated does nothing and invites the reader to
+                             wonder what it did. -->
+                        @if (!TermStartFollowsOrderDate(line)) {
+                            <button
+                                type="button"
+                                class="mjo-ol-term__reset"
+                                (click)="ResetTermStart(line)">
+                                Reset to order date
+                            </button>
+                        }
+                    } @else {
+                        <span class="mjo-ol-term__value">{{ TermStartValue(line) }}</span>
+                    }
+                    <span class="mjo-ol-term__hint">
+                        @if (TermStartIsDictated(line)) {
+                            Continuing existing coverage, so the term begins the day after the current
+                            one ends — not something this line can set.
+                        } @else if (TermStartFollowsOrderDate(line)) {
+                            Following the order date. The subscription type's rules may still adjust
+                            the actual start.
+                        } @else {
+                            Stated on this line, so a later change to the order date leaves it alone.
+                        }
+                    </span>
+                </div>
+            }
+
             @if (ExtensionFor(line); as ext) {
                 <div class="mjo-ol-ext" [class.is-open]="IsExtensionOpen(line)">
                     <button

@@ -94,6 +94,19 @@ export interface SubscriptionDecision {
     };
     /** Populated when Action = 'Reject'. */
     RejectReason?: string;
+    /**
+     * True when a `RequestedStartDate` was supplied and the term begins on a DIFFERENT date,
+     * because an extension continues existing coverage and must start the day after it ends.
+     *
+     * A stated start that matches the continuation date is not reported: the rule and the request
+     * agree, so there is nothing to tell anyone.
+     *
+     * Reported rather than rejected: a renewal line carrying a stated start is a legitimate order
+     * — often the same date the original term started — and refusing it would block the renewal
+     * over a field the customer never sees. The caller surfaces this so the discrepancy is
+     * visible instead of the date silently disappearing.
+     */
+    StartOverrideIgnored?: boolean;
 }
 
 /** The term being canceled, as plain data. */
@@ -175,6 +188,26 @@ export interface SubscriptionPurchaseContext {
      * order every cycle.
      */
     IsRenewal?: boolean;
+    /**
+     * A term start stated on the order line, which WINS over `StartMode` (D-TERMSTART).
+     *
+     * `PurchaseDate` answers "when was this sold" and must stay the order date — the booking
+     * journal entry is dated from it. This answers the separate question "when does coverage
+     * begin", which an agreement settles independently: an order booked 8/27 can sell a
+     * membership running 8/1, 9/1 or 1/1. Deriving both from `OrderDate` conflated the two and
+     * left the term start unsettable, so a mid-month sale of a term that everyone agreed starts
+     * the 1st recognized revenue from the wrong month.
+     *
+     * Absent (the common case) the start is derived from `PurchaseDate` through the type's rules,
+     * exactly as before. Present, it is taken AS GIVEN — including for `Deferred`, whose
+     * `DeferredStartDays` answers "how long after the sale does coverage begin" and has nothing
+     * left to say once someone names the date. `CalendarAnchored` also honors it; the anchor still
+     * governs the END, so a stated start inside a partial period is prorated the same way any
+     * other mid-cycle join is.
+     *
+     * An EXTENSION ignores it — see `Decide`.
+     */
+    RequestedStartDate?: Date | null;
 }
 
 function money(v: number): number {
@@ -229,6 +262,12 @@ export class SubscriptionBehavior {
         const ctx: SubscriptionPurchaseContext = {
             ...rawContext,
             PurchaseDate: utcDay(rawContext.PurchaseDate),
+            // Normalized on the SAME footing as PurchaseDate. A stated start arrives from a SQL
+            // `DATE` column and is a calendar date, so leaving it un-snapped reintroduces exactly
+            // the local-vs-UTC midnight drift the comment on `utcDay` describes — here it would
+            // land a term start hours before the day it names and, on an anchored type, an end
+            // before the start.
+            RequestedStartDate: rawContext.RequestedStartDate ? utcDay(rawContext.RequestedStartDate) : null,
             Existing: rawContext.Existing
                 ? { ...rawContext.Existing, LatestTermEnd: rawContext.Existing.LatestTermEnd ? utcDay(rawContext.Existing.LatestTermEnd) : null }
                 : rawContext.Existing,
@@ -249,10 +288,13 @@ export class SubscriptionBehavior {
             };
         }
 
-        // An extension starts where the existing coverage ends — never overlapping it.
+        // An extension starts where the existing coverage ends — never overlapping it. That rule
+        // outranks a stated start: honoring one here would either overlap the term still running
+        // or leave a gap in coverage the customer has already been sold.
         const extending = action === 'ExtendExisting';
-        const start = extending && ctx.Existing?.LatestTermEnd
-            ? addDays(ctx.Existing.LatestTermEnd, 1)
+        const existingCoverageEnd = extending ? (ctx.Existing?.LatestTermEnd ?? null) : null;
+        const start = existingCoverageEnd
+            ? addDays(existingCoverageEnd, 1)
             : utcDay(this.ComputeStartDate(ctx));
 
         const end = this.ComputeEndDate(ctx, start, extending);
@@ -261,6 +303,16 @@ export class SubscriptionBehavior {
         return {
             Action: action,
             SubscriptionID: action === 'CreateNew' ? undefined : ctx.Existing?.ID,
+            // Only when a start was actually stated, existing coverage displaced it, AND the term
+            // genuinely begins somewhere else. An extension with no prior term end still runs the
+            // ordinary start rules, so it honors the stated date and has nothing to report — and
+            // the likeliest thing a diligent order taker types is exactly the continuation date,
+            // where the rule and the request agree and there is no discrepancy to report. Warning
+            // on that case teaches everyone to skim past the warning.
+            StartOverrideIgnored:
+                !!ctx.RequestedStartDate &&
+                existingCoverageEnd !== null &&
+                start.getTime() !== ctx.RequestedStartDate.getTime(),
             Term: {
                 StartDate: start,
                 EndDate: end,
@@ -376,8 +428,20 @@ export class SubscriptionBehavior {
         }
     }
 
-    /** Immediate / Deferred / snap-forward to the calendar anchor. */
+    /**
+     * A stated start, or else Immediate / Deferred / snap-forward to the calendar anchor.
+     *
+     * The override lives HERE rather than in `Decide` so that a driver subclass overriding this
+     * method decides for itself what a stated start means for its own rules — putting it in
+     * `Decide` would apply it before any subclass could see it, silently disabling the one hook
+     * that exists for exactly this kind of variation.
+     */
     protected ComputeStartDate(ctx: SubscriptionPurchaseContext): Date {
+        // Stated on the line and taken as given — the whole point of the field (D-TERMSTART). Note
+        // what this does NOT do: it never reads `StartMode`, so no rule quietly shifts a date
+        // somebody typed deliberately.
+        if (ctx.RequestedStartDate) return ctx.RequestedStartDate;
+
         const purchase = ctx.PurchaseDate;
         switch (ctx.Rules.StartMode) {
             case 'Immediate':
