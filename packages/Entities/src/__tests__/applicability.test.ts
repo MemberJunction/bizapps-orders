@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { priceApplies } from '../pricing/applicability.js';
-import { EvaluateFilter } from '../pricing/mj-filter-eval.js';
+import { EvaluateFilter, IsCompositeFilter, ParseFilterField } from '../pricing/mj-filter-eval.js';
 
 const memberWhen = {
     logic: 'and' as const,
@@ -68,5 +68,31 @@ describe('EvaluateFilter — groups', () => {
                 BillToPerson: { Title: 'Staff' },
             }),
         ).toBe(false);
+    });
+});
+
+describe('ParseFilterField / IsCompositeFilter', () => {
+    it('splits Source.Field and treats a bare name as the empty source', () => {
+        expect(ParseFilterField('BillToOrganization.Type')).toEqual({
+            source: 'BillToOrganization',
+            name: 'Type',
+        });
+        expect(ParseFilterField('Order.OrderDate')).toEqual({ source: 'Order', name: 'OrderDate' });
+        expect(ParseFilterField('SKU')).toEqual({ source: null, name: 'SKU' });
+        expect(ParseFilterField('.Type')).toEqual({ source: null, name: '.Type' });
+        expect(ParseFilterField('Order.')).toEqual({ source: null, name: 'Order.' });
+        expect(ParseFilterField('  Product.SKU  ')).toEqual({ source: 'Product', name: 'SKU' });
+    });
+
+    it('keeps nested dotted names after the first dot for the field path', () => {
+        expect(ParseFilterField('BillToOrganization.Address.City')).toEqual({
+            source: 'BillToOrganization',
+            name: 'Address.City',
+        });
+    });
+
+    it('distinguishes a group from a leaf rule', () => {
+        expect(IsCompositeFilter({ logic: 'and', filters: [] })).toBe(true);
+        expect(IsCompositeFilter({ field: 'Order.Status', operator: 'eq', value: 'Draft' })).toBe(false);
     });
 });

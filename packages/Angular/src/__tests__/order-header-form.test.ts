@@ -17,6 +17,7 @@ import {
     ORDER_FORM_SAVED_TABS,
     OrderFormTabs,
 } from '../lib/custom/OrderHeader/order-header-form.component';
+import { MJOOrderLinesEditorComponent } from '../lib/custom/OrderHeader/order-lines-editor.component';
 import { OrderHeaderExpandedFromPref } from '../lib/custom/OrderHeader/order-header-prefs';
 
 const here = import.meta.dirname;
@@ -247,6 +248,54 @@ describe('order header link wiring', () => {
         expect(lines).toContain('OverrideReasonText(line)');
         expect(lines).toContain('ShowsForeignRevenue(line)');
         expect(lines).not.toMatch(/@if \(product\.CompanyName\) \{\s*<mjo-consequence-chip Kind="company"/);
+    });
+
+    it('hides the override picker behind a pencil and stamps PriceOverridden / PriceOverrideReason', () => {
+        const lines = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
+            'utf8',
+        );
+        const ts = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.ts'),
+            'utf8',
+        );
+        expect(lines).toContain('mjo-ol-price__pencil');
+        expect(lines).toContain('ToggleOverrideEditor(line)');
+        expect(lines).toContain('IsOverrideEditorOpen(line)');
+        expect(lines).toContain('Override Explanation');
+        expect(lines).toContain('(input)="SetOverrideReason(line, $event)"');
+        expect(lines).toContain('Use Default Price');
+        expect(ts).toContain("this.stamp(line, 'PriceOverridden', true)");
+        expect(ts).toContain("this.stamp(line, 'PriceOverrideReason', reason === '' ? null : reason)");
+        expect(ts).toContain("this.stamp(line, 'PriceOverridden', false)");
+    });
+
+    it('IsOverridden reads PriceOverridden, and ShowsForeignRevenue hides same-company revenue', () => {
+        const instance = Object.create(MJOOrderLinesEditorComponent.prototype) as MJOOrderLinesEditorComponent;
+        (instance as unknown as { _order: { CompanyID: string; Company: string } })._order = {
+            CompanyID: 'co-1',
+            Company: 'Acme',
+        };
+
+        const overridden = {
+            GetFieldByName: (name: string) => (name === 'PriceOverridden' ? { Value: true } : null),
+            FieldIsDirty: () => false,
+        };
+        expect(instance.IsOverridden(overridden as never)).toBe(true);
+        expect(instance.OverrideReasonText({
+            GetFieldByName: (name: string) => (name === 'PriceOverrideReason' ? { Value: 'Board rate' } : null),
+        } as never)).toBe('Board rate');
+
+        (instance as unknown as { ProductFor: () => { CompanyID: string; CompanyName: string } }).ProductFor = () => ({
+            CompanyID: 'co-1',
+            CompanyName: 'Acme',
+        });
+        expect(instance.ShowsForeignRevenue({ ID: 'l1' } as never)).toBe(false);
+        (instance as unknown as { ProductFor: () => { CompanyID: string; CompanyName: string } }).ProductFor = () => ({
+            CompanyID: 'co-2',
+            CompanyName: 'Other Co',
+        });
+        expect(instance.ShowsForeignRevenue({ ID: 'l1' } as never)).toBe(true);
     });
 
     it('keeps existing line extensions collapsed behind a disclosure', () => {
