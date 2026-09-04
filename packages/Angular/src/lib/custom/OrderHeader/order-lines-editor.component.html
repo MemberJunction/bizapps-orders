@@ -41,10 +41,14 @@
                             </button>
                         }
                     </div>
-                    <mjo-price-source-badge
-                        [Source]="PricedLine(line)?.PriceSource ?? null"
-                        [Settled]="!Pricing.Loading"
-                        [Overridden]="IsOverridden(line)" />
+                    @if (IsOverridden(line)) {
+                        <span class="mjo-ol-overpill">overridden</span>
+                    } @else {
+                        <mjo-price-source-badge
+                            [Source]="PricedLine(line)?.PriceSource ?? null"
+                            [Settled]="!Pricing.Loading"
+                            [Overridden]="false" />
+                    }
                     @if (PricedLine(line)?.Error; as why) {
                         <div class="mjo-ol-card__err">{{ why }}</div>
                     }
@@ -65,40 +69,43 @@
 
             @if (IsOverrideEditorOpen(line)) {
                 <div class="mjo-ol-override" role="region" [attr.aria-label]="'Override price for ' + (ProductFor(line)?.Name ?? 'line')">
-                    <select
-                        class="mjo-ol-price__pick"
-                        [value]="SelectedPriceID(line)"
-                        (change)="PickNamedPrice(line, $event)"
-                        aria-label="Named price">
-                        <option value="">{{ EngineLabel(line) }}</option>
-                        @if (OverrideKind === 'any') {
-                            <option value="__custom__">Custom amount</option>
+                    <div class="mjo-ol-override__row">
+                        <select
+                            class="mjo-ol-price__pick"
+                            [value]="SelectedPriceID(line)"
+                            (change)="PickNamedPrice(line, $event)"
+                            aria-label="Named price">
+                            <option value="">{{ DefaultLabel(line) }}</option>
+                            @if (OverrideKind === 'any') {
+                                <option value="__custom__">Custom amount</option>
+                            }
+                            @for (price of ApplicableFor(line); track price.ID) {
+                                <option [value]="price.ID">{{ price.Name }} · {{ price.UnitPrice | mjoMoney }}</option>
+                            }
+                        </select>
+                        @if (ShowCustomAmount(line)) {
+                            <input
+                                class="mjo-ol-price__amt"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                [value]="DisplayUnit(line)"
+                                (change)="TypeAmount(line, $event)"
+                                aria-label="Custom unit price">
                         }
-                        @for (price of ApplicableFor(line); track price.ID) {
-                            <option [value]="price.ID">{{ price.Name }} · {{ price.UnitPrice | mjoMoney }}</option>
-                        }
-                    </select>
-                    @if (OverrideKind === 'any') {
-                        <input
-                            class="mjo-ol-price__amt"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            [value]="DisplayUnit(line)"
-                            (change)="TypeAmount(line, $event)"
-                            aria-label="Unit price">
-                    }
-                    <label class="mjo-ol-override__reason">
-                        <span>Why this price</span>
+                    </div>
+                    <label class="mjo-ol-override__reason" [class.is-off]="!CanExplainOverride(line)">
+                        <span>Override Explanation</span>
                         <textarea
                             rows="2"
+                            [disabled]="!CanExplainOverride(line)"
                             [value]="OverrideReasonText(line)"
                             (change)="SetOverrideReason(line, $event)"
-                            placeholder="Optional — shown on the line and the invoice trail"></textarea>
+                            placeholder="Optional — why this price differs from the default"></textarea>
                     </label>
                     <div class="mjo-ol-override__actions">
                         <button type="button" class="mjo-ol-override__done" (click)="DoneOverrideEditor(line)">Done</button>
-                        <button type="button" class="mjo-ol-override__reset" (click)="ResetOverride(line)">Use engine price</button>
+                        <button type="button" class="mjo-ol-override__reset" (click)="ResetOverride(line)">Use Default Price</button>
                     </div>
                 </div>
             }
