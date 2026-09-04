@@ -13,7 +13,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Metadata, RunView, CompositeKey, EntityFieldTSType } from '@memberjunction/core';
 import {
-    CreateEmptyFilter,
     type CompositeFilterDescriptor,
     type FilterFieldInfo,
 } from '@memberjunction/ng-filter-builder';
@@ -829,7 +828,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     public OpenWhenEditor(row: PriceCard): void {
         this.WhenFields = this.buildWhenFields();
-        this.WhenFilter = this.parseWhenFilter(row.Record) ?? CreateEmptyFilter();
+        this.WhenFilter = this.parseWhenFilter(row.Record) ?? { logic: 'and', filters: [] };
         this.WhenEditorPriceID = row.ID;
         this.cdr?.markForCheck();
     }
