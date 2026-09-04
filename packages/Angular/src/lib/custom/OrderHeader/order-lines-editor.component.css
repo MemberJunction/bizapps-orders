@@ -105,13 +105,154 @@
 
 .mjo-ol-card__price {
     flex: none;
-    width: 118px;
+    min-width: 108px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.mjo-ol-card__price-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    height: 28px;
+}
+
+.mjo-ol-price__pencil {
+    flex: none;
+    color: var(--mj-text-muted);
+}
+
+.mjo-ol-price__pencil:hover {
+    color: var(--mj-text-link);
+    background: var(--mj-bg-surface-hover);
+}
+
+.mjo-ol-price__pick,
+.mjo-ol-price__amt,
+.mjo-ol-override__reason textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: inherit;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.mjo-ol-price__pick {
+    height: 28px;
+    padding: 0 6px;
+    text-align: left;
+    flex: 1 1 180px;
+    max-width: 240px;
+    width: auto;
+}
+
+.mjo-ol-price__amt {
+    height: 28px;
+    padding: 0 8px;
     text-align: right;
+    font-weight: var(--mj-font-semibold);
+    width: 108px;
+    flex: none;
+}
+
+.mjo-ol-override {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-2);
+    margin-top: var(--mj-space-2);
+    padding: var(--mj-space-2);
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-md);
+    background: var(--mj-bg-surface-subtle, var(--mj-bg-surface));
+}
+
+.mjo-ol-override__row {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+}
+
+.mjo-ol-override__reason span {
+    display: block;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+    margin-bottom: 4px;
+}
+
+.mjo-ol-override__reason.is-off {
+    opacity: 0.55;
+}
+
+.mjo-ol-override__reason textarea:disabled {
+    cursor: not-allowed;
+    background: var(--mj-bg-surface-subtle, var(--mj-bg-surface));
+}
+
+.mjo-ol-override__reason textarea {
+    resize: vertical;
+    min-height: 48px;
+    padding: 6px 8px;
+    text-align: left;
+    font-variant-numeric: normal;
+}
+
+.mjo-ol-override__actions {
+    display: flex;
+    gap: var(--mj-space-2);
+    justify-content: flex-end;
+}
+
+.mjo-ol-override__done,
+.mjo-ol-override__reset {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    font-weight: var(--mj-font-semibold);
+    padding: 4px 8px;
+    border-radius: var(--mj-radius-sm);
+}
+
+.mjo-ol-override__done {
+    color: var(--mj-text-link);
+}
+
+.mjo-ol-override__reset {
+    color: var(--mj-text-muted);
+}
+
+.mjo-ol-override__done:hover,
+.mjo-ol-override__reset:hover {
+    background: var(--mj-bg-surface-hover);
 }
 
 .mjo-ol-card__amt {
     font-variant-numeric: tabular-nums;
     font-weight: var(--mj-font-semibold);
+    font-size: var(--mj-text-sm);
+    line-height: 28px;
+}
+
+.mjo-ol-overpill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--mj-status-warning-text);
+    background: color-mix(in srgb, var(--mj-status-warning-text) 16%, transparent);
 }
 
 .mjo-ol-card__err {
@@ -122,11 +263,16 @@
 
 .mjo-ol-card__tot {
     flex: none;
-    width: 104px;
+    min-width: 104px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
     text-align: right;
     font-variant-numeric: tabular-nums;
     font-weight: var(--mj-font-semibold);
     font-size: var(--mj-text-sm);
+    line-height: 28px;
 }
 
 .mjo-ol-iconbtn {
@@ -149,6 +295,13 @@
     gap: 6px;
     flex-wrap: wrap;
     margin-top: var(--mj-space-2);
+}
+
+.mjo-ol-card__why {
+    margin-top: 6px;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-secondary);
+    line-height: 1.35;
 }
 
 .mjo-ol-empty {
@@ -220,6 +373,11 @@
 }
 
 .mj-typeahead-list.is-open { display: block; }
+
+.mj-typeahead-list.is-up {
+    top: auto;
+    bottom: calc(100% + 4px);
+}
 
 .mj-typeahead-item {
     display: flex;

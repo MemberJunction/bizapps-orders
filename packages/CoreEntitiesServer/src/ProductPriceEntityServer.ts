@@ -24,9 +24,9 @@
  *   PURE:  ./PricingBehavior.ts (PickPriceRule — the reader this protects)
  *   DOC:   plans/archive/pricing-schema.md
  */
-import { BaseEntity, IRunViewProvider, RunView, ValidationErrorInfo, ValidationResult } from '@memberjunction/core';
+import { BaseEntity, ValidationErrorInfo, ValidationResult } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { mjBizAppsOrdersProductPriceEntity } from '@mj-biz-apps/orders-entities';
+import { LoadOrdersEngine, OrdersEngine, mjBizAppsOrdersProductPriceEntity } from '@mj-biz-apps/orders-entities';
 
 const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
 
@@ -73,32 +73,26 @@ export class ProductPriceEntityServer extends mjBizAppsOrdersProductPriceEntity 
     public override async ValidateAsync(): Promise<ValidationResult> {
         const result = await super.ValidateAsync();
         if (this.Status !== 'Active') return result; // an inactive rule collides with nothing
+        const productCategoryID = this.Get('ProductCategoryID') as string | null;
+        if (!this.ProductID && !productCategoryID) return result;
 
-        // Statically imported. A dynamic `import()` here violated the house rule and bought nothing:
-        // `@memberjunction/core` is already imported at the top of this file for BaseEntity.
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const listClause = this.PriceListID ? `PriceListID = '${this.PriceListID}'` : `PriceListID IS NULL`;
-        const notSelf = this.IsSaved ? ` AND ID <> '${this.ID}'` : '';
+        await LoadOrdersEngine(this.ProviderToUse as never, this.ContextCurrentUser);
+        const listKey = (this.PriceListID ?? '').toLowerCase();
+        const fee = String(this.FeeType);
+        const priority = Number(this.Priority);
+        const catKey = (productCategoryID ?? '').toLowerCase();
+        const productKey = (this.ProductID ?? '').toLowerCase();
+        const siblings = OrdersEngine.Instance.ProductPrices.filter((o) => {
+            if (this.IsSaved && o.ID === this.ID) return false;
+            if (o.Status !== 'Active') return false;
+            if (String(o.FeeType) !== fee) return false;
+            if (Number(o.Priority) !== priority) return false;
+            if ((o.PriceListID ?? '').toLowerCase() !== listKey) return false;
+            if (this.ProductID) return (o.ProductID ?? '').toLowerCase() === productKey;
+            return ((o as { ProductCategoryID?: string | null }).ProductCategoryID ?? '').toLowerCase() === catKey;
+        });
 
-        const res = await rv.RunView<SiblingRow>(
-            {
-                EntityName: PRODUCT_PRICE_ENTITY,
-                ExtraFilter:
-                    `ProductID = '${this.ProductID}' AND Status = 'Active' AND ${listClause} ` +
-                    `AND FeeType = '${String(this.FeeType).replace(/'/g, "''")}' ` +
-                    `AND Priority = ${Number(this.Priority)}${notSelf}`,
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            this.ContextCurrentUser,
-        );
-        // Loud on failure: silently answering "no siblings" would let the ambiguity through, and the
-        // whole point is that the ambiguity is otherwise invisible until an order fails.
-        if (!res?.Success) {
-            throw new Error(`ProductPriceEntityServer: could not check for conflicting price rules: ${res?.ErrorMessage ?? 'unknown error'}`);
-        }
-
-        const clash = (res.Results ?? []).find(
+        const clash = siblings.find(
             (o) =>
                 bandsOverlap(this.MinQuantity, this.MaxQuantity, o.MinQuantity, o.MaxQuantity) &&
                 windowsOverlap(this.EffectiveFrom, this.EffectiveTo, o.EffectiveFrom, o.EffectiveTo),
@@ -110,7 +104,7 @@ export class ProductPriceEntityServer extends mjBizAppsOrdersProductPriceEntity 
                 new ValidationErrorInfo(
                     'ProductPriceEntityServer.ValidateAsync',
                     `This price rule collides with an existing one: both have priority ${this.Priority}, overlapping ` +
-                        `quantity bands and overlapping effective windows for the same product, price list and fee ` +
+                        `quantity bands and overlapping effective windows for the same product or category, price list and fee ` +
                         `type. The other is ${clash.Description?.trim() || clash.ID}. Pricing resolves by highest ` +
                         `priority and refuses to break a tie, so an order using either quantity would fail. Give one ` +
                         `of them a different priority, narrow a quantity band, or separate the date windows.`,

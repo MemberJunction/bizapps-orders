@@ -8,7 +8,7 @@
  * ever drifts back to local-time construction.
  */
 import { describe, expect, it } from 'vitest';
-import { SubscriptionBehavior, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
+import { SubscriptionBehavior, ResolveSubscriptionTypeID, ResolveRevenueRecognitionTypeID, SubscriptionTypeRulesFrom, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
 
 /** Baseline rules; each test overrides only what it is about. */
 function rules(overrides: Partial<SubscriptionTypeRules> = {}): SubscriptionTypeRules {
@@ -419,5 +419,63 @@ describe('cancellation policy', () => {
             const d = cancelWith({ CancellationMode: 'Immediate', GracePeriodDays: 0 }, '2026-07-01');
             expect(iso(d.AccessThroughDate)).toBe(iso(d.EffectiveDate));
         });
+    });
+});
+
+describe('ResolveSubscriptionTypeID', () => {
+    it('uses the product override when set', () => {
+        expect(ResolveSubscriptionTypeID('prod-st', 'type-default')).toBe('prod-st');
+    });
+
+    it('inherits the product type default when the product left it blank', () => {
+        expect(ResolveSubscriptionTypeID(null, 'type-default')).toBe('type-default');
+        expect(ResolveSubscriptionTypeID('', 'type-default')).toBe('type-default');
+        expect(ResolveSubscriptionTypeID('  ', 'C5E1A870-9B24-4D63-8E17-5A6B7C8D9E01')).toBe(
+            'C5E1A870-9B24-4D63-8E17-5A6B7C8D9E01',
+        );
+    });
+
+    it('is not a subscription when neither the product nor the type names one', () => {
+        expect(ResolveSubscriptionTypeID(null, null)).toBeNull();
+        expect(ResolveSubscriptionTypeID(undefined, '')).toBeNull();
+    });
+});
+
+describe('ResolveRevenueRecognitionTypeID', () => {
+    it('prefers the product override', () => {
+        expect(ResolveRevenueRecognitionTypeID('prod-rr', 'type-default')).toBe('prod-rr');
+    });
+    it('falls back to the product-type default', () => {
+        expect(ResolveRevenueRecognitionTypeID(null, 'type-default')).toBe('type-default');
+        expect(ResolveRevenueRecognitionTypeID('', 'EvenOverTime-id')).toBe('EvenOverTime-id');
+    });
+    it('is null when neither is set', () => {
+        expect(ResolveRevenueRecognitionTypeID(null, null)).toBeNull();
+        expect(ResolveRevenueRecognitionTypeID(undefined, '')).toBeNull();
+    });
+});
+
+describe('SubscriptionTypeRulesFrom', () => {
+    it('fills numeric defaults so a cache row is safe to Decide()', () => {
+        const mapped = SubscriptionTypeRulesFrom({
+            ID: 'st-1',
+            Code: 'AnnualRolling',
+            SubscriberScope: 'Either',
+            BenefitModel: 'Holder',
+            StartMode: 'Immediate',
+            BillingCadence: 'Annual',
+            RecognitionCadence: 'Monthly',
+            ConcurrencyMode: 'ExtendExisting',
+            ReactivationMode: 'AlwaysCreateNew',
+            CancellationMode: 'EndOfTerm',
+            CancellationRefundMode: 'NoRefund',
+            TrialDays: null as unknown as number,
+            AutoRenewDefault: true,
+            RenewalLeadDays: 90,
+            GracePeriodDays: null as unknown as number,
+        });
+        expect(mapped.TrialDays).toBe(0);
+        expect(mapped.GracePeriodDays).toBe(0);
+        expect(mapped.DefaultTermMonths).toBeNull();
     });
 });

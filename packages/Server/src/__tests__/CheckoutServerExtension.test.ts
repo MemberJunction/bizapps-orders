@@ -34,6 +34,13 @@ vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
         ReapExpiredOpenSessions: vi.fn().mockResolvedValue(0),
     },
     EscapeText: (value: string) => value.replace(/'/g, "''"),
+    LoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
+    OrdersEngine: { Instance: {} },
+}));
+
+vi.mock('@mj-biz-apps/orders-entities', () => ({
+    LoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
+    OrdersEngine: { Instance: {} },
 }));
 
 import { CheckoutSessionService } from '@mj-biz-apps/orders-core-entities-server';

@@ -11,7 +11,7 @@ import {
     mjBizAppsOrdersRevenueRecognitionTypeEntity,
 } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersProductFormComponent } from '../../generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
-import { FormatMoney } from '../../panels/money-format';
+import { LoadProductListPriceLabel } from '../../panels/catalog-list-price';
 
 export type ProductFormPane = 'overview' | 'pricing' | 'promos' | 'accounting' | 'fulfillment' | 'subscriptions' | 'bundles' | 'systemMetadata';
 
@@ -49,6 +49,7 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
     public EventProductLoading = false;
     public ProductTypeRecord: mjBizAppsOrdersProductTypeEntity | null = null;
     public RevenueRecRecord: mjBizAppsOrdersRevenueRecognitionTypeEntity | null = null;
+    public ListPriceLabel = 'No price';
 
     protected navigationService = inject(NavigationService, { optional: true });
 
@@ -71,6 +72,7 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         }
 
         await this.syncSubtypeExtension();
+        this.ListPriceLabel = await LoadProductListPriceLabel(this.record?.ID);
     }
 
     public SelectPane(pane: ProductFormPane): void {
@@ -131,11 +133,8 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         return `${venue} · ${start}`;
     }
 
-    /**
-     * Formats the base price into currency.
-     */
     public get FormattedBasePrice(): string {
-        return FormatMoney(this.record?.StandaloneSellingPrice || 0);
+        return this.ListPriceLabel;
     }
 
     /**

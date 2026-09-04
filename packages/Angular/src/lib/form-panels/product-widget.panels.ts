@@ -10,6 +10,9 @@ import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities'
         slot: 'after-fields',
         sortKey: 90,
         contributionKey: 'pricing',
+        inclusion: 'Primary',
+        relatedEntity: 'MJ_BizApps_Orders: Product Prices',
+        relatedJoinField: 'ProductID',
     },
 })
 @Component({

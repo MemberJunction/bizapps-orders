@@ -10,6 +10,7 @@ describe('CatalogOptionFrom', () => {
                 SKU: 'EVT-SUMMIT',
                 ProductType: 'Event',
                 ProductTypeID: 'type-event',
+                CompanyID: 'co-1',
                 Company: 'Meridian',
                 StandaloneSellingPrice: 0,
                 IsTaxable: true,
@@ -24,6 +25,7 @@ describe('CatalogOptionFrom', () => {
         expect(option.ListPrice).toBe(450);
         expect(option.Taxable).toBe(true);
         expect(option.MaxQuantityPerLine).toBe(1);
+        expect(option.CompanyID).toBe('co-1');
     });
 
     it('leaves OrderLineExtensionEntity null when the type is missing', () => {
@@ -34,6 +36,7 @@ describe('CatalogOptionFrom', () => {
                 SKU: 'UNK-1',
                 ProductType: '',
                 ProductTypeID: 'type-missing',
+                CompanyID: 'co-1',
                 Company: 'Meridian',
                 StandaloneSellingPrice: 1,
                 IsTaxable: false,
@@ -53,6 +56,7 @@ describe('CatalogOptionFrom', () => {
                 SKU: 'STK-1',
                 ProductType: 'Goods',
                 ProductTypeID: 'type-goods',
+                CompanyID: 'co-1',
                 Company: 'Meridian',
                 StandaloneSellingPrice: 12,
                 IsTaxable: false,
