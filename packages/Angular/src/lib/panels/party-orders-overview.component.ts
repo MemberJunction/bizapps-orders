@@ -206,7 +206,7 @@ interface TimelineItem {
                                     <tbody>
                                         @for (ord of Orders; track ord.ID) {
                                             <tr (click)="OnOrderClick(ord.ID)">
-                                                <td class="mjo-table__order-num">{{ ord.OrderNumber }}</td>
+                                                <td class="mjo-table__order-num" [title]="ord.OrderNumber">{{ ord.OrderNumber }}</td>
                                                 <td>{{ FormatDate(ord.OrderDate) }}</td>
                                                 <td class="mjo-table__amount">{{ FormatCurrency(ord.TotalGross) }}</td>
                                                 <td>
@@ -555,6 +555,10 @@ interface TimelineItem {
             font-family: var(--mj-font-mono, monospace);
             font-weight: 600;
             color: var(--mj-brand-primary, #38bdf8);
+            max-width: 140px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .mjo-table__amount {
@@ -952,8 +956,9 @@ export class PartyOrdersOverviewComponent implements OnInit {
 
         if (this.Orders.length > 0) {
             this.Orders.forEach(ord => {
+                const status = ord.Status || 'Confirmed';
                 list.push({
-                    Title: `Order ${ord.OrderNumber} ${ord.Status || 'Confirmed'}`,
+                    Title: `Order (${status})`,
                     Subtitle: `${this.FormatCurrency(ord.TotalGross)} • ${this.GetPaymentStatus(ord)}`,
                     TimeAgo: this.FormatDate(ord.OrderDate),
                     Icon: 'fa-solid fa-cart-shopping',
