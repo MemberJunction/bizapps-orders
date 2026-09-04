@@ -212,6 +212,17 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return this.Catalog.find((p) => UUIDsEqual(p.ID, line.ProductID));
     }
 
+    /** True when the line books to a different company than the order's selling company. */
+    public ShowsForeignRevenue(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const product = this.ProductFor(line);
+        if (!product?.CompanyName) return false;
+        const sellingID = this._order?.CompanyID;
+        if (product.CompanyID && sellingID) return !UUIDsEqual(product.CompanyID, sellingID);
+        const sellingName = this._order?.Company;
+        if (!sellingName) return true;
+        return product.CompanyName.trim().toLowerCase() !== String(sellingName).trim().toLowerCase();
+    }
+
     public PricedLine(line: mjBizAppsOrdersOrderLineEntity): MJOLinePrice | undefined {
         return this.Pricing.Result?.Lines.find((priced) => UUIDsEqual(priced.ClientKey, line.ID));
     }
@@ -345,6 +356,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const target = event.target;
         if (!(target instanceof HTMLTextAreaElement)) return;
         const reason = target.value.trim();
+        this.stamp(line, 'PriceOverridden', true);
         this.stamp(line, 'PriceOverrideReason', reason === '' ? null : reason);
     }
 

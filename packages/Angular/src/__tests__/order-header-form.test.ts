@@ -238,6 +238,17 @@ describe('order header link wiring', () => {
         });
     });
 
+    it('shows an override explanation under the consequence chips and hides same-company revenue', () => {
+        const lines = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
+            'utf8',
+        );
+        expect(lines).toContain('mjo-ol-card__why');
+        expect(lines).toContain('OverrideReasonText(line)');
+        expect(lines).toContain('ShowsForeignRevenue(line)');
+        expect(lines).not.toMatch(/@if \(product\.CompanyName\) \{\s*<mjo-consequence-chip Kind="company"/);
+    });
+
     it('keeps existing line extensions collapsed behind a disclosure', () => {
         const lines = readFileSync(
             join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),

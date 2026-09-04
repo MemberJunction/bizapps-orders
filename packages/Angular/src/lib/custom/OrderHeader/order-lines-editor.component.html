@@ -100,7 +100,7 @@
                             rows="2"
                             [disabled]="!CanExplainOverride(line)"
                             [value]="OverrideReasonText(line)"
-                            (change)="SetOverrideReason(line, $event)"
+                            (input)="SetOverrideReason(line, $event)"
                             placeholder="Optional — why this price differs from the default"></textarea>
                     </label>
                     <div class="mjo-ol-override__actions">
@@ -118,11 +118,14 @@
                     @if (!product.Taxable) {
                         <mjo-consequence-chip Kind="untaxable">Untaxable</mjo-consequence-chip>
                     }
-                    @if (product.CompanyName) {
+                    @if (ShowsForeignRevenue(line)) {
                         <mjo-consequence-chip Kind="company">Revenue to {{ product.CompanyName }}</mjo-consequence-chip>
                     }
                 }
             </div>
+            @if (OverrideReasonText(line); as why) {
+                <div class="mjo-ol-card__why">{{ why }}</div>
+            }
 
             @if (ExtensionFor(line); as ext) {
                 <div class="mjo-ol-ext" [class.is-open]="IsExtensionOpen(line)">

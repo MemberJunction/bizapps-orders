@@ -1079,6 +1079,7 @@ export interface MJOProductOption {
     /** MJ entity name of the IS-A Order Line extension, when the type has one. */
     OrderLineExtensionEntity: string | null;
     CompanyName: string;
+    CompanyID: string;
     ListPrice: number;
     Taxable: boolean;
     /** NULL = no cap. 1 = one unit per line (conference tickets). */
@@ -1089,7 +1090,7 @@ export interface MJOProductOption {
 export function CatalogOptionFrom(
     product: Pick<
         mjBizAppsOrdersProductEntity,
-        'ID' | 'Name' | 'SKU' | 'ProductType' | 'ProductTypeID' | 'Company' | 'StandaloneSellingPrice' | 'IsTaxable' | 'MaxQuantityPerLine'
+        'ID' | 'Name' | 'SKU' | 'ProductType' | 'ProductTypeID' | 'CompanyID' | 'Company' | 'StandaloneSellingPrice' | 'IsTaxable' | 'MaxQuantityPerLine'
     >,
     type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
     listPrice: number,
@@ -1102,6 +1103,7 @@ export function CatalogOptionFrom(
         ProductTypeID: product.ProductTypeID,
         OrderLineExtensionEntity: type?.OrderLineExtensionEntity ?? null,
         CompanyName: product.Company ?? '',
+        CompanyID: product.CompanyID ?? '',
         ListPrice: product.StandaloneSellingPrice || listPrice || 0,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),

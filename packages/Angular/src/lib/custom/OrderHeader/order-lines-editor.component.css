@@ -297,6 +297,13 @@
     margin-top: var(--mj-space-2);
 }
 
+.mjo-ol-card__why {
+    margin-top: 6px;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-secondary);
+    line-height: 1.35;
+}
+
 .mjo-ol-empty {
     display: flex;
     flex-direction: column;
