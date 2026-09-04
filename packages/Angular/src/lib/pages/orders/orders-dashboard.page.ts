@@ -6,10 +6,21 @@ import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../..
 import { DaysSince, FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent, MJEmptyStateComponent, MJTabNavComponent, type TabConfig, type MJAlertVariant } from '@memberjunction/ng-ui-components';
 import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
-import { Metadata, type EntityInfo } from '@memberjunction/core';
+import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { GetOrders } from '../../data/orders-queries';
 import { LocalDay, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { NavigationService } from '@memberjunction/ng-shared';
+import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
+
+/** A customer (organization or individual) ranked by lifetime order spend. */
+export interface MJOTopCustomerItem {
+    ID?: string;
+    Name: string;
+    OrderCount: number;
+    TotalGross: number;
+    FormattedTotal: string;
+}
 
 /** A queue worth someone's attention, with where it leads. */
 interface MJOQueue {
@@ -135,6 +146,54 @@ interface MJOAttentionItem {
                         </div>
                         <div class="mj-card-pad">
                             <mjo-bar-list [Rows]="StatusMix" EmptyText="No orders yet." />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mjo-dash__split mjo-dash__split--two">
+                    <div class="mj-card">
+                        <div class="mj-card-head">
+                            <i class="fa-solid fa-building" aria-hidden="true"></i>
+                            <h3>Top Organizations</h3>
+                            <span class="right small muted">by spend</span>
+                        </div>
+                        <div class="mj-card-pad mjo-dash__leaderboard">
+                            @for (org of TopOrganizations; track (org.ID ?? org.Name); let idx = $index) {
+                                <div class="mjo-dash__leader-row" (click)="OnCustomerClick('Organization', org.ID)">
+                                    <span class="mjo-dash__rank">{{ idx + 1 }}</span>
+                                    <div class="mjo-dash__leader-info">
+                                        <span class="mjo-dash__leader-name" [title]="org.Name">{{ org.Name }}</span>
+                                        <span class="small muted">{{ org.OrderCount }} order{{ org.OrderCount === 1 ? '' : 's' }}</span>
+                                    </div>
+                                    <b class="mj-num mjo-dash__leader-amount">{{ org.FormattedTotal }}</b>
+                                    <i class="fa-solid fa-chevron-right muted tiny" aria-hidden="true"></i>
+                                </div>
+                            } @empty {
+                                <div class="small muted">No organization orders recorded.</div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="mj-card">
+                        <div class="mj-card-head">
+                            <i class="fa-solid fa-users" aria-hidden="true"></i>
+                            <h3>Top People</h3>
+                            <span class="right small muted">by spend</span>
+                        </div>
+                        <div class="mj-card-pad mjo-dash__leaderboard">
+                            @for (person of TopPeople; track (person.ID ?? person.Name); let idx = $index) {
+                                <div class="mjo-dash__leader-row" (click)="OnCustomerClick('Person', person.ID)">
+                                    <span class="mjo-dash__rank">{{ idx + 1 }}</span>
+                                    <div class="mjo-dash__leader-info">
+                                        <span class="mjo-dash__leader-name" [title]="person.Name">{{ person.Name }}</span>
+                                        <span class="small muted">{{ person.OrderCount }} order{{ person.OrderCount === 1 ? '' : 's' }}</span>
+                                    </div>
+                                    <b class="mj-num mjo-dash__leader-amount">{{ person.FormattedTotal }}</b>
+                                    <i class="fa-solid fa-chevron-right muted tiny" aria-hidden="true"></i>
+                                </div>
+                            } @empty {
+                                <div class="small muted">No customer orders recorded.</div>
+                            }
                         </div>
                     </div>
                 </div>
@@ -343,11 +402,71 @@ interface MJOAttentionItem {
                 grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
                 margin-top: var(--mj-space-4);
             }
+            .mjo-dash__split--two {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                margin-top: var(--mj-space-4);
+            }
             .mjo-dash__split {
                 display: grid;
                 grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
                 gap: var(--mj-space-4);
                 margin-top: var(--mj-space-6);
+            }
+            .mjo-dash__leaderboard {
+                display: flex;
+                flex-direction: column;
+                gap: var(--mj-space-2);
+            }
+            .mjo-dash__leader-row {
+                display: flex;
+                align-items: center;
+                gap: var(--mj-space-3);
+                padding: var(--mj-space-2) var(--mj-space-3);
+                border-radius: var(--mj-radius-md);
+                cursor: pointer;
+                transition: background-color 150ms ease;
+            }
+            .mjo-dash__leader-row:hover {
+                background: var(--mj-bg-surface-hover, rgba(0, 0, 0, 0.04));
+            }
+            .mjo-dash__rank {
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                background: var(--mj-bg-subtle, #f3f4f6);
+                color: var(--mj-text-muted);
+                font-size: 12px;
+                font-weight: var(--mj-font-bold, 600);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+            }
+            .mjo-dash__leader-row:first-child .mjo-dash__rank {
+                background: var(--mj-brand-primary-light, #e0e7ff);
+                color: var(--mj-brand-primary, #4338ca);
+            }
+            .mjo-dash__leader-info {
+                flex: 1;
+                min-width: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+            .mjo-dash__leader-name {
+                font-weight: var(--mj-font-medium, 500);
+                color: var(--mj-text-primary, inherit);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .mjo-dash__leader-row:hover .mjo-dash__leader-name {
+                color: var(--mj-brand-primary);
+            }
+            .mjo-dash__leader-amount {
+                font-size: 14px;
+                font-weight: var(--mj-font-semibold, 600);
+                flex-shrink: 0;
             }
             .mjo-dash__queue {
                 display: flex;
@@ -393,6 +512,7 @@ interface MJOAttentionItem {
             }
             @media (max-width: 1000px) {
                 .mjo-dash__split,
+                .mjo-dash__split--two,
                 .mjo-dash__split--wide { grid-template-columns: 1fr; }
             }
             @media (max-width: 760px) {
@@ -405,6 +525,7 @@ interface MJOAttentionItem {
 })
 export class MJOOrdersDashboardPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
+    private readonly navigationService = inject(NavigationService, { optional: true });
 
     @Output() NavigateRequested = new EventEmitter<string>();
     @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
@@ -537,6 +658,76 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return [...this.orders]
             .sort((a, b) => String(b.OrderDate ?? '').localeCompare(String(a.OrderDate ?? '')))
             .slice(0, 7);
+    }
+
+    public get TopOrganizations(): MJOTopCustomerItem[] {
+        const orgMap = new Map<string, { ID?: string; Name: string; OrderCount: number; TotalGross: number }>();
+        for (const order of this.orders) {
+            if (order.Status === 'Voided') continue;
+            const orgId = order.BillToOrganizationID;
+            const orgName = order.BillToOrganization;
+            if (orgId || orgName) {
+                const key = orgId || orgName!;
+                const existing = orgMap.get(key);
+                const gross = order.TotalGross ?? 0;
+                if (existing) {
+                    existing.OrderCount++;
+                    existing.TotalGross += gross;
+                } else {
+                    orgMap.set(key, {
+                        ID: orgId ?? undefined,
+                        Name: orgName || 'Unknown Organization',
+                        OrderCount: 1,
+                        TotalGross: gross
+                    });
+                }
+            }
+        }
+        return Array.from(orgMap.values())
+            .sort((a, b) => b.TotalGross - a.TotalGross || b.OrderCount - a.OrderCount)
+            .slice(0, 5)
+            .map(item => ({
+                ...item,
+                FormattedTotal: FormatMoney(item.TotalGross, { Round: true })
+            }));
+    }
+
+    public get TopPeople(): MJOTopCustomerItem[] {
+        const personMap = new Map<string, { ID?: string; Name: string; OrderCount: number; TotalGross: number }>();
+        for (const order of this.orders) {
+            if (order.Status === 'Voided') continue;
+            const personId = order.BillToPersonID;
+            const personName = order.BillToPerson;
+            if (personId || personName) {
+                const key = personId || personName!;
+                const existing = personMap.get(key);
+                const gross = order.TotalGross ?? 0;
+                if (existing) {
+                    existing.OrderCount++;
+                    existing.TotalGross += gross;
+                } else {
+                    personMap.set(key, {
+                        ID: personId ?? undefined,
+                        Name: personName || 'Unknown Person',
+                        OrderCount: 1,
+                        TotalGross: gross
+                    });
+                }
+            }
+        }
+        return Array.from(personMap.values())
+            .sort((a, b) => b.TotalGross - a.TotalGross || b.OrderCount - a.OrderCount)
+            .slice(0, 5)
+            .map(item => ({
+                ...item,
+                FormattedTotal: FormatMoney(item.TotalGross, { Round: true })
+            }));
+    }
+
+    public OnCustomerClick(kind: 'Organization' | 'Person', id?: string): void {
+        if (!id || !this.navigationService) return;
+        const entityName = kind === 'Organization' ? MJO_COMMON_ENTITIES.Organization : MJO_COMMON_ENTITIES.Person;
+        this.navigationService.OpenEntityRecord(entityName, CompositeKey.FromID(id));
     }
 
     public get WorthALook(): MJOAttentionItem[] {
