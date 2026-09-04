@@ -55,8 +55,4 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
         this.ListPriceLabel = await LoadProductListPriceLabel(productId);
         this.cdr?.markForCheck();
     }
-
-    public get RevRec(): string {
-        return this.Record.RevenueRecognitionType || '—';
-    }
 }

@@ -105,9 +105,25 @@
 
 .mjo-ol-card__price {
     flex: none;
-    width: 118px;
+    width: 168px;
     text-align: right;
 }
+
+.mjo-ol-price-pick,
+.mjo-ol-price-any {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    border: 1px solid var(--mj-border-default);
+    background: var(--mj-bg-surface-sunken, transparent);
+    color: inherit;
+    border-radius: var(--mj-radius-sm);
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    padding: 4px 6px;
+}
+
+.mjo-ol-price-any { text-align: right; }
 
 .mjo-ol-card__amt {
     font-variant-numeric: tabular-nums;

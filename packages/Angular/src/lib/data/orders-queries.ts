@@ -1081,6 +1081,8 @@ export interface MJOProductOption {
     /** MJ entity name of the IS-A Order Line extension, when the type has one. */
     OrderLineExtensionEntity: string | null;
     CompanyName: string;
+    CompanyID: string;
+    ProductCategoryID: string | null;
     ListPrice: number;
     Taxable: boolean;
     /** NULL = no cap. 1 = one unit per line (conference tickets). */
@@ -1091,7 +1093,7 @@ export interface MJOProductOption {
 export function CatalogOptionFrom(
     product: Pick<
         mjBizAppsOrdersProductEntity,
-        'ID' | 'Name' | 'SKU' | 'ProductType' | 'ProductTypeID' | 'Company' | 'StandaloneSellingPrice' | 'IsTaxable' | 'MaxQuantityPerLine'
+        'ID' | 'Name' | 'SKU' | 'ProductType' | 'ProductTypeID' | 'Company' | 'CompanyID' | 'ProductCategoryID' | 'IsTaxable' | 'MaxQuantityPerLine'
     >,
     type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
     listPrice: number,
@@ -1104,7 +1106,9 @@ export function CatalogOptionFrom(
         ProductTypeID: product.ProductTypeID,
         OrderLineExtensionEntity: type?.OrderLineExtensionEntity ?? null,
         CompanyName: product.Company ?? '',
-        ListPrice: product.StandaloneSellingPrice || listPrice || 0,
+        CompanyID: product.CompanyID ?? '',
+        ProductCategoryID: product.ProductCategoryID ?? null,
+        ListPrice: listPrice || 0,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
     };
@@ -1146,7 +1150,9 @@ async function loadCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> 
     ]);
     const byProduct = new Map<string, number>();
     for (const price of prices) {
-        if (price.ProductID && !byProduct.has(price.ProductID)) byProduct.set(price.ProductID, price.Amount);
+        if (!price.ProductID || price.PriceListID) continue;
+        if (price.Status && price.Status !== 'Active') continue;
+        if (!byProduct.has(price.ProductID)) byProduct.set(price.ProductID, price.Amount);
     }
     const typesById = new Map(types.map((type) => [type.ID, type]));
     return products.map((product) =>

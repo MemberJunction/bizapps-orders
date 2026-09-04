@@ -6,6 +6,7 @@ import {
     CompositeKey,
     Metadata,
     type IMetadataProvider,
+    type UserInfo,
 } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 import {
@@ -18,6 +19,12 @@ import {
     OrderHeaderEntity,
     OrderLineEntity,
     ClampLineQuantity,
+    ListApplicablePrices,
+    loadApplicabilityContext,
+    priceOverrideCatalogInstalled,
+    userPriceOverrideKind,
+    type ApplicablePrice,
+    type PriceOverrideKind,
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
@@ -83,6 +90,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public PickerCursor = 0;
     public PickerOpen = false;
     public CatalogError: string | null = null;
+    /** `unsynced` = auth catalog not pushed yet, so the gate is off and both controls show. */
+    public OverrideAccess: PriceOverrideKind | 'unsynced' = 'none';
+    private readonly applicableByLine = new Map<string, ApplicablePrice[]>();
 
     public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
         return [...(this._order?.Lines.Items ?? [])];
@@ -185,6 +195,62 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return this.Pricing.Result?.Lines.find((priced) => UUIDsEqual(priced.ClientKey, line.ID));
     }
 
+    public get CanPickNamedPrice(): boolean {
+        return this.OverrideAccess === 'list' || this.OverrideAccess === 'any' || this.OverrideAccess === 'unsynced';
+    }
+
+    public get CanTypeAmount(): boolean {
+        return this.OverrideAccess === 'any' || this.OverrideAccess === 'unsynced';
+    }
+
+    public ApplicableFor(line: mjBizAppsOrdersOrderLineEntity): ApplicablePrice[] {
+        return this.applicableByLine.get(line.ID) ?? [];
+    }
+
+    public SelectedNamedPriceID(line: mjBizAppsOrdersOrderLineEntity): string {
+        return line.ProductPriceID ?? '';
+    }
+
+    public StatedAmountValue(line: mjBizAppsOrdersOrderLineEntity): number | string {
+        const field = line.GetFieldByName('UnitPrice');
+        if (field?.Dirty) return Number(line.UnitPrice ?? 0);
+        return this.PricedLine(line)?.UnitPrice ?? '';
+    }
+
+    public OnPickNamedPrice(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
+        const target = event.target;
+        if (!(target instanceof HTMLSelectElement)) return;
+        const id = target.value;
+        if (!id) {
+            this.clearStatedPrice(line);
+            this.schedulePricing();
+            return;
+        }
+        const pick = this.ApplicableFor(line).find((p) => UUIDsEqual(p.ID, id));
+        if (!pick) return;
+        line.ProductPriceID = pick.ID;
+        line.UnitPrice = pick.UnitPrice;
+        this.schedulePricing();
+    }
+
+    public OnTypeAmount(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode || !this.CanTypeAmount) return;
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const raw = Number.parseFloat(target.value);
+        if (!Number.isFinite(raw)) return;
+        line.UnitPrice = raw;
+        this.schedulePricing();
+    }
+
+    private clearStatedPrice(line: mjBizAppsOrdersOrderLineEntity): void {
+        const unit = line.GetFieldByName('UnitPrice');
+        if (unit) unit.Value = unit.OldValue;
+        const price = line.GetFieldByName('ProductPriceID');
+        if (price) price.Value = price.OldValue;
+    }
+
     public OpenProduct(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
         event.preventDefault();
         event.stopPropagation();
@@ -257,6 +323,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     private async onOrderBound(): Promise<void> {
+        this.resolveOverrideAccess();
         if (this.Catalog.length === 0) await this.loadCatalog();
         if (this._order && !this._order.Lines.IsLoaded && this._order.IsSaved) {
             await this._order.Lines.Load();
@@ -266,9 +333,20 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.cdr.detectChanges();
     }
 
+    private resolveOverrideAccess(): void {
+        const provider = this.metadata;
+        const user = new Metadata().CurrentUser as UserInfo | null;
+        if (!priceOverrideCatalogInstalled(provider)) {
+            this.OverrideAccess = 'unsynced';
+            return;
+        }
+        this.OverrideAccess = userPriceOverrideKind(user, provider);
+    }
+
     private unbindOrder(): void {
         this.expandedLineIds.clear();
         this.hydratingLineIds.clear();
+        this.applicableByLine.clear();
     }
 
     private async addPlainLine(product: MJOProductOption): Promise<void> {
@@ -344,7 +422,67 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.pricing.SchedulePricing(this._order, (state) => {
             this.Pricing = state;
             this.PricingChanged.emit(state);
+            if (!state.Loading) void this.refreshAllApplicable();
             this.cdr.detectChanges();
         });
+    }
+
+    private async refreshAllApplicable(): Promise<void> {
+        await Promise.all(this.Lines.map((line) => this.refreshApplicableForLine(line)));
+        this.cdr.detectChanges();
+    }
+
+    private async refreshApplicableForLine(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        if (!this._order || !line.ProductID) return;
+        const product = this.ProductFor(line);
+        const companyId = product?.CompanyID || this._order.CompanyID;
+        if (!companyId) {
+            this.applicableByLine.set(line.ID, []);
+            return;
+        }
+        const md = new Metadata();
+        const user = md.CurrentUser as UserInfo | null;
+        const provider = this.metadata;
+        if (!user) return;
+        try {
+            const ctx = {
+                ProductID: line.ProductID,
+                ProductCategoryID: product?.ProductCategoryID ?? null,
+                CompanyID: companyId,
+                Quantity: Number(line.Quantity ?? 0),
+                AsOf: this._order.OrderDate ? new Date(this._order.OrderDate) : new Date(),
+                OrganizationID: this._order.BillToOrganizationID ?? null,
+                PersonID: this._order.BillToPersonID ?? null,
+                ApplicabilityContext: await loadApplicabilityContext(
+                    {
+                        OrderHeaderID: this._order.ID,
+                        ProductID: line.ProductID,
+                        BillToPersonID: this._order.BillToPersonID ?? null,
+                        BillToOrganizationID: this._order.BillToOrganizationID ?? null,
+                        ShipToPersonID: this._order.ShipToPersonID ?? null,
+                        ShipToOrganizationID: this._order.ShipToOrganizationID ?? null,
+                        BillToAddressID: this._order.BillToAddressID ?? null,
+                        ShipToAddressID: this._order.ShipToAddressID ?? null,
+                        OrderFallback: this._order.IsSaved
+                            ? null
+                            : {
+                                  OrderDate: this._order.OrderDate,
+                                  Status: this._order.Status,
+                                  BillToPersonID: this._order.BillToPersonID,
+                                  BillToOrganizationID: this._order.BillToOrganizationID,
+                                  ShipToPersonID: this._order.ShipToPersonID,
+                                  ShipToOrganizationID: this._order.ShipToOrganizationID,
+                                  BillToAddressID: this._order.BillToAddressID,
+                                  ShipToAddressID: this._order.ShipToAddressID,
+                              },
+                    },
+                    provider,
+                    user,
+                ),
+            };
+            this.applicableByLine.set(line.ID, await ListApplicablePrices(ctx, provider, user));
+        } catch {
+            this.applicableByLine.set(line.ID, []);
+        }
     }
 }

@@ -153,7 +153,7 @@
                                             <div class="mjo-when-edit">
                                                 <div class="mjo-when-title">When this price applies</div>
                                                 <mj-filter-builder
-                                                    [fields]="WhenFields"
+                                                    [sources]="WhenBuilderSources"
                                                     [filter]="WhenFilter"
                                                     [showSummary]="true"
                                                     (filterChange)="OnWhenFilterChange($event)">
@@ -248,18 +248,47 @@
             <h3>Test a quote</h3>
             <button type="button" class="mjo-btn-subtle" (click)="CloseQuote()">Close</button>
         </div>
-        <p class="mjo-quote-lede">Optional. Sample bill-to type against these prices. Same walk as GL — product then category.</p>
-        <label class="mjo-field-group">
-            <span class="mjo-sub-label">Bill-to organization Type</span>
-            <select class="mjo-input-select" [(ngModel)]="QuoteOrgType" (ngModelChange)="RunQuote()">
-                <option value="Member">Member</option>
-                <option value="Prospect">Prospect</option>
-            </select>
-        </label>
-        <label class="mjo-field-group">
-            <span class="mjo-sub-label">Qty</span>
-            <input type="number" class="mjo-input-num" [(ngModel)]="SimQuantity" min="1" (ngModelChange)="RunQuote()">
-        </label>
+        <p class="mjo-quote-lede">Same bag the engine evaluates: this product, an as-of order, and bill-to / ship-to parties. Empty parties are null, so a When on that party does not match.</p>
+        <div class="mjo-quote-grid">
+            <label class="mjo-field-group">
+                <span class="mjo-sub-label">As of</span>
+                <input type="date" class="mjo-input-text" [(ngModel)]="QuoteAsOf" (ngModelChange)="ScheduleQuote()">
+            </label>
+            <label class="mjo-field-group">
+                <span class="mjo-sub-label">Qty</span>
+                <input type="number" class="mjo-input-num" [(ngModel)]="SimQuantity" min="1" (ngModelChange)="ScheduleQuote()">
+            </label>
+            <label class="mjo-field-group">
+                <span class="mjo-sub-label">Order status</span>
+                <input class="mjo-input-text" [(ngModel)]="QuoteOrderStatus" placeholder="optional" (ngModelChange)="ScheduleQuote()">
+            </label>
+        </div>
+        @for (slot of QuoteParties; track slot.key) {
+            <label class="mjo-field-group mjo-quote-party">
+                <span class="mjo-sub-label">{{ slot.label }}</span>
+                <div class="mjo-quote-typeahead">
+                    <input
+                        class="mjo-input-text"
+                        [(ngModel)]="slot.query"
+                        [placeholder]="'Search ' + slot.label.toLowerCase()"
+                        (ngModelChange)="SearchQuoteParty(slot)"
+                        autocomplete="off">
+                    @if (slot.id) {
+                        <button type="button" class="mjo-btn-subtle" (click)="ClearQuoteParty(slot)">Clear</button>
+                    }
+                </div>
+                @if (slot.hits.length) {
+                    <div class="mjo-quote-hits" role="listbox">
+                        @for (hit of slot.hits; track hit.ID) {
+                            <button type="button" class="mjo-quote-hit" (mousedown)="PickQuoteParty(slot, hit)">{{ hit.Label }}</button>
+                        }
+                    </div>
+                }
+            </label>
+        }
+        @if (QuoteBusy) {
+            <p class="mjo-quote-why"><i class="fa-solid fa-spinner fa-spin"></i> Resolving…</p>
+        }
         <div class="mjo-quote-amt">{{ QuoteResult.AmountText }}</div>
         <p class="mjo-quote-why">{{ QuoteResult.Why }}</p>
         @if (QuoteResult.Skipped) {
