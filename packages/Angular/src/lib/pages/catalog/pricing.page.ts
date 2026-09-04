@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
@@ -46,7 +46,8 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
         <div class="mjo-pr__viewer-host">
             @if (ProductPriceEntityInfo) {
                 <mj-entity-viewer
-                    [Entity]="ProductPriceEntityInfo">
+                    [Entity]="ProductPriceEntityInfo"
+                    (CreateRecordRequested)="OnCreateRequested()">
                 </mj-entity-viewer>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading price rules...</div>
@@ -251,6 +252,18 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
 export class MJOPricingPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    /**
+     * The grid's New button EMITS -- it does not create. `mj-entity-viewer` raises
+     * `CreateRecordRequested` and leaves the host to act; nothing bound it here, so every New
+     * button on this screen did nothing at all, silently and with no console error. The entity
+     * name travels with the event so the section needs one handler rather than one per grid.
+     */
+    @Output() CreateRecordRequested = new EventEmitter<string>();
+
+    public OnCreateRequested(): void {
+        this.CreateRecordRequested.emit(MJO_ENTITIES.ProductPrice);
+    }
+
     public ProductPriceEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersProductPriceEntity[] = [];
 
@@ -363,7 +376,8 @@ export class MJOPricingPageComponent implements OnInit {
         <div class="mjo-pr__viewer-host">
             @if (PromotionEntityInfo) {
                 <mj-entity-viewer
-                    [Entity]="PromotionEntityInfo">
+                    [Entity]="PromotionEntityInfo"
+                    (CreateRecordRequested)="OnCreateRequested()">
                 </mj-entity-viewer>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading promotions...</div>
@@ -404,6 +418,12 @@ export class MJOPricingPageComponent implements OnInit {
 })
 export class MJOPromotionsPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
+
+    @Output() CreateRecordRequested = new EventEmitter<string>();
+
+    public OnCreateRequested(): void {
+        this.CreateRecordRequested.emit(MJO_ENTITIES.Promotion);
+    }
 
     public PromotionEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersPromotionEntity[] = [];

@@ -286,6 +286,11 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         on<{ ID?: string } | string>('PaymentOpened', (row) => this.openEntity(MJO_ENTITIES.PaymentHeader, row));
         on<{ ID?: string } | string>('ProductOpened', (row) => this.openEntity(MJO_ENTITIES.Product, row));
 
+        // The grid's New button only ASKS. `mj-entity-viewer` emits `CreateRecordRequested` and
+        // leaves creating to the host; no catalog grid bound it, so all four New buttons were dead.
+        // The page sends the entity name, so this stays one line however many grids appear later.
+        on<string>('CreateRecordRequested', (entityName) => this.navigationService.OpenNewEntityRecord(entityName));
+
         // The irreversible step. Straight to the engine — there is no dry run in front of it.
         on<OrderHeaderEntity>('ConfirmRequested', (draft) => void this.Confirm(draft));
 
