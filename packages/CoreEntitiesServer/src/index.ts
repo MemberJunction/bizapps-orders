@@ -42,7 +42,7 @@ export {
 } from './RevenueRecognition.js';
 export type { RevRecContext, RevRecEntry, RevRecSchedule } from './RevenueRecognition.js';
 
-export { SubscriptionBehavior, LoadSubscriptionBehavior } from './SubscriptionBehavior.js';
+export { SubscriptionBehavior, LoadSubscriptionBehavior, ResolveSubscriptionTypeID } from './SubscriptionBehavior.js';
 export type {
     SubscriptionTypeRules,
     SubscriptionPurchaseContext,

@@ -80,6 +80,7 @@ const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms
 const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
 import {
     SubscriptionBehavior,
+    ResolveSubscriptionTypeID,
     type SubscriberIdentity,
     type ExistingSubscription,
     type SubscriptionDecision,
@@ -90,6 +91,7 @@ interface ProductRow {
     ID: string;
     Name: string;
     SubscriptionTypeID?: string | null;
+    ProductTypeID?: string | null;
     RevenueRecognitionTypeID: string;
 }
 
@@ -120,6 +122,7 @@ const RELATIONSHIP_ENTITY = 'MJ_BizApps_Common: Relationships';
 const COMMON_SCHEMA = '__mj_BizAppsCommon';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
+const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 
 /** Statuses at or beyond the booking lock (plan D8/D9). */
 const BOOKED_STATUSES = new Set(['Confirmed']);
@@ -2096,14 +2099,34 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const prod = await rv.RunView<ProductRow>(
             {
                 EntityName: PRODUCT_ENTITY,
-                ExtraFilter: `ID IN (${ids}) AND SubscriptionTypeID IS NOT NULL`,
-                Fields: ['ID', 'Name', 'SubscriptionTypeID', 'RevenueRecognitionTypeID'],
+                ExtraFilter: `ID IN (${ids})`,
+                Fields: ['ID', 'Name', 'SubscriptionTypeID', 'RevenueRecognitionTypeID', 'ProductTypeID'],
                 ResultType: 'simple',
             },
             this.ContextCurrentUser,
         );
         const products = new Map((prod?.Results ?? []).map(p => [uuidKey(p.ID), p]));
         if (products.size === 0) return [];
+
+        const typeIDs = [...new Set(
+            [...products.values()].map((p) => p.ProductTypeID).filter((id): id is string => !!id),
+        )];
+        const typeDefaults = new Map<string, string | null>();
+        if (typeIDs.length) {
+            const quoted = typeIDs.map((id) => `'${id.replace(/'/g, "''")}'`).join(',');
+            const typeRows = await rv.RunView<{ ID: string; DefaultSubscriptionTypeID: string | null }>(
+                {
+                    EntityName: PRODUCT_TYPE_ENTITY,
+                    ExtraFilter: `ID IN (${quoted})`,
+                    Fields: ['ID', 'DefaultSubscriptionTypeID'],
+                    ResultType: 'simple',
+                },
+                this.ContextCurrentUser,
+            );
+            for (const row of typeRows?.Results ?? []) {
+                typeDefaults.set(uuidKey(row.ID), row.DefaultSubscriptionTypeID ?? null);
+            }
+        }
 
         const types = await rv.RunView<SubscriptionTypeRules>(
             { EntityName: SUBSCRIPTION_TYPE_ENTITY, ResultType: 'simple' },
@@ -2119,7 +2142,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // create a second subscription (and a second term) every time one was cancelled, which
             // is the exact opposite of what the line means.
             if (line.ReversesOrderLineID || (line.Quantity ?? 0) < 0) continue;
-            const rules = rulesByID.get(uuidKey(product.SubscriptionTypeID));
+            const inherited = product.ProductTypeID
+                ? typeDefaults.get(uuidKey(product.ProductTypeID))
+                : null;
+            const subscriptionTypeID = ResolveSubscriptionTypeID(product.SubscriptionTypeID, inherited);
+            if (!subscriptionTypeID) continue;
+            product.SubscriptionTypeID = subscriptionTypeID;
+            const rules = rulesByID.get(uuidKey(subscriptionTypeID));
             if (!rules) {
                 throw new Error(`Product '${product.Name}' names a subscription type that was not found.`);
             }

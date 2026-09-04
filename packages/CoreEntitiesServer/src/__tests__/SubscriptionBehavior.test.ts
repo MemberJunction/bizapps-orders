@@ -8,7 +8,7 @@
  * ever drifts back to local-time construction.
  */
 import { describe, expect, it } from 'vitest';
-import { SubscriptionBehavior, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
+import { SubscriptionBehavior, ResolveSubscriptionTypeID, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
 
 /** Baseline rules; each test overrides only what it is about. */
 function rules(overrides: Partial<SubscriptionTypeRules> = {}): SubscriptionTypeRules {
@@ -419,5 +419,24 @@ describe('cancellation policy', () => {
             const d = cancelWith({ CancellationMode: 'Immediate', GracePeriodDays: 0 }, '2026-07-01');
             expect(iso(d.AccessThroughDate)).toBe(iso(d.EffectiveDate));
         });
+    });
+});
+
+describe('ResolveSubscriptionTypeID', () => {
+    it('uses the product override when set', () => {
+        expect(ResolveSubscriptionTypeID('prod-st', 'type-default')).toBe('prod-st');
+    });
+
+    it('inherits the product type default when the product left it blank', () => {
+        expect(ResolveSubscriptionTypeID(null, 'type-default')).toBe('type-default');
+        expect(ResolveSubscriptionTypeID('', 'type-default')).toBe('type-default');
+        expect(ResolveSubscriptionTypeID('  ', 'C5E1A870-9B24-4D63-8E17-5A6B7C8D9E01')).toBe(
+            'C5E1A870-9B24-4D63-8E17-5A6B7C8D9E01',
+        );
+    });
+
+    it('is not a subscription when neither the product nor the type names one', () => {
+        expect(ResolveSubscriptionTypeID(null, null)).toBeNull();
+        expect(ResolveSubscriptionTypeID(undefined, '')).toBeNull();
     });
 });

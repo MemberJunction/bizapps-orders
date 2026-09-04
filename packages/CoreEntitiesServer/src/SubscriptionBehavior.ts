@@ -600,6 +600,23 @@ export class SubscriptionBehavior {
     }
 }
 
+/**
+ * Which subscription type a product actually uses at confirm.
+ *
+ * `Product.SubscriptionTypeID` wins when set. Otherwise the product type's
+ * `DefaultSubscriptionTypeID` (Membership → Annual Rolling, etc.). Null means
+ * the line is not a subscription — no term, no service period from this path.
+ */
+export function ResolveSubscriptionTypeID(
+    productSubscriptionTypeID: string | null | undefined,
+    typeDefaultSubscriptionTypeID: string | null | undefined,
+): string | null {
+    const explicit = productSubscriptionTypeID?.trim();
+    if (explicit) return explicit;
+    const inherited = typeDefaultSubscriptionTypeID?.trim();
+    return inherited || null;
+}
+
 /** Tree-shaking anchor — the base behaviour must be registered before booking runs. */
 export function LoadSubscriptionBehavior(): void {
     // intentionally empty
