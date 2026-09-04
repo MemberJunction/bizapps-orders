@@ -44,7 +44,7 @@
  */
 import { Metadata, RunView, type RunViewParams, type UserInfo } from '@memberjunction/core';
 import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
-import { IsBefore, Today, type DateCell } from '@mj-biz-apps/orders-entities';
+import { IsBefore, LoadOrdersEngine, OrdersEngine, Today, type DateCell } from '@mj-biz-apps/orders-entities';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersCustomerTaxExemptionEntity,
@@ -1046,29 +1046,27 @@ export async function GetSubscriptionEvents(
 export async function GetProducts(
     options: { Search?: string; MaxRows?: number; User?: UserInfo } = {},
 ): Promise<mjBizAppsOrdersProductEntity[]> {
-    const filters = [
-        `Status = 'Active'`,
-        // Leftover IT-ORD-* fixture rows from the retired prefix-and-sweep catalog. They sort
-        // first by name, often have no price, and made Fast Entry refuse with "no price rule".
-        // The live catalog is ORD-WORLD (natural names). Keep this filter as a leftover guard.
-        `Name NOT LIKE 'IT-ORD-%'`,
-    ];
-    if (options.Search?.trim()) {
-        const escaped = likeText(options.Search);
-        filters.push(`(Name LIKE '%${escaped}%' OR SKU LIKE '%${escaped}%')`);
-    }
-    return run<mjBizAppsOrdersProductEntity>(
-        MJO_ENTITIES.Product,
-        filters,
-        'Name',
-        options.MaxRows ?? 200,
-        options.User,
-    );
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, options.User ?? md.CurrentUser);
+    const q = options.Search?.trim().toLowerCase() ?? '';
+    const max = options.MaxRows ?? 200;
+    return OrdersEngine.Instance.Products.filter((p) => {
+        if (p.Status !== 'Active') return false;
+        if (p.Name?.startsWith('IT-ORD-')) return false;
+        if (q && !p.Name?.toLowerCase().includes(q) && !(p.SKU ?? '').toLowerCase().includes(q)) return false;
+        return true;
+    })
+        .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''))
+        .slice(0, max);
 }
 
 /** Price rules, highest priority first — that is the order that resolves a tie. */
 export async function GetProductPrices(user?: UserInfo): Promise<mjBizAppsOrdersProductPriceEntity[]> {
-    return run<mjBizAppsOrdersProductPriceEntity>(MJO_ENTITIES.ProductPrice, [], 'Priority DESC', undefined, user);
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
+    return [...OrdersEngine.Instance.ProductPrices].sort(
+        (a, b) => Number(b.Priority || 0) - Number(a.Priority || 0),
+    );
 }
 
 /** A catalog row as the product picker shows it. */
@@ -1123,35 +1121,14 @@ function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null })
  * order taker the item is free. The engine still resolves the real price on
  * the line.
  */
-let catalogCache: MJOProductOption[] | null = null;
-let catalogLoad: Promise<MJOProductOption[]> | null = null;
-
-/** Catalog picker rows, loaded once per session. */
+/** Catalog picker rows from OrdersEngine — live, not a session snapshot. */
 export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
-    if (catalogCache) return catalogCache;
-    if (catalogLoad) return catalogLoad;
-    catalogLoad = loadCatalogOptions(user).then((rows) => {
-        catalogCache = rows;
-        catalogLoad = null;
-        return rows;
+    const products = await GetProducts({ MaxRows: 500, User: user });
+    const engine = OrdersEngine.Instance;
+    return products.map((product) => {
+        const list = engine.BaseProductPrices(product.ID)[0];
+        return CatalogOptionFrom(product, engine.ProductTypeByID(product.ProductTypeID), Number(list?.Amount ?? 0));
     });
-    return catalogLoad;
-}
-
-async function loadCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
-    const [products, prices, types] = await Promise.all([
-        GetProducts({ MaxRows: 500, User: user }),
-        GetProductPrices(user),
-        GetProductTypes(user),
-    ]);
-    const byProduct = new Map<string, number>();
-    for (const price of prices) {
-        if (price.ProductID && !byProduct.has(price.ProductID)) byProduct.set(price.ProductID, price.Amount);
-    }
-    const typesById = new Map(types.map((type) => [type.ID, type]));
-    return products.map((product) =>
-        CatalogOptionFrom(product, typesById.get(product.ProductTypeID), byProduct.get(product.ID) ?? 0),
-    );
 }
 
 /** Promotions, newest window first. */
@@ -1180,7 +1157,11 @@ export async function GetProductCategories(user?: UserInfo): Promise<mjBizAppsOr
  * those answers. That is why an order screen never asks.
  */
 export async function GetProductTypes(user?: UserInfo): Promise<mjBizAppsOrdersProductTypeEntity[]> {
-    return run<mjBizAppsOrdersProductTypeEntity>(MJO_ENTITIES.ProductType, [`IsActive = 1`], 'Name', undefined, user);
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
+    return OrdersEngine.Instance.ProductTypes.filter((t) => t.IsActive).sort((a, b) =>
+        (a.Name ?? '').localeCompare(b.Name ?? ''),
+    );
 }
 
 /** Price lists — the named sets a customer can be assigned to. */

@@ -13,7 +13,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Metadata, RunView, CompositeKey, EntityFieldTSType } from '@memberjunction/core';
 import {
-    createEmptyFilter,
+    CreateEmptyFilter,
     type CompositeFilterDescriptor,
     type FilterFieldInfo,
 } from '@memberjunction/ng-filter-builder';
@@ -24,11 +24,10 @@ import type { FormContext, FormNavigationEvent } from '@memberjunction/ng-base-f
 import type { RunViewParams } from '@memberjunction/core';
 import type {
     mjBizAppsOrdersProductEntity,
-    mjBizAppsOrdersProductPriceEntity,
     mjBizAppsOrdersPriceListEntity
 } from '@mj-biz-apps/orders-entities';
 import { FormatMoney } from '../../../panels/money-format';
-import { PRICE_APPLICABILITY_SOURCES, priceApplies } from '@mj-biz-apps/orders-entities';
+import { LoadOrdersEngine, OrdersEngine, PRICE_APPLICABILITY_SOURCES, ProductPriceEntity, priceApplies } from '@mj-biz-apps/orders-entities';
 
 export interface PriceChannel {
     ID: string | null;
@@ -39,7 +38,7 @@ export interface PriceChannel {
 }
 
 export interface LadderTierRow {
-    Record: mjBizAppsOrdersProductPriceEntity;
+    Record: ProductPriceEntity;
     ID: string;
     TierNumber: number;
     BracketLabel: string;
@@ -79,7 +78,7 @@ export interface PriceCard {
     Inherited: boolean;
     SourceLabel: string;
     WhenText: string;
-    Record: mjBizAppsOrdersProductPriceEntity;
+    Record: ProductPriceEntity;
 }
 
 /** Dotted Source.Field labels for the When sentence. */
@@ -116,7 +115,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     @Output() public Navigate = new EventEmitter<FormNavigationEvent>();
     @Output() public PriceChanged = new EventEmitter<void>();
-    @Output() public TierAdded = new EventEmitter<mjBizAppsOrdersProductPriceEntity>();
+    @Output() public TierAdded = new EventEmitter<ProductPriceEntity>();
 
     private cdr?: ChangeDetectorRef;
     private navService?: NavigationService;
@@ -148,7 +147,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     public NewPriceAmount = 0;
     public QuoteOrgType = 'Member';
     public QuoteResult = { AmountText: '—', Why: '', Skipped: '' };
-    public InheritedRecords: mjBizAppsOrdersProductPriceEntity[] = [];
+    public InheritedRecords: ProductPriceEntity[] = [];
 
     public ActiveToast: WidgetToast | null = null;
     private toastTimer?: ReturnType<typeof setTimeout>;
@@ -158,7 +157,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     ];
     public SelectedChannelID: string | null = null;
 
-    public AllPriceRecords: mjBizAppsOrdersProductPriceEntity[] = [];
+    public AllPriceRecords: ProductPriceEntity[] = [];
     public LadderTiers: LadderTierRow[] = [];
     public StepBars: StepCurveBar[] = [];
 
@@ -226,28 +225,28 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         return this.Channels.some((c) => c.ID != null);
     }
 
-    public get PricesForChannel(): mjBizAppsOrdersProductPriceEntity[] {
+    public get PricesForChannel(): ProductPriceEntity[] {
         return this.AllPriceRecords.filter((p) =>
             this.SelectedChannelID === null ? !p.PriceListID : p.PriceListID === this.SelectedChannelID,
         );
     }
 
     public get VisiblePrices(): PriceCard[] {
-        const inChannel = (p: mjBizAppsOrdersProductPriceEntity) =>
+        const inChannel = (p: ProductPriceEntity) =>
             this.SelectedChannelID === null ? !p.PriceListID : p.PriceListID === this.SelectedChannelID;
         const productRows = this.AllPriceRecords.filter(inChannel);
         const names = new Set(productRows.map((p) => this.PriceDisplayName(p).trim().toLowerCase()));
         const inherited = this.InheritedRecords.filter(
             (p) => inChannel(p) && !names.has(this.PriceDisplayName(p).trim().toLowerCase()),
         );
-        const toCard = (p: mjBizAppsOrdersProductPriceEntity, inherited: boolean): PriceCard => ({
+        const toCard = (p: ProductPriceEntity, inherited: boolean): PriceCard => ({
             ID: p.ID,
             Name: this.PriceDisplayName(p),
             Amount: Number(p.Amount) || 0,
             Inherited: inherited,
             SourceLabel: inherited ? 'From category' : 'This product',
             WhenText: this.WhenSentence(p),
-            Record: p,
+            Record: p as ProductPriceEntity,
         });
         const productCards = productRows
             .map((p) => toCard(p, false))
@@ -261,17 +260,17 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         return this.HasAdvanced(row.Record);
     }
 
-    public PriceDisplayName(p: mjBizAppsOrdersProductPriceEntity): string {
+    public PriceDisplayName(p: ProductPriceEntity): string {
         const n = (p as { Name?: string }).Name?.trim();
         if (n) return n;
         return p.Description?.trim() || 'Price';
     }
 
-    public HasWhen(p: mjBizAppsOrdersProductPriceEntity): boolean {
+    public HasWhen(p: ProductPriceEntity): boolean {
         return this.WhenSentence(p).length > 0;
     }
 
-    public WhenSentence(p: mjBizAppsOrdersProductPriceEntity): string {
+    public WhenSentence(p: ProductPriceEntity): string {
         const raw = (p as { Applicability?: string | null }).Applicability;
         if (raw == null || String(raw).trim() === '') return '';
         try {
@@ -330,7 +329,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         return hit?.displayName ?? stored.replace('.', ' · ');
     }
 
-    public OpenPriceRecord(p: mjBizAppsOrdersProductPriceEntity, event?: Event): void {
+    public OpenPriceRecord(p: ProductPriceEntity, event?: Event): void {
         event?.stopPropagation();
         this.Navigate.emit({
             Kind: 'record',
@@ -401,21 +400,11 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         try {
             if (this.Product.Prices) {
                 await this.Product.Prices.Load();
-                this.AllPriceRecords = [...this.Product.Prices.Items];
+                this.AllPriceRecords = [...this.Product.Prices.Items] as ProductPriceEntity[];
             } else {
-                const rv = new RunView();
-                const pricesResult = await rv.RunView<mjBizAppsOrdersProductPriceEntity>({
-                    EntityName: PRODUCT_PRICES_ENTITY,
-                    ExtraFilter: `ProductID = '${this.Product.ID}'`,
-                    OrderBy: 'MinQuantity ASC, __mj_CreatedAt ASC',
-                    ResultType: 'entity_object',
-                    MaxRows: 100,
-                });
-                if (pricesResult.Success && pricesResult.Results) {
-                    this.AllPriceRecords = pricesResult.Results;
-                } else {
-                    console.warn('Could not retrieve product prices:', pricesResult.ErrorMessage);
-                }
+                const md = new Metadata();
+                await LoadOrdersEngine(Metadata.Provider, md.CurrentUser);
+                this.AllPriceRecords = OrdersEngine.Instance.ProductPricesFor(this.Product.ID) as ProductPriceEntity[];
             }
 
             const rv = new RunView();
@@ -443,7 +432,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     private countPricesOnChannel(listId: string | null): number {
-        const match = (p: mjBizAppsOrdersProductPriceEntity) =>
+        const match = (p: ProductPriceEntity) =>
             listId === null ? !p.PriceListID : p.PriceListID === listId;
         const product = this.AllPriceRecords.filter(match);
         const names = new Set(product.map((p) => this.PriceDisplayName(p).trim().toLowerCase()));
@@ -626,13 +615,13 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             }
 
             // 2. Instantiate and save the new tier bracket
-            let newPrice: mjBizAppsOrdersProductPriceEntity;
+            let newPrice: ProductPriceEntity;
 
             if (this.Product.Prices) {
-                newPrice = await this.Product.Prices.Create();
+                newPrice = await this.Product.Prices.Create() as ProductPriceEntity;
             } else {
                 const md = new Metadata();
-                const obj = await md.GetEntityObject<mjBizAppsOrdersProductPriceEntity>(PRODUCT_PRICES_ENTITY);
+                const obj = await md.GetEntityObject<ProductPriceEntity>(PRODUCT_PRICES_ENTITY);
                 if (!obj) throw new Error(`Failed to create entity object for ${PRODUCT_PRICES_ENTITY}`);
                 newPrice = obj;
             }
@@ -648,7 +637,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             newPrice.Status = 'Active';
             newPrice.EffectiveFrom = new Date();
             const bracket = maxQty != null ? `${minQty}–${maxQty}` : `${minQty}+`;
-            newPrice.Name = `${this.NewTierModel || 'Volume'} ${bracket}`.slice(0, 100);
+            (newPrice as { Name?: string }).Name = `${this.NewTierModel || 'Volume'} ${bracket}`.slice(0, 100);
 
             const saved = await newPrice.Save();
             if (saved) {
@@ -807,7 +796,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     /** Qty bands, end date, non-standard fee, recurrence — not a default List/Base row. */
-    public HasAdvanced(p: mjBizAppsOrdersProductPriceEntity | null | undefined): boolean {
+    public HasAdvanced(p: ProductPriceEntity | null | undefined): boolean {
         if (!p) return false;
         const min = p.MinQuantity;
         const max = p.MaxQuantity;
@@ -840,7 +829,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     public OpenWhenEditor(row: PriceCard): void {
         this.WhenFields = this.buildWhenFields();
-        this.WhenFilter = this.parseWhenFilter(row.Record) ?? createEmptyFilter();
+        this.WhenFilter = this.parseWhenFilter(row.Record) ?? CreateEmptyFilter();
         this.WhenEditorPriceID = row.ID;
         this.cdr?.markForCheck();
     }
@@ -849,7 +838,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.WhenFilter = filter;
     }
 
-    private parseWhenFilter(p: mjBizAppsOrdersProductPriceEntity): CompositeFilterDescriptor | null {
+    private parseWhenFilter(p: ProductPriceEntity): CompositeFilterDescriptor | null {
         const raw = (p as { Applicability?: string | null }).Applicability;
         if (raw == null || String(raw).trim() === '') return null;
         try {
@@ -911,7 +900,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     private syncFromCollection(): void {
         if (this.Product?.Prices) {
-            this.AllPriceRecords = [...this.Product.Prices.Items];
+            this.AllPriceRecords = [...this.Product.Prices.Items] as ProductPriceEntity[];
         }
     }
 
@@ -947,7 +936,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         return max + 10;
     }
 
-    public async SavePrice(p: mjBizAppsOrdersProductPriceEntity): Promise<void> {
+    public async SavePrice(p: ProductPriceEntity): Promise<void> {
         if (!this.EditMode) return;
         await this.saveProductGraph();
         this.cdr?.markForCheck();
@@ -967,7 +956,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.IsSaving = true;
         this.cdr?.markForCheck();
         try {
-            const newPrice = await this.Product.Prices.Create();
+            const newPrice = await this.Product.Prices.Create() as ProductPriceEntity;
             newPrice.ProductID = this.Product.ID;
             newPrice.PriceListID = this.SelectedChannelID;
             (newPrice as { Name?: string }).Name = name;
@@ -1035,32 +1024,11 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.InheritedRecords = [];
         const categoryId = this.Product?.ProductCategoryID;
         if (!categoryId) return;
-        const rv = new RunView();
-        const cats = await rv.RunView<{ ID: string; ParentProductCategoryID: string | null; Name?: string }>({
-            EntityName: PRODUCT_CATEGORIES_ENTITY,
-            ExtraFilter: '',
-            ResultType: 'simple',
-            MaxRows: 500,
-        });
-        const rows = cats.Success && cats.Results ? cats.Results : [];
-        const byId = new Map(rows.map((c) => [String(c.ID).toLowerCase(), c]));
-        const chain: string[] = [];
-        let cur: string | null = categoryId;
-        const seen = new Set<string>();
-        while (cur && !seen.has(cur.toLowerCase())) {
-            seen.add(cur.toLowerCase());
-            chain.push(cur);
-            const rec = byId.get(cur.toLowerCase());
-            cur = rec?.ParentProductCategoryID ?? null;
-        }
-        if (!chain.length) return;
-        const inList = chain.map((id) => `'${id.replace(/'/g, "''")}'`).join(',');
-        const prices = await rv.RunView<mjBizAppsOrdersProductPriceEntity>({
-            EntityName: PRODUCT_PRICES_ENTITY,
-            ExtraFilter: `ProductCategoryID IN (${inList}) AND Status = 'Active'`,
-            ResultType: 'entity_object',
-            MaxRows: 200,
-        });
-        this.InheritedRecords = prices.Success && prices.Results ? prices.Results : [];
+        const md = new Metadata();
+        await LoadOrdersEngine(Metadata.Provider, md.CurrentUser);
+        const chain = OrdersEngine.Instance.CategoryChain(categoryId);
+        this.InheritedRecords = OrdersEngine.Instance.ProductPricesFor(null, chain).filter(
+            (p) => !p.ProductID && (!p.Status || p.Status === 'Active'),
+        ) as ProductPriceEntity[];
     }
 }

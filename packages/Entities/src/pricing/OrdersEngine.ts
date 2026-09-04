@@ -1,73 +1,55 @@
 /**
- * @fileoverview This app's metadata cache — the small, rarely-changing lookup tables, loaded once
+ * @fileoverview This app's metadata cache — lookup tables AND the product catalog, loaded once
  * and held in process.
  *
- * WHY THIS EXISTS. The tables below are LOOKUPS: a handful of rows each, edited by an administrator
- * a few times a year, and read on nearly every write path. Reading them per operation is the wrong
- * shape twice over.
+ * WHY THIS EXISTS. The tables below are read on nearly every write path and on the order-entry
+ * catalog. Reading them per operation is the wrong shape twice over.
  *
- * The obvious cost is the round trip. The subtler and more damaging one is what the round trip looks
- * like at the call site. `PaymentHeaderEntityServer` used to answer "does this tender book its
- * processor fee inline?" with a `RunView` naming a single column:
+ * The obvious cost is the round trip. The subtler one is a `RunView` that names `Fields`: when a
+ * column is missing from CodeGen the call fails softly and the feature is silently off. A cache
+ * turns that into a typed property read. If the field is missing the whole load fails loudly at
+ * startup, once.
  *
- *     RunView({ EntityName: PAYMENT_TYPE_ENTITY, ExtraFilter: `ID='${id}'`, Fields: ['BookProcessingFeeInline'] })
+ * WHAT BELONGS HERE. `*Type` tables, plus the product catalog (`Products`, `Product Prices`,
+ * `Product Categories`). Those are read-mostly, mutated through `BaseEntity.Save()`, and
+ * `BaseEngine` refreshes the in-memory arrays on save/delete (and on remote-invalidate when the
+ * GraphQL subscription carries `RecordData`). Transactional rows — orders, payments, subscriptions —
+ * still do NOT belong here.
  *
- * That reads as a careful, minimal query. It is actually a hidden dependency on CodeGen having run:
- * `Fields` names a column that must exist in the base view AND be registered as an `EntityField`, and
- * when it is not, `RunView` does not throw — it returns unsuccessfully, the caller takes its
- * defensive branch, and the feature is silently off. That is exactly what happened when the column
- * was added by a migration whose CodeGen output was never committed: a documented switch that could
- * not be turned on, in a system where nothing failed.
+ * REFRESH IS AUTOMATIC. `BaseEngine` subscribes to entity save/delete events, so an administrator
+ * adding a product is visible without a restart. `Config()` is idempotent and cheap after the first
+ * call. `@RegisterForStartup` loads the cache with MJAPI so the first confirm does not pay the
+ * catalog query.
  *
- * A cache turns that into an ordinary property read on a typed entity object. If the field is
- * missing the whole load fails loudly at startup, once, instead of every call site quietly choosing
- * a default.
+ * THE ONE THING THAT DEFEATS IT IS A RAW `UPDATE`. A statement outside the entity layer fires no
+ * event. `ChargeEngine` deliberately does NOT read charge types from here when `Basis` may change
+ * in the same transaction.
  *
- * WHAT BELONGS HERE AND WHAT DOES NOT. Small, bounded, read-mostly reference data — the `*Type`
- * tables and their siblings. Transactional tables do NOT belong here at any size: an order, a
- * payment or a subscription is read for a specific row at a specific moment, and a cached copy is a
- * stale answer waiting to be believed.
+ * Misses that would be fatal (`PaymentProviderResolver`) still fall through to a query.
  *
- * REFRESH IS AUTOMATIC, THROUGH THE ENTITY LAYER. `BaseEngine` subscribes to entity save/delete
- * events, so an administrator adding a payment type through the API is visible without a restart —
- * and, usefully, so is a change made inside an open transaction, because the refresh reads back
- * through the same provider. `Config()` is idempotent and cheap after the first call, which is why
- * the entity servers can call it on their paths rather than co-ordinating a startup order.
- *
- * THE ONE THING THAT DEFEATS IT IS A RAW `UPDATE`. A statement executed outside the entity layer
- * fires no event, so the cache keeps answering with what it loaded. That is the boundary of what
- * this is for, and it is not hypothetical: `ChargeEngine` deliberately does NOT read charge types
- * from here, because `ChargeType.Basis` — whether tax computes on the goods alone or on goods plus
- * shipping — is configuration a caller may set for the order it is about to price, in the same
- * transaction. Serving that from cache prices the order on the previous basis and produces a tax
- * figure that is plausible, balanced and wrong by the shipping.
- *
- * So: cache what nobody changes mid-transaction. Where a miss would be fatal rather than merely
- * slower — `PaymentProviderResolver`, which throws "not configured" on a miss — read the cache first
- * and fall through to the query, so the common path is free and the uncommon one still works.
- *
- * CONNECTS TO:
- *   CODE: PaymentHeaderEntityServer.feeBooksInline · PaymentProviderResolver · OrderEntityServer.subscriptionLines
- *   PLAN: D36 (PaymentType), D37 (PaymentProviderType), D45 (SubscriptionType), D63 (settings live in OrdersSettings)
- *
- * @module @mj-biz-apps/orders-core-entities-server
+ * @module @mj-biz-apps/orders-entities
  */
-
-import { BaseEngine, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { BaseEngine, RegisterForStartup, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersPaymentProviderTypeEntity,
     mjBizAppsOrdersPaymentTermsTypeEntity,
     mjBizAppsOrdersPaymentTypeEntity,
+    mjBizAppsOrdersProductCategoryEntity,
+    mjBizAppsOrdersProductEntity,
+    mjBizAppsOrdersProductPriceEntity,
     mjBizAppsOrdersProductTypeEntity,
     mjBizAppsOrdersSubscriptionTypeEntity,
 } from '../generated/entity_subclasses';
 
+const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
+
 /**
- * The lookup cache for BizApps Orders.
+ * The lookup + catalog cache for BizApps Orders.
  *
  * Use `OrdersEngine.Instance` after `Config()`; every accessor is a synchronous property read.
  */
+@RegisterForStartup()
 export class OrdersEngine extends BaseEngine<OrdersEngine> {
     public static get Instance(): OrdersEngine {
         return super.getInstance<OrdersEngine>();
@@ -79,38 +61,28 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     private _chargeTypes: mjBizAppsOrdersChargeTypeEntity[] = [];
     private _productTypes: mjBizAppsOrdersProductTypeEntity[] = [];
     private _subscriptionTypes: mjBizAppsOrdersSubscriptionTypeEntity[] = [];
+    private _products: mjBizAppsOrdersProductEntity[] = [];
+    private _productPrices: mjBizAppsOrdersProductPriceEntity[] = [];
+    private _productCategories: mjBizAppsOrdersProductCategoryEntity[] = [];
 
     /**
      * Load (or refresh) the cache.
      *
      * `ResultType: 'entity_object'` on purpose: callers get typed entities, so reading a column that
-     * does not exist is a COMPILE error rather than an `undefined` at run time. That is the whole
-     * point of the exercise — see the header.
+     * does not exist is a COMPILE error rather than an `undefined` at run time.
      */
     public async Config(forceRefresh?: boolean, contextUser?: UserInfo, provider?: IMetadataProvider): Promise<void> {
         await this.Load(
             [
-                { Type: 'entity', PropertyName: '_paymentTypes', EntityName: 'MJ_BizApps_Orders: Payment Types', ResultType: 'entity_object' },
-                {
-                    Type: 'entity',
-                    PropertyName: '_paymentProviderTypes',
-                    EntityName: 'MJ_BizApps_Orders: Payment Provider Types',
-                    ResultType: 'entity_object',
-                },
-                {
-                    Type: 'entity',
-                    PropertyName: '_paymentTermsTypes',
-                    EntityName: 'MJ_BizApps_Orders: Payment Terms Types',
-                    ResultType: 'entity_object',
-                },
-                { Type: 'entity', PropertyName: '_chargeTypes', EntityName: 'MJ_BizApps_Orders: Charge Types', ResultType: 'entity_object' },
-                { Type: 'entity', PropertyName: '_productTypes', EntityName: 'MJ_BizApps_Orders: Product Types', ResultType: 'entity_object' },
-                {
-                    Type: 'entity',
-                    PropertyName: '_subscriptionTypes',
-                    EntityName: 'MJ_BizApps_Orders: Subscription Types',
-                    ResultType: 'entity_object',
-                },
+                { Type: 'entity', PropertyName: '_paymentTypes', EntityName: 'MJ_BizApps_Orders: Payment Types' },
+                { Type: 'entity', PropertyName: '_paymentProviderTypes', EntityName: 'MJ_BizApps_Orders: Payment Provider Types' },
+                { Type: 'entity', PropertyName: '_paymentTermsTypes', EntityName: 'MJ_BizApps_Orders: Payment Terms Types' },
+                { Type: 'entity', PropertyName: '_chargeTypes', EntityName: 'MJ_BizApps_Orders: Charge Types' },
+                { Type: 'entity', PropertyName: '_productTypes', EntityName: 'MJ_BizApps_Orders: Product Types' },
+                { Type: 'entity', PropertyName: '_subscriptionTypes', EntityName: 'MJ_BizApps_Orders: Subscription Types' },
+                { Type: 'entity', PropertyName: '_products', EntityName: 'MJ_BizApps_Orders: Products' },
+                { Type: 'entity', PropertyName: '_productPrices', EntityName: 'MJ_BizApps_Orders: Product Prices' },
+                { Type: 'entity', PropertyName: '_productCategories', EntityName: 'MJ_BizApps_Orders: Product Categories' },
             ],
             provider as IMetadataProvider,
             forceRefresh,
@@ -119,87 +91,169 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
 
     public get PaymentTypes(): mjBizAppsOrdersPaymentTypeEntity[] {
-        return this._paymentTypes;
+        return this.GetConfigData<mjBizAppsOrdersPaymentTypeEntity>('_paymentTypes');
     }
-
     public get PaymentProviderTypes(): mjBizAppsOrdersPaymentProviderTypeEntity[] {
-        return this._paymentProviderTypes;
+        return this.GetConfigData<mjBizAppsOrdersPaymentProviderTypeEntity>('_paymentProviderTypes');
     }
-
     public get PaymentTermsTypes(): mjBizAppsOrdersPaymentTermsTypeEntity[] {
-        return this._paymentTermsTypes;
+        return this.GetConfigData<mjBizAppsOrdersPaymentTermsTypeEntity>('_paymentTermsTypes');
     }
-
     public get ChargeTypes(): mjBizAppsOrdersChargeTypeEntity[] {
-        return this._chargeTypes;
+        return this.GetConfigData<mjBizAppsOrdersChargeTypeEntity>('_chargeTypes');
     }
-
     public get ProductTypes(): mjBizAppsOrdersProductTypeEntity[] {
-        return this._productTypes;
+        return this.GetConfigData<mjBizAppsOrdersProductTypeEntity>('_productTypes');
     }
-
     public get SubscriptionTypes(): mjBizAppsOrdersSubscriptionTypeEntity[] {
-        return this._subscriptionTypes;
+        return this.GetConfigData<mjBizAppsOrdersSubscriptionTypeEntity>('_subscriptionTypes');
+    }
+    public get Products(): mjBizAppsOrdersProductEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersProductEntity>('_products');
+    }
+    public get ProductPrices(): mjBizAppsOrdersProductPriceEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersProductPriceEntity>('_productPrices');
+    }
+    public get ProductCategories(): mjBizAppsOrdersProductCategoryEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersProductCategoryEntity>('_productCategories');
     }
 
-    /** One payment type by ID, or undefined. */
+    public get Products$() {
+        return this.ObserveProperty<mjBizAppsOrdersProductEntity>('_products');
+    }
+    public get ProductPrices$() {
+        return this.ObserveProperty<mjBizAppsOrdersProductPriceEntity>('_productPrices');
+    }
+
     public PaymentTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentTypeEntity | undefined {
-        return byID(this._paymentTypes, id);
+        return byID(this.PaymentTypes, id);
     }
-
-    /** One payment type by its stable `Code` — `Cash`, `ACH`, `CreditCard`. */
     public PaymentTypeByCode(code: string | null | undefined): mjBizAppsOrdersPaymentTypeEntity | undefined {
         if (!code) return undefined;
         const wanted = code.trim().toLowerCase();
-        return this._paymentTypes.find((t) => t.Code?.trim().toLowerCase() === wanted);
+        return this.PaymentTypes.find((t) => t.Code?.trim().toLowerCase() === wanted);
     }
-
-    /** One charge type by its stable `Code` — `Shipping`, `SalesTax`. */
     public ChargeTypeByCode(code: string | null | undefined): mjBizAppsOrdersChargeTypeEntity | undefined {
         if (!code) return undefined;
         const wanted = code.trim().toLowerCase();
-        return this._chargeTypes.find((t) => t.Code?.trim().toLowerCase() === wanted);
+        return this.ChargeTypes.find((t) => t.Code?.trim().toLowerCase() === wanted);
     }
-
-    /** One charge type by ID. */
     public ChargeTypeByID(id: string | null | undefined): mjBizAppsOrdersChargeTypeEntity | undefined {
-        return byID(this._chargeTypes, id);
+        return byID(this.ChargeTypes, id);
     }
-
-    /** One provider type by ID. */
     public PaymentProviderTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentProviderTypeEntity | undefined {
-        return byID(this._paymentProviderTypes, id);
+        return byID(this.PaymentProviderTypes, id);
     }
-
-    /** One terms record by ID — `NetDays` is what derives an order's due date. */
     public PaymentTermsTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentTermsTypeEntity | undefined {
-        return byID(this._paymentTermsTypes, id);
+        return byID(this.PaymentTermsTypes, id);
     }
-
-    /** One product type by ID — `DefaultSubscriptionTypeID` is what Membership inherits at confirm. */
     public ProductTypeByID(id: string | null | undefined): mjBizAppsOrdersProductTypeEntity | undefined {
-        return byID(this._productTypes, id);
+        return byID(this.ProductTypes, id);
+    }
+    public ProductTypeByCode(code: string | null | undefined): mjBizAppsOrdersProductTypeEntity | undefined {
+        if (!code) return undefined;
+        const wanted = code.trim().toLowerCase();
+        return this.ProductTypes.find((t) => (t.Code ?? '').trim().toLowerCase() === wanted);
+    }
+    public SubscriptionTypeByID(id: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
+        return byID(this.SubscriptionTypes, id);
+    }
+    public ProductByID(id: string | null | undefined): mjBizAppsOrdersProductEntity | undefined {
+        return byID(this.Products, id);
     }
 
-    /** One subscription type by ID — the rules row Annual Rolling / Calendar Year / etc. */
-    public SubscriptionTypeByID(id: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
-        return byID(this._subscriptionTypes, id);
+    public ProductBySKU(sku: string | null | undefined): mjBizAppsOrdersProductEntity | undefined {
+        const wanted = sku?.trim().toLowerCase();
+        if (!wanted) return undefined;
+        return this.Products.find((p) => (p.SKU ?? '').trim().toLowerCase() === wanted);
+    }
+    public ProductPriceByID(id: string | null | undefined): mjBizAppsOrdersProductPriceEntity | undefined {
+        return byID(this.ProductPrices, id);
+    }
+    public ProductCategoryByID(id: string | null | undefined): mjBizAppsOrdersProductCategoryEntity | undefined {
+        return byID(this.ProductCategories, id);
+    }
+
+    public ProductTypeCode(productID: string | null | undefined): string | null {
+        const product = this.ProductByID(productID);
+        if (!product) return null;
+        return this.ProductTypeByID(product.ProductTypeID)?.Code ?? null;
+    }
+
+    public ProductRequiresFulfillment(productID: string | null | undefined): boolean {
+        const product = this.ProductByID(productID);
+        if (!product) return false;
+        return !!this.ProductTypeByID(product.ProductTypeID)?.RequiresFulfillment;
+    }
+
+    /** Active base-channel (no list) prices on a product, highest priority first. */
+    public BaseProductPrices(productID: string | null | undefined): mjBizAppsOrdersProductPriceEntity[] {
+        const id = uuidKey(productID);
+        if (!id) return [];
+        return this.ProductPrices.filter(
+            (p) => uuidKey(p.ProductID) === id && !p.PriceListID && (!p.Status || p.Status === 'Active'),
+        ).sort((a, b) => Number(b.Priority || 0) - Number(a.Priority || 0));
+    }
+
+    /** Prices hanging on this product or any of the given categories (inherit walk). */
+    public ProductPricesFor(
+        productID: string | null | undefined,
+        categoryIDs: readonly string[] = [],
+    ): mjBizAppsOrdersProductPriceEntity[] {
+        const pid = uuidKey(productID);
+        const cats = new Set(categoryIDs.map(uuidKey).filter(Boolean));
+        return this.ProductPrices.filter((p) => {
+            if (pid && uuidKey(p.ProductID) === pid) return true;
+            const cat = uuidKey((p as { ProductCategoryID?: string | null }).ProductCategoryID);
+            return !!cat && cats.has(cat);
+        });
+    }
+
+    /** Category and ancestors, nearest first. */
+    public CategoryChain(startCategoryID: string | null | undefined): string[] {
+        if (!startCategoryID) return [];
+        const parent = new Map(
+            this.ProductCategories.map((c) => [
+                uuidKey(c.ID),
+                (c.ParentProductCategoryID as string | null | undefined) ?? null,
+            ]),
+        );
+        const chain: string[] = [];
+        const seen = new Set<string>();
+        let current: string | null = startCategoryID;
+        while (current && !seen.has(uuidKey(current))) {
+            seen.add(uuidKey(current));
+            chain.push(current);
+            current = parent.get(uuidKey(current)) ?? null;
+        }
+        return chain;
     }
 }
 
-/** Case-insensitive ID match — SQL Server hands UUIDs back in either case. */
 function byID<T extends { ID?: string }>(rows: T[], id: string | null | undefined): T | undefined {
     if (!id) return undefined;
     const wanted = id.toLowerCase();
     return rows.find((r) => r.ID?.toLowerCase() === wanted);
 }
 
+/** Load the cache. Idempotent and cheap after the first call. */
+export async function LoadOrdersEngine(provider: IMetadataProvider, user?: UserInfo | null): Promise<void> {
+    await OrdersEngine.Instance.Config(false, user ?? undefined, provider);
+}
+
 /**
- * Load the cache. Idempotent and cheap after the first call.
- *
- * A thin function rather than making callers reach for `OrdersEngine.Instance.Config(...)`, so the
- * booking paths read as one line and the argument order is decided once.
+ * True when this provider can Config the engine (has `RunViews`). Unit tests that only mock
+ * `RunView` fall through to their query stubs; production MJAPI/Explorer always return true.
  */
-export async function LoadOrdersEngine(provider: IMetadataProvider, user: UserInfo): Promise<void> {
-    await OrdersEngine.Instance.Config(false, user, provider);
+export async function OrdersEngineReady(
+    provider: IMetadataProvider | IRunViewProvider | null | undefined,
+    user?: UserInfo | null,
+): Promise<boolean> {
+    if (!provider || typeof (provider as { RunViews?: unknown }).RunViews !== 'function') return false;
+    try {
+        await LoadOrdersEngine(provider as IMetadataProvider, user);
+        return true;
+    } catch {
+        return false;
+    }
 }

@@ -35,7 +35,8 @@
  *
  * @module @mj-biz-apps/orders-entities
  */
-import { RunView, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import { OrdersEngine, OrdersEngineReady } from './pricing/OrdersEngine';
 
 /** Where a driver was found, so a caller can say WHY it escalated. */
 export type PricingDriverLevel = 'product' | 'category' | 'type' | 'company';
@@ -92,6 +93,43 @@ export async function ResolvePricingDriver(
         return { ...LOCAL, CanPriceLocally: false, Unresolved: `'${productID}' is not a product id.` };
     }
     const rv = new RunView(provider);
+    if (await OrdersEngineReady(provider as unknown as IMetadataProvider, user)) {
+        const engine = OrdersEngine.Instance;
+        const product = engine.ProductByID(productID);
+        if (product) {
+            if (product.PricingDriverClass) {
+                return { CanPriceLocally: false, DriverClass: product.PricingDriverClass, Level: 'product' };
+            }
+            for (const categoryID of engine.CategoryChain(product.ProductCategoryID)) {
+                const category = engine.ProductCategoryByID(categoryID);
+                if (!category) break;
+                if (category.PricingDriverClass) {
+                    return { CanPriceLocally: false, DriverClass: category.PricingDriverClass, Level: 'category' };
+                }
+            }
+            if (product.ProductTypeID) {
+                const driver = engine.ProductTypeByID(product.ProductTypeID)?.PricingDriverClass ?? null;
+                if (driver) return { CanPriceLocally: false, DriverClass: driver, Level: 'type' };
+            }
+            if (companyID && UUID.test(companyID)) {
+                const policyRes = await rv.RunView<{ PricingDriverClass: string | null }>(
+                    {
+                        EntityName: POLICY_ENTITY,
+                        ExtraFilter: `ID = '${companyID}'`,
+                        Fields: ['PricingDriverClass'],
+                        ResultType: 'simple',
+                    },
+                    user,
+                );
+                if (!policyRes?.Success) {
+                    return { ...LOCAL, Unresolved: `Could not read the company pricing policy.` };
+                }
+                const policyDriver = policyRes.Results?.[0]?.PricingDriverClass;
+                if (policyDriver) return { CanPriceLocally: false, DriverClass: policyDriver, Level: 'company' };
+            }
+            return { CanPriceLocally: true, DriverClass: null, Level: null };
+        }
+    }
 
     const productRes = await rv.RunView<ProductRow>(
         {
@@ -113,14 +151,11 @@ export async function ResolvePricingDriver(
         return { CanPriceLocally: false, DriverClass: product.PricingDriverClass, Level: 'product' };
     }
 
-    // UP THE CATEGORY CHAIN. Walked one level at a time rather than read as a tree, because the
-    // nearest ancestor that names a driver wins and a deeper one must not override it.
     let categoryID = product.ProductCategoryID;
     const seen = new Set<string>();
     while (categoryID && UUID.test(categoryID)) {
-        if (seen.has(categoryID.toLowerCase())) break; // a cycle is bad data, not an infinite loop
+        if (seen.has(categoryID.toLowerCase())) break;
         seen.add(categoryID.toLowerCase());
-
         const catRes = await rv.RunView<CategoryRow>(
             {
                 EntityName: CATEGORY_ENTITY,

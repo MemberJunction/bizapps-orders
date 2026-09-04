@@ -41,6 +41,7 @@ import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngin
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { RunCharges, SplitChargesByLine } from './ChargeEngine.js';
 import { ResolvePrice } from './PriceResolver.js';
+import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
 import { AllocateProRata, LineGross, NetAfterDiscount } from './PricingBehavior.js';
 /**
@@ -558,24 +559,17 @@ export class OrderPricingService {
         AvailableFrom: Date | null;
         AvailableTo: Date | null;
     } | null> {
-        const rv = new RunView((this.host.Provider as unknown as IRunViewProvider));
-        const res = await rv.RunView<{
-            ProductCategoryID: string | null;
-            CompanyID: string;
-            Name: string;
-            Status: string;
-            AvailableFrom: Date | null;
-            AvailableTo: Date | null;
-        }>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Products',
-                ExtraFilter: `ID = '${productID}'`,
-                Fields: ['ProductCategoryID', 'CompanyID', 'Name', 'Status', 'AvailableFrom', 'AvailableTo'],
-                ResultType: 'simple',
-            },
-            this.host.User,
-        );
-        return res?.Results?.[0] ?? null;
+        await LoadOrdersEngine(this.host.Provider, this.host.User);
+        const p = OrdersEngine.Instance.ProductByID(productID);
+        if (!p) return null;
+        return {
+            ProductCategoryID: p.ProductCategoryID ?? null,
+            CompanyID: p.CompanyID,
+            Name: p.Name,
+            Status: p.Status,
+            AvailableFrom: p.AvailableFrom ?? null,
+            AvailableTo: p.AvailableTo ?? null,
+        };
     }
 
     /**
@@ -651,43 +645,27 @@ export class OrderPricingService {
      * unreachable, which defeats having a tree at all.
      */
     private async resolveLineTaxability(productID: string): Promise<ResolvedTaxability> {
-        const rv = new RunView((this.host.Provider as unknown as IRunViewProvider));
-        const pRes = await rv.RunView<{
-            IsTaxable: boolean | null;
-            TaxCategory: string | null;
-            ProductCategoryID: string | null;
-            ProductTypeID: string | null;
-        }>(
+        await LoadOrdersEngine(this.host.Provider, this.host.User);
+        const product = OrdersEngine.Instance.ProductByID(productID);
+        if (!product) return { IsTaxable: true, TaxCategory: null, DecidedAt: 'Default' };
+
+        const chain = await this.categoryTaxChain(product.ProductCategoryID);
+        const typeRow = OrdersEngine.Instance.ProductTypeByID(product.ProductTypeID);
+        const type = typeRow
+            ? {
+                  DefaultIsTaxable: typeRow.DefaultIsTaxable,
+                  DefaultTaxCategory: typeRow.DefaultTaxCategory ?? null,
+              }
+            : null;
+
+        return ResolveTaxability(
             {
-                EntityName: 'MJ_BizApps_Orders: Products',
-                ExtraFilter: `ID = '${productID}'`,
-                Fields: ['IsTaxable', 'TaxCategory', 'ProductCategoryID', 'ProductTypeID'],
-                ResultType: 'simple',
-                BypassCache: true,
+                IsTaxable: product.IsTaxable,
+                TaxCategory: product.TaxCategory ?? null,
             },
-            this.host.User,
+            chain,
+            type,
         );
-        const p = pRes?.Results?.[0];
-        if (!p) return { IsTaxable: true, TaxCategory: null, DecidedAt: 'Default' };
-
-        const chain = await this.categoryTaxChain(p.ProductCategoryID);
-
-        let type: { DefaultIsTaxable: boolean; DefaultTaxCategory: string | null } | null = null;
-        if (p.ProductTypeID) {
-            const tRes = await rv.RunView<{ DefaultIsTaxable: boolean; DefaultTaxCategory: string | null }>(
-                {
-                    EntityName: 'MJ_BizApps_Orders: Product Types',
-                    ExtraFilter: `ID = '${p.ProductTypeID}'`,
-                    Fields: ['DefaultIsTaxable', 'DefaultTaxCategory'],
-                    ResultType: 'simple',
-                    BypassCache: true,
-                },
-                this.host.User,
-            );
-            type = tRes?.Results?.[0] ?? null;
-        }
-
-        return ResolveTaxability(p, chain, type);
     }
 
     /**
@@ -699,40 +677,16 @@ export class OrderPricingService {
      */
     private async categoryTaxChain(startCategoryID: string | null): Promise<TaxabilityCategoryLevel[]> {
         if (!startCategoryID) return [];
-        const rv = new RunView((this.host.Provider as unknown as IRunViewProvider));
-        const res = await rv.RunView<{
-            ID: string;
-            ParentProductCategoryID: string | null;
-            DefaultIsTaxable: boolean | null;
-            DefaultTaxCategory: string | null;
-        }>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Product Categories',
-                Fields: ['ID', 'ParentProductCategoryID', 'DefaultIsTaxable', 'DefaultTaxCategory'],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            this.host.User,
-        );
-        const byID = new Map(
-            (res?.Results ?? []).map((c) => [String(c.ID).toLowerCase(), c]),
-        );
-
+        await LoadOrdersEngine(this.host.Provider, this.host.User);
         const chain: TaxabilityCategoryLevel[] = [];
-        const seen = new Set<string>();
-        let current: string | null = startCategoryID;
-        while (current) {
-            const key = String(current).toLowerCase();
-            if (seen.has(key)) break;
-            seen.add(key);
-            const row = byID.get(key);
+        for (const id of OrdersEngine.Instance.CategoryChain(startCategoryID)) {
+            const row = OrdersEngine.Instance.ProductCategoryByID(id);
             if (!row) break;
             chain.push({
                 ID: row.ID,
                 DefaultIsTaxable: row.DefaultIsTaxable,
                 DefaultTaxCategory: row.DefaultTaxCategory,
             });
-            current = row.ParentProductCategoryID;
         }
         return chain;
     }

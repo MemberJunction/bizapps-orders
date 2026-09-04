@@ -85,12 +85,10 @@ export async function LoadAccountingEngine(
     user: UserInfo,
 ): Promise<AccountingEngineSurface> {
     const engine = (AccountingEngineBase as unknown as { Instance: AccountingEngineSurface }).Instance;
-    // Force a refresh. ORD-WORLD (and any other process) writes links through BaseEntity
-    // in a different Node process than MJAPI; those events never reach this cache, so a
-    // Config(false) after startup keeps serving an empty link set and every confirm
-    // reports "No GL account is linked for role 'Accounts Receivable'". Reloading a few
-    // dozen link rows on a booking is cheaper than a silent miss.
-    await engine.ConfigEx({ forceRefresh: true, contextUser: user, provider });
+    // GL Account Roles, accounts, and links already live in AccountingEngineBase. Config is
+    // idempotent; BaseEngine save/delete events keep the arrays current. Do not force-refresh
+    // on every booking — that throws away the cache the engine exists to provide.
+    await engine.ConfigEx({ forceRefresh: false, contextUser: user, provider });
     return engine;
 }
 

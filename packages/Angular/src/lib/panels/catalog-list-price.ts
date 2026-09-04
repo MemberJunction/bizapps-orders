@@ -1,7 +1,6 @@
-import { RunView } from '@memberjunction/core';
+import { Metadata } from '@memberjunction/core';
+import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { FormatMoney } from './money-format';
-
-const PRODUCT_PRICES = 'MJ_BizApps_Orders: Product Prices';
 
 /** List price for display: ProductPrice rows on the product (base channel), never SSP. */
 export function FormatListPriceFromRows(amounts: number[]): string {
@@ -15,14 +14,8 @@ export function FormatListPriceFromRows(amounts: number[]): string {
 
 export async function LoadProductListPriceLabel(productId: string | null | undefined): Promise<string> {
     if (!productId) return 'No price';
-    const rv = new RunView();
-    const res = await rv.RunView<{ Amount: number }>({
-        EntityName: PRODUCT_PRICES,
-        ExtraFilter: `ProductID = '${productId.replace(/'/g, "''")}' AND PriceListID IS NULL AND Status = 'Active'`,
-        Fields: ['Amount'],
-        ResultType: 'simple',
-        MaxRows: 50,
-    });
-    const amounts = (res.Success && res.Results ? res.Results : []).map((r) => Number(r.Amount));
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, md.CurrentUser);
+    const amounts = OrdersEngine.Instance.BaseProductPrices(productId).map((p) => Number(p.Amount));
     return FormatListPriceFromRows(amounts);
 }

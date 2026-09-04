@@ -2091,26 +2091,24 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private async subscriptionLines(
         lines: mjBizAppsOrdersOrderLineEntity[],
     ): Promise<Array<{ line: mjBizAppsOrdersOrderLineEntity; product: ProductRow; rules: SubscriptionTypeRules }>> {
-        const ids = [...new Set(lines.map(l => l.ProductID))].map(id => `'${id}'`).join(',');
-        if (!ids) return [];
+        if (!lines.length) return [];
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         await LoadOrdersEngine(provider, user);
 
-        // Products are catalog rows, not *Type lookups — they are not in OrdersEngine (see that
-        // class's header). The type default and the rules row ARE, so this is the only RunView.
-        const rv = new RunView(provider as unknown as IRunViewProvider);
-        const prod = await rv.RunView<ProductRow>(
-            {
-                EntityName: PRODUCT_ENTITY,
-                ExtraFilter: `ID IN (${ids})`,
-                Fields: ['ID', 'Name', 'SubscriptionTypeID', 'RevenueRecognitionTypeID', 'ProductTypeID'],
-                ResultType: 'simple',
-            },
-            user,
-        );
-        const products = new Map((prod?.Results ?? []).map(p => [uuidKey(p.ID), p]));
+        const products = new Map<string, ProductRow>();
+        for (const line of lines) {
+            const p = OrdersEngine.Instance.ProductByID(line.ProductID);
+            if (!p) continue;
+            products.set(uuidKey(p.ID), {
+                ID: p.ID,
+                Name: p.Name,
+                SubscriptionTypeID: p.SubscriptionTypeID,
+                ProductTypeID: p.ProductTypeID,
+                RevenueRecognitionTypeID: p.RevenueRecognitionTypeID,
+            });
+        }
         if (products.size === 0) return [];
 
         const out = [];

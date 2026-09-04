@@ -1,6 +1,8 @@
 ---
 "@mj-biz-apps/orders-core-entities-server": patch
 "@mj-biz-apps/orders-entities": patch
+"@mj-biz-apps/orders-ng": patch
 ---
 
-Confirm inherits ProductType.DefaultSubscriptionTypeID when Product.SubscriptionTypeID is blank. Product Types and Subscription Types live in OrdersEngine; confirm still RunViews the product SKU (catalog, not a *Type lookup).
+OrdersEngine now caches Products, Product Prices, Product Categories, Product Types, and Subscription Types (@RegisterForStartup). Confirm, pricing, checkout, fulfilment, and the catalog picker read those arrays instead of per-call RunView. GL Account Roles stay on AccountingEngineBase; booking no longer force-refreshes that cache. Confirm also inherits ProductType.DefaultSubscriptionTypeID when the product left SubscriptionTypeID blank.
+

@@ -33,7 +33,7 @@ import {
     RunView,
     UserInfo,
 } from '@memberjunction/core';
-import { mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
+import { LoadOrdersEngine, OrdersEngine, mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
 import {
     InitialGrantStatus,
     ReduceGrantForReturn,
@@ -50,9 +50,6 @@ import { RequireUUID } from './sql-guards.js';
 
 const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
-const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
-const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
-const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 
@@ -308,76 +305,45 @@ async function loadPolicyInputs(
     const out = new Map<string, PolicyInputs>();
     if (!productIDs.length) return out;
 
-    const products = await rv.RunView<{
-        ID: string;
-        ProductTypeID: string;
-        ProductCategoryID: string | null;
-        EntitlementGrantTiming: GrantTiming | null;
-        EntitlementQuantityMode: QuantityMode | null;
-        EntitlementValidityMode: ValidityMode | null;
-    }>(
-        {
-            EntityName: PRODUCT_ENTITY,
-            ExtraFilter: `ID IN (${quote(productIDs)})`,
-            ResultType: 'simple',
-        },
-        user,
-    );
-    const productRows = products?.Results ?? [];
+    await LoadOrdersEngine(provider, user);
+    const productRows = productIDs
+        .map((id) => OrdersEngine.Instance.ProductByID(id))
+        .filter((p): p is NonNullable<typeof p> => !!p);
     if (!productRows.length) return out;
 
-    const types = await rv.RunView<{
-        ID: string;
-        DefaultEntitlementGrantTiming: GrantTiming;
-        DefaultEntitlementQuantityMode: QuantityMode;
-        DefaultEntitlementValidityMode: ValidityMode;
-    }>(
-        {
-            EntityName: PRODUCT_TYPE_ENTITY,
-            ExtraFilter: `ID IN (${quote(productRows.map((p) => p.ProductTypeID))})`,
-            ResultType: 'simple',
-        },
-        user,
+    const typeByID = new Map(
+        productRows.map((p) => {
+            const t = OrdersEngine.Instance.ProductTypeByID(p.ProductTypeID);
+            return [
+                key(p.ProductTypeID),
+                t
+                    ? {
+                          ID: t.ID,
+                          DefaultEntitlementGrantTiming: t.DefaultEntitlementGrantTiming as GrantTiming,
+                          DefaultEntitlementQuantityMode: t.DefaultEntitlementQuantityMode as QuantityMode,
+                          DefaultEntitlementValidityMode: t.DefaultEntitlementValidityMode as ValidityMode,
+                      }
+                    : undefined,
+            ] as const;
+        }).filter((entry): entry is readonly [string, NonNullable<(typeof entry)[1]>] => !!entry[1]),
     );
-    const typeByID = new Map((types?.Results ?? []).map((t) => [key(t.ID), t]));
 
-    // Breadth-first up the tree, gathering every level in one query each.
     const categoryByID = new Map<string, PolicyCategoryLevel & { ParentProductCategoryID: string | null }>();
-    let frontier = [...new Set(productRows.map((p) => p.ProductCategoryID).filter((c): c is string => !!c))];
-    const MAX_DEPTH = 20;
-    for (let depth = 0; depth < MAX_DEPTH && frontier.length; depth++) {
-        const level = await rv.RunView<{
-            ID: string;
-            ParentProductCategoryID: string | null;
-            DefaultEntitlementGrantTiming: GrantTiming | null;
-            DefaultEntitlementQuantityMode: QuantityMode | null;
-            DefaultEntitlementValidityMode: ValidityMode | null;
-        }>(
-            {
-                EntityName: PRODUCT_CATEGORY_ENTITY,
-                ExtraFilter: `ID IN (${quote(frontier)})`,
-                ResultType: 'simple',
-            },
-            user,
-        );
-        const rows = level?.Results ?? [];
-        if (!rows.length) break;
-        for (const r of rows) {
-            categoryByID.set(key(r.ID), {
-                ID: r.ID,
-                ParentProductCategoryID: r.ParentProductCategoryID,
-                EntitlementGrantTiming: r.DefaultEntitlementGrantTiming,
-                EntitlementQuantityMode: r.DefaultEntitlementQuantityMode,
-                EntitlementValidityMode: r.DefaultEntitlementValidityMode,
+    const seenCats = new Set<string>();
+    for (const p of productRows) {
+        for (const catID of OrdersEngine.Instance.CategoryChain(p.ProductCategoryID)) {
+            if (seenCats.has(key(catID))) continue;
+            seenCats.add(key(catID));
+            const cat = OrdersEngine.Instance.ProductCategoryByID(catID);
+            if (!cat) continue;
+            categoryByID.set(key(cat.ID), {
+                ID: cat.ID,
+                ParentProductCategoryID: cat.ParentProductCategoryID ?? null,
+                EntitlementGrantTiming: cat.DefaultEntitlementGrantTiming as GrantTiming | null,
+                EntitlementQuantityMode: cat.DefaultEntitlementQuantityMode as QuantityMode | null,
+                EntitlementValidityMode: cat.DefaultEntitlementValidityMode as ValidityMode | null,
             });
         }
-        frontier = [
-            ...new Set(
-                rows
-                    .map((r) => r.ParentProductCategoryID)
-                    .filter((c): c is string => !!c && !categoryByID.has(key(c))),
-            ),
-        ];
     }
 
     for (const p of productRows) {
@@ -388,7 +354,7 @@ async function loadPolicyInputs(
         const chain: PolicyCategoryLevel[] = [];
         const seen = new Set<string>();
         let cursor = p.ProductCategoryID;
-        while (cursor && !seen.has(key(cursor)) && chain.length < MAX_DEPTH) {
+        while (cursor && !seen.has(key(cursor)) && chain.length < 20) {
             seen.add(key(cursor));
             const cat = categoryByID.get(key(cursor));
             if (!cat) break;

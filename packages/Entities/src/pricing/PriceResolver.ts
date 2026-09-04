@@ -44,6 +44,7 @@ import {
 } from './PricingBehavior.js';
 import { priceApplies, type FilterEvalContext } from './applicability.js';
 import { collapseInheritedPrices } from './inheritPrices.js';
+import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 
 const PRICE_LIST_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assignments';
@@ -287,33 +288,55 @@ export class DefaultPriceResolver extends BasePriceResolver {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<ProductPriceRow[]> {
-        const rv = new RunView(provider as unknown as IRunViewProvider);
-        const listClause = priceListIDs.length
-            ? `(PriceListID IN (${priceListIDs.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')}) OR PriceListID IS NULL)`
-            : `PriceListID IS NULL`;
-        const feeClause = `FeeType = '${(ctx.FeeType ?? 'Standard').replace(/'/g, "''")}'`;
-        const catClause = categoryChainNearestFirst.length
-            ? ` OR ProductCategoryID IN (${categoryChainNearestFirst.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`
-            : '';
-        const scopeClause = `(ProductID = '${ctx.ProductID.replace(/'/g, "''")}'${catClause})`;
-
-        const res = await rv.RunView<ProductPriceRow>(
-            {
-                EntityName: PRODUCT_PRICE_ENTITY,
-                ExtraFilter: `${scopeClause} AND Status = 'Active' AND ${listClause} AND ${feeClause}`,
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            user,
-        );
-        if (!res?.Success) {
-            throw new PriceResolutionError(ctx.ProductID, `Could not read price rules: ${res?.ErrorMessage ?? 'unknown error'}`);
+        if (!(await OrdersEngineReady(provider, user))) {
+            const rv = new RunView(provider as unknown as IRunViewProvider);
+            const listClause = priceListIDs.length
+                ? `(PriceListID IN (${priceListIDs.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')}) OR PriceListID IS NULL)`
+                : `PriceListID IS NULL`;
+            const feeClause = `FeeType = '${(ctx.FeeType ?? 'Standard').replace(/'/g, "''")}'`;
+            const catClause = categoryChainNearestFirst.length
+                ? ` OR ProductCategoryID IN (${categoryChainNearestFirst.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`
+                : '';
+            const scopeClause = `(ProductID = '${ctx.ProductID.replace(/'/g, "''")}'${catClause})`;
+            const res = await rv.RunView<ProductPriceRow>(
+                {
+                    EntityName: PRODUCT_PRICE_ENTITY,
+                    ExtraFilter: `${scopeClause} AND Status = 'Active' AND ${listClause} AND ${feeClause}`,
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                user,
+            );
+            if (!res?.Success) {
+                throw new PriceResolutionError(ctx.ProductID, `Could not read price rules: ${res?.ErrorMessage ?? 'unknown error'}`);
+            }
+            const queried = res.Results ?? [];
+            if (priceListIDs.length) {
+                for (const r of queried) {
+                    if (r.PriceListID) r.Priority = r.Priority + 1;
+                }
+            }
+            return queried;
         }
-        const rows = res.Results ?? [];
+        const lists = new Set(priceListIDs.map(uuidKey));
+        const fee = (ctx.FeeType ?? 'Standard').trim().toLowerCase();
+        const rows: ProductPriceRow[] = [];
+        for (const p of OrdersEngine.Instance.ProductPricesFor(ctx.ProductID, categoryChainNearestFirst)) {
+            if (p.Status && p.Status !== 'Active') continue;
+            if ((p.FeeType ?? 'Standard').trim().toLowerCase() !== fee) continue;
+            const listID = p.PriceListID ? uuidKey(p.PriceListID) : '';
+            if (lists.size) {
+                if (listID && !lists.has(listID)) continue;
+            } else if (listID) {
+                continue;
+            }
+            rows.push(productPriceRowFrom(p as never));
+        }
 
         // A LIST rule beats a BASE rule of equal priority — otherwise assigning a customer to a list
         // would leave them on base pricing half the time, decided by row order. Nudging the list
         // rule's effective priority keeps that intent in the data rather than in a sort comparator.
+        // Copy already happened in productPriceRowFrom — do not mutate the engine's live entities.
         if (priceListIDs.length) {
             for (const r of rows) {
                 if (r.PriceListID) r.Priority = r.Priority + 1;
@@ -521,6 +544,9 @@ async function categoryChain(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<string[]> {
+    if (await OrdersEngineReady(provider, user)) {
+        return OrdersEngine.Instance.CategoryChain(startCategoryID);
+    }
     if (!startCategoryID) return [];
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const res = await rv.RunView<{ ID: string; ParentProductCategoryID: string | null }>(
@@ -532,16 +558,70 @@ async function categoryChain(
         user,
     );
     const parent = new Map((res?.Results ?? []).map((c) => [uuidKey(c.ID), c.ParentProductCategoryID]));
-
     const chain: string[] = [];
     const seen = new Set<string>();
     let current: string | null = startCategoryID;
     while (current && !seen.has(uuidKey(current))) {
-        seen.add(uuidKey(current)); // cycle guard — the DB blocks self-parenting, not longer loops
+        seen.add(uuidKey(current));
         chain.push(current);
         current = parent.get(uuidKey(current)) ?? null;
     }
     return chain;
+}
+
+function productPriceRowFrom(p: {
+    ID: string;
+    ProductID?: string | null;
+    ProductCategoryID?: string | null;
+    Name?: string | null;
+    PriceListID?: string | null;
+    PricingModel: string;
+    FeeType: string;
+    Amount: number;
+    PackageQuantity?: number | null;
+    MinQuantity?: number | null;
+    MaxQuantity?: number | null;
+    EffectiveFrom: Date;
+    EffectiveTo?: Date | null;
+    RecurrenceMonths?: string | null;
+    RecurrenceDaysOfWeek?: string | null;
+    RecurrenceDayOfMonthMin?: number | null;
+    RecurrenceDayOfMonthMax?: number | null;
+    TimeOfDayStart?: string | null;
+    TimeOfDayEnd?: string | null;
+    Priority: number;
+    Status: string;
+    Description?: string | null;
+    Applicability?: string | null;
+    Get?: (name: string) => unknown;
+}): ProductPriceRow {
+    const get = (name: string, fallback: unknown) =>
+        p.Get ? (p.Get(name) ?? fallback) : ((p as Record<string, unknown>)[name] ?? fallback);
+    return {
+        ID: p.ID,
+        ProductID: (get('ProductID', p.ProductID) as string | null) ?? null,
+        ProductCategoryID: (get('ProductCategoryID', p.ProductCategoryID) as string | null) ?? null,
+        Name: (get('Name', p.Name) as string | null) ?? null,
+        PriceListID: (get('PriceListID', p.PriceListID) as string | null) ?? null,
+        PricingModel: String(get('PricingModel', p.PricingModel) ?? 'PerUnit'),
+        FeeType: String(get('FeeType', p.FeeType) ?? 'Standard'),
+        Amount: Number(get('Amount', p.Amount) ?? 0),
+        PackageQuantity: (get('PackageQuantity', p.PackageQuantity) as number | null) ?? null,
+        MinQuantity: (get('MinQuantity', p.MinQuantity) as number | null) ?? null,
+        MaxQuantity: (get('MaxQuantity', p.MaxQuantity) as number | null) ?? null,
+        EffectiveFrom: new Date(get('EffectiveFrom', p.EffectiveFrom) as Date),
+        EffectiveTo: get('EffectiveTo', p.EffectiveTo) ? new Date(get('EffectiveTo', p.EffectiveTo) as Date) : null,
+        RecurrenceMonths: (get('RecurrenceMonths', p.RecurrenceMonths) as string | null) ?? null,
+        RecurrenceDaysOfWeek: (get('RecurrenceDaysOfWeek', p.RecurrenceDaysOfWeek) as string | null) ?? null,
+        RecurrenceDayOfMonthMin: (get('RecurrenceDayOfMonthMin', p.RecurrenceDayOfMonthMin) as number | null) ?? null,
+        RecurrenceDayOfMonthMax: (get('RecurrenceDayOfMonthMax', p.RecurrenceDayOfMonthMax) as number | null) ?? null,
+        TimeOfDayStart: (get('TimeOfDayStart', p.TimeOfDayStart) as string | null) ?? null,
+        TimeOfDayEnd: (get('TimeOfDayEnd', p.TimeOfDayEnd) as string | null) ?? null,
+        Priority: Number(get('Priority', p.Priority) ?? 0),
+        Status: String(get('Status', p.Status) ?? 'Active'),
+        Description: (get('Description', p.Description) as string | null) ?? null,
+        Applicability: (get('Applicability', p.Applicability) as string | null) ?? null,
+    };
 }
 
 /** Named prices that apply to this context, before PickPriceRule chooses a winner. OverrideList uses this set. */

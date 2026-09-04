@@ -42,7 +42,12 @@
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
-import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import {
+    LoadOrdersEngine,
+    OrdersEngine,
+    type mjBizAppsOrdersOrderHeaderEntity,
+    type mjBizAppsOrdersOrderLineEntity,
+} from '@mj-biz-apps/orders-entities';
 import { GL_ROLE, GLAccountResolver, GLAccountResolutionError } from './GLAccountResolver.js';
 import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
@@ -474,18 +479,21 @@ export class OrderJournalEntryFactory {
     }
 
     private async loadProducts(productIDs: string[]): Promise<Map<string, ProductRow>> {
-        const inList = [...new Set(productIDs)].map((id) => `'${id}'`).join(',');
-        const rv = new RunView(this._provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<ProductRow>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Products',
-                ExtraFilter: `ID IN (${inList})`,
-                Fields: ['ID', 'CompanyID', 'ProductCategoryID', 'ProductTypeID', 'RevenueRecognitionTypeID', 'Name'],
-                ResultType: 'simple',
-            },
-            this._contextUser,
-        );
-        return new Map((result?.Results ?? []).map((p) => [p.ID, p]));
+        await LoadOrdersEngine(this._provider, this._contextUser);
+        const out = new Map<string, ProductRow>();
+        for (const id of productIDs) {
+            const p = OrdersEngine.Instance.ProductByID(id);
+            if (!p) continue;
+            out.set(p.ID, {
+                ID: p.ID,
+                CompanyID: p.CompanyID,
+                ProductCategoryID: p.ProductCategoryID ?? null,
+                ProductTypeID: p.ProductTypeID,
+                RevenueRecognitionTypeID: p.RevenueRecognitionTypeID,
+                Name: p.Name,
+            });
+        }
+        return out;
     }
 
     /**
@@ -495,17 +503,9 @@ export class OrderJournalEntryFactory {
      * not seeded metadata with stable keys. One query for the whole draft build, not one per line.
      */
     private async loadGiftCardTypeIDs(): Promise<Set<string>> {
-        const rv = new RunView(this._provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<{ ID: string }>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Product Types',
-                ExtraFilter: `Code = '${GIFT_CARD_PRODUCT_TYPE_CODE}'`,
-                Fields: ['ID'],
-                ResultType: 'simple',
-            },
-            this._contextUser,
-        );
-        return new Set((result?.Results ?? []).map((r) => r.ID));
+        await LoadOrdersEngine(this._provider, this._contextUser);
+        const type = OrdersEngine.Instance.ProductTypeByCode(GIFT_CARD_PRODUCT_TYPE_CODE);
+        return new Set(type ? [type.ID] : []);
     }
 
     private async loadRevRecTypes(): Promise<Map<string, RevRecTypeRow>> {

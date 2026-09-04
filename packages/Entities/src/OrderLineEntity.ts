@@ -26,6 +26,7 @@ import {
     userPriceOverrideKind,
 } from './pricing/priceOverride';
 import { ListApplicablePrices, PriceResolutionError, ResolvePrice } from './pricing/PriceResolver';
+import { LoadOrdersEngine, OrdersEngine } from './pricing/OrdersEngine';
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Lines')
 export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
@@ -151,17 +152,9 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
     }
 
     private async loadProductForOverride(): Promise<{ ProductCategoryID: string | null; CompanyID: string } | null> {
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ ProductCategoryID: string | null; CompanyID: string }>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Products',
-                ExtraFilter: `ID = '${this.ProductID}'`,
-                Fields: ['ProductCategoryID', 'CompanyID'],
-                ResultType: 'simple',
-            },
-            this.ContextCurrentUser,
-        );
-        return res?.Results?.[0] ?? null;
+        await LoadOrdersEngine(this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
+        const p = OrdersEngine.Instance.ProductByID(this.ProductID);
+        return p ? { ProductCategoryID: p.ProductCategoryID ?? null, CompanyID: p.CompanyID } : null;
     }
 
     private async loadHeaderForOverride(): Promise<{

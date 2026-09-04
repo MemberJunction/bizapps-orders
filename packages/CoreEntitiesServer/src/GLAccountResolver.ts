@@ -26,8 +26,9 @@
  *   PRIMITIVE: AccountingEngineBase.ResolveLinkedAccount (@mj-biz-apps/accounting-engine-base)
  *   CALLER:    OrderJournalEntryFactory (./OrderJournalEntryFactory.ts)
  */
-import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
+import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 
 /** GL account roles this app books against (seeded by accounting's metadata). */
 export const GL_ROLE = {
@@ -219,21 +220,11 @@ export class GLAccountResolver {
         return null;
     }
 
-    /** One read of the category tree per booking — the walk is pointer-chasing after this. */
+    /** Category tree from OrdersEngine — pointer-chasing after this. */
     private async ensureCategoriesLoaded(): Promise<void> {
         if (this._categoriesLoaded) return;
-
-        const rv = new RunView(this._provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<CategoryRow>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Product Categories',
-                Fields: ['ID', 'ParentProductCategoryID'],
-                ResultType: 'simple',
-            },
-            this._contextUser,
-        );
-
-        for (const row of result?.Results ?? []) {
+        await LoadOrdersEngine(this._provider, this._contextUser);
+        for (const row of OrdersEngine.Instance.ProductCategories) {
             this._categoryParent.set(row.ID, row.ParentProductCategoryID ?? null);
         }
         this._categoriesLoaded = true;
