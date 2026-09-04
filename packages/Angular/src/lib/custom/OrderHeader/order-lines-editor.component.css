@@ -105,16 +105,30 @@
 
 .mjo-ol-card__price {
     flex: none;
-    width: 118px;
+    width: 132px;
     text-align: right;
 }
 
-.mjo-ol-card__price--edit {
-    width: 168px;
+.mjo-ol-card__price-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+}
+
+.mjo-ol-price__pencil {
+    flex: none;
+    color: var(--mj-text-muted);
+}
+
+.mjo-ol-price__pencil:hover {
+    color: var(--mj-text-link);
+    background: var(--mj-bg-surface-hover);
 }
 
 .mjo-ol-price__pick,
-.mjo-ol-price__amt {
+.mjo-ol-price__amt,
+.mjo-ol-override__reason textarea {
     display: block;
     width: 100%;
     box-sizing: border-box;
@@ -135,10 +149,66 @@
 
 .mjo-ol-price__amt {
     height: 28px;
-    margin-top: 4px;
     padding: 0 8px;
     text-align: right;
     font-weight: var(--mj-font-semibold);
+}
+
+.mjo-ol-override {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-2);
+    margin-top: var(--mj-space-2);
+    padding: var(--mj-space-2);
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-md);
+    background: var(--mj-bg-surface-subtle, var(--mj-bg-surface));
+}
+
+.mjo-ol-override__reason span {
+    display: block;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+    margin-bottom: 4px;
+}
+
+.mjo-ol-override__reason textarea {
+    resize: vertical;
+    min-height: 48px;
+    padding: 6px 8px;
+    text-align: left;
+    font-variant-numeric: normal;
+}
+
+.mjo-ol-override__actions {
+    display: flex;
+    gap: var(--mj-space-2);
+    justify-content: flex-end;
+}
+
+.mjo-ol-override__done,
+.mjo-ol-override__reset {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    font-weight: var(--mj-font-semibold);
+    padding: 4px 8px;
+    border-radius: var(--mj-radius-sm);
+}
+
+.mjo-ol-override__done {
+    color: var(--mj-text-link);
+}
+
+.mjo-ol-override__reset {
+    color: var(--mj-text-muted);
+}
+
+.mjo-ol-override__done:hover,
+.mjo-ol-override__reset:hover {
+    background: var(--mj-bg-surface-hover);
 }
 
 .mjo-ol-card__amt {
@@ -252,6 +322,11 @@
 }
 
 .mj-typeahead-list.is-open { display: block; }
+
+.mj-typeahead-list.is-up {
+    top: auto;
+    bottom: calc(100% + 4px);
+}
 
 .mj-typeahead-item {
     display: flex;

@@ -61,9 +61,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
      * authorization catalog is not synced, and when money fields did not change.
      */
     private async assertPriceOverride(result: ValidationResult): Promise<void> {
-        const priceDirty =
-            this.GetFieldByName('UnitPrice')?.Dirty === true ||
-            this.GetFieldByName('ProductPriceID')?.Dirty === true;
+        const priceDirty = this.FieldIsDirty('UnitPrice', 'ProductPriceID');
         if (this.IsSaved && !priceDirty) return;
         if (!this.ProductID) return;
 
@@ -72,8 +70,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
         if (!provider || !user) return;
         if (!priceOverrideCatalogInstalled(provider)) return;
 
-        const field = this.GetFieldByName('UnitPrice');
-        const stated = field?.Dirty === true || (this.UnitPrice ?? 0) > 0;
+        const stated = this.FieldIsDirty('UnitPrice') || (this.UnitPrice ?? 0) > 0;
         if (!stated && !this.ProductPriceID) return;
 
         try {
@@ -206,7 +203,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
      */
     private refuseBookedMoneyEdits(result: ValidationResult): void {
         if (!this.JournalEntryID) return;
-        const dirty = ORDER_LINE_MONEY_FIELDS.filter((name) => this.GetFieldByName(name)?.Dirty);
+        const dirty = ORDER_LINE_MONEY_FIELDS.filter((name) => this.FieldIsDirty(name));
         if (dirty.length === 0) return;
         result.Success = false;
         result.Errors.push(

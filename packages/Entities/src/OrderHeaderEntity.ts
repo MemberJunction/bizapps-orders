@@ -338,7 +338,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 continue;
             }
             for (const name of ORDER_LINE_MONEY_FIELDS) {
-                if (line.GetFieldByName(name)?.Dirty) {
+                if (line.FieldIsDirty(name)) {
                     dirtyLineMoney.push(name);
                 }
             }
@@ -346,7 +346,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
         const dirtyHeaderMoney: string[] = [];
         for (const name of ORDER_HEADER_MONEY_FIELDS) {
-            if (this.GetFieldByName(name)?.Dirty) {
+            if (this.FieldIsDirty(name)) {
                 dirtyHeaderMoney.push(name);
             }
         }

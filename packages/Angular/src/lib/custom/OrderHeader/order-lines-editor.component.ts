@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, EventEmitter, Input, OnDestroy, Output, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -92,10 +92,14 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public ProductQuery = '';
     public PickerCursor = 0;
     public PickerOpen = false;
+    /** True when the catalog list would overflow the viewport below the search box. */
+    public PickerOpensUp = false;
     public CatalogError: string | null = null;
+    @ViewChild('pickerHost') private pickerHost?: ElementRef<HTMLElement>;
     /** 'none' hides the picker; 'list' is named prices only; 'any' also types an amount. */
     public OverrideKind: PriceOverrideKind = 'none';
     private readonly applicableByLine = new Map<string, ApplicablePrice[]>();
+    private readonly overrideEditorLineIds = new Set<string>();
 
     public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
         return [...(this._order?.Lines.Items ?? [])];
@@ -112,11 +116,17 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public OpenPicker(): void {
         this.PickerOpen = true;
         this.PickerCursor = 0;
+        this.updatePickerFlip();
+    }
+
+    public OnProductQueryChange(): void {
+        if (this.PickerOpen) this.updatePickerFlip();
     }
 
     public ClosePickerSoon(): void {
         setTimeout(() => {
             this.PickerOpen = false;
+            this.PickerOpensUp = false;
             this.cdr.detectChanges();
         }, 140);
     }
@@ -189,6 +199,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
         if (!this.EditMode) return;
         this.expandedLineIds.delete(line.ID);
+        this.overrideEditorLineIds.delete(line.ID);
         this._order?.Lines.Remove(line);
         this.schedulePricing();
     }
@@ -210,14 +221,13 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public SelectedPriceID(line: mjBizAppsOrdersOrderLineEntity): string {
-        const field = line.GetFieldByName('ProductPriceID');
-        if (field?.Dirty && line.ProductPriceID) return String(line.ProductPriceID);
-        return '';
+        if (!this.IsOverridden(line)) return '';
+        if (line.ProductPriceID) return String(line.ProductPriceID);
+        return this.OverrideKind === 'any' ? '__custom__' : '';
     }
 
     public DisplayUnit(line: mjBizAppsOrdersOrderLineEntity): number | null {
-        const field = line.GetFieldByName('UnitPrice');
-        if (field?.Dirty) return Number(line.UnitPrice ?? 0);
+        if (this.IsOverridden(line)) return Number(line.UnitPrice ?? 0);
         return this.PricedLine(line)?.UnitPrice ?? null;
     }
 
@@ -232,14 +242,19 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!(target instanceof HTMLSelectElement)) return;
         const id = target.value;
         if (!id) {
-            this.clearOverride(line);
-            this.schedulePricing();
+            this.ResetOverride(line);
+            return;
+        }
+        if (id === '__custom__') {
+            this.stamp(line, 'ProductPriceID', null);
+            this.markOverridden(line);
             return;
         }
         const hit = this.ApplicableFor(line).find((p) => UUIDsEqual(p.ID, id));
         if (!hit) return;
         this.stamp(line, 'ProductPriceID', hit.ID);
         this.stamp(line, 'UnitPrice', hit.UnitPrice);
+        this.markOverridden(line);
         this.schedulePricing();
     }
 
@@ -251,7 +266,50 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!Number.isFinite(amount) || amount < 0) return;
         this.stamp(line, 'ProductPriceID', null);
         this.stamp(line, 'UnitPrice', amount);
+        this.markOverridden(line);
         this.schedulePricing();
+    }
+
+    public IsOverrideEditorOpen(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.overrideEditorLineIds.has(line.ID);
+    }
+
+    public ToggleOverrideEditor(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (!this.CanOverride) return;
+        if (this.overrideEditorLineIds.has(line.ID)) {
+            this.overrideEditorLineIds.delete(line.ID);
+            return;
+        }
+        this.overrideEditorLineIds.add(line.ID);
+        void this.refreshApplicable(line);
+    }
+
+    public DoneOverrideEditor(line: mjBizAppsOrdersOrderLineEntity): void {
+        this.overrideEditorLineIds.delete(line.ID);
+    }
+
+    public ResetOverride(line: mjBizAppsOrdersOrderLineEntity): void {
+        this.clearOverride(line);
+        this.overrideEditorLineIds.delete(line.ID);
+        this.schedulePricing();
+    }
+
+    public IsOverridden(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const flag = line.GetFieldByName('PriceOverridden');
+        if (flag && (flag.Value === true || flag.Value === 1 || flag.Value === '1')) return true;
+        return line.FieldIsDirty('UnitPrice', 'ProductPriceID');
+    }
+
+    public OverrideReasonText(line: mjBizAppsOrdersOrderLineEntity): string {
+        const field = line.GetFieldByName('PriceOverrideReason');
+        return field?.Value == null ? '' : String(field.Value);
+    }
+
+    public SetOverrideReason(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        const target = event.target;
+        if (!(target instanceof HTMLTextAreaElement)) return;
+        const reason = target.value.trim();
+        this.stamp(line, 'PriceOverrideReason', reason === '' ? null : reason);
     }
 
     public OpenProduct(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -341,6 +399,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.expandedLineIds.clear();
         this.hydratingLineIds.clear();
         this.applicableByLine.clear();
+        this.overrideEditorLineIds.clear();
         this.OverrideKind = 'none';
     }
 
@@ -412,6 +471,23 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         }
     }
 
+    private updatePickerFlip(): void {
+        // Measure after the list is in the DOM so max-height (240px) is the right budget.
+        requestAnimationFrame(() => {
+            const host = this.pickerHost?.nativeElement;
+            if (!host || !this.PickerOpen) {
+                this.PickerOpensUp = false;
+                return;
+            }
+            const rect = host.getBoundingClientRect();
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const spaceAbove = rect.top;
+            const listHeight = 240;
+            this.PickerOpensUp = spaceBelow < listHeight && spaceAbove > spaceBelow;
+            this.cdr.detectChanges();
+        });
+    }
+
     private schedulePricing(): void {
         if (!this._order) return;
         this.pricing.SchedulePricing(this._order, (state) => {
@@ -434,6 +510,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const named = line.GetFieldByName('ProductPriceID');
         if (unit) unit.Value = unit.OldValue;
         if (named) named.Value = named.OldValue;
+        this.stamp(line, 'PriceOverridden', false);
+        this.stamp(line, 'PriceOverrideReason', null);
+    }
+
+    private markOverridden(line: mjBizAppsOrdersOrderLineEntity): void {
+        this.stamp(line, 'PriceOverridden', true);
     }
 
     private async resolveOverrideKind(): Promise<void> {
