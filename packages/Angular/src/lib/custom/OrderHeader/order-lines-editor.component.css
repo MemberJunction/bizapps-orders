@@ -109,6 +109,38 @@
     text-align: right;
 }
 
+.mjo-ol-card__price--edit {
+    width: 168px;
+}
+
+.mjo-ol-price__pick,
+.mjo-ol-price__amt {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: inherit;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.mjo-ol-price__pick {
+    height: 28px;
+    padding: 0 6px;
+    text-align: left;
+}
+
+.mjo-ol-price__amt {
+    height: 28px;
+    margin-top: 4px;
+    padding: 0 8px;
+    text-align: right;
+    font-weight: var(--mj-font-semibold);
+}
+
 .mjo-ol-card__amt {
     font-variant-numeric: tabular-nums;
     font-weight: var(--mj-font-semibold);

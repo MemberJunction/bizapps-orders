@@ -27,8 +27,33 @@
                     }
                 </div>
 
-                <div class="mjo-ol-card__price">
-                    <div class="mjo-ol-card__amt">{{ PricedLine(line)?.UnitPrice | mjoMoney }}</div>
+                <div class="mjo-ol-card__price" [class.mjo-ol-card__price--edit]="CanOverride">
+                    @if (CanOverride) {
+                        <select
+                            class="mjo-ol-price__pick"
+                            [value]="SelectedPriceID(line)"
+                            (change)="PickNamedPrice(line, $event)"
+                            aria-label="Named price">
+                            <option value="">{{ EngineLabel(line) }}</option>
+                            @for (price of ApplicableFor(line); track price.ID) {
+                                <option [value]="price.ID">{{ price.Name }} · {{ price.UnitPrice | mjoMoney }}</option>
+                            }
+                        </select>
+                        @if (OverrideKind === 'any') {
+                            <input
+                                class="mjo-ol-price__amt"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                [value]="DisplayUnit(line)"
+                                (change)="TypeAmount(line, $event)"
+                                aria-label="Unit price">
+                        } @else {
+                            <div class="mjo-ol-card__amt">{{ DisplayUnit(line) | mjoMoney }}</div>
+                        }
+                    } @else {
+                        <div class="mjo-ol-card__amt">{{ PricedLine(line)?.UnitPrice | mjoMoney }}</div>
+                    }
                     <mjo-price-source-badge
                         [Source]="PricedLine(line)?.PriceSource ?? null"
                         [Settled]="!Pricing.Loading"

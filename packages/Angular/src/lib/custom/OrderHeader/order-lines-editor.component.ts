@@ -5,7 +5,9 @@ import {
     BaseEntity,
     CompositeKey,
     Metadata,
+    RunView,
     type IMetadataProvider,
+    type UserInfo,
 } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 import {
@@ -18,6 +20,14 @@ import {
     OrderHeaderEntity,
     OrderLineEntity,
     ClampLineQuantity,
+    ListApplicablePrices,
+    LoadOrdersEngine,
+    OrdersEngine,
+    loadApplicabilityContext,
+    priceOverrideCatalogInstalled,
+    userPriceOverrideKind,
+    type ApplicablePrice,
+    type PriceOverrideKind,
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
@@ -83,6 +93,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public PickerCursor = 0;
     public PickerOpen = false;
     public CatalogError: string | null = null;
+    /** 'none' hides the picker; 'list' is named prices only; 'any' also types an amount. */
+    public OverrideKind: PriceOverrideKind = 'none';
+    private readonly applicableByLine = new Map<string, ApplicablePrice[]>();
 
     public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
         return [...(this._order?.Lines.Items ?? [])];
@@ -144,12 +157,14 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.PickerCursor = 0;
         this.PickerOpen = false;
         this.schedulePricing();
+        void this.refreshAllApplicable();
         this.cdr.detectChanges();
     }
 
     public Bump(line: mjBizAppsOrdersOrderLineEntity, delta: number): void {
         if (!this.EditMode) return;
         line.Quantity = this.clampQuantity(line, Number(line.Quantity ?? 0) + delta);
+        void this.refreshApplicable(line);
         this.schedulePricing();
     }
 
@@ -158,6 +173,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
         line.Quantity = this.clampQuantity(line, Number.parseFloat(target.value));
+        void this.refreshApplicable(line);
         this.schedulePricing();
     }
 
@@ -183,6 +199,59 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     public PricedLine(line: mjBizAppsOrdersOrderLineEntity): MJOLinePrice | undefined {
         return this.Pricing.Result?.Lines.find((priced) => UUIDsEqual(priced.ClientKey, line.ID));
+    }
+
+    public get CanOverride(): boolean {
+        return this.EditMode && this.OverrideKind !== 'none';
+    }
+
+    public ApplicableFor(line: mjBizAppsOrdersOrderLineEntity): ApplicablePrice[] {
+        return this.applicableByLine.get(line.ID) ?? [];
+    }
+
+    public SelectedPriceID(line: mjBizAppsOrdersOrderLineEntity): string {
+        const field = line.GetFieldByName('ProductPriceID');
+        if (field?.Dirty && line.ProductPriceID) return String(line.ProductPriceID);
+        return '';
+    }
+
+    public DisplayUnit(line: mjBizAppsOrdersOrderLineEntity): number | null {
+        const field = line.GetFieldByName('UnitPrice');
+        if (field?.Dirty) return Number(line.UnitPrice ?? 0);
+        return this.PricedLine(line)?.UnitPrice ?? null;
+    }
+
+    public EngineLabel(line: mjBizAppsOrdersOrderLineEntity): string {
+        const unit = this.PricedLine(line)?.UnitPrice;
+        return unit == null ? 'Engine price' : `Engine · ${unit.toFixed(2)}`;
+    }
+
+    public PickNamedPrice(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.CanOverride) return;
+        const target = event.target;
+        if (!(target instanceof HTMLSelectElement)) return;
+        const id = target.value;
+        if (!id) {
+            this.clearOverride(line);
+            this.schedulePricing();
+            return;
+        }
+        const hit = this.ApplicableFor(line).find((p) => UUIDsEqual(p.ID, id));
+        if (!hit) return;
+        this.stamp(line, 'ProductPriceID', hit.ID);
+        this.stamp(line, 'UnitPrice', hit.UnitPrice);
+        this.schedulePricing();
+    }
+
+    public TypeAmount(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.CanOverride || this.OverrideKind !== 'any') return;
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const amount = Number.parseFloat(target.value);
+        if (!Number.isFinite(amount) || amount < 0) return;
+        this.stamp(line, 'ProductPriceID', null);
+        this.stamp(line, 'UnitPrice', amount);
+        this.schedulePricing();
     }
 
     public OpenProduct(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -262,13 +331,17 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             await this._order.Lines.Load();
         }
         await this.hydrateExtensions();
+        await this.resolveOverrideKind();
         this.schedulePricing();
+        void this.refreshAllApplicable();
         this.cdr.detectChanges();
     }
 
     private unbindOrder(): void {
         this.expandedLineIds.clear();
         this.hydratingLineIds.clear();
+        this.applicableByLine.clear();
+        this.OverrideKind = 'none';
     }
 
     private async addPlainLine(product: MJOProductOption): Promise<void> {
@@ -346,5 +419,92 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             this.PricingChanged.emit(state);
             this.cdr.detectChanges();
         });
+    }
+
+    private stamp(line: mjBizAppsOrdersOrderLineEntity, fieldName: string, value: unknown): void {
+        const field = line.GetFieldByName(fieldName);
+        if (!field) return;
+        const baseline = field.OldValue;
+        field.Value = value;
+        if (!field.Dirty) field.RestoreOldValue(baseline);
+    }
+
+    private clearOverride(line: mjBizAppsOrdersOrderLineEntity): void {
+        const unit = line.GetFieldByName('UnitPrice');
+        const named = line.GetFieldByName('ProductPriceID');
+        if (unit) unit.Value = unit.OldValue;
+        if (named) named.Value = named.OldValue;
+    }
+
+    private async resolveOverrideKind(): Promise<void> {
+        const user = this.metadata.CurrentUser as UserInfo | null;
+        this.OverrideKind = userPriceOverrideKind(user, this.metadata);
+        if (this.OverrideKind !== 'none') return;
+        if (!priceOverrideCatalogInstalled(this.metadata)) return;
+        this.OverrideKind = await this.overrideKindFromLiveRoles(user);
+    }
+
+    private async overrideKindFromLiveRoles(user: UserInfo | null): Promise<PriceOverrideKind> {
+        const roleIDs = (user?.UserRoles ?? []).map((r) => r.RoleID).filter(Boolean);
+        if (!roleIDs.length) return 'none';
+        const quoted = roleIDs.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(',');
+        const rv = new RunView();
+        const res = await rv.RunView<{ Authorization: string; Type: string }>({
+            EntityName: 'MJ: Authorization Roles',
+            ExtraFilter: `RoleID IN (${quoted}) AND Type LIKE 'Allow%' AND Authorization LIKE 'MJ.BizApps.Orders.Price.Override%'`,
+            ResultType: 'simple',
+        });
+        const names = (res.Success ? res.Results : [])
+            .map((row) => String(row.Authorization ?? ''))
+            .filter(Boolean);
+        if (names.some((n) => n === 'MJ.BizApps.Orders.Price.OverrideAny' || n === 'MJ.BizApps.Orders.Price.Override')) {
+            return 'any';
+        }
+        if (names.includes('MJ.BizApps.Orders.Price.OverrideList')) return 'list';
+        return 'none';
+    }
+
+    private async refreshAllApplicable(): Promise<void> {
+        if (!this.CanOverride) return;
+        await Promise.all(this.Lines.map((line) => this.refreshApplicable(line)));
+        this.cdr.detectChanges();
+    }
+
+    private async refreshApplicable(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        if (!this.CanOverride || !this._order || !line.ProductID) return;
+        const user = this.metadata.CurrentUser as UserInfo | null;
+        if (!user) return;
+        try {
+            await LoadOrdersEngine(this.metadata, user);
+            const product = OrdersEngine.Instance.ProductByID(line.ProductID);
+            const companyID = product?.CompanyID ?? this._order.CompanyID;
+            if (!companyID) return;
+            const ctx = {
+                ProductID: line.ProductID,
+                ProductCategoryID: product?.ProductCategoryID ?? null,
+                CompanyID: companyID,
+                Quantity: Number(line.Quantity ?? 0),
+                AsOf: this._order.OrderDate ? new Date(this._order.OrderDate) : new Date(),
+                OrganizationID: this._order.BillToOrganizationID ?? null,
+                PersonID: this._order.BillToPersonID ?? null,
+                ApplicabilityContext: await loadApplicabilityContext(
+                    {
+                        OrderHeaderID: this._order.ID ?? null,
+                        ProductID: line.ProductID,
+                        BillToPersonID: this._order.BillToPersonID ?? null,
+                        BillToOrganizationID: this._order.BillToOrganizationID ?? null,
+                        ShipToPersonID: this._order.ShipToPersonID ?? null,
+                        ShipToOrganizationID: this._order.ShipToOrganizationID ?? null,
+                        BillToAddressID: this._order.BillToAddressID ?? null,
+                        ShipToAddressID: this._order.ShipToAddressID ?? null,
+                    },
+                    this.metadata,
+                    user,
+                ),
+            };
+            this.applicableByLine.set(line.ID, await ListApplicablePrices(ctx, this.metadata, user));
+        } catch {
+            this.applicableByLine.set(line.ID, []);
+        }
     }
 }
