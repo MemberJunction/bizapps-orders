@@ -600,6 +600,36 @@ export class SubscriptionBehavior {
     }
 }
 
+/** Map a subscription-type entity (or a cache row) onto the rules bag `Decide` reads. */
+export function SubscriptionTypeRulesFrom(row: SubscriptionTypeRules): SubscriptionTypeRules {
+    return {
+        ID: row.ID,
+        Code: row.Code,
+        DriverClass: row.DriverClass ?? null,
+        SubscriberScope: row.SubscriberScope,
+        BenefitModel: row.BenefitModel,
+        StartMode: row.StartMode,
+        DeferredStartDays: row.DeferredStartDays ?? null,
+        AnchorMonth: row.AnchorMonth ?? null,
+        AnchorDay: row.AnchorDay ?? null,
+        PartialPeriodMode: row.PartialPeriodMode ?? null,
+        DefaultTermMonths: row.DefaultTermMonths ?? null,
+        BillingCadence: row.BillingCadence,
+        RecognitionCadence: row.RecognitionCadence,
+        CustomCycleDays: row.CustomCycleDays ?? null,
+        TrialDays: row.TrialDays ?? 0,
+        ConcurrencyMode: row.ConcurrencyMode,
+        ReactivationMode: row.ReactivationMode,
+        ReactivationWindowDays: row.ReactivationWindowDays ?? null,
+        AutoRenewDefault: !!row.AutoRenewDefault,
+        RenewalLeadDays: row.RenewalLeadDays ?? 0,
+        CancellationMode: row.CancellationMode,
+        CancellationRefundMode: row.CancellationRefundMode,
+        CancellationWindowDays: row.CancellationWindowDays ?? null,
+        GracePeriodDays: row.GracePeriodDays ?? 0,
+    };
+}
+
 /**
  * Which subscription type a product actually uses at confirm.
  *

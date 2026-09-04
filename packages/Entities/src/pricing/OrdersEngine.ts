@@ -47,8 +47,8 @@
  * and fall through to the query, so the common path is free and the uncommon one still works.
  *
  * CONNECTS TO:
- *   CODE: PaymentHeaderEntityServer.feeBooksInline · PaymentProviderResolver
- *   PLAN: D36 (PaymentType), D37 (PaymentProviderType), D63 (settings live in OrdersSettings)
+ *   CODE: PaymentHeaderEntityServer.feeBooksInline · PaymentProviderResolver · OrderEntityServer.subscriptionLines
+ *   PLAN: D36 (PaymentType), D37 (PaymentProviderType), D45 (SubscriptionType), D63 (settings live in OrdersSettings)
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
@@ -59,6 +59,8 @@ import type {
     mjBizAppsOrdersPaymentProviderTypeEntity,
     mjBizAppsOrdersPaymentTermsTypeEntity,
     mjBizAppsOrdersPaymentTypeEntity,
+    mjBizAppsOrdersProductTypeEntity,
+    mjBizAppsOrdersSubscriptionTypeEntity,
 } from '../generated/entity_subclasses';
 
 /**
@@ -75,6 +77,8 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     private _paymentProviderTypes: mjBizAppsOrdersPaymentProviderTypeEntity[] = [];
     private _paymentTermsTypes: mjBizAppsOrdersPaymentTermsTypeEntity[] = [];
     private _chargeTypes: mjBizAppsOrdersChargeTypeEntity[] = [];
+    private _productTypes: mjBizAppsOrdersProductTypeEntity[] = [];
+    private _subscriptionTypes: mjBizAppsOrdersSubscriptionTypeEntity[] = [];
 
     /**
      * Load (or refresh) the cache.
@@ -100,6 +104,13 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
                     ResultType: 'entity_object',
                 },
                 { Type: 'entity', PropertyName: '_chargeTypes', EntityName: 'MJ_BizApps_Orders: Charge Types', ResultType: 'entity_object' },
+                { Type: 'entity', PropertyName: '_productTypes', EntityName: 'MJ_BizApps_Orders: Product Types', ResultType: 'entity_object' },
+                {
+                    Type: 'entity',
+                    PropertyName: '_subscriptionTypes',
+                    EntityName: 'MJ_BizApps_Orders: Subscription Types',
+                    ResultType: 'entity_object',
+                },
             ],
             provider as IMetadataProvider,
             forceRefresh,
@@ -121,6 +132,14 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
 
     public get ChargeTypes(): mjBizAppsOrdersChargeTypeEntity[] {
         return this._chargeTypes;
+    }
+
+    public get ProductTypes(): mjBizAppsOrdersProductTypeEntity[] {
+        return this._productTypes;
+    }
+
+    public get SubscriptionTypes(): mjBizAppsOrdersSubscriptionTypeEntity[] {
+        return this._subscriptionTypes;
     }
 
     /** One payment type by ID, or undefined. */
@@ -155,6 +174,16 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     /** One terms record by ID — `NetDays` is what derives an order's due date. */
     public PaymentTermsTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentTermsTypeEntity | undefined {
         return byID(this._paymentTermsTypes, id);
+    }
+
+    /** One product type by ID — `DefaultSubscriptionTypeID` is what Membership inherits at confirm. */
+    public ProductTypeByID(id: string | null | undefined): mjBizAppsOrdersProductTypeEntity | undefined {
+        return byID(this._productTypes, id);
+    }
+
+    /** One subscription type by ID — the rules row Annual Rolling / Calendar Year / etc. */
+    public SubscriptionTypeByID(id: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
+        return byID(this._subscriptionTypes, id);
     }
 }
 

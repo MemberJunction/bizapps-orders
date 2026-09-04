@@ -8,7 +8,7 @@
  * ever drifts back to local-time construction.
  */
 import { describe, expect, it } from 'vitest';
-import { SubscriptionBehavior, ResolveSubscriptionTypeID, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
+import { SubscriptionBehavior, ResolveSubscriptionTypeID, SubscriptionTypeRulesFrom, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
 
 /** Baseline rules; each test overrides only what it is about. */
 function rules(overrides: Partial<SubscriptionTypeRules> = {}): SubscriptionTypeRules {
@@ -438,5 +438,30 @@ describe('ResolveSubscriptionTypeID', () => {
     it('is not a subscription when neither the product nor the type names one', () => {
         expect(ResolveSubscriptionTypeID(null, null)).toBeNull();
         expect(ResolveSubscriptionTypeID(undefined, '')).toBeNull();
+    });
+});
+
+describe('SubscriptionTypeRulesFrom', () => {
+    it('fills numeric defaults so a cache row is safe to Decide()', () => {
+        const mapped = SubscriptionTypeRulesFrom({
+            ID: 'st-1',
+            Code: 'AnnualRolling',
+            SubscriberScope: 'Either',
+            BenefitModel: 'Holder',
+            StartMode: 'Immediate',
+            BillingCadence: 'Annual',
+            RecognitionCadence: 'Monthly',
+            ConcurrencyMode: 'ExtendExisting',
+            ReactivationMode: 'AlwaysCreateNew',
+            CancellationMode: 'EndOfTerm',
+            CancellationRefundMode: 'NoRefund',
+            TrialDays: null as unknown as number,
+            AutoRenewDefault: true,
+            RenewalLeadDays: 90,
+            GracePeriodDays: null as unknown as number,
+        });
+        expect(mapped.TrialDays).toBe(0);
+        expect(mapped.GracePeriodDays).toBe(0);
+        expect(mapped.DefaultTermMonths).toBeNull();
     });
 });

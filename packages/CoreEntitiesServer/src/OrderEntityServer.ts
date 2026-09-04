@@ -81,6 +81,7 @@ const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
 import {
     SubscriptionBehavior,
     ResolveSubscriptionTypeID,
+    SubscriptionTypeRulesFrom,
     type SubscriberIdentity,
     type ExistingSubscription,
     type SubscriptionDecision,
@@ -121,8 +122,6 @@ const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 const RELATIONSHIP_ENTITY = 'MJ_BizApps_Common: Relationships';
 const COMMON_SCHEMA = '__mj_BizAppsCommon';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
-const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
-const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 
 /** Statuses at or beyond the booking lock (plan D8/D9). */
 const BOOKED_STATUSES = new Set(['Confirmed']);
@@ -2092,10 +2091,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private async subscriptionLines(
         lines: mjBizAppsOrdersOrderLineEntity[],
     ): Promise<Array<{ line: mjBizAppsOrdersOrderLineEntity; product: ProductRow; rules: SubscriptionTypeRules }>> {
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const ids = [...new Set(lines.map(l => l.ProductID))].map(id => `'${id}'`).join(',');
         if (!ids) return [];
 
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        await LoadOrdersEngine(provider, user);
+
+        // Products are catalog rows, not *Type lookups — they are not in OrdersEngine (see that
+        // class's header). The type default and the rules row ARE, so this is the only RunView.
+        const rv = new RunView(provider as unknown as IRunViewProvider);
         const prod = await rv.RunView<ProductRow>(
             {
                 EntityName: PRODUCT_ENTITY,
@@ -2103,36 +2108,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Fields: ['ID', 'Name', 'SubscriptionTypeID', 'RevenueRecognitionTypeID', 'ProductTypeID'],
                 ResultType: 'simple',
             },
-            this.ContextCurrentUser,
+            user,
         );
         const products = new Map((prod?.Results ?? []).map(p => [uuidKey(p.ID), p]));
         if (products.size === 0) return [];
-
-        const typeIDs = [...new Set(
-            [...products.values()].map((p) => p.ProductTypeID).filter((id): id is string => !!id),
-        )];
-        const typeDefaults = new Map<string, string | null>();
-        if (typeIDs.length) {
-            const quoted = typeIDs.map((id) => `'${id.replace(/'/g, "''")}'`).join(',');
-            const typeRows = await rv.RunView<{ ID: string; DefaultSubscriptionTypeID: string | null }>(
-                {
-                    EntityName: PRODUCT_TYPE_ENTITY,
-                    ExtraFilter: `ID IN (${quoted})`,
-                    Fields: ['ID', 'DefaultSubscriptionTypeID'],
-                    ResultType: 'simple',
-                },
-                this.ContextCurrentUser,
-            );
-            for (const row of typeRows?.Results ?? []) {
-                typeDefaults.set(uuidKey(row.ID), row.DefaultSubscriptionTypeID ?? null);
-            }
-        }
-
-        const types = await rv.RunView<SubscriptionTypeRules>(
-            { EntityName: SUBSCRIPTION_TYPE_ENTITY, ResultType: 'simple' },
-            this.ContextCurrentUser,
-        );
-        const rulesByID = new Map((types?.Results ?? []).map(t => [uuidKey(t.ID), t]));
 
         const out = [];
         for (const line of lines) {
@@ -2142,17 +2121,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // create a second subscription (and a second term) every time one was cancelled, which
             // is the exact opposite of what the line means.
             if (line.ReversesOrderLineID || (line.Quantity ?? 0) < 0) continue;
-            const inherited = product.ProductTypeID
-                ? typeDefaults.get(uuidKey(product.ProductTypeID))
-                : null;
+            const inherited = OrdersEngine.Instance.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID ?? null;
             const subscriptionTypeID = ResolveSubscriptionTypeID(product.SubscriptionTypeID, inherited);
             if (!subscriptionTypeID) continue;
             product.SubscriptionTypeID = subscriptionTypeID;
-            const rules = rulesByID.get(uuidKey(subscriptionTypeID));
-            if (!rules) {
+            const cached = OrdersEngine.Instance.SubscriptionTypeByID(subscriptionTypeID);
+            if (!cached) {
                 throw new Error(`Product '${product.Name}' names a subscription type that was not found.`);
             }
-            out.push({ line, product, rules });
+            out.push({ line, product, rules: SubscriptionTypeRulesFrom(cached) });
         }
         return out;
     }
