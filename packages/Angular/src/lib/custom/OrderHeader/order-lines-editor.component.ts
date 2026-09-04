@@ -20,6 +20,7 @@ import {
     OrderHeaderEntity,
     OrderLineEntity,
     ClampLineQuantity,
+    FieldIsDirty,
     ListApplicablePrices,
     LoadOrdersEngine,
     OrdersEngine,
@@ -343,7 +344,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public IsOverridden(line: mjBizAppsOrdersOrderLineEntity): boolean {
         const flag = line.GetFieldByName('PriceOverridden');
         if (flag && (flag.Value === true || flag.Value === 1 || flag.Value === '1')) return true;
-        return line.FieldIsDirty('UnitPrice', 'ProductPriceID');
+        return FieldIsDirty(line, 'UnitPrice', 'ProductPriceID');
     }
 
     public OverrideReasonText(line: mjBizAppsOrdersOrderLineEntity): string {

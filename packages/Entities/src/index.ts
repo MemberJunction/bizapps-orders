@@ -34,6 +34,7 @@ export * from './line-quantity';
  */
 export * from './OrderHeaderEntity';
 export * from './OrderLineEntity';
+export * from './fieldIsDirty';
 export * from './ProductPriceEntity';
 export * from './OrderLineExtensionCompanion';
 export * from './CustomerPaymentMethodEntity';

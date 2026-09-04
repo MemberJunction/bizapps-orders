@@ -268,6 +268,7 @@ describe('order header link wiring', () => {
         expect(ts).toContain("this.stamp(line, 'PriceOverridden', true)");
         expect(ts).toContain("this.stamp(line, 'PriceOverrideReason', reason === '' ? null : reason)");
         expect(ts).toContain("this.stamp(line, 'PriceOverridden', false)");
+        expect(ts).toContain("FieldIsDirty(line, 'UnitPrice', 'ProductPriceID')");
     });
 
     it('IsOverridden reads PriceOverridden, and ShowsForeignRevenue hides same-company revenue', () => {

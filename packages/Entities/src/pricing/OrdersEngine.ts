@@ -124,13 +124,6 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         return this.GetConfigData<mjBizAppsOrdersProductCategoryEntity>('_productCategories');
     }
 
-    public get Products$() {
-        return this.ObserveProperty<mjBizAppsOrdersProductEntity>('_products');
-    }
-    public get ProductPrices$() {
-        return this.ObserveProperty<mjBizAppsOrdersProductPriceEntity>('_productPrices');
-    }
-
     public PaymentTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentTypeEntity | undefined {
         return byID(this.PaymentTypes, id);
     }
