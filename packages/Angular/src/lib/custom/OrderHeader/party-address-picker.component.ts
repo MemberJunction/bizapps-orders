@@ -10,6 +10,7 @@ import {
 } from '@mj-biz-apps/common-entities';
 import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
+import { FormatPartyAddress } from './order-header-prefs';
 
 export type PartyAddressSide = 'ship' | 'bill';
 
@@ -50,6 +51,43 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
     public SaveToOrg = false;
     public ManagingProfile = false;
     public Loading = false;
+
+    /** Person or org is on this panel — the picker is only meaningful then. */
+    public get HasParty(): boolean {
+        return !!(this.PersonID || this.OrganizationID);
+    }
+
+    /** Dropdown + custom editor: compose mode with a party to pick from. */
+    public get ShowPicker(): boolean {
+        return this.EditMode && this.HasParty;
+    }
+
+    /** An address ID is bound on the order. */
+    public get ShowSelected(): boolean {
+        return !!this.AddressID;
+    }
+
+    /** Hide the whole block: no party in compose, and nothing selected in read-only. */
+    public get ShowSection(): boolean {
+        return this.ShowPicker || (!this.EditMode && this.ShowSelected);
+    }
+
+    /**
+     * Selected address as loaded with the order: embedded Address bits, then the
+     * header virtual `ShipToAddress` / `BillToAddress` (the related-entity join
+     * on the order view — not a second Address RunView).
+     */
+    public get SelectedAddressText(): string {
+        const embedded = this.CustomAddress;
+        if (embedded) {
+            const formatted = FormatPartyAddress(embedded);
+            if (formatted) return formatted;
+        }
+        const virtual = this.Side === 'ship' ? this.Order.ShipToAddress : this.Order.BillToAddress;
+        if (virtual) return virtual;
+        const opt = this.Options.find((o) => o.ID.toLowerCase() === (this.AddressID ?? '').toLowerCase());
+        return opt?.Label ?? '';
+    }
 
     public ngOnChanges(changes: SimpleChanges): void {
         if (changes['Order'] || changes['Side'] || changes['PersonName'] || changes['OrganizationName']) {
@@ -115,6 +153,14 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
     }
 
     private async reload(): Promise<void> {
+        if (!this.HasParty) {
+            this.Options = [];
+            this.Selection = this.AddressID && !this.EditMode ? this.AddressID : '';
+            this.Custom = false;
+            this.ManagingProfile = false;
+            this.cdr.detectChanges();
+            return;
+        }
         this.Loading = true;
         try {
             this.Options = await this.loadPartyAddresses();
@@ -155,41 +201,23 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
             ResultType: 'entity_object',
         });
         const rows = links.Success ? links.Results : [];
-        if (rows.length === 0) return [];
-
-        const ids = [...new Set(rows.map((l) => l.AddressID).filter(Boolean))];
-        const addrRes = await rv.RunView<mjBizAppsCommonAddressEntity>({
-            EntityName: MJO_COMMON_ENTITIES.Address,
-            ExtraFilter: `ID IN (${ids.map((id) => `'${id}'`).join(',')})`,
-            ResultType: 'entity_object',
-        });
-        const byID = new Map((addrRes.Success ? addrRes.Results : []).map((a) => [a.ID.toLowerCase(), a]));
         const personEntityID = personEntity?.ID.toLowerCase();
         const out: PartyAddressOption[] = [];
         const seen = new Set<string>();
         for (const link of rows) {
-            const addr = byID.get(link.AddressID.toLowerCase());
-            if (!addr || seen.has(addr.ID.toLowerCase())) continue;
-            seen.add(addr.ID.toLowerCase());
+            if (!link.AddressID || seen.has(link.AddressID.toLowerCase())) continue;
+            seen.add(link.AddressID.toLowerCase());
             const fromPerson = personEntityID != null && link.EntityID.toLowerCase() === personEntityID;
+            const who = fromPerson ? (this.PersonName || 'Person') : (this.OrganizationName || 'Organization');
+            const type = link.AddressType || (link.IsPrimary ? 'Primary' : 'Address');
+            const street = link.Address || 'Address';
             out.push({
-                ID: addr.ID,
-                Label: this.formatOption(addr, link, fromPerson),
+                ID: link.AddressID,
+                Label: `${type} · ${street} (${who})`,
                 Source: fromPerson ? 'person' : 'organization',
             });
         }
         return out;
-    }
-
-    private formatOption(
-        addr: mjBizAppsCommonAddressEntity,
-        link: mjBizAppsCommonAddressLinkEntity,
-        fromPerson: boolean,
-    ): string {
-        const street = [addr.Line1, addr.City, addr.StateProvince, addr.PostalCode].filter(Boolean).join(', ');
-        const who = fromPerson ? (this.PersonName || 'Person') : (this.OrganizationName || 'Organization');
-        const type = link.AddressType || (link.IsPrimary ? 'Primary' : 'Address');
-        return `${type} · ${street} (${who})`;
     }
 
     private setAddressID(id: string | null): void {

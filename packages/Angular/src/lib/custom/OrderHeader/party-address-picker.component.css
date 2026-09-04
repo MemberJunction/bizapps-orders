@@ -84,3 +84,9 @@
 .mjo-addr__check input {
     margin: 0;
 }
+
+.mjo-addr__preview {
+    font-size: var(--mj-text-sm);
+    color: var(--mj-text-secondary);
+    line-height: 1.35;
+}
