@@ -647,6 +647,22 @@ export function ResolveSubscriptionTypeID(
     return inherited || null;
 }
 
+/**
+ * Which revenue-recognition type a product actually uses at booking.
+ *
+ * `Product.RevenueRecognitionTypeID` wins when set. Otherwise the product type's
+ * `DefaultRevenueRecognitionTypeID`. Null means confirm cannot tell upfront vs over time.
+ */
+export function ResolveRevenueRecognitionTypeID(
+    productRevenueRecognitionTypeID: string | null | undefined,
+    typeDefaultRevenueRecognitionTypeID: string | null | undefined,
+): string | null {
+    const explicit = productRevenueRecognitionTypeID?.trim();
+    if (explicit) return explicit;
+    const inherited = typeDefaultRevenueRecognitionTypeID?.trim();
+    return inherited || null;
+}
+
 /** Tree-shaking anchor — the base behaviour must be registered before booking runs. */
 export function LoadSubscriptionBehavior(): void {
     // intentionally empty

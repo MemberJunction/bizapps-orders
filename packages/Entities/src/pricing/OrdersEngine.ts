@@ -39,6 +39,7 @@ import type {
     mjBizAppsOrdersProductEntity,
     mjBizAppsOrdersProductPriceEntity,
     mjBizAppsOrdersProductTypeEntity,
+    mjBizAppsOrdersRevenueRecognitionTypeEntity,
     mjBizAppsOrdersSubscriptionTypeEntity,
 } from '../generated/entity_subclasses';
 
@@ -61,6 +62,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     private _chargeTypes: mjBizAppsOrdersChargeTypeEntity[] = [];
     private _productTypes: mjBizAppsOrdersProductTypeEntity[] = [];
     private _subscriptionTypes: mjBizAppsOrdersSubscriptionTypeEntity[] = [];
+    private _revenueRecognitionTypes: mjBizAppsOrdersRevenueRecognitionTypeEntity[] = [];
     private _products: mjBizAppsOrdersProductEntity[] = [];
     private _productPrices: mjBizAppsOrdersProductPriceEntity[] = [];
     private _productCategories: mjBizAppsOrdersProductCategoryEntity[] = [];
@@ -80,6 +82,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
                 { Type: 'entity', PropertyName: '_chargeTypes', EntityName: 'MJ_BizApps_Orders: Charge Types' },
                 { Type: 'entity', PropertyName: '_productTypes', EntityName: 'MJ_BizApps_Orders: Product Types' },
                 { Type: 'entity', PropertyName: '_subscriptionTypes', EntityName: 'MJ_BizApps_Orders: Subscription Types' },
+                { Type: 'entity', PropertyName: '_revenueRecognitionTypes', EntityName: 'MJ_BizApps_Orders: Revenue Recognition Types' },
                 { Type: 'entity', PropertyName: '_products', EntityName: 'MJ_BizApps_Orders: Products' },
                 { Type: 'entity', PropertyName: '_productPrices', EntityName: 'MJ_BizApps_Orders: Product Prices' },
                 { Type: 'entity', PropertyName: '_productCategories', EntityName: 'MJ_BizApps_Orders: Product Categories' },
@@ -107,6 +110,9 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
     public get SubscriptionTypes(): mjBizAppsOrdersSubscriptionTypeEntity[] {
         return this.GetConfigData<mjBizAppsOrdersSubscriptionTypeEntity>('_subscriptionTypes');
+    }
+    public get RevenueRecognitionTypes(): mjBizAppsOrdersRevenueRecognitionTypeEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersRevenueRecognitionTypeEntity>('_revenueRecognitionTypes');
     }
     public get Products(): mjBizAppsOrdersProductEntity[] {
         return this.GetConfigData<mjBizAppsOrdersProductEntity>('_products');
@@ -157,6 +163,21 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
     public SubscriptionTypeByID(id: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
         return byID(this.SubscriptionTypes, id);
+    }
+    public RevenueRecognitionTypeByID(id: string | null | undefined): mjBizAppsOrdersRevenueRecognitionTypeEntity | undefined {
+        return byID(this.RevenueRecognitionTypes, id);
+    }
+
+    /**
+     * Product.RevenueRecognitionTypeID when set, otherwise the product type's
+     * DefaultRevenueRecognitionTypeID. Null means booking cannot tell upfront vs over time.
+     */
+    public ResolveRevenueRecognitionTypeID(productID: string | null | undefined): string | null {
+        const product = this.ProductByID(productID);
+        if (!product) return null;
+        const explicit = product.RevenueRecognitionTypeID?.trim();
+        if (explicit) return explicit;
+        return this.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID?.trim() || null;
     }
     public ProductByID(id: string | null | undefined): mjBizAppsOrdersProductEntity | undefined {
         return byID(this.Products, id);

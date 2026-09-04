@@ -8,7 +8,7 @@
  * ever drifts back to local-time construction.
  */
 import { describe, expect, it } from 'vitest';
-import { SubscriptionBehavior, ResolveSubscriptionTypeID, SubscriptionTypeRulesFrom, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
+import { SubscriptionBehavior, ResolveSubscriptionTypeID, ResolveRevenueRecognitionTypeID, SubscriptionTypeRulesFrom, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
 
 /** Baseline rules; each test overrides only what it is about. */
 function rules(overrides: Partial<SubscriptionTypeRules> = {}): SubscriptionTypeRules {
@@ -438,6 +438,20 @@ describe('ResolveSubscriptionTypeID', () => {
     it('is not a subscription when neither the product nor the type names one', () => {
         expect(ResolveSubscriptionTypeID(null, null)).toBeNull();
         expect(ResolveSubscriptionTypeID(undefined, '')).toBeNull();
+    });
+});
+
+describe('ResolveRevenueRecognitionTypeID', () => {
+    it('prefers the product override', () => {
+        expect(ResolveRevenueRecognitionTypeID('prod-rr', 'type-default')).toBe('prod-rr');
+    });
+    it('falls back to the product-type default', () => {
+        expect(ResolveRevenueRecognitionTypeID(null, 'type-default')).toBe('type-default');
+        expect(ResolveRevenueRecognitionTypeID('', 'EvenOverTime-id')).toBe('EvenOverTime-id');
+    });
+    it('is null when neither is set', () => {
+        expect(ResolveRevenueRecognitionTypeID(null, null)).toBeNull();
+        expect(ResolveRevenueRecognitionTypeID(undefined, '')).toBeNull();
     });
 });
 
