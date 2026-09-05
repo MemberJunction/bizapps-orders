@@ -417,6 +417,24 @@
     width: 100%;
 }
 
+/* Required-field affordance: the marker sits on the label, the invalid state and hint appear
+   only after a capture is attempted without the field. Say it before the server has to. */
+.mjo-required-mark {
+    color: var(--mj-status-error, #dc2626);
+    font-weight: var(--mj-font-bold, 700);
+}
+
+.mjo-input--invalid {
+    border-color: var(--mj-status-error, #dc2626) !important;
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.12);
+}
+
+.mjo-field-hint--error {
+    margin-top: 4px;
+    font-size: var(--mj-text-xs, 12px);
+    color: var(--mj-status-error, #dc2626);
+}
+
 .mjo-table {
     width: 100%;
     border-collapse: collapse;
@@ -440,6 +458,14 @@
     border-bottom: 1px solid var(--mj-border-default, #e2e8f0);
     vertical-align: middle;
     color: var(--mj-text-primary, #0f172a);
+}
+
+/* Headers and action buttons never wrap: "Pay in Full" was folding onto three lines inside a
+   crushed cell while the wrapper's overflow-x sat unused. Let the table scroll instead. */
+.mjo-table th,
+.mjo-table .mjo-btn,
+.mjo-table .font-mono {
+    white-space: nowrap;
 }
 
 .mjo-order-row:hover {
