@@ -1,3 +1,10 @@
+-- Sequence is COMPUTED, never literal. The two fields below were originally written as
+-- Sequence 43 and 44, which is whatever the authoring database happened to have free. On AIDP
+-- stage 42/43/44 are held by ParentOrderLineIDPath / ParentOrderLineIDIsLeaf /
+-- ParentOrderLineIDChildCount -- CodeGen hierarchy virtuals, which exist per host depending on
+-- schema shape -- so the insert hit UQ_EntityField_EntityID_Sequence and the upgrade stopped at
+-- batch 1/10. Any hard-coded Sequence is fragile for exactly this reason; MAX+1 is evaluated per
+-- host, and the two inserts are separate statements so the second sees the first.
 -- Register OrderLine.PriceOverridden / PriceOverrideReason with metadata, the
 -- base view, and CRUD procs. Columns already exist on the table (V202609041400).
 -- SQL Server expands SELECT o.* at CREATE VIEW time, so the view must be rebuilt
@@ -9,13 +16,15 @@ IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE EntityID = @Entit
 INSERT INTO [${mjSchema}].[EntityField]
     (ID, EntityID, Sequence, Name, DisplayName, Description, Type, Length, Precision, Scale, AllowsNull, AutoIncrement, AllowUpdateAPI, IsVirtual, IsComputed, IsNameField, IncludeInUserSearchAPI, IncludeRelatedEntityNameFieldInBaseView, DefaultInView, DefaultValue, IsPrimaryKey, IsUnique, RelatedEntityDisplayType, Category, Status, GeneratedFormSection, IncludeInGeneratedForm, __mj_CreatedAt, __mj_UpdatedAt)
 VALUES
-    ('7c4e2a91-6b18-4f0d-9e3a-1d2c3b4a5e60', @EntityID, 43, 'PriceOverridden', 'Price Overridden', '1 when UnitPrice was set by a staff override rather than the default price.', 'bit', 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, '((0))', 0, 0, 'Search', 'Pricing and Financials', 'Active', 'Category', 1, GETUTCDATE(), GETUTCDATE());
+    ('7c4e2a91-6b18-4f0d-9e3a-1d2c3b4a5e60', @EntityID,
+     (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = @EntityID), 'PriceOverridden', 'Price Overridden', '1 when UnitPrice was set by a staff override rather than the default price.', 'bit', 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, '((0))', 0, 0, 'Search', 'Pricing and Financials', 'Active', 'Category', 1, GETUTCDATE(), GETUTCDATE());
 
 IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE EntityID = @EntityID AND Name = 'PriceOverrideReason')
 INSERT INTO [${mjSchema}].[EntityField]
     (ID, EntityID, Sequence, Name, DisplayName, Description, Type, Length, Precision, Scale, AllowsNull, AutoIncrement, AllowUpdateAPI, IsVirtual, IsComputed, IsNameField, IncludeInUserSearchAPI, IncludeRelatedEntityNameFieldInBaseView, DefaultInView, IsPrimaryKey, IsUnique, RelatedEntityDisplayType, Category, Status, GeneratedFormSection, IncludeInGeneratedForm, __mj_CreatedAt, __mj_UpdatedAt)
 VALUES
-    ('8d5f3b02-7c29-4a1e-8f4b-2e3d4c5b6f71', @EntityID, 44, 'PriceOverrideReason', 'Override Explanation', 'Optional staff note for why the default price was overridden.', 'nvarchar', -1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 'Search', 'Pricing and Financials', 'Active', 'Category', 1, GETUTCDATE(), GETUTCDATE());
+    ('8d5f3b02-7c29-4a1e-8f4b-2e3d4c5b6f71', @EntityID,
+     (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = @EntityID), 'PriceOverrideReason', 'Override Explanation', 'Optional staff note for why the default price was overridden.', 'nvarchar', -1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 'Search', 'Pricing and Financials', 'Active', 'Category', 1, GETUTCDATE(), GETUTCDATE());
 
 UPDATE [${mjSchema}].[Entity] SET [__mj_UpdatedAt] = GETUTCDATE() WHERE ID = @EntityID;
 GO
