@@ -35,6 +35,7 @@ import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberj
 import { MJGlobal, RegisterClassEx } from '@memberjunction/global';
 import {
     ComputeAmount,
+    DescribeInapplicableReason,
     IsRuleApplicable,
     Money,
     PickPriceRule,
@@ -234,15 +235,19 @@ export class DefaultPriceResolver extends BasePriceResolver {
         }
 
         if (pick.Index === -1) {
-            // Nothing applied, but rules EXIST — say why the nearest one did not, because "no price
-            // found" is far less useful than "there is a winter rate and it starts in November".
+            // Nothing applied, but rules EXIST — say why the nearest one did not, in words that
+            // carry the fix: "Base: not in force until 2026-09-05 — change that date or date the
+            // order later" beats both "no price found" and the bare reason code it replaced.
             const why = rules
-                .map((r, i) => `${priceLabel(rows[i])}: ${IsRuleApplicable(r, { Quantity: ctx.Quantity, AsOf: ctx.AsOf })}`)
+                .map((r, i) => {
+                    const reason = IsRuleApplicable(r, { Quantity: ctx.Quantity, AsOf: ctx.AsOf });
+                    return `'${priceLabel(rows[i])}' did not apply: ${reason ? DescribeInapplicableReason(r, reason) : 'unknown'}`;
+                })
                 .slice(0, 4);
             throw new PriceResolutionError(
                 ctx.ProductID,
                 `No price rule applies to quantity ${ctx.Quantity} on ${ctx.AsOf.toISOString().slice(0, 10)}. ` +
-                    `${rules.length} rule(s) were considered — ${why.join('; ')}.`,
+                    `${rules.length} rule(s) were considered. ${why.join('; ')}.`,
             );
         }
 

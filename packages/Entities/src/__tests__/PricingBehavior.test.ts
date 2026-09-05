@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import {
     AllocateProRata,
     ComputeAmount,
+    DescribeInapplicableReason,
     IsRuleApplicable,
     Money,
     PickPriceRule,
@@ -269,5 +270,38 @@ describe('AllocateProRata', () => {
 
     it('returns nothing for no weights', () => {
         expect(AllocateProRata(50, [])).toEqual([]);
+    });
+});
+
+describe('DescribeInapplicableReason', () => {
+    it('turns NotYetEffective into the date and the fix', () => {
+        // The bare code is what the refusal used to print. The description owes the reader the
+        // date that is blocking them and what would unblock it.
+        const r = rule({ EffectiveFrom: d('2026-09-05T00:00:00Z') });
+        const text = DescribeInapplicableReason(r, 'NotYetEffective');
+        expect(text).toContain('2026-09-05');
+        expect(text).toContain('Effective From');
+        expect(text).toMatch(/change that date|date the order/);
+    });
+
+    it('reads Effective bounds with UTC parts, matching IsRuleApplicable', () => {
+        // A DATE column arrives as midnight UTC. Local getters would name the day BEFORE for
+        // anyone west of Greenwich — the message must blame the same day the gate enforced.
+        const r = rule({ EffectiveFrom: d('2026-09-05T00:00:00Z'), EffectiveTo: d('2026-10-01T00:00:00Z') });
+        expect(DescribeInapplicableReason(r, 'NotYetEffective')).toContain('2026-09-05');
+        expect(DescribeInapplicableReason(r, 'Expired')).toContain('2026-10-01');
+    });
+
+    it('names the quantity bound that refused', () => {
+        const r = rule({ MinQuantity: 10, MaxQuantity: 50 });
+        expect(DescribeInapplicableReason(r, 'QuantityBelowMin')).toContain('10');
+        expect(DescribeInapplicableReason(r, 'QuantityAboveMax')).toContain('50');
+    });
+
+    it('names the status that made a rule Inactive', () => {
+        const r = rule({ Status: 'Draft' });
+        const text = DescribeInapplicableReason(r, 'Inactive');
+        expect(text).toContain("'Draft'");
+        expect(text).toContain('activate');
     });
 });
