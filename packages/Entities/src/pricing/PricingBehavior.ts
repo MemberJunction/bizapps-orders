@@ -87,6 +87,49 @@ export type InapplicableReason =
 
 const EPSILON = 1e-9;
 
+/** `boundDayNumber`'s yyyymmdd back to `YYYY-MM-DD`, for messages. */
+function boundDayText(d: Date): string {
+    const n = boundDayNumber(new Date(d));
+    const y = Math.floor(n / 10000);
+    const m = Math.floor((n % 10000) / 100);
+    const day = n % 100;
+    return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * An {@link InapplicableReason} as a sentence a user can act on.
+ *
+ * The reason CODES are for programs; this is for the refusal message. "Base: NotYetEffective" told
+ * Craig nothing during the E2E — "Base: not in force until 2026-09-05 (its Effective From date);
+ * change that date or date the order later" is the same fact with the fix attached, which is what
+ * an error that stops a save owes the person reading it.
+ */
+export function DescribeInapplicableReason(rule: PriceRule, reason: InapplicableReason): string {
+    switch (reason) {
+        case 'Inactive':
+            return `its status is '${rule.Status}', not 'Active' — activate the price to use it`;
+        case 'QuantityBelowMin':
+            return `it needs a quantity of at least ${rule.MinQuantity}`;
+        case 'QuantityAboveMax':
+            return `it only covers quantities up to ${rule.MaxQuantity}`;
+        case 'NotYetEffective':
+            return `it is not in force until ${boundDayText(rule.EffectiveFrom)} (its Effective From date) — ` +
+                `change that date on the price, or date the order on or after it`;
+        case 'Expired':
+            return `it expired ${rule.EffectiveTo ? `on ${boundDayText(rule.EffectiveTo)}` : 'already'} (its Effective To date)`;
+        case 'MonthExcluded':
+            return `it only applies in months ${rule.RecurrenceMonths}`;
+        case 'DayOfWeekExcluded':
+            return `it only applies on weekdays ${rule.RecurrenceDaysOfWeek} (Monday = 1)`;
+        case 'DayOfMonthExcluded':
+            return `it only applies on days ${rule.RecurrenceDayOfMonthMin ?? 1}–${rule.RecurrenceDayOfMonthMax ?? 31} of the month`;
+        case 'TimeOfDayExcluded':
+            return `it only applies between ${rule.TimeOfDayStart ?? 'the start of day'} and ${rule.TimeOfDayEnd ?? 'end of day'}`;
+        default:
+            return reason;
+    }
+}
+
 /** Parse '1,2,3' into a Set of numbers. Empty/blank means "no restriction", signalled by null. */
 function parseNumberList(raw: string | null | undefined): Set<number> | null {
     if (raw == null) return null;

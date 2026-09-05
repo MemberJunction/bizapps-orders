@@ -600,6 +600,7 @@ async function loadPrices(ctx: IntegrationCheckContext, world: WorldState): Prom
             `ProductID = '${productID}' AND Status = 'Active' AND FeeType = 'Standard' AND Priority = 0 AND PriceListID IS NULL`,
             {
                 ProductID: productID,
+                Name: `Base ${Number(row.Amount)}`,
                 PricingModel: row.PricingModel || 'PerUnit',
                 FeeType: 'Standard',
                 Amount: Number(row.Amount),
