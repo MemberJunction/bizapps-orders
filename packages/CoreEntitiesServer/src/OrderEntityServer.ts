@@ -66,7 +66,7 @@ import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
-import { RequireUUID } from './sql-guards.js';
+import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import {
     MergeOrderRollups,
     ORDER_ROLLUP_FIELDS,
@@ -1146,7 +1146,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const res = await rv.RunView<{ ID: string; Code: string }>(
             {
                 EntityName: CHARGE_TYPE_ENTITY,
-                ExtraFilter: `ID IN (${unique.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`,
+                ExtraFilter: `ID IN (${RequireUUIDs(unique, 'ChargeTypeID').map((id) => `'${id}'`).join(',')})`,
                 ResultType: 'simple',
             },
             this.ContextCurrentUser as UserInfo,
@@ -2060,7 +2060,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (types.length === 0) return null;
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const quoted = types.map((t) => `'${t.replace(/'/g, "''")}'`).join(',');
+        const quoted = types.map((t) => `'${EscapeSQLString(t)}'`).join(',');
         const date = asOf.toISOString().slice(0, 10);
 
         const result = await rv.RunView<{ ToOrganizationID: string; StartDate: string }>(

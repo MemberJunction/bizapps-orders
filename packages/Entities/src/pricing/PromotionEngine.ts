@@ -32,6 +32,7 @@ import {
 } from '../generated/entity_subclasses';
 import { MJGlobal } from '@memberjunction/global';
 import { AllocateProRata, Money } from './PricingBehavior.js';
+import { EscapeSQLString } from '../sql-guards.js';
 import {
     ApplyPromotions,
     type ApplyPromotionsResult,
@@ -160,7 +161,7 @@ async function loadCandidates(
     const wanted = new Set<string>();
 
     if (codes.length) {
-        const quoted = codes.map((c) => `'${c.replace(/'/g, "''")}'`).join(',');
+        const quoted = codes.map((c) => `'${EscapeSQLString(c)}'`).join(',');
         const res = await rv.RunView<{
             ID: string;
             PromotionID: string;
