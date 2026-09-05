@@ -959,7 +959,12 @@ describe('CheckoutSessionService', () => {
             mocks.mockOrderInstance.BillToPersonID = 'person-new-1';
             mocks.mockPaymentIntentInstance.Status = 'Succeeded';
 
-            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            // A real UUID: the method now boundary-validates its argument with RequireUUID
+            // (it is a PaymentIntent row id, interpolated into a filter).
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded(
+                'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                testUser
+            );
             expect(book.Attempted).toBe(true);
             expect(book.Booked).toBe(true);
             expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
@@ -967,7 +972,10 @@ describe('CheckoutSessionService', () => {
 
         it('BookSettledCheckoutPaymentIfNeeded is a no-op when no Confirmed checkout session owns the intent', async () => {
             mocks.sessionRunViewResults = [];
-            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-unrelated', testUser);
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded(
+                'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                testUser
+            );
             expect(book.Attempted).toBe(false);
             expect(book.Booked).toBe(false);
             expect(mocks.mockCaptureExecute).not.toHaveBeenCalled();

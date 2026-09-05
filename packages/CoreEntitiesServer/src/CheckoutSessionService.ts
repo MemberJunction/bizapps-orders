@@ -28,7 +28,7 @@ import {
     type CheckoutWidgetConfiguration,
     type ProductTypeConfiguration
 } from '@mj-biz-apps/orders-entities';
-import { EscapeText } from './sql-guards.js';
+import { EscapeSQLString, RequireUUID } from './sql-guards.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
@@ -191,7 +191,7 @@ export class CheckoutSessionService {
         }
 
         const rv = new RunView();
-        const escapedSlug = EscapeText(slug.trim());
+        const escapedSlug = EscapeSQLString(slug.trim());
         const distRes = await rv.RunView<mjBizAppsOrdersCheckoutWidgetDistributionEntity>({
             EntityName: CHECKOUT_DISTRIBUTION_ENTITY,
             ExtraFilter: `Slug = '${escapedSlug}' AND Status = 'Active'`,
@@ -212,7 +212,7 @@ export class CheckoutSessionService {
 
         // Check for existing unexpired session for this client. An ISO-8601 literal compares
         // correctly on both SQL Server and PostgreSQL — GETUTCDATE() is T-SQL-only.
-        const escapedKey = EscapeText(clientSessionKey.trim());
+        const escapedKey = EscapeSQLString(clientSessionKey.trim());
         const nowUtc = new Date().toISOString();
         const sessRes = await rv.RunView<mjBizAppsOrdersCheckoutSessionEntity>({
             EntityName: CHECKOUT_SESSION_ENTITY,
@@ -615,7 +615,7 @@ export class CheckoutSessionService {
 
         const normalized = email.trim().toLowerCase();
         const rv = new RunView();
-        const escaped = EscapeText(normalized);
+        const escaped = EscapeSQLString(normalized);
         try {
             const personRes = await rv.RunView<{ ID: string }>({
                 EntityName: PERSON_ENTITY,
@@ -1585,7 +1585,7 @@ export class CheckoutSessionService {
         const found = await rv.RunView<{ ID: string }>(
             {
                 EntityName: CHECKOUT_SESSION_ENTITY,
-                ExtraFilter: `PaymentIntentID = '${EscapeText(paymentIntentID)}' AND Status = 'Confirmed'`,
+                ExtraFilter: `PaymentIntentID = '${RequireUUID(paymentIntentID, 'paymentIntentID')}' AND Status = 'Confirmed'`,
                 MaxRows: 1,
                 ResultType: 'simple',
             },

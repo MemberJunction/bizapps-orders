@@ -49,6 +49,7 @@ import { SettlePaymentForEvent } from './PaymentSettlement.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import type { WebhookEvent } from './BasePaymentProvider.js';
 import { CheckoutSessionService } from './CheckoutSessionService.js';
+import { EscapeSQLString } from './sql-guards.js';
 import {
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
     webhookEventExceedsRetryWindow,
@@ -232,7 +233,7 @@ async function findIntent(
     // Escaped rather than interpolated raw: this value came off the wire. It is inside a verified
     // payload, so it is not attacker-controlled in practice — but "verified" and "safe to concatenate
     // into SQL" are different claims, and only one of them is being made here.
-    const safe = event.ProviderIntentID.replace(/'/g, "''");
+    const safe = EscapeSQLString(event.ProviderIntentID);
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const result = await rv.RunView<{ ID: string; Status: string; ProviderEventID: string | null }>(
         {

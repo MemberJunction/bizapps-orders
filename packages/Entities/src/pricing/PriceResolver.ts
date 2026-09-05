@@ -45,6 +45,7 @@ import {
 import { priceApplies, type FilterEvalContext } from './applicability.js';
 import { collapseInheritedPrices } from './inheritPrices.js';
 import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
+import { EscapeSQLString, RequireUUID, RequireUUIDs } from '../sql-guards.js';
 
 const PRICE_LIST_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assignments';
@@ -291,13 +292,13 @@ export class DefaultPriceResolver extends BasePriceResolver {
         if (!(await OrdersEngineReady(provider, user))) {
             const rv = new RunView(provider as unknown as IRunViewProvider);
             const listClause = priceListIDs.length
-                ? `(PriceListID IN (${priceListIDs.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')}) OR PriceListID IS NULL)`
+                ? `(PriceListID IN (${RequireUUIDs(priceListIDs, 'PriceListID').map((id) => `'${id}'`).join(',')}) OR PriceListID IS NULL)`
                 : `PriceListID IS NULL`;
-            const feeClause = `FeeType = '${(ctx.FeeType ?? 'Standard').replace(/'/g, "''")}'`;
+            const feeClause = `FeeType = '${EscapeSQLString(ctx.FeeType ?? 'Standard')}'`;
             const catClause = categoryChainNearestFirst.length
-                ? ` OR ProductCategoryID IN (${categoryChainNearestFirst.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`
+                ? ` OR ProductCategoryID IN (${RequireUUIDs(categoryChainNearestFirst, 'ProductCategoryID').map((id) => `'${id}'`).join(',')})`
                 : '';
-            const scopeClause = `(ProductID = '${ctx.ProductID.replace(/'/g, "''")}'${catClause})`;
+            const scopeClause = `(ProductID = '${RequireUUID(ctx.ProductID, 'ProductID')}'${catClause})`;
             const res = await rv.RunView<ProductPriceRow>(
                 {
                     EntityName: PRODUCT_PRICE_ENTITY,
