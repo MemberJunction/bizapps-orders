@@ -1,5 +1,14 @@
 # @mj-biz-apps/orders-server
 
+## 5.8.0
+
+### Patch Changes
+
+- Updated dependencies [2981938]
+  - @mj-biz-apps/orders-entities@5.8.0
+  - @mj-biz-apps/orders-core-entities-server@5.8.0
+  - @mj-biz-apps/orders-actions@5.8.0
+
 ## 5.7.0
 
 ### Patch Changes
