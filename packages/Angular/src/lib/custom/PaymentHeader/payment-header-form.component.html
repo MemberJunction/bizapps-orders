@@ -177,14 +177,17 @@
                             </mj-form-field>
 
                             <div class="mjo-field">
-                                <label class="mjo-label">Payment Type</label>
+                                <label class="mjo-label">Payment Type <span class="mjo-required-mark" title="Required to capture and book">*</span></label>
                                 @if (ComposeMode && PaymentTypes.length > 0) {
-                                    <select class="mj-input" [ngModel]="record.PaymentTypeID" (ngModelChange)="OnPaymentTypeSelected($event)">
+                                    <select class="mj-input" [class.mjo-input--invalid]="PaymentTypeMissing" [ngModel]="record.PaymentTypeID" (ngModelChange)="OnPaymentTypeSelected($event)">
                                         <option [ngValue]="null">Select payment type…</option>
                                         @for (pt of PaymentTypes; track pt.ID) {
                                             <option [value]="pt.ID">{{ pt.Name }}</option>
                                         }
                                     </select>
+                                    @if (PaymentTypeMissing) {
+                                        <div class="mjo-field-hint mjo-field-hint--error">Required before Capture &amp; Book.</div>
+                                    }
                                 } @else {
                                     <mj-form-field
                                         [Record]="record"

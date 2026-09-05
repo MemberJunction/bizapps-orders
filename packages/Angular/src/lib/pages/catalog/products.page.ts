@@ -5,7 +5,7 @@ import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-e
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
-import { GetChargeTypes, GetProducts, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
+import { GetChargeTypes, GetProductCategories, GetProducts, GetProductTypes, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import {
     IsBefore,
@@ -50,7 +50,8 @@ import {
             @if (ProductEntityInfo) {
                 <mj-entity-viewer
                     [Entity]="ProductEntityInfo"
-                    (RecordOpened)="OnRecordOpened($event)">
+                    (RecordOpened)="OnRecordOpened($event)"
+                    (CreateRecordRequested)="ProductCreateRequested.emit()">
                 </mj-entity-viewer>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading products...</div>
@@ -190,6 +191,8 @@ export class MJOProductsPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
     @Output() ProductOpened = new EventEmitter<mjBizAppsOrdersProductEntity>();
+    /** The grid's New button — the host routes it, this page never imports Router. */
+    @Output() ProductCreateRequested = new EventEmitter<void>();
 
     public ProductEntityInfo: EntityInfo | null = null;
     public Categories: Array<Record<string, unknown>> = [];
@@ -198,6 +201,10 @@ export class MJOProductsPageComponent implements OnInit {
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
         this.ProductEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.Product) || null;
+        this.cdr.detectChanges();
+        const [types, categories] = await Promise.all([GetProductTypes(), GetProductCategories()]);
+        this.Types = types.map((t) => t.GetAll());
+        this.Categories = categories.map((c) => c.GetAll());
         this.cdr.detectChanges();
     }
 

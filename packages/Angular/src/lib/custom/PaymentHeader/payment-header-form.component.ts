@@ -40,6 +40,26 @@ export const PAYMENT_FORM_TABS: TabConfig[] = [
 ];
 
 /**
+ * A save-result message with its repeated lines collapsed.
+ *
+ * `LatestResult.Message` can carry the same validation failure more than once (the failure list
+ * plus the summary that restates it), and the capture banner then printed "Payment Type cannot be
+ * null" twice. Same fact once is the whole fix; order is preserved.
+ */
+function uniqueErrorLines(message: string | null | undefined): string {
+    if (!message) return '';
+    const seen = new Set<string>();
+    const kept: string[] = [];
+    for (const line of message.split(/\r?\n/)) {
+        const key = line.trim();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        kept.push(line);
+    }
+    return kept.join('\n');
+}
+
+/**
  * Custom Payment Header form component overriding the CodeGen-generated form.
  *
  * Registered with priority 2 to override mjBizAppsOrdersPaymentHeaderFormComponent in ClassFactory.
@@ -85,6 +105,8 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
     public Capturing = false;
     public CaptureError: string | null = null;
     public AmountManuallySet = false;
+    /** True once a capture was attempted without a Payment Type — drives the field's error state. */
+    public PaymentTypeMissing = false;
 
     private lastLoadedCustomerKey: string | null = null;
 
@@ -544,6 +566,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
     public OnPaymentTypeSelected(paymentTypeID: string | null): void {
         if (!this.record) return;
         this.record.PaymentTypeID = paymentTypeID || '';
+        if (paymentTypeID) this.PaymentTypeMissing = false;
         if (paymentTypeID && this.record.PaymentDetailID_Object) {
             this.record.PaymentDetailID_Object.PaymentTypeID = paymentTypeID;
         }
@@ -1002,6 +1025,13 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
             if (!this.hasPayer) {
                 throw new Error('Please select who is paying (Bill-To Customer) before capturing.');
             }
+            if (!this.record.PaymentTypeID) {
+                // Gate it HERE rather than letting the NOT NULL refuse it server-side: the round
+                // trip cost a whole capture attempt and came back as a raw constraint message.
+                this.PaymentTypeMissing = true;
+                throw new Error('Select a Payment Type before capturing — it is required to book the payment.');
+            }
+            this.PaymentTypeMissing = false;
             if (!this.IsAllocationBalanced) {
                 throw new Error(
                     `Allocations must exactly match payment amount. Remainder: $${this.UnallocatedRemainder.toFixed(2)}`
@@ -1013,7 +1043,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
 
             const saved = await this.record.Save();
             if (!saved) {
-                throw new Error(this.record.LatestResult?.Message || 'Failed to capture and book payment.');
+                throw new Error(uniqueErrorLines(this.record.LatestResult?.Message) || 'Failed to capture and book payment.');
             }
 
             this.ActiveTab = 'accounting';
