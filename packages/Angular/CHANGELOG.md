@@ -1,5 +1,12 @@
 # @mj-biz-apps/orders-ng
 
+## 5.9.0
+
+### Patch Changes
+
+- Updated dependencies [e121d98]
+  - @mj-biz-apps/orders-entities@5.9.0
+
 ## 5.8.0
 
 ### Patch Changes
