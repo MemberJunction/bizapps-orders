@@ -1,21 +1,50 @@
 -- =============================================================================
--- ProductPrice.Name / ProductCategoryID / Applicability EntityField rows
--- =============================================================================
--- V202609031400 added the physical columns and regenerated ProductPrice SPs,
--- but the CodeGen tail did not INSERT the EntityField rows (they already
--- existed on the authoring DB). A blank install therefore has the columns and
--- the procs, and no metadata — mj sync push then fails looking up
--- Entity='MJ_BizApps_Orders: Product Prices' AND Name='Name'.
+-- CodeGen remainder for ProductPrice.Name / ProductCategoryID / Applicability
 --
--- CAPTURE: mj codegen --skipfiles from bizapps-orders, 2026-09-06,
--- MJ_6_1_edge_5_fwd, includeSchemas=['__mj_BizAppsOrders'], forceRegeneration
--- on MJ_BizApps_Orders: Product Prices, advancedGeneration off.
--- Only the Product Prices EntityField inserts + the Product Categories
--- relationship are kept (the rest of that run's pending-field log is other
--- entities and is omitted).
+-- FOLLOWS: V202609031400__v5.2.0__ProductPrice_Name_Scope_Applicability.sql
+--
+-- THAT FILE added the physical columns and regenerated ProductPrice (and
+-- Product Category) views/SPs, but its CodeGen tail omitted EntityField
+-- INSERTs — they already existed on the authoring DB. A blank install
+-- therefore has the columns and the procs, and no metadata. mj sync push
+-- fails looking up Entity='MJ_BizApps_Orders: Product Prices' AND Name='Name'.
+-- 031400 also EXECs spUpdateEntityFieldRelatedEntityNameFieldMap for
+-- EntityField ID F76B9D6E-… which that tail never inserted.
+--
+-- THIS FILE is a new forward migration (031400 is already on next and
+-- applied). Body is the COMPLETE CodeGen SQL log from a clean recapture,
+-- not a subset:
+--   DB:     MJ_6_1_orders_cg_177 (private; not the live install DB)
+--   Before: MJ + Common + Tasks + Accounting migrate/sync, then every
+--           Orders V through V202609050900 (061900 not applied)
+--   Then:   mj codegen --skipfiles
+--           includeSchemas: ['__mj_BizAppsOrders']
+--           excludeSchemas: []
+--           advancedGeneration.enableAdvancedGeneration = false
+--           SQLOutput.convertCoreSchemaToFlywayMigrationFile + schemaPlaceholders
+--   Log:    migrations/codegen/PR177_FullEmit.sql (same bytes as below)
+--
+-- The log is more than EntityField rows: pending-field INSERTs (56),
+-- sequence bumps (guarded), EntityRelationship, indexes, hierarchy
+-- functions, base views, and CRUD procs for the Orders entities CodeGen
+-- considered modified. No MoreCheese / Common EntityField inserts.
 -- =============================================================================
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '6be0aac7-48e4-4283-bfe6-15a7d77c061a' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'Name')) BEGIN
+/* SQL text to update existing entities from schema */
+EXEC [${mjSchema}].[spUpdateExistingEntitiesFromSchema] @ExcludedSchemaNames='', @IncludedSchemaNames='${flyway:defaultSchema}';
+
+/* SQL text to insert 56 new entity field(s) */
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = 'C2F418C4-8239-4486-B036-0BC4EAE4D24E'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'C2F418C4-8239-4486-B036-0BC4EAE4D24E'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b82c6221-ee92-46c7-933f-e845266d4487' OR (EntityID = 'C2F418C4-8239-4486-B036-0BC4EAE4D24E' AND Name = 'Distribution')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -48,7 +77,610 @@
          )
          VALUES
          (
-            '6be0aac7-48e4-4283-bfe6-15a7d77c061a',
+            'b82c6221-ee92-46c7-933f-e845266d4487',
+            'C2F418C4-8239-4486-B036-0BC4EAE4D24E', -- Entity: MJ_BizApps_Orders: Checkout Sessions
+            15,
+            'Distribution',
+            'Distribution',
+            NULL,
+            'nvarchar',
+            510,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '83A06268-2C96-400F-9CC8-21EEEF6654D1'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '83A06268-2C96-400F-9CC8-21EEEF6654D1'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '56bf7a36-0311-4fbc-b44a-dff7e14f6cd2' OR (EntityID = '83A06268-2C96-400F-9CC8-21EEEF6654D1' AND Name = 'PaymentHeader')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '56bf7a36-0311-4fbc-b44a-dff7e14f6cd2',
+            '83A06268-2C96-400F-9CC8-21EEEF6654D1', -- Entity: MJ_BizApps_Orders: Payment Lines
+            11,
+            'PaymentHeader',
+            'Payment Header',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            0,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '48b5563d-a3b0-4568-ac30-a94f61b570df' OR (EntityID = '83A06268-2C96-400F-9CC8-21EEEF6654D1' AND Name = 'OrderHeader')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '48b5563d-a3b0-4568-ac30-a94f61b570df',
+            '83A06268-2C96-400F-9CC8-21EEEF6654D1', -- Entity: MJ_BizApps_Orders: Payment Lines
+            12,
+            'OrderHeader',
+            'Order Header',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            0,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '058fcbf4-98a4-4fda-bcf4-696f196487f5' OR (EntityID = '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8' AND Name = 'OrderHeader')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '058fcbf4-98a4-4fda-bcf4-696f196487f5',
+            '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8', -- Entity: MJ_BizApps_Orders: Order Adjustments
+            16,
+            'OrderHeader',
+            'Order Header',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            0,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '8789b6eb-7370-4d82-9ec5-95881fb4a14d' OR (EntityID = '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8' AND Name = 'PromotionCode')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '8789b6eb-7370-4d82-9ec5-95881fb4a14d',
+            '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8', -- Entity: MJ_BizApps_Orders: Order Adjustments
+            18,
+            'PromotionCode',
+            'Promotion Code',
+            NULL,
+            'nvarchar',
+            120,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'fce2420d-0fd3-40b1-8bc6-d49792c5b966' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'Origin')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'fce2420d-0fd3-40b1-8bc6-d49792c5b966',
+            'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
+            34,
+            'Origin',
+            'Origin',
+            NULL,
+            'nvarchar',
+            100,
+            0,
+            0,
+            0,
+            'Direct',
+            0,
+            1,
+            0,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '3719cd23-fa95-42dd-bcd7-b3703a24cfba' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'SourceCheckoutWidgetID')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '3719cd23-fa95-42dd-bcd7-b3703a24cfba',
+            'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
+            35,
+            'SourceCheckoutWidgetID',
+            'Source Checkout Widget ID',
+            NULL,
+            'uniqueidentifier',
+            16,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            1,
+            0,
+            0,
+            'CC67C1C1-7A85-4342-ADA2-82FDDDE138EE',
+            'ID',
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '372c5047-f78d-4630-bea9-47d7edf781ae' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'FulfillmentStatus')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '372c5047-f78d-4630-bea9-47d7edf781ae',
+            'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
+            36,
+            'FulfillmentStatus',
+            'Fulfillment Status',
+            'Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.',
+            'nvarchar',
+            40,
+            0,
+            0,
+            0,
+            'Pending',
+            0,
+            1,
+            0,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b0ef13f1-b103-4e0d-acba-e194bad81fcf' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'SourceCheckoutWidget')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'b0ef13f1-b103-4e0d-acba-e194bad81fcf',
+            'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
+            50,
+            'SourceCheckoutWidget',
+            'Source Checkout Widget',
+            NULL,
+            'nvarchar',
+            200,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '5cb822da-fecb-4665-b4a8-b75f88d21d31' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'Name')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '5cb822da-fecb-4665-b4a8-b75f88d21d31',
             '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', -- Entity: MJ_BizApps_Orders: Product Prices
             24,
             'Name',
@@ -78,7 +710,7 @@
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '0dde4699-9abe-4f5d-8d08-b6e6b467c667' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'ProductCategoryID')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'fc984132-b32d-4976-913a-a10d9f8777df' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'ProductCategoryID')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -111,7 +743,7 @@
          )
          VALUES
          (
-            '0dde4699-9abe-4f5d-8d08-b6e6b467c667',
+            'fc984132-b32d-4976-913a-a10d9f8777df',
             '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', -- Entity: MJ_BizApps_Orders: Product Prices
             25,
             'ProductCategoryID',
@@ -141,7 +773,7 @@
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'ffabace6-7f1a-4162-a487-60e74c2f3394' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'Applicability')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'cf06f478-12bf-4396-b88f-23e27489d8f1' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'Applicability')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -174,7 +806,7 @@
          )
          VALUES
          (
-            'ffabace6-7f1a-4162-a487-60e74c2f3394',
+            'cf06f478-12bf-4396-b88f-23e27489d8f1',
             '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', -- Entity: MJ_BizApps_Orders: Product Prices
             26,
             'Applicability',
@@ -204,7 +836,7 @@
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '9b368f84-c9b1-451a-bf36-91b4c07545b0' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'ProductCategory')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'a74b736c-71fc-45a1-8b51-b0dc64094e61' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'ProductCategory')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -237,7 +869,7 @@
          )
          VALUES
          (
-            '9b368f84-c9b1-451a-bf36-91b4c07545b0',
+            'a74b736c-71fc-45a1-8b51-b0dc64094e61',
             '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', -- Entity: MJ_BizApps_Orders: Product Prices
             29,
             'ProductCategory',
@@ -266,14 +898,10399 @@
             GETUTCDATE()
          )
       END;
-GO
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'f398b604-dc38-4391-b711-7304ceb73601' OR (EntityID = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17' AND Name = 'SourceCustomerPaymentMethod')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'f398b604-dc38-4391-b711-7304ceb73601',
+            '4B5B0D73-496E-4CFA-92B9-3299A1E29E17', -- Entity: MJ_BizApps_Orders: Payment Details
+            27,
+            'SourceCustomerPaymentMethod',
+            'Source Customer Payment Method',
+            NULL,
+            'nvarchar',
+            200,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '77b27e27-aefd-4d91-ae54-eea622588f0e' OR (EntityID = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17' AND Name = 'StoredValueAccount')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '77b27e27-aefd-4d91-ae54-eea622588f0e',
+            '4B5B0D73-496E-4CFA-92B9-3299A1E29E17', -- Entity: MJ_BizApps_Orders: Payment Details
+            28,
+            'StoredValueAccount',
+            'Stored Value Account',
+            NULL,
+            'nvarchar',
+            120,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '26b3660b-318d-4e7b-8469-e36fca209664' OR (EntityID = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17' AND Name = 'SourceOrderHeader')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '26b3660b-318d-4e7b-8469-e36fca209664',
+            '4B5B0D73-496E-4CFA-92B9-3299A1E29E17', -- Entity: MJ_BizApps_Orders: Payment Details
+            29,
+            'SourceOrderHeader',
+            'Source Order Header',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = 'C96F379A-3E15-4DE5-BA94-4ECC90960C6D'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'C96F379A-3E15-4DE5-BA94-4ECC90960C6D'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '305d2d9f-0c7e-4591-bb70-bd7446d818ee' OR (EntityID = 'C96F379A-3E15-4DE5-BA94-4ECC90960C6D' AND Name = 'PaymentDetail')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '305d2d9f-0c7e-4591-bb70-bd7446d818ee',
+            'C96F379A-3E15-4DE5-BA94-4ECC90960C6D', -- Entity: MJ_BizApps_Orders: Customer Payment Methods
+            12,
+            'PaymentDetail',
+            'Payment Detail',
+            NULL,
+            'char',
+            4,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = 'EC59C50D-92BD-4247-80B1-51139BE93D35'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'EC59C50D-92BD-4247-80B1-51139BE93D35'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '00017f82-986e-450c-b21e-03a27af42550' OR (EntityID = 'EC59C50D-92BD-4247-80B1-51139BE93D35' AND Name = 'Subscription')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '00017f82-986e-450c-b21e-03a27af42550',
+            'EC59C50D-92BD-4247-80B1-51139BE93D35', -- Entity: MJ_BizApps_Orders: Subscription Events
+            11,
+            'Subscription',
+            'Subscription',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            0,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '4337caf4-98f8-4f07-855c-479c0b47e0af' OR (EntityID = 'EC59C50D-92BD-4247-80B1-51139BE93D35' AND Name = 'RelatedPayment')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '4337caf4-98f8-4f07-855c-479c0b47e0af',
+            'EC59C50D-92BD-4247-80B1-51139BE93D35', -- Entity: MJ_BizApps_Orders: Subscription Events
+            12,
+            'RelatedPayment',
+            'Related Payment',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '3b9c415f-1d00-41ad-a788-339e98a3a508' OR (EntityID = 'EC59C50D-92BD-4247-80B1-51139BE93D35' AND Name = 'RelatedOrderHeader')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '3b9c415f-1d00-41ad-a788-339e98a3a508',
+            'EC59C50D-92BD-4247-80B1-51139BE93D35', -- Entity: MJ_BizApps_Orders: Subscription Events
+            13,
+            'RelatedOrderHeader',
+            'Related Order Header',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'e4300094-04ef-44b7-9391-748801dcb221' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'OrderHeader')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'e4300094-04ef-44b7-9391-748801dcb221',
+            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
+            34,
+            'OrderHeader',
+            'Order Header',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            0,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '1876ab05-d15d-4f66-82a0-35498c114830' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ProductPrice')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '1876ab05-d15d-4f66-82a0-35498c114830',
+            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
+            37,
+            'ProductPrice',
+            'Product Price',
+            NULL,
+            'nvarchar',
+            200,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'c7ab71b9-e9b8-4786-b2d7-c4aca056ff3c' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'Subscription')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'c7ab71b9-e9b8-4786-b2d7-c4aca056ff3c',
+            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
+            41,
+            'Subscription',
+            'Subscription',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '797a445e-c5e4-4d6b-98a5-fb829407baae' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = '${mjSchema}_Latitude')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '797a445e-c5e4-4d6b-98a5-fb829407baae',
+            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
+            43,
+            '${mjSchema}_Latitude',
+            'Mj Latitude',
+            NULL,
+            'decimal',
+            9,
+            10,
+            6,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '51b58905-0de6-44e5-bc1e-fd2c2ee3a50e' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = '${mjSchema}_Longitude')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '51b58905-0de6-44e5-bc1e-fd2c2ee3a50e',
+            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
+            44,
+            '${mjSchema}_Longitude',
+            'Mj Longitude',
+            NULL,
+            'decimal',
+            9,
+            10,
+            6,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = 'EB009F74-F4C5-4596-86C3-5893B9453200'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'EB009F74-F4C5-4596-86C3-5893B9453200'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'bbb462d9-9c03-43a1-b219-37c7e6fdf502' OR (EntityID = 'EB009F74-F4C5-4596-86C3-5893B9453200' AND Name = 'OrderHeader')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'bbb462d9-9c03-43a1-b219-37c7e6fdf502',
+            'EB009F74-F4C5-4596-86C3-5893B9453200', -- Entity: MJ_BizApps_Orders: Order Charges
+            18,
+            'OrderHeader',
+            'Order Header',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            0,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '7D7C4D5F-E410-4803-9762-A060C536C098'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '7D7C4D5F-E410-4803-9762-A060C536C098'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '036f892f-4c9d-40f8-8aac-445fd7f2e1c5' OR (EntityID = '7D7C4D5F-E410-4803-9762-A060C536C098' AND Name = 'OrderHeader')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '036f892f-4c9d-40f8-8aac-445fd7f2e1c5',
+            '7D7C4D5F-E410-4803-9762-A060C536C098', -- Entity: MJ_BizApps_Orders: Payment Intents
+            14,
+            'OrderHeader',
+            'Order Header',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'f4b383d6-026d-4376-9036-f56986b5cb5b' OR (EntityID = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD' AND Name = 'StoredValueAccount')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'f4b383d6-026d-4376-9036-f56986b5cb5b',
+            '572AC8CE-8446-418B-979A-A7EE4E1F5AFD', -- Entity: MJ_BizApps_Orders: Stored Value Transactions
+            11,
+            'StoredValueAccount',
+            'Stored Value Account',
+            NULL,
+            'nvarchar',
+            120,
+            0,
+            0,
+            0,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b4e33fae-3f64-4c56-b682-38d89629ad23' OR (EntityID = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD' AND Name = 'RelatedPayment')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'b4e33fae-3f64-4c56-b682-38d89629ad23',
+            '572AC8CE-8446-418B-979A-A7EE4E1F5AFD', -- Entity: MJ_BizApps_Orders: Stored Value Transactions
+            12,
+            'RelatedPayment',
+            'Related Payment',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '39547d96-3a0f-4ece-b36e-92e9e22ca0bc' OR (EntityID = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD' AND Name = 'RelatedOrderHeader')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '39547d96-3a0f-4ece-b36e-92e9e22ca0bc',
+            '572AC8CE-8446-418B-979A-A7EE4E1F5AFD', -- Entity: MJ_BizApps_Orders: Stored Value Transactions
+            13,
+            'RelatedOrderHeader',
+            'Related Order Header',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '22244201-298a-40cc-aadc-0a535c6bbe30' OR (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'PaymentIntent')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '22244201-298a-40cc-aadc-0a535c6bbe30',
+            'CE97BF15-F7C6-4C50-A744-A89C714A4DDD', -- Entity: MJ_BizApps_Orders: Payment Headers
+            30,
+            'PaymentIntent',
+            'Payment Intent',
+            NULL,
+            'nvarchar',
+            200,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '8cd42598-a27c-4a99-9b08-e33447f9e6cd' OR (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'PaymentDetail')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '8cd42598-a27c-4a99-9b08-e33447f9e6cd',
+            'CE97BF15-F7C6-4C50-A744-A89C714A4DDD', -- Entity: MJ_BizApps_Orders: Payment Headers
+            31,
+            'PaymentDetail',
+            'Payment Detail',
+            NULL,
+            'char',
+            4,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '75902937-3eef-4c62-ae23-119f491fe673' OR (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'ReversesPaymentHeader')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '75902937-3eef-4c62-ae23-119f491fe673',
+            'CE97BF15-F7C6-4C50-A744-A89C714A4DDD', -- Entity: MJ_BizApps_Orders: Payment Headers
+            32,
+            'ReversesPaymentHeader',
+            'Reverses Payment Header',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '90A1060F-35D6-44A7-9076-A9053BBF60E6'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '90A1060F-35D6-44A7-9076-A9053BBF60E6'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'e3e708ce-ebb1-47d3-86d1-513b995177e2' OR (EntityID = '90A1060F-35D6-44A7-9076-A9053BBF60E6' AND Name = 'PriceOverridden')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'e3e708ce-ebb1-47d3-86d1-513b995177e2',
+            '90A1060F-35D6-44A7-9076-A9053BBF60E6', -- Entity: MJ_BizApps_Orders: Event Order Lines
+            37,
+            'PriceOverridden',
+            'Price Overridden',
+            NULL,
+            'bit',
+            1,
+            1,
+            0,
+            0,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'f0e5eae4-b5d1-44c7-a65a-48b92c3dd96f' OR (EntityID = '90A1060F-35D6-44A7-9076-A9053BBF60E6' AND Name = 'PriceOverrideReason')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'f0e5eae4-b5d1-44c7-a65a-48b92c3dd96f',
+            '90A1060F-35D6-44A7-9076-A9053BBF60E6', -- Entity: MJ_BizApps_Orders: Event Order Lines
+            38,
+            'PriceOverrideReason',
+            'Price Override Reason',
+            NULL,
+            'nvarchar',
+            -1,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '9E638C8F-6447-45D9-9137-B24E1047BCE5'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '9E638C8F-6447-45D9-9137-B24E1047BCE5'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '4397672b-74cc-44f9-9930-65e57a1042cb' OR (EntityID = '9E638C8F-6447-45D9-9137-B24E1047BCE5' AND Name = 'Subscription')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '4397672b-74cc-44f9-9930-65e57a1042cb',
+            '9E638C8F-6447-45D9-9137-B24E1047BCE5', -- Entity: MJ_BizApps_Orders: Entitlement Grants
+            19,
+            'Subscription',
+            'Subscription',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '22E31028-E862-424B-8C10-C167B2C9E304'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '22E31028-E862-424B-8C10-C167B2C9E304'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '0a36d4f9-2010-47c1-a822-ceb28f26bbbd' OR (EntityID = '22E31028-E862-424B-8C10-C167B2C9E304' AND Name = 'Subscription')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '0a36d4f9-2010-47c1-a822-ceb28f26bbbd',
+            '22E31028-E862-424B-8C10-C167B2C9E304', -- Entity: MJ_BizApps_Orders: Subscription Terms
+            16,
+            'Subscription',
+            'Subscription',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            0,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = 'E9B55146-3351-440C-AD47-FD4DE05BDA05'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'E9B55146-3351-440C-AD47-FD4DE05BDA05'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '7947e24c-8f53-4e89-94b1-5d320ada5efd' OR (EntityID = 'E9B55146-3351-440C-AD47-FD4DE05BDA05' AND Name = 'MigratesFromSubscription')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '7947e24c-8f53-4e89-94b1-5d320ada5efd',
+            'E9B55146-3351-440C-AD47-FD4DE05BDA05', -- Entity: MJ_BizApps_Orders: Subscriptions
+            28,
+            'MigratesFromSubscription',
+            'Migrates From Subscription',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '21ceded2-cfab-42e2-bae1-d62d42e60dca' OR (EntityID = 'E9B55146-3351-440C-AD47-FD4DE05BDA05' AND Name = 'MigratesToSubscription')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '21ceded2-cfab-42e2-bae1-d62d42e60dca',
+            'E9B55146-3351-440C-AD47-FD4DE05BDA05', -- Entity: MJ_BizApps_Orders: Subscriptions
+            29,
+            'MigratesToSubscription',
+            'Migrates To Subscription',
+            NULL,
+            'nvarchar',
+            80,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+/* SQL text to update existing entity fields from schema */
+EXEC [${mjSchema}].[spUpdateExistingEntityFieldsFromSchema] @ExcludedSchemaNames='', @IncludedSchemaNames='${flyway:defaultSchema}';
+
+/* Update IS-A parent field PriceOverridden on MJ_BizApps_Orders: Event Order Lines */
+UPDATE [${mjSchema}].[EntityField]
+                  SET [IsVirtual]=1,
+                      [Type]='bit',
+                      [Length]=1,
+                      [Precision]=1,
+                      [Scale]=0,
+                      [AllowsNull]=0,
+                      [AllowUpdateAPI]=1
+                  WHERE [ID]='E3E708CE-EBB1-47D3-86D1-513B995177E2';
+
+/* Update IS-A parent field PriceOverrideReason on MJ_BizApps_Orders: Event Order Lines */
+UPDATE [${mjSchema}].[EntityField]
+                  SET [IsVirtual]=1,
+                      [Type]='nvarchar',
+                      [Length]=-1,
+                      [Precision]=0,
+                      [Scale]=0,
+                      [AllowsNull]=1,
+                      [AllowUpdateAPI]=1
+                  WHERE [ID]='F0E5EAE4-B5D1-44C7-A65A-48B92C3DD96F';
+
+/* Update entity timestamp for MJ_BizApps_Orders: Event Order Lines after IS-A field sync */
+UPDATE [${mjSchema}].[Entity] SET [__mj_UpdatedAt]=GETUTCDATE() WHERE ID='90A1060F-35D6-44A7-9076-A9053BBF60E6';
+
+/* SQL text to set default column width where needed */
+EXEC [${mjSchema}].[spSetDefaultColumnWidthWhereNeeded] @ExcludedSchemaNames='', @IncludedSchemaNames='${flyway:defaultSchema}';
+
+/* SQL text to insert entity field value with ID 8704abf8-9ab4-4a5c-94d9-95c306c52ae0 */
+INSERT INTO [${mjSchema}].[EntityFieldValue]
+                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+                                    VALUES
+                                       ('8704abf8-9ab4-4a5c-94d9-95c306c52ae0', '372C5047-F78D-4630-BEA9-47D7EDF781AE', 1, 'Fulfilled', 'Fulfilled', GETUTCDATE(), GETUTCDATE());
+
+/* SQL text to insert entity field value with ID 6a34e25f-6c17-45be-83fb-ea95dd690909 */
+INSERT INTO [${mjSchema}].[EntityFieldValue]
+                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+                                    VALUES
+                                       ('6a34e25f-6c17-45be-83fb-ea95dd690909', '372C5047-F78D-4630-BEA9-47D7EDF781AE', 2, 'NotApplicable', 'NotApplicable', GETUTCDATE(), GETUTCDATE());
+
+/* SQL text to insert entity field value with ID c040a14d-9ab3-4a28-90d8-43a4881fab1b */
+INSERT INTO [${mjSchema}].[EntityFieldValue]
+                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+                                    VALUES
+                                       ('c040a14d-9ab3-4a28-90d8-43a4881fab1b', '372C5047-F78D-4630-BEA9-47D7EDF781AE', 3, 'PartiallyFulfilled', 'PartiallyFulfilled', GETUTCDATE(), GETUTCDATE());
+
+/* SQL text to insert entity field value with ID d5216045-c29d-419c-a579-82f1857e6c42 */
+INSERT INTO [${mjSchema}].[EntityFieldValue]
+                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+                                    VALUES
+                                       ('d5216045-c29d-419c-a579-82f1857e6c42', '372C5047-F78D-4630-BEA9-47D7EDF781AE', 4, 'Pending', 'Pending', GETUTCDATE(), GETUTCDATE());
+
+/* SQL text to insert entity field value with ID f78ec325-915a-4fa4-b1a1-516ded35fbf1 */
+INSERT INTO [${mjSchema}].[EntityFieldValue]
+                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+                                    VALUES
+                                       ('f78ec325-915a-4fa4-b1a1-516ded35fbf1', '372C5047-F78D-4630-BEA9-47D7EDF781AE', 5, 'Returned', 'Returned', GETUTCDATE(), GETUTCDATE());
+
+/* SQL text to update ValueListType for entity field ID 372C5047-F78D-4630-BEA9-47D7EDF781AE */
+UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='372C5047-F78D-4630-BEA9-47D7EDF781AE';
+
 
 /* Create Entity Relationship: MJ_BizApps_Orders: Product Categories -> MJ_BizApps_Orders: Product Prices (One To Many via ProductCategoryID) */
    IF NOT EXISTS (
-      SELECT 1 FROM [${mjSchema}].[EntityRelationship] WHERE [ID] = '9291984d-3e75-48ce-8a56-87c281da4fa2'
+      SELECT 1 FROM [${mjSchema}].[EntityRelationship] WHERE [ID] = '8308d995-ce4b-43cc-96ea-dbbf44297130'
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('9291984d-3e75-48ce-8a56-87c281da4fa2', 'B0FA90A6-6975-4C5E-ABC7-3AEA97700CC3', '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', 'ProductCategoryID', 'One To Many', 1, 1, 4, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('8308d995-ce4b-43cc-96ea-dbbf44297130', 'B0FA90A6-6975-4C5E-ABC7-3AEA97700CC3', '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', 'ProductCategoryID', 'One To Many', 1, 1, 4, GETUTCDATE(), GETUTCDATE())
    END;
+
+/* SQL text to sync schema info from database schemas */
+EXEC [${mjSchema}].[spUpdateSchemaInfoFromDatabase] @ExcludedSchemaNames='', @IncludedSchemaNames='${flyway:defaultSchema}';
+
+/* Index for Foreign Keys for CheckoutSession */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Checkout Sessions
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key CheckoutWidgetID in table CheckoutSession
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_CheckoutSession_CheckoutWidgetID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[CheckoutSession]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_CheckoutSession_CheckoutWidgetID ON [${flyway:defaultSchema}].[CheckoutSession] ([CheckoutWidgetID]);
+
+-- Index for foreign key DistributionID in table CheckoutSession
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_CheckoutSession_DistributionID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[CheckoutSession]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_CheckoutSession_DistributionID ON [${flyway:defaultSchema}].[CheckoutSession] ([DistributionID]);
+
+-- Index for foreign key PersonID in table CheckoutSession
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_CheckoutSession_PersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[CheckoutSession]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_CheckoutSession_PersonID ON [${flyway:defaultSchema}].[CheckoutSession] ([PersonID]);
+
+-- Index for foreign key DraftOrderID in table CheckoutSession
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_CheckoutSession_DraftOrderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[CheckoutSession]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_CheckoutSession_DraftOrderID ON [${flyway:defaultSchema}].[CheckoutSession] ([DraftOrderID]);
+
+-- Index for foreign key PaymentIntentID in table CheckoutSession
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_CheckoutSession_PaymentIntentID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[CheckoutSession]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_CheckoutSession_PaymentIntentID ON [${flyway:defaultSchema}].[CheckoutSession] ([PaymentIntentID]);
+
+/* Index for Foreign Keys for CustomerPaymentMethod */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Customer Payment Methods
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key OwnerPersonID in table CustomerPaymentMethod
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_CustomerPaymentMethod_OwnerPersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[CustomerPaymentMethod]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_CustomerPaymentMethod_OwnerPersonID ON [${flyway:defaultSchema}].[CustomerPaymentMethod] ([OwnerPersonID]);
+
+-- Index for foreign key OwnerOrganizationID in table CustomerPaymentMethod
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_CustomerPaymentMethod_OwnerOrganizationID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[CustomerPaymentMethod]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_CustomerPaymentMethod_OwnerOrganizationID ON [${flyway:defaultSchema}].[CustomerPaymentMethod] ([OwnerOrganizationID]);
+
+-- Index for foreign key PaymentDetailID in table CustomerPaymentMethod
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_CustomerPaymentMethod_PaymentDetailID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[CustomerPaymentMethod]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_CustomerPaymentMethod_PaymentDetailID ON [${flyway:defaultSchema}].[CustomerPaymentMethod] ([PaymentDetailID]);
+
+/* Index for Foreign Keys for EntitlementGrant */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Entitlement Grants
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key ProductEntitlementID in table EntitlementGrant
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_EntitlementGrant_ProductEntitlementID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[EntitlementGrant]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_EntitlementGrant_ProductEntitlementID ON [${flyway:defaultSchema}].[EntitlementGrant] ([ProductEntitlementID]);
+
+-- Index for foreign key OrderLineID in table EntitlementGrant
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_EntitlementGrant_OrderLineID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[EntitlementGrant]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_EntitlementGrant_OrderLineID ON [${flyway:defaultSchema}].[EntitlementGrant] ([OrderLineID]);
+
+-- Index for foreign key SubscriptionID in table EntitlementGrant
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_EntitlementGrant_SubscriptionID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[EntitlementGrant]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_EntitlementGrant_SubscriptionID ON [${flyway:defaultSchema}].[EntitlementGrant] ([SubscriptionID]);
+
+-- Index for foreign key BeneficiaryPersonID in table EntitlementGrant
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_EntitlementGrant_BeneficiaryPersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[EntitlementGrant]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_EntitlementGrant_BeneficiaryPersonID ON [${flyway:defaultSchema}].[EntitlementGrant] ([BeneficiaryPersonID]);
+
+-- Index for foreign key BeneficiaryOrganizationID in table EntitlementGrant
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_EntitlementGrant_BeneficiaryOrganizationID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[EntitlementGrant]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_EntitlementGrant_BeneficiaryOrganizationID ON [${flyway:defaultSchema}].[EntitlementGrant] ([BeneficiaryOrganizationID]);
+
+-- Index for foreign key SubscriptionTermID in table EntitlementGrant
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_EntitlementGrant_SubscriptionTermID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[EntitlementGrant]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_EntitlementGrant_SubscriptionTermID ON [${flyway:defaultSchema}].[EntitlementGrant] ([SubscriptionTermID]);
+
+/* Base View SQL for MJ_BizApps_Orders: Checkout Sessions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Checkout Sessions
+-- Item: vwCheckoutSessions
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Checkout Sessions
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  CheckoutSession
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwCheckoutSessions]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwCheckoutSessions];
 GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwCheckoutSessions]
+AS
+SELECT
+    c.*,
+    mjBizAppsOrdersCheckoutWidget_CheckoutWidgetID.[Name] AS [CheckoutWidget],
+    mjBizAppsOrdersCheckoutWidgetDistribution_DistributionID.[Slug] AS [Distribution],
+    mjBizAppsCommonPerson_PersonID.[DisplayName] AS [Person],
+    mjBizAppsOrdersOrderHeader_DraftOrderID.[OrderNumber] AS [DraftOrder],
+    mjBizAppsOrdersPaymentIntent_PaymentIntentID.[ProviderIntentID] AS [PaymentIntent]
+FROM
+    [${flyway:defaultSchema}].[CheckoutSession] AS c
+INNER JOIN
+    [${flyway:defaultSchema}].[CheckoutWidget] AS mjBizAppsOrdersCheckoutWidget_CheckoutWidgetID
+  ON
+    [c].[CheckoutWidgetID] = mjBizAppsOrdersCheckoutWidget_CheckoutWidgetID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[CheckoutWidgetDistribution] AS mjBizAppsOrdersCheckoutWidgetDistribution_DistributionID
+  ON
+    [c].[DistributionID] = mjBizAppsOrdersCheckoutWidgetDistribution_DistributionID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_PersonID
+  ON
+    [c].[PersonID] = mjBizAppsCommonPerson_PersonID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_DraftOrderID
+  ON
+    [c].[DraftOrderID] = mjBizAppsOrdersOrderHeader_DraftOrderID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentIntent] AS mjBizAppsOrdersPaymentIntent_PaymentIntentID
+  ON
+    [c].[PaymentIntentID] = mjBizAppsOrdersPaymentIntent_PaymentIntentID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwCheckoutSessions] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Checkout Sessions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Checkout Sessions
+-- Item: Permissions for vwCheckoutSessions
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwCheckoutSessions] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Checkout Sessions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Checkout Sessions
+-- Item: spCreateCheckoutSession
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR CheckoutSession
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateCheckoutSession]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateCheckoutSession];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateCheckoutSession]
+    @ID uniqueidentifier = NULL,
+    @CheckoutWidgetID uniqueidentifier,
+    @DistributionID_Clear bit = 0,
+    @DistributionID uniqueidentifier = NULL,
+    @ClientSessionKey nvarchar(100),
+    @Email_Clear bit = 0,
+    @Email nvarchar(255) = NULL,
+    @PersonID_Clear bit = 0,
+    @PersonID uniqueidentifier = NULL,
+    @DraftOrderID_Clear bit = 0,
+    @DraftOrderID uniqueidentifier = NULL,
+    @PaymentIntentID_Clear bit = 0,
+    @PaymentIntentID uniqueidentifier = NULL,
+    @Status nvarchar(20) = NULL,
+    @ExpiresAt datetimeoffset,
+    @MetadataJSON_Clear bit = 0,
+    @MetadataJSON nvarchar(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[CheckoutSession]
+            (
+                [ID],
+                [CheckoutWidgetID],
+                [DistributionID],
+                [ClientSessionKey],
+                [Email],
+                [PersonID],
+                [DraftOrderID],
+                [PaymentIntentID],
+                [Status],
+                [ExpiresAt],
+                [MetadataJSON]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @CheckoutWidgetID,
+                CASE WHEN @DistributionID_Clear = 1 THEN NULL ELSE ISNULL(@DistributionID, NULL) END,
+                @ClientSessionKey,
+                CASE WHEN @Email_Clear = 1 THEN NULL ELSE ISNULL(@Email, NULL) END,
+                CASE WHEN @PersonID_Clear = 1 THEN NULL ELSE ISNULL(@PersonID, NULL) END,
+                CASE WHEN @DraftOrderID_Clear = 1 THEN NULL ELSE ISNULL(@DraftOrderID, NULL) END,
+                CASE WHEN @PaymentIntentID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentIntentID, NULL) END,
+                ISNULL(@Status, 'Open'),
+                @ExpiresAt,
+                CASE WHEN @MetadataJSON_Clear = 1 THEN NULL ELSE ISNULL(@MetadataJSON, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[CheckoutSession]
+            (
+                [CheckoutWidgetID],
+                [DistributionID],
+                [ClientSessionKey],
+                [Email],
+                [PersonID],
+                [DraftOrderID],
+                [PaymentIntentID],
+                [Status],
+                [ExpiresAt],
+                [MetadataJSON]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @CheckoutWidgetID,
+                CASE WHEN @DistributionID_Clear = 1 THEN NULL ELSE ISNULL(@DistributionID, NULL) END,
+                @ClientSessionKey,
+                CASE WHEN @Email_Clear = 1 THEN NULL ELSE ISNULL(@Email, NULL) END,
+                CASE WHEN @PersonID_Clear = 1 THEN NULL ELSE ISNULL(@PersonID, NULL) END,
+                CASE WHEN @DraftOrderID_Clear = 1 THEN NULL ELSE ISNULL(@DraftOrderID, NULL) END,
+                CASE WHEN @PaymentIntentID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentIntentID, NULL) END,
+                ISNULL(@Status, 'Open'),
+                @ExpiresAt,
+                CASE WHEN @MetadataJSON_Clear = 1 THEN NULL ELSE ISNULL(@MetadataJSON, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwCheckoutSessions] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateCheckoutSession] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Checkout Sessions */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateCheckoutSession] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Checkout Sessions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Checkout Sessions
+-- Item: spUpdateCheckoutSession
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR CheckoutSession
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateCheckoutSession]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateCheckoutSession];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateCheckoutSession]
+    @ID uniqueidentifier,
+    @CheckoutWidgetID uniqueidentifier = NULL,
+    @DistributionID_Clear bit = 0,
+    @DistributionID uniqueidentifier = NULL,
+    @ClientSessionKey nvarchar(100) = NULL,
+    @Email_Clear bit = 0,
+    @Email nvarchar(255) = NULL,
+    @PersonID_Clear bit = 0,
+    @PersonID uniqueidentifier = NULL,
+    @DraftOrderID_Clear bit = 0,
+    @DraftOrderID uniqueidentifier = NULL,
+    @PaymentIntentID_Clear bit = 0,
+    @PaymentIntentID uniqueidentifier = NULL,
+    @Status nvarchar(20) = NULL,
+    @ExpiresAt datetimeoffset = NULL,
+    @MetadataJSON_Clear bit = 0,
+    @MetadataJSON nvarchar(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[CheckoutSession]
+    SET
+        [CheckoutWidgetID] = ISNULL(@CheckoutWidgetID, [CheckoutWidgetID]),
+        [DistributionID] = CASE WHEN @DistributionID_Clear = 1 THEN NULL ELSE ISNULL(@DistributionID, [DistributionID]) END,
+        [ClientSessionKey] = ISNULL(@ClientSessionKey, [ClientSessionKey]),
+        [Email] = CASE WHEN @Email_Clear = 1 THEN NULL ELSE ISNULL(@Email, [Email]) END,
+        [PersonID] = CASE WHEN @PersonID_Clear = 1 THEN NULL ELSE ISNULL(@PersonID, [PersonID]) END,
+        [DraftOrderID] = CASE WHEN @DraftOrderID_Clear = 1 THEN NULL ELSE ISNULL(@DraftOrderID, [DraftOrderID]) END,
+        [PaymentIntentID] = CASE WHEN @PaymentIntentID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentIntentID, [PaymentIntentID]) END,
+        [Status] = ISNULL(@Status, [Status]),
+        [ExpiresAt] = ISNULL(@ExpiresAt, [ExpiresAt]),
+        [MetadataJSON] = CASE WHEN @MetadataJSON_Clear = 1 THEN NULL ELSE ISNULL(@MetadataJSON, [MetadataJSON]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwCheckoutSessions] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwCheckoutSessions]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateCheckoutSession] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the CheckoutSession table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateCheckoutSession]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateCheckoutSession];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateCheckoutSession
+ON [${flyway:defaultSchema}].[CheckoutSession]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[CheckoutSession]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[CheckoutSession] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Checkout Sessions */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateCheckoutSession] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Customer Payment Methods */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Customer Payment Methods
+-- Item: vwCustomerPaymentMethods
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Customer Payment Methods
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  CustomerPaymentMethod
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwCustomerPaymentMethods]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwCustomerPaymentMethods];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwCustomerPaymentMethods]
+AS
+SELECT
+    c.*,
+    mjBizAppsCommonPerson_OwnerPersonID.[DisplayName] AS [OwnerPerson],
+    mjBizAppsCommonOrganization_OwnerOrganizationID.[Name] AS [OwnerOrganization],
+    mjBizAppsOrdersPaymentDetail_PaymentDetailID.[Last4] AS [PaymentDetail]
+FROM
+    [${flyway:defaultSchema}].[CustomerPaymentMethod] AS c
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_OwnerPersonID
+  ON
+    [c].[OwnerPersonID] = mjBizAppsCommonPerson_OwnerPersonID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Organization] AS mjBizAppsCommonOrganization_OwnerOrganizationID
+  ON
+    [c].[OwnerOrganizationID] = mjBizAppsCommonOrganization_OwnerOrganizationID.[ID]
+INNER JOIN
+    [${flyway:defaultSchema}].[PaymentDetail] AS mjBizAppsOrdersPaymentDetail_PaymentDetailID
+  ON
+    [c].[PaymentDetailID] = mjBizAppsOrdersPaymentDetail_PaymentDetailID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwCustomerPaymentMethods] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Customer Payment Methods */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Customer Payment Methods
+-- Item: Permissions for vwCustomerPaymentMethods
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwCustomerPaymentMethods] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Customer Payment Methods */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Customer Payment Methods
+-- Item: spCreateCustomerPaymentMethod
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR CustomerPaymentMethod
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateCustomerPaymentMethod]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateCustomerPaymentMethod];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateCustomerPaymentMethod]
+    @ID uniqueidentifier = NULL,
+    @OwnerPersonID_Clear bit = 0,
+    @OwnerPersonID uniqueidentifier = NULL,
+    @OwnerOrganizationID_Clear bit = 0,
+    @OwnerOrganizationID uniqueidentifier = NULL,
+    @PaymentDetailID uniqueidentifier,
+    @Nickname_Clear bit = 0,
+    @Nickname nvarchar(100) = NULL,
+    @IsDefault bit = NULL,
+    @IsActive bit = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[CustomerPaymentMethod]
+            (
+                [ID],
+                [OwnerPersonID],
+                [OwnerOrganizationID],
+                [PaymentDetailID],
+                [Nickname],
+                [IsDefault],
+                [IsActive]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                CASE WHEN @OwnerPersonID_Clear = 1 THEN NULL ELSE ISNULL(@OwnerPersonID, NULL) END,
+                CASE WHEN @OwnerOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@OwnerOrganizationID, NULL) END,
+                @PaymentDetailID,
+                CASE WHEN @Nickname_Clear = 1 THEN NULL ELSE ISNULL(@Nickname, NULL) END,
+                ISNULL(@IsDefault, 0),
+                ISNULL(@IsActive, 1)
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[CustomerPaymentMethod]
+            (
+                [OwnerPersonID],
+                [OwnerOrganizationID],
+                [PaymentDetailID],
+                [Nickname],
+                [IsDefault],
+                [IsActive]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                CASE WHEN @OwnerPersonID_Clear = 1 THEN NULL ELSE ISNULL(@OwnerPersonID, NULL) END,
+                CASE WHEN @OwnerOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@OwnerOrganizationID, NULL) END,
+                @PaymentDetailID,
+                CASE WHEN @Nickname_Clear = 1 THEN NULL ELSE ISNULL(@Nickname, NULL) END,
+                ISNULL(@IsDefault, 0),
+                ISNULL(@IsActive, 1)
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwCustomerPaymentMethods] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateCustomerPaymentMethod] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Customer Payment Methods */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateCustomerPaymentMethod] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Customer Payment Methods */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Customer Payment Methods
+-- Item: spUpdateCustomerPaymentMethod
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR CustomerPaymentMethod
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateCustomerPaymentMethod]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateCustomerPaymentMethod];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateCustomerPaymentMethod]
+    @ID uniqueidentifier,
+    @OwnerPersonID_Clear bit = 0,
+    @OwnerPersonID uniqueidentifier = NULL,
+    @OwnerOrganizationID_Clear bit = 0,
+    @OwnerOrganizationID uniqueidentifier = NULL,
+    @PaymentDetailID uniqueidentifier = NULL,
+    @Nickname_Clear bit = 0,
+    @Nickname nvarchar(100) = NULL,
+    @IsDefault bit = NULL,
+    @IsActive bit = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[CustomerPaymentMethod]
+    SET
+        [OwnerPersonID] = CASE WHEN @OwnerPersonID_Clear = 1 THEN NULL ELSE ISNULL(@OwnerPersonID, [OwnerPersonID]) END,
+        [OwnerOrganizationID] = CASE WHEN @OwnerOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@OwnerOrganizationID, [OwnerOrganizationID]) END,
+        [PaymentDetailID] = ISNULL(@PaymentDetailID, [PaymentDetailID]),
+        [Nickname] = CASE WHEN @Nickname_Clear = 1 THEN NULL ELSE ISNULL(@Nickname, [Nickname]) END,
+        [IsDefault] = ISNULL(@IsDefault, [IsDefault]),
+        [IsActive] = ISNULL(@IsActive, [IsActive])
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwCustomerPaymentMethods] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwCustomerPaymentMethods]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateCustomerPaymentMethod] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the CustomerPaymentMethod table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateCustomerPaymentMethod]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateCustomerPaymentMethod];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateCustomerPaymentMethod
+ON [${flyway:defaultSchema}].[CustomerPaymentMethod]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[CustomerPaymentMethod]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[CustomerPaymentMethod] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Customer Payment Methods */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateCustomerPaymentMethod] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Entitlement Grants */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Entitlement Grants
+-- Item: vwEntitlementGrants
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Entitlement Grants
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  EntitlementGrant
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwEntitlementGrants]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwEntitlementGrants];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwEntitlementGrants]
+AS
+SELECT
+    e.*,
+    mjBizAppsOrdersProductEntitlement_ProductEntitlementID.[Name] AS [ProductEntitlement],
+    mjBizAppsOrdersSubscription_SubscriptionID.[SubscriptionNumber] AS [Subscription],
+    mjBizAppsCommonPerson_BeneficiaryPersonID.[DisplayName] AS [BeneficiaryPerson],
+    mjBizAppsCommonOrganization_BeneficiaryOrganizationID.[Name] AS [BeneficiaryOrganization]
+FROM
+    [${flyway:defaultSchema}].[EntitlementGrant] AS e
+INNER JOIN
+    [${flyway:defaultSchema}].[ProductEntitlement] AS mjBizAppsOrdersProductEntitlement_ProductEntitlementID
+  ON
+    [e].[ProductEntitlementID] = mjBizAppsOrdersProductEntitlement_ProductEntitlementID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[Subscription] AS mjBizAppsOrdersSubscription_SubscriptionID
+  ON
+    [e].[SubscriptionID] = mjBizAppsOrdersSubscription_SubscriptionID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_BeneficiaryPersonID
+  ON
+    [e].[BeneficiaryPersonID] = mjBizAppsCommonPerson_BeneficiaryPersonID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Organization] AS mjBizAppsCommonOrganization_BeneficiaryOrganizationID
+  ON
+    [e].[BeneficiaryOrganizationID] = mjBizAppsCommonOrganization_BeneficiaryOrganizationID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwEntitlementGrants] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Entitlement Grants */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Entitlement Grants
+-- Item: Permissions for vwEntitlementGrants
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwEntitlementGrants] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Entitlement Grants */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Entitlement Grants
+-- Item: spCreateEntitlementGrant
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR EntitlementGrant
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateEntitlementGrant]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateEntitlementGrant];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateEntitlementGrant]
+    @ID uniqueidentifier = NULL,
+    @ProductEntitlementID uniqueidentifier,
+    @OrderLineID_Clear bit = 0,
+    @OrderLineID uniqueidentifier = NULL,
+    @SubscriptionID_Clear bit = 0,
+    @SubscriptionID uniqueidentifier = NULL,
+    @BeneficiaryPersonID_Clear bit = 0,
+    @BeneficiaryPersonID uniqueidentifier = NULL,
+    @BeneficiaryOrganizationID_Clear bit = 0,
+    @BeneficiaryOrganizationID uniqueidentifier = NULL,
+    @Quantity_Clear bit = 0,
+    @Quantity decimal(18, 4) = NULL,
+    @ValidFrom_Clear bit = 0,
+    @ValidFrom datetimeoffset = NULL,
+    @ValidTo_Clear bit = 0,
+    @ValidTo datetimeoffset = NULL,
+    @Status nvarchar(20) = NULL,
+    @ProvisionedAt_Clear bit = 0,
+    @ProvisionedAt datetimeoffset = NULL,
+    @ValidityModeApplied_Clear bit = 0,
+    @ValidityModeApplied nvarchar(20) = NULL,
+    @SubscriptionTermID_Clear bit = 0,
+    @SubscriptionTermID uniqueidentifier = NULL,
+    @RevokedAt_Clear bit = 0,
+    @RevokedAt datetimeoffset = NULL,
+    @RevocationReason_Clear bit = 0,
+    @RevocationReason nvarchar(300) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[EntitlementGrant]
+            (
+                [ID],
+                [ProductEntitlementID],
+                [OrderLineID],
+                [SubscriptionID],
+                [BeneficiaryPersonID],
+                [BeneficiaryOrganizationID],
+                [Quantity],
+                [ValidFrom],
+                [ValidTo],
+                [Status],
+                [ProvisionedAt],
+                [ValidityModeApplied],
+                [SubscriptionTermID],
+                [RevokedAt],
+                [RevocationReason]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @ProductEntitlementID,
+                CASE WHEN @OrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@OrderLineID, NULL) END,
+                CASE WHEN @SubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionID, NULL) END,
+                CASE WHEN @BeneficiaryPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BeneficiaryPersonID, NULL) END,
+                CASE WHEN @BeneficiaryOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BeneficiaryOrganizationID, NULL) END,
+                CASE WHEN @Quantity_Clear = 1 THEN NULL ELSE ISNULL(@Quantity, NULL) END,
+                CASE WHEN @ValidFrom_Clear = 1 THEN NULL ELSE ISNULL(@ValidFrom, NULL) END,
+                CASE WHEN @ValidTo_Clear = 1 THEN NULL ELSE ISNULL(@ValidTo, NULL) END,
+                ISNULL(@Status, 'Active'),
+                CASE WHEN @ProvisionedAt_Clear = 1 THEN NULL ELSE ISNULL(@ProvisionedAt, NULL) END,
+                CASE WHEN @ValidityModeApplied_Clear = 1 THEN NULL ELSE ISNULL(@ValidityModeApplied, NULL) END,
+                CASE WHEN @SubscriptionTermID_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionTermID, NULL) END,
+                CASE WHEN @RevokedAt_Clear = 1 THEN NULL ELSE ISNULL(@RevokedAt, NULL) END,
+                CASE WHEN @RevocationReason_Clear = 1 THEN NULL ELSE ISNULL(@RevocationReason, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[EntitlementGrant]
+            (
+                [ProductEntitlementID],
+                [OrderLineID],
+                [SubscriptionID],
+                [BeneficiaryPersonID],
+                [BeneficiaryOrganizationID],
+                [Quantity],
+                [ValidFrom],
+                [ValidTo],
+                [Status],
+                [ProvisionedAt],
+                [ValidityModeApplied],
+                [SubscriptionTermID],
+                [RevokedAt],
+                [RevocationReason]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ProductEntitlementID,
+                CASE WHEN @OrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@OrderLineID, NULL) END,
+                CASE WHEN @SubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionID, NULL) END,
+                CASE WHEN @BeneficiaryPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BeneficiaryPersonID, NULL) END,
+                CASE WHEN @BeneficiaryOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BeneficiaryOrganizationID, NULL) END,
+                CASE WHEN @Quantity_Clear = 1 THEN NULL ELSE ISNULL(@Quantity, NULL) END,
+                CASE WHEN @ValidFrom_Clear = 1 THEN NULL ELSE ISNULL(@ValidFrom, NULL) END,
+                CASE WHEN @ValidTo_Clear = 1 THEN NULL ELSE ISNULL(@ValidTo, NULL) END,
+                ISNULL(@Status, 'Active'),
+                CASE WHEN @ProvisionedAt_Clear = 1 THEN NULL ELSE ISNULL(@ProvisionedAt, NULL) END,
+                CASE WHEN @ValidityModeApplied_Clear = 1 THEN NULL ELSE ISNULL(@ValidityModeApplied, NULL) END,
+                CASE WHEN @SubscriptionTermID_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionTermID, NULL) END,
+                CASE WHEN @RevokedAt_Clear = 1 THEN NULL ELSE ISNULL(@RevokedAt, NULL) END,
+                CASE WHEN @RevocationReason_Clear = 1 THEN NULL ELSE ISNULL(@RevocationReason, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwEntitlementGrants] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateEntitlementGrant] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Entitlement Grants */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateEntitlementGrant] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Entitlement Grants */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Entitlement Grants
+-- Item: spUpdateEntitlementGrant
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR EntitlementGrant
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateEntitlementGrant]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateEntitlementGrant];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateEntitlementGrant]
+    @ID uniqueidentifier,
+    @ProductEntitlementID uniqueidentifier = NULL,
+    @OrderLineID_Clear bit = 0,
+    @OrderLineID uniqueidentifier = NULL,
+    @SubscriptionID_Clear bit = 0,
+    @SubscriptionID uniqueidentifier = NULL,
+    @BeneficiaryPersonID_Clear bit = 0,
+    @BeneficiaryPersonID uniqueidentifier = NULL,
+    @BeneficiaryOrganizationID_Clear bit = 0,
+    @BeneficiaryOrganizationID uniqueidentifier = NULL,
+    @Quantity_Clear bit = 0,
+    @Quantity decimal(18, 4) = NULL,
+    @ValidFrom_Clear bit = 0,
+    @ValidFrom datetimeoffset = NULL,
+    @ValidTo_Clear bit = 0,
+    @ValidTo datetimeoffset = NULL,
+    @Status nvarchar(20) = NULL,
+    @ProvisionedAt_Clear bit = 0,
+    @ProvisionedAt datetimeoffset = NULL,
+    @ValidityModeApplied_Clear bit = 0,
+    @ValidityModeApplied nvarchar(20) = NULL,
+    @SubscriptionTermID_Clear bit = 0,
+    @SubscriptionTermID uniqueidentifier = NULL,
+    @RevokedAt_Clear bit = 0,
+    @RevokedAt datetimeoffset = NULL,
+    @RevocationReason_Clear bit = 0,
+    @RevocationReason nvarchar(300) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[EntitlementGrant]
+    SET
+        [ProductEntitlementID] = ISNULL(@ProductEntitlementID, [ProductEntitlementID]),
+        [OrderLineID] = CASE WHEN @OrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@OrderLineID, [OrderLineID]) END,
+        [SubscriptionID] = CASE WHEN @SubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionID, [SubscriptionID]) END,
+        [BeneficiaryPersonID] = CASE WHEN @BeneficiaryPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BeneficiaryPersonID, [BeneficiaryPersonID]) END,
+        [BeneficiaryOrganizationID] = CASE WHEN @BeneficiaryOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BeneficiaryOrganizationID, [BeneficiaryOrganizationID]) END,
+        [Quantity] = CASE WHEN @Quantity_Clear = 1 THEN NULL ELSE ISNULL(@Quantity, [Quantity]) END,
+        [ValidFrom] = CASE WHEN @ValidFrom_Clear = 1 THEN NULL ELSE ISNULL(@ValidFrom, [ValidFrom]) END,
+        [ValidTo] = CASE WHEN @ValidTo_Clear = 1 THEN NULL ELSE ISNULL(@ValidTo, [ValidTo]) END,
+        [Status] = ISNULL(@Status, [Status]),
+        [ProvisionedAt] = CASE WHEN @ProvisionedAt_Clear = 1 THEN NULL ELSE ISNULL(@ProvisionedAt, [ProvisionedAt]) END,
+        [ValidityModeApplied] = CASE WHEN @ValidityModeApplied_Clear = 1 THEN NULL ELSE ISNULL(@ValidityModeApplied, [ValidityModeApplied]) END,
+        [SubscriptionTermID] = CASE WHEN @SubscriptionTermID_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionTermID, [SubscriptionTermID]) END,
+        [RevokedAt] = CASE WHEN @RevokedAt_Clear = 1 THEN NULL ELSE ISNULL(@RevokedAt, [RevokedAt]) END,
+        [RevocationReason] = CASE WHEN @RevocationReason_Clear = 1 THEN NULL ELSE ISNULL(@RevocationReason, [RevocationReason]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwEntitlementGrants] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwEntitlementGrants]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateEntitlementGrant] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the EntitlementGrant table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateEntitlementGrant]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateEntitlementGrant];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateEntitlementGrant
+ON [${flyway:defaultSchema}].[EntitlementGrant]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[EntitlementGrant]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[EntitlementGrant] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Entitlement Grants */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateEntitlementGrant] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Checkout Sessions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Checkout Sessions
+-- Item: spDeleteCheckoutSession
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR CheckoutSession
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteCheckoutSession]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteCheckoutSession];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteCheckoutSession]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[CheckoutSession]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteCheckoutSession] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Checkout Sessions */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteCheckoutSession] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Customer Payment Methods */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Customer Payment Methods
+-- Item: spDeleteCustomerPaymentMethod
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR CustomerPaymentMethod
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteCustomerPaymentMethod]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteCustomerPaymentMethod];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteCustomerPaymentMethod]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[CustomerPaymentMethod]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteCustomerPaymentMethod] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Customer Payment Methods */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteCustomerPaymentMethod] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Entitlement Grants */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Entitlement Grants
+-- Item: spDeleteEntitlementGrant
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR EntitlementGrant
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteEntitlementGrant]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteEntitlementGrant];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteEntitlementGrant]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[EntitlementGrant]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteEntitlementGrant] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Entitlement Grants */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteEntitlementGrant] TO [cdp_Developer], [cdp_Integration];
+
+/* Index for Foreign Keys for EventOrderLine */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key PersonID in table EventOrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_EventOrderLine_PersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[EventOrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_EventOrderLine_PersonID ON [${flyway:defaultSchema}].[EventOrderLine] ([PersonID]);
+
+/* Index for Foreign Keys for OrderAdjustment */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Adjustments
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key OrderHeaderID in table OrderAdjustment
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderAdjustment_OrderHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderAdjustment]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderAdjustment_OrderHeaderID ON [${flyway:defaultSchema}].[OrderAdjustment] ([OrderHeaderID]);
+
+-- Index for foreign key OrderLineID in table OrderAdjustment
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderAdjustment_OrderLineID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderAdjustment]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderAdjustment_OrderLineID ON [${flyway:defaultSchema}].[OrderAdjustment] ([OrderLineID]);
+
+-- Index for foreign key PromotionID in table OrderAdjustment
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderAdjustment_PromotionID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderAdjustment]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderAdjustment_PromotionID ON [${flyway:defaultSchema}].[OrderAdjustment] ([PromotionID]);
+
+-- Index for foreign key PromotionCodeID in table OrderAdjustment
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderAdjustment_PromotionCodeID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderAdjustment]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderAdjustment_PromotionCodeID ON [${flyway:defaultSchema}].[OrderAdjustment] ([PromotionCodeID]);
+
+-- Index for foreign key AuthorizedBySalesAuthorityID in table OrderAdjustment
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderAdjustment_AuthorizedBySalesAuthorityID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderAdjustment]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderAdjustment_AuthorizedBySalesAuthorityID ON [${flyway:defaultSchema}].[OrderAdjustment] ([AuthorizedBySalesAuthorityID]);
+
+/* Index for Foreign Keys for OrderCharge */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Charges
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key OrderHeaderID in table OrderCharge
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderCharge_OrderHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderCharge]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderCharge_OrderHeaderID ON [${flyway:defaultSchema}].[OrderCharge] ([OrderHeaderID]);
+
+-- Index for foreign key ChargeTypeID in table OrderCharge
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderCharge_ChargeTypeID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderCharge]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderCharge_ChargeTypeID ON [${flyway:defaultSchema}].[OrderCharge] ([ChargeTypeID]);
+
+/* Index for Foreign Keys for OrderHeader */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Headers
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key CompanyID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_CompanyID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_CompanyID ON [${flyway:defaultSchema}].[OrderHeader] ([CompanyID]);
+
+-- Index for foreign key BillToPersonID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_BillToPersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_BillToPersonID ON [${flyway:defaultSchema}].[OrderHeader] ([BillToPersonID]);
+
+-- Index for foreign key BillToOrganizationID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_BillToOrganizationID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_BillToOrganizationID ON [${flyway:defaultSchema}].[OrderHeader] ([BillToOrganizationID]);
+
+-- Index for foreign key SalesRepUserID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_SalesRepUserID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_SalesRepUserID ON [${flyway:defaultSchema}].[OrderHeader] ([SalesRepUserID]);
+
+-- Index for foreign key BillToAddressID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_BillToAddressID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_BillToAddressID ON [${flyway:defaultSchema}].[OrderHeader] ([BillToAddressID]);
+
+-- Index for foreign key ShipToAddressID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_ShipToAddressID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_ShipToAddressID ON [${flyway:defaultSchema}].[OrderHeader] ([ShipToAddressID]);
+
+-- Index for foreign key ShipToOrganizationID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_ShipToOrganizationID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_ShipToOrganizationID ON [${flyway:defaultSchema}].[OrderHeader] ([ShipToOrganizationID]);
+
+-- Index for foreign key ShipToPersonID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_ShipToPersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_ShipToPersonID ON [${flyway:defaultSchema}].[OrderHeader] ([ShipToPersonID]);
+
+-- Index for foreign key PaymentTermsTypeID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_PaymentTermsTypeID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_PaymentTermsTypeID ON [${flyway:defaultSchema}].[OrderHeader] ([PaymentTermsTypeID]);
+
+-- Index for foreign key InitialPaymentTypeID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_InitialPaymentTypeID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_InitialPaymentTypeID ON [${flyway:defaultSchema}].[OrderHeader] ([InitialPaymentTypeID]);
+
+-- Index for foreign key InitialPaymentDetailID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_InitialPaymentDetailID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_InitialPaymentDetailID ON [${flyway:defaultSchema}].[OrderHeader] ([InitialPaymentDetailID]);
+
+-- Index for foreign key PostedByUserID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_PostedByUserID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_PostedByUserID ON [${flyway:defaultSchema}].[OrderHeader] ([PostedByUserID]);
+
+-- Index for foreign key ReversesOrderHeaderID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_ReversesOrderHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_ReversesOrderHeaderID ON [${flyway:defaultSchema}].[OrderHeader] ([ReversesOrderHeaderID]);
+
+-- Index for foreign key SourceCheckoutWidgetID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_SourceCheckoutWidgetID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_SourceCheckoutWidgetID ON [${flyway:defaultSchema}].[OrderHeader] ([SourceCheckoutWidgetID]);
+
+/* SQL text to update entity field related entity name field map for entity field ID 3719CD23-FA95-42DD-BCD7-B3703A24CFBA */
+EXEC [${mjSchema}].[spUpdateEntityFieldRelatedEntityNameFieldMap] @EntityFieldID='3719CD23-FA95-42DD-BCD7-B3703A24CFBA', @RelatedEntityNameFieldMap='SourceCheckoutWidget';
+
+/* Base View SQL for MJ_BizApps_Orders: Event Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: vwEventOrderLines
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Event Order Lines
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  EventOrderLine
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwEventOrderLines]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwEventOrderLines];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwEventOrderLines]
+AS
+SELECT
+    e.*,
+    ${mjSchema}_isa_p1.[OrderHeaderID],
+    ${mjSchema}_isa_p1.[ProductID],
+    ${mjSchema}_isa_p1.[CompanyID],
+    ${mjSchema}_isa_p1.[LineNumber],
+    ${mjSchema}_isa_p1.[Quantity],
+    ${mjSchema}_isa_p1.[UnitPrice],
+    ${mjSchema}_isa_p1.[ProductPriceID],
+    ${mjSchema}_isa_p1.[DiscountPct],
+    ${mjSchema}_isa_p1.[DiscountAmount],
+    ${mjSchema}_isa_p1.[LineTotalNet],
+    ${mjSchema}_isa_p1.[ChargeAmount],
+    ${mjSchema}_isa_p1.[LineTax],
+    ${mjSchema}_isa_p1.[LineTotalGross],
+    ${mjSchema}_isa_p1.[ShipToAddressID],
+    ${mjSchema}_isa_p1.[ShipToOrganizationID],
+    ${mjSchema}_isa_p1.[ShipToPersonID],
+    ${mjSchema}_isa_p1.[RenewsSubscriptionID],
+    ${mjSchema}_isa_p1.[ServicePeriodStart],
+    ${mjSchema}_isa_p1.[ServicePeriodEnd],
+    ${mjSchema}_isa_p1.[FulfillmentStatus],
+    ${mjSchema}_isa_p1.[ReversesOrderLineID],
+    ${mjSchema}_isa_p1.[SourceBundleProductID],
+    ${mjSchema}_isa_p1.[ParentOrderLineID],
+    ${mjSchema}_isa_p1.[IsRollupParent],
+    ${mjSchema}_isa_p1.[IsQuantityOverridden],
+    ${mjSchema}_isa_p1.[SubscriptionID],
+    ${mjSchema}_isa_p1.[Description],
+    ${mjSchema}_isa_p1.[JournalEntryID],
+    ${mjSchema}_isa_p1.[PriceOverridden],
+    ${mjSchema}_isa_p1.[PriceOverrideReason],
+    mjBizAppsCommonPerson_PersonID.[DisplayName] AS [Person]
+FROM
+    [${flyway:defaultSchema}].[EventOrderLine] AS e
+INNER JOIN
+    [${flyway:defaultSchema}].[OrderLine] AS ${mjSchema}_isa_p1
+  ON
+    [e].[ID] = ${mjSchema}_isa_p1.[ID]
+INNER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_PersonID
+  ON
+    [e].[PersonID] = mjBizAppsCommonPerson_PersonID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwEventOrderLines] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Event Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: Permissions for vwEventOrderLines
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwEventOrderLines] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Event Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: spCreateEventOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR EventOrderLine
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateEventOrderLine]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateEventOrderLine];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateEventOrderLine]
+    @ID uniqueidentifier = NULL,
+    @CheckInAt_Clear bit = 0,
+    @CheckInAt datetimeoffset = NULL,
+    @PersonID uniqueidentifier,
+    @DietaryPreferences_Clear bit = 0,
+    @DietaryPreferences nvarchar(500) = NULL,
+    @Allergies_Clear bit = 0,
+    @Allergies nvarchar(500) = NULL,
+    @Comments_Clear bit = 0,
+    @Comments nvarchar(2000) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @ActualID UNIQUEIDENTIFIER = ISNULL(@ID, NEWID())
+    INSERT INTO
+    [${flyway:defaultSchema}].[EventOrderLine]
+        (
+            [CheckInAt],
+                [PersonID],
+                [DietaryPreferences],
+                [Allergies],
+                [Comments],
+                [ID]
+        )
+    VALUES
+        (
+            CASE WHEN @CheckInAt_Clear = 1 THEN NULL ELSE ISNULL(@CheckInAt, NULL) END,
+                @PersonID,
+                CASE WHEN @DietaryPreferences_Clear = 1 THEN NULL ELSE ISNULL(@DietaryPreferences, NULL) END,
+                CASE WHEN @Allergies_Clear = 1 THEN NULL ELSE ISNULL(@Allergies, NULL) END,
+                CASE WHEN @Comments_Clear = 1 THEN NULL ELSE ISNULL(@Comments, NULL) END,
+                @ActualID
+        )
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwEventOrderLines] WHERE [ID] = @ActualID
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateEventOrderLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Event Order Lines */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateEventOrderLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Event Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: spUpdateEventOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR EventOrderLine
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateEventOrderLine]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateEventOrderLine];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateEventOrderLine]
+    @ID uniqueidentifier,
+    @CheckInAt_Clear bit = 0,
+    @CheckInAt datetimeoffset = NULL,
+    @PersonID uniqueidentifier = NULL,
+    @DietaryPreferences_Clear bit = 0,
+    @DietaryPreferences nvarchar(500) = NULL,
+    @Allergies_Clear bit = 0,
+    @Allergies nvarchar(500) = NULL,
+    @Comments_Clear bit = 0,
+    @Comments nvarchar(2000) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[EventOrderLine]
+    SET
+        [CheckInAt] = CASE WHEN @CheckInAt_Clear = 1 THEN NULL ELSE ISNULL(@CheckInAt, [CheckInAt]) END,
+        [PersonID] = ISNULL(@PersonID, [PersonID]),
+        [DietaryPreferences] = CASE WHEN @DietaryPreferences_Clear = 1 THEN NULL ELSE ISNULL(@DietaryPreferences, [DietaryPreferences]) END,
+        [Allergies] = CASE WHEN @Allergies_Clear = 1 THEN NULL ELSE ISNULL(@Allergies, [Allergies]) END,
+        [Comments] = CASE WHEN @Comments_Clear = 1 THEN NULL ELSE ISNULL(@Comments, [Comments]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwEventOrderLines] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwEventOrderLines]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateEventOrderLine] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the EventOrderLine table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateEventOrderLine]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateEventOrderLine];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateEventOrderLine
+ON [${flyway:defaultSchema}].[EventOrderLine]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[EventOrderLine]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[EventOrderLine] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Event Order Lines */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateEventOrderLine] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Order Adjustments */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Adjustments
+-- Item: vwOrderAdjustments
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Order Adjustments
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  OrderAdjustment
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderAdjustments]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwOrderAdjustments];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwOrderAdjustments]
+AS
+SELECT
+    o.*,
+    mjBizAppsOrdersOrderHeader_OrderHeaderID.[OrderNumber] AS [OrderHeader],
+    mjBizAppsOrdersPromotion_PromotionID.[Name] AS [Promotion],
+    mjBizAppsOrdersPromotionCode_PromotionCodeID.[Code] AS [PromotionCode]
+FROM
+    [${flyway:defaultSchema}].[OrderAdjustment] AS o
+INNER JOIN
+    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_OrderHeaderID
+  ON
+    [o].[OrderHeaderID] = mjBizAppsOrdersOrderHeader_OrderHeaderID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[Promotion] AS mjBizAppsOrdersPromotion_PromotionID
+  ON
+    [o].[PromotionID] = mjBizAppsOrdersPromotion_PromotionID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PromotionCode] AS mjBizAppsOrdersPromotionCode_PromotionCodeID
+  ON
+    [o].[PromotionCodeID] = mjBizAppsOrdersPromotionCode_PromotionCodeID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderAdjustments] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Order Adjustments */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Adjustments
+-- Item: Permissions for vwOrderAdjustments
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderAdjustments] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Order Adjustments */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Adjustments
+-- Item: spCreateOrderAdjustment
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR OrderAdjustment
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateOrderAdjustment]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateOrderAdjustment];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateOrderAdjustment]
+    @ID uniqueidentifier = NULL,
+    @OrderHeaderID uniqueidentifier,
+    @OrderLineID_Clear bit = 0,
+    @OrderLineID uniqueidentifier = NULL,
+    @PromotionID_Clear bit = 0,
+    @PromotionID uniqueidentifier = NULL,
+    @PromotionCodeID_Clear bit = 0,
+    @PromotionCodeID uniqueidentifier = NULL,
+    @Amount decimal(19, 4),
+    @Sequence int = NULL,
+    @Reason_Clear bit = 0,
+    @Reason nvarchar(MAX) = NULL,
+    @AppliedByUserID_Clear bit = 0,
+    @AppliedByUserID uniqueidentifier = NULL,
+    @AppliedAt datetimeoffset = NULL,
+    @AuthorizedBySalesAuthorityID_Clear bit = 0,
+    @AuthorizedBySalesAuthorityID uniqueidentifier = NULL,
+    @ApprovedByUserID_Clear bit = 0,
+    @ApprovedByUserID uniqueidentifier = NULL,
+    @ApprovedAt_Clear bit = 0,
+    @ApprovedAt datetimeoffset = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[OrderAdjustment]
+            (
+                [ID],
+                [OrderHeaderID],
+                [OrderLineID],
+                [PromotionID],
+                [PromotionCodeID],
+                [Amount],
+                [Sequence],
+                [Reason],
+                [AppliedByUserID],
+                [AppliedAt],
+                [AuthorizedBySalesAuthorityID],
+                [ApprovedByUserID],
+                [ApprovedAt]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @OrderHeaderID,
+                CASE WHEN @OrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@OrderLineID, NULL) END,
+                CASE WHEN @PromotionID_Clear = 1 THEN NULL ELSE ISNULL(@PromotionID, NULL) END,
+                CASE WHEN @PromotionCodeID_Clear = 1 THEN NULL ELSE ISNULL(@PromotionCodeID, NULL) END,
+                @Amount,
+                ISNULL(@Sequence, 0),
+                CASE WHEN @Reason_Clear = 1 THEN NULL ELSE ISNULL(@Reason, NULL) END,
+                CASE WHEN @AppliedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@AppliedByUserID, NULL) END,
+                ISNULL(@AppliedAt, sysdatetimeoffset()),
+                CASE WHEN @AuthorizedBySalesAuthorityID_Clear = 1 THEN NULL ELSE ISNULL(@AuthorizedBySalesAuthorityID, NULL) END,
+                CASE WHEN @ApprovedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@ApprovedByUserID, NULL) END,
+                CASE WHEN @ApprovedAt_Clear = 1 THEN NULL ELSE ISNULL(@ApprovedAt, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[OrderAdjustment]
+            (
+                [OrderHeaderID],
+                [OrderLineID],
+                [PromotionID],
+                [PromotionCodeID],
+                [Amount],
+                [Sequence],
+                [Reason],
+                [AppliedByUserID],
+                [AppliedAt],
+                [AuthorizedBySalesAuthorityID],
+                [ApprovedByUserID],
+                [ApprovedAt]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @OrderHeaderID,
+                CASE WHEN @OrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@OrderLineID, NULL) END,
+                CASE WHEN @PromotionID_Clear = 1 THEN NULL ELSE ISNULL(@PromotionID, NULL) END,
+                CASE WHEN @PromotionCodeID_Clear = 1 THEN NULL ELSE ISNULL(@PromotionCodeID, NULL) END,
+                @Amount,
+                ISNULL(@Sequence, 0),
+                CASE WHEN @Reason_Clear = 1 THEN NULL ELSE ISNULL(@Reason, NULL) END,
+                CASE WHEN @AppliedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@AppliedByUserID, NULL) END,
+                ISNULL(@AppliedAt, sysdatetimeoffset()),
+                CASE WHEN @AuthorizedBySalesAuthorityID_Clear = 1 THEN NULL ELSE ISNULL(@AuthorizedBySalesAuthorityID, NULL) END,
+                CASE WHEN @ApprovedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@ApprovedByUserID, NULL) END,
+                CASE WHEN @ApprovedAt_Clear = 1 THEN NULL ELSE ISNULL(@ApprovedAt, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwOrderAdjustments] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderAdjustment] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Order Adjustments */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderAdjustment] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Order Adjustments */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Adjustments
+-- Item: spUpdateOrderAdjustment
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR OrderAdjustment
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateOrderAdjustment]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderAdjustment];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderAdjustment]
+    @ID uniqueidentifier,
+    @OrderHeaderID uniqueidentifier = NULL,
+    @OrderLineID_Clear bit = 0,
+    @OrderLineID uniqueidentifier = NULL,
+    @PromotionID_Clear bit = 0,
+    @PromotionID uniqueidentifier = NULL,
+    @PromotionCodeID_Clear bit = 0,
+    @PromotionCodeID uniqueidentifier = NULL,
+    @Amount decimal(19, 4) = NULL,
+    @Sequence int = NULL,
+    @Reason_Clear bit = 0,
+    @Reason nvarchar(MAX) = NULL,
+    @AppliedByUserID_Clear bit = 0,
+    @AppliedByUserID uniqueidentifier = NULL,
+    @AppliedAt datetimeoffset = NULL,
+    @AuthorizedBySalesAuthorityID_Clear bit = 0,
+    @AuthorizedBySalesAuthorityID uniqueidentifier = NULL,
+    @ApprovedByUserID_Clear bit = 0,
+    @ApprovedByUserID uniqueidentifier = NULL,
+    @ApprovedAt_Clear bit = 0,
+    @ApprovedAt datetimeoffset = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[OrderAdjustment]
+    SET
+        [OrderHeaderID] = ISNULL(@OrderHeaderID, [OrderHeaderID]),
+        [OrderLineID] = CASE WHEN @OrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@OrderLineID, [OrderLineID]) END,
+        [PromotionID] = CASE WHEN @PromotionID_Clear = 1 THEN NULL ELSE ISNULL(@PromotionID, [PromotionID]) END,
+        [PromotionCodeID] = CASE WHEN @PromotionCodeID_Clear = 1 THEN NULL ELSE ISNULL(@PromotionCodeID, [PromotionCodeID]) END,
+        [Amount] = ISNULL(@Amount, [Amount]),
+        [Sequence] = ISNULL(@Sequence, [Sequence]),
+        [Reason] = CASE WHEN @Reason_Clear = 1 THEN NULL ELSE ISNULL(@Reason, [Reason]) END,
+        [AppliedByUserID] = CASE WHEN @AppliedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@AppliedByUserID, [AppliedByUserID]) END,
+        [AppliedAt] = ISNULL(@AppliedAt, [AppliedAt]),
+        [AuthorizedBySalesAuthorityID] = CASE WHEN @AuthorizedBySalesAuthorityID_Clear = 1 THEN NULL ELSE ISNULL(@AuthorizedBySalesAuthorityID, [AuthorizedBySalesAuthorityID]) END,
+        [ApprovedByUserID] = CASE WHEN @ApprovedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@ApprovedByUserID, [ApprovedByUserID]) END,
+        [ApprovedAt] = CASE WHEN @ApprovedAt_Clear = 1 THEN NULL ELSE ISNULL(@ApprovedAt, [ApprovedAt]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwOrderAdjustments] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwOrderAdjustments]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderAdjustment] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the OrderAdjustment table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateOrderAdjustment]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateOrderAdjustment];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateOrderAdjustment
+ON [${flyway:defaultSchema}].[OrderAdjustment]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[OrderAdjustment]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[OrderAdjustment] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Order Adjustments */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderAdjustment] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Order Charges */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Charges
+-- Item: vwOrderCharges
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Order Charges
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  OrderCharge
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderCharges]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwOrderCharges];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwOrderCharges]
+AS
+SELECT
+    o.*,
+    mjBizAppsOrdersOrderHeader_OrderHeaderID.[OrderNumber] AS [OrderHeader],
+    mjBizAppsOrdersChargeType_ChargeTypeID.[Name] AS [ChargeType]
+FROM
+    [${flyway:defaultSchema}].[OrderCharge] AS o
+INNER JOIN
+    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_OrderHeaderID
+  ON
+    [o].[OrderHeaderID] = mjBizAppsOrdersOrderHeader_OrderHeaderID.[ID]
+INNER JOIN
+    [${flyway:defaultSchema}].[ChargeType] AS mjBizAppsOrdersChargeType_ChargeTypeID
+  ON
+    [o].[ChargeTypeID] = mjBizAppsOrdersChargeType_ChargeTypeID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderCharges] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Order Charges */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Charges
+-- Item: Permissions for vwOrderCharges
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderCharges] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Order Charges */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Charges
+-- Item: spCreateOrderCharge
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR OrderCharge
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateOrderCharge]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateOrderCharge];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateOrderCharge]
+    @ID uniqueidentifier = NULL,
+    @OrderHeaderID uniqueidentifier,
+    @ChargeTypeID uniqueidentifier,
+    @Amount decimal(19, 4),
+    @BasisAmount_Clear bit = 0,
+    @BasisAmount decimal(19, 4) = NULL,
+    @Rate_Clear bit = 0,
+    @Rate decimal(9, 6) = NULL,
+    @Sequence int = NULL,
+    @TaxJurisdictionID_Clear bit = 0,
+    @TaxJurisdictionID uniqueidentifier = NULL,
+    @TaxRateID_Clear bit = 0,
+    @TaxRateID uniqueidentifier = NULL,
+    @CalculationSource nvarchar(50) = NULL,
+    @IsOverridden bit = NULL,
+    @ComputedAmount_Clear bit = 0,
+    @ComputedAmount decimal(19, 4) = NULL,
+    @OverrideReason_Clear bit = 0,
+    @OverrideReason nvarchar(MAX) = NULL,
+    @OverriddenByUserID_Clear bit = 0,
+    @OverriddenByUserID uniqueidentifier = NULL,
+    @OverriddenAt_Clear bit = 0,
+    @OverriddenAt datetimeoffset = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[OrderCharge]
+            (
+                [ID],
+                [OrderHeaderID],
+                [ChargeTypeID],
+                [Amount],
+                [BasisAmount],
+                [Rate],
+                [Sequence],
+                [TaxJurisdictionID],
+                [TaxRateID],
+                [CalculationSource],
+                [IsOverridden],
+                [ComputedAmount],
+                [OverrideReason],
+                [OverriddenByUserID],
+                [OverriddenAt]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @OrderHeaderID,
+                @ChargeTypeID,
+                @Amount,
+                CASE WHEN @BasisAmount_Clear = 1 THEN NULL ELSE ISNULL(@BasisAmount, NULL) END,
+                CASE WHEN @Rate_Clear = 1 THEN NULL ELSE ISNULL(@Rate, NULL) END,
+                ISNULL(@Sequence, 0),
+                CASE WHEN @TaxJurisdictionID_Clear = 1 THEN NULL ELSE ISNULL(@TaxJurisdictionID, NULL) END,
+                CASE WHEN @TaxRateID_Clear = 1 THEN NULL ELSE ISNULL(@TaxRateID, NULL) END,
+                ISNULL(@CalculationSource, 'Internal'),
+                ISNULL(@IsOverridden, 0),
+                CASE WHEN @ComputedAmount_Clear = 1 THEN NULL ELSE ISNULL(@ComputedAmount, NULL) END,
+                CASE WHEN @OverrideReason_Clear = 1 THEN NULL ELSE ISNULL(@OverrideReason, NULL) END,
+                CASE WHEN @OverriddenByUserID_Clear = 1 THEN NULL ELSE ISNULL(@OverriddenByUserID, NULL) END,
+                CASE WHEN @OverriddenAt_Clear = 1 THEN NULL ELSE ISNULL(@OverriddenAt, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[OrderCharge]
+            (
+                [OrderHeaderID],
+                [ChargeTypeID],
+                [Amount],
+                [BasisAmount],
+                [Rate],
+                [Sequence],
+                [TaxJurisdictionID],
+                [TaxRateID],
+                [CalculationSource],
+                [IsOverridden],
+                [ComputedAmount],
+                [OverrideReason],
+                [OverriddenByUserID],
+                [OverriddenAt]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @OrderHeaderID,
+                @ChargeTypeID,
+                @Amount,
+                CASE WHEN @BasisAmount_Clear = 1 THEN NULL ELSE ISNULL(@BasisAmount, NULL) END,
+                CASE WHEN @Rate_Clear = 1 THEN NULL ELSE ISNULL(@Rate, NULL) END,
+                ISNULL(@Sequence, 0),
+                CASE WHEN @TaxJurisdictionID_Clear = 1 THEN NULL ELSE ISNULL(@TaxJurisdictionID, NULL) END,
+                CASE WHEN @TaxRateID_Clear = 1 THEN NULL ELSE ISNULL(@TaxRateID, NULL) END,
+                ISNULL(@CalculationSource, 'Internal'),
+                ISNULL(@IsOverridden, 0),
+                CASE WHEN @ComputedAmount_Clear = 1 THEN NULL ELSE ISNULL(@ComputedAmount, NULL) END,
+                CASE WHEN @OverrideReason_Clear = 1 THEN NULL ELSE ISNULL(@OverrideReason, NULL) END,
+                CASE WHEN @OverriddenByUserID_Clear = 1 THEN NULL ELSE ISNULL(@OverriddenByUserID, NULL) END,
+                CASE WHEN @OverriddenAt_Clear = 1 THEN NULL ELSE ISNULL(@OverriddenAt, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwOrderCharges] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderCharge] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Order Charges */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderCharge] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Order Charges */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Charges
+-- Item: spUpdateOrderCharge
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR OrderCharge
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateOrderCharge]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderCharge];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderCharge]
+    @ID uniqueidentifier,
+    @OrderHeaderID uniqueidentifier = NULL,
+    @ChargeTypeID uniqueidentifier = NULL,
+    @Amount decimal(19, 4) = NULL,
+    @BasisAmount_Clear bit = 0,
+    @BasisAmount decimal(19, 4) = NULL,
+    @Rate_Clear bit = 0,
+    @Rate decimal(9, 6) = NULL,
+    @Sequence int = NULL,
+    @TaxJurisdictionID_Clear bit = 0,
+    @TaxJurisdictionID uniqueidentifier = NULL,
+    @TaxRateID_Clear bit = 0,
+    @TaxRateID uniqueidentifier = NULL,
+    @CalculationSource nvarchar(50) = NULL,
+    @IsOverridden bit = NULL,
+    @ComputedAmount_Clear bit = 0,
+    @ComputedAmount decimal(19, 4) = NULL,
+    @OverrideReason_Clear bit = 0,
+    @OverrideReason nvarchar(MAX) = NULL,
+    @OverriddenByUserID_Clear bit = 0,
+    @OverriddenByUserID uniqueidentifier = NULL,
+    @OverriddenAt_Clear bit = 0,
+    @OverriddenAt datetimeoffset = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[OrderCharge]
+    SET
+        [OrderHeaderID] = ISNULL(@OrderHeaderID, [OrderHeaderID]),
+        [ChargeTypeID] = ISNULL(@ChargeTypeID, [ChargeTypeID]),
+        [Amount] = ISNULL(@Amount, [Amount]),
+        [BasisAmount] = CASE WHEN @BasisAmount_Clear = 1 THEN NULL ELSE ISNULL(@BasisAmount, [BasisAmount]) END,
+        [Rate] = CASE WHEN @Rate_Clear = 1 THEN NULL ELSE ISNULL(@Rate, [Rate]) END,
+        [Sequence] = ISNULL(@Sequence, [Sequence]),
+        [TaxJurisdictionID] = CASE WHEN @TaxJurisdictionID_Clear = 1 THEN NULL ELSE ISNULL(@TaxJurisdictionID, [TaxJurisdictionID]) END,
+        [TaxRateID] = CASE WHEN @TaxRateID_Clear = 1 THEN NULL ELSE ISNULL(@TaxRateID, [TaxRateID]) END,
+        [CalculationSource] = ISNULL(@CalculationSource, [CalculationSource]),
+        [IsOverridden] = ISNULL(@IsOverridden, [IsOverridden]),
+        [ComputedAmount] = CASE WHEN @ComputedAmount_Clear = 1 THEN NULL ELSE ISNULL(@ComputedAmount, [ComputedAmount]) END,
+        [OverrideReason] = CASE WHEN @OverrideReason_Clear = 1 THEN NULL ELSE ISNULL(@OverrideReason, [OverrideReason]) END,
+        [OverriddenByUserID] = CASE WHEN @OverriddenByUserID_Clear = 1 THEN NULL ELSE ISNULL(@OverriddenByUserID, [OverriddenByUserID]) END,
+        [OverriddenAt] = CASE WHEN @OverriddenAt_Clear = 1 THEN NULL ELSE ISNULL(@OverriddenAt, [OverriddenAt]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwOrderCharges] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwOrderCharges]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderCharge] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the OrderCharge table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateOrderCharge]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateOrderCharge];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateOrderCharge
+ON [${flyway:defaultSchema}].[OrderCharge]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[OrderCharge]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[OrderCharge] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Order Charges */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderCharge] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Event Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: spDeleteEventOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR EventOrderLine
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteEventOrderLine]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteEventOrderLine];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteEventOrderLine]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[EventOrderLine]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteEventOrderLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Event Order Lines */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteEventOrderLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Order Adjustments */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Adjustments
+-- Item: spDeleteOrderAdjustment
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR OrderAdjustment
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteOrderAdjustment]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteOrderAdjustment];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteOrderAdjustment]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[OrderAdjustment]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderAdjustment] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Order Adjustments */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderAdjustment] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Order Charges */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Charges
+-- Item: spDeleteOrderCharge
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR OrderCharge
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteOrderCharge]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteOrderCharge];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteOrderCharge]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[OrderCharge]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderCharge] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Order Charges */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderCharge] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Order Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Headers
+-- Item: vwOrderHeadersGenerated
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Order Headers
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  OrderHeader
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderHeadersGenerated]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwOrderHeadersGenerated];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwOrderHeadersGenerated]
+AS
+SELECT
+    o.*,
+    MJCompany_CompanyID.[Name] AS [Company],
+    mjBizAppsCommonPerson_BillToPersonID.[DisplayName] AS [BillToPerson],
+    mjBizAppsCommonOrganization_BillToOrganizationID.[Name] AS [BillToOrganization],
+    MJUser_SalesRepUserID.[Name] AS [SalesRepUser],
+    mjBizAppsCommonAddress_BillToAddressID.[Line1] AS [BillToAddress],
+    mjBizAppsCommonAddress_ShipToAddressID.[Line1] AS [ShipToAddress],
+    mjBizAppsCommonOrganization_ShipToOrganizationID.[Name] AS [ShipToOrganization],
+    mjBizAppsCommonPerson_ShipToPersonID.[DisplayName] AS [ShipToPerson],
+    mjBizAppsOrdersPaymentTermsType_PaymentTermsTypeID.[Name] AS [PaymentTermsType],
+    mjBizAppsOrdersPaymentType_InitialPaymentTypeID.[Name] AS [InitialPaymentType],
+    mjBizAppsOrdersPaymentDetail_InitialPaymentDetailID.[Last4] AS [InitialPaymentDetail],
+    MJUser_PostedByUserID.[Name] AS [PostedByUser],
+    mjBizAppsOrdersOrderHeader_ReversesOrderHeaderID.[OrderNumber] AS [ReversesOrderHeader],
+    mjBizAppsOrdersCheckoutWidget_SourceCheckoutWidgetID.[Name] AS [SourceCheckoutWidget],
+    ${mjSchema}_rgc.[Latitude] AS [${mjSchema}_Latitude],
+    ${mjSchema}_rgc.[Longitude] AS [${mjSchema}_Longitude]
+FROM
+    [${flyway:defaultSchema}].[OrderHeader] AS o
+INNER JOIN
+    [${mjSchema}].[Company] AS MJCompany_CompanyID
+  ON
+    [o].[CompanyID] = MJCompany_CompanyID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_BillToPersonID
+  ON
+    [o].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Organization] AS mjBizAppsCommonOrganization_BillToOrganizationID
+  ON
+    [o].[BillToOrganizationID] = mjBizAppsCommonOrganization_BillToOrganizationID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}].[User] AS MJUser_SalesRepUserID
+  ON
+    [o].[SalesRepUserID] = MJUser_SalesRepUserID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Address] AS mjBizAppsCommonAddress_BillToAddressID
+  ON
+    [o].[BillToAddressID] = mjBizAppsCommonAddress_BillToAddressID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Address] AS mjBizAppsCommonAddress_ShipToAddressID
+  ON
+    [o].[ShipToAddressID] = mjBizAppsCommonAddress_ShipToAddressID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Organization] AS mjBizAppsCommonOrganization_ShipToOrganizationID
+  ON
+    [o].[ShipToOrganizationID] = mjBizAppsCommonOrganization_ShipToOrganizationID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_ShipToPersonID
+  ON
+    [o].[ShipToPersonID] = mjBizAppsCommonPerson_ShipToPersonID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentTermsType] AS mjBizAppsOrdersPaymentTermsType_PaymentTermsTypeID
+  ON
+    [o].[PaymentTermsTypeID] = mjBizAppsOrdersPaymentTermsType_PaymentTermsTypeID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentType] AS mjBizAppsOrdersPaymentType_InitialPaymentTypeID
+  ON
+    [o].[InitialPaymentTypeID] = mjBizAppsOrdersPaymentType_InitialPaymentTypeID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentDetail] AS mjBizAppsOrdersPaymentDetail_InitialPaymentDetailID
+  ON
+    [o].[InitialPaymentDetailID] = mjBizAppsOrdersPaymentDetail_InitialPaymentDetailID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}].[User] AS MJUser_PostedByUserID
+  ON
+    [o].[PostedByUserID] = MJUser_PostedByUserID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_ReversesOrderHeaderID
+  ON
+    [o].[ReversesOrderHeaderID] = mjBizAppsOrdersOrderHeader_ReversesOrderHeaderID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[CheckoutWidget] AS mjBizAppsOrdersCheckoutWidget_SourceCheckoutWidgetID
+  ON
+    [o].[SourceCheckoutWidgetID] = mjBizAppsOrdersCheckoutWidget_SourceCheckoutWidgetID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}].[vwRecordGeoCodes] AS ${mjSchema}_rgc
+  ON
+    ${mjSchema}_rgc.[EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'
+    AND ${mjSchema}_rgc.[RecordID] = CAST([o].[ID] AS NVARCHAR(450))
+    AND ${mjSchema}_rgc.[LocationType] = 'Primary'
+GO
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderHeaders]', 'V') IS NOT NULL
+BEGIN
+    EXEC sp_executesql N'GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderHeaders] TO [cdp_UI], [cdp_Developer], [cdp_Integration]';
+END;
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Order Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Headers
+-- Item: Permissions for vwOrderHeaders
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderHeaders]', 'V') IS NOT NULL
+BEGIN
+    EXEC sp_executesql N'GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderHeaders] TO [cdp_UI], [cdp_Developer], [cdp_Integration]';
+END;
+
+/* spCreate SQL for MJ_BizApps_Orders: Order Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Headers
+-- Item: spCreateOrderHeader
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR OrderHeader
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateOrderHeader]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateOrderHeader];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateOrderHeader]
+    @ID uniqueidentifier = NULL,
+    @OrderNumber nvarchar(40),
+    @OrderType nvarchar(20) = NULL,
+    @OrderDate date,
+    @Status nvarchar(20) = NULL,
+    @CompanyID uniqueidentifier,
+    @BillToPersonID_Clear bit = 0,
+    @BillToPersonID uniqueidentifier = NULL,
+    @BillToOrganizationID_Clear bit = 0,
+    @BillToOrganizationID uniqueidentifier = NULL,
+    @SalesRepUserID_Clear bit = 0,
+    @SalesRepUserID uniqueidentifier = NULL,
+    @BillToAddressID_Clear bit = 0,
+    @BillToAddressID uniqueidentifier = NULL,
+    @ShipToAddressID_Clear bit = 0,
+    @ShipToAddressID uniqueidentifier = NULL,
+    @ShipToOrganizationID_Clear bit = 0,
+    @ShipToOrganizationID uniqueidentifier = NULL,
+    @ShipToPersonID_Clear bit = 0,
+    @ShipToPersonID uniqueidentifier = NULL,
+    @PaymentTermsTypeID_Clear bit = 0,
+    @PaymentTermsTypeID uniqueidentifier = NULL,
+    @TotalGross_Clear bit = 0,
+    @TotalGross decimal(18, 2) = NULL,
+    @AmountPaid decimal(18, 2) = NULL,
+    @Balance_Clear bit = 0,
+    @Balance decimal(18, 2) = NULL,
+    @DueDate_Clear bit = 0,
+    @DueDate date = NULL,
+    @ExternalDocumentNumber_Clear bit = 0,
+    @ExternalDocumentNumber nvarchar(80) = NULL,
+    @InitialPaymentTypeID_Clear bit = 0,
+    @InitialPaymentTypeID uniqueidentifier = NULL,
+    @InitialPaymentAmount decimal(18, 2) = NULL,
+    @InitialPaymentDetailID_Clear bit = 0,
+    @InitialPaymentDetailID uniqueidentifier = NULL,
+    @PostedAt_Clear bit = 0,
+    @PostedAt datetimeoffset = NULL,
+    @PostedByUserID_Clear bit = 0,
+    @PostedByUserID uniqueidentifier = NULL,
+    @ReversesOrderHeaderID_Clear bit = 0,
+    @ReversesOrderHeaderID uniqueidentifier = NULL,
+    @ReversalReason_Clear bit = 0,
+    @ReversalReason nvarchar(MAX) = NULL,
+    @RequestedDeliveryDate_Clear bit = 0,
+    @RequestedDeliveryDate date = NULL,
+    @ApprovalTaskID_Clear bit = 0,
+    @ApprovalTaskID uniqueidentifier = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(MAX) = NULL,
+    @Notes_Clear bit = 0,
+    @Notes nvarchar(MAX) = NULL,
+    @ConfirmedAt_Clear bit = 0,
+    @ConfirmedAt datetimeoffset = NULL,
+    @Origin nvarchar(50) = NULL,
+    @SourceCheckoutWidgetID_Clear bit = 0,
+    @SourceCheckoutWidgetID uniqueidentifier = NULL,
+    @FulfillmentStatus nvarchar(20) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[OrderHeader]
+            (
+                [ID],
+                [OrderNumber],
+                [OrderType],
+                [OrderDate],
+                [Status],
+                [CompanyID],
+                [BillToPersonID],
+                [BillToOrganizationID],
+                [SalesRepUserID],
+                [BillToAddressID],
+                [ShipToAddressID],
+                [ShipToOrganizationID],
+                [ShipToPersonID],
+                [PaymentTermsTypeID],
+                [TotalGross],
+                [AmountPaid],
+                [Balance],
+                [DueDate],
+                [ExternalDocumentNumber],
+                [InitialPaymentTypeID],
+                [InitialPaymentAmount],
+                [InitialPaymentDetailID],
+                [PostedAt],
+                [PostedByUserID],
+                [ReversesOrderHeaderID],
+                [ReversalReason],
+                [RequestedDeliveryDate],
+                [ApprovalTaskID],
+                [Description],
+                [Notes],
+                [ConfirmedAt],
+                [Origin],
+                [SourceCheckoutWidgetID],
+                [FulfillmentStatus]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @OrderNumber,
+                ISNULL(@OrderType, 'Sale'),
+                @OrderDate,
+                ISNULL(@Status, 'Draft'),
+                @CompanyID,
+                CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, NULL) END,
+                CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, NULL) END,
+                CASE WHEN @SalesRepUserID_Clear = 1 THEN NULL ELSE ISNULL(@SalesRepUserID, NULL) END,
+                CASE WHEN @BillToAddressID_Clear = 1 THEN NULL ELSE ISNULL(@BillToAddressID, NULL) END,
+                CASE WHEN @ShipToAddressID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressID, NULL) END,
+                CASE WHEN @ShipToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToOrganizationID, NULL) END,
+                CASE WHEN @ShipToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToPersonID, NULL) END,
+                CASE WHEN @PaymentTermsTypeID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentTermsTypeID, NULL) END,
+                CASE WHEN @TotalGross_Clear = 1 THEN NULL ELSE ISNULL(@TotalGross, NULL) END,
+                ISNULL(@AmountPaid, 0),
+                CASE WHEN @Balance_Clear = 1 THEN NULL ELSE ISNULL(@Balance, NULL) END,
+                CASE WHEN @DueDate_Clear = 1 THEN NULL ELSE ISNULL(@DueDate, NULL) END,
+                CASE WHEN @ExternalDocumentNumber_Clear = 1 THEN NULL ELSE ISNULL(@ExternalDocumentNumber, NULL) END,
+                CASE WHEN @InitialPaymentTypeID_Clear = 1 THEN NULL ELSE ISNULL(@InitialPaymentTypeID, NULL) END,
+                ISNULL(@InitialPaymentAmount, 0),
+                CASE WHEN @InitialPaymentDetailID_Clear = 1 THEN NULL ELSE ISNULL(@InitialPaymentDetailID, NULL) END,
+                CASE WHEN @PostedAt_Clear = 1 THEN NULL ELSE ISNULL(@PostedAt, NULL) END,
+                CASE WHEN @PostedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@PostedByUserID, NULL) END,
+                CASE WHEN @ReversesOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesOrderHeaderID, NULL) END,
+                CASE WHEN @ReversalReason_Clear = 1 THEN NULL ELSE ISNULL(@ReversalReason, NULL) END,
+                CASE WHEN @RequestedDeliveryDate_Clear = 1 THEN NULL ELSE ISNULL(@RequestedDeliveryDate, NULL) END,
+                CASE WHEN @ApprovalTaskID_Clear = 1 THEN NULL ELSE ISNULL(@ApprovalTaskID, NULL) END,
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, NULL) END,
+                CASE WHEN @ConfirmedAt_Clear = 1 THEN NULL ELSE ISNULL(@ConfirmedAt, NULL) END,
+                ISNULL(@Origin, 'Direct'),
+                CASE WHEN @SourceCheckoutWidgetID_Clear = 1 THEN NULL ELSE ISNULL(@SourceCheckoutWidgetID, NULL) END,
+                ISNULL(@FulfillmentStatus, 'Pending')
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[OrderHeader]
+            (
+                [OrderNumber],
+                [OrderType],
+                [OrderDate],
+                [Status],
+                [CompanyID],
+                [BillToPersonID],
+                [BillToOrganizationID],
+                [SalesRepUserID],
+                [BillToAddressID],
+                [ShipToAddressID],
+                [ShipToOrganizationID],
+                [ShipToPersonID],
+                [PaymentTermsTypeID],
+                [TotalGross],
+                [AmountPaid],
+                [Balance],
+                [DueDate],
+                [ExternalDocumentNumber],
+                [InitialPaymentTypeID],
+                [InitialPaymentAmount],
+                [InitialPaymentDetailID],
+                [PostedAt],
+                [PostedByUserID],
+                [ReversesOrderHeaderID],
+                [ReversalReason],
+                [RequestedDeliveryDate],
+                [ApprovalTaskID],
+                [Description],
+                [Notes],
+                [ConfirmedAt],
+                [Origin],
+                [SourceCheckoutWidgetID],
+                [FulfillmentStatus]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @OrderNumber,
+                ISNULL(@OrderType, 'Sale'),
+                @OrderDate,
+                ISNULL(@Status, 'Draft'),
+                @CompanyID,
+                CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, NULL) END,
+                CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, NULL) END,
+                CASE WHEN @SalesRepUserID_Clear = 1 THEN NULL ELSE ISNULL(@SalesRepUserID, NULL) END,
+                CASE WHEN @BillToAddressID_Clear = 1 THEN NULL ELSE ISNULL(@BillToAddressID, NULL) END,
+                CASE WHEN @ShipToAddressID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressID, NULL) END,
+                CASE WHEN @ShipToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToOrganizationID, NULL) END,
+                CASE WHEN @ShipToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToPersonID, NULL) END,
+                CASE WHEN @PaymentTermsTypeID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentTermsTypeID, NULL) END,
+                CASE WHEN @TotalGross_Clear = 1 THEN NULL ELSE ISNULL(@TotalGross, NULL) END,
+                ISNULL(@AmountPaid, 0),
+                CASE WHEN @Balance_Clear = 1 THEN NULL ELSE ISNULL(@Balance, NULL) END,
+                CASE WHEN @DueDate_Clear = 1 THEN NULL ELSE ISNULL(@DueDate, NULL) END,
+                CASE WHEN @ExternalDocumentNumber_Clear = 1 THEN NULL ELSE ISNULL(@ExternalDocumentNumber, NULL) END,
+                CASE WHEN @InitialPaymentTypeID_Clear = 1 THEN NULL ELSE ISNULL(@InitialPaymentTypeID, NULL) END,
+                ISNULL(@InitialPaymentAmount, 0),
+                CASE WHEN @InitialPaymentDetailID_Clear = 1 THEN NULL ELSE ISNULL(@InitialPaymentDetailID, NULL) END,
+                CASE WHEN @PostedAt_Clear = 1 THEN NULL ELSE ISNULL(@PostedAt, NULL) END,
+                CASE WHEN @PostedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@PostedByUserID, NULL) END,
+                CASE WHEN @ReversesOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesOrderHeaderID, NULL) END,
+                CASE WHEN @ReversalReason_Clear = 1 THEN NULL ELSE ISNULL(@ReversalReason, NULL) END,
+                CASE WHEN @RequestedDeliveryDate_Clear = 1 THEN NULL ELSE ISNULL(@RequestedDeliveryDate, NULL) END,
+                CASE WHEN @ApprovalTaskID_Clear = 1 THEN NULL ELSE ISNULL(@ApprovalTaskID, NULL) END,
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, NULL) END,
+                CASE WHEN @ConfirmedAt_Clear = 1 THEN NULL ELSE ISNULL(@ConfirmedAt, NULL) END,
+                ISNULL(@Origin, 'Direct'),
+                CASE WHEN @SourceCheckoutWidgetID_Clear = 1 THEN NULL ELSE ISNULL(@SourceCheckoutWidgetID, NULL) END,
+                ISNULL(@FulfillmentStatus, 'Pending')
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwOrderHeaders] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Order Headers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Order Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Headers
+-- Item: spUpdateOrderHeader
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR OrderHeader
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateOrderHeader]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderHeader];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderHeader]
+    @ID uniqueidentifier,
+    @OrderNumber nvarchar(40) = NULL,
+    @OrderType nvarchar(20) = NULL,
+    @OrderDate date = NULL,
+    @Status nvarchar(20) = NULL,
+    @CompanyID uniqueidentifier = NULL,
+    @BillToPersonID_Clear bit = 0,
+    @BillToPersonID uniqueidentifier = NULL,
+    @BillToOrganizationID_Clear bit = 0,
+    @BillToOrganizationID uniqueidentifier = NULL,
+    @SalesRepUserID_Clear bit = 0,
+    @SalesRepUserID uniqueidentifier = NULL,
+    @BillToAddressID_Clear bit = 0,
+    @BillToAddressID uniqueidentifier = NULL,
+    @ShipToAddressID_Clear bit = 0,
+    @ShipToAddressID uniqueidentifier = NULL,
+    @ShipToOrganizationID_Clear bit = 0,
+    @ShipToOrganizationID uniqueidentifier = NULL,
+    @ShipToPersonID_Clear bit = 0,
+    @ShipToPersonID uniqueidentifier = NULL,
+    @PaymentTermsTypeID_Clear bit = 0,
+    @PaymentTermsTypeID uniqueidentifier = NULL,
+    @TotalGross_Clear bit = 0,
+    @TotalGross decimal(18, 2) = NULL,
+    @AmountPaid decimal(18, 2) = NULL,
+    @Balance_Clear bit = 0,
+    @Balance decimal(18, 2) = NULL,
+    @DueDate_Clear bit = 0,
+    @DueDate date = NULL,
+    @ExternalDocumentNumber_Clear bit = 0,
+    @ExternalDocumentNumber nvarchar(80) = NULL,
+    @InitialPaymentTypeID_Clear bit = 0,
+    @InitialPaymentTypeID uniqueidentifier = NULL,
+    @InitialPaymentAmount decimal(18, 2) = NULL,
+    @InitialPaymentDetailID_Clear bit = 0,
+    @InitialPaymentDetailID uniqueidentifier = NULL,
+    @PostedAt_Clear bit = 0,
+    @PostedAt datetimeoffset = NULL,
+    @PostedByUserID_Clear bit = 0,
+    @PostedByUserID uniqueidentifier = NULL,
+    @ReversesOrderHeaderID_Clear bit = 0,
+    @ReversesOrderHeaderID uniqueidentifier = NULL,
+    @ReversalReason_Clear bit = 0,
+    @ReversalReason nvarchar(MAX) = NULL,
+    @RequestedDeliveryDate_Clear bit = 0,
+    @RequestedDeliveryDate date = NULL,
+    @ApprovalTaskID_Clear bit = 0,
+    @ApprovalTaskID uniqueidentifier = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(MAX) = NULL,
+    @Notes_Clear bit = 0,
+    @Notes nvarchar(MAX) = NULL,
+    @ConfirmedAt_Clear bit = 0,
+    @ConfirmedAt datetimeoffset = NULL,
+    @Origin nvarchar(50) = NULL,
+    @SourceCheckoutWidgetID_Clear bit = 0,
+    @SourceCheckoutWidgetID uniqueidentifier = NULL,
+    @FulfillmentStatus nvarchar(20) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[OrderHeader]
+    SET
+        [OrderNumber] = ISNULL(@OrderNumber, [OrderNumber]),
+        [OrderType] = ISNULL(@OrderType, [OrderType]),
+        [OrderDate] = ISNULL(@OrderDate, [OrderDate]),
+        [Status] = ISNULL(@Status, [Status]),
+        [CompanyID] = ISNULL(@CompanyID, [CompanyID]),
+        [BillToPersonID] = CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, [BillToPersonID]) END,
+        [BillToOrganizationID] = CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, [BillToOrganizationID]) END,
+        [SalesRepUserID] = CASE WHEN @SalesRepUserID_Clear = 1 THEN NULL ELSE ISNULL(@SalesRepUserID, [SalesRepUserID]) END,
+        [BillToAddressID] = CASE WHEN @BillToAddressID_Clear = 1 THEN NULL ELSE ISNULL(@BillToAddressID, [BillToAddressID]) END,
+        [ShipToAddressID] = CASE WHEN @ShipToAddressID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressID, [ShipToAddressID]) END,
+        [ShipToOrganizationID] = CASE WHEN @ShipToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToOrganizationID, [ShipToOrganizationID]) END,
+        [ShipToPersonID] = CASE WHEN @ShipToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToPersonID, [ShipToPersonID]) END,
+        [PaymentTermsTypeID] = CASE WHEN @PaymentTermsTypeID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentTermsTypeID, [PaymentTermsTypeID]) END,
+        [TotalGross] = CASE WHEN @TotalGross_Clear = 1 THEN NULL ELSE ISNULL(@TotalGross, [TotalGross]) END,
+        [AmountPaid] = ISNULL(@AmountPaid, [AmountPaid]),
+        [Balance] = CASE WHEN @Balance_Clear = 1 THEN NULL ELSE ISNULL(@Balance, [Balance]) END,
+        [DueDate] = CASE WHEN @DueDate_Clear = 1 THEN NULL ELSE ISNULL(@DueDate, [DueDate]) END,
+        [ExternalDocumentNumber] = CASE WHEN @ExternalDocumentNumber_Clear = 1 THEN NULL ELSE ISNULL(@ExternalDocumentNumber, [ExternalDocumentNumber]) END,
+        [InitialPaymentTypeID] = CASE WHEN @InitialPaymentTypeID_Clear = 1 THEN NULL ELSE ISNULL(@InitialPaymentTypeID, [InitialPaymentTypeID]) END,
+        [InitialPaymentAmount] = ISNULL(@InitialPaymentAmount, [InitialPaymentAmount]),
+        [InitialPaymentDetailID] = CASE WHEN @InitialPaymentDetailID_Clear = 1 THEN NULL ELSE ISNULL(@InitialPaymentDetailID, [InitialPaymentDetailID]) END,
+        [PostedAt] = CASE WHEN @PostedAt_Clear = 1 THEN NULL ELSE ISNULL(@PostedAt, [PostedAt]) END,
+        [PostedByUserID] = CASE WHEN @PostedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@PostedByUserID, [PostedByUserID]) END,
+        [ReversesOrderHeaderID] = CASE WHEN @ReversesOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesOrderHeaderID, [ReversesOrderHeaderID]) END,
+        [ReversalReason] = CASE WHEN @ReversalReason_Clear = 1 THEN NULL ELSE ISNULL(@ReversalReason, [ReversalReason]) END,
+        [RequestedDeliveryDate] = CASE WHEN @RequestedDeliveryDate_Clear = 1 THEN NULL ELSE ISNULL(@RequestedDeliveryDate, [RequestedDeliveryDate]) END,
+        [ApprovalTaskID] = CASE WHEN @ApprovalTaskID_Clear = 1 THEN NULL ELSE ISNULL(@ApprovalTaskID, [ApprovalTaskID]) END,
+        [Description] = CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, [Description]) END,
+        [Notes] = CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, [Notes]) END,
+        [ConfirmedAt] = CASE WHEN @ConfirmedAt_Clear = 1 THEN NULL ELSE ISNULL(@ConfirmedAt, [ConfirmedAt]) END,
+        [Origin] = ISNULL(@Origin, [Origin]),
+        [SourceCheckoutWidgetID] = CASE WHEN @SourceCheckoutWidgetID_Clear = 1 THEN NULL ELSE ISNULL(@SourceCheckoutWidgetID, [SourceCheckoutWidgetID]) END,
+        [FulfillmentStatus] = ISNULL(@FulfillmentStatus, [FulfillmentStatus])
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwOrderHeaders] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwOrderHeaders]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderHeader] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the OrderHeader table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateOrderHeader]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateOrderHeader];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateOrderHeader
+ON [${flyway:defaultSchema}].[OrderHeader]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[OrderHeader]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[OrderHeader] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Order Headers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Order Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Headers
+-- Item: spDeleteOrderHeader
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR OrderHeader
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteOrderHeader]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteOrderHeader];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteOrderHeader]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[OrderHeader]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Order Headers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* Index for Foreign Keys for OrderLine */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key OrderHeaderID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_OrderHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_OrderHeaderID ON [${flyway:defaultSchema}].[OrderLine] ([OrderHeaderID]);
+
+-- Index for foreign key ProductID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_ProductID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_ProductID ON [${flyway:defaultSchema}].[OrderLine] ([ProductID]);
+
+-- Index for foreign key CompanyID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_CompanyID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_CompanyID ON [${flyway:defaultSchema}].[OrderLine] ([CompanyID]);
+
+-- Index for foreign key ProductPriceID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_ProductPriceID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_ProductPriceID ON [${flyway:defaultSchema}].[OrderLine] ([ProductPriceID]);
+
+-- Index for foreign key ShipToOrganizationID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_ShipToOrganizationID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_ShipToOrganizationID ON [${flyway:defaultSchema}].[OrderLine] ([ShipToOrganizationID]);
+
+-- Index for foreign key ShipToPersonID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_ShipToPersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_ShipToPersonID ON [${flyway:defaultSchema}].[OrderLine] ([ShipToPersonID]);
+
+-- Index for foreign key ReversesOrderLineID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_ReversesOrderLineID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_ReversesOrderLineID ON [${flyway:defaultSchema}].[OrderLine] ([ReversesOrderLineID]);
+
+-- Index for foreign key SourceBundleProductID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_SourceBundleProductID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_SourceBundleProductID ON [${flyway:defaultSchema}].[OrderLine] ([SourceBundleProductID]);
+
+-- Index for foreign key ParentOrderLineID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_ParentOrderLineID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_ParentOrderLineID ON [${flyway:defaultSchema}].[OrderLine] ([ParentOrderLineID]);
+
+-- Index for foreign key SubscriptionID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_SubscriptionID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_SubscriptionID ON [${flyway:defaultSchema}].[OrderLine] ([SubscriptionID]);
+
+-- Index for foreign key JournalEntryID in table OrderLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderLine_JournalEntryID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderLine_JournalEntryID ON [${flyway:defaultSchema}].[OrderLine] ([JournalEntryID]);
+
+/* SQL text to update entity field related entity name field map for entity field ID F4A049BE-99E2-4A21-82CE-F5807ECABEB6 */
+EXEC [${mjSchema}].[spUpdateEntityFieldRelatedEntityNameFieldMap] @EntityFieldID='F4A049BE-99E2-4A21-82CE-F5807ECABEB6', @RelatedEntityNameFieldMap='ProductPrice';
+
+/* Index for Foreign Keys for PaymentDetail */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Details
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key CompanyID in table PaymentDetail
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentDetail_CompanyID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentDetail]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentDetail_CompanyID ON [${flyway:defaultSchema}].[PaymentDetail] ([CompanyID]);
+
+-- Index for foreign key PaymentTypeID in table PaymentDetail
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentDetail_PaymentTypeID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentDetail]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentDetail_PaymentTypeID ON [${flyway:defaultSchema}].[PaymentDetail] ([PaymentTypeID]);
+
+-- Index for foreign key PaymentProviderID in table PaymentDetail
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentDetail_PaymentProviderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentDetail]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentDetail_PaymentProviderID ON [${flyway:defaultSchema}].[PaymentDetail] ([PaymentProviderID]);
+
+-- Index for foreign key SourceCustomerPaymentMethodID in table PaymentDetail
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentDetail_SourceCustomerPaymentMethodID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentDetail]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentDetail_SourceCustomerPaymentMethodID ON [${flyway:defaultSchema}].[PaymentDetail] ([SourceCustomerPaymentMethodID]);
+
+-- Index for foreign key StoredValueAccountID in table PaymentDetail
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentDetail_StoredValueAccountID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentDetail]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentDetail_StoredValueAccountID ON [${flyway:defaultSchema}].[PaymentDetail] ([StoredValueAccountID]);
+
+-- Index for foreign key SourceOrderHeaderID in table PaymentDetail
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentDetail_SourceOrderHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentDetail]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentDetail_SourceOrderHeaderID ON [${flyway:defaultSchema}].[PaymentDetail] ([SourceOrderHeaderID]);
+
+/* Index for Foreign Keys for PaymentHeader */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key ReceivingCompanyID in table PaymentHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentHeader_ReceivingCompanyID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentHeader_ReceivingCompanyID ON [${flyway:defaultSchema}].[PaymentHeader] ([ReceivingCompanyID]);
+
+-- Index for foreign key BillToPersonID in table PaymentHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentHeader_BillToPersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentHeader_BillToPersonID ON [${flyway:defaultSchema}].[PaymentHeader] ([BillToPersonID]);
+
+-- Index for foreign key BillToOrganizationID in table PaymentHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentHeader_BillToOrganizationID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentHeader_BillToOrganizationID ON [${flyway:defaultSchema}].[PaymentHeader] ([BillToOrganizationID]);
+
+-- Index for foreign key PaymentTypeID in table PaymentHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentHeader_PaymentTypeID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentHeader_PaymentTypeID ON [${flyway:defaultSchema}].[PaymentHeader] ([PaymentTypeID]);
+
+-- Index for foreign key PaymentProviderID in table PaymentHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentHeader_PaymentProviderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentHeader_PaymentProviderID ON [${flyway:defaultSchema}].[PaymentHeader] ([PaymentProviderID]);
+
+-- Index for foreign key PaymentIntentID in table PaymentHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentHeader_PaymentIntentID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentHeader_PaymentIntentID ON [${flyway:defaultSchema}].[PaymentHeader] ([PaymentIntentID]);
+
+-- Index for foreign key PaymentDetailID in table PaymentHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentHeader_PaymentDetailID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentHeader_PaymentDetailID ON [${flyway:defaultSchema}].[PaymentHeader] ([PaymentDetailID]);
+
+-- Index for foreign key ReversesPaymentHeaderID in table PaymentHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentHeader_ReversesPaymentHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentHeader_ReversesPaymentHeaderID ON [${flyway:defaultSchema}].[PaymentHeader] ([ReversesPaymentHeaderID]);
+
+-- Index for foreign key JournalEntryID in table PaymentHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentHeader_JournalEntryID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentHeader_JournalEntryID ON [${flyway:defaultSchema}].[PaymentHeader] ([JournalEntryID]);
+
+/* Index for Foreign Keys for PaymentIntent */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Intents
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key PaymentProviderID in table PaymentIntent
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentIntent_PaymentProviderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentIntent]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentIntent_PaymentProviderID ON [${flyway:defaultSchema}].[PaymentIntent] ([PaymentProviderID]);
+
+-- Index for foreign key OrderHeaderID in table PaymentIntent
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentIntent_OrderHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentIntent]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentIntent_OrderHeaderID ON [${flyway:defaultSchema}].[PaymentIntent] ([OrderHeaderID]);
+
+-- Index for foreign key BillToPersonID in table PaymentIntent
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentIntent_BillToPersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentIntent]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentIntent_BillToPersonID ON [${flyway:defaultSchema}].[PaymentIntent] ([BillToPersonID]);
+
+-- Index for foreign key BillToOrganizationID in table PaymentIntent
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentIntent_BillToOrganizationID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentIntent]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentIntent_BillToOrganizationID ON [${flyway:defaultSchema}].[PaymentIntent] ([BillToOrganizationID]);
+
+/* Index for Foreign Keys for PaymentLine */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Lines
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key PaymentHeaderID in table PaymentLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentLine_PaymentHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentLine_PaymentHeaderID ON [${flyway:defaultSchema}].[PaymentLine] ([PaymentHeaderID]);
+
+-- Index for foreign key OrderHeaderID in table PaymentLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentLine_OrderHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentLine_OrderHeaderID ON [${flyway:defaultSchema}].[PaymentLine] ([OrderHeaderID]);
+
+-- Index for foreign key OrderLineID in table PaymentLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentLine_OrderLineID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentLine_OrderLineID ON [${flyway:defaultSchema}].[PaymentLine] ([OrderLineID]);
+
+-- Index for foreign key AllocatedByUserID in table PaymentLine
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_PaymentLine_AllocatedByUserID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentLine]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_PaymentLine_AllocatedByUserID ON [${flyway:defaultSchema}].[PaymentLine] ([AllocatedByUserID]);
+
+/* Base View SQL for MJ_BizApps_Orders: Payment Details */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Details
+-- Item: vwPaymentDetails
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Payment Details
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  PaymentDetail
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwPaymentDetails]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwPaymentDetails];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwPaymentDetails]
+AS
+SELECT
+    p.*,
+    MJCompany_CompanyID.[Name] AS [Company],
+    mjBizAppsOrdersPaymentType_PaymentTypeID.[Name] AS [PaymentType],
+    mjBizAppsOrdersPaymentProvider_PaymentProviderID.[Name] AS [PaymentProvider],
+    mjBizAppsOrdersCustomerPaymentMethod_SourceCustomerPaymentMethodID.[Nickname] AS [SourceCustomerPaymentMethod],
+    mjBizAppsOrdersStoredValueAccount_StoredValueAccountID.[Code] AS [StoredValueAccount],
+    mjBizAppsOrdersOrderHeader_SourceOrderHeaderID.[OrderNumber] AS [SourceOrderHeader]
+FROM
+    [${flyway:defaultSchema}].[PaymentDetail] AS p
+INNER JOIN
+    [${mjSchema}].[Company] AS MJCompany_CompanyID
+  ON
+    [p].[CompanyID] = MJCompany_CompanyID.[ID]
+INNER JOIN
+    [${flyway:defaultSchema}].[PaymentType] AS mjBizAppsOrdersPaymentType_PaymentTypeID
+  ON
+    [p].[PaymentTypeID] = mjBizAppsOrdersPaymentType_PaymentTypeID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentProvider] AS mjBizAppsOrdersPaymentProvider_PaymentProviderID
+  ON
+    [p].[PaymentProviderID] = mjBizAppsOrdersPaymentProvider_PaymentProviderID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[CustomerPaymentMethod] AS mjBizAppsOrdersCustomerPaymentMethod_SourceCustomerPaymentMethodID
+  ON
+    [p].[SourceCustomerPaymentMethodID] = mjBizAppsOrdersCustomerPaymentMethod_SourceCustomerPaymentMethodID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[StoredValueAccount] AS mjBizAppsOrdersStoredValueAccount_StoredValueAccountID
+  ON
+    [p].[StoredValueAccountID] = mjBizAppsOrdersStoredValueAccount_StoredValueAccountID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_SourceOrderHeaderID
+  ON
+    [p].[SourceOrderHeaderID] = mjBizAppsOrdersOrderHeader_SourceOrderHeaderID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPaymentDetails] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Payment Details */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Details
+-- Item: Permissions for vwPaymentDetails
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPaymentDetails] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Payment Details */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Details
+-- Item: spCreatePaymentDetail
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR PaymentDetail
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreatePaymentDetail]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreatePaymentDetail];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreatePaymentDetail]
+    @ID uniqueidentifier = NULL,
+    @CompanyID uniqueidentifier,
+    @PaymentTypeID uniqueidentifier,
+    @PaymentProviderID_Clear bit = 0,
+    @PaymentProviderID uniqueidentifier = NULL,
+    @SourceCustomerPaymentMethodID_Clear bit = 0,
+    @SourceCustomerPaymentMethodID uniqueidentifier = NULL,
+    @ProviderCustomerRef_Clear bit = 0,
+    @ProviderCustomerRef nvarchar(100) = NULL,
+    @ProviderInstrumentRef_Clear bit = 0,
+    @ProviderInstrumentRef nvarchar(100) = NULL,
+    @Brand_Clear bit = 0,
+    @Brand nvarchar(40) = NULL,
+    @Last4_Clear bit = 0,
+    @Last4 char(4) = NULL,
+    @ExpiryMonth_Clear bit = 0,
+    @ExpiryMonth int = NULL,
+    @ExpiryYear_Clear bit = 0,
+    @ExpiryYear int = NULL,
+    @HolderName_Clear bit = 0,
+    @HolderName nvarchar(200) = NULL,
+    @BankName_Clear bit = 0,
+    @BankName nvarchar(200) = NULL,
+    @RoutingLast4_Clear bit = 0,
+    @RoutingLast4 char(4) = NULL,
+    @AccountLast4_Clear bit = 0,
+    @AccountLast4 char(4) = NULL,
+    @BankAccountType_Clear bit = 0,
+    @BankAccountType nvarchar(20) = NULL,
+    @ReferenceNumber_Clear bit = 0,
+    @ReferenceNumber nvarchar(100) = NULL,
+    @InstrumentDate_Clear bit = 0,
+    @InstrumentDate date = NULL,
+    @StoredValueAccountID_Clear bit = 0,
+    @StoredValueAccountID uniqueidentifier = NULL,
+    @SourceOrderHeaderID_Clear bit = 0,
+    @SourceOrderHeaderID uniqueidentifier = NULL,
+    @Notes_Clear bit = 0,
+    @Notes nvarchar(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[PaymentDetail]
+            (
+                [ID],
+                [CompanyID],
+                [PaymentTypeID],
+                [PaymentProviderID],
+                [SourceCustomerPaymentMethodID],
+                [ProviderCustomerRef],
+                [ProviderInstrumentRef],
+                [Brand],
+                [Last4],
+                [ExpiryMonth],
+                [ExpiryYear],
+                [HolderName],
+                [BankName],
+                [RoutingLast4],
+                [AccountLast4],
+                [BankAccountType],
+                [ReferenceNumber],
+                [InstrumentDate],
+                [StoredValueAccountID],
+                [SourceOrderHeaderID],
+                [Notes]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @CompanyID,
+                @PaymentTypeID,
+                CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, NULL) END,
+                CASE WHEN @SourceCustomerPaymentMethodID_Clear = 1 THEN NULL ELSE ISNULL(@SourceCustomerPaymentMethodID, NULL) END,
+                CASE WHEN @ProviderCustomerRef_Clear = 1 THEN NULL ELSE ISNULL(@ProviderCustomerRef, NULL) END,
+                CASE WHEN @ProviderInstrumentRef_Clear = 1 THEN NULL ELSE ISNULL(@ProviderInstrumentRef, NULL) END,
+                CASE WHEN @Brand_Clear = 1 THEN NULL ELSE ISNULL(@Brand, NULL) END,
+                CASE WHEN @Last4_Clear = 1 THEN NULL ELSE ISNULL(@Last4, NULL) END,
+                CASE WHEN @ExpiryMonth_Clear = 1 THEN NULL ELSE ISNULL(@ExpiryMonth, NULL) END,
+                CASE WHEN @ExpiryYear_Clear = 1 THEN NULL ELSE ISNULL(@ExpiryYear, NULL) END,
+                CASE WHEN @HolderName_Clear = 1 THEN NULL ELSE ISNULL(@HolderName, NULL) END,
+                CASE WHEN @BankName_Clear = 1 THEN NULL ELSE ISNULL(@BankName, NULL) END,
+                CASE WHEN @RoutingLast4_Clear = 1 THEN NULL ELSE ISNULL(@RoutingLast4, NULL) END,
+                CASE WHEN @AccountLast4_Clear = 1 THEN NULL ELSE ISNULL(@AccountLast4, NULL) END,
+                CASE WHEN @BankAccountType_Clear = 1 THEN NULL ELSE ISNULL(@BankAccountType, NULL) END,
+                CASE WHEN @ReferenceNumber_Clear = 1 THEN NULL ELSE ISNULL(@ReferenceNumber, NULL) END,
+                CASE WHEN @InstrumentDate_Clear = 1 THEN NULL ELSE ISNULL(@InstrumentDate, NULL) END,
+                CASE WHEN @StoredValueAccountID_Clear = 1 THEN NULL ELSE ISNULL(@StoredValueAccountID, NULL) END,
+                CASE WHEN @SourceOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@SourceOrderHeaderID, NULL) END,
+                CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[PaymentDetail]
+            (
+                [CompanyID],
+                [PaymentTypeID],
+                [PaymentProviderID],
+                [SourceCustomerPaymentMethodID],
+                [ProviderCustomerRef],
+                [ProviderInstrumentRef],
+                [Brand],
+                [Last4],
+                [ExpiryMonth],
+                [ExpiryYear],
+                [HolderName],
+                [BankName],
+                [RoutingLast4],
+                [AccountLast4],
+                [BankAccountType],
+                [ReferenceNumber],
+                [InstrumentDate],
+                [StoredValueAccountID],
+                [SourceOrderHeaderID],
+                [Notes]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @CompanyID,
+                @PaymentTypeID,
+                CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, NULL) END,
+                CASE WHEN @SourceCustomerPaymentMethodID_Clear = 1 THEN NULL ELSE ISNULL(@SourceCustomerPaymentMethodID, NULL) END,
+                CASE WHEN @ProviderCustomerRef_Clear = 1 THEN NULL ELSE ISNULL(@ProviderCustomerRef, NULL) END,
+                CASE WHEN @ProviderInstrumentRef_Clear = 1 THEN NULL ELSE ISNULL(@ProviderInstrumentRef, NULL) END,
+                CASE WHEN @Brand_Clear = 1 THEN NULL ELSE ISNULL(@Brand, NULL) END,
+                CASE WHEN @Last4_Clear = 1 THEN NULL ELSE ISNULL(@Last4, NULL) END,
+                CASE WHEN @ExpiryMonth_Clear = 1 THEN NULL ELSE ISNULL(@ExpiryMonth, NULL) END,
+                CASE WHEN @ExpiryYear_Clear = 1 THEN NULL ELSE ISNULL(@ExpiryYear, NULL) END,
+                CASE WHEN @HolderName_Clear = 1 THEN NULL ELSE ISNULL(@HolderName, NULL) END,
+                CASE WHEN @BankName_Clear = 1 THEN NULL ELSE ISNULL(@BankName, NULL) END,
+                CASE WHEN @RoutingLast4_Clear = 1 THEN NULL ELSE ISNULL(@RoutingLast4, NULL) END,
+                CASE WHEN @AccountLast4_Clear = 1 THEN NULL ELSE ISNULL(@AccountLast4, NULL) END,
+                CASE WHEN @BankAccountType_Clear = 1 THEN NULL ELSE ISNULL(@BankAccountType, NULL) END,
+                CASE WHEN @ReferenceNumber_Clear = 1 THEN NULL ELSE ISNULL(@ReferenceNumber, NULL) END,
+                CASE WHEN @InstrumentDate_Clear = 1 THEN NULL ELSE ISNULL(@InstrumentDate, NULL) END,
+                CASE WHEN @StoredValueAccountID_Clear = 1 THEN NULL ELSE ISNULL(@StoredValueAccountID, NULL) END,
+                CASE WHEN @SourceOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@SourceOrderHeaderID, NULL) END,
+                CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwPaymentDetails] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePaymentDetail] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Payment Details */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePaymentDetail] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Payment Details */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Details
+-- Item: spUpdatePaymentDetail
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR PaymentDetail
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdatePaymentDetail]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdatePaymentDetail];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdatePaymentDetail]
+    @ID uniqueidentifier,
+    @CompanyID uniqueidentifier = NULL,
+    @PaymentTypeID uniqueidentifier = NULL,
+    @PaymentProviderID_Clear bit = 0,
+    @PaymentProviderID uniqueidentifier = NULL,
+    @SourceCustomerPaymentMethodID_Clear bit = 0,
+    @SourceCustomerPaymentMethodID uniqueidentifier = NULL,
+    @ProviderCustomerRef_Clear bit = 0,
+    @ProviderCustomerRef nvarchar(100) = NULL,
+    @ProviderInstrumentRef_Clear bit = 0,
+    @ProviderInstrumentRef nvarchar(100) = NULL,
+    @Brand_Clear bit = 0,
+    @Brand nvarchar(40) = NULL,
+    @Last4_Clear bit = 0,
+    @Last4 char(4) = NULL,
+    @ExpiryMonth_Clear bit = 0,
+    @ExpiryMonth int = NULL,
+    @ExpiryYear_Clear bit = 0,
+    @ExpiryYear int = NULL,
+    @HolderName_Clear bit = 0,
+    @HolderName nvarchar(200) = NULL,
+    @BankName_Clear bit = 0,
+    @BankName nvarchar(200) = NULL,
+    @RoutingLast4_Clear bit = 0,
+    @RoutingLast4 char(4) = NULL,
+    @AccountLast4_Clear bit = 0,
+    @AccountLast4 char(4) = NULL,
+    @BankAccountType_Clear bit = 0,
+    @BankAccountType nvarchar(20) = NULL,
+    @ReferenceNumber_Clear bit = 0,
+    @ReferenceNumber nvarchar(100) = NULL,
+    @InstrumentDate_Clear bit = 0,
+    @InstrumentDate date = NULL,
+    @StoredValueAccountID_Clear bit = 0,
+    @StoredValueAccountID uniqueidentifier = NULL,
+    @SourceOrderHeaderID_Clear bit = 0,
+    @SourceOrderHeaderID uniqueidentifier = NULL,
+    @Notes_Clear bit = 0,
+    @Notes nvarchar(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PaymentDetail]
+    SET
+        [CompanyID] = ISNULL(@CompanyID, [CompanyID]),
+        [PaymentTypeID] = ISNULL(@PaymentTypeID, [PaymentTypeID]),
+        [PaymentProviderID] = CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, [PaymentProviderID]) END,
+        [SourceCustomerPaymentMethodID] = CASE WHEN @SourceCustomerPaymentMethodID_Clear = 1 THEN NULL ELSE ISNULL(@SourceCustomerPaymentMethodID, [SourceCustomerPaymentMethodID]) END,
+        [ProviderCustomerRef] = CASE WHEN @ProviderCustomerRef_Clear = 1 THEN NULL ELSE ISNULL(@ProviderCustomerRef, [ProviderCustomerRef]) END,
+        [ProviderInstrumentRef] = CASE WHEN @ProviderInstrumentRef_Clear = 1 THEN NULL ELSE ISNULL(@ProviderInstrumentRef, [ProviderInstrumentRef]) END,
+        [Brand] = CASE WHEN @Brand_Clear = 1 THEN NULL ELSE ISNULL(@Brand, [Brand]) END,
+        [Last4] = CASE WHEN @Last4_Clear = 1 THEN NULL ELSE ISNULL(@Last4, [Last4]) END,
+        [ExpiryMonth] = CASE WHEN @ExpiryMonth_Clear = 1 THEN NULL ELSE ISNULL(@ExpiryMonth, [ExpiryMonth]) END,
+        [ExpiryYear] = CASE WHEN @ExpiryYear_Clear = 1 THEN NULL ELSE ISNULL(@ExpiryYear, [ExpiryYear]) END,
+        [HolderName] = CASE WHEN @HolderName_Clear = 1 THEN NULL ELSE ISNULL(@HolderName, [HolderName]) END,
+        [BankName] = CASE WHEN @BankName_Clear = 1 THEN NULL ELSE ISNULL(@BankName, [BankName]) END,
+        [RoutingLast4] = CASE WHEN @RoutingLast4_Clear = 1 THEN NULL ELSE ISNULL(@RoutingLast4, [RoutingLast4]) END,
+        [AccountLast4] = CASE WHEN @AccountLast4_Clear = 1 THEN NULL ELSE ISNULL(@AccountLast4, [AccountLast4]) END,
+        [BankAccountType] = CASE WHEN @BankAccountType_Clear = 1 THEN NULL ELSE ISNULL(@BankAccountType, [BankAccountType]) END,
+        [ReferenceNumber] = CASE WHEN @ReferenceNumber_Clear = 1 THEN NULL ELSE ISNULL(@ReferenceNumber, [ReferenceNumber]) END,
+        [InstrumentDate] = CASE WHEN @InstrumentDate_Clear = 1 THEN NULL ELSE ISNULL(@InstrumentDate, [InstrumentDate]) END,
+        [StoredValueAccountID] = CASE WHEN @StoredValueAccountID_Clear = 1 THEN NULL ELSE ISNULL(@StoredValueAccountID, [StoredValueAccountID]) END,
+        [SourceOrderHeaderID] = CASE WHEN @SourceOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@SourceOrderHeaderID, [SourceOrderHeaderID]) END,
+        [Notes] = CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, [Notes]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwPaymentDetails] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwPaymentDetails]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePaymentDetail] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the PaymentDetail table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdatePaymentDetail]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdatePaymentDetail];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdatePaymentDetail
+ON [${flyway:defaultSchema}].[PaymentDetail]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PaymentDetail]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[PaymentDetail] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Payment Details */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePaymentDetail] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Payment Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: vwPaymentHeaders
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Payment Headers
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  PaymentHeader
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwPaymentHeaders]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwPaymentHeaders];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwPaymentHeaders]
+AS
+SELECT
+    p.*,
+    MJCompany_ReceivingCompanyID.[Name] AS [ReceivingCompany],
+    mjBizAppsCommonPerson_BillToPersonID.[DisplayName] AS [BillToPerson],
+    mjBizAppsCommonOrganization_BillToOrganizationID.[Name] AS [BillToOrganization],
+    mjBizAppsOrdersPaymentType_PaymentTypeID.[Name] AS [PaymentType],
+    mjBizAppsOrdersPaymentProvider_PaymentProviderID.[Name] AS [PaymentProvider],
+    mjBizAppsOrdersPaymentIntent_PaymentIntentID.[ProviderIntentID] AS [PaymentIntent],
+    mjBizAppsOrdersPaymentDetail_PaymentDetailID.[Last4] AS [PaymentDetail],
+    mjBizAppsOrdersPaymentHeader_ReversesPaymentHeaderID.[PaymentNumber] AS [ReversesPaymentHeader],
+    mjBizAppsAccountingJournalEntry_JournalEntryID.[EntryNumber] AS [JournalEntry]
+FROM
+    [${flyway:defaultSchema}].[PaymentHeader] AS p
+INNER JOIN
+    [${mjSchema}].[Company] AS MJCompany_ReceivingCompanyID
+  ON
+    [p].[ReceivingCompanyID] = MJCompany_ReceivingCompanyID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_BillToPersonID
+  ON
+    [p].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Organization] AS mjBizAppsCommonOrganization_BillToOrganizationID
+  ON
+    [p].[BillToOrganizationID] = mjBizAppsCommonOrganization_BillToOrganizationID.[ID]
+INNER JOIN
+    [${flyway:defaultSchema}].[PaymentType] AS mjBizAppsOrdersPaymentType_PaymentTypeID
+  ON
+    [p].[PaymentTypeID] = mjBizAppsOrdersPaymentType_PaymentTypeID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentProvider] AS mjBizAppsOrdersPaymentProvider_PaymentProviderID
+  ON
+    [p].[PaymentProviderID] = mjBizAppsOrdersPaymentProvider_PaymentProviderID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentIntent] AS mjBizAppsOrdersPaymentIntent_PaymentIntentID
+  ON
+    [p].[PaymentIntentID] = mjBizAppsOrdersPaymentIntent_PaymentIntentID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentDetail] AS mjBizAppsOrdersPaymentDetail_PaymentDetailID
+  ON
+    [p].[PaymentDetailID] = mjBizAppsOrdersPaymentDetail_PaymentDetailID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentHeader] AS mjBizAppsOrdersPaymentHeader_ReversesPaymentHeaderID
+  ON
+    [p].[ReversesPaymentHeaderID] = mjBizAppsOrdersPaymentHeader_ReversesPaymentHeaderID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsAccounting].[JournalEntry] AS mjBizAppsAccountingJournalEntry_JournalEntryID
+  ON
+    [p].[JournalEntryID] = mjBizAppsAccountingJournalEntry_JournalEntryID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPaymentHeaders] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Payment Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: Permissions for vwPaymentHeaders
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPaymentHeaders] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Payment Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: spCreatePaymentHeader
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR PaymentHeader
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreatePaymentHeader]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreatePaymentHeader];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreatePaymentHeader]
+    @ID uniqueidentifier = NULL,
+    @PaymentNumber nvarchar(40),
+    @ReceivingCompanyID uniqueidentifier,
+    @BillToPersonID_Clear bit = 0,
+    @BillToPersonID uniqueidentifier = NULL,
+    @BillToOrganizationID_Clear bit = 0,
+    @BillToOrganizationID uniqueidentifier = NULL,
+    @PaymentDate date,
+    @PaymentTypeID uniqueidentifier,
+    @Amount decimal(18, 2),
+    @ProcessingFeeAmount decimal(18, 2) = NULL,
+    @NetAmount_Clear bit = 0,
+    @NetAmount decimal(18, 2) = NULL,
+    @PaymentProviderID_Clear bit = 0,
+    @PaymentProviderID uniqueidentifier = NULL,
+    @PaymentIntentID_Clear bit = 0,
+    @PaymentIntentID uniqueidentifier = NULL,
+    @PaymentDetailID_Clear bit = 0,
+    @PaymentDetailID uniqueidentifier = NULL,
+    @ProviderChargeID_Clear bit = 0,
+    @ProviderChargeID nvarchar(100) = NULL,
+    @ProviderRefundID_Clear bit = 0,
+    @ProviderRefundID nvarchar(100) = NULL,
+    @ReversesPaymentHeaderID_Clear bit = 0,
+    @ReversesPaymentHeaderID uniqueidentifier = NULL,
+    @ReversalReason_Clear bit = 0,
+    @ReversalReason nvarchar(MAX) = NULL,
+    @Status nvarchar(20) = NULL,
+    @JournalEntryID_Clear bit = 0,
+    @JournalEntryID uniqueidentifier = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(MAX) = NULL,
+    @Notes_Clear bit = 0,
+    @Notes nvarchar(MAX) = NULL,
+    @IdempotencyKey_Clear bit = 0,
+    @IdempotencyKey nvarchar(200) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[PaymentHeader]
+            (
+                [ID],
+                [PaymentNumber],
+                [ReceivingCompanyID],
+                [BillToPersonID],
+                [BillToOrganizationID],
+                [PaymentDate],
+                [PaymentTypeID],
+                [Amount],
+                [ProcessingFeeAmount],
+                [NetAmount],
+                [PaymentProviderID],
+                [PaymentIntentID],
+                [PaymentDetailID],
+                [ProviderChargeID],
+                [ProviderRefundID],
+                [ReversesPaymentHeaderID],
+                [ReversalReason],
+                [Status],
+                [JournalEntryID],
+                [Description],
+                [Notes],
+                [IdempotencyKey]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @PaymentNumber,
+                @ReceivingCompanyID,
+                CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, NULL) END,
+                CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, NULL) END,
+                @PaymentDate,
+                @PaymentTypeID,
+                @Amount,
+                ISNULL(@ProcessingFeeAmount, 0),
+                CASE WHEN @NetAmount_Clear = 1 THEN NULL ELSE ISNULL(@NetAmount, NULL) END,
+                CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, NULL) END,
+                CASE WHEN @PaymentIntentID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentIntentID, NULL) END,
+                CASE WHEN @PaymentDetailID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentDetailID, NULL) END,
+                CASE WHEN @ProviderChargeID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderChargeID, NULL) END,
+                CASE WHEN @ProviderRefundID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderRefundID, NULL) END,
+                CASE WHEN @ReversesPaymentHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesPaymentHeaderID, NULL) END,
+                CASE WHEN @ReversalReason_Clear = 1 THEN NULL ELSE ISNULL(@ReversalReason, NULL) END,
+                ISNULL(@Status, 'Pending'),
+                CASE WHEN @JournalEntryID_Clear = 1 THEN NULL ELSE ISNULL(@JournalEntryID, NULL) END,
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, NULL) END,
+                CASE WHEN @IdempotencyKey_Clear = 1 THEN NULL ELSE ISNULL(@IdempotencyKey, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[PaymentHeader]
+            (
+                [PaymentNumber],
+                [ReceivingCompanyID],
+                [BillToPersonID],
+                [BillToOrganizationID],
+                [PaymentDate],
+                [PaymentTypeID],
+                [Amount],
+                [ProcessingFeeAmount],
+                [NetAmount],
+                [PaymentProviderID],
+                [PaymentIntentID],
+                [PaymentDetailID],
+                [ProviderChargeID],
+                [ProviderRefundID],
+                [ReversesPaymentHeaderID],
+                [ReversalReason],
+                [Status],
+                [JournalEntryID],
+                [Description],
+                [Notes],
+                [IdempotencyKey]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @PaymentNumber,
+                @ReceivingCompanyID,
+                CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, NULL) END,
+                CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, NULL) END,
+                @PaymentDate,
+                @PaymentTypeID,
+                @Amount,
+                ISNULL(@ProcessingFeeAmount, 0),
+                CASE WHEN @NetAmount_Clear = 1 THEN NULL ELSE ISNULL(@NetAmount, NULL) END,
+                CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, NULL) END,
+                CASE WHEN @PaymentIntentID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentIntentID, NULL) END,
+                CASE WHEN @PaymentDetailID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentDetailID, NULL) END,
+                CASE WHEN @ProviderChargeID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderChargeID, NULL) END,
+                CASE WHEN @ProviderRefundID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderRefundID, NULL) END,
+                CASE WHEN @ReversesPaymentHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesPaymentHeaderID, NULL) END,
+                CASE WHEN @ReversalReason_Clear = 1 THEN NULL ELSE ISNULL(@ReversalReason, NULL) END,
+                ISNULL(@Status, 'Pending'),
+                CASE WHEN @JournalEntryID_Clear = 1 THEN NULL ELSE ISNULL(@JournalEntryID, NULL) END,
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, NULL) END,
+                CASE WHEN @IdempotencyKey_Clear = 1 THEN NULL ELSE ISNULL(@IdempotencyKey, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwPaymentHeaders] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePaymentHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Payment Headers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePaymentHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Payment Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: spUpdatePaymentHeader
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR PaymentHeader
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdatePaymentHeader]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdatePaymentHeader];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdatePaymentHeader]
+    @ID uniqueidentifier,
+    @PaymentNumber nvarchar(40) = NULL,
+    @ReceivingCompanyID uniqueidentifier = NULL,
+    @BillToPersonID_Clear bit = 0,
+    @BillToPersonID uniqueidentifier = NULL,
+    @BillToOrganizationID_Clear bit = 0,
+    @BillToOrganizationID uniqueidentifier = NULL,
+    @PaymentDate date = NULL,
+    @PaymentTypeID uniqueidentifier = NULL,
+    @Amount decimal(18, 2) = NULL,
+    @ProcessingFeeAmount decimal(18, 2) = NULL,
+    @NetAmount_Clear bit = 0,
+    @NetAmount decimal(18, 2) = NULL,
+    @PaymentProviderID_Clear bit = 0,
+    @PaymentProviderID uniqueidentifier = NULL,
+    @PaymentIntentID_Clear bit = 0,
+    @PaymentIntentID uniqueidentifier = NULL,
+    @PaymentDetailID_Clear bit = 0,
+    @PaymentDetailID uniqueidentifier = NULL,
+    @ProviderChargeID_Clear bit = 0,
+    @ProviderChargeID nvarchar(100) = NULL,
+    @ProviderRefundID_Clear bit = 0,
+    @ProviderRefundID nvarchar(100) = NULL,
+    @ReversesPaymentHeaderID_Clear bit = 0,
+    @ReversesPaymentHeaderID uniqueidentifier = NULL,
+    @ReversalReason_Clear bit = 0,
+    @ReversalReason nvarchar(MAX) = NULL,
+    @Status nvarchar(20) = NULL,
+    @JournalEntryID_Clear bit = 0,
+    @JournalEntryID uniqueidentifier = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(MAX) = NULL,
+    @Notes_Clear bit = 0,
+    @Notes nvarchar(MAX) = NULL,
+    @IdempotencyKey_Clear bit = 0,
+    @IdempotencyKey nvarchar(200) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PaymentHeader]
+    SET
+        [PaymentNumber] = ISNULL(@PaymentNumber, [PaymentNumber]),
+        [ReceivingCompanyID] = ISNULL(@ReceivingCompanyID, [ReceivingCompanyID]),
+        [BillToPersonID] = CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, [BillToPersonID]) END,
+        [BillToOrganizationID] = CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, [BillToOrganizationID]) END,
+        [PaymentDate] = ISNULL(@PaymentDate, [PaymentDate]),
+        [PaymentTypeID] = ISNULL(@PaymentTypeID, [PaymentTypeID]),
+        [Amount] = ISNULL(@Amount, [Amount]),
+        [ProcessingFeeAmount] = ISNULL(@ProcessingFeeAmount, [ProcessingFeeAmount]),
+        [NetAmount] = CASE WHEN @NetAmount_Clear = 1 THEN NULL ELSE ISNULL(@NetAmount, [NetAmount]) END,
+        [PaymentProviderID] = CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, [PaymentProviderID]) END,
+        [PaymentIntentID] = CASE WHEN @PaymentIntentID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentIntentID, [PaymentIntentID]) END,
+        [PaymentDetailID] = CASE WHEN @PaymentDetailID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentDetailID, [PaymentDetailID]) END,
+        [ProviderChargeID] = CASE WHEN @ProviderChargeID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderChargeID, [ProviderChargeID]) END,
+        [ProviderRefundID] = CASE WHEN @ProviderRefundID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderRefundID, [ProviderRefundID]) END,
+        [ReversesPaymentHeaderID] = CASE WHEN @ReversesPaymentHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesPaymentHeaderID, [ReversesPaymentHeaderID]) END,
+        [ReversalReason] = CASE WHEN @ReversalReason_Clear = 1 THEN NULL ELSE ISNULL(@ReversalReason, [ReversalReason]) END,
+        [Status] = ISNULL(@Status, [Status]),
+        [JournalEntryID] = CASE WHEN @JournalEntryID_Clear = 1 THEN NULL ELSE ISNULL(@JournalEntryID, [JournalEntryID]) END,
+        [Description] = CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, [Description]) END,
+        [Notes] = CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, [Notes]) END,
+        [IdempotencyKey] = CASE WHEN @IdempotencyKey_Clear = 1 THEN NULL ELSE ISNULL(@IdempotencyKey, [IdempotencyKey]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwPaymentHeaders] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwPaymentHeaders]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePaymentHeader] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the PaymentHeader table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdatePaymentHeader]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdatePaymentHeader];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdatePaymentHeader
+ON [${flyway:defaultSchema}].[PaymentHeader]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PaymentHeader]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[PaymentHeader] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Payment Headers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePaymentHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Payment Intents */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Intents
+-- Item: vwPaymentIntents
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Payment Intents
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  PaymentIntent
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwPaymentIntents]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwPaymentIntents];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwPaymentIntents]
+AS
+SELECT
+    p.*,
+    mjBizAppsOrdersPaymentProvider_PaymentProviderID.[Name] AS [PaymentProvider],
+    mjBizAppsOrdersOrderHeader_OrderHeaderID.[OrderNumber] AS [OrderHeader],
+    mjBizAppsCommonPerson_BillToPersonID.[DisplayName] AS [BillToPerson],
+    mjBizAppsCommonOrganization_BillToOrganizationID.[Name] AS [BillToOrganization]
+FROM
+    [${flyway:defaultSchema}].[PaymentIntent] AS p
+INNER JOIN
+    [${flyway:defaultSchema}].[PaymentProvider] AS mjBizAppsOrdersPaymentProvider_PaymentProviderID
+  ON
+    [p].[PaymentProviderID] = mjBizAppsOrdersPaymentProvider_PaymentProviderID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_OrderHeaderID
+  ON
+    [p].[OrderHeaderID] = mjBizAppsOrdersOrderHeader_OrderHeaderID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_BillToPersonID
+  ON
+    [p].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Organization] AS mjBizAppsCommonOrganization_BillToOrganizationID
+  ON
+    [p].[BillToOrganizationID] = mjBizAppsCommonOrganization_BillToOrganizationID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPaymentIntents] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Payment Intents */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Intents
+-- Item: Permissions for vwPaymentIntents
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPaymentIntents] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Payment Intents */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Intents
+-- Item: spCreatePaymentIntent
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR PaymentIntent
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreatePaymentIntent]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreatePaymentIntent];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreatePaymentIntent]
+    @ID uniqueidentifier = NULL,
+    @PaymentProviderID uniqueidentifier,
+    @ProviderIntentID nvarchar(100),
+    @Status nvarchar(30),
+    @Amount decimal(18, 2),
+    @OrderHeaderID_Clear bit = 0,
+    @OrderHeaderID uniqueidentifier = NULL,
+    @BillToPersonID_Clear bit = 0,
+    @BillToPersonID uniqueidentifier = NULL,
+    @BillToOrganizationID_Clear bit = 0,
+    @BillToOrganizationID uniqueidentifier = NULL,
+    @ProviderEventID_Clear bit = 0,
+    @ProviderEventID nvarchar(100) = NULL,
+    @LastEventAt_Clear bit = 0,
+    @LastEventAt datetimeoffset = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[PaymentIntent]
+            (
+                [ID],
+                [PaymentProviderID],
+                [ProviderIntentID],
+                [Status],
+                [Amount],
+                [OrderHeaderID],
+                [BillToPersonID],
+                [BillToOrganizationID],
+                [ProviderEventID],
+                [LastEventAt]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @PaymentProviderID,
+                @ProviderIntentID,
+                @Status,
+                @Amount,
+                CASE WHEN @OrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@OrderHeaderID, NULL) END,
+                CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, NULL) END,
+                CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, NULL) END,
+                CASE WHEN @ProviderEventID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderEventID, NULL) END,
+                CASE WHEN @LastEventAt_Clear = 1 THEN NULL ELSE ISNULL(@LastEventAt, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[PaymentIntent]
+            (
+                [PaymentProviderID],
+                [ProviderIntentID],
+                [Status],
+                [Amount],
+                [OrderHeaderID],
+                [BillToPersonID],
+                [BillToOrganizationID],
+                [ProviderEventID],
+                [LastEventAt]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @PaymentProviderID,
+                @ProviderIntentID,
+                @Status,
+                @Amount,
+                CASE WHEN @OrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@OrderHeaderID, NULL) END,
+                CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, NULL) END,
+                CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, NULL) END,
+                CASE WHEN @ProviderEventID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderEventID, NULL) END,
+                CASE WHEN @LastEventAt_Clear = 1 THEN NULL ELSE ISNULL(@LastEventAt, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwPaymentIntents] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePaymentIntent] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Payment Intents */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePaymentIntent] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Payment Intents */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Intents
+-- Item: spUpdatePaymentIntent
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR PaymentIntent
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdatePaymentIntent]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdatePaymentIntent];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdatePaymentIntent]
+    @ID uniqueidentifier,
+    @PaymentProviderID uniqueidentifier = NULL,
+    @ProviderIntentID nvarchar(100) = NULL,
+    @Status nvarchar(30) = NULL,
+    @Amount decimal(18, 2) = NULL,
+    @OrderHeaderID_Clear bit = 0,
+    @OrderHeaderID uniqueidentifier = NULL,
+    @BillToPersonID_Clear bit = 0,
+    @BillToPersonID uniqueidentifier = NULL,
+    @BillToOrganizationID_Clear bit = 0,
+    @BillToOrganizationID uniqueidentifier = NULL,
+    @ProviderEventID_Clear bit = 0,
+    @ProviderEventID nvarchar(100) = NULL,
+    @LastEventAt_Clear bit = 0,
+    @LastEventAt datetimeoffset = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PaymentIntent]
+    SET
+        [PaymentProviderID] = ISNULL(@PaymentProviderID, [PaymentProviderID]),
+        [ProviderIntentID] = ISNULL(@ProviderIntentID, [ProviderIntentID]),
+        [Status] = ISNULL(@Status, [Status]),
+        [Amount] = ISNULL(@Amount, [Amount]),
+        [OrderHeaderID] = CASE WHEN @OrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@OrderHeaderID, [OrderHeaderID]) END,
+        [BillToPersonID] = CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, [BillToPersonID]) END,
+        [BillToOrganizationID] = CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, [BillToOrganizationID]) END,
+        [ProviderEventID] = CASE WHEN @ProviderEventID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderEventID, [ProviderEventID]) END,
+        [LastEventAt] = CASE WHEN @LastEventAt_Clear = 1 THEN NULL ELSE ISNULL(@LastEventAt, [LastEventAt]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwPaymentIntents] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwPaymentIntents]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePaymentIntent] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the PaymentIntent table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdatePaymentIntent]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdatePaymentIntent];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdatePaymentIntent
+ON [${flyway:defaultSchema}].[PaymentIntent]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PaymentIntent]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[PaymentIntent] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Payment Intents */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePaymentIntent] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Payment Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Lines
+-- Item: vwPaymentLines
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Payment Lines
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  PaymentLine
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwPaymentLines]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwPaymentLines];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwPaymentLines]
+AS
+SELECT
+    p.*,
+    mjBizAppsOrdersPaymentHeader_PaymentHeaderID.[PaymentNumber] AS [PaymentHeader],
+    mjBizAppsOrdersOrderHeader_OrderHeaderID.[OrderNumber] AS [OrderHeader],
+    MJUser_AllocatedByUserID.[Name] AS [AllocatedByUser]
+FROM
+    [${flyway:defaultSchema}].[PaymentLine] AS p
+INNER JOIN
+    [${flyway:defaultSchema}].[PaymentHeader] AS mjBizAppsOrdersPaymentHeader_PaymentHeaderID
+  ON
+    [p].[PaymentHeaderID] = mjBizAppsOrdersPaymentHeader_PaymentHeaderID.[ID]
+INNER JOIN
+    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_OrderHeaderID
+  ON
+    [p].[OrderHeaderID] = mjBizAppsOrdersOrderHeader_OrderHeaderID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}].[User] AS MJUser_AllocatedByUserID
+  ON
+    [p].[AllocatedByUserID] = MJUser_AllocatedByUserID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPaymentLines] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Payment Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Lines
+-- Item: Permissions for vwPaymentLines
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPaymentLines] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Payment Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Lines
+-- Item: spCreatePaymentLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR PaymentLine
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreatePaymentLine]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreatePaymentLine];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreatePaymentLine]
+    @ID uniqueidentifier = NULL,
+    @PaymentHeaderID uniqueidentifier,
+    @OrderHeaderID uniqueidentifier,
+    @OrderLineID_Clear bit = 0,
+    @OrderLineID uniqueidentifier = NULL,
+    @Amount decimal(18, 2),
+    @AllocatedAt datetimeoffset,
+    @AllocatedByUserID_Clear bit = 0,
+    @AllocatedByUserID uniqueidentifier = NULL,
+    @BookedAt_Clear bit = 0,
+    @BookedAt datetimeoffset = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[PaymentLine]
+            (
+                [ID],
+                [PaymentHeaderID],
+                [OrderHeaderID],
+                [OrderLineID],
+                [Amount],
+                [AllocatedAt],
+                [AllocatedByUserID],
+                [BookedAt]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @PaymentHeaderID,
+                @OrderHeaderID,
+                CASE WHEN @OrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@OrderLineID, NULL) END,
+                @Amount,
+                @AllocatedAt,
+                CASE WHEN @AllocatedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@AllocatedByUserID, NULL) END,
+                CASE WHEN @BookedAt_Clear = 1 THEN NULL ELSE ISNULL(@BookedAt, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[PaymentLine]
+            (
+                [PaymentHeaderID],
+                [OrderHeaderID],
+                [OrderLineID],
+                [Amount],
+                [AllocatedAt],
+                [AllocatedByUserID],
+                [BookedAt]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @PaymentHeaderID,
+                @OrderHeaderID,
+                CASE WHEN @OrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@OrderLineID, NULL) END,
+                @Amount,
+                @AllocatedAt,
+                CASE WHEN @AllocatedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@AllocatedByUserID, NULL) END,
+                CASE WHEN @BookedAt_Clear = 1 THEN NULL ELSE ISNULL(@BookedAt, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwPaymentLines] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePaymentLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Payment Lines */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePaymentLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Payment Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Lines
+-- Item: spUpdatePaymentLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR PaymentLine
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdatePaymentLine]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdatePaymentLine];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdatePaymentLine]
+    @ID uniqueidentifier,
+    @PaymentHeaderID uniqueidentifier = NULL,
+    @OrderHeaderID uniqueidentifier = NULL,
+    @OrderLineID_Clear bit = 0,
+    @OrderLineID uniqueidentifier = NULL,
+    @Amount decimal(18, 2) = NULL,
+    @AllocatedAt datetimeoffset = NULL,
+    @AllocatedByUserID_Clear bit = 0,
+    @AllocatedByUserID uniqueidentifier = NULL,
+    @BookedAt_Clear bit = 0,
+    @BookedAt datetimeoffset = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PaymentLine]
+    SET
+        [PaymentHeaderID] = ISNULL(@PaymentHeaderID, [PaymentHeaderID]),
+        [OrderHeaderID] = ISNULL(@OrderHeaderID, [OrderHeaderID]),
+        [OrderLineID] = CASE WHEN @OrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@OrderLineID, [OrderLineID]) END,
+        [Amount] = ISNULL(@Amount, [Amount]),
+        [AllocatedAt] = ISNULL(@AllocatedAt, [AllocatedAt]),
+        [AllocatedByUserID] = CASE WHEN @AllocatedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@AllocatedByUserID, [AllocatedByUserID]) END,
+        [BookedAt] = CASE WHEN @BookedAt_Clear = 1 THEN NULL ELSE ISNULL(@BookedAt, [BookedAt]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwPaymentLines] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwPaymentLines]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePaymentLine] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the PaymentLine table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdatePaymentLine]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdatePaymentLine];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdatePaymentLine
+ON [${flyway:defaultSchema}].[PaymentLine]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PaymentLine]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[PaymentLine] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Payment Lines */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePaymentLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Payment Details */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Details
+-- Item: spDeletePaymentDetail
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR PaymentDetail
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeletePaymentDetail]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeletePaymentDetail];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeletePaymentDetail]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[PaymentDetail]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePaymentDetail] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Payment Details */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePaymentDetail] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Payment Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: spDeletePaymentHeader
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR PaymentHeader
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeletePaymentHeader]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeletePaymentHeader];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeletePaymentHeader]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[PaymentHeader]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePaymentHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Payment Headers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePaymentHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Payment Intents */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Intents
+-- Item: spDeletePaymentIntent
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR PaymentIntent
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeletePaymentIntent]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeletePaymentIntent];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeletePaymentIntent]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[PaymentIntent]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePaymentIntent] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Payment Intents */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePaymentIntent] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Payment Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Lines
+-- Item: spDeletePaymentLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR PaymentLine
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeletePaymentLine]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeletePaymentLine];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeletePaymentLine]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[PaymentLine]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePaymentLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Payment Lines */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePaymentLine] TO [cdp_Developer], [cdp_Integration];
+
+/* Hierarchy Metadata Function SQL for MJ_BizApps_Orders: Order Lines.ParentOrderLineID */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: fnOrderLineParentOrderLineID_GetHierarchyMeta
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+------------------------------------------------------------
+----- HIERARCHY METADATA FUNCTION FOR: [OrderLine].[ParentOrderLineID]
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetHierarchyMeta]', 'IF') IS NOT NULL
+    DROP FUNCTION [${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetHierarchyMeta];
+GO
+
+CREATE FUNCTION [${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetHierarchyMeta]
+(
+    @RecordID uniqueidentifier,
+    @ParentID uniqueidentifier
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH CTE_Ancestors AS (
+        SELECT
+            [ID],
+            [ParentOrderLineID],
+            0 AS [Depth],
+            CAST('/' + CAST([ID] AS NVARCHAR(36)) + '/' AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[OrderLine]
+        WHERE
+            [ID] = @RecordID
+
+        UNION ALL
+
+        SELECT
+            p.[ID],
+            p.[ParentOrderLineID],
+            c.[Depth] + 1 AS [Depth],
+            CAST('/' + CAST(p.[ID] AS NVARCHAR(36)) + c.[Path] AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[OrderLine] p
+        INNER JOIN
+            CTE_Ancestors c ON p.[ID] = c.[ParentOrderLineID]
+        WHERE
+            c.[Depth] < 100
+    )
+    SELECT TOP 1
+        a.[ID] AS [RootID],
+        (SELECT MAX([Depth]) FROM CTE_Ancestors) AS [Depth],
+        (SELECT TOP 1 [Path] FROM CTE_Ancestors ORDER BY [Depth] DESC) AS [Path],
+        CAST(CASE WHEN EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[OrderLine] WHERE [ParentOrderLineID] = @RecordID) THEN 0 ELSE 1 END AS BIT) AS [IsLeaf],
+        (SELECT COUNT(1) FROM [${flyway:defaultSchema}].[OrderLine] WHERE [ParentOrderLineID] = @RecordID) AS [ChildCount]
+    FROM
+        CTE_Ancestors a
+    WHERE
+        a.[ParentOrderLineID] IS NULL OR @ParentID IS NULL
+    ORDER BY
+        a.[Depth] DESC
+);
+GO
+
+/* Descendants Traversal Function SQL for MJ_BizApps_Orders: Order Lines.ParentOrderLineID */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: fnOrderLineParentOrderLineID_GetDescendants
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+------------------------------------------------------------
+----- DESCENDANTS FUNCTION FOR: [OrderLine].[ParentOrderLineID]
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetDescendants]', 'IF') IS NOT NULL
+    DROP FUNCTION [${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetDescendants];
+GO
+
+CREATE FUNCTION [${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetDescendants]
+(
+    @RootID uniqueidentifier,
+    @MaxDepth INT = NULL
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH CTE_Descendants AS (
+        SELECT
+            [ID],
+            [ParentOrderLineID],
+            0 AS [RelativeDepth],
+            CAST('/' + CAST([ID] AS NVARCHAR(36)) + '/' AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[OrderLine]
+        WHERE
+            [ID] = @RootID
+
+        UNION ALL
+
+        SELECT
+            c.[ID],
+            c.[ParentOrderLineID],
+            p.[RelativeDepth] + 1 AS [RelativeDepth],
+            CAST(p.[Path] + CAST(c.[ID] AS NVARCHAR(36)) + '/' AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[OrderLine] c
+        INNER JOIN
+            CTE_Descendants p ON c.[ParentOrderLineID] = p.[ID]
+        WHERE
+            (@MaxDepth IS NULL OR p.[RelativeDepth] < @MaxDepth)
+            AND p.[RelativeDepth] < 100
+    )
+    SELECT
+        d.[ID] AS [ID],
+        d.[RelativeDepth] AS [Depth],
+        d.[Path],
+        CAST(CASE WHEN EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[OrderLine] WHERE [ParentOrderLineID] = d.[ID]) THEN 0 ELSE 1 END AS BIT) AS [IsLeaf],
+        (SELECT COUNT(1) FROM [${flyway:defaultSchema}].[OrderLine] WHERE [ParentOrderLineID] = d.[ID]) AS [ChildCount]
+    FROM
+        CTE_Descendants d
+);
+GO
+
+/* Ancestors Traversal Function SQL for MJ_BizApps_Orders: Order Lines.ParentOrderLineID */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: fnOrderLineParentOrderLineID_GetAncestors
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+------------------------------------------------------------
+----- ANCESTORS FUNCTION FOR: [OrderLine].[ParentOrderLineID]
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetAncestors]', 'IF') IS NOT NULL
+    DROP FUNCTION [${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetAncestors];
+GO
+
+CREATE FUNCTION [${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetAncestors]
+(
+    @RecordID uniqueidentifier
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH CTE_Ancestors AS (
+        SELECT
+            [ID],
+            [ParentOrderLineID],
+            0 AS [LevelUp],
+            CAST('/' + CAST([ID] AS NVARCHAR(36)) + '/' AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[OrderLine]
+        WHERE
+            [ID] = @RecordID
+
+        UNION ALL
+
+        SELECT
+            p.[ID],
+            p.[ParentOrderLineID],
+            c.[LevelUp] + 1 AS [LevelUp],
+            CAST('/' + CAST(p.[ID] AS NVARCHAR(36)) + c.[Path] AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[OrderLine] p
+        INNER JOIN
+            CTE_Ancestors c ON p.[ID] = c.[ParentOrderLineID]
+        WHERE
+            c.[LevelUp] < 100
+    )
+    SELECT
+        a.[ID] AS [ID],
+        a.[LevelUp],
+        a.[Path]
+    FROM
+        CTE_Ancestors a
+);
+GO
+
+/* Root ID Function SQL for MJ_BizApps_Orders: Order Lines.ParentOrderLineID */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: fnOrderLineParentOrderLineID_GetRootID
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+------------------------------------------------------------
+----- ROOT ID FUNCTION FOR: [OrderLine].[ParentOrderLineID]
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetRootID]', 'IF') IS NOT NULL
+    DROP FUNCTION [${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetRootID];
+GO
+
+CREATE FUNCTION [${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetRootID]
+(
+    @RecordID uniqueidentifier,
+    @ParentID uniqueidentifier
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH CTE_RootParent AS (
+        SELECT
+            [ID],
+            [ParentOrderLineID],
+            [ID] AS [RootParentID],
+            0 AS [Depth]
+        FROM
+            [${flyway:defaultSchema}].[OrderLine]
+        WHERE
+            [ID] = COALESCE(@ParentID, @RecordID)
+
+        UNION ALL
+
+        SELECT
+            c.[ID],
+            c.[ParentOrderLineID],
+            c.[ID] AS [RootParentID],
+            p.[Depth] + 1 AS [Depth]
+        FROM
+            [${flyway:defaultSchema}].[OrderLine] c
+        INNER JOIN
+            CTE_RootParent p ON c.[ID] = p.[ParentOrderLineID]
+        WHERE
+            p.[Depth] < 100
+    )
+    SELECT TOP 1
+        [RootParentID] AS RootID
+    FROM
+        CTE_RootParent
+    WHERE
+        [ParentOrderLineID] IS NULL
+    ORDER BY
+        [RootParentID]
+);
+GO
+
+/* Base View SQL for MJ_BizApps_Orders: Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: vwOrderLines
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Order Lines
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  OrderLine
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderLines]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwOrderLines];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwOrderLines]
+AS
+SELECT
+    o.*,
+    mjBizAppsOrdersOrderHeader_OrderHeaderID.[OrderNumber] AS [OrderHeader],
+    mjBizAppsOrdersProduct_ProductID.[Name] AS [Product],
+    MJCompany_CompanyID.[Name] AS [Company],
+    mjBizAppsOrdersProductPrice_ProductPriceID.[Name] AS [ProductPrice],
+    mjBizAppsCommonOrganization_ShipToOrganizationID.[Name] AS [ShipToOrganization],
+    mjBizAppsCommonPerson_ShipToPersonID.[DisplayName] AS [ShipToPerson],
+    mjBizAppsOrdersProduct_SourceBundleProductID.[Name] AS [SourceBundleProduct],
+    mjBizAppsOrdersSubscription_SubscriptionID.[SubscriptionNumber] AS [Subscription],
+    mjBizAppsAccountingJournalEntry_JournalEntryID.[EntryNumber] AS [JournalEntry],
+    hier_ParentOrderLineID.RootID AS [RootParentOrderLineID],
+    hier_ParentOrderLineID.Depth AS [ParentOrderLineIDDepth],
+    hier_ParentOrderLineID.Path AS [ParentOrderLineIDPath],
+    hier_ParentOrderLineID.IsLeaf AS [ParentOrderLineIDIsLeaf],
+    hier_ParentOrderLineID.ChildCount AS [ParentOrderLineIDChildCount]
+FROM
+    [${flyway:defaultSchema}].[OrderLine] AS o
+INNER JOIN
+    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_OrderHeaderID
+  ON
+    [o].[OrderHeaderID] = mjBizAppsOrdersOrderHeader_OrderHeaderID.[ID]
+INNER JOIN
+    [${flyway:defaultSchema}].[Product] AS mjBizAppsOrdersProduct_ProductID
+  ON
+    [o].[ProductID] = mjBizAppsOrdersProduct_ProductID.[ID]
+INNER JOIN
+    [${mjSchema}].[Company] AS MJCompany_CompanyID
+  ON
+    [o].[CompanyID] = MJCompany_CompanyID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[ProductPrice] AS mjBizAppsOrdersProductPrice_ProductPriceID
+  ON
+    [o].[ProductPriceID] = mjBizAppsOrdersProductPrice_ProductPriceID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Organization] AS mjBizAppsCommonOrganization_ShipToOrganizationID
+  ON
+    [o].[ShipToOrganizationID] = mjBizAppsCommonOrganization_ShipToOrganizationID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_ShipToPersonID
+  ON
+    [o].[ShipToPersonID] = mjBizAppsCommonPerson_ShipToPersonID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[Product] AS mjBizAppsOrdersProduct_SourceBundleProductID
+  ON
+    [o].[SourceBundleProductID] = mjBizAppsOrdersProduct_SourceBundleProductID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[Subscription] AS mjBizAppsOrdersSubscription_SubscriptionID
+  ON
+    [o].[SubscriptionID] = mjBizAppsOrdersSubscription_SubscriptionID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsAccounting].[JournalEntry] AS mjBizAppsAccountingJournalEntry_JournalEntryID
+  ON
+    [o].[JournalEntryID] = mjBizAppsAccountingJournalEntry_JournalEntryID.[ID]
+OUTER APPLY
+    [${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetHierarchyMeta]([o].[ID], [o].[ParentOrderLineID]) AS hier_ParentOrderLineID
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderLines] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: Permissions for vwOrderLines
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderLines] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: spCreateOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR OrderLine
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateOrderLine]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateOrderLine];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateOrderLine]
+    @ID uniqueidentifier = NULL,
+    @OrderHeaderID uniqueidentifier,
+    @ProductID uniqueidentifier,
+    @CompanyID uniqueidentifier,
+    @LineNumber int,
+    @Quantity decimal(18, 4),
+    @UnitPrice decimal(19, 4),
+    @ProductPriceID_Clear bit = 0,
+    @ProductPriceID uniqueidentifier = NULL,
+    @DiscountPct decimal(7, 4) = NULL,
+    @DiscountAmount decimal(19, 4) = NULL,
+    @LineTotalNet_Clear bit = 0,
+    @LineTotalNet decimal(18, 2) = NULL,
+    @ChargeAmount decimal(18, 2) = NULL,
+    @LineTax decimal(18, 2) = NULL,
+    @LineTotalGross_Clear bit = 0,
+    @LineTotalGross decimal(18, 2) = NULL,
+    @ShipToAddressID_Clear bit = 0,
+    @ShipToAddressID uniqueidentifier = NULL,
+    @ShipToOrganizationID_Clear bit = 0,
+    @ShipToOrganizationID uniqueidentifier = NULL,
+    @ShipToPersonID_Clear bit = 0,
+    @ShipToPersonID uniqueidentifier = NULL,
+    @RenewsSubscriptionID_Clear bit = 0,
+    @RenewsSubscriptionID uniqueidentifier = NULL,
+    @ServicePeriodStart_Clear bit = 0,
+    @ServicePeriodStart date = NULL,
+    @ServicePeriodEnd_Clear bit = 0,
+    @ServicePeriodEnd date = NULL,
+    @FulfillmentStatus_Clear bit = 0,
+    @FulfillmentStatus nvarchar(20) = NULL,
+    @ReversesOrderLineID_Clear bit = 0,
+    @ReversesOrderLineID uniqueidentifier = NULL,
+    @SourceBundleProductID_Clear bit = 0,
+    @SourceBundleProductID uniqueidentifier = NULL,
+    @ParentOrderLineID_Clear bit = 0,
+    @ParentOrderLineID uniqueidentifier = NULL,
+    @IsRollupParent bit = NULL,
+    @IsQuantityOverridden bit = NULL,
+    @SubscriptionID_Clear bit = 0,
+    @SubscriptionID uniqueidentifier = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(500) = NULL,
+    @JournalEntryID_Clear bit = 0,
+    @JournalEntryID uniqueidentifier = NULL,
+    @PriceOverridden bit = NULL,
+    @PriceOverrideReason_Clear bit = 0,
+    @PriceOverrideReason nvarchar(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[OrderLine]
+            (
+                [ID],
+                [OrderHeaderID],
+                [ProductID],
+                [CompanyID],
+                [LineNumber],
+                [Quantity],
+                [UnitPrice],
+                [ProductPriceID],
+                [DiscountPct],
+                [DiscountAmount],
+                [LineTotalNet],
+                [ChargeAmount],
+                [LineTax],
+                [LineTotalGross],
+                [ShipToAddressID],
+                [ShipToOrganizationID],
+                [ShipToPersonID],
+                [RenewsSubscriptionID],
+                [ServicePeriodStart],
+                [ServicePeriodEnd],
+                [FulfillmentStatus],
+                [ReversesOrderLineID],
+                [SourceBundleProductID],
+                [ParentOrderLineID],
+                [IsRollupParent],
+                [IsQuantityOverridden],
+                [SubscriptionID],
+                [Description],
+                [JournalEntryID],
+                [PriceOverridden],
+                [PriceOverrideReason]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @OrderHeaderID,
+                @ProductID,
+                @CompanyID,
+                @LineNumber,
+                @Quantity,
+                @UnitPrice,
+                CASE WHEN @ProductPriceID_Clear = 1 THEN NULL ELSE ISNULL(@ProductPriceID, NULL) END,
+                ISNULL(@DiscountPct, 0),
+                ISNULL(@DiscountAmount, 0),
+                CASE WHEN @LineTotalNet_Clear = 1 THEN NULL ELSE ISNULL(@LineTotalNet, NULL) END,
+                ISNULL(@ChargeAmount, 0),
+                ISNULL(@LineTax, 0),
+                CASE WHEN @LineTotalGross_Clear = 1 THEN NULL ELSE ISNULL(@LineTotalGross, NULL) END,
+                CASE WHEN @ShipToAddressID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressID, NULL) END,
+                CASE WHEN @ShipToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToOrganizationID, NULL) END,
+                CASE WHEN @ShipToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToPersonID, NULL) END,
+                CASE WHEN @RenewsSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@RenewsSubscriptionID, NULL) END,
+                CASE WHEN @ServicePeriodStart_Clear = 1 THEN NULL ELSE ISNULL(@ServicePeriodStart, NULL) END,
+                CASE WHEN @ServicePeriodEnd_Clear = 1 THEN NULL ELSE ISNULL(@ServicePeriodEnd, NULL) END,
+                CASE WHEN @FulfillmentStatus_Clear = 1 THEN NULL ELSE ISNULL(@FulfillmentStatus, NULL) END,
+                CASE WHEN @ReversesOrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesOrderLineID, NULL) END,
+                CASE WHEN @SourceBundleProductID_Clear = 1 THEN NULL ELSE ISNULL(@SourceBundleProductID, NULL) END,
+                CASE WHEN @ParentOrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@ParentOrderLineID, NULL) END,
+                ISNULL(@IsRollupParent, 0),
+                ISNULL(@IsQuantityOverridden, 0),
+                CASE WHEN @SubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionID, NULL) END,
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                CASE WHEN @JournalEntryID_Clear = 1 THEN NULL ELSE ISNULL(@JournalEntryID, NULL) END,
+                ISNULL(@PriceOverridden, 0),
+                CASE WHEN @PriceOverrideReason_Clear = 1 THEN NULL ELSE ISNULL(@PriceOverrideReason, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[OrderLine]
+            (
+                [OrderHeaderID],
+                [ProductID],
+                [CompanyID],
+                [LineNumber],
+                [Quantity],
+                [UnitPrice],
+                [ProductPriceID],
+                [DiscountPct],
+                [DiscountAmount],
+                [LineTotalNet],
+                [ChargeAmount],
+                [LineTax],
+                [LineTotalGross],
+                [ShipToAddressID],
+                [ShipToOrganizationID],
+                [ShipToPersonID],
+                [RenewsSubscriptionID],
+                [ServicePeriodStart],
+                [ServicePeriodEnd],
+                [FulfillmentStatus],
+                [ReversesOrderLineID],
+                [SourceBundleProductID],
+                [ParentOrderLineID],
+                [IsRollupParent],
+                [IsQuantityOverridden],
+                [SubscriptionID],
+                [Description],
+                [JournalEntryID],
+                [PriceOverridden],
+                [PriceOverrideReason]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @OrderHeaderID,
+                @ProductID,
+                @CompanyID,
+                @LineNumber,
+                @Quantity,
+                @UnitPrice,
+                CASE WHEN @ProductPriceID_Clear = 1 THEN NULL ELSE ISNULL(@ProductPriceID, NULL) END,
+                ISNULL(@DiscountPct, 0),
+                ISNULL(@DiscountAmount, 0),
+                CASE WHEN @LineTotalNet_Clear = 1 THEN NULL ELSE ISNULL(@LineTotalNet, NULL) END,
+                ISNULL(@ChargeAmount, 0),
+                ISNULL(@LineTax, 0),
+                CASE WHEN @LineTotalGross_Clear = 1 THEN NULL ELSE ISNULL(@LineTotalGross, NULL) END,
+                CASE WHEN @ShipToAddressID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressID, NULL) END,
+                CASE WHEN @ShipToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToOrganizationID, NULL) END,
+                CASE WHEN @ShipToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToPersonID, NULL) END,
+                CASE WHEN @RenewsSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@RenewsSubscriptionID, NULL) END,
+                CASE WHEN @ServicePeriodStart_Clear = 1 THEN NULL ELSE ISNULL(@ServicePeriodStart, NULL) END,
+                CASE WHEN @ServicePeriodEnd_Clear = 1 THEN NULL ELSE ISNULL(@ServicePeriodEnd, NULL) END,
+                CASE WHEN @FulfillmentStatus_Clear = 1 THEN NULL ELSE ISNULL(@FulfillmentStatus, NULL) END,
+                CASE WHEN @ReversesOrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesOrderLineID, NULL) END,
+                CASE WHEN @SourceBundleProductID_Clear = 1 THEN NULL ELSE ISNULL(@SourceBundleProductID, NULL) END,
+                CASE WHEN @ParentOrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@ParentOrderLineID, NULL) END,
+                ISNULL(@IsRollupParent, 0),
+                ISNULL(@IsQuantityOverridden, 0),
+                CASE WHEN @SubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionID, NULL) END,
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                CASE WHEN @JournalEntryID_Clear = 1 THEN NULL ELSE ISNULL(@JournalEntryID, NULL) END,
+                ISNULL(@PriceOverridden, 0),
+                CASE WHEN @PriceOverrideReason_Clear = 1 THEN NULL ELSE ISNULL(@PriceOverrideReason, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwOrderLines] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Order Lines */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: spUpdateOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR OrderLine
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateOrderLine]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderLine];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderLine]
+    @ID uniqueidentifier,
+    @OrderHeaderID uniqueidentifier = NULL,
+    @ProductID uniqueidentifier = NULL,
+    @CompanyID uniqueidentifier = NULL,
+    @LineNumber int = NULL,
+    @Quantity decimal(18, 4) = NULL,
+    @UnitPrice decimal(19, 4) = NULL,
+    @ProductPriceID_Clear bit = 0,
+    @ProductPriceID uniqueidentifier = NULL,
+    @DiscountPct decimal(7, 4) = NULL,
+    @DiscountAmount decimal(19, 4) = NULL,
+    @LineTotalNet_Clear bit = 0,
+    @LineTotalNet decimal(18, 2) = NULL,
+    @ChargeAmount decimal(18, 2) = NULL,
+    @LineTax decimal(18, 2) = NULL,
+    @LineTotalGross_Clear bit = 0,
+    @LineTotalGross decimal(18, 2) = NULL,
+    @ShipToAddressID_Clear bit = 0,
+    @ShipToAddressID uniqueidentifier = NULL,
+    @ShipToOrganizationID_Clear bit = 0,
+    @ShipToOrganizationID uniqueidentifier = NULL,
+    @ShipToPersonID_Clear bit = 0,
+    @ShipToPersonID uniqueidentifier = NULL,
+    @RenewsSubscriptionID_Clear bit = 0,
+    @RenewsSubscriptionID uniqueidentifier = NULL,
+    @ServicePeriodStart_Clear bit = 0,
+    @ServicePeriodStart date = NULL,
+    @ServicePeriodEnd_Clear bit = 0,
+    @ServicePeriodEnd date = NULL,
+    @FulfillmentStatus_Clear bit = 0,
+    @FulfillmentStatus nvarchar(20) = NULL,
+    @ReversesOrderLineID_Clear bit = 0,
+    @ReversesOrderLineID uniqueidentifier = NULL,
+    @SourceBundleProductID_Clear bit = 0,
+    @SourceBundleProductID uniqueidentifier = NULL,
+    @ParentOrderLineID_Clear bit = 0,
+    @ParentOrderLineID uniqueidentifier = NULL,
+    @IsRollupParent bit = NULL,
+    @IsQuantityOverridden bit = NULL,
+    @SubscriptionID_Clear bit = 0,
+    @SubscriptionID uniqueidentifier = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(500) = NULL,
+    @JournalEntryID_Clear bit = 0,
+    @JournalEntryID uniqueidentifier = NULL,
+    @PriceOverridden bit = NULL,
+    @PriceOverrideReason_Clear bit = 0,
+    @PriceOverrideReason nvarchar(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[OrderLine]
+    SET
+        [OrderHeaderID] = ISNULL(@OrderHeaderID, [OrderHeaderID]),
+        [ProductID] = ISNULL(@ProductID, [ProductID]),
+        [CompanyID] = ISNULL(@CompanyID, [CompanyID]),
+        [LineNumber] = ISNULL(@LineNumber, [LineNumber]),
+        [Quantity] = ISNULL(@Quantity, [Quantity]),
+        [UnitPrice] = ISNULL(@UnitPrice, [UnitPrice]),
+        [ProductPriceID] = CASE WHEN @ProductPriceID_Clear = 1 THEN NULL ELSE ISNULL(@ProductPriceID, [ProductPriceID]) END,
+        [DiscountPct] = ISNULL(@DiscountPct, [DiscountPct]),
+        [DiscountAmount] = ISNULL(@DiscountAmount, [DiscountAmount]),
+        [LineTotalNet] = CASE WHEN @LineTotalNet_Clear = 1 THEN NULL ELSE ISNULL(@LineTotalNet, [LineTotalNet]) END,
+        [ChargeAmount] = ISNULL(@ChargeAmount, [ChargeAmount]),
+        [LineTax] = ISNULL(@LineTax, [LineTax]),
+        [LineTotalGross] = CASE WHEN @LineTotalGross_Clear = 1 THEN NULL ELSE ISNULL(@LineTotalGross, [LineTotalGross]) END,
+        [ShipToAddressID] = CASE WHEN @ShipToAddressID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressID, [ShipToAddressID]) END,
+        [ShipToOrganizationID] = CASE WHEN @ShipToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToOrganizationID, [ShipToOrganizationID]) END,
+        [ShipToPersonID] = CASE WHEN @ShipToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@ShipToPersonID, [ShipToPersonID]) END,
+        [RenewsSubscriptionID] = CASE WHEN @RenewsSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@RenewsSubscriptionID, [RenewsSubscriptionID]) END,
+        [ServicePeriodStart] = CASE WHEN @ServicePeriodStart_Clear = 1 THEN NULL ELSE ISNULL(@ServicePeriodStart, [ServicePeriodStart]) END,
+        [ServicePeriodEnd] = CASE WHEN @ServicePeriodEnd_Clear = 1 THEN NULL ELSE ISNULL(@ServicePeriodEnd, [ServicePeriodEnd]) END,
+        [FulfillmentStatus] = CASE WHEN @FulfillmentStatus_Clear = 1 THEN NULL ELSE ISNULL(@FulfillmentStatus, [FulfillmentStatus]) END,
+        [ReversesOrderLineID] = CASE WHEN @ReversesOrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesOrderLineID, [ReversesOrderLineID]) END,
+        [SourceBundleProductID] = CASE WHEN @SourceBundleProductID_Clear = 1 THEN NULL ELSE ISNULL(@SourceBundleProductID, [SourceBundleProductID]) END,
+        [ParentOrderLineID] = CASE WHEN @ParentOrderLineID_Clear = 1 THEN NULL ELSE ISNULL(@ParentOrderLineID, [ParentOrderLineID]) END,
+        [IsRollupParent] = ISNULL(@IsRollupParent, [IsRollupParent]),
+        [IsQuantityOverridden] = ISNULL(@IsQuantityOverridden, [IsQuantityOverridden]),
+        [SubscriptionID] = CASE WHEN @SubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionID, [SubscriptionID]) END,
+        [Description] = CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, [Description]) END,
+        [JournalEntryID] = CASE WHEN @JournalEntryID_Clear = 1 THEN NULL ELSE ISNULL(@JournalEntryID, [JournalEntryID]) END,
+        [PriceOverridden] = ISNULL(@PriceOverridden, [PriceOverridden]),
+        [PriceOverrideReason] = CASE WHEN @PriceOverrideReason_Clear = 1 THEN NULL ELSE ISNULL(@PriceOverrideReason, [PriceOverrideReason]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwOrderLines] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwOrderLines]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderLine] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the OrderLine table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateOrderLine]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateOrderLine];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateOrderLine
+ON [${flyway:defaultSchema}].[OrderLine]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[OrderLine]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[OrderLine] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Order Lines */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: spDeleteOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR OrderLine
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteOrderLine]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteOrderLine];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteOrderLine]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[OrderLine]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderLine] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Order Lines */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderLine] TO [cdp_Developer], [cdp_Integration];
+
+/* SQL text to update entity field related entity name field map for entity field ID 64B5768D-A79E-4DE2-88BE-CBC20D11BE93 */
+EXEC [${mjSchema}].[spUpdateEntityFieldRelatedEntityNameFieldMap] @EntityFieldID='64B5768D-A79E-4DE2-88BE-CBC20D11BE93', @RelatedEntityNameFieldMap='ProductPrice';
+
+/* Base View SQL for MJ_BizApps_Orders: Price Tiers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Price Tiers
+-- Item: vwPriceTiers
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Price Tiers
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  PriceTier
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwPriceTiers]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwPriceTiers];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwPriceTiers]
+AS
+SELECT
+    p.*,
+    mjBizAppsOrdersProductPrice_ProductPriceID.[Name] AS [ProductPrice]
+FROM
+    [${flyway:defaultSchema}].[PriceTier] AS p
+INNER JOIN
+    [${flyway:defaultSchema}].[ProductPrice] AS mjBizAppsOrdersProductPrice_ProductPriceID
+  ON
+    [p].[ProductPriceID] = mjBizAppsOrdersProductPrice_ProductPriceID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPriceTiers] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Price Tiers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Price Tiers
+-- Item: Permissions for vwPriceTiers
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPriceTiers] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Price Tiers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Price Tiers
+-- Item: spCreatePriceTier
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR PriceTier
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreatePriceTier]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreatePriceTier];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreatePriceTier]
+    @ID uniqueidentifier = NULL,
+    @ProductPriceID uniqueidentifier,
+    @MinQuantity decimal(18, 4),
+    @MaxQuantity_Clear bit = 0,
+    @MaxQuantity decimal(18, 4) = NULL,
+    @Amount decimal(19, 4),
+    @SortOrder int = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[PriceTier]
+            (
+                [ID],
+                [ProductPriceID],
+                [MinQuantity],
+                [MaxQuantity],
+                [Amount],
+                [SortOrder]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @ProductPriceID,
+                @MinQuantity,
+                CASE WHEN @MaxQuantity_Clear = 1 THEN NULL ELSE ISNULL(@MaxQuantity, NULL) END,
+                @Amount,
+                ISNULL(@SortOrder, 0)
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[PriceTier]
+            (
+                [ProductPriceID],
+                [MinQuantity],
+                [MaxQuantity],
+                [Amount],
+                [SortOrder]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ProductPriceID,
+                @MinQuantity,
+                CASE WHEN @MaxQuantity_Clear = 1 THEN NULL ELSE ISNULL(@MaxQuantity, NULL) END,
+                @Amount,
+                ISNULL(@SortOrder, 0)
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwPriceTiers] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePriceTier] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Price Tiers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePriceTier] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Price Tiers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Price Tiers
+-- Item: spUpdatePriceTier
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR PriceTier
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdatePriceTier]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdatePriceTier];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdatePriceTier]
+    @ID uniqueidentifier,
+    @ProductPriceID uniqueidentifier = NULL,
+    @MinQuantity decimal(18, 4) = NULL,
+    @MaxQuantity_Clear bit = 0,
+    @MaxQuantity decimal(18, 4) = NULL,
+    @Amount decimal(19, 4) = NULL,
+    @SortOrder int = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PriceTier]
+    SET
+        [ProductPriceID] = ISNULL(@ProductPriceID, [ProductPriceID]),
+        [MinQuantity] = ISNULL(@MinQuantity, [MinQuantity]),
+        [MaxQuantity] = CASE WHEN @MaxQuantity_Clear = 1 THEN NULL ELSE ISNULL(@MaxQuantity, [MaxQuantity]) END,
+        [Amount] = ISNULL(@Amount, [Amount]),
+        [SortOrder] = ISNULL(@SortOrder, [SortOrder])
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwPriceTiers] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwPriceTiers]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePriceTier] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the PriceTier table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdatePriceTier]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdatePriceTier];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdatePriceTier
+ON [${flyway:defaultSchema}].[PriceTier]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PriceTier]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[PriceTier] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Price Tiers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePriceTier] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Price Tiers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Price Tiers
+-- Item: spDeletePriceTier
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR PriceTier
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeletePriceTier]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeletePriceTier];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeletePriceTier]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[PriceTier]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePriceTier] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Price Tiers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePriceTier] TO [cdp_Developer], [cdp_Integration];
+
+/* Index for Foreign Keys for ProductPrice */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Prices
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key ProductID in table ProductPrice
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_ProductPrice_ProductID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[ProductPrice]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_ProductPrice_ProductID ON [${flyway:defaultSchema}].[ProductPrice] ([ProductID]);
+
+-- Index for foreign key PriceListID in table ProductPrice
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_ProductPrice_PriceListID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[ProductPrice]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_ProductPrice_PriceListID ON [${flyway:defaultSchema}].[ProductPrice] ([PriceListID]);
+
+-- Index for foreign key ProductCategoryID in table ProductPrice
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_ProductPrice_ProductCategoryID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[ProductPrice]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_ProductPrice_ProductCategoryID ON [${flyway:defaultSchema}].[ProductPrice] ([ProductCategoryID]);
+
+/* SQL text to update entity field related entity name field map for entity field ID FC984132-B32D-4976-913A-A10D9F8777DF */
+EXEC [${mjSchema}].[spUpdateEntityFieldRelatedEntityNameFieldMap] @EntityFieldID='FC984132-B32D-4976-913A-A10D9F8777DF', @RelatedEntityNameFieldMap='ProductCategory';
+
+/* Hierarchy Metadata Function SQL for MJ_BizApps_Orders: Product Categories.ParentProductCategoryID */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Categories
+-- Item: fnProductCategoryParentProductCategoryID_GetHierarchyMeta
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+------------------------------------------------------------
+----- HIERARCHY METADATA FUNCTION FOR: [ProductCategory].[ParentProductCategoryID]
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetHierarchyMeta]', 'IF') IS NOT NULL
+    DROP FUNCTION [${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetHierarchyMeta];
+GO
+
+CREATE FUNCTION [${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetHierarchyMeta]
+(
+    @RecordID uniqueidentifier,
+    @ParentID uniqueidentifier
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH CTE_Ancestors AS (
+        SELECT
+            [ID],
+            [ParentProductCategoryID],
+            0 AS [Depth],
+            CAST('/' + CAST([ID] AS NVARCHAR(36)) + '/' AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[ProductCategory]
+        WHERE
+            [ID] = @RecordID
+
+        UNION ALL
+
+        SELECT
+            p.[ID],
+            p.[ParentProductCategoryID],
+            c.[Depth] + 1 AS [Depth],
+            CAST('/' + CAST(p.[ID] AS NVARCHAR(36)) + c.[Path] AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[ProductCategory] p
+        INNER JOIN
+            CTE_Ancestors c ON p.[ID] = c.[ParentProductCategoryID]
+        WHERE
+            c.[Depth] < 100
+    )
+    SELECT TOP 1
+        a.[ID] AS [RootID],
+        (SELECT MAX([Depth]) FROM CTE_Ancestors) AS [Depth],
+        (SELECT TOP 1 [Path] FROM CTE_Ancestors ORDER BY [Depth] DESC) AS [Path],
+        CAST(CASE WHEN EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductCategory] WHERE [ParentProductCategoryID] = @RecordID) THEN 0 ELSE 1 END AS BIT) AS [IsLeaf],
+        (SELECT COUNT(1) FROM [${flyway:defaultSchema}].[ProductCategory] WHERE [ParentProductCategoryID] = @RecordID) AS [ChildCount]
+    FROM
+        CTE_Ancestors a
+    WHERE
+        a.[ParentProductCategoryID] IS NULL OR @ParentID IS NULL
+    ORDER BY
+        a.[Depth] DESC
+);
+GO
+
+/* Descendants Traversal Function SQL for MJ_BizApps_Orders: Product Categories.ParentProductCategoryID */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Categories
+-- Item: fnProductCategoryParentProductCategoryID_GetDescendants
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+------------------------------------------------------------
+----- DESCENDANTS FUNCTION FOR: [ProductCategory].[ParentProductCategoryID]
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetDescendants]', 'IF') IS NOT NULL
+    DROP FUNCTION [${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetDescendants];
+GO
+
+CREATE FUNCTION [${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetDescendants]
+(
+    @RootID uniqueidentifier,
+    @MaxDepth INT = NULL
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH CTE_Descendants AS (
+        SELECT
+            [ID],
+            [ParentProductCategoryID],
+            0 AS [RelativeDepth],
+            CAST('/' + CAST([ID] AS NVARCHAR(36)) + '/' AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[ProductCategory]
+        WHERE
+            [ID] = @RootID
+
+        UNION ALL
+
+        SELECT
+            c.[ID],
+            c.[ParentProductCategoryID],
+            p.[RelativeDepth] + 1 AS [RelativeDepth],
+            CAST(p.[Path] + CAST(c.[ID] AS NVARCHAR(36)) + '/' AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[ProductCategory] c
+        INNER JOIN
+            CTE_Descendants p ON c.[ParentProductCategoryID] = p.[ID]
+        WHERE
+            (@MaxDepth IS NULL OR p.[RelativeDepth] < @MaxDepth)
+            AND p.[RelativeDepth] < 100
+    )
+    SELECT
+        d.[ID] AS [ID],
+        d.[RelativeDepth] AS [Depth],
+        d.[Path],
+        CAST(CASE WHEN EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[ProductCategory] WHERE [ParentProductCategoryID] = d.[ID]) THEN 0 ELSE 1 END AS BIT) AS [IsLeaf],
+        (SELECT COUNT(1) FROM [${flyway:defaultSchema}].[ProductCategory] WHERE [ParentProductCategoryID] = d.[ID]) AS [ChildCount]
+    FROM
+        CTE_Descendants d
+);
+GO
+
+/* Ancestors Traversal Function SQL for MJ_BizApps_Orders: Product Categories.ParentProductCategoryID */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Categories
+-- Item: fnProductCategoryParentProductCategoryID_GetAncestors
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+------------------------------------------------------------
+----- ANCESTORS FUNCTION FOR: [ProductCategory].[ParentProductCategoryID]
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetAncestors]', 'IF') IS NOT NULL
+    DROP FUNCTION [${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetAncestors];
+GO
+
+CREATE FUNCTION [${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetAncestors]
+(
+    @RecordID uniqueidentifier
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH CTE_Ancestors AS (
+        SELECT
+            [ID],
+            [ParentProductCategoryID],
+            0 AS [LevelUp],
+            CAST('/' + CAST([ID] AS NVARCHAR(36)) + '/' AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[ProductCategory]
+        WHERE
+            [ID] = @RecordID
+
+        UNION ALL
+
+        SELECT
+            p.[ID],
+            p.[ParentProductCategoryID],
+            c.[LevelUp] + 1 AS [LevelUp],
+            CAST('/' + CAST(p.[ID] AS NVARCHAR(36)) + c.[Path] AS NVARCHAR(MAX)) AS [Path]
+        FROM
+            [${flyway:defaultSchema}].[ProductCategory] p
+        INNER JOIN
+            CTE_Ancestors c ON p.[ID] = c.[ParentProductCategoryID]
+        WHERE
+            c.[LevelUp] < 100
+    )
+    SELECT
+        a.[ID] AS [ID],
+        a.[LevelUp],
+        a.[Path]
+    FROM
+        CTE_Ancestors a
+);
+GO
+
+/* Root ID Function SQL for MJ_BizApps_Orders: Product Categories.ParentProductCategoryID */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Categories
+-- Item: fnProductCategoryParentProductCategoryID_GetRootID
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+------------------------------------------------------------
+----- ROOT ID FUNCTION FOR: [ProductCategory].[ParentProductCategoryID]
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetRootID]', 'IF') IS NOT NULL
+    DROP FUNCTION [${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetRootID];
+GO
+
+CREATE FUNCTION [${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetRootID]
+(
+    @RecordID uniqueidentifier,
+    @ParentID uniqueidentifier
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH CTE_RootParent AS (
+        SELECT
+            [ID],
+            [ParentProductCategoryID],
+            [ID] AS [RootParentID],
+            0 AS [Depth]
+        FROM
+            [${flyway:defaultSchema}].[ProductCategory]
+        WHERE
+            [ID] = COALESCE(@ParentID, @RecordID)
+
+        UNION ALL
+
+        SELECT
+            c.[ID],
+            c.[ParentProductCategoryID],
+            c.[ID] AS [RootParentID],
+            p.[Depth] + 1 AS [Depth]
+        FROM
+            [${flyway:defaultSchema}].[ProductCategory] c
+        INNER JOIN
+            CTE_RootParent p ON c.[ID] = p.[ParentProductCategoryID]
+        WHERE
+            p.[Depth] < 100
+    )
+    SELECT TOP 1
+        [RootParentID] AS RootID
+    FROM
+        CTE_RootParent
+    WHERE
+        [ParentProductCategoryID] IS NULL
+    ORDER BY
+        [RootParentID]
+);
+GO
+
+/* Base View SQL for MJ_BizApps_Orders: Product Categories */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Categories
+-- Item: vwProductCategories
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Product Categories
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  ProductCategory
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwProductCategories]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwProductCategories];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwProductCategories]
+AS
+SELECT
+    p.*,
+    MJCompany_CompanyID.[Name] AS [Company],
+    mjBizAppsOrdersProductCategory_ParentProductCategoryID.[Name] AS [ParentProductCategory],
+    hier_ParentProductCategoryID.RootID AS [RootParentProductCategoryID],
+    hier_ParentProductCategoryID.Depth AS [ParentProductCategoryIDDepth],
+    hier_ParentProductCategoryID.Path AS [ParentProductCategoryIDPath],
+    hier_ParentProductCategoryID.IsLeaf AS [ParentProductCategoryIDIsLeaf],
+    hier_ParentProductCategoryID.ChildCount AS [ParentProductCategoryIDChildCount]
+FROM
+    [${flyway:defaultSchema}].[ProductCategory] AS p
+INNER JOIN
+    [${mjSchema}].[Company] AS MJCompany_CompanyID
+  ON
+    [p].[CompanyID] = MJCompany_CompanyID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[ProductCategory] AS mjBizAppsOrdersProductCategory_ParentProductCategoryID
+  ON
+    [p].[ParentProductCategoryID] = mjBizAppsOrdersProductCategory_ParentProductCategoryID.[ID]
+OUTER APPLY
+    [${flyway:defaultSchema}].[fnProductCategoryParentProductCategoryID_GetHierarchyMeta]([p].[ID], [p].[ParentProductCategoryID]) AS hier_ParentProductCategoryID
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwProductCategories] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Product Categories */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Categories
+-- Item: Permissions for vwProductCategories
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwProductCategories] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Product Categories */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Categories
+-- Item: spCreateProductCategory
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR ProductCategory
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateProductCategory]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateProductCategory];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateProductCategory]
+    @ID uniqueidentifier = NULL,
+    @CompanyID uniqueidentifier,
+    @Code_Clear bit = 0,
+    @Code nvarchar(40) = NULL,
+    @Name nvarchar(200),
+    @ParentProductCategoryID_Clear bit = 0,
+    @ParentProductCategoryID uniqueidentifier = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(MAX) = NULL,
+    @IsActive bit = NULL,
+    @DefaultIsTaxable_Clear bit = 0,
+    @DefaultIsTaxable bit = NULL,
+    @DefaultTaxCategory_Clear bit = 0,
+    @DefaultTaxCategory nvarchar(50) = NULL,
+    @DefaultEntitlementGrantTiming_Clear bit = 0,
+    @DefaultEntitlementGrantTiming nvarchar(20) = NULL,
+    @DefaultEntitlementQuantityMode_Clear bit = 0,
+    @DefaultEntitlementQuantityMode nvarchar(20) = NULL,
+    @DefaultEntitlementValidityMode_Clear bit = 0,
+    @DefaultEntitlementValidityMode nvarchar(20) = NULL,
+    @PricingDriverClass_Clear bit = 0,
+    @PricingDriverClass nvarchar(255) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[ProductCategory]
+            (
+                [ID],
+                [CompanyID],
+                [Code],
+                [Name],
+                [ParentProductCategoryID],
+                [Description],
+                [IsActive],
+                [DefaultIsTaxable],
+                [DefaultTaxCategory],
+                [DefaultEntitlementGrantTiming],
+                [DefaultEntitlementQuantityMode],
+                [DefaultEntitlementValidityMode],
+                [PricingDriverClass]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @CompanyID,
+                CASE WHEN @Code_Clear = 1 THEN NULL ELSE ISNULL(@Code, NULL) END,
+                @Name,
+                CASE WHEN @ParentProductCategoryID_Clear = 1 THEN NULL ELSE ISNULL(@ParentProductCategoryID, NULL) END,
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                ISNULL(@IsActive, 1),
+                CASE WHEN @DefaultIsTaxable_Clear = 1 THEN NULL ELSE ISNULL(@DefaultIsTaxable, NULL) END,
+                CASE WHEN @DefaultTaxCategory_Clear = 1 THEN NULL ELSE ISNULL(@DefaultTaxCategory, NULL) END,
+                CASE WHEN @DefaultEntitlementGrantTiming_Clear = 1 THEN NULL ELSE ISNULL(@DefaultEntitlementGrantTiming, NULL) END,
+                CASE WHEN @DefaultEntitlementQuantityMode_Clear = 1 THEN NULL ELSE ISNULL(@DefaultEntitlementQuantityMode, NULL) END,
+                CASE WHEN @DefaultEntitlementValidityMode_Clear = 1 THEN NULL ELSE ISNULL(@DefaultEntitlementValidityMode, NULL) END,
+                CASE WHEN @PricingDriverClass_Clear = 1 THEN NULL ELSE ISNULL(@PricingDriverClass, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[ProductCategory]
+            (
+                [CompanyID],
+                [Code],
+                [Name],
+                [ParentProductCategoryID],
+                [Description],
+                [IsActive],
+                [DefaultIsTaxable],
+                [DefaultTaxCategory],
+                [DefaultEntitlementGrantTiming],
+                [DefaultEntitlementQuantityMode],
+                [DefaultEntitlementValidityMode],
+                [PricingDriverClass]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @CompanyID,
+                CASE WHEN @Code_Clear = 1 THEN NULL ELSE ISNULL(@Code, NULL) END,
+                @Name,
+                CASE WHEN @ParentProductCategoryID_Clear = 1 THEN NULL ELSE ISNULL(@ParentProductCategoryID, NULL) END,
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                ISNULL(@IsActive, 1),
+                CASE WHEN @DefaultIsTaxable_Clear = 1 THEN NULL ELSE ISNULL(@DefaultIsTaxable, NULL) END,
+                CASE WHEN @DefaultTaxCategory_Clear = 1 THEN NULL ELSE ISNULL(@DefaultTaxCategory, NULL) END,
+                CASE WHEN @DefaultEntitlementGrantTiming_Clear = 1 THEN NULL ELSE ISNULL(@DefaultEntitlementGrantTiming, NULL) END,
+                CASE WHEN @DefaultEntitlementQuantityMode_Clear = 1 THEN NULL ELSE ISNULL(@DefaultEntitlementQuantityMode, NULL) END,
+                CASE WHEN @DefaultEntitlementValidityMode_Clear = 1 THEN NULL ELSE ISNULL(@DefaultEntitlementValidityMode, NULL) END,
+                CASE WHEN @PricingDriverClass_Clear = 1 THEN NULL ELSE ISNULL(@PricingDriverClass, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwProductCategories] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateProductCategory] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Product Categories */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateProductCategory] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Product Categories */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Categories
+-- Item: spUpdateProductCategory
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR ProductCategory
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateProductCategory]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateProductCategory];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateProductCategory]
+    @ID uniqueidentifier,
+    @CompanyID uniqueidentifier = NULL,
+    @Code_Clear bit = 0,
+    @Code nvarchar(40) = NULL,
+    @Name nvarchar(200) = NULL,
+    @ParentProductCategoryID_Clear bit = 0,
+    @ParentProductCategoryID uniqueidentifier = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(MAX) = NULL,
+    @IsActive bit = NULL,
+    @DefaultIsTaxable_Clear bit = 0,
+    @DefaultIsTaxable bit = NULL,
+    @DefaultTaxCategory_Clear bit = 0,
+    @DefaultTaxCategory nvarchar(50) = NULL,
+    @DefaultEntitlementGrantTiming_Clear bit = 0,
+    @DefaultEntitlementGrantTiming nvarchar(20) = NULL,
+    @DefaultEntitlementQuantityMode_Clear bit = 0,
+    @DefaultEntitlementQuantityMode nvarchar(20) = NULL,
+    @DefaultEntitlementValidityMode_Clear bit = 0,
+    @DefaultEntitlementValidityMode nvarchar(20) = NULL,
+    @PricingDriverClass_Clear bit = 0,
+    @PricingDriverClass nvarchar(255) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[ProductCategory]
+    SET
+        [CompanyID] = ISNULL(@CompanyID, [CompanyID]),
+        [Code] = CASE WHEN @Code_Clear = 1 THEN NULL ELSE ISNULL(@Code, [Code]) END,
+        [Name] = ISNULL(@Name, [Name]),
+        [ParentProductCategoryID] = CASE WHEN @ParentProductCategoryID_Clear = 1 THEN NULL ELSE ISNULL(@ParentProductCategoryID, [ParentProductCategoryID]) END,
+        [Description] = CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, [Description]) END,
+        [IsActive] = ISNULL(@IsActive, [IsActive]),
+        [DefaultIsTaxable] = CASE WHEN @DefaultIsTaxable_Clear = 1 THEN NULL ELSE ISNULL(@DefaultIsTaxable, [DefaultIsTaxable]) END,
+        [DefaultTaxCategory] = CASE WHEN @DefaultTaxCategory_Clear = 1 THEN NULL ELSE ISNULL(@DefaultTaxCategory, [DefaultTaxCategory]) END,
+        [DefaultEntitlementGrantTiming] = CASE WHEN @DefaultEntitlementGrantTiming_Clear = 1 THEN NULL ELSE ISNULL(@DefaultEntitlementGrantTiming, [DefaultEntitlementGrantTiming]) END,
+        [DefaultEntitlementQuantityMode] = CASE WHEN @DefaultEntitlementQuantityMode_Clear = 1 THEN NULL ELSE ISNULL(@DefaultEntitlementQuantityMode, [DefaultEntitlementQuantityMode]) END,
+        [DefaultEntitlementValidityMode] = CASE WHEN @DefaultEntitlementValidityMode_Clear = 1 THEN NULL ELSE ISNULL(@DefaultEntitlementValidityMode, [DefaultEntitlementValidityMode]) END,
+        [PricingDriverClass] = CASE WHEN @PricingDriverClass_Clear = 1 THEN NULL ELSE ISNULL(@PricingDriverClass, [PricingDriverClass]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwProductCategories] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwProductCategories]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateProductCategory] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the ProductCategory table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateProductCategory]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateProductCategory];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateProductCategory
+ON [${flyway:defaultSchema}].[ProductCategory]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[ProductCategory]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[ProductCategory] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Product Categories */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateProductCategory] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Product Categories */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Categories
+-- Item: spDeleteProductCategory
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR ProductCategory
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteProductCategory]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteProductCategory];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteProductCategory]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[ProductCategory]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteProductCategory] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Product Categories */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteProductCategory] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Product Prices */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Prices
+-- Item: vwProductPrices
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Product Prices
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  ProductPrice
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwProductPrices]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwProductPrices];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwProductPrices]
+AS
+SELECT
+    p.*,
+    mjBizAppsOrdersProduct_ProductID.[Name] AS [Product],
+    mjBizAppsOrdersPriceList_PriceListID.[Name] AS [PriceList],
+    mjBizAppsOrdersProductCategory_ProductCategoryID.[Name] AS [ProductCategory]
+FROM
+    [${flyway:defaultSchema}].[ProductPrice] AS p
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[Product] AS mjBizAppsOrdersProduct_ProductID
+  ON
+    [p].[ProductID] = mjBizAppsOrdersProduct_ProductID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PriceList] AS mjBizAppsOrdersPriceList_PriceListID
+  ON
+    [p].[PriceListID] = mjBizAppsOrdersPriceList_PriceListID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[ProductCategory] AS mjBizAppsOrdersProductCategory_ProductCategoryID
+  ON
+    [p].[ProductCategoryID] = mjBizAppsOrdersProductCategory_ProductCategoryID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwProductPrices] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Product Prices */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Prices
+-- Item: Permissions for vwProductPrices
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwProductPrices] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Product Prices */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Prices
+-- Item: spCreateProductPrice
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR ProductPrice
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateProductPrice]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateProductPrice];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateProductPrice]
+    @ID uniqueidentifier = NULL,
+    @ProductID_Clear bit = 0,
+    @ProductID uniqueidentifier = NULL,
+    @PriceListID_Clear bit = 0,
+    @PriceListID uniqueidentifier = NULL,
+    @PricingModel nvarchar(20) = NULL,
+    @FeeType nvarchar(20) = NULL,
+    @Amount decimal(19, 4),
+    @UnitOfMeasure_Clear bit = 0,
+    @UnitOfMeasure nvarchar(40) = NULL,
+    @PackageQuantity_Clear bit = 0,
+    @PackageQuantity decimal(18, 4) = NULL,
+    @MinQuantity_Clear bit = 0,
+    @MinQuantity decimal(18, 4) = NULL,
+    @MaxQuantity_Clear bit = 0,
+    @MaxQuantity decimal(18, 4) = NULL,
+    @EffectiveFrom date,
+    @EffectiveTo_Clear bit = 0,
+    @EffectiveTo date = NULL,
+    @RecurrenceMonths_Clear bit = 0,
+    @RecurrenceMonths nvarchar(40) = NULL,
+    @RecurrenceDaysOfWeek_Clear bit = 0,
+    @RecurrenceDaysOfWeek nvarchar(20) = NULL,
+    @RecurrenceDayOfMonthMin_Clear bit = 0,
+    @RecurrenceDayOfMonthMin tinyint = NULL,
+    @RecurrenceDayOfMonthMax_Clear bit = 0,
+    @RecurrenceDayOfMonthMax tinyint = NULL,
+    @TimeOfDayStart_Clear bit = 0,
+    @TimeOfDayStart time = NULL,
+    @TimeOfDayEnd_Clear bit = 0,
+    @TimeOfDayEnd time = NULL,
+    @Priority int = NULL,
+    @Status nvarchar(10) = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(MAX) = NULL,
+    @Name nvarchar(100),
+    @ProductCategoryID_Clear bit = 0,
+    @ProductCategoryID uniqueidentifier = NULL,
+    @Applicability_Clear bit = 0,
+    @Applicability nvarchar(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[ProductPrice]
+            (
+                [ID],
+                [ProductID],
+                [PriceListID],
+                [PricingModel],
+                [FeeType],
+                [Amount],
+                [UnitOfMeasure],
+                [PackageQuantity],
+                [MinQuantity],
+                [MaxQuantity],
+                [EffectiveFrom],
+                [EffectiveTo],
+                [RecurrenceMonths],
+                [RecurrenceDaysOfWeek],
+                [RecurrenceDayOfMonthMin],
+                [RecurrenceDayOfMonthMax],
+                [TimeOfDayStart],
+                [TimeOfDayEnd],
+                [Priority],
+                [Status],
+                [Description],
+                [Name],
+                [ProductCategoryID],
+                [Applicability]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                CASE WHEN @ProductID_Clear = 1 THEN NULL ELSE ISNULL(@ProductID, NULL) END,
+                CASE WHEN @PriceListID_Clear = 1 THEN NULL ELSE ISNULL(@PriceListID, NULL) END,
+                ISNULL(@PricingModel, 'Flat'),
+                ISNULL(@FeeType, 'Standard'),
+                @Amount,
+                CASE WHEN @UnitOfMeasure_Clear = 1 THEN NULL ELSE ISNULL(@UnitOfMeasure, NULL) END,
+                CASE WHEN @PackageQuantity_Clear = 1 THEN NULL ELSE ISNULL(@PackageQuantity, NULL) END,
+                CASE WHEN @MinQuantity_Clear = 1 THEN NULL ELSE ISNULL(@MinQuantity, NULL) END,
+                CASE WHEN @MaxQuantity_Clear = 1 THEN NULL ELSE ISNULL(@MaxQuantity, NULL) END,
+                @EffectiveFrom,
+                CASE WHEN @EffectiveTo_Clear = 1 THEN NULL ELSE ISNULL(@EffectiveTo, NULL) END,
+                CASE WHEN @RecurrenceMonths_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceMonths, NULL) END,
+                CASE WHEN @RecurrenceDaysOfWeek_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceDaysOfWeek, NULL) END,
+                CASE WHEN @RecurrenceDayOfMonthMin_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceDayOfMonthMin, NULL) END,
+                CASE WHEN @RecurrenceDayOfMonthMax_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceDayOfMonthMax, NULL) END,
+                CASE WHEN @TimeOfDayStart_Clear = 1 THEN NULL ELSE ISNULL(@TimeOfDayStart, NULL) END,
+                CASE WHEN @TimeOfDayEnd_Clear = 1 THEN NULL ELSE ISNULL(@TimeOfDayEnd, NULL) END,
+                ISNULL(@Priority, 0),
+                ISNULL(@Status, 'Active'),
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                @Name,
+                CASE WHEN @ProductCategoryID_Clear = 1 THEN NULL ELSE ISNULL(@ProductCategoryID, NULL) END,
+                CASE WHEN @Applicability_Clear = 1 THEN NULL ELSE ISNULL(@Applicability, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[ProductPrice]
+            (
+                [ProductID],
+                [PriceListID],
+                [PricingModel],
+                [FeeType],
+                [Amount],
+                [UnitOfMeasure],
+                [PackageQuantity],
+                [MinQuantity],
+                [MaxQuantity],
+                [EffectiveFrom],
+                [EffectiveTo],
+                [RecurrenceMonths],
+                [RecurrenceDaysOfWeek],
+                [RecurrenceDayOfMonthMin],
+                [RecurrenceDayOfMonthMax],
+                [TimeOfDayStart],
+                [TimeOfDayEnd],
+                [Priority],
+                [Status],
+                [Description],
+                [Name],
+                [ProductCategoryID],
+                [Applicability]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                CASE WHEN @ProductID_Clear = 1 THEN NULL ELSE ISNULL(@ProductID, NULL) END,
+                CASE WHEN @PriceListID_Clear = 1 THEN NULL ELSE ISNULL(@PriceListID, NULL) END,
+                ISNULL(@PricingModel, 'Flat'),
+                ISNULL(@FeeType, 'Standard'),
+                @Amount,
+                CASE WHEN @UnitOfMeasure_Clear = 1 THEN NULL ELSE ISNULL(@UnitOfMeasure, NULL) END,
+                CASE WHEN @PackageQuantity_Clear = 1 THEN NULL ELSE ISNULL(@PackageQuantity, NULL) END,
+                CASE WHEN @MinQuantity_Clear = 1 THEN NULL ELSE ISNULL(@MinQuantity, NULL) END,
+                CASE WHEN @MaxQuantity_Clear = 1 THEN NULL ELSE ISNULL(@MaxQuantity, NULL) END,
+                @EffectiveFrom,
+                CASE WHEN @EffectiveTo_Clear = 1 THEN NULL ELSE ISNULL(@EffectiveTo, NULL) END,
+                CASE WHEN @RecurrenceMonths_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceMonths, NULL) END,
+                CASE WHEN @RecurrenceDaysOfWeek_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceDaysOfWeek, NULL) END,
+                CASE WHEN @RecurrenceDayOfMonthMin_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceDayOfMonthMin, NULL) END,
+                CASE WHEN @RecurrenceDayOfMonthMax_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceDayOfMonthMax, NULL) END,
+                CASE WHEN @TimeOfDayStart_Clear = 1 THEN NULL ELSE ISNULL(@TimeOfDayStart, NULL) END,
+                CASE WHEN @TimeOfDayEnd_Clear = 1 THEN NULL ELSE ISNULL(@TimeOfDayEnd, NULL) END,
+                ISNULL(@Priority, 0),
+                ISNULL(@Status, 'Active'),
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                @Name,
+                CASE WHEN @ProductCategoryID_Clear = 1 THEN NULL ELSE ISNULL(@ProductCategoryID, NULL) END,
+                CASE WHEN @Applicability_Clear = 1 THEN NULL ELSE ISNULL(@Applicability, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwProductPrices] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateProductPrice] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Product Prices */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateProductPrice] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Product Prices */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Prices
+-- Item: spUpdateProductPrice
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR ProductPrice
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateProductPrice]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateProductPrice];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateProductPrice]
+    @ID uniqueidentifier,
+    @ProductID_Clear bit = 0,
+    @ProductID uniqueidentifier = NULL,
+    @PriceListID_Clear bit = 0,
+    @PriceListID uniqueidentifier = NULL,
+    @PricingModel nvarchar(20) = NULL,
+    @FeeType nvarchar(20) = NULL,
+    @Amount decimal(19, 4) = NULL,
+    @UnitOfMeasure_Clear bit = 0,
+    @UnitOfMeasure nvarchar(40) = NULL,
+    @PackageQuantity_Clear bit = 0,
+    @PackageQuantity decimal(18, 4) = NULL,
+    @MinQuantity_Clear bit = 0,
+    @MinQuantity decimal(18, 4) = NULL,
+    @MaxQuantity_Clear bit = 0,
+    @MaxQuantity decimal(18, 4) = NULL,
+    @EffectiveFrom date = NULL,
+    @EffectiveTo_Clear bit = 0,
+    @EffectiveTo date = NULL,
+    @RecurrenceMonths_Clear bit = 0,
+    @RecurrenceMonths nvarchar(40) = NULL,
+    @RecurrenceDaysOfWeek_Clear bit = 0,
+    @RecurrenceDaysOfWeek nvarchar(20) = NULL,
+    @RecurrenceDayOfMonthMin_Clear bit = 0,
+    @RecurrenceDayOfMonthMin tinyint = NULL,
+    @RecurrenceDayOfMonthMax_Clear bit = 0,
+    @RecurrenceDayOfMonthMax tinyint = NULL,
+    @TimeOfDayStart_Clear bit = 0,
+    @TimeOfDayStart time = NULL,
+    @TimeOfDayEnd_Clear bit = 0,
+    @TimeOfDayEnd time = NULL,
+    @Priority int = NULL,
+    @Status nvarchar(10) = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(MAX) = NULL,
+    @Name nvarchar(100) = NULL,
+    @ProductCategoryID_Clear bit = 0,
+    @ProductCategoryID uniqueidentifier = NULL,
+    @Applicability_Clear bit = 0,
+    @Applicability nvarchar(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[ProductPrice]
+    SET
+        [ProductID] = CASE WHEN @ProductID_Clear = 1 THEN NULL ELSE ISNULL(@ProductID, [ProductID]) END,
+        [PriceListID] = CASE WHEN @PriceListID_Clear = 1 THEN NULL ELSE ISNULL(@PriceListID, [PriceListID]) END,
+        [PricingModel] = ISNULL(@PricingModel, [PricingModel]),
+        [FeeType] = ISNULL(@FeeType, [FeeType]),
+        [Amount] = ISNULL(@Amount, [Amount]),
+        [UnitOfMeasure] = CASE WHEN @UnitOfMeasure_Clear = 1 THEN NULL ELSE ISNULL(@UnitOfMeasure, [UnitOfMeasure]) END,
+        [PackageQuantity] = CASE WHEN @PackageQuantity_Clear = 1 THEN NULL ELSE ISNULL(@PackageQuantity, [PackageQuantity]) END,
+        [MinQuantity] = CASE WHEN @MinQuantity_Clear = 1 THEN NULL ELSE ISNULL(@MinQuantity, [MinQuantity]) END,
+        [MaxQuantity] = CASE WHEN @MaxQuantity_Clear = 1 THEN NULL ELSE ISNULL(@MaxQuantity, [MaxQuantity]) END,
+        [EffectiveFrom] = ISNULL(@EffectiveFrom, [EffectiveFrom]),
+        [EffectiveTo] = CASE WHEN @EffectiveTo_Clear = 1 THEN NULL ELSE ISNULL(@EffectiveTo, [EffectiveTo]) END,
+        [RecurrenceMonths] = CASE WHEN @RecurrenceMonths_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceMonths, [RecurrenceMonths]) END,
+        [RecurrenceDaysOfWeek] = CASE WHEN @RecurrenceDaysOfWeek_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceDaysOfWeek, [RecurrenceDaysOfWeek]) END,
+        [RecurrenceDayOfMonthMin] = CASE WHEN @RecurrenceDayOfMonthMin_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceDayOfMonthMin, [RecurrenceDayOfMonthMin]) END,
+        [RecurrenceDayOfMonthMax] = CASE WHEN @RecurrenceDayOfMonthMax_Clear = 1 THEN NULL ELSE ISNULL(@RecurrenceDayOfMonthMax, [RecurrenceDayOfMonthMax]) END,
+        [TimeOfDayStart] = CASE WHEN @TimeOfDayStart_Clear = 1 THEN NULL ELSE ISNULL(@TimeOfDayStart, [TimeOfDayStart]) END,
+        [TimeOfDayEnd] = CASE WHEN @TimeOfDayEnd_Clear = 1 THEN NULL ELSE ISNULL(@TimeOfDayEnd, [TimeOfDayEnd]) END,
+        [Priority] = ISNULL(@Priority, [Priority]),
+        [Status] = ISNULL(@Status, [Status]),
+        [Description] = CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, [Description]) END,
+        [Name] = ISNULL(@Name, [Name]),
+        [ProductCategoryID] = CASE WHEN @ProductCategoryID_Clear = 1 THEN NULL ELSE ISNULL(@ProductCategoryID, [ProductCategoryID]) END,
+        [Applicability] = CASE WHEN @Applicability_Clear = 1 THEN NULL ELSE ISNULL(@Applicability, [Applicability]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwProductPrices] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwProductPrices]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateProductPrice] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the ProductPrice table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateProductPrice]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateProductPrice];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateProductPrice
+ON [${flyway:defaultSchema}].[ProductPrice]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[ProductPrice]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[ProductPrice] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Product Prices */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateProductPrice] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Product Prices */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Product Prices
+-- Item: spDeleteProductPrice
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR ProductPrice
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteProductPrice]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteProductPrice];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteProductPrice]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[ProductPrice]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteProductPrice] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Product Prices */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteProductPrice] TO [cdp_Developer], [cdp_Integration];
+
+/* Index for Foreign Keys for StoredValueTransaction */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Stored Value Transactions
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key StoredValueAccountID in table StoredValueTransaction
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_StoredValueTransaction_StoredValueAccountID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[StoredValueTransaction]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_StoredValueTransaction_StoredValueAccountID ON [${flyway:defaultSchema}].[StoredValueTransaction] ([StoredValueAccountID]);
+
+-- Index for foreign key RelatedPaymentID in table StoredValueTransaction
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_StoredValueTransaction_RelatedPaymentID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[StoredValueTransaction]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_StoredValueTransaction_RelatedPaymentID ON [${flyway:defaultSchema}].[StoredValueTransaction] ([RelatedPaymentID]);
+
+-- Index for foreign key RelatedOrderHeaderID in table StoredValueTransaction
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_StoredValueTransaction_RelatedOrderHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[StoredValueTransaction]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_StoredValueTransaction_RelatedOrderHeaderID ON [${flyway:defaultSchema}].[StoredValueTransaction] ([RelatedOrderHeaderID]);
+
+/* Index for Foreign Keys for SubscriptionEvent */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Events
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key SubscriptionID in table SubscriptionEvent
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_SubscriptionEvent_SubscriptionID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[SubscriptionEvent]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_SubscriptionEvent_SubscriptionID ON [${flyway:defaultSchema}].[SubscriptionEvent] ([SubscriptionID]);
+
+-- Index for foreign key RelatedPaymentID in table SubscriptionEvent
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_SubscriptionEvent_RelatedPaymentID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[SubscriptionEvent]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_SubscriptionEvent_RelatedPaymentID ON [${flyway:defaultSchema}].[SubscriptionEvent] ([RelatedPaymentID]);
+
+-- Index for foreign key RelatedOrderHeaderID in table SubscriptionEvent
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_SubscriptionEvent_RelatedOrderHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[SubscriptionEvent]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_SubscriptionEvent_RelatedOrderHeaderID ON [${flyway:defaultSchema}].[SubscriptionEvent] ([RelatedOrderHeaderID]);
+
+/* Base View SQL for MJ_BizApps_Orders: Stored Value Transactions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Stored Value Transactions
+-- Item: vwStoredValueTransactions
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Stored Value Transactions
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  StoredValueTransaction
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwStoredValueTransactions]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwStoredValueTransactions];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwStoredValueTransactions]
+AS
+SELECT
+    s.*,
+    mjBizAppsOrdersStoredValueAccount_StoredValueAccountID.[Code] AS [StoredValueAccount],
+    mjBizAppsOrdersPaymentHeader_RelatedPaymentID.[PaymentNumber] AS [RelatedPayment],
+    mjBizAppsOrdersOrderHeader_RelatedOrderHeaderID.[OrderNumber] AS [RelatedOrderHeader]
+FROM
+    [${flyway:defaultSchema}].[StoredValueTransaction] AS s
+INNER JOIN
+    [${flyway:defaultSchema}].[StoredValueAccount] AS mjBizAppsOrdersStoredValueAccount_StoredValueAccountID
+  ON
+    [s].[StoredValueAccountID] = mjBizAppsOrdersStoredValueAccount_StoredValueAccountID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentHeader] AS mjBizAppsOrdersPaymentHeader_RelatedPaymentID
+  ON
+    [s].[RelatedPaymentID] = mjBizAppsOrdersPaymentHeader_RelatedPaymentID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_RelatedOrderHeaderID
+  ON
+    [s].[RelatedOrderHeaderID] = mjBizAppsOrdersOrderHeader_RelatedOrderHeaderID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwStoredValueTransactions] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Stored Value Transactions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Stored Value Transactions
+-- Item: Permissions for vwStoredValueTransactions
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwStoredValueTransactions] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Stored Value Transactions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Stored Value Transactions
+-- Item: spCreateStoredValueTransaction
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR StoredValueTransaction
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateStoredValueTransaction]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateStoredValueTransaction];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateStoredValueTransaction]
+    @ID uniqueidentifier = NULL,
+    @StoredValueAccountID uniqueidentifier,
+    @TransactionType nvarchar(20),
+    @Amount decimal(18, 2),
+    @BalanceAfter decimal(18, 2),
+    @RelatedPaymentID_Clear bit = 0,
+    @RelatedPaymentID uniqueidentifier = NULL,
+    @RelatedOrderHeaderID_Clear bit = 0,
+    @RelatedOrderHeaderID uniqueidentifier = NULL,
+    @OccurredAt datetimeoffset
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[StoredValueTransaction]
+            (
+                [ID],
+                [StoredValueAccountID],
+                [TransactionType],
+                [Amount],
+                [BalanceAfter],
+                [RelatedPaymentID],
+                [RelatedOrderHeaderID],
+                [OccurredAt]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @StoredValueAccountID,
+                @TransactionType,
+                @Amount,
+                @BalanceAfter,
+                CASE WHEN @RelatedPaymentID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedPaymentID, NULL) END,
+                CASE WHEN @RelatedOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedOrderHeaderID, NULL) END,
+                @OccurredAt
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[StoredValueTransaction]
+            (
+                [StoredValueAccountID],
+                [TransactionType],
+                [Amount],
+                [BalanceAfter],
+                [RelatedPaymentID],
+                [RelatedOrderHeaderID],
+                [OccurredAt]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @StoredValueAccountID,
+                @TransactionType,
+                @Amount,
+                @BalanceAfter,
+                CASE WHEN @RelatedPaymentID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedPaymentID, NULL) END,
+                CASE WHEN @RelatedOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedOrderHeaderID, NULL) END,
+                @OccurredAt
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwStoredValueTransactions] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateStoredValueTransaction] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Stored Value Transactions */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateStoredValueTransaction] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Stored Value Transactions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Stored Value Transactions
+-- Item: spUpdateStoredValueTransaction
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR StoredValueTransaction
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateStoredValueTransaction]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateStoredValueTransaction];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateStoredValueTransaction]
+    @ID uniqueidentifier,
+    @StoredValueAccountID uniqueidentifier = NULL,
+    @TransactionType nvarchar(20) = NULL,
+    @Amount decimal(18, 2) = NULL,
+    @BalanceAfter decimal(18, 2) = NULL,
+    @RelatedPaymentID_Clear bit = 0,
+    @RelatedPaymentID uniqueidentifier = NULL,
+    @RelatedOrderHeaderID_Clear bit = 0,
+    @RelatedOrderHeaderID uniqueidentifier = NULL,
+    @OccurredAt datetimeoffset = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[StoredValueTransaction]
+    SET
+        [StoredValueAccountID] = ISNULL(@StoredValueAccountID, [StoredValueAccountID]),
+        [TransactionType] = ISNULL(@TransactionType, [TransactionType]),
+        [Amount] = ISNULL(@Amount, [Amount]),
+        [BalanceAfter] = ISNULL(@BalanceAfter, [BalanceAfter]),
+        [RelatedPaymentID] = CASE WHEN @RelatedPaymentID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedPaymentID, [RelatedPaymentID]) END,
+        [RelatedOrderHeaderID] = CASE WHEN @RelatedOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedOrderHeaderID, [RelatedOrderHeaderID]) END,
+        [OccurredAt] = ISNULL(@OccurredAt, [OccurredAt])
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwStoredValueTransactions] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwStoredValueTransactions]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateStoredValueTransaction] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the StoredValueTransaction table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateStoredValueTransaction]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateStoredValueTransaction];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateStoredValueTransaction
+ON [${flyway:defaultSchema}].[StoredValueTransaction]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[StoredValueTransaction]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[StoredValueTransaction] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Stored Value Transactions */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateStoredValueTransaction] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Subscription Events */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Events
+-- Item: vwSubscriptionEvents
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Subscription Events
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  SubscriptionEvent
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwSubscriptionEvents]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwSubscriptionEvents];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwSubscriptionEvents]
+AS
+SELECT
+    s.*,
+    mjBizAppsOrdersSubscription_SubscriptionID.[SubscriptionNumber] AS [Subscription],
+    mjBizAppsOrdersPaymentHeader_RelatedPaymentID.[PaymentNumber] AS [RelatedPayment],
+    mjBizAppsOrdersOrderHeader_RelatedOrderHeaderID.[OrderNumber] AS [RelatedOrderHeader]
+FROM
+    [${flyway:defaultSchema}].[SubscriptionEvent] AS s
+INNER JOIN
+    [${flyway:defaultSchema}].[Subscription] AS mjBizAppsOrdersSubscription_SubscriptionID
+  ON
+    [s].[SubscriptionID] = mjBizAppsOrdersSubscription_SubscriptionID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentHeader] AS mjBizAppsOrdersPaymentHeader_RelatedPaymentID
+  ON
+    [s].[RelatedPaymentID] = mjBizAppsOrdersPaymentHeader_RelatedPaymentID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_RelatedOrderHeaderID
+  ON
+    [s].[RelatedOrderHeaderID] = mjBizAppsOrdersOrderHeader_RelatedOrderHeaderID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwSubscriptionEvents] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Subscription Events */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Events
+-- Item: Permissions for vwSubscriptionEvents
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwSubscriptionEvents] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Subscription Events */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Events
+-- Item: spCreateSubscriptionEvent
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR SubscriptionEvent
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateSubscriptionEvent]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateSubscriptionEvent];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateSubscriptionEvent]
+    @ID uniqueidentifier = NULL,
+    @SubscriptionID uniqueidentifier,
+    @EventType nvarchar(40),
+    @OccurredAt datetimeoffset,
+    @EventData_Clear bit = 0,
+    @EventData nvarchar(MAX) = NULL,
+    @ProviderEventID_Clear bit = 0,
+    @ProviderEventID nvarchar(100) = NULL,
+    @RelatedPaymentID_Clear bit = 0,
+    @RelatedPaymentID uniqueidentifier = NULL,
+    @RelatedOrderHeaderID_Clear bit = 0,
+    @RelatedOrderHeaderID uniqueidentifier = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[SubscriptionEvent]
+            (
+                [ID],
+                [SubscriptionID],
+                [EventType],
+                [OccurredAt],
+                [EventData],
+                [ProviderEventID],
+                [RelatedPaymentID],
+                [RelatedOrderHeaderID]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @SubscriptionID,
+                @EventType,
+                @OccurredAt,
+                CASE WHEN @EventData_Clear = 1 THEN NULL ELSE ISNULL(@EventData, NULL) END,
+                CASE WHEN @ProviderEventID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderEventID, NULL) END,
+                CASE WHEN @RelatedPaymentID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedPaymentID, NULL) END,
+                CASE WHEN @RelatedOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedOrderHeaderID, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[SubscriptionEvent]
+            (
+                [SubscriptionID],
+                [EventType],
+                [OccurredAt],
+                [EventData],
+                [ProviderEventID],
+                [RelatedPaymentID],
+                [RelatedOrderHeaderID]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @SubscriptionID,
+                @EventType,
+                @OccurredAt,
+                CASE WHEN @EventData_Clear = 1 THEN NULL ELSE ISNULL(@EventData, NULL) END,
+                CASE WHEN @ProviderEventID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderEventID, NULL) END,
+                CASE WHEN @RelatedPaymentID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedPaymentID, NULL) END,
+                CASE WHEN @RelatedOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedOrderHeaderID, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwSubscriptionEvents] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateSubscriptionEvent] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Subscription Events */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateSubscriptionEvent] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Subscription Events */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Events
+-- Item: spUpdateSubscriptionEvent
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR SubscriptionEvent
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateSubscriptionEvent]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateSubscriptionEvent];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateSubscriptionEvent]
+    @ID uniqueidentifier,
+    @SubscriptionID uniqueidentifier = NULL,
+    @EventType nvarchar(40) = NULL,
+    @OccurredAt datetimeoffset = NULL,
+    @EventData_Clear bit = 0,
+    @EventData nvarchar(MAX) = NULL,
+    @ProviderEventID_Clear bit = 0,
+    @ProviderEventID nvarchar(100) = NULL,
+    @RelatedPaymentID_Clear bit = 0,
+    @RelatedPaymentID uniqueidentifier = NULL,
+    @RelatedOrderHeaderID_Clear bit = 0,
+    @RelatedOrderHeaderID uniqueidentifier = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[SubscriptionEvent]
+    SET
+        [SubscriptionID] = ISNULL(@SubscriptionID, [SubscriptionID]),
+        [EventType] = ISNULL(@EventType, [EventType]),
+        [OccurredAt] = ISNULL(@OccurredAt, [OccurredAt]),
+        [EventData] = CASE WHEN @EventData_Clear = 1 THEN NULL ELSE ISNULL(@EventData, [EventData]) END,
+        [ProviderEventID] = CASE WHEN @ProviderEventID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderEventID, [ProviderEventID]) END,
+        [RelatedPaymentID] = CASE WHEN @RelatedPaymentID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedPaymentID, [RelatedPaymentID]) END,
+        [RelatedOrderHeaderID] = CASE WHEN @RelatedOrderHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@RelatedOrderHeaderID, [RelatedOrderHeaderID]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwSubscriptionEvents] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwSubscriptionEvents]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateSubscriptionEvent] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the SubscriptionEvent table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateSubscriptionEvent]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateSubscriptionEvent];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateSubscriptionEvent
+ON [${flyway:defaultSchema}].[SubscriptionEvent]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[SubscriptionEvent]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[SubscriptionEvent] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Subscription Events */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateSubscriptionEvent] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Stored Value Transactions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Stored Value Transactions
+-- Item: spDeleteStoredValueTransaction
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR StoredValueTransaction
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteStoredValueTransaction]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteStoredValueTransaction];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteStoredValueTransaction]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[StoredValueTransaction]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteStoredValueTransaction] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Stored Value Transactions */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteStoredValueTransaction] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Subscription Events */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Events
+-- Item: spDeleteSubscriptionEvent
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR SubscriptionEvent
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteSubscriptionEvent]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteSubscriptionEvent];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteSubscriptionEvent]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[SubscriptionEvent]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteSubscriptionEvent] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Subscription Events */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteSubscriptionEvent] TO [cdp_Developer], [cdp_Integration];
+
+/* Index for Foreign Keys for SubscriptionTerm */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Terms
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key SubscriptionID in table SubscriptionTerm
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_SubscriptionTerm_SubscriptionID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[SubscriptionTerm]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_SubscriptionTerm_SubscriptionID ON [${flyway:defaultSchema}].[SubscriptionTerm] ([SubscriptionID]);
+
+-- Index for foreign key OrderLineID in table SubscriptionTerm
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_SubscriptionTerm_OrderLineID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[SubscriptionTerm]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_SubscriptionTerm_OrderLineID ON [${flyway:defaultSchema}].[SubscriptionTerm] ([OrderLineID]);
+
+-- Index for foreign key RevenueRecognitionTypeID in table SubscriptionTerm
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_SubscriptionTerm_RevenueRecognitionTypeID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[SubscriptionTerm]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_SubscriptionTerm_RevenueRecognitionTypeID ON [${flyway:defaultSchema}].[SubscriptionTerm] ([RevenueRecognitionTypeID]);
+
+/* Index for Foreign Keys for Subscription */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscriptions
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key CompanyID in table Subscription
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_Subscription_CompanyID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[Subscription]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_Subscription_CompanyID ON [${flyway:defaultSchema}].[Subscription] ([CompanyID]);
+
+-- Index for foreign key OrderLineID in table Subscription
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_Subscription_OrderLineID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[Subscription]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_Subscription_OrderLineID ON [${flyway:defaultSchema}].[Subscription] ([OrderLineID]);
+
+-- Index for foreign key SubscriptionTypeID in table Subscription
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_Subscription_SubscriptionTypeID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[Subscription]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_Subscription_SubscriptionTypeID ON [${flyway:defaultSchema}].[Subscription] ([SubscriptionTypeID]);
+
+-- Index for foreign key ProductID in table Subscription
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_Subscription_ProductID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[Subscription]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_Subscription_ProductID ON [${flyway:defaultSchema}].[Subscription] ([ProductID]);
+
+-- Index for foreign key HolderOrganizationID in table Subscription
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_Subscription_HolderOrganizationID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[Subscription]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_Subscription_HolderOrganizationID ON [${flyway:defaultSchema}].[Subscription] ([HolderOrganizationID]);
+
+-- Index for foreign key BeneficiaryPersonID in table Subscription
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_Subscription_BeneficiaryPersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[Subscription]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_Subscription_BeneficiaryPersonID ON [${flyway:defaultSchema}].[Subscription] ([BeneficiaryPersonID]);
+
+-- Index for foreign key PaymentProviderID in table Subscription
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_Subscription_PaymentProviderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[Subscription]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_Subscription_PaymentProviderID ON [${flyway:defaultSchema}].[Subscription] ([PaymentProviderID]);
+
+-- Index for foreign key MigratesFromSubscriptionID in table Subscription
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_Subscription_MigratesFromSubscriptionID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[Subscription]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_Subscription_MigratesFromSubscriptionID ON [${flyway:defaultSchema}].[Subscription] ([MigratesFromSubscriptionID]);
+
+-- Index for foreign key MigratesToSubscriptionID in table Subscription
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_Subscription_MigratesToSubscriptionID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[Subscription]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_Subscription_MigratesToSubscriptionID ON [${flyway:defaultSchema}].[Subscription] ([MigratesToSubscriptionID]);
+
+/* Base View SQL for MJ_BizApps_Orders: Subscription Terms */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Terms
+-- Item: vwSubscriptionTerms
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Subscription Terms
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  SubscriptionTerm
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwSubscriptionTerms]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwSubscriptionTerms];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwSubscriptionTerms]
+AS
+SELECT
+    s.*,
+    mjBizAppsOrdersSubscription_SubscriptionID.[SubscriptionNumber] AS [Subscription],
+    mjBizAppsOrdersRevenueRecognitionType_RevenueRecognitionTypeID.[Name] AS [RevenueRecognitionType]
+FROM
+    [${flyway:defaultSchema}].[SubscriptionTerm] AS s
+INNER JOIN
+    [${flyway:defaultSchema}].[Subscription] AS mjBizAppsOrdersSubscription_SubscriptionID
+  ON
+    [s].[SubscriptionID] = mjBizAppsOrdersSubscription_SubscriptionID.[ID]
+INNER JOIN
+    [${flyway:defaultSchema}].[RevenueRecognitionType] AS mjBizAppsOrdersRevenueRecognitionType_RevenueRecognitionTypeID
+  ON
+    [s].[RevenueRecognitionTypeID] = mjBizAppsOrdersRevenueRecognitionType_RevenueRecognitionTypeID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwSubscriptionTerms] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Subscription Terms */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Terms
+-- Item: Permissions for vwSubscriptionTerms
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwSubscriptionTerms] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Subscription Terms */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Terms
+-- Item: spCreateSubscriptionTerm
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR SubscriptionTerm
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateSubscriptionTerm]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateSubscriptionTerm];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateSubscriptionTerm]
+    @ID uniqueidentifier = NULL,
+    @SubscriptionID uniqueidentifier,
+    @TermNumber int,
+    @OrderLineID uniqueidentifier,
+    @StartDate date,
+    @EndDate date,
+    @Amount decimal(18, 2),
+    @IsProrated bit = NULL,
+    @ProrationFactor_Clear bit = 0,
+    @ProrationFactor decimal(9, 6) = NULL,
+    @RevenueRecognitionTypeID uniqueidentifier,
+    @Status nvarchar(20) = NULL,
+    @CanceledAt_Clear bit = 0,
+    @CanceledAt datetimeoffset = NULL,
+    @CancellationEffectiveDate_Clear bit = 0,
+    @CancellationEffectiveDate date = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[SubscriptionTerm]
+            (
+                [ID],
+                [SubscriptionID],
+                [TermNumber],
+                [OrderLineID],
+                [StartDate],
+                [EndDate],
+                [Amount],
+                [IsProrated],
+                [ProrationFactor],
+                [RevenueRecognitionTypeID],
+                [Status],
+                [CanceledAt],
+                [CancellationEffectiveDate]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @SubscriptionID,
+                @TermNumber,
+                @OrderLineID,
+                @StartDate,
+                @EndDate,
+                @Amount,
+                ISNULL(@IsProrated, 0),
+                CASE WHEN @ProrationFactor_Clear = 1 THEN NULL ELSE ISNULL(@ProrationFactor, NULL) END,
+                @RevenueRecognitionTypeID,
+                ISNULL(@Status, 'Scheduled'),
+                CASE WHEN @CanceledAt_Clear = 1 THEN NULL ELSE ISNULL(@CanceledAt, NULL) END,
+                CASE WHEN @CancellationEffectiveDate_Clear = 1 THEN NULL ELSE ISNULL(@CancellationEffectiveDate, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[SubscriptionTerm]
+            (
+                [SubscriptionID],
+                [TermNumber],
+                [OrderLineID],
+                [StartDate],
+                [EndDate],
+                [Amount],
+                [IsProrated],
+                [ProrationFactor],
+                [RevenueRecognitionTypeID],
+                [Status],
+                [CanceledAt],
+                [CancellationEffectiveDate]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @SubscriptionID,
+                @TermNumber,
+                @OrderLineID,
+                @StartDate,
+                @EndDate,
+                @Amount,
+                ISNULL(@IsProrated, 0),
+                CASE WHEN @ProrationFactor_Clear = 1 THEN NULL ELSE ISNULL(@ProrationFactor, NULL) END,
+                @RevenueRecognitionTypeID,
+                ISNULL(@Status, 'Scheduled'),
+                CASE WHEN @CanceledAt_Clear = 1 THEN NULL ELSE ISNULL(@CanceledAt, NULL) END,
+                CASE WHEN @CancellationEffectiveDate_Clear = 1 THEN NULL ELSE ISNULL(@CancellationEffectiveDate, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwSubscriptionTerms] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateSubscriptionTerm] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Subscription Terms */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateSubscriptionTerm] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Subscription Terms */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Terms
+-- Item: spUpdateSubscriptionTerm
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR SubscriptionTerm
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateSubscriptionTerm]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateSubscriptionTerm];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateSubscriptionTerm]
+    @ID uniqueidentifier,
+    @SubscriptionID uniqueidentifier = NULL,
+    @TermNumber int = NULL,
+    @OrderLineID uniqueidentifier = NULL,
+    @StartDate date = NULL,
+    @EndDate date = NULL,
+    @Amount decimal(18, 2) = NULL,
+    @IsProrated bit = NULL,
+    @ProrationFactor_Clear bit = 0,
+    @ProrationFactor decimal(9, 6) = NULL,
+    @RevenueRecognitionTypeID uniqueidentifier = NULL,
+    @Status nvarchar(20) = NULL,
+    @CanceledAt_Clear bit = 0,
+    @CanceledAt datetimeoffset = NULL,
+    @CancellationEffectiveDate_Clear bit = 0,
+    @CancellationEffectiveDate date = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[SubscriptionTerm]
+    SET
+        [SubscriptionID] = ISNULL(@SubscriptionID, [SubscriptionID]),
+        [TermNumber] = ISNULL(@TermNumber, [TermNumber]),
+        [OrderLineID] = ISNULL(@OrderLineID, [OrderLineID]),
+        [StartDate] = ISNULL(@StartDate, [StartDate]),
+        [EndDate] = ISNULL(@EndDate, [EndDate]),
+        [Amount] = ISNULL(@Amount, [Amount]),
+        [IsProrated] = ISNULL(@IsProrated, [IsProrated]),
+        [ProrationFactor] = CASE WHEN @ProrationFactor_Clear = 1 THEN NULL ELSE ISNULL(@ProrationFactor, [ProrationFactor]) END,
+        [RevenueRecognitionTypeID] = ISNULL(@RevenueRecognitionTypeID, [RevenueRecognitionTypeID]),
+        [Status] = ISNULL(@Status, [Status]),
+        [CanceledAt] = CASE WHEN @CanceledAt_Clear = 1 THEN NULL ELSE ISNULL(@CanceledAt, [CanceledAt]) END,
+        [CancellationEffectiveDate] = CASE WHEN @CancellationEffectiveDate_Clear = 1 THEN NULL ELSE ISNULL(@CancellationEffectiveDate, [CancellationEffectiveDate]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwSubscriptionTerms] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwSubscriptionTerms]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateSubscriptionTerm] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the SubscriptionTerm table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateSubscriptionTerm]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateSubscriptionTerm];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateSubscriptionTerm
+ON [${flyway:defaultSchema}].[SubscriptionTerm]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[SubscriptionTerm]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[SubscriptionTerm] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Subscription Terms */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateSubscriptionTerm] TO [cdp_Developer], [cdp_Integration];
+
+/* Base View SQL for MJ_BizApps_Orders: Subscriptions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscriptions
+-- Item: vwSubscriptions
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Subscriptions
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  Subscription
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwSubscriptions]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwSubscriptions];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwSubscriptions]
+AS
+SELECT
+    s.*,
+    MJCompany_CompanyID.[Name] AS [Company],
+    mjBizAppsOrdersSubscriptionType_SubscriptionTypeID.[Name] AS [SubscriptionType],
+    mjBizAppsOrdersProduct_ProductID.[Name] AS [Product],
+    mjBizAppsCommonOrganization_HolderOrganizationID.[Name] AS [HolderOrganization],
+    mjBizAppsCommonPerson_BeneficiaryPersonID.[DisplayName] AS [BeneficiaryPerson],
+    mjBizAppsOrdersPaymentProvider_PaymentProviderID.[Name] AS [PaymentProvider],
+    mjBizAppsOrdersSubscription_MigratesFromSubscriptionID.[SubscriptionNumber] AS [MigratesFromSubscription],
+    mjBizAppsOrdersSubscription_MigratesToSubscriptionID.[SubscriptionNumber] AS [MigratesToSubscription]
+FROM
+    [${flyway:defaultSchema}].[Subscription] AS s
+INNER JOIN
+    [${mjSchema}].[Company] AS MJCompany_CompanyID
+  ON
+    [s].[CompanyID] = MJCompany_CompanyID.[ID]
+INNER JOIN
+    [${flyway:defaultSchema}].[SubscriptionType] AS mjBizAppsOrdersSubscriptionType_SubscriptionTypeID
+  ON
+    [s].[SubscriptionTypeID] = mjBizAppsOrdersSubscriptionType_SubscriptionTypeID.[ID]
+INNER JOIN
+    [${flyway:defaultSchema}].[Product] AS mjBizAppsOrdersProduct_ProductID
+  ON
+    [s].[ProductID] = mjBizAppsOrdersProduct_ProductID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Organization] AS mjBizAppsCommonOrganization_HolderOrganizationID
+  ON
+    [s].[HolderOrganizationID] = mjBizAppsCommonOrganization_HolderOrganizationID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_BeneficiaryPersonID
+  ON
+    [s].[BeneficiaryPersonID] = mjBizAppsCommonPerson_BeneficiaryPersonID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentProvider] AS mjBizAppsOrdersPaymentProvider_PaymentProviderID
+  ON
+    [s].[PaymentProviderID] = mjBizAppsOrdersPaymentProvider_PaymentProviderID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[Subscription] AS mjBizAppsOrdersSubscription_MigratesFromSubscriptionID
+  ON
+    [s].[MigratesFromSubscriptionID] = mjBizAppsOrdersSubscription_MigratesFromSubscriptionID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[Subscription] AS mjBizAppsOrdersSubscription_MigratesToSubscriptionID
+  ON
+    [s].[MigratesToSubscriptionID] = mjBizAppsOrdersSubscription_MigratesToSubscriptionID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwSubscriptions] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Subscriptions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscriptions
+-- Item: Permissions for vwSubscriptions
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwSubscriptions] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Subscriptions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscriptions
+-- Item: spCreateSubscription
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR Subscription
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreateSubscription]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreateSubscription];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateSubscription]
+    @ID uniqueidentifier = NULL,
+    @SubscriptionNumber nvarchar(40),
+    @CompanyID uniqueidentifier,
+    @OrderLineID uniqueidentifier,
+    @SubscriptionTypeID uniqueidentifier,
+    @ProductID uniqueidentifier,
+    @HolderOrganizationID_Clear bit = 0,
+    @HolderOrganizationID uniqueidentifier = NULL,
+    @BeneficiaryPersonID_Clear bit = 0,
+    @BeneficiaryPersonID uniqueidentifier = NULL,
+    @Status nvarchar(20),
+    @StartDate date,
+    @TrialEndDate_Clear bit = 0,
+    @TrialEndDate date = NULL,
+    @CanceledAt_Clear bit = 0,
+    @CanceledAt datetimeoffset = NULL,
+    @EndDate_Clear bit = 0,
+    @EndDate date = NULL,
+    @AutoRenew bit = NULL,
+    @RenewalLeadDays_Clear bit = 0,
+    @RenewalLeadDays int = NULL,
+    @PaymentProviderID_Clear bit = 0,
+    @PaymentProviderID uniqueidentifier = NULL,
+    @ProviderSubscriptionID_Clear bit = 0,
+    @ProviderSubscriptionID nvarchar(100) = NULL,
+    @MigratesFromSubscriptionID_Clear bit = 0,
+    @MigratesFromSubscriptionID uniqueidentifier = NULL,
+    @MigratesToSubscriptionID_Clear bit = 0,
+    @MigratesToSubscriptionID uniqueidentifier = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[Subscription]
+            (
+                [ID],
+                [SubscriptionNumber],
+                [CompanyID],
+                [OrderLineID],
+                [SubscriptionTypeID],
+                [ProductID],
+                [HolderOrganizationID],
+                [BeneficiaryPersonID],
+                [Status],
+                [StartDate],
+                [TrialEndDate],
+                [CanceledAt],
+                [EndDate],
+                [AutoRenew],
+                [RenewalLeadDays],
+                [PaymentProviderID],
+                [ProviderSubscriptionID],
+                [MigratesFromSubscriptionID],
+                [MigratesToSubscriptionID]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @SubscriptionNumber,
+                @CompanyID,
+                @OrderLineID,
+                @SubscriptionTypeID,
+                @ProductID,
+                CASE WHEN @HolderOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@HolderOrganizationID, NULL) END,
+                CASE WHEN @BeneficiaryPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BeneficiaryPersonID, NULL) END,
+                @Status,
+                @StartDate,
+                CASE WHEN @TrialEndDate_Clear = 1 THEN NULL ELSE ISNULL(@TrialEndDate, NULL) END,
+                CASE WHEN @CanceledAt_Clear = 1 THEN NULL ELSE ISNULL(@CanceledAt, NULL) END,
+                CASE WHEN @EndDate_Clear = 1 THEN NULL ELSE ISNULL(@EndDate, NULL) END,
+                ISNULL(@AutoRenew, 1),
+                CASE WHEN @RenewalLeadDays_Clear = 1 THEN NULL ELSE ISNULL(@RenewalLeadDays, NULL) END,
+                CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, NULL) END,
+                CASE WHEN @ProviderSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderSubscriptionID, NULL) END,
+                CASE WHEN @MigratesFromSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@MigratesFromSubscriptionID, NULL) END,
+                CASE WHEN @MigratesToSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@MigratesToSubscriptionID, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[Subscription]
+            (
+                [SubscriptionNumber],
+                [CompanyID],
+                [OrderLineID],
+                [SubscriptionTypeID],
+                [ProductID],
+                [HolderOrganizationID],
+                [BeneficiaryPersonID],
+                [Status],
+                [StartDate],
+                [TrialEndDate],
+                [CanceledAt],
+                [EndDate],
+                [AutoRenew],
+                [RenewalLeadDays],
+                [PaymentProviderID],
+                [ProviderSubscriptionID],
+                [MigratesFromSubscriptionID],
+                [MigratesToSubscriptionID]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @SubscriptionNumber,
+                @CompanyID,
+                @OrderLineID,
+                @SubscriptionTypeID,
+                @ProductID,
+                CASE WHEN @HolderOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@HolderOrganizationID, NULL) END,
+                CASE WHEN @BeneficiaryPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BeneficiaryPersonID, NULL) END,
+                @Status,
+                @StartDate,
+                CASE WHEN @TrialEndDate_Clear = 1 THEN NULL ELSE ISNULL(@TrialEndDate, NULL) END,
+                CASE WHEN @CanceledAt_Clear = 1 THEN NULL ELSE ISNULL(@CanceledAt, NULL) END,
+                CASE WHEN @EndDate_Clear = 1 THEN NULL ELSE ISNULL(@EndDate, NULL) END,
+                ISNULL(@AutoRenew, 1),
+                CASE WHEN @RenewalLeadDays_Clear = 1 THEN NULL ELSE ISNULL(@RenewalLeadDays, NULL) END,
+                CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, NULL) END,
+                CASE WHEN @ProviderSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderSubscriptionID, NULL) END,
+                CASE WHEN @MigratesFromSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@MigratesFromSubscriptionID, NULL) END,
+                CASE WHEN @MigratesToSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@MigratesToSubscriptionID, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwSubscriptions] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateSubscription] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Subscriptions */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateSubscription] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Subscriptions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscriptions
+-- Item: spUpdateSubscription
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR Subscription
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdateSubscription]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdateSubscription];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateSubscription]
+    @ID uniqueidentifier,
+    @SubscriptionNumber nvarchar(40) = NULL,
+    @CompanyID uniqueidentifier = NULL,
+    @OrderLineID uniqueidentifier = NULL,
+    @SubscriptionTypeID uniqueidentifier = NULL,
+    @ProductID uniqueidentifier = NULL,
+    @HolderOrganizationID_Clear bit = 0,
+    @HolderOrganizationID uniqueidentifier = NULL,
+    @BeneficiaryPersonID_Clear bit = 0,
+    @BeneficiaryPersonID uniqueidentifier = NULL,
+    @Status nvarchar(20) = NULL,
+    @StartDate date = NULL,
+    @TrialEndDate_Clear bit = 0,
+    @TrialEndDate date = NULL,
+    @CanceledAt_Clear bit = 0,
+    @CanceledAt datetimeoffset = NULL,
+    @EndDate_Clear bit = 0,
+    @EndDate date = NULL,
+    @AutoRenew bit = NULL,
+    @RenewalLeadDays_Clear bit = 0,
+    @RenewalLeadDays int = NULL,
+    @PaymentProviderID_Clear bit = 0,
+    @PaymentProviderID uniqueidentifier = NULL,
+    @ProviderSubscriptionID_Clear bit = 0,
+    @ProviderSubscriptionID nvarchar(100) = NULL,
+    @MigratesFromSubscriptionID_Clear bit = 0,
+    @MigratesFromSubscriptionID uniqueidentifier = NULL,
+    @MigratesToSubscriptionID_Clear bit = 0,
+    @MigratesToSubscriptionID uniqueidentifier = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[Subscription]
+    SET
+        [SubscriptionNumber] = ISNULL(@SubscriptionNumber, [SubscriptionNumber]),
+        [CompanyID] = ISNULL(@CompanyID, [CompanyID]),
+        [OrderLineID] = ISNULL(@OrderLineID, [OrderLineID]),
+        [SubscriptionTypeID] = ISNULL(@SubscriptionTypeID, [SubscriptionTypeID]),
+        [ProductID] = ISNULL(@ProductID, [ProductID]),
+        [HolderOrganizationID] = CASE WHEN @HolderOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@HolderOrganizationID, [HolderOrganizationID]) END,
+        [BeneficiaryPersonID] = CASE WHEN @BeneficiaryPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BeneficiaryPersonID, [BeneficiaryPersonID]) END,
+        [Status] = ISNULL(@Status, [Status]),
+        [StartDate] = ISNULL(@StartDate, [StartDate]),
+        [TrialEndDate] = CASE WHEN @TrialEndDate_Clear = 1 THEN NULL ELSE ISNULL(@TrialEndDate, [TrialEndDate]) END,
+        [CanceledAt] = CASE WHEN @CanceledAt_Clear = 1 THEN NULL ELSE ISNULL(@CanceledAt, [CanceledAt]) END,
+        [EndDate] = CASE WHEN @EndDate_Clear = 1 THEN NULL ELSE ISNULL(@EndDate, [EndDate]) END,
+        [AutoRenew] = ISNULL(@AutoRenew, [AutoRenew]),
+        [RenewalLeadDays] = CASE WHEN @RenewalLeadDays_Clear = 1 THEN NULL ELSE ISNULL(@RenewalLeadDays, [RenewalLeadDays]) END,
+        [PaymentProviderID] = CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, [PaymentProviderID]) END,
+        [ProviderSubscriptionID] = CASE WHEN @ProviderSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderSubscriptionID, [ProviderSubscriptionID]) END,
+        [MigratesFromSubscriptionID] = CASE WHEN @MigratesFromSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@MigratesFromSubscriptionID, [MigratesFromSubscriptionID]) END,
+        [MigratesToSubscriptionID] = CASE WHEN @MigratesToSubscriptionID_Clear = 1 THEN NULL ELSE ISNULL(@MigratesToSubscriptionID, [MigratesToSubscriptionID]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwSubscriptions] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwSubscriptions]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateSubscription] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the Subscription table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateSubscription]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateSubscription];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateSubscription
+ON [${flyway:defaultSchema}].[Subscription]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[Subscription]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[Subscription] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Subscriptions */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateSubscription] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Subscription Terms */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscription Terms
+-- Item: spDeleteSubscriptionTerm
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR SubscriptionTerm
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteSubscriptionTerm]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteSubscriptionTerm];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteSubscriptionTerm]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[SubscriptionTerm]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteSubscriptionTerm] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Subscription Terms */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteSubscriptionTerm] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Subscriptions */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Subscriptions
+-- Item: spDeleteSubscription
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR Subscription
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteSubscription]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteSubscription];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteSubscription]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[Subscription]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteSubscription] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Subscriptions */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteSubscription] TO [cdp_Developer], [cdp_Integration];
+
+/* SQL text to delete unneeded entity fields (17 scoped entities) */
+EXEC [${mjSchema}].[spDeleteUnneededEntityFields] @ExcludedSchemaNames='', @EntityIDs='C2F418C4-8239-4486-B036-0BC4EAE4D24E,83A06268-2C96-400F-9CC8-21EEEF6654D1,8936D4D1-EB07-4EE8-A7AC-24131A1C48A8,FC529BC8-FF09-44A9-B454-26EAFDAC791B,58018ECE-83EF-4E05-A9D0-2F7E47F9AF25,4B5B0D73-496E-4CFA-92B9-3299A1E29E17,C96F379A-3E15-4DE5-BA94-4ECC90960C6D,EC59C50D-92BD-4247-80B1-51139BE93D35,66D82C24-9C9F-4CD6-B019-53C20274AB00,EB009F74-F4C5-4596-86C3-5893B9453200,7D7C4D5F-E410-4803-9762-A060C536C098,572AC8CE-8446-418B-979A-A7EE4E1F5AFD,CE97BF15-F7C6-4C50-A744-A89C714A4DDD,90A1060F-35D6-44A7-9076-A9053BBF60E6,9E638C8F-6447-45D9-9137-B24E1047BCE5,22E31028-E862-424B-8C10-C167B2C9E304,E9B55146-3351-440C-AD47-FD4DE05BDA05', @IncludedSchemaNames='${flyway:defaultSchema}';
+
+/* SQL text to insert 6 new entity field(s) */
+UPDATE [${mjSchema}].[EntityField]
+         SET [Sequence] = [Sequence] + 100000
+       WHERE [EntityID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'
+         AND [Sequence] < 100000
+         AND NOT EXISTS (
+             SELECT 1 FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'
+                AND [Sequence] >= 100000
+         );
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '97dbc477-174a-497c-9eab-1bc0a5125ebb' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'RootParentOrderLineID')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '97dbc477-174a-497c-9eab-1bc0a5125ebb',
+            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
+            43,
+            'RootParentOrderLineID',
+            'Root Parent Order Line ID',
+            NULL,
+            'uniqueidentifier',
+            16,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '6f868c4c-1d19-4152-b0a3-5d913d367db8' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDDepth')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '6f868c4c-1d19-4152-b0a3-5d913d367db8',
+            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
+            44,
+            'ParentOrderLineIDDepth',
+            'Parent Order Line ID Depth',
+            NULL,
+            'int',
+            4,
+            10,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '18ec055c-4597-4f0e-9073-1a6869e7bfda' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDPath')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '18ec055c-4597-4f0e-9073-1a6869e7bfda',
+            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
+            45,
+            'ParentOrderLineIDPath',
+            'Parent Order Line ID Path',
+            NULL,
+            'nvarchar',
+            -1,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b055207b-f084-4d05-8a33-328118306e28' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDIsLeaf')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'b055207b-f084-4d05-8a33-328118306e28',
+            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
+            46,
+            'ParentOrderLineIDIsLeaf',
+            'Parent Order Line ID Is Leaf',
+            NULL,
+            'bit',
+            1,
+            1,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '9e6b203b-4945-48d0-8aac-a9b79e4facac' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDChildCount')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '9e6b203b-4945-48d0-8aac-a9b79e4facac',
+            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
+            47,
+            'ParentOrderLineIDChildCount',
+            'Parent Order Line ID Child Count',
+            NULL,
+            'int',
+            4,
+            10,
+            0,
+            1,
+            NULL,
+            0,
+            0,
+            1,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+/* SQL text to update existing entity fields from schema (17 scoped entities) */
+EXEC [${mjSchema}].[spUpdateExistingEntityFieldsFromSchema] @ExcludedSchemaNames='', @EntityIDs='C2F418C4-8239-4486-B036-0BC4EAE4D24E,83A06268-2C96-400F-9CC8-21EEEF6654D1,8936D4D1-EB07-4EE8-A7AC-24131A1C48A8,FC529BC8-FF09-44A9-B454-26EAFDAC791B,58018ECE-83EF-4E05-A9D0-2F7E47F9AF25,4B5B0D73-496E-4CFA-92B9-3299A1E29E17,C96F379A-3E15-4DE5-BA94-4ECC90960C6D,EC59C50D-92BD-4247-80B1-51139BE93D35,66D82C24-9C9F-4CD6-B019-53C20274AB00,EB009F74-F4C5-4596-86C3-5893B9453200,7D7C4D5F-E410-4803-9762-A060C536C098,572AC8CE-8446-418B-979A-A7EE4E1F5AFD,CE97BF15-F7C6-4C50-A744-A89C714A4DDD,90A1060F-35D6-44A7-9076-A9053BBF60E6,9E638C8F-6447-45D9-9137-B24E1047BCE5,22E31028-E862-424B-8C10-C167B2C9E304,E9B55146-3351-440C-AD47-FD4DE05BDA05', @IncludedSchemaNames='${flyway:defaultSchema}';
+
+/* SQL text to set default column width where needed */
+EXEC [${mjSchema}].[spSetDefaultColumnWidthWhereNeeded] @ExcludedSchemaNames='', @IncludedSchemaNames='${flyway:defaultSchema}';
+
+/* Refresh custom base views for modified entities so schema changes are picked up */
+EXEC sp_refreshview '${flyway:defaultSchema}.vwOrderHeadersGenerated';
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderHeaders]', 'V') IS NOT NULL
+BEGIN
+    EXEC sp_executesql N'EXEC sp_refreshview ''${flyway:defaultSchema}.vwOrderHeaders'';';
+END;
+

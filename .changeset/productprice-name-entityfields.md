@@ -2,4 +2,4 @@
 "@mj-biz-apps/orders-entities": minor
 ---
 
-Add the EntityField rows for ProductPrice.Name, ProductCategoryID, Applicability, and the ProductCategory virtual that V202609031400's CodeGen tail omitted. Blank installs were failing mj sync push looking up Product Prices.Name.
+Forward CodeGen remainder for V202609031400 (ProductPrice.Name / ProductCategoryID / Applicability). That file added the columns and SPs but omitted EntityField inserts. Recaptured on a clean DB with includeSchemas limited to __mj_BizAppsOrders; the migration is the full SQL log, not a subset.
