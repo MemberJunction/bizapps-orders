@@ -45,9 +45,10 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
 
         <div class="mjo-pr__viewer-host">
             @if (ProductPriceEntityInfo) {
-                <mj-entity-viewer
-                    [Entity]="ProductPriceEntityInfo">
-                </mj-entity-viewer>
+                <mj-view-workspace
+                    [Entity]="ProductPriceEntityInfo"
+                    [AutoSaveView]="true">
+                </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading price rules...</div>
             }
@@ -223,12 +224,13 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
                 height: 100%;
                 width: 100%;
+                min-height: 0;
             }
             .mjo-pr__grid {
                 display: grid;
@@ -362,9 +364,10 @@ export class MJOPricingPageComponent implements OnInit {
 
         <div class="mjo-pr__viewer-host">
             @if (PromotionEntityInfo) {
-                <mj-entity-viewer
-                    [Entity]="PromotionEntityInfo">
-                </mj-entity-viewer>
+                <mj-view-workspace
+                    [Entity]="PromotionEntityInfo"
+                    [AutoSaveView]="true">
+                </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading promotions...</div>
             }
@@ -389,12 +392,13 @@ export class MJOPricingPageComponent implements OnInit {
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
                 height: 100%;
                 width: 100%;
+                min-height: 0;
             }
             @media (max-width: 760px) {
                 :host { padding: var(--mj-space-4); }
