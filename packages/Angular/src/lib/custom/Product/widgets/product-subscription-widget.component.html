@@ -1,3 +1,14 @@
+<!--
+    CARD SHELL ONLY — the fields are PROJECTED by the caller.
+
+    mj-collapsible-panel decides "this section is empty, hide it" from
+    @ContentChildren(MjFormFieldComponent), and a content query cannot see across a
+    component view boundary. While the mj-form-fields lived in this template the panel
+    counted zero fields, treated the section as non-field content, and kept the shell —
+    which is the bare "Subscription Management" header reported in golive#184. Declaring
+    them in the panel's template and projecting them here keeps this card's chrome and
+    lets MJ's existing hide-when-empty logic see them.
+-->
 <div class="mjo-sub-widget-wrap">
     <div class="mjo-sub-card">
         <div class="mjo-card-head">
@@ -5,25 +16,7 @@
             <span>Recurring Subscription &amp; Renewal Settings</span>
         </div>
         <div class="mjo-card-body">
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="SubscriptionTypeID"
-                Type="textbox"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                LinkType="Record"
-                (Navigate)="Navigate.emit($event)">
-            </mj-form-field>
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="EntitlementValidityMode"
-                Type="select"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)">
-            </mj-form-field>
+            <ng-content></ng-content>
         </div>
     </div>
 </div>
