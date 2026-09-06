@@ -22,7 +22,7 @@
 --           excludeSchemas: []
 --           advancedGeneration.enableAdvancedGeneration = false
 --           SQLOutput.convertCoreSchemaToFlywayMigrationFile + schemaPlaceholders
---   Log:    migrations/codegen/PR177_FullEmit.sql (same bytes as below)
+--   The body below is that SQL log in full (migrations/codegen/ is gitignored).
 --
 -- The log is more than EntityField rows: pending-field INSERTs (56),
 -- sequence bumps (guarded), EntityRelationship, indexes, hierarchy
