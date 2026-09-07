@@ -1,34 +1,169 @@
 -- =============================================================================
--- CodeGen remainder for ProductPrice.Name / ProductCategoryID / Applicability
---
+-- ProductPrice.Name EntityFields + scoped CodeGen remainder
 -- FOLLOWS: V202609031400__v5.2.0__ProductPrice_Name_Scope_Applicability.sql
 --
--- THAT FILE added the physical columns and regenerated ProductPrice (and
--- Product Category) views/SPs, but its CodeGen tail omitted EntityField
--- INSERTs — they already existed on the authoring DB. A blank install
--- therefore has the columns and the procs, and no metadata. mj sync push
--- fails looking up Entity='MJ_BizApps_Orders: Product Prices' AND Name='Name'.
--- 031400 also EXECs spUpdateEntityFieldRelatedEntityNameFieldMap for
--- EntityField ID F76B9D6E-… which that tail never inserted.
+-- 031400 added the columns and SPs but omitted EntityField inserts (they
+-- already existed on the authoring DB). Blank install: columns and procs
+-- exist, metadata does not; mj sync push fails looking up Product Prices.Name.
 --
--- THIS FILE is a new forward migration (031400 is already on next and
--- applied). Body is the COMPLETE CodeGen SQL log from a clean recapture,
--- not a subset:
---   DB:     MJ_6_1_orders_cg_177 (private; not the live install DB)
---   Before: MJ + Common + Tasks + Accounting migrate/sync, then every
---           Orders V through V202609050900 (061900 not applied)
---   Then:   mj codegen --skipfiles
---           includeSchemas: ['__mj_BizAppsOrders']
---           excludeSchemas: []
---           advancedGeneration.enableAdvancedGeneration = false
---           SQLOutput.convertCoreSchemaToFlywayMigrationFile + schemaPlaceholders
---   The body below is that SQL log in full (migrations/codegen/ is gitignored).
---
--- The log is more than EntityField rows: pending-field INSERTs (56),
--- sequence bumps (guarded), EntityRelationship, indexes, hierarchy
--- functions, base views, and CRUD procs for the Orders entities CodeGen
--- considered modified. No MoreCheese / Common EntityField inserts.
+-- Do not squash. This forward V is:
+--   50 blanks → inlined R__RefreshMetadata → 50 blanks → CODEGEN banner → emit
+-- Authoring: DB at V202609050900, run R, then `mj codegen --skipfiles`
+--   includeSchemas=['__mj_BizAppsOrders'], advancedGeneration off
+--   (MJ_6_1_edge_5_blank_20260906). Replay: R then emit.
 -- =============================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ==============================================================================================
+   METADATA REFRESH — inlined copy of MJ/migrations/R__RefreshMetadata.sql
+   (minus ${flyway:timestamp}, which exists only to churn the repeatable checksum).
+
+   Why this is here: Flyway runs every versioned migration before any R__ script.
+   V202609031400 added ProductPrice.Name / ProductCategoryID / Applicability and
+   regenerated SPs, but its CodeGen tail omitted EntityField inserts. This forward
+   V supplies those rows (and the rest of the scoped CodeGen remainder).
+
+   Authoring: on a DB that has applied every Orders V through V202609050900,
+   run this refresh, THEN mj codegen --skipfiles (includeSchemas=__mj_BizAppsOrders),
+   then append the emit below. Replay: refresh first, then emit — so heal/sequence
+   state matches what CodeGen saw, and the emit does not collide with fields the
+   refresh already reconciled.
+
+   EXEC target is ${mjSchema} (__mj). ${flyway:defaultSchema} in the original R
+   file is MJ core; here it is ${mjSchema}.
+   ============================================================================================== */
+
+/* SQL text to recompile all views (dependency order: inner layered views before g.* wrappers) */
+EXEC [${mjSchema}].spRecompileAllViews
+GO
+
+/* SQL text to update existing entities from schema */
+EXEC [${mjSchema}].spUpdateExistingEntitiesFromSchema @ExcludedSchemaNames='sys,staging'
+GO
+
+/* SQL text to sync schema info from database schemas */
+EXEC [${mjSchema}].spUpdateSchemaInfoFromDatabase @ExcludedSchemaNames='sys,staging'
+GO
+
+/* SQL text to delete unneeded entity fields */
+EXEC [${mjSchema}].spDeleteUnneededEntityFields @ExcludedSchemaNames='sys,staging'
+GO
+
+/* SQL text to update existing entity fields from schema */
+EXEC [${mjSchema}].spUpdateExistingEntityFieldsFromSchema @ExcludedSchemaNames='sys,staging'
+GO
+
+/* SQL text to set default column width where needed */
+EXEC [${mjSchema}].spSetDefaultColumnWidthWhereNeeded @ExcludedSchemaNames='sys,staging'
+GO
+
+/* SQL text to recompile all stored procedures in dependency order */
+EXEC [${mjSchema}].spRecompileAllProceduresInDependencyOrder @ExcludedSchemaNames='sys,staging', @LogOutput=0, @ContinueOnError=1
+GO
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ============================================================================================
+   ==== CODEGEN OUTPUT — DO NOT EDIT BELOW THIS LINE ====
+   Generated by local MJ CLI 6.1.0-edge.5 (`mj codegen --skipfiles`) AFTER the
+   inlined R__RefreshMetadata above, includeSchemas=['__mj_BizAppsOrders'].
+   ============================================================================================ */
 
 /* SQL text to update existing entities from schema */
 EXEC [${mjSchema}].[spUpdateExistingEntitiesFromSchema] @ExcludedSchemaNames='', @IncludedSchemaNames='${flyway:defaultSchema}';
@@ -44,7 +179,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b82c6221-ee92-46c7-933f-e845266d4487' OR (EntityID = 'C2F418C4-8239-4486-B036-0BC4EAE4D24E' AND Name = 'Distribution')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '3e82b098-66d2-4140-bb4e-cb641bd202e3' OR (EntityID = 'C2F418C4-8239-4486-B036-0BC4EAE4D24E' AND Name = 'Distribution')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -77,7 +212,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'b82c6221-ee92-46c7-933f-e845266d4487',
+            '3e82b098-66d2-4140-bb4e-cb641bd202e3',
             'C2F418C4-8239-4486-B036-0BC4EAE4D24E', -- Entity: MJ_BizApps_Orders: Checkout Sessions
             15,
             'Distribution',
@@ -116,7 +251,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '56bf7a36-0311-4fbc-b44a-dff7e14f6cd2' OR (EntityID = '83A06268-2C96-400F-9CC8-21EEEF6654D1' AND Name = 'PaymentHeader')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '246cced8-0bb9-492d-a3fa-5feabc345cbf' OR (EntityID = '83A06268-2C96-400F-9CC8-21EEEF6654D1' AND Name = 'PaymentHeader')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -149,7 +284,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '56bf7a36-0311-4fbc-b44a-dff7e14f6cd2',
+            '246cced8-0bb9-492d-a3fa-5feabc345cbf',
             '83A06268-2C96-400F-9CC8-21EEEF6654D1', -- Entity: MJ_BizApps_Orders: Payment Lines
             11,
             'PaymentHeader',
@@ -179,7 +314,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '48b5563d-a3b0-4568-ac30-a94f61b570df' OR (EntityID = '83A06268-2C96-400F-9CC8-21EEEF6654D1' AND Name = 'OrderHeader')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '76054ac9-6a3f-4fa2-8fec-12ef4eb0075d' OR (EntityID = '83A06268-2C96-400F-9CC8-21EEEF6654D1' AND Name = 'OrderHeader')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -212,7 +347,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '48b5563d-a3b0-4568-ac30-a94f61b570df',
+            '76054ac9-6a3f-4fa2-8fec-12ef4eb0075d',
             '83A06268-2C96-400F-9CC8-21EEEF6654D1', -- Entity: MJ_BizApps_Orders: Payment Lines
             12,
             'OrderHeader',
@@ -251,7 +386,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '058fcbf4-98a4-4fda-bcf4-696f196487f5' OR (EntityID = '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8' AND Name = 'OrderHeader')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'da27745a-5e90-445f-8ce7-abccde47f15c' OR (EntityID = '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8' AND Name = 'OrderHeader')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -284,7 +419,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '058fcbf4-98a4-4fda-bcf4-696f196487f5',
+            'da27745a-5e90-445f-8ce7-abccde47f15c',
             '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8', -- Entity: MJ_BizApps_Orders: Order Adjustments
             16,
             'OrderHeader',
@@ -314,7 +449,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '8789b6eb-7370-4d82-9ec5-95881fb4a14d' OR (EntityID = '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8' AND Name = 'PromotionCode')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'bc3f252b-5a46-4db7-9c95-88ab80727d78' OR (EntityID = '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8' AND Name = 'PromotionCode')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -347,7 +482,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '8789b6eb-7370-4d82-9ec5-95881fb4a14d',
+            'bc3f252b-5a46-4db7-9c95-88ab80727d78',
             '8936D4D1-EB07-4EE8-A7AC-24131A1C48A8', -- Entity: MJ_BizApps_Orders: Order Adjustments
             18,
             'PromotionCode',
@@ -386,7 +521,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'fce2420d-0fd3-40b1-8bc6-d49792c5b966' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'Origin')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '39ecff1c-9311-49f2-b4c0-c79e50e3115e' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'Origin')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -419,7 +554,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'fce2420d-0fd3-40b1-8bc6-d49792c5b966',
+            '39ecff1c-9311-49f2-b4c0-c79e50e3115e',
             'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
             34,
             'Origin',
@@ -449,7 +584,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '3719cd23-fa95-42dd-bcd7-b3703a24cfba' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'SourceCheckoutWidgetID')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'ad35e8e7-6aca-4b49-ba17-f0c820062cff' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'SourceCheckoutWidgetID')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -482,7 +617,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '3719cd23-fa95-42dd-bcd7-b3703a24cfba',
+            'ad35e8e7-6aca-4b49-ba17-f0c820062cff',
             'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
             35,
             'SourceCheckoutWidgetID',
@@ -512,7 +647,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '372c5047-f78d-4630-bea9-47d7edf781ae' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'FulfillmentStatus')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'f04330ba-4a37-4674-a2fe-237ce04e2c52' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'FulfillmentStatus')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -545,7 +680,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '372c5047-f78d-4630-bea9-47d7edf781ae',
+            'f04330ba-4a37-4674-a2fe-237ce04e2c52',
             'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
             36,
             'FulfillmentStatus',
@@ -575,7 +710,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b0ef13f1-b103-4e0d-acba-e194bad81fcf' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'SourceCheckoutWidget')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '3f7decd0-409d-4ed0-bb55-8947fe8568b2' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'SourceCheckoutWidget')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -608,7 +743,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'b0ef13f1-b103-4e0d-acba-e194bad81fcf',
+            '3f7decd0-409d-4ed0-bb55-8947fe8568b2',
             'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
             50,
             'SourceCheckoutWidget',
@@ -647,7 +782,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '5cb822da-fecb-4665-b4a8-b75f88d21d31' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'Name')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '236ffd4c-4e05-4b9b-b573-730a25218b55' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'Name')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -680,7 +815,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '5cb822da-fecb-4665-b4a8-b75f88d21d31',
+            '236ffd4c-4e05-4b9b-b573-730a25218b55',
             '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', -- Entity: MJ_BizApps_Orders: Product Prices
             24,
             'Name',
@@ -710,7 +845,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'fc984132-b32d-4976-913a-a10d9f8777df' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'ProductCategoryID')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '22f303c6-3ff3-4074-90d5-32d35149106d' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'ProductCategoryID')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -743,7 +878,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'fc984132-b32d-4976-913a-a10d9f8777df',
+            '22f303c6-3ff3-4074-90d5-32d35149106d',
             '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', -- Entity: MJ_BizApps_Orders: Product Prices
             25,
             'ProductCategoryID',
@@ -773,7 +908,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'cf06f478-12bf-4396-b88f-23e27489d8f1' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'Applicability')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'dec44ba1-0803-4dd2-8e56-cf36530aa6c3' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'Applicability')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -806,7 +941,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'cf06f478-12bf-4396-b88f-23e27489d8f1',
+            'dec44ba1-0803-4dd2-8e56-cf36530aa6c3',
             '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', -- Entity: MJ_BizApps_Orders: Product Prices
             26,
             'Applicability',
@@ -836,7 +971,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'a74b736c-71fc-45a1-8b51-b0dc64094e61' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'ProductCategory')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '93909d9c-5915-40f5-9111-ac6b58638f1f' OR (EntityID = '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25' AND Name = 'ProductCategory')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -869,7 +1004,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'a74b736c-71fc-45a1-8b51-b0dc64094e61',
+            '93909d9c-5915-40f5-9111-ac6b58638f1f',
             '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', -- Entity: MJ_BizApps_Orders: Product Prices
             29,
             'ProductCategory',
@@ -908,7 +1043,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'f398b604-dc38-4391-b711-7304ceb73601' OR (EntityID = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17' AND Name = 'SourceCustomerPaymentMethod')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'a2f49b67-7ec9-4f28-9460-aa6b9282fdcf' OR (EntityID = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17' AND Name = 'SourceCustomerPaymentMethod')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -941,7 +1076,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'f398b604-dc38-4391-b711-7304ceb73601',
+            'a2f49b67-7ec9-4f28-9460-aa6b9282fdcf',
             '4B5B0D73-496E-4CFA-92B9-3299A1E29E17', -- Entity: MJ_BizApps_Orders: Payment Details
             27,
             'SourceCustomerPaymentMethod',
@@ -971,7 +1106,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '77b27e27-aefd-4d91-ae54-eea622588f0e' OR (EntityID = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17' AND Name = 'StoredValueAccount')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '93fe715d-c1b7-4b6e-8b8e-6c2a6e59b188' OR (EntityID = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17' AND Name = 'StoredValueAccount')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1004,7 +1139,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '77b27e27-aefd-4d91-ae54-eea622588f0e',
+            '93fe715d-c1b7-4b6e-8b8e-6c2a6e59b188',
             '4B5B0D73-496E-4CFA-92B9-3299A1E29E17', -- Entity: MJ_BizApps_Orders: Payment Details
             28,
             'StoredValueAccount',
@@ -1034,7 +1169,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '26b3660b-318d-4e7b-8469-e36fca209664' OR (EntityID = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17' AND Name = 'SourceOrderHeader')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'c013dbba-0d05-42a3-9dac-38c6b76b20ca' OR (EntityID = '4B5B0D73-496E-4CFA-92B9-3299A1E29E17' AND Name = 'SourceOrderHeader')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1067,7 +1202,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '26b3660b-318d-4e7b-8469-e36fca209664',
+            'c013dbba-0d05-42a3-9dac-38c6b76b20ca',
             '4B5B0D73-496E-4CFA-92B9-3299A1E29E17', -- Entity: MJ_BizApps_Orders: Payment Details
             29,
             'SourceOrderHeader',
@@ -1106,7 +1241,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '305d2d9f-0c7e-4591-bb70-bd7446d818ee' OR (EntityID = 'C96F379A-3E15-4DE5-BA94-4ECC90960C6D' AND Name = 'PaymentDetail')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'a78e0c59-4fe4-423d-ba7a-256376f59ee8' OR (EntityID = 'C96F379A-3E15-4DE5-BA94-4ECC90960C6D' AND Name = 'PaymentDetail')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1139,7 +1274,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '305d2d9f-0c7e-4591-bb70-bd7446d818ee',
+            'a78e0c59-4fe4-423d-ba7a-256376f59ee8',
             'C96F379A-3E15-4DE5-BA94-4ECC90960C6D', -- Entity: MJ_BizApps_Orders: Customer Payment Methods
             12,
             'PaymentDetail',
@@ -1178,7 +1313,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '00017f82-986e-450c-b21e-03a27af42550' OR (EntityID = 'EC59C50D-92BD-4247-80B1-51139BE93D35' AND Name = 'Subscription')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'dccfa411-8284-4d9b-9243-66ef94c64753' OR (EntityID = 'EC59C50D-92BD-4247-80B1-51139BE93D35' AND Name = 'Subscription')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1211,7 +1346,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '00017f82-986e-450c-b21e-03a27af42550',
+            'dccfa411-8284-4d9b-9243-66ef94c64753',
             'EC59C50D-92BD-4247-80B1-51139BE93D35', -- Entity: MJ_BizApps_Orders: Subscription Events
             11,
             'Subscription',
@@ -1241,7 +1376,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '4337caf4-98f8-4f07-855c-479c0b47e0af' OR (EntityID = 'EC59C50D-92BD-4247-80B1-51139BE93D35' AND Name = 'RelatedPayment')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '67e58dd5-3c96-403e-993a-92eb854e31ca' OR (EntityID = 'EC59C50D-92BD-4247-80B1-51139BE93D35' AND Name = 'RelatedPayment')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1274,7 +1409,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '4337caf4-98f8-4f07-855c-479c0b47e0af',
+            '67e58dd5-3c96-403e-993a-92eb854e31ca',
             'EC59C50D-92BD-4247-80B1-51139BE93D35', -- Entity: MJ_BizApps_Orders: Subscription Events
             12,
             'RelatedPayment',
@@ -1304,7 +1439,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '3b9c415f-1d00-41ad-a788-339e98a3a508' OR (EntityID = 'EC59C50D-92BD-4247-80B1-51139BE93D35' AND Name = 'RelatedOrderHeader')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'd1ce5c9f-5185-475c-a909-5327d88d1770' OR (EntityID = 'EC59C50D-92BD-4247-80B1-51139BE93D35' AND Name = 'RelatedOrderHeader')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1337,7 +1472,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '3b9c415f-1d00-41ad-a788-339e98a3a508',
+            'd1ce5c9f-5185-475c-a909-5327d88d1770',
             'EC59C50D-92BD-4247-80B1-51139BE93D35', -- Entity: MJ_BizApps_Orders: Subscription Events
             13,
             'RelatedOrderHeader',
@@ -1376,7 +1511,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'e4300094-04ef-44b7-9391-748801dcb221' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'OrderHeader')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '33e591fd-218d-4356-aaeb-9341ad2da754' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'OrderHeader')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1409,7 +1544,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'e4300094-04ef-44b7-9391-748801dcb221',
+            '33e591fd-218d-4356-aaeb-9341ad2da754',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             34,
             'OrderHeader',
@@ -1439,7 +1574,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '1876ab05-d15d-4f66-82a0-35498c114830' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ProductPrice')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '38724e0e-ad43-4ec1-b5e2-d3dbc608fbad' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ProductPrice')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1472,7 +1607,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '1876ab05-d15d-4f66-82a0-35498c114830',
+            '38724e0e-ad43-4ec1-b5e2-d3dbc608fbad',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             37,
             'ProductPrice',
@@ -1502,7 +1637,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'c7ab71b9-e9b8-4786-b2d7-c4aca056ff3c' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'Subscription')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '64e21d0a-f38f-4e0c-8dbd-95cd5777ced5' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'Subscription')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1535,7 +1670,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'c7ab71b9-e9b8-4786-b2d7-c4aca056ff3c',
+            '64e21d0a-f38f-4e0c-8dbd-95cd5777ced5',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             41,
             'Subscription',
@@ -1565,7 +1700,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '797a445e-c5e4-4d6b-98a5-fb829407baae' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = '${mjSchema}_Latitude')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'e268eefd-fe57-4bdc-b19a-aa78b358b34d' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = '${mjSchema}_Latitude')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1598,7 +1733,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '797a445e-c5e4-4d6b-98a5-fb829407baae',
+            'e268eefd-fe57-4bdc-b19a-aa78b358b34d',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             43,
             '${mjSchema}_Latitude',
@@ -1628,7 +1763,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '51b58905-0de6-44e5-bc1e-fd2c2ee3a50e' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = '${mjSchema}_Longitude')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '43fa7ea3-f3a7-4015-bb9a-349467defe17' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = '${mjSchema}_Longitude')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1661,7 +1796,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '51b58905-0de6-44e5-bc1e-fd2c2ee3a50e',
+            '43fa7ea3-f3a7-4015-bb9a-349467defe17',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             44,
             '${mjSchema}_Longitude',
@@ -1700,7 +1835,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'bbb462d9-9c03-43a1-b219-37c7e6fdf502' OR (EntityID = 'EB009F74-F4C5-4596-86C3-5893B9453200' AND Name = 'OrderHeader')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '20a79e63-2f39-44c6-a63b-eb3790b7b2f3' OR (EntityID = 'EB009F74-F4C5-4596-86C3-5893B9453200' AND Name = 'OrderHeader')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1733,7 +1868,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'bbb462d9-9c03-43a1-b219-37c7e6fdf502',
+            '20a79e63-2f39-44c6-a63b-eb3790b7b2f3',
             'EB009F74-F4C5-4596-86C3-5893B9453200', -- Entity: MJ_BizApps_Orders: Order Charges
             18,
             'OrderHeader',
@@ -1772,7 +1907,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '036f892f-4c9d-40f8-8aac-445fd7f2e1c5' OR (EntityID = '7D7C4D5F-E410-4803-9762-A060C536C098' AND Name = 'OrderHeader')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '9ab69181-36e9-41f0-9de7-446dbd94f6f1' OR (EntityID = '7D7C4D5F-E410-4803-9762-A060C536C098' AND Name = 'OrderHeader')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1805,7 +1940,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '036f892f-4c9d-40f8-8aac-445fd7f2e1c5',
+            '9ab69181-36e9-41f0-9de7-446dbd94f6f1',
             '7D7C4D5F-E410-4803-9762-A060C536C098', -- Entity: MJ_BizApps_Orders: Payment Intents
             14,
             'OrderHeader',
@@ -1844,7 +1979,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'f4b383d6-026d-4376-9036-f56986b5cb5b' OR (EntityID = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD' AND Name = 'StoredValueAccount')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'ad2a9cc4-154a-4fea-83e8-15852d32dfed' OR (EntityID = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD' AND Name = 'StoredValueAccount')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1877,7 +2012,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'f4b383d6-026d-4376-9036-f56986b5cb5b',
+            'ad2a9cc4-154a-4fea-83e8-15852d32dfed',
             '572AC8CE-8446-418B-979A-A7EE4E1F5AFD', -- Entity: MJ_BizApps_Orders: Stored Value Transactions
             11,
             'StoredValueAccount',
@@ -1907,7 +2042,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b4e33fae-3f64-4c56-b682-38d89629ad23' OR (EntityID = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD' AND Name = 'RelatedPayment')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'ebacb7a7-14c7-49f3-a98d-aff742013a2b' OR (EntityID = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD' AND Name = 'RelatedPayment')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -1940,7 +2075,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'b4e33fae-3f64-4c56-b682-38d89629ad23',
+            'ebacb7a7-14c7-49f3-a98d-aff742013a2b',
             '572AC8CE-8446-418B-979A-A7EE4E1F5AFD', -- Entity: MJ_BizApps_Orders: Stored Value Transactions
             12,
             'RelatedPayment',
@@ -1970,7 +2105,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '39547d96-3a0f-4ece-b36e-92e9e22ca0bc' OR (EntityID = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD' AND Name = 'RelatedOrderHeader')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'e5d261ec-c90f-438d-95d6-269464e6f24a' OR (EntityID = '572AC8CE-8446-418B-979A-A7EE4E1F5AFD' AND Name = 'RelatedOrderHeader')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -2003,7 +2138,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '39547d96-3a0f-4ece-b36e-92e9e22ca0bc',
+            'e5d261ec-c90f-438d-95d6-269464e6f24a',
             '572AC8CE-8446-418B-979A-A7EE4E1F5AFD', -- Entity: MJ_BizApps_Orders: Stored Value Transactions
             13,
             'RelatedOrderHeader',
@@ -2042,7 +2177,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '22244201-298a-40cc-aadc-0a535c6bbe30' OR (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'PaymentIntent')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '01f0a304-3092-4142-a73d-75a4ce08dbeb' OR (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'PaymentIntent')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -2075,7 +2210,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '22244201-298a-40cc-aadc-0a535c6bbe30',
+            '01f0a304-3092-4142-a73d-75a4ce08dbeb',
             'CE97BF15-F7C6-4C50-A744-A89C714A4DDD', -- Entity: MJ_BizApps_Orders: Payment Headers
             30,
             'PaymentIntent',
@@ -2105,7 +2240,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '8cd42598-a27c-4a99-9b08-e33447f9e6cd' OR (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'PaymentDetail')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '05c789e5-552a-4f06-a338-562a50997129' OR (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'PaymentDetail')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -2138,7 +2273,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '8cd42598-a27c-4a99-9b08-e33447f9e6cd',
+            '05c789e5-552a-4f06-a338-562a50997129',
             'CE97BF15-F7C6-4C50-A744-A89C714A4DDD', -- Entity: MJ_BizApps_Orders: Payment Headers
             31,
             'PaymentDetail',
@@ -2168,7 +2303,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '75902937-3eef-4c62-ae23-119f491fe673' OR (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'ReversesPaymentHeader')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'c5147b9e-e2b3-465a-b563-31c6cc7b8e7a' OR (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'ReversesPaymentHeader')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -2201,7 +2336,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '75902937-3eef-4c62-ae23-119f491fe673',
+            'c5147b9e-e2b3-465a-b563-31c6cc7b8e7a',
             'CE97BF15-F7C6-4C50-A744-A89C714A4DDD', -- Entity: MJ_BizApps_Orders: Payment Headers
             32,
             'ReversesPaymentHeader',
@@ -2240,7 +2375,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'e3e708ce-ebb1-47d3-86d1-513b995177e2' OR (EntityID = '90A1060F-35D6-44A7-9076-A9053BBF60E6' AND Name = 'PriceOverridden')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '4e18cc18-f277-4808-84d4-7b221f97bcb9' OR (EntityID = '90A1060F-35D6-44A7-9076-A9053BBF60E6' AND Name = 'PriceOverridden')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -2273,7 +2408,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'e3e708ce-ebb1-47d3-86d1-513b995177e2',
+            '4e18cc18-f277-4808-84d4-7b221f97bcb9',
             '90A1060F-35D6-44A7-9076-A9053BBF60E6', -- Entity: MJ_BizApps_Orders: Event Order Lines
             37,
             'PriceOverridden',
@@ -2303,7 +2438,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'f0e5eae4-b5d1-44c7-a65a-48b92c3dd96f' OR (EntityID = '90A1060F-35D6-44A7-9076-A9053BBF60E6' AND Name = 'PriceOverrideReason')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'c3e3beb8-67c0-4368-9d96-38ea348ba048' OR (EntityID = '90A1060F-35D6-44A7-9076-A9053BBF60E6' AND Name = 'PriceOverrideReason')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -2336,7 +2471,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'f0e5eae4-b5d1-44c7-a65a-48b92c3dd96f',
+            'c3e3beb8-67c0-4368-9d96-38ea348ba048',
             '90A1060F-35D6-44A7-9076-A9053BBF60E6', -- Entity: MJ_BizApps_Orders: Event Order Lines
             38,
             'PriceOverrideReason',
@@ -2375,7 +2510,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '4397672b-74cc-44f9-9930-65e57a1042cb' OR (EntityID = '9E638C8F-6447-45D9-9137-B24E1047BCE5' AND Name = 'Subscription')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '9f021c63-dfd8-43f0-8194-77d71a3a5999' OR (EntityID = '9E638C8F-6447-45D9-9137-B24E1047BCE5' AND Name = 'Subscription')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -2408,7 +2543,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '4397672b-74cc-44f9-9930-65e57a1042cb',
+            '9f021c63-dfd8-43f0-8194-77d71a3a5999',
             '9E638C8F-6447-45D9-9137-B24E1047BCE5', -- Entity: MJ_BizApps_Orders: Entitlement Grants
             19,
             'Subscription',
@@ -2447,7 +2582,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '0a36d4f9-2010-47c1-a822-ceb28f26bbbd' OR (EntityID = '22E31028-E862-424B-8C10-C167B2C9E304' AND Name = 'Subscription')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'cbb17833-a6ea-4eb8-b998-86ee50f3ad2b' OR (EntityID = '22E31028-E862-424B-8C10-C167B2C9E304' AND Name = 'Subscription')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -2480,7 +2615,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '0a36d4f9-2010-47c1-a822-ceb28f26bbbd',
+            'cbb17833-a6ea-4eb8-b998-86ee50f3ad2b',
             '22E31028-E862-424B-8C10-C167B2C9E304', -- Entity: MJ_BizApps_Orders: Subscription Terms
             16,
             'Subscription',
@@ -2519,7 +2654,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '7947e24c-8f53-4e89-94b1-5d320ada5efd' OR (EntityID = 'E9B55146-3351-440C-AD47-FD4DE05BDA05' AND Name = 'MigratesFromSubscription')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '122de4cb-e05c-40a5-ae72-518f5adbcd7a' OR (EntityID = 'E9B55146-3351-440C-AD47-FD4DE05BDA05' AND Name = 'MigratesFromSubscription')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -2552,7 +2687,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '7947e24c-8f53-4e89-94b1-5d320ada5efd',
+            '122de4cb-e05c-40a5-ae72-518f5adbcd7a',
             'E9B55146-3351-440C-AD47-FD4DE05BDA05', -- Entity: MJ_BizApps_Orders: Subscriptions
             28,
             'MigratesFromSubscription',
@@ -2582,7 +2717,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '21ceded2-cfab-42e2-bae1-d62d42e60dca' OR (EntityID = 'E9B55146-3351-440C-AD47-FD4DE05BDA05' AND Name = 'MigratesToSubscription')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '1b6d24d8-8693-4d61-84a3-ca5d96a825a8' OR (EntityID = 'E9B55146-3351-440C-AD47-FD4DE05BDA05' AND Name = 'MigratesToSubscription')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -2615,7 +2750,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '21ceded2-cfab-42e2-bae1-d62d42e60dca',
+            '1b6d24d8-8693-4d61-84a3-ca5d96a825a8',
             'E9B55146-3351-440C-AD47-FD4DE05BDA05', -- Entity: MJ_BizApps_Orders: Subscriptions
             29,
             'MigratesToSubscription',
@@ -2657,7 +2792,7 @@ UPDATE [${mjSchema}].[EntityField]
                       [Scale]=0,
                       [AllowsNull]=0,
                       [AllowUpdateAPI]=1
-                  WHERE [ID]='E3E708CE-EBB1-47D3-86D1-513B995177E2';
+                  WHERE [ID]='4E18CC18-F277-4808-84D4-7B221F97BCB9';
 
 /* Update IS-A parent field PriceOverrideReason on MJ_BizApps_Orders: Event Order Lines */
 UPDATE [${mjSchema}].[EntityField]
@@ -2668,7 +2803,7 @@ UPDATE [${mjSchema}].[EntityField]
                       [Scale]=0,
                       [AllowsNull]=1,
                       [AllowUpdateAPI]=1
-                  WHERE [ID]='F0E5EAE4-B5D1-44C7-A65A-48B92C3DD96F';
+                  WHERE [ID]='C3E3BEB8-67C0-4368-9D96-38EA348BA048';
 
 /* Update entity timestamp for MJ_BizApps_Orders: Event Order Lines after IS-A field sync */
 UPDATE [${mjSchema}].[Entity] SET [__mj_UpdatedAt]=GETUTCDATE() WHERE ID='90A1060F-35D6-44A7-9076-A9053BBF60E6';
@@ -2676,47 +2811,47 @@ UPDATE [${mjSchema}].[Entity] SET [__mj_UpdatedAt]=GETUTCDATE() WHERE ID='90A106
 /* SQL text to set default column width where needed */
 EXEC [${mjSchema}].[spSetDefaultColumnWidthWhereNeeded] @ExcludedSchemaNames='', @IncludedSchemaNames='${flyway:defaultSchema}';
 
-/* SQL text to insert entity field value with ID 8704abf8-9ab4-4a5c-94d9-95c306c52ae0 */
+/* SQL text to insert entity field value with ID 84c96a80-3549-4fd7-ae00-0a2d88bad78b */
 INSERT INTO [${mjSchema}].[EntityFieldValue]
                                        ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
                                     VALUES
-                                       ('8704abf8-9ab4-4a5c-94d9-95c306c52ae0', '372C5047-F78D-4630-BEA9-47D7EDF781AE', 1, 'Fulfilled', 'Fulfilled', GETUTCDATE(), GETUTCDATE());
+                                       ('84c96a80-3549-4fd7-ae00-0a2d88bad78b', 'F04330BA-4A37-4674-A2FE-237CE04E2C52', 1, 'Fulfilled', 'Fulfilled', GETUTCDATE(), GETUTCDATE());
 
-/* SQL text to insert entity field value with ID 6a34e25f-6c17-45be-83fb-ea95dd690909 */
+/* SQL text to insert entity field value with ID 1cfd7b10-d9d0-4ba0-a4fb-dbc866065e58 */
 INSERT INTO [${mjSchema}].[EntityFieldValue]
                                        ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
                                     VALUES
-                                       ('6a34e25f-6c17-45be-83fb-ea95dd690909', '372C5047-F78D-4630-BEA9-47D7EDF781AE', 2, 'NotApplicable', 'NotApplicable', GETUTCDATE(), GETUTCDATE());
+                                       ('1cfd7b10-d9d0-4ba0-a4fb-dbc866065e58', 'F04330BA-4A37-4674-A2FE-237CE04E2C52', 2, 'NotApplicable', 'NotApplicable', GETUTCDATE(), GETUTCDATE());
 
-/* SQL text to insert entity field value with ID c040a14d-9ab3-4a28-90d8-43a4881fab1b */
+/* SQL text to insert entity field value with ID 91085ca1-ad50-4305-ba85-5aecffa5575b */
 INSERT INTO [${mjSchema}].[EntityFieldValue]
                                        ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
                                     VALUES
-                                       ('c040a14d-9ab3-4a28-90d8-43a4881fab1b', '372C5047-F78D-4630-BEA9-47D7EDF781AE', 3, 'PartiallyFulfilled', 'PartiallyFulfilled', GETUTCDATE(), GETUTCDATE());
+                                       ('91085ca1-ad50-4305-ba85-5aecffa5575b', 'F04330BA-4A37-4674-A2FE-237CE04E2C52', 3, 'PartiallyFulfilled', 'PartiallyFulfilled', GETUTCDATE(), GETUTCDATE());
 
-/* SQL text to insert entity field value with ID d5216045-c29d-419c-a579-82f1857e6c42 */
+/* SQL text to insert entity field value with ID 23825725-0670-400f-85e5-f78947c8e231 */
 INSERT INTO [${mjSchema}].[EntityFieldValue]
                                        ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
                                     VALUES
-                                       ('d5216045-c29d-419c-a579-82f1857e6c42', '372C5047-F78D-4630-BEA9-47D7EDF781AE', 4, 'Pending', 'Pending', GETUTCDATE(), GETUTCDATE());
+                                       ('23825725-0670-400f-85e5-f78947c8e231', 'F04330BA-4A37-4674-A2FE-237CE04E2C52', 4, 'Pending', 'Pending', GETUTCDATE(), GETUTCDATE());
 
-/* SQL text to insert entity field value with ID f78ec325-915a-4fa4-b1a1-516ded35fbf1 */
+/* SQL text to insert entity field value with ID 179b1287-4cce-4f61-9fc5-fdcab8e36505 */
 INSERT INTO [${mjSchema}].[EntityFieldValue]
                                        ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
                                     VALUES
-                                       ('f78ec325-915a-4fa4-b1a1-516ded35fbf1', '372C5047-F78D-4630-BEA9-47D7EDF781AE', 5, 'Returned', 'Returned', GETUTCDATE(), GETUTCDATE());
+                                       ('179b1287-4cce-4f61-9fc5-fdcab8e36505', 'F04330BA-4A37-4674-A2FE-237CE04E2C52', 5, 'Returned', 'Returned', GETUTCDATE(), GETUTCDATE());
 
-/* SQL text to update ValueListType for entity field ID 372C5047-F78D-4630-BEA9-47D7EDF781AE */
-UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='372C5047-F78D-4630-BEA9-47D7EDF781AE';
+/* SQL text to update ValueListType for entity field ID F04330BA-4A37-4674-A2FE-237CE04E2C52 */
+UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='F04330BA-4A37-4674-A2FE-237CE04E2C52';
 
 
 /* Create Entity Relationship: MJ_BizApps_Orders: Product Categories -> MJ_BizApps_Orders: Product Prices (One To Many via ProductCategoryID) */
    IF NOT EXISTS (
-      SELECT 1 FROM [${mjSchema}].[EntityRelationship] WHERE [ID] = '8308d995-ce4b-43cc-96ea-dbbf44297130'
+      SELECT 1 FROM [${mjSchema}].[EntityRelationship] WHERE [ID] = 'b49d1d2b-e267-4104-9ae6-923d21c4f7f3'
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('8308d995-ce4b-43cc-96ea-dbbf44297130', 'B0FA90A6-6975-4C5E-ABC7-3AEA97700CC3', '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', 'ProductCategoryID', 'One To Many', 1, 1, 4, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('b49d1d2b-e267-4104-9ae6-923d21c4f7f3', 'B0FA90A6-6975-4C5E-ABC7-3AEA97700CC3', '58018ECE-83EF-4E05-A9D0-2F7E47F9AF25', 'ProductCategoryID', 'One To Many', 1, 1, 4, GETUTCDATE(), GETUTCDATE())
    END;
 
 /* SQL text to sync schema info from database schemas */
@@ -4069,8 +4204,8 @@ IF NOT EXISTS (
 )
 CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_SourceCheckoutWidgetID ON [${flyway:defaultSchema}].[OrderHeader] ([SourceCheckoutWidgetID]);
 
-/* SQL text to update entity field related entity name field map for entity field ID 3719CD23-FA95-42DD-BCD7-B3703A24CFBA */
-EXEC [${mjSchema}].[spUpdateEntityFieldRelatedEntityNameFieldMap] @EntityFieldID='3719CD23-FA95-42DD-BCD7-B3703A24CFBA', @RelatedEntityNameFieldMap='SourceCheckoutWidget';
+/* SQL text to update entity field related entity name field map for entity field ID AD35E8E7-6ACA-4B49-BA17-F0C820062CFF */
+EXEC [${mjSchema}].[spUpdateEntityFieldRelatedEntityNameFieldMap] @EntityFieldID='AD35E8E7-6ACA-4B49-BA17-F0C820062CFF', @RelatedEntityNameFieldMap='SourceCheckoutWidget';
 
 /* Base View SQL for MJ_BizApps_Orders: Event Order Lines */
 -----------------------------------------------------------------
@@ -8456,8 +8591,8 @@ IF NOT EXISTS (
 )
 CREATE INDEX IDX_AUTO_MJ_FKEY_ProductPrice_ProductCategoryID ON [${flyway:defaultSchema}].[ProductPrice] ([ProductCategoryID]);
 
-/* SQL text to update entity field related entity name field map for entity field ID FC984132-B32D-4976-913A-A10D9F8777DF */
-EXEC [${mjSchema}].[spUpdateEntityFieldRelatedEntityNameFieldMap] @EntityFieldID='FC984132-B32D-4976-913A-A10D9F8777DF', @RelatedEntityNameFieldMap='ProductCategory';
+/* SQL text to update entity field related entity name field map for entity field ID 22F303C6-3FF3-4074-90D5-32D35149106D */
+EXEC [${mjSchema}].[spUpdateEntityFieldRelatedEntityNameFieldMap] @EntityFieldID='22F303C6-3FF3-4074-90D5-32D35149106D', @RelatedEntityNameFieldMap='ProductCategory';
 
 /* Hierarchy Metadata Function SQL for MJ_BizApps_Orders: Product Categories.ParentProductCategoryID */
 -----------------------------------------------------------------
@@ -10966,7 +11101,7 @@ UPDATE [${mjSchema}].[EntityField]
                 AND [Sequence] >= 100000
          );
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '97dbc477-174a-497c-9eab-1bc0a5125ebb' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'RootParentOrderLineID')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'c223d278-61b7-44a6-9986-5dcb14444f9a' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'RootParentOrderLineID')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -10999,7 +11134,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '97dbc477-174a-497c-9eab-1bc0a5125ebb',
+            'c223d278-61b7-44a6-9986-5dcb14444f9a',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             43,
             'RootParentOrderLineID',
@@ -11029,7 +11164,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '6f868c4c-1d19-4152-b0a3-5d913d367db8' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDDepth')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '7e58cf41-c57e-49cd-942e-a00e17524512' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDDepth')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -11062,7 +11197,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '6f868c4c-1d19-4152-b0a3-5d913d367db8',
+            '7e58cf41-c57e-49cd-942e-a00e17524512',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             44,
             'ParentOrderLineIDDepth',
@@ -11092,7 +11227,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '18ec055c-4597-4f0e-9073-1a6869e7bfda' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDPath')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'd847fdce-f029-4899-92d1-d1b9ce8552dc' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDPath')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -11125,7 +11260,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '18ec055c-4597-4f0e-9073-1a6869e7bfda',
+            'd847fdce-f029-4899-92d1-d1b9ce8552dc',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             45,
             'ParentOrderLineIDPath',
@@ -11155,7 +11290,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b055207b-f084-4d05-8a33-328118306e28' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDIsLeaf')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '329f8228-1dc3-4fb1-aac1-626f137df5cc' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDIsLeaf')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -11188,7 +11323,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            'b055207b-f084-4d05-8a33-328118306e28',
+            '329f8228-1dc3-4fb1-aac1-626f137df5cc',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             46,
             'ParentOrderLineIDIsLeaf',
@@ -11218,7 +11353,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '9e6b203b-4945-48d0-8aac-a9b79e4facac' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDChildCount')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '243ce794-cced-4095-ac5c-828b706cca84' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ParentOrderLineIDChildCount')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -11251,7 +11386,7 @@ UPDATE [${mjSchema}].[EntityField]
          )
          VALUES
          (
-            '9e6b203b-4945-48d0-8aac-a9b79e4facac',
+            '243ce794-cced-4095-ac5c-828b706cca84',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             47,
             'ParentOrderLineIDChildCount',
