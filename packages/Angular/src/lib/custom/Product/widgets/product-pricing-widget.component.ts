@@ -27,7 +27,7 @@ import type {
     mjBizAppsOrdersPriceListEntity
 } from '@mj-biz-apps/orders-entities';
 import { FormatMoney } from '../../../panels/money-format';
-import { LoadOrdersEngine, OrdersEngine, PRICE_APPLICABILITY_SOURCES, ProductPriceEntity, priceApplies } from '@mj-biz-apps/orders-entities';
+import { LoadOrdersEngine, OrdersEngine, PRICE_APPLICABILITY_SOURCES, ProductPriceEntity, TodayAsDateValue, priceApplies } from '@mj-biz-apps/orders-entities';
 
 export interface PriceChannel {
     ID: string | null;
@@ -592,6 +592,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.IsSaving = true;
         this.cdr?.markForCheck();
 
+        let newPrice: ProductPriceEntity | null = null;
         try {
             // 1. Auto-adjust prior open-ended or overlapping sibling tiers in the same channel
             const channelSiblings = this.AllPriceRecords.filter(p => 
@@ -615,8 +616,6 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             }
 
             // 2. Instantiate and save the new tier bracket
-            let newPrice: ProductPriceEntity;
-
             if (this.Product.Prices) {
                 newPrice = await this.Product.Prices.Create() as ProductPriceEntity;
             } else {
@@ -635,7 +634,9 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             newPrice.FeeType = 'Standard';
             newPrice.Priority = 0;
             newPrice.Status = 'Active';
-            newPrice.EffectiveFrom = new Date();
+            // The LOCAL calendar day, not new Date(): an instant serialises in UTC, which dated
+            // every evening-created price TOMORROW and made it refuse to apply until then.
+            newPrice.EffectiveFrom = TodayAsDateValue();
             const bracket = maxQty != null ? `${minQty}–${maxQty}` : `${minQty}+`;
             (newPrice as { Name?: string }).Name = `${this.NewTierModel || 'Volume'} ${bracket}`.slice(0, 100);
 
@@ -650,11 +651,13 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
                 console.error('Failed to save product price record:', newPrice.LatestResult);
                 const errMsg = this.extractErrorMessage(newPrice.LatestResult);
                 this.ShowToast(`Could not save pricing bracket: ${errMsg}`, 'error', 6000);
+                this.discardUnsaved(newPrice);
             }
         } catch (err) {
             console.error('Failed to create tier bracket:', err);
             const errMsg = err instanceof Error ? err.message : String(err);
             this.ShowToast(`Error creating pricing bracket: ${errMsg}`, 'error', 6000);
+            if (newPrice) this.discardUnsaved(newPrice);
         } finally {
             this.IsSaving = false;
             this.cdr?.markForCheck();
@@ -928,6 +931,19 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         return ok;
     }
 
+    /**
+     * Take a row that FAILED to save back out of the grid.
+     *
+     * `Prices.Create()` appends to the collection immediately, and `syncFromCollection` copies the
+     * collection into the grid — so a failed save used to leave a phantom row on screen while the
+     * tab counter (which counts saved records) honestly said it wasn't there.
+     */
+    private discardUnsaved(price: ProductPriceEntity): void {
+        if (price.IsSaved) return;
+        this.Product?.Prices?.Remove(price);
+        this.syncFromCollection();
+    }
+
     private nextPriorityOnChannel(): number {
         const peers = this.AllPriceRecords.filter((p) =>
             this.SelectedChannelID === null ? !p.PriceListID : p.PriceListID === this.SelectedChannelID,
@@ -955,8 +971,9 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         const amount = Number(this.NewPriceAmount);
         this.IsSaving = true;
         this.cdr?.markForCheck();
+        let newPrice: ProductPriceEntity | null = null;
         try {
-            const newPrice = await this.Product.Prices.Create() as ProductPriceEntity;
+            newPrice = await this.Product.Prices.Create() as ProductPriceEntity;
             newPrice.ProductID = this.Product.ID;
             newPrice.PriceListID = this.SelectedChannelID;
             (newPrice as { Name?: string }).Name = name;
@@ -965,16 +982,21 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             newPrice.FeeType = 'Standard';
             newPrice.Priority = this.nextPriorityOnChannel();
             newPrice.Status = 'Active';
-            newPrice.EffectiveFrom = new Date();
+            // Same rule as AddTierBracket: the LOCAL calendar day, or the price starts tomorrow
+            // for anyone saving in the evening.
+            newPrice.EffectiveFrom = TodayAsDateValue();
             const saved = await this.saveProductGraph();
             if (saved) {
                 this.ShowToast(`Added ${name} · ${this.FormatCurrency(newPrice.Amount)}`, 'success');
                 this.PriceChanged.emit();
                 this.TierAdded.emit(newPrice);
                 await this.LoadPricingData();
+            } else {
+                this.discardUnsaved(newPrice);
             }
         } catch (err) {
             this.ShowToast(err instanceof Error ? err.message : String(err), 'error', 6000);
+            if (newPrice) this.discardUnsaved(newPrice);
         } finally {
             this.IsSaving = false;
             this.cdr?.markForCheck();

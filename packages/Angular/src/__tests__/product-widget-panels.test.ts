@@ -1,0 +1,143 @@
+import '@angular/compiler';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, it, expect } from 'vitest';
+import { MJGlobal } from '@memberjunction/global';
+import { BaseFormPanel } from '@memberjunction/ng-base-forms';
+import {
+    ProductAccountingPanel,
+    ProductFulfillmentPanel,
+    ProductSubscriptionsPanel,
+} from '../lib/form-panels/product-widget.panels';
+import '../public-api';
+
+/**
+ * golive#184 — the Product form's contributed sections rendered a bare header when every
+ * field in them was empty, and ten fields rendered twice (generated section + widget).
+ *
+ * Both fixes are structural, so these tests read the structures:
+ *  - `replacesSectionKey` on the registration is what removes the duplicate generated section.
+ *  - Where an `mj-form-field` is DECLARED is what decides whether mj-collapsible-panel's
+ *    `@ContentChildren` hide-when-empty check can see it. A field declared inside the widget's
+ *    own template sits behind a component view boundary and is invisible to the query.
+ */
+
+/** Inline `template:` of a panel component, from the decorator metadata Angular keeps on the class. */
+function PanelTemplate(panel: unknown): string {
+    const annotations = (panel as { __annotations__?: { template?: string }[] }).__annotations__;
+    const template = annotations?.[0]?.template;
+    expect(typeof template, 'panel must use an inline template').toBe('string');
+    return template as string;
+}
+
+function ReadRepoFile(relativeToThisFile: string): string {
+    return readFileSync(fileURLToPath(new URL(relativeToThisFile, import.meta.url)), 'utf8');
+}
+
+const WIDGETS_DIR = '../lib/custom/Product/widgets/';
+const SUBSCRIPTION_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-subscription-widget.component.html`);
+const FULFILLMENT_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-fulfillment-widget.component.html`);
+const ACCOUNTING_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-accounting-widget.component.html`);
+const GENERATED_PRODUCT_FORM_HTML = ReadRepoFile(
+    '../lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component.html'
+);
+
+function FieldNames(markup: string): string[] {
+    return [...markup.matchAll(/FieldName="([^"]+)"/g)].map((m) => m[1]);
+}
+
+/** Field names declared inside one generated `<mj-collapsible-panel SectionKey="...">` block. */
+function GeneratedSectionFields(sectionKey: string): string[] {
+    const start = GENERATED_PRODUCT_FORM_HTML.indexOf(`SectionKey="${sectionKey}"`);
+    expect(start, `generated section ${sectionKey} not found`).toBeGreaterThan(-1);
+    const end = GENERATED_PRODUCT_FORM_HTML.indexOf('</mj-collapsible-panel>', start);
+    expect(end, `generated section ${sectionKey} is unterminated`).toBeGreaterThan(start);
+    return FieldNames(GENERATED_PRODUCT_FORM_HTML.slice(start, end));
+}
+
+function PanelRegistrationMetadata(panel: unknown): Record<string, unknown> | undefined {
+    return MJGlobal.Instance.ClassFactory.GetAllRegistrations(BaseFormPanel).find((r) => r.SubClass === panel)
+        ?.Metadata;
+}
+
+describe('Product widget panels replace their duplicate generated sections', () => {
+    it.each([
+        { name: 'accounting', panel: ProductAccountingPanel, sectionKey: 'financialAndAccounting' },
+        { name: 'fulfillment', panel: ProductFulfillmentPanel, sectionKey: 'catalogLifecycle' },
+        { name: 'subscriptions', panel: ProductSubscriptionsPanel, sectionKey: 'subscriptionAndEntitlements' },
+    ])('the $name panel claims the generated $sectionKey section', ({ panel, sectionKey }) => {
+        expect(PanelRegistrationMetadata(panel)?.['replacesSectionKey']).toBe(sectionKey);
+    });
+
+    it('still renders every field of the three replaced sections', () => {
+        const rendered = new Set([
+            ...FieldNames(PanelTemplate(ProductAccountingPanel)),
+            ...FieldNames(PanelTemplate(ProductFulfillmentPanel)),
+            ...FieldNames(PanelTemplate(ProductSubscriptionsPanel)),
+            ...FieldNames(SUBSCRIPTION_WIDGET_HTML),
+            ...FieldNames(FULFILLMENT_WIDGET_HTML),
+            ...FieldNames(ACCOUNTING_WIDGET_HTML),
+        ]);
+
+        // StandaloneSellingPrice is deliberately off generated forms
+        // (metadata/entities/.product-standalone-selling-price-deprecation.json sets
+        // IncludeInGeneratedForm = 0). The committed generated template still carries it
+        // because CodeGen has not been re-run against that metadata yet, so it must not be
+        // carried into the replacement panel.
+        const deprecated = ['StandaloneSellingPrice'];
+        const replaced = [
+            ...GeneratedSectionFields('financialAndAccounting'),
+            ...GeneratedSectionFields('catalogLifecycle'),
+            ...GeneratedSectionFields('subscriptionAndEntitlements'),
+        ].filter((field) => !deprecated.includes(field));
+        expect(replaced.length).toBeGreaterThan(0);
+        expect(rendered.has('StandaloneSellingPrice')).toBe(false);
+
+        const lost = replaced.filter((field) => !rendered.has(field));
+        expect(lost, 'replacing a generated section must not drop its fields').toEqual([]);
+    });
+});
+
+describe('Contributed sections hide when every field is empty', () => {
+    it.each([
+        {
+            name: 'subscriptions',
+            panel: ProductSubscriptionsPanel,
+            fields: ['SubscriptionTypeID', 'EntitlementValidityMode'],
+        },
+        {
+            name: 'fulfillment',
+            panel: ProductFulfillmentPanel,
+            fields: [
+                'Status',
+                'AvailableFrom',
+                'AvailableTo',
+                'EntitlementGrantTiming',
+                'EntitlementQuantityMode',
+                'EntitlementValidityMode',
+                'SuccessorProductID',
+            ],
+        },
+    ])('the $name panel declares its fields in its own template', ({ panel, fields }) => {
+        // Declared in the panel template => a ContentChild of mj-collapsible-panel =>
+        // hasRenderableContent() can see it. Declared in the widget => invisible.
+        expect(FieldNames(PanelTemplate(panel))).toEqual(fields);
+    });
+
+    it.each([
+        { name: 'subscription', html: SUBSCRIPTION_WIDGET_HTML },
+        { name: 'fulfillment', html: FULFILLMENT_WIDGET_HTML },
+    ])('the $name widget projects the fields instead of declaring them', ({ html }) => {
+        expect(FieldNames(html)).toEqual([]);
+        expect(html).toContain('<ng-content>');
+    });
+
+    it('leaves the accounting widget owning its fields, because its GL links are not fields', () => {
+        // The accounting panel also renders bizapps-product-gl-links, which is real content even
+        // when all three product columns are empty. Hoisting its fields would let MJ hide the
+        // panel — and the GL links with it — so this section deliberately stays always-visible.
+        expect(FieldNames(PanelTemplate(ProductAccountingPanel))).toEqual([]);
+        expect(FieldNames(ACCOUNTING_WIDGET_HTML).length).toBeGreaterThan(0);
+        expect(ACCOUNTING_WIDGET_HTML).toContain('bizapps-product-gl-links');
+    });
+});

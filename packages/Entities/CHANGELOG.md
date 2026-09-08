@@ -1,5 +1,11 @@
 # @mj-biz-apps/orders-entities
 
+## 5.10.0
+
+### Minor Changes
+
+- 76b3d3e: Forward CodeGen remainder for V202609031400 (ProductPrice.Name / ProductCategoryID / Applicability). That file added the columns and SPs but omitted EntityField inserts. Recaptured on a clean DB with includeSchemas limited to \_\_mj_BizAppsOrders; the migration is the full SQL log, not a subset.
+
 ## 5.9.0
 
 ### Minor Changes
