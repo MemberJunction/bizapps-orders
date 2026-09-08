@@ -1,11 +1,11 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
-import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
-import { GetChargeTypes, GetProducts, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
+import { GetChargeTypes, GetProductCategories, GetProducts, GetProductTypes, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import {
     IsBefore,
@@ -14,6 +14,14 @@ import {
     type mjBizAppsOrdersCustomerTaxExemptionEntity,
     type mjBizAppsOrdersProductEntity,
 } from '@mj-biz-apps/orders-entities';
+
+/**
+ * The payload `mj-view-workspace` emits from `OpenRecordRequested`.
+ *
+ * The workspace declares this shape inline rather than exporting a named type, so it is restated
+ * here instead of widening the handler to `any` — the compiler still checks the binding.
+ */
+type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> };
 
 /**
  * `mjo-products-page` — the catalog, which is the behaviour root.
@@ -48,10 +56,12 @@ import {
 
         <div class="mjo-products-viewer-container">
             @if (ProductEntityInfo) {
-                <mj-entity-viewer
+                <mj-view-workspace
                     [Entity]="ProductEntityInfo"
-                    (RecordOpened)="OnRecordOpened($event)">
-                </mj-entity-viewer>
+                    [AutoSaveView]="true"
+                    (OpenRecordRequested)="OnRecordOpened($event)"
+                    (CreateNewRecordRequested)="ProductCreateRequested.emit()">
+                </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading products...</div>
             }
@@ -162,12 +172,13 @@ import {
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
                 height: 100%;
                 width: 100%;
+                min-height: 0;
             }
             .mjo-cat__note { margin-bottom: var(--mj-space-4); }
             .mjo-cat__grid {
@@ -190,6 +201,8 @@ export class MJOProductsPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
     @Output() ProductOpened = new EventEmitter<mjBizAppsOrdersProductEntity>();
+    /** The grid's New button — the host routes it, this page never imports Router. */
+    @Output() ProductCreateRequested = new EventEmitter<void>();
 
     public ProductEntityInfo: EntityInfo | null = null;
     public Categories: Array<Record<string, unknown>> = [];
@@ -199,10 +212,19 @@ export class MJOProductsPageComponent implements OnInit {
         const md = new Metadata();
         this.ProductEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.Product) || null;
         this.cdr.detectChanges();
+        const [types, categories] = await Promise.all([GetProductTypes(), GetProductCategories()]);
+        this.Types = types.map((t) => t.GetAll());
+        this.Categories = categories.map((c) => c.GetAll());
+        this.cdr.detectChanges();
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    /**
+     * The workspace hands back the row it opened, not a composite key — Product's key is `ID`, so
+     * the row carries it. A row without an `ID` is not openable and is dropped rather than emitting
+     * a half-built surrogate the section would try to route to.
+     */
+    public OnRecordOpened(event: OpenRecordRequest): void {
+        const id = event.record['ID'] as string | undefined;
         if (id) {
             const surrogate = { ID: id } as mjBizAppsOrdersProductEntity;
             this.ProductOpened.emit(surrogate);
@@ -247,9 +269,10 @@ export class MJOProductsPageComponent implements OnInit {
 
         <div class="mjo-tax__viewer-host">
             @if (ChargeTypeEntityInfo) {
-                <mj-entity-viewer
-                    [Entity]="ChargeTypeEntityInfo">
-                </mj-entity-viewer>
+                <mj-view-workspace
+                    [Entity]="ChargeTypeEntityInfo"
+                    [AutoSaveView]="true">
+                </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading charge types...</div>
             }
@@ -426,12 +449,13 @@ export class MJOProductsPageComponent implements OnInit {
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
                 height: 100%;
                 width: 100%;
+                min-height: 0;
             }
             .mjo-tax__grid {
                 display: grid;

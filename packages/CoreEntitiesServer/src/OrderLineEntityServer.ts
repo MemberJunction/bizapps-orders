@@ -40,12 +40,11 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { IsBooked, LineGross, NetAfterDiscount, OrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { IsBooked, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderLineEntity, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
-const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 
 function money(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -215,22 +214,9 @@ export class OrderLineEntityServer extends OrderLineEntity {
     /** Derived from the product, always — plan D6. */
     private async stampCompanyFromProduct(): Promise<void> {
         if (!this.ProductID) return;
-
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const result = await rv.RunView<{ ID: string; CompanyID: string }>(
-            {
-                EntityName: PRODUCT_ENTITY,
-                ExtraFilter: `ID='${this.ProductID}'`,
-                Fields: ['ID', 'CompanyID'],
-                ResultType: 'simple',
-            },
-            this.ContextCurrentUser,
-        );
-
-        const product = result?.Results?.[0];
-        if (product?.CompanyID) {
-            this.CompanyID = product.CompanyID;
-        }
+        await LoadOrdersEngine(this.ProviderToUse as never, this.ContextCurrentUser);
+        const product = OrdersEngine.Instance.ProductByID(this.ProductID);
+        if (product?.CompanyID) this.CompanyID = product.CompanyID;
     }
 
     private computeTotals(): void {

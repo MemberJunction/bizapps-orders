@@ -42,7 +42,13 @@
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
-import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import {
+    LoadOrdersEngine,
+    OrdersEngine,
+    type mjBizAppsOrdersOrderHeaderEntity,
+    type mjBizAppsOrdersOrderLineEntity,
+} from '@mj-biz-apps/orders-entities';
+import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 import { GL_ROLE, GLAccountResolver, GLAccountResolutionError } from './GLAccountResolver.js';
 import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
@@ -186,16 +192,19 @@ export class OrderJournalEntryFactory {
         term?: { ID: string; StartDate: Date; EndDate: Date; Amount: number },
         recognitionMonths?: number,
     ): Promise<OrderLineDraft[]> {
-        const product = products.get(line.ProductID);
+        const product = products.get(line.ProductID.toLowerCase());
         if (!product) {
             throw new Error(`Order line ${line.ID} references product ${line.ProductID}, which was not found.`);
         }
 
-        const revRec = revRecTypes.get(product.RevenueRecognitionTypeID);
+        const typeDefault = OrdersEngine.Instance.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID;
+        const revRecID = ResolveRevenueRecognitionTypeID(product.RevenueRecognitionTypeID, typeDefault);
+        const revRec = revRecID ? revRecTypes.get(revRecID.toLowerCase()) : undefined;
         if (!revRec) {
             throw new Error(
-                `Product '${product.Name}' has no valid revenue recognition type — cannot determine ` +
-                    `whether its revenue is earned at booking or over time.`,
+                `Product '${product.Name}' has no valid revenue recognition type` +
+                    (revRecID ? ` (${revRecID})` : '') +
+                    ` — cannot determine whether its revenue is earned at booking or over time.`,
             );
         }
 
@@ -474,18 +483,21 @@ export class OrderJournalEntryFactory {
     }
 
     private async loadProducts(productIDs: string[]): Promise<Map<string, ProductRow>> {
-        const inList = [...new Set(productIDs)].map((id) => `'${id}'`).join(',');
-        const rv = new RunView(this._provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<ProductRow>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Products',
-                ExtraFilter: `ID IN (${inList})`,
-                Fields: ['ID', 'CompanyID', 'ProductCategoryID', 'ProductTypeID', 'RevenueRecognitionTypeID', 'Name'],
-                ResultType: 'simple',
-            },
-            this._contextUser,
-        );
-        return new Map((result?.Results ?? []).map((p) => [p.ID, p]));
+        await LoadOrdersEngine(this._provider, this._contextUser);
+        const out = new Map<string, ProductRow>();
+        for (const id of productIDs) {
+            const p = OrdersEngine.Instance.ProductByID(id);
+            if (!p) continue;
+            out.set(p.ID.toLowerCase(), {
+                ID: p.ID,
+                CompanyID: p.CompanyID,
+                ProductCategoryID: p.ProductCategoryID ?? null,
+                ProductTypeID: p.ProductTypeID,
+                RevenueRecognitionTypeID: p.RevenueRecognitionTypeID,
+                Name: p.Name,
+            });
+        }
+        return out;
     }
 
     /**
@@ -495,20 +507,27 @@ export class OrderJournalEntryFactory {
      * not seeded metadata with stable keys. One query for the whole draft build, not one per line.
      */
     private async loadGiftCardTypeIDs(): Promise<Set<string>> {
-        const rv = new RunView(this._provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<{ ID: string }>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Product Types',
-                ExtraFilter: `Code = '${GIFT_CARD_PRODUCT_TYPE_CODE}'`,
-                Fields: ['ID'],
-                ResultType: 'simple',
-            },
-            this._contextUser,
-        );
-        return new Set((result?.Results ?? []).map((r) => r.ID));
+        await LoadOrdersEngine(this._provider, this._contextUser);
+        const type = OrdersEngine.Instance.ProductTypeByCode(GIFT_CARD_PRODUCT_TYPE_CODE);
+        return new Set(type ? [type.ID] : []);
     }
 
     private async loadRevRecTypes(): Promise<Map<string, RevRecTypeRow>> {
+        await LoadOrdersEngine(this._provider, this._contextUser);
+        const cached = OrdersEngine.Instance.RevenueRecognitionTypes;
+        if (cached.length > 0) {
+            return new Map(
+                cached.map((t) => [
+                    t.ID.toLowerCase(),
+                    {
+                        ID: t.ID,
+                        Code: t.Code,
+                        DriverClass: t.DriverClass,
+                        IsDeferred: !!t.IsDeferred,
+                    },
+                ]),
+            );
+        }
         const rv = new RunView(this._provider as unknown as IRunViewProvider);
         const result = await rv.RunView<RevRecTypeRow>(
             {
@@ -518,7 +537,12 @@ export class OrderJournalEntryFactory {
             },
             this._contextUser,
         );
-        return new Map((result?.Results ?? []).map((t) => [t.ID, t]));
+        if (!result?.Success) {
+            throw new Error(
+                `Could not load revenue recognition types${result?.ErrorMessage ? `: ${result.ErrorMessage}` : '.'}`,
+            );
+        }
+        return new Map((result.Results ?? []).map((t) => [t.ID.toLowerCase(), t]));
     }
 
     /** Plan D31 — the line's dimension tags ride onto every JE line it produces. */

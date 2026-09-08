@@ -30,7 +30,7 @@ import {
     RunView,
     UserInfo,
 } from '@memberjunction/core';
-import { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { LoadOrdersEngine, OrdersEngine, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import {
     PlanBundleExpansion,
     type BundleComponent,
@@ -38,6 +38,7 @@ import {
 } from './BundleBehavior.js';
 
 const PRODUCT_BUNDLE_ITEM_ENTITY = 'MJ_BizApps_Orders: Product Bundle Items';
+
 const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
@@ -113,20 +114,13 @@ export async function ExpandBundleLines(
     // Active, undated-or-current rules with no price list — a list-scoped price is a negotiated
     // price for one customer, not the product's standalone value.
     const componentIDs = [...new Set(rows.map((r) => r.ComponentProductID))];
-    const prices = await rv.RunView<{ ProductID: string; Amount: number; Priority: number }>(
-        {
-            EntityName: PRODUCT_PRICE_ENTITY,
-            ExtraFilter:
-                `ProductID IN (${quote(componentIDs)}) AND Status = 'Active' ` +
-                `AND PriceListID IS NULL AND MinQuantity IS NULL AND MaxQuantity IS NULL`,
-            ResultType: 'simple',
-        },
-        user,
-    );
+    await LoadOrdersEngine(provider, user);
     const sspByProduct = new Map<string, number>();
-    for (const p of (prices.Results ?? []).sort((a, b) => (b.Priority ?? 0) - (a.Priority ?? 0))) {
-        // Highest priority wins; the ambiguity guard already stops two rules tying.
-        if (!sspByProduct.has(key(p.ProductID))) sspByProduct.set(key(p.ProductID), Number(p.Amount));
+    for (const id of componentIDs) {
+        const prices = OrdersEngine.Instance.BaseProductPrices(id).filter(
+            (p) => p.MinQuantity == null && p.MaxQuantity == null,
+        );
+        if (prices[0]) sspByProduct.set(key(id), Number(prices[0].Amount));
     }
 
     // Snapshot the collection: children are appended as we go and must not themselves be scanned.

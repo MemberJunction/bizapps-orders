@@ -18,6 +18,7 @@ import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderLineEntity } from './generated/entity_subclasses';
 import { OrderLineExtensionCompanion } from './OrderLineExtensionCompanion';
 import { ORDER_LINE_MONEY_FIELDS } from './booked-money';
+import { anyFieldIsDirty } from './field-dirty';
 import { loadApplicabilityContext } from './pricing/applicability';
 import {
     isEnginePrice,
@@ -26,6 +27,7 @@ import {
     userPriceOverrideKind,
 } from './pricing/priceOverride';
 import { ListApplicablePrices, PriceResolutionError, ResolvePrice } from './pricing/PriceResolver';
+import { LoadOrdersEngine, OrdersEngine } from './pricing/OrdersEngine';
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Lines')
 export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
@@ -33,6 +35,13 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
      * Extension entity (e.g. `EventOrderLine`) companion riding with this line.
      */
     public readonly Extension = this.RegisterCompanion(new OrderLineExtensionCompanion(this));
+
+    /**
+     * True when any of the named fields has unsaved changes. See {@link anyFieldIsDirty}.
+     */
+    public FieldIsDirty(...fieldNames: string[]): boolean {
+        return anyFieldIsDirty(this, fieldNames);
+    }
 
     /**
      * Runs validation on this line and fans out to the extension companion.
@@ -60,9 +69,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
      * authorization catalog is not synced, and when money fields did not change.
      */
     private async assertPriceOverride(result: ValidationResult): Promise<void> {
-        const priceDirty =
-            this.GetFieldByName('UnitPrice')?.Dirty === true ||
-            this.GetFieldByName('ProductPriceID')?.Dirty === true;
+        const priceDirty = this.FieldIsDirty('UnitPrice', 'ProductPriceID');
         if (this.IsSaved && !priceDirty) return;
         if (!this.ProductID) return;
 
@@ -71,8 +78,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
         if (!provider || !user) return;
         if (!priceOverrideCatalogInstalled(provider)) return;
 
-        const field = this.GetFieldByName('UnitPrice');
-        const stated = field?.Dirty === true || (this.UnitPrice ?? 0) > 0;
+        const stated = this.FieldIsDirty('UnitPrice') || (this.UnitPrice ?? 0) > 0;
         if (!stated && !this.ProductPriceID) return;
 
         try {
@@ -151,17 +157,9 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
     }
 
     private async loadProductForOverride(): Promise<{ ProductCategoryID: string | null; CompanyID: string } | null> {
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ ProductCategoryID: string | null; CompanyID: string }>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Products',
-                ExtraFilter: `ID = '${this.ProductID}'`,
-                Fields: ['ProductCategoryID', 'CompanyID'],
-                ResultType: 'simple',
-            },
-            this.ContextCurrentUser,
-        );
-        return res?.Results?.[0] ?? null;
+        await LoadOrdersEngine(this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
+        const p = OrdersEngine.Instance.ProductByID(this.ProductID);
+        return p ? { ProductCategoryID: p.ProductCategoryID ?? null, CompanyID: p.CompanyID } : null;
     }
 
     private async loadHeaderForOverride(): Promise<{
@@ -213,7 +211,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
      */
     private refuseBookedMoneyEdits(result: ValidationResult): void {
         if (!this.JournalEntryID) return;
-        const dirty = ORDER_LINE_MONEY_FIELDS.filter((name) => this.GetFieldByName(name)?.Dirty);
+        const dirty = ORDER_LINE_MONEY_FIELDS.filter((name) => this.FieldIsDirty(name));
         if (dirty.length === 0) return;
         result.Success = false;
         result.Errors.push(

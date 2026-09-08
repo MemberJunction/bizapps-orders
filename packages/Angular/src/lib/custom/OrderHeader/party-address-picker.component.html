@@ -1,0 +1,80 @@
+@if (ShowSection) {
+<div class="mjo-addr">
+    @if (ShowPicker) {
+        <div class="mjo-addr__bar">
+            <span class="mjo-addr__label">Address</span>
+            <button type="button" class="mjo-addr__btn" (click)="ToggleManageProfile()">
+                {{ ManagingProfile ? 'Hide profile addresses' : 'Manage profile addresses' }}
+            </button>
+        </div>
+
+        <select
+            class="mjo-addr__pick"
+            [ngModel]="Selection"
+            (ngModelChange)="OnSelect($event)"
+            aria-label="Address">
+            <option value="">No address</option>
+            @for (opt of Options; track opt.ID) {
+                <option [value]="opt.ID">{{ opt.Label }}</option>
+            }
+            <option [value]="'__custom__'">Custom address for this order</option>
+        </select>
+    } @else if (ShowSelected) {
+        <div class="mjo-addr__bar">
+            <span class="mjo-addr__label">Address</span>
+        </div>
+    }
+
+    @if (ShowSelected && !Custom) {
+        <div class="mjo-addr__preview">{{ SelectedAddressText }}</div>
+    }
+
+    @if (ShowPicker && Custom && CustomAddress) {
+        <div class="mjo-addr__custom">
+            <mj-form-field [Record]="CustomAddress" [ShowLabel]="true" FieldName="Line1" Type="textbox" [EditMode]="true"></mj-form-field>
+            <mj-form-field [Record]="CustomAddress" [ShowLabel]="true" FieldName="Line2" Type="textbox" [EditMode]="true"></mj-form-field>
+            <div class="mjo-addr__row">
+                <mj-form-field [Record]="CustomAddress" [ShowLabel]="true" FieldName="City" Type="textbox" [EditMode]="true"></mj-form-field>
+                <mj-form-field [Record]="CustomAddress" [ShowLabel]="true" FieldName="StateProvince" Type="textbox" [EditMode]="true"></mj-form-field>
+                <mj-form-field [Record]="CustomAddress" [ShowLabel]="true" FieldName="PostalCode" Type="textbox" [EditMode]="true"></mj-form-field>
+            </div>
+            <mj-form-field [Record]="CustomAddress" [ShowLabel]="true" FieldName="Country" Type="textbox" [EditMode]="true"></mj-form-field>
+            <div class="mjo-addr__save">
+                @if (PersonID) {
+                    <label class="mjo-addr__check">
+                        <input type="checkbox" [(ngModel)]="SaveToPerson" (ngModelChange)="OnSaveToPersonChange()">
+                        Also save to {{ PersonName || 'this person' }}
+                    </label>
+                }
+                @if (OrganizationID) {
+                    <label class="mjo-addr__check">
+                        <input type="checkbox" [(ngModel)]="SaveToOrg" (ngModelChange)="OnSaveToOrgChange()">
+                        Also save to {{ OrganizationName || 'this organization' }}
+                    </label>
+                }
+            </div>
+        </div>
+    }
+
+    @if (ShowPicker && ManagingProfile) {
+        <div class="mjo-addr__profile">
+            @if (PersonID) {
+                <bizapps-address-editor
+                    [EntityName]="PersonEntity"
+                    [RecordID]="PersonID"
+                    [EditMode]="true"
+                    (DataChanged)="reloadFromProfile()">
+                </bizapps-address-editor>
+            }
+            @if (OrganizationID) {
+                <bizapps-address-editor
+                    [EntityName]="OrgEntity"
+                    [RecordID]="OrganizationID"
+                    [EditMode]="true"
+                    (DataChanged)="reloadFromProfile()">
+                </bizapps-address-editor>
+            }
+        </div>
+    }
+</div>
+}

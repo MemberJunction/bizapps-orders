@@ -1,5 +1,87 @@
 # @mj-biz-apps/orders-entities
 
+## 5.9.0
+
+### Minor Changes
+
+- e121d98: Rebuild `vwEventOrderLines` so Event Order Lines can be read again.
+
+  `EventOrderLine` IS-A `OrderLine`, and its base view lists every inherited column explicitly.
+  5.7.0 added `PriceOverridden` / `PriceOverrideReason` to `OrderLine` and rebuilt `vwOrderLines`,
+  but nothing rebuilt the **child** IS-A view — so it still carried the pre-5.7.0 parent column list.
+
+  CodeGen cannot heal this: a host's `mj.config.cjs` carries this app's schema in `excludeSchemas`
+  (written back on every `mj app install`/`upgrade`), because the BizApps apps own their own views.
+  So CodeGen registers the inherited fields on the child entity and then reports them as unreadable.
+
+  The failure is quiet, which is the dangerous part: every read of the entity fails with
+  "column … does not exist", and a grid renders that as **"no data"** rather than an error — Event
+  Order Lines looks empty while its table is full.
+
+  `vwEventOrderLines` is the only IS-A child of `OrderLine` in this schema, verified against a live
+  database where these were the only two unreadable fields across every `__mj_BizApps*` entity.
+
+## 5.8.0
+
+### Minor Changes
+
+- 2981938: Stop the PriceOverride metadata seed hard-coding EntityField `Sequence`.
+
+  `V202609041600` inserted `PriceOverridden` and `PriceOverrideReason` at Sequence **43** and **44** —
+  whatever happened to be free on the authoring database. On AIDP stage 42/43/44 are held by
+  `ParentOrderLineIDPath`, `ParentOrderLineIDIsLeaf` and `ParentOrderLineIDChildCount`: CodeGen
+  hierarchy virtuals, which exist per host depending on schema shape. The insert hit
+  `UQ_EntityField_EntityID_Sequence` and the 5.7.0 upgrade stopped at batch 1/10, taking sales down
+  with it as a dependent.
+
+  Both values are now `MAX(Sequence) + 1`, evaluated per host. The two inserts are separate
+  statements, so the second sees the first.
+
+## 5.7.0
+
+### Minor Changes
+
+- bbb5171: OrdersEngine now caches Products, Product Prices, Product Categories, Product Types, Subscription Types, and Revenue Recognition Types (@RegisterForStartup). Confirm, pricing, checkout, fulfilment, and the catalog picker read those arrays instead of per-call RunView. Confirm looks up rev-rec types by normalized ID and inherits ProductType.DefaultRevenueRecognitionTypeID when the product left it blank. GL Account Roles stay on AccountingEngineBase; booking no longer force-refreshes that cache. Confirm also inherits ProductType.DefaultSubscriptionTypeID when the product left SubscriptionTypeID blank. `@mj-biz-apps/accounting-engine-base` is a real dependency of orders-core-entities-server (static import, declared in package.json), not a peer. Local filter-eval helpers are PascalCase (`EvaluateFilter`, `IsCompositeFilter`, `ParseFilterField`). Order-line price override is a pencil that expands a named-price picker (custom amount only when Custom is selected) plus Override Explanation when the price diverges from default. OrderLine gains PriceOverridden and PriceOverrideReason. Ship/bill addresses bind AddressID from the party; custom addresses can be linked onto the person/org profile.
+- bb9a5f2: Ship the three price-override Authorizations to hosts.
+
+  `metadata/authorizations/.price-override.json` declares `MJ.BizApps.Orders.Price.Override` and its
+  two children, but metadata is a dev-time source — the install engine never reads that directory, so
+  records reach a host only through a migration. Without one the price-override permission checks
+  would find no authorization to test against anywhere but the developer's own database, and
+  `scripts/check-release-seed-coverage.mjs` blocked the release saying exactly that.
+
+  The seed guards on **ID or Name**, because `__mj.Authorization` carries `UQ_Authorization` on
+  `Name`: on a host that created these via `mj sync push`, MJ assigned its own IDs, so an ID-only
+  guard passes and the insert then trips the unique constraint. The children resolve their parent by
+  name rather than by the literal ID for the same reason.
+
+### Patch Changes
+
+- a436049: License declarations now agree on BUSL-1.1 everywhere.
+
+  The manifest was corrected earlier; the README badge still advertised ISC, which is the
+  first license statement a reader meets and outranked `LICENSE`, `package.json`,
+  `mj-app.json` and every workspace package in practice. The badge now reads BUSL-1.1 and
+  links to `LICENSE`.
+
+- 4dfa35c: Unbreak the build: `FieldIsDirty` was called but never defined.
+
+  `next` has not compiled since #155. Nine call sites across Entities and Angular call
+  `BaseEntity.FieldIsDirty(...)`, which **does not exist in MemberJunction** — a code search across
+  the whole MJ repo finds nothing, and 6.1.0-edge.5 is the newest edge. `orders-entities` failed to
+  compile, which cascaded into `orders-core-entities-server` as dozens of "has no exported member"
+  errors.
+
+  Adds `anyFieldIsDirty(entity, names)` over MJ's real API (`GetFieldByName(name)?.Dirty`) and a
+  `FieldIsDirty(...names)` method on `OrderLineEntity` and `OrderHeaderEntity`. Call sites holding a
+  _generated_ entity type — `Lines.Items`, and the Angular services — go through the helper directly,
+  since the generated class has no such method.
+
+  Also fixes two unrelated breaks in the same run: `Products$`/`ProductPrices$` had no explicit
+  return type, so TypeScript could not name the inferred `Observable` (TS2742) — `rxjs` is now a
+  declared dependency rather than a transitive one — and `CreateEmptyFilter` was imported with the
+  wrong casing (`createEmptyFilter`).
+
 ## 5.6.0
 
 ## 5.5.0

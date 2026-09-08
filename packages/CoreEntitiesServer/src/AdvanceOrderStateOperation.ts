@@ -32,6 +32,8 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    LoadOrdersEngine,
+    OrdersEngine,
     mjBizAppsOrdersOrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
     type BlockerResult,
@@ -43,8 +45,6 @@ import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
-const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
-const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 
 const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${i}'`))].join(',');
@@ -282,29 +282,13 @@ export class AdvanceOrderStateOperation extends BaseRemotableOperation<
         const rows = lines.Results ?? [];
         if (!rows.length) return 0;
 
-        const products = await rv.RunView<{ ID: string; ProductTypeID: string }>(
-            {
-                EntityName: PRODUCT_ENTITY,
-                ExtraFilter: `ID IN (${quote(rows.map((l) => l.ProductID))})`,
-                ResultType: 'simple',
-            },
-            user,
-        );
-        const typeIDs = [...new Set((products.Results ?? []).map((p) => p.ProductTypeID))].filter(Boolean);
-        const types = typeIDs.length
-            ? await rv.RunView<{ ID: string; RequiresFulfillment: boolean }>(
-                  { EntityName: PRODUCT_TYPE_ENTITY, ExtraFilter: `ID IN (${quote(typeIDs)})`, ResultType: 'simple' },
-                  user,
-              )
-            : { Results: [] };
-        const requiresByType = new Map((types.Results ?? []).map((t) => [key(t.ID), !!t.RequiresFulfillment]));
-        const typeByProduct = new Map((products.Results ?? []).map((p) => [key(p.ID), key(p.ProductTypeID)]));
+        await LoadOrdersEngine(provider, user);
 
         let remaining = 0;
         for (const row of rows) {
             const shaped: FulfillableLine = {
                 ID: row.ID,
-                RequiresFulfillment: requiresByType.get(typeByProduct.get(key(row.ProductID)) ?? '') ?? false,
+                RequiresFulfillment: OrdersEngine.Instance.ProductRequiresFulfillment(row.ProductID),
                 FulfillmentStatus: (row.FulfillmentStatus as FulfillableLine['FulfillmentStatus']) ?? null,
                 ReversesOrderLineID: row.ReversesOrderLineID,
                 IsRollupParent: !!row.IsRollupParent,

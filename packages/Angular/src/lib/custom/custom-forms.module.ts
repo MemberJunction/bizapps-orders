@@ -30,6 +30,7 @@ import { BizAppsPriceListFormComponent, LoadPriceListFormComponent } from './Pri
 import { BizAppsPromotionFormComponent, LoadPromotionFormComponent } from './Promotion/promotion-form.component';
 import { BizAppsOrderHeaderFormComponent, LoadOrderHeaderFormComponent } from './OrderHeader/order-header-form.component';
 import { MJOOrderLinesEditorComponent } from './OrderHeader/order-lines-editor.component';
+import { MJOPartyAddressPickerComponent } from './OrderHeader/party-address-picker.component';
 import { BizAppsSubscriptionFormComponent, LoadSubscriptionFormComponent } from './Subscription/subscription-form.component';
 import { BizAppsSubscriptionTermFormComponent, LoadSubscriptionTermFormComponent } from './SubscriptionTerm/subscription-term-form.component';
 import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } from './PaymentHeader/payment-header-form.component';
@@ -61,6 +62,7 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
         MJTabNavComponent,
         FilterBuilderModule,
         MJOOrderLinesEditorComponent,
+        MJOPartyAddressPickerComponent,
         DeferredRevenueWaterfallModule,
     ],
     exports: [

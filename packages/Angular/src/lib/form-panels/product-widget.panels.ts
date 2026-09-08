@@ -74,6 +74,15 @@ export class ProductPromosPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
         slot: 'after-fields',
         sortKey: 60,
         contributionKey: 'accounting',
+        // Claims the generated `financialAndAccounting` section, which rendered the same
+        // Rev-Rec / IsTaxable / TaxCategory fields a second time. CompanyID moved into the
+        // widget so nothing is lost; StandaloneSellingPrice is deliberately deprecated off
+        // generated forms and is not carried over.
+        //
+        // This panel keeps its fields inside the widget on purpose — unlike fulfillment and
+        // subscriptions it also renders bizapps-product-gl-links, which is real content when
+        // the three product columns are empty, so it must NOT be hide-when-empty.
+        replacesSectionKey: 'financialAndAccounting',
     },
 })
 @Component({
@@ -104,11 +113,18 @@ export class ProductAccountingPanel extends BaseFormPanel<mjBizAppsOrdersProduct
         slot: 'after-fields',
         sortKey: 50,
         contributionKey: 'fulfillment',
+        // Claims the generated `catalogLifecycle` section, which rendered
+        // SuccessorProductID / AvailableFrom / AvailableTo a second time. Its one remaining
+        // field (Status) moved into this panel so nothing is lost.
+        replacesSectionKey: 'catalogLifecycle',
     },
 })
 @Component({
     standalone: false,
     selector: 'mjo-product-fulfillment-panel',
+    // The mj-form-fields are declared HERE, not inside the widget, so
+    // mj-collapsible-panel's @ContentChildren hide-when-empty check can see them.
+    // The widget is the card shell and projects them. See golive#184.
     template: `
         <mj-collapsible-panel
             SectionKey="fulfillment"
@@ -116,11 +132,71 @@ export class ProductAccountingPanel extends BaseFormPanel<mjBizAppsOrdersProduct
             Icon="fa-solid fa-truck"
             [Form]="FormComponent"
             [FormContext]="FormContext">
-            <bizapps-product-fulfillment-widget
-                [Product]="Record"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="FormComponent.OnFormNavigate($event)">
+            <bizapps-product-fulfillment-widget>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="Status"
+                    Type="select"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="AvailableFrom"
+                    Type="datepicker"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="AvailableTo"
+                    Type="datepicker"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="EntitlementGrantTiming"
+                    Type="select"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="EntitlementQuantityMode"
+                    Type="select"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="EntitlementValidityMode"
+                    Type="select"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="SuccessorProductID"
+                    Type="textbox"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    LinkType="Record"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
             </bizapps-product-fulfillment-widget>
         </mj-collapsible-panel>
     `,
@@ -134,11 +210,17 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
         slot: 'after-fields',
         sortKey: 40,
         contributionKey: 'subscriptions',
+        // Claims the generated `subscriptionAndEntitlements` section — every one of its four
+        // fields is already rendered by this panel or the fulfillment panel.
+        replacesSectionKey: 'subscriptionAndEntitlements',
     },
 })
 @Component({
     standalone: false,
     selector: 'mjo-product-subscriptions-panel',
+    // The mj-form-fields are declared HERE, not inside the widget, so
+    // mj-collapsible-panel's @ContentChildren hide-when-empty check can see them.
+    // The widget is the card shell and projects them. See golive#184.
     template: `
         <mj-collapsible-panel
             SectionKey="subscriptions"
@@ -146,11 +228,26 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
             Icon="fa-solid fa-repeat"
             [Form]="FormComponent"
             [FormContext]="FormContext">
-            <bizapps-product-subscription-widget
-                [Product]="Record"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="FormComponent.OnFormNavigate($event)">
+            <bizapps-product-subscription-widget>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="SubscriptionTypeID"
+                    Type="textbox"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    LinkType="Record"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="EntitlementValidityMode"
+                    Type="select"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
             </bizapps-product-subscription-widget>
         </mj-collapsible-panel>
     `,

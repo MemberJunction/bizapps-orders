@@ -26,6 +26,8 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import {
+    LoadOrdersEngine,
+    OrdersEngine,
     mjBizAppsOrdersStoredValueAccountEntity,
     mjBizAppsOrdersStoredValueTransactionEntity,
 } from '@mj-biz-apps/orders-entities';
@@ -42,8 +44,6 @@ import {
 
 const STORED_VALUE_ACCOUNT_ENTITY = 'MJ_BizApps_Orders: Stored Value Accounts';
 const STORED_VALUE_TRANSACTION_ENTITY = 'MJ_BizApps_Orders: Stored Value Transactions';
-const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
-const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 
 const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${i}'`))].join(',');
@@ -107,33 +107,12 @@ export async function IssueGiftCards(
     if (!lines.length) return out;
 
     const rv = new RunView(provider as unknown as IRunViewProvider);
+    await LoadOrdersEngine(provider, user);
 
-    // Which of these products are gift cards? One query for the product→type join rather than one
-    // per line: an order of sixty lines should not cost sixty round trips.
-    const productIDs = [...new Set(lines.map((l) => l.ProductID))];
-    const products = await rv.RunView<{ ID: string; ProductTypeID: string }>(
-        {
-            EntityName: PRODUCT_ENTITY,
-            ExtraFilter: `ID IN (${quote(productIDs)})`,
-            ResultType: 'simple',
-        },
-        user,
-    );
-    const typeIDs = [...new Set((products.Results ?? []).map((p) => p.ProductTypeID))].filter(Boolean);
-    if (!typeIDs.length) return out;
-
-    const types = await rv.RunView<{ ID: string; Code: string | null }>(
-        {
-            EntityName: PRODUCT_TYPE_ENTITY,
-            ExtraFilter: `ID IN (${quote(typeIDs)})`,
-            ResultType: 'simple',
-        },
-        user,
-    );
-    const codeByTypeID = new Map((types.Results ?? []).map((t) => [key(t.ID), t.Code]));
-    const typeCodeByProductID = new Map(
-        (products.Results ?? []).map((p) => [key(p.ID), codeByTypeID.get(key(p.ProductTypeID)) ?? null]),
-    );
+    const typeCodeByProductID = new Map<string, string | null>();
+    for (const line of lines) {
+        typeCodeByProductID.set(key(line.ProductID), OrdersEngine.Instance.ProductTypeCode(line.ProductID));
+    }
 
     const facts = (line: GiftCardOrderLine): GiftCardLineFacts => ({
         ID: line.ID,

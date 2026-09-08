@@ -1,9 +1,9 @@
 /**
  * In-memory CompositeFilterDescriptor evaluation.
  *
- * Temporary copy of `@memberjunction/core` `evaluateFilter` from MJ PR
+ * Temporary copy of `@memberjunction/core` filter eval from MJ PR
  * https://github.com/MemberJunction/MJ/pull/4185. Replace the import in
- * `applicability.ts` with the core export once that PR is on `next`.
+ * `applicability.ts` with the core `CompositeFilter` once we drop this shim.
  *
  * Do not diverge from the MJ contract: dotted fields are `Source.Field`;
  * bare names read `context['']`; missing source → undefined (false unless
@@ -38,13 +38,13 @@ export interface CompositeFilterDescriptor {
     filters: (FilterDescriptor | CompositeFilterDescriptor)[];
 }
 
-export function isCompositeFilter(
+export function IsCompositeFilter(
     filter: FilterDescriptor | CompositeFilterDescriptor,
 ): filter is CompositeFilterDescriptor {
     return filter != null && typeof filter === 'object' && 'logic' in filter && 'filters' in filter;
 }
 
-export function parseFilterField(field: string): { source: string | null; name: string } {
+export function ParseFilterField(field: string): { source: string | null; name: string } {
     const raw = (field ?? '').trim();
     const dot = raw.indexOf('.');
     if (dot <= 0 || dot === raw.length - 1) {
@@ -55,18 +55,18 @@ export function parseFilterField(field: string): { source: string | null; name: 
 
 export type FilterEvalContext = Record<string, Record<string, unknown> | null | undefined>;
 
-export function evaluateFilter(
+export function EvaluateFilter(
     filter: CompositeFilterDescriptor | FilterDescriptor | null | undefined,
     context: FilterEvalContext,
 ): boolean {
     if (!filter) return true;
-    if (isCompositeFilter(filter)) {
+    if (IsCompositeFilter(filter)) {
         const parts = (filter.filters ?? []).filter((f) => f != null);
         if (parts.length === 0) return true;
         if (filter.logic === 'or') {
-            return parts.some((p) => evaluateFilter(p as CompositeFilterDescriptor, context));
+            return parts.some((p) => EvaluateFilter(p as CompositeFilterDescriptor, context));
         }
-        return parts.every((p) => evaluateFilter(p as CompositeFilterDescriptor, context));
+        return parts.every((p) => EvaluateFilter(p as CompositeFilterDescriptor, context));
     }
     return evaluateRule(filter, context);
 }
@@ -78,7 +78,7 @@ function evaluateRule(rule: FilterDescriptor, context: FilterEvalContext): boole
 }
 
 function readValue(context: FilterEvalContext, field: string): unknown {
-    const { source, name } = parseFilterField(field);
+    const { source, name } = ParseFilterField(field);
     const rec = context[source ?? ''];
     if (rec == null) return undefined;
     if (name.includes('.')) {

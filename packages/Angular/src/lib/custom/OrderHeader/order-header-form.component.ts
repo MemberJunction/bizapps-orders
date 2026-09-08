@@ -372,30 +372,6 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             || 'Header default — override when it ships elsewhere';
     }
 
-    public EnsureBillToAddress(event: Event): void {
-        event.stopPropagation();
-        this.record?.BillToAddressID_EnsureObject();
-        this.cdr.detectChanges();
-    }
-
-    public ClearBillToAddress(event: Event): void {
-        event.stopPropagation();
-        this.record?.ClearBillToAddress();
-        this.cdr.detectChanges();
-    }
-
-    public EnsureShipToAddress(event: Event): void {
-        event.stopPropagation();
-        this.record?.ShipToAddressID_EnsureObject();
-        this.cdr.detectChanges();
-    }
-
-    public ClearShipToAddress(event: Event): void {
-        event.stopPropagation();
-        this.record?.ClearShipToAddress();
-        this.cdr.detectChanges();
-    }
-
     private FormatEmbeddedAddress(address: { Line1?: string | null; City?: string | null; StateProvince?: string | null; PostalCode?: string | null } | null | undefined): string {
         return address ? FormatPartyAddress(address) : '';
     }

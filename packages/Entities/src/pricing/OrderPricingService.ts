@@ -40,7 +40,8 @@ import type { ResolvedPrice } from './PriceResolver.js';
 import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngine.js';
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { RunCharges, SplitChargesByLine } from './ChargeEngine.js';
-import { ResolvePrice } from './PriceResolver.js';
+import { PriceResolutionError, ResolvePrice } from './PriceResolver.js';
+import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
 import { AllocateProRata, LineGross, NetAfterDiscount } from './PricingBehavior.js';
 /**
@@ -155,6 +156,8 @@ export class OrderPricingService {
     private ctx!: OrderPricingContext;
     private out!: OrderPricingResult;
     private partyContext: FilterEvalContext | null = null;
+    /** One catalog refresh per walk, ever — the bound on the stale-cache retry. */
+    private catalogRefreshed = false;
 
     constructor(private readonly host: OrderPricingHost) {}
 
@@ -469,22 +472,19 @@ export class OrderPricingService {
         // out-of-window product should not reach the ledger, and refusing here aborts
         // the confirm before any line is written.
         if (product) this.assertProductSellable(line, product);
-        const resolved = await ResolvePrice(
-            {
-                ProductID: line.ProductID,
-                ProductCategoryID: product?.ProductCategoryID ?? null,
-                CompanyID: product?.CompanyID ?? this.ctx.CompanyID,
-                Quantity: Number(line.Quantity ?? 0),
-                AsOf: this.ctx.OrderDate ? new Date(this.ctx.OrderDate) : new Date(),
-                OrganizationID: this.ctx.BillToOrganizationID ?? null,
-                PersonID: this.ctx.BillToPersonID ?? null,
-                ApplicabilityContext: await this.applicabilityBag(line.ProductID),
-                ...(this.ctx.PriceListID !== undefined ? { PriceListID: this.ctx.PriceListID } : {}),
-                ...(this.ctx.FeeType ? { FeeType: this.ctx.FeeType } : {}),
-            },
-            provider,
-            user,
-        );
+        const resolutionCtx = {
+            ProductID: line.ProductID,
+            ProductCategoryID: product?.ProductCategoryID ?? null,
+            CompanyID: product?.CompanyID ?? this.ctx.CompanyID,
+            Quantity: Number(line.Quantity ?? 0),
+            AsOf: this.ctx.OrderDate ? new Date(this.ctx.OrderDate) : new Date(),
+            OrganizationID: this.ctx.BillToOrganizationID ?? null,
+            PersonID: this.ctx.BillToPersonID ?? null,
+            ApplicabilityContext: await this.applicabilityBag(line.ProductID),
+            ...(this.ctx.PriceListID !== undefined ? { PriceListID: this.ctx.PriceListID } : {}),
+            ...(this.ctx.FeeType ? { FeeType: this.ctx.FeeType } : {}),
+        };
+        const resolved = await this.resolveRetryingStaleCatalog(resolutionCtx);
 
         if (!resolved) {
             if (await this.refusesUnpricedLines()) {
@@ -507,6 +507,45 @@ export class OrderPricingService {
         // the pricing answer is identical either way.
         (line as unknown as CarriesResolvedExtendedAmount).ResolvedExtendedAmount = resolved.ExtendedAmount;
         this.out.PriceComponents.set(line, resolved);
+    }
+
+    /**
+     * `ResolvePrice`, with ONE catalog refresh when a CACHED answer refuses.
+     *
+     * The preview path and the save path read the same rules through the same resolver, but the
+     * resolver serves them from `OrdersEngine`'s cache whenever the engine is loaded — and that
+     * cache goes stale on any write that bypasses the entity layer (a raw UPDATE, another service,
+     * an admin tool). The visible symptom is the two paths contradicting each other: preview
+     * resolves the price a fresh read can see, then Save refuses on rule state the database no
+     * longer holds, until someone restarts the server.
+     *
+     * So before letting a refusal stand, refresh the cache once and ask again. Bounded explicitly:
+     * `catalogRefreshed` caps it at one refresh per walk, however many lines refuse. Only a CACHED
+     * refusal triggers it — when the engine is not loaded the resolver already read fresh, and the
+     * refusal is the database's own answer. A WRONG price from a stale cache (rather than a refusal)
+     * is not detectable here; that is the cache's documented raw-UPDATE limitation.
+     */
+    private async resolveRetryingStaleCatalog(
+        resolutionCtx: Parameters<typeof ResolvePrice>[0],
+    ): Promise<ResolvedPrice | null> {
+        const provider = this.host.Provider;
+        const user = this.host.User;
+        let refusal: PriceResolutionError | null = null;
+        try {
+            const hit = await ResolvePrice(resolutionCtx, provider, user);
+            if (hit) return hit;
+        } catch (err) {
+            if (!(err instanceof PriceResolutionError)) throw err;
+            refusal = err;
+        }
+        // A refusal or a miss, possibly from a stale cache. Retry only when the cache answered.
+        if (this.catalogRefreshed || !(await OrdersEngineReady(provider, user))) {
+            if (refusal) throw refusal;
+            return null;
+        }
+        this.catalogRefreshed = true;
+        await OrdersEngine.Instance.Config(true, user, provider);
+        return ResolvePrice(resolutionCtx, provider, user);
     }
 
     /**
@@ -558,24 +597,17 @@ export class OrderPricingService {
         AvailableFrom: Date | null;
         AvailableTo: Date | null;
     } | null> {
-        const rv = new RunView((this.host.Provider as unknown as IRunViewProvider));
-        const res = await rv.RunView<{
-            ProductCategoryID: string | null;
-            CompanyID: string;
-            Name: string;
-            Status: string;
-            AvailableFrom: Date | null;
-            AvailableTo: Date | null;
-        }>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Products',
-                ExtraFilter: `ID = '${productID}'`,
-                Fields: ['ProductCategoryID', 'CompanyID', 'Name', 'Status', 'AvailableFrom', 'AvailableTo'],
-                ResultType: 'simple',
-            },
-            this.host.User,
-        );
-        return res?.Results?.[0] ?? null;
+        await LoadOrdersEngine(this.host.Provider, this.host.User);
+        const p = OrdersEngine.Instance.ProductByID(productID);
+        if (!p) return null;
+        return {
+            ProductCategoryID: p.ProductCategoryID ?? null,
+            CompanyID: p.CompanyID,
+            Name: p.Name,
+            Status: p.Status,
+            AvailableFrom: p.AvailableFrom ?? null,
+            AvailableTo: p.AvailableTo ?? null,
+        };
     }
 
     /**
@@ -651,43 +683,27 @@ export class OrderPricingService {
      * unreachable, which defeats having a tree at all.
      */
     private async resolveLineTaxability(productID: string): Promise<ResolvedTaxability> {
-        const rv = new RunView((this.host.Provider as unknown as IRunViewProvider));
-        const pRes = await rv.RunView<{
-            IsTaxable: boolean | null;
-            TaxCategory: string | null;
-            ProductCategoryID: string | null;
-            ProductTypeID: string | null;
-        }>(
+        await LoadOrdersEngine(this.host.Provider, this.host.User);
+        const product = OrdersEngine.Instance.ProductByID(productID);
+        if (!product) return { IsTaxable: true, TaxCategory: null, DecidedAt: 'Default' };
+
+        const chain = await this.categoryTaxChain(product.ProductCategoryID);
+        const typeRow = OrdersEngine.Instance.ProductTypeByID(product.ProductTypeID);
+        const type = typeRow
+            ? {
+                  DefaultIsTaxable: typeRow.DefaultIsTaxable,
+                  DefaultTaxCategory: typeRow.DefaultTaxCategory ?? null,
+              }
+            : null;
+
+        return ResolveTaxability(
             {
-                EntityName: 'MJ_BizApps_Orders: Products',
-                ExtraFilter: `ID = '${productID}'`,
-                Fields: ['IsTaxable', 'TaxCategory', 'ProductCategoryID', 'ProductTypeID'],
-                ResultType: 'simple',
-                BypassCache: true,
+                IsTaxable: product.IsTaxable,
+                TaxCategory: product.TaxCategory ?? null,
             },
-            this.host.User,
+            chain,
+            type,
         );
-        const p = pRes?.Results?.[0];
-        if (!p) return { IsTaxable: true, TaxCategory: null, DecidedAt: 'Default' };
-
-        const chain = await this.categoryTaxChain(p.ProductCategoryID);
-
-        let type: { DefaultIsTaxable: boolean; DefaultTaxCategory: string | null } | null = null;
-        if (p.ProductTypeID) {
-            const tRes = await rv.RunView<{ DefaultIsTaxable: boolean; DefaultTaxCategory: string | null }>(
-                {
-                    EntityName: 'MJ_BizApps_Orders: Product Types',
-                    ExtraFilter: `ID = '${p.ProductTypeID}'`,
-                    Fields: ['DefaultIsTaxable', 'DefaultTaxCategory'],
-                    ResultType: 'simple',
-                    BypassCache: true,
-                },
-                this.host.User,
-            );
-            type = tRes?.Results?.[0] ?? null;
-        }
-
-        return ResolveTaxability(p, chain, type);
     }
 
     /**
@@ -699,40 +715,16 @@ export class OrderPricingService {
      */
     private async categoryTaxChain(startCategoryID: string | null): Promise<TaxabilityCategoryLevel[]> {
         if (!startCategoryID) return [];
-        const rv = new RunView((this.host.Provider as unknown as IRunViewProvider));
-        const res = await rv.RunView<{
-            ID: string;
-            ParentProductCategoryID: string | null;
-            DefaultIsTaxable: boolean | null;
-            DefaultTaxCategory: string | null;
-        }>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Product Categories',
-                Fields: ['ID', 'ParentProductCategoryID', 'DefaultIsTaxable', 'DefaultTaxCategory'],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            this.host.User,
-        );
-        const byID = new Map(
-            (res?.Results ?? []).map((c) => [String(c.ID).toLowerCase(), c]),
-        );
-
+        await LoadOrdersEngine(this.host.Provider, this.host.User);
         const chain: TaxabilityCategoryLevel[] = [];
-        const seen = new Set<string>();
-        let current: string | null = startCategoryID;
-        while (current) {
-            const key = String(current).toLowerCase();
-            if (seen.has(key)) break;
-            seen.add(key);
-            const row = byID.get(key);
+        for (const id of OrdersEngine.Instance.CategoryChain(startCategoryID)) {
+            const row = OrdersEngine.Instance.ProductCategoryByID(id);
             if (!row) break;
             chain.push({
                 ID: row.ID,
                 DefaultIsTaxable: row.DefaultIsTaxable,
                 DefaultTaxCategory: row.DefaultTaxCategory,
             });
-            current = row.ParentProductCategoryID;
         }
         return chain;
     }

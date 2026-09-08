@@ -4,9 +4,10 @@
  * The builder (mj-filter-builder `[sources]`, MJ PR #4185) always writes
  * `Source.Field`. This module is the engine side of that contract.
  */
-import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import { BaseEntity, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import {
-    evaluateFilter,
+    EvaluateFilter,
     type CompositeFilterDescriptor,
     type FilterDescriptor,
     type FilterEvalContext,
@@ -42,7 +43,7 @@ export function parseApplicability(
 /** Null / empty Applicability always applies. Invalid JSON throws (catalog is broken). */
 export function priceApplies(applicabilityJson: string | null | undefined, context: FilterEvalContext): boolean {
     const filter = parseApplicability(applicabilityJson);
-    return evaluateFilter(filter, context);
+    return EvaluateFilter(filter, context);
 }
 
 export interface ApplicabilityPartyIDs {
@@ -58,6 +59,12 @@ export interface ApplicabilityPartyIDs {
     OrderFallback?: Record<string, unknown> | null;
 }
 
+function entityToBag(entity: BaseEntity): Record<string, unknown> {
+    const bag: Record<string, unknown> = {};
+    for (const field of entity.Fields) bag[field.Name] = field.Value;
+    return bag;
+}
+
 async function loadRow(
     entityName: string,
     id: string | null | undefined,
@@ -65,6 +72,10 @@ async function loadRow(
     user: UserInfo,
 ): Promise<Record<string, unknown> | null> {
     if (!id) return null;
+    if (entityName === 'MJ_BizApps_Orders: Products' && (await OrdersEngineReady(provider, user))) {
+        const product = OrdersEngine.Instance.ProductByID(id);
+        if (product) return entityToBag(product);
+    }
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const res = await rv.RunView<Record<string, unknown>>(
         {
@@ -79,7 +90,7 @@ async function loadRow(
 }
 
 /**
- * Load the eight-record bag `evaluateFilter` reads. Missing parties are `null`,
+ * Load the eight-record bag `EvaluateFilter` reads. Missing parties are `null`,
  * so a When on ship-to is false unless the operator is empty/null.
  */
 export async function loadApplicabilityContext(

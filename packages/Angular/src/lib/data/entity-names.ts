@@ -61,6 +61,8 @@ export const MJO_COMMON_ENTITIES = {
     Organization: 'MJ_BizApps_Common: Organizations',
     Person: 'MJ_BizApps_Common: People',
     Address: 'MJ_BizApps_Common: Addresses',
+    AddressLink: 'MJ_BizApps_Common: Address Links',
+    AddressType: 'MJ_BizApps_Common: Address Types',
 } as const;
 
 /**

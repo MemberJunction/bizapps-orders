@@ -27,6 +27,8 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    LoadOrdersEngine,
+    OrdersEngine,
     OrdersGetFulfillmentQueueOperation as OrdersGetFulfillmentQueueOperationBase,
     type OrdersGetFulfillmentQueueInput,
     type OrdersGetFulfillmentQueueOutput,
@@ -39,8 +41,6 @@ import { RequireUUID } from './sql-guards.js';
 
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
-const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
-const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 
 const DEFAULT_MAX = 500;
 const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
@@ -141,30 +141,16 @@ export class GetFulfillmentQueueOperation extends OrdersGetFulfillmentQueueOpera
         const lineRows = lines.Results ?? [];
         if (!lineRows.length) return this.empty();
 
-        const products = await rv.RunView<{ ID: string; Name: string; SKU: string | null; ProductTypeID: string }>(
-            {
-                EntityName: PRODUCT_ENTITY,
-                ExtraFilter: `ID IN (${quote(lineRows.map((l) => l.ProductID))})`,
-                ResultType: 'simple',
-            },
-            user,
+        await LoadOrdersEngine(provider, user);
+        const productByID = new Map(
+            lineRows.map((l) => {
+                const p = OrdersEngine.Instance.ProductByID(l.ProductID);
+                return [key(l.ProductID), p] as const;
+            }),
         );
-        const productByID = new Map((products.Results ?? []).map((p) => [key(p.ID), p]));
 
-        const types = await rv.RunView<{ ID: string; RequiresFulfillment: boolean }>(
-            {
-                EntityName: PRODUCT_TYPE_ENTITY,
-                ExtraFilter: `ID IN (${quote((products.Results ?? []).map((p) => p.ProductTypeID))})`,
-                ResultType: 'simple',
-            },
-            user,
-        );
-        const requiresByTypeID = new Map((types.Results ?? []).map((t) => [key(t.ID), !!t.RequiresFulfillment]));
-
-        const requiresFulfillment = (productID: string): boolean => {
-            const product = productByID.get(key(productID));
-            return product ? (requiresByTypeID.get(key(product.ProductTypeID)) ?? false) : false;
-        };
+        const requiresFulfillment = (productID: string): boolean =>
+            OrdersEngine.Instance.ProductRequiresFulfillment(productID);
 
         // ── the DECISION, in the pure module ──
         const shaped = lineRows.map((l) => ({

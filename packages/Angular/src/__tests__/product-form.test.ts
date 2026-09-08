@@ -85,13 +85,24 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
         expect(instance.StatusBadgeClass).toContain('mjo-status-chip--draft');
     });
 
-    it('simulates volume pricing in BizAppsProductPricingWidgetComponent', () => {
+    it('simulates volume pricing from the base ProductPrice, not StandaloneSellingPrice', () => {
         const widget = new BizAppsProductPricingWidgetComponent();
         widget.Product = {
-            StandaloneSellingPrice: 1200,
+            StandaloneSellingPrice: 9999,
             IsSaved: true,
             ID: 'prod-1',
         } as unknown as mjBizAppsOrdersProductEntity;
+        widget.AllPriceRecords = [
+            {
+                ID: 'pp-base',
+                PriceListID: null,
+                MinQuantity: 1,
+                Amount: 1200,
+                Status: 'Active',
+            } as never,
+        ];
+
+        expect(widget.BaseListPrice).toBe(1200);
 
         widget.SimQuantity = 25;
         widget.RecalculateSimulation();
@@ -105,6 +116,21 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
         expect(widget.SimResult.UnitPrice).toBe(900);
         expect(widget.SimResult.TotalAmount).toBe(45000);
         expect(widget.SimResult.TotalSavings).toBe(15000);
+    });
+
+    it('does not treat Product.StandaloneSellingPrice as list price', () => {
+        const widget = new BizAppsProductPricingWidgetComponent();
+        widget.Product = {
+            StandaloneSellingPrice: 1200,
+            IsSaved: true,
+            ID: 'prod-1',
+        } as unknown as mjBizAppsOrdersProductEntity;
+        widget.AllPriceRecords = [];
+        expect(widget.BaseListPrice).toBe(0);
+        widget.SimQuantity = 25;
+        widget.RecalculateSimulation();
+        expect(widget.SimResult.UnitPrice).toBe(0);
+        expect(widget.SimResult.TotalAmount).toBe(0);
     });
 
     it('OnFormNavigate dispatches record navigation to NavigationService when present', () => {

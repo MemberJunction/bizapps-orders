@@ -80,6 +80,8 @@ const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms
 const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
 import {
     SubscriptionBehavior,
+    ResolveSubscriptionTypeID,
+    SubscriptionTypeRulesFrom,
     type SubscriberIdentity,
     type ExistingSubscription,
     type SubscriptionDecision,
@@ -90,6 +92,7 @@ interface ProductRow {
     ID: string;
     Name: string;
     SubscriptionTypeID?: string | null;
+    ProductTypeID?: string | null;
     RevenueRecognitionTypeID: string;
 }
 
@@ -119,7 +122,6 @@ const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 const RELATIONSHIP_ENTITY = 'MJ_BizApps_Common: Relationships';
 const COMMON_SCHEMA = '__mj_BizAppsCommon';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
-const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 
 /** Statuses at or beyond the booking lock (plan D8/D9). */
 const BOOKED_STATUSES = new Set(['Confirmed']);
@@ -2089,27 +2091,25 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private async subscriptionLines(
         lines: mjBizAppsOrdersOrderLineEntity[],
     ): Promise<Array<{ line: mjBizAppsOrdersOrderLineEntity; product: ProductRow; rules: SubscriptionTypeRules }>> {
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const ids = [...new Set(lines.map(l => l.ProductID))].map(id => `'${id}'`).join(',');
-        if (!ids) return [];
+        if (!lines.length) return [];
 
-        const prod = await rv.RunView<ProductRow>(
-            {
-                EntityName: PRODUCT_ENTITY,
-                ExtraFilter: `ID IN (${ids}) AND SubscriptionTypeID IS NOT NULL`,
-                Fields: ['ID', 'Name', 'SubscriptionTypeID', 'RevenueRecognitionTypeID'],
-                ResultType: 'simple',
-            },
-            this.ContextCurrentUser,
-        );
-        const products = new Map((prod?.Results ?? []).map(p => [uuidKey(p.ID), p]));
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        await LoadOrdersEngine(provider, user);
+
+        const products = new Map<string, ProductRow>();
+        for (const line of lines) {
+            const p = OrdersEngine.Instance.ProductByID(line.ProductID);
+            if (!p) continue;
+            products.set(uuidKey(p.ID), {
+                ID: p.ID,
+                Name: p.Name,
+                SubscriptionTypeID: p.SubscriptionTypeID,
+                ProductTypeID: p.ProductTypeID,
+                RevenueRecognitionTypeID: p.RevenueRecognitionTypeID,
+            });
+        }
         if (products.size === 0) return [];
-
-        const types = await rv.RunView<SubscriptionTypeRules>(
-            { EntityName: SUBSCRIPTION_TYPE_ENTITY, ResultType: 'simple' },
-            this.ContextCurrentUser,
-        );
-        const rulesByID = new Map((types?.Results ?? []).map(t => [uuidKey(t.ID), t]));
 
         const out = [];
         for (const line of lines) {
@@ -2119,11 +2119,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // create a second subscription (and a second term) every time one was cancelled, which
             // is the exact opposite of what the line means.
             if (line.ReversesOrderLineID || (line.Quantity ?? 0) < 0) continue;
-            const rules = rulesByID.get(uuidKey(product.SubscriptionTypeID));
-            if (!rules) {
+            const inherited = OrdersEngine.Instance.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID ?? null;
+            const subscriptionTypeID = ResolveSubscriptionTypeID(product.SubscriptionTypeID, inherited);
+            if (!subscriptionTypeID) continue;
+            product.SubscriptionTypeID = subscriptionTypeID;
+            const cached = OrdersEngine.Instance.SubscriptionTypeByID(subscriptionTypeID);
+            if (!cached) {
                 throw new Error(`Product '${product.Name}' names a subscription type that was not found.`);
             }
-            out.push({ line, product, rules });
+            out.push({ line, product, rules: SubscriptionTypeRulesFrom(cached) });
         }
         return out;
     }

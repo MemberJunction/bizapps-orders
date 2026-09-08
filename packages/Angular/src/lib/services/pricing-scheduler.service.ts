@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Metadata, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { CanPriceOrderLocally, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, type PreviewComponent, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { anyFieldIsDirty } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
 
@@ -213,7 +214,7 @@ export class MJOPricingScheduler {
                     Quantity: Number(l.Quantity ?? 0),
                     // A STATED price is passed through and PINS the line. An absent one is what
                     // tells the engine to resolve — sending 0 would read as a deliberate free line.
-                    UnitPrice: l.GetFieldByName('UnitPrice')?.Dirty ? Number(l.UnitPrice) : null,
+                    UnitPrice: anyFieldIsDirty(l, ['UnitPrice']) ? Number(l.UnitPrice) : null,
                     DiscountPct: Number(l.DiscountPct ?? 0),
                 })),
                 PromotionCodes: order.PromotionCodes.Codes,
@@ -284,7 +285,7 @@ export class MJOPricingScheduler {
             line.Quantity = Number(source.Quantity ?? 0);
             // A STATED price PINS the line; an absent one is what tells the engine to resolve.
             // Assigning 0 would read as a deliberate free line.
-            if (source.GetFieldByName('UnitPrice')?.Dirty) line.UnitPrice = Number(source.UnitPrice);
+            if (anyFieldIsDirty(source, ['UnitPrice'])) line.UnitPrice = Number(source.UnitPrice);
             line.DiscountPct = Number(source.DiscountPct ?? 0);
             lines.push(line);
         }
@@ -359,7 +360,10 @@ export class MJOPricingScheduler {
     ): MJOPricingResult {
         const lines: MJOLinePrice[] = out.Lines.map((priced, i) => {
             const line = order.Lines.Items[i];
-            const stated = line?.GetFieldByName('UnitPrice')?.Dirty === true;
+            const stated =
+                (line ? anyFieldIsDirty(line, ['UnitPrice']) : false) ||
+                line?.GetFieldByName('PriceOverridden')?.Value === true ||
+                line?.GetFieldByName('PriceOverridden')?.Value === 1;
             const extended = round(Number(priced.UnitPrice) * Number(line?.Quantity ?? 0));
             return {
                 // Positional: an unsaved line has no id, and the engine answers by position.

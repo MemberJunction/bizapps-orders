@@ -232,6 +232,12 @@ const mocks = vi.hoisted(() => {
         mockPaymentIntentInstance: new MockPaymentIntent(),
         lastRunViewParams: undefined as { EntityName?: string; MaxRows?: number; Fields?: string[]; ExtraFilter?: string } | undefined,
         sessionRunViewResults: undefined as Array<{ ID: string }> | undefined,
+        mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
+        mockProductBySKU: vi.fn((sku: string | null | undefined) => {
+            const wanted = sku?.trim().toLowerCase();
+            if (wanted === 'conf-2027') return { ID: 'prod-1', SKU: 'CONF-2027' };
+            return undefined;
+        }),
     };
 });
 
@@ -331,7 +337,13 @@ vi.mock('@mj-biz-apps/orders-entities', () => ({
     mjBizAppsOrdersCheckoutWidgetEntity: mocks.MockCheckoutWidget,
     mjBizAppsOrdersPaymentIntentEntity: mocks.MockPaymentIntent,
     mjBizAppsOrdersProductEntity: mocks.MockProduct,
-    mjBizAppsOrdersProductTypeEntity: mocks.MockProductType
+    mjBizAppsOrdersProductTypeEntity: mocks.MockProductType,
+    LoadOrdersEngine: mocks.mockLoadOrdersEngine,
+    OrdersEngine: {
+        Instance: {
+            ProductBySKU: mocks.mockProductBySKU,
+        },
+    },
 }));
 
 import { CheckoutSessionService } from '../CheckoutSessionService.js';
@@ -385,6 +397,12 @@ describe('CheckoutSessionService', () => {
         mocks.mockIntentLoad.mockResolvedValue(true);
         mocks.mockSessionSave.mockResolvedValue(true);
         mocks.mockClaimCreate.mockResolvedValue({ ID: 'claim-1' });
+        mocks.mockLoadOrdersEngine.mockResolvedValue(undefined);
+        mocks.mockProductBySKU.mockImplementation((sku: string | null | undefined) => {
+            const wanted = sku?.trim().toLowerCase();
+            if (wanted === 'conf-2027') return { ID: 'prod-1', SKU: 'CONF-2027' };
+            return undefined;
+        });
     });
 
     describe('InitializeSession', () => {
@@ -445,6 +463,8 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(true);
             expect(res.Configuration?.productId).toBe('prod-1');
             expect(res.Configuration?.productSku).toBe('CONF-2027');
+            expect(mocks.mockLoadOrdersEngine).toHaveBeenCalled();
+            expect(mocks.mockProductBySKU).toHaveBeenCalledWith('CONF-2027');
         });
 
         it('still writes SKU-resolved productId when extensionFields are already authored', async () => {
@@ -458,6 +478,26 @@ describe('CheckoutSessionService', () => {
             expect(res.Configuration?.extensionFields).toEqual([
                 { name: 'seat', label: 'Seat', type: 'text' },
             ]);
+        });
+
+        it('matches SKU case-insensitively through OrdersEngine.ProductBySKU', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                productSku: 'conf-2027',
+            });
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            expect(res.Success).toBe(true);
+            expect(res.Configuration?.productId).toBe('prod-1');
+        });
+
+        it('does not invent a productId when the SKU is missing from the catalog cache', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                productSku: 'NO-SUCH-SKU',
+                title: 'Broken widget',
+            });
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            expect(res.Success).toBe(true);
+            expect(res.Configuration?.productId).toBeUndefined();
+            expect(mocks.mockLoadOrdersEngine).toHaveBeenCalled();
         });
 
         it('allowlists public Configuration keys and drops secret-shaped and unknown keys', async () => {
@@ -508,6 +548,20 @@ describe('CheckoutSessionService', () => {
             );
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toMatch(/not configured with a product/i);
+        });
+
+        it('allowlists a SKU-only widget from the OrdersEngine catalog cache', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productSku: 'CONF-2027' });
+            const res = await CheckoutSessionService.UpdateDraft(
+                'sess-123',
+                KEY,
+                'a@b.com',
+                [{ ProductID: 'prod-1', Quantity: 1 }]
+            );
+            expect(res.ErrorMessage ?? '').not.toMatch(/not configured with a product/i);
+            expect(res.ErrorMessage ?? '').not.toMatch(/does not sell that product/i);
+            expect(mocks.mockLoadOrdersEngine).toHaveBeenCalled();
+            expect(mocks.mockProductBySKU).toHaveBeenCalledWith('CONF-2027');
         });
 
         it('rejects a product whose CompanyID is null even when the ProductID is in the catalog', async () => {

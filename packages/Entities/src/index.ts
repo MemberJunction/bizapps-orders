@@ -25,6 +25,7 @@ export * from './generated/remote_operations';
 export * from './OrderStatusBehavior';
 export * from './PartyAffiliationBehavior';
 export * from './booked-money';
+export * from './field-dirty';
 export * from './line-quantity';
 
 /**

@@ -5,6 +5,7 @@ import {
     isNamedListPick,
     moneyEqual,
     priceOverrideCatalogInstalled,
+    userPriceOverrideKind,
 } from '../pricing/priceOverride.js';
 
 describe('price override helpers', () => {
@@ -33,5 +34,10 @@ describe('price override helpers', () => {
         expect(isNamedListPick({ ProductPriceID: 'p2', UnitPrice: 1 }, applicable)).toBe(false);
         expect(isNamedListPick({ ProductPriceID: null, UnitPrice: 275 }, applicable)).toBe(false);
         expect(moneyEqual(1.005, 1.01)).toBe(true);
+    });
+
+    it('denies override when there is no user', () => {
+        expect(userPriceOverrideKind(null, { Authorizations: [] })).toBe('none');
+        expect(userPriceOverrideKind(undefined, { Authorizations: [] })).toBe('none');
     });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ToISODate, ISOYear, IsBefore, Today, LocalDay, type DateCell } from '../date-cell';
+import { ToISODate, ISOYear, IsBefore, Today, LocalDay, TodayAsDateValue, type DateCell } from '../date-cell';
 
 /**
  * Tier 1 for reading a date cell.
@@ -121,5 +121,23 @@ describe('Today and LocalDay', () => {
 
     it('LocalDay zero-pads single-digit months and days', () => {
         expect(LocalDay(new Date(2026, 0, 5))).toBe('2026-01-05');
+    });
+});
+
+describe('TodayAsDateValue', () => {
+    it('round-trips through ToISODate as the LOCAL calendar day', () => {
+        // The whole contract: assign it to a date-typed field, read it back with any UTC-parts
+        // reader, and it is still the day the user's clock showed — not the UTC day, which is
+        // already tomorrow for part of every evening in the Americas' zones' mirror image (and
+        // was the bug: a price created at 8pm Central stamped EffectiveFrom with tomorrow).
+        expect(ToISODate(TodayAsDateValue())).toBe(Today());
+    });
+
+    it('is pinned to midnight UTC, the shape a SQL date column round-trips as', () => {
+        const v = TodayAsDateValue();
+        expect(v.getUTCHours()).toBe(0);
+        expect(v.getUTCMinutes()).toBe(0);
+        expect(v.getUTCSeconds()).toBe(0);
+        expect(v.getUTCMilliseconds()).toBe(0);
     });
 });
