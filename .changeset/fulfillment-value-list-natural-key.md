@@ -1,5 +1,5 @@
 ---
-"@mj-biz-apps/orders-entities": patch
+"@mj-biz-apps/orders-entities": minor
 ---
 
 `V202609061900` could not apply on any host but the one it was generated from.
