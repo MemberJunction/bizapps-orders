@@ -25,7 +25,7 @@
             "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products&Name=StandaloneSellingPrice"
           },
           "sync": {
-            "lastModified": "2026-09-03T22:33:23.201Z",
+            "lastModified": "2026-09-07T21:27:44.824Z",
             "checksum": "83e17f5b4cb3102ea3c77012bff521fd69748a4b076791ca4942d23276344d0e"
           }
         }
