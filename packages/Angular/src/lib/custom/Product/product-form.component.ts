@@ -91,8 +91,10 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         if (this.ProductTypeRecord?.ProductExtensionEntity === 'MJ_BizApps_Orders: Event Products') {
             return true;
         }
-        const typeName = (this.record?.ProductType as string) ?? this.ProductTypeRecord?.Name ?? '';
-        return typeName.toLowerCase().includes('event') || typeName.toLowerCase().includes('conference') || typeName.toLowerCase().includes('summit') || this.record?.ISAChild != null;
+        if (this.record?.ISAChild?.EntityInfo?.Name === 'MJ_BizApps_Orders: Event Products') {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -211,21 +213,9 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         if (this.HasEventExtension && !this.EventProductChild) {
             this.EventProductLoading = true;
             try {
-                if (this.record.ISAChild && this.record.ISAChild.EntityInfo.Name === 'MJ_BizApps_Orders: Event Products') {
-                    this.EventProductChild = this.record.ISAChild as mjBizAppsOrdersEventProductEntity;
-                } else if (this.record.IsSaved && this.record.ID) {
-                    const ep = await md.GetEntityObject<mjBizAppsOrdersEventProductEntity>('MJ_BizApps_Orders: Event Products', md.CurrentUser);
-                    if (await ep.Load(this.record.ID)) {
-                        this.EventProductChild = ep;
-                    } else {
-                        await ep.NewRecord();
-                        ep.ID = this.record.ID;
-                        this.EventProductChild = ep;
-                    }
-                } else {
-                    const ep = await md.GetEntityObject<mjBizAppsOrdersEventProductEntity>('MJ_BizApps_Orders: Event Products', md.CurrentUser);
-                    await ep.NewRecord();
-                    this.EventProductChild = ep;
+                const child = await this.record.EnsureISAChild('MJ_BizApps_Orders: Event Products');
+                if (child) {
+                    this.EventProductChild = child as mjBizAppsOrdersEventProductEntity;
                 }
             } catch (err) {
                 console.error('Failed to initialize EventProduct specialized profile:', err);

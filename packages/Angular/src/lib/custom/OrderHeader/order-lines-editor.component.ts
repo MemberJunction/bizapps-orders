@@ -387,6 +387,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (line.EntityInfo?.Name !== MJO_ENTITIES.OrderLine) {
             return line;
         }
+        if (line.ISAChild) {
+            return line.ISAChild;
+        }
         if (line instanceof OrderLineEntity) {
             if (line.Extension?.Entity) {
                 return line.Extension.Entity;
@@ -467,9 +470,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const line = (await this._order.Lines.Create()) as OrderLineEntity;
         line.ProductID = product.ID;
         line.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
-        if (line instanceof OrderLineEntity) {
-            await line.Extension.EnsureEntity(product.OrderLineExtensionEntity);
-        }
+        await line.EnsureISAChild(product.OrderLineExtensionEntity);
         this.expandedLineIds.add(line.ID);
     }
 
@@ -478,7 +479,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.hydratingLineIds.add(line.ID);
         try {
             CachedExtensionEntityInfo(this.metadata, extName);
-            await line.Extension.EnsureEntity(extName);
+            await line.EnsureISAChild(extName);
             this.cdr.detectChanges();
         } finally {
             this.hydratingLineIds.delete(line.ID);
