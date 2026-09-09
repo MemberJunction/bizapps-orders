@@ -8,6 +8,10 @@ name: PostgreSQL migration parity
 on:
   workflow_dispatch:
   pull_request:
+    # `ready_for_review` is NOT in the default type set (opened/synchronize/reopened),
+    # and the job below skips while the PR is a draft — without it, marking a PR ready
+    # would not re-trigger anything and the check would never report.
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [next, main]
     paths:
       - 'migrations/**'
@@ -25,6 +29,11 @@ concurrency:
 
 jobs:
   pg-parity:
+    # Drafts DO fire opened/synchronize, so a draft otherwise burns a full run on every
+    # push. Skip while draft; the `ready_for_review` trigger above brings it back. A job
+    # skipped by `if:` still reports a conclusion, so this is safe as a required check.
+    # The event_name arm keeps the job running on `push`, where pull_request is null.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: PG migration parity check
     runs-on: ubuntu-latest
     timeout-minutes: 20
