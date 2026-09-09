@@ -6,6 +6,7 @@
  */
 import { BaseEntity, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
+import { EscapeSQLString } from '../sql-guards.js';
 import {
     EvaluateFilter,
     type CompositeFilterDescriptor,
@@ -80,7 +81,7 @@ async function loadRow(
     const res = await rv.RunView<Record<string, unknown>>(
         {
             EntityName: entityName,
-            ExtraFilter: `ID = '${id.replace(/'/g, "''")}'`,
+            ExtraFilter: `ID = '${EscapeSQLString(id)}'`,
             ResultType: 'simple',
             BypassCache: true,
         },
