@@ -136,6 +136,7 @@ const mocks = vi.hoisted(() => {
         Extension = {
             EnsureEntity: vi.fn().mockImplementation(() => Promise.resolve(this.extensionInstance))
         };
+        EnsureISAChild = vi.fn().mockImplementation(() => Promise.resolve(this.extensionInstance));
     }
 
     class MockOrderHeader {
@@ -692,13 +693,14 @@ describe('CheckoutSessionService', () => {
             expect(mocks.mockSessionInstance.Save).toHaveBeenCalled();
             expect(res.Lines[0].Description).toContain('Bob Jones');
 
-            // Assert catalog entity was used for EnsureEntity, NOT the client override
+            // Assert catalog entity was used for EnsureISAChild, NOT the client override
             const orderLine = mocks.mockOrderInstance.Lines.Items[0] as unknown as {
+                EnsureISAChild: ReturnType<typeof vi.fn>;
                 Extension: { EnsureEntity: ReturnType<typeof vi.fn> };
                 extensionInstance: { Set: ReturnType<typeof vi.fn> };
             };
-            expect(orderLine.Extension.EnsureEntity).toHaveBeenCalledWith('MJ_BizApps_Orders: Event Order Lines');
-            expect(orderLine.Extension.EnsureEntity).not.toHaveBeenCalledWith('AttackerMaliciousEntityOverride');
+            expect(orderLine.EnsureISAChild).toHaveBeenCalledWith('MJ_BizApps_Orders: Event Order Lines');
+            expect(orderLine.EnsureISAChild).not.toHaveBeenCalledWith('AttackerMaliciousEntityOverride');
 
             // Assert blocked fields were never passed to Set
             expect(orderLine.extensionInstance.Set).not.toHaveBeenCalledWith('PersonID', 'attacker-injected-guid');

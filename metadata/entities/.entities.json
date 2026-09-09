@@ -116,6 +116,7 @@
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products"
     },
     "fields": {
+      "SubtypeSelector": "{\"Path\": \"ProductTypeID.ProductExtensionEntity\"}",
       "Configuration": {
         "UI": {
           "Form": {
@@ -125,10 +126,17 @@
           }
         }
       }
+    }
+  },
+  {
+    "_comments": [
+      "Order Lines declarative SubtypeSelector routes extension to ProductType.OrderLineExtensionEntity via ProductID."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines"
     },
-    "sync": {
-      "lastModified": "2026-09-02T03:26:35.904Z",
-      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    "fields": {
+      "SubtypeSelector": "{\"Path\": \"ProductID.ProductTypeID.OrderLineExtensionEntity\"}"
     }
   },
   {

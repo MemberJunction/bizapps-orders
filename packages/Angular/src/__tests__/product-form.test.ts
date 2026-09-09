@@ -36,12 +36,22 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
         const instance = Object.create(BizAppsProductFormComponent.prototype) as BizAppsProductFormComponent;
         expect(instance.HasEventExtension).toBe(false);
 
+        // Subtype detected via ProductTypeRecord.ProductExtensionEntity
+        instance.ProductTypeRecord = {
+            ProductExtensionEntity: 'MJ_BizApps_Orders: Event Products',
+        } as unknown as import('@mj-biz-apps/orders-entities').mjBizAppsOrdersProductTypeEntity;
+        expect(instance.HasEventExtension).toBe(true);
+
+        // Subtype detected via attached ISAChild
+        instance.ProductTypeRecord = null;
         instance.record = {
-            ProductType: 'Conference Event Ticket',
-            ISAChild: null,
+            ISAChild: {
+                EntityInfo: { Name: 'MJ_BizApps_Orders: Event Products' },
+            },
         } as unknown as mjBizAppsOrdersProductEntity;
         expect(instance.HasEventExtension).toBe(true);
 
+        // Non-event subtype or plain product
         instance.record = {
             ProductType: 'Standard Physical Good',
             ISAChild: null,
