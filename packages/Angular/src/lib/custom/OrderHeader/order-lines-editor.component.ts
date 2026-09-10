@@ -32,7 +32,7 @@ import {
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
-import { MJOMoneyPipe } from '../../panels/money-format';
+import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { GetCatalogOptions, type MJOProductOption } from '../../data/orders-queries';
 import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
@@ -248,9 +248,24 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return this.PricedLine(line)?.UnitPrice ?? null;
     }
 
+    /**
+     * The `Default` row of the price picker — which rule is in force, and for how much.
+     *
+     * It read `Default · 195.00`, which answered neither question a user opening this
+     * dropdown has: every other option names its rule and carries a currency symbol, so
+     * the one entry that is ACTUALLY APPLIED was the only one that said nothing about
+     * itself. The name comes from `PriceSource`, which is the same `priceLabel()` output
+     * `ApplicablePrice.Name` carries, so the default and its twin in the list below read
+     * identically. `FormatMoney` rather than `toFixed` for the symbol and the separators.
+     */
     public DefaultLabel(line: mjBizAppsOrdersOrderLineEntity): string {
         const unit = this.DefaultUnit(line);
-        return unit == null ? 'Default price' : `Default · ${unit.toFixed(2)}`;
+        if (unit == null) return 'Default price';
+        const rule = this.PricedLine(line)?.PriceSource;
+        const amount = FormatMoney(unit);
+        // 'stated' is not a rule name — it means the user typed this price, and saying
+        // "Default (stated)" would present their own entry back to them as a resolution.
+        return rule && rule !== 'stated' ? `Default (${rule}) · ${amount}` : `Default · ${amount}`;
     }
 
     public ShowCustomAmount(line: mjBizAppsOrdersOrderLineEntity): boolean {
