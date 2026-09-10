@@ -11,11 +11,6 @@ name: PostgreSQL migration parity
 # historical migrations lack PG counterparts.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'migrations/**'
-      - 'migrations-pg/**'
 
 concurrency:
   group: pg-migrations-${{ github.ref }}
