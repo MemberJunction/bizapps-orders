@@ -663,7 +663,7 @@ export function BuildPaymentJournalFilter(payment: mjBizAppsOrdersPaymentHeaderE
         filters.push(`ID = '${payment.JournalEntryID}'`);
     }
     filters.push(`LinkedRecordID = '${payment.ID}'`);
-    filters.push(`LinkedRecordID IN (SELECT ID FROM [__mj_BizAppsOrders].[PaymentLine] WHERE PaymentHeaderID = '${payment.ID}')`);
+    filters.push(`LinkedRecordID IN (SELECT ID FROM [__mj_BizAppsOrders].[vwPaymentLines] WHERE PaymentHeaderID = '${payment.ID}')`);
     return filters.join(' OR ');
 }
 

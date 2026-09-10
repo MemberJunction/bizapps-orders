@@ -23,7 +23,7 @@ import { MJO_ENTITIES } from '../entity-names';
 
 const here = import.meta.dirname;
 const generated = readFileSync(
-    join(here, '..', '..', '..', '..', '..', 'Entities', 'src', 'generated', 'entity_subclasses.ts'),
+    join(here, '..', '..', '..', '..', '..', 'Entities', 'src', 'generated', 'entities', '__mj_BizAppsOrders.ts'),
     'utf8',
 );
 const queries = readFileSync(join(here, '..', 'orders-queries.ts'), 'utf8');

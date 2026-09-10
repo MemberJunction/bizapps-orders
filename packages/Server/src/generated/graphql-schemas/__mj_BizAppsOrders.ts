@@ -1962,6 +1962,12 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(36)
     JournalEntryID?: string;
         
+    @Field(() => Boolean) 
+    PriceOverridden: boolean;
+        
+    @Field({nullable: true}) 
+    PriceOverrideReason?: string;
+        
     @Field() 
     @MaxLength(201)
     Person: string;
@@ -2075,6 +2081,12 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     @Field({ nullable: true })
     JournalEntryID: string | null;
 
+    @Field(() => Boolean, { nullable: true })
+    PriceOverridden?: boolean;
+
+    @Field({ nullable: true })
+    PriceOverrideReason: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -2186,6 +2198,12 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     JournalEntryID?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    PriceOverridden?: boolean;
+
+    @Field({ nullable: true })
+    PriceOverrideReason?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -3909,6 +3927,18 @@ export class mjBizAppsOrdersOrderHeader_ {
         
     @Field(() => Float, {nullable: true}) 
     _mj__Longitude?: number;
+
+    @Field(() => Float, {nullable: true}) 
+    _mj__Latitude_BillToAddressID?: number;
+        
+    @Field(() => Float, {nullable: true}) 
+    _mj__Longitude_BillToAddressID?: number;
+        
+    @Field(() => Float, {nullable: true}) 
+    _mj__Latitude_ShipToAddressID?: number;
+        
+    @Field(() => Float, {nullable: true}) 
+    _mj__Longitude_ShipToAddressID?: number;
         
     @Field(() => Int) 
     IsOverdue: number;
@@ -4722,6 +4752,12 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field(() => Boolean, {description: `1 when UnitPrice was set by a staff override (named list pick or typed amount) rather than the pricing engine. 0 is the engine price.`}) 
+    PriceOverridden: boolean;
+        
+    @Field({nullable: true, description: `Optional staff note for why the engine price was overridden. NULL when PriceOverridden = 0 or when no reason was given.`}) 
+    PriceOverrideReason?: string;
+        
     @Field() 
     @MaxLength(40)
     OrderHeader: string;
@@ -4757,6 +4793,22 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     JournalEntry?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    RootParentOrderLineID?: string;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentOrderLineIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    ParentOrderLineIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    ParentOrderLineIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentOrderLineIDChildCount?: number;
         
 }
 
@@ -4851,6 +4903,12 @@ export class CreatemjBizAppsOrdersOrderLineInput {
 
     @Field({ nullable: true })
     JournalEntryID: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    PriceOverridden?: boolean;
+
+    @Field({ nullable: true })
+    PriceOverrideReason: string | null;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -4948,6 +5006,12 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field({ nullable: true })
     JournalEntryID?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    PriceOverridden?: boolean;
+
+    @Field({ nullable: true })
+    PriceOverrideReason?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -7747,6 +7811,10 @@ export class mjBizAppsOrdersPriceTier_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field() 
+    @MaxLength(100)
+    ProductPrice: string;
+        
 }
 
 //****************************************************************************
@@ -8147,6 +8215,22 @@ export class mjBizAppsOrdersProductCategory_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     ParentProductCategory?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    RootParentProductCategoryID?: string;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentProductCategoryIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    ParentProductCategoryIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    ParentProductCategoryIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentProductCategoryIDChildCount?: number;
         
 }
 

@@ -669,7 +669,7 @@ GO
 
 -- skipped spUpdateExistingEntityFieldsFromSchema: collides with explicit EntityField inserts in this file
 
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE [ID] = '8eae6de6-0a09-4ed8-a1e0-c4ecc5bc0038')
+IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE [ID] = '8eae6de6-0a09-4ed8-a1e0-c4ecc5bc0038' OR ([EntityID] = 'B090A662-A97A-4748-B109-2FA716C14651' AND [Name] = 'PricingDriverClass'))
 BEGIN
 /* Create IS-A parent field PricingDriverClass on MJ_BizApps_Orders: Event Products */
 INSERT INTO [${mjSchema}].[EntityField] (
@@ -687,7 +687,7 @@ INSERT INTO [${mjSchema}].[EntityField] (
 
 
 END;
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE [ID] = '282102e7-ac8b-4d20-b92e-c23b11052cd3')
+IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE [ID] = '282102e7-ac8b-4d20-b92e-c23b11052cd3' OR ([EntityID] = 'B090A662-A97A-4748-B109-2FA716C14651' AND [Name] = 'MaxQuantityPerLine'))
 BEGIN
 /* Create IS-A parent field MaxQuantityPerLine on MJ_BizApps_Orders: Event Products */
 INSERT INTO [${mjSchema}].[EntityField] (

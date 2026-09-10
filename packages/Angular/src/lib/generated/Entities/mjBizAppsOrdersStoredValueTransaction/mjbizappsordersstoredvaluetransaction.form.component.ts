@@ -18,6 +18,7 @@ export class mjBizAppsOrdersStoredValueTransactionFormComponent extends BaseForm
             { sectionKey: 'transactionDetails', sectionName: 'Transaction Details', isExpanded: true },
             { sectionKey: 'financialData', sectionName: 'Financial Data', isExpanded: true },
             { sectionKey: 'relatedEntities', sectionName: 'Related Entities', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }
