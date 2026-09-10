@@ -55,7 +55,7 @@ import { stripSqlComments } from './strip-sql-comments.mjs';
 const RED = '\x1b[0;31m', YELLOW = '\x1b[0;33m', GREEN = '\x1b[0;32m', DIM = '\x1b[2m', NC = '\x1b[0m';
 const GIT_MAX_BUFFER = Number(process.env.MJ_GIT_MAX_BUFFER) || 256 * 1024 * 1024;
 /** Flyway versioned and baseline migrations: fixture SQL never runs. */
-const VERSIONED_MIGRATION_RE = /(^|\/)[VB]\d{12}__[^/]*\.sql$/;
+const VERSIONED_MIGRATION_RE = /(^|\/)V\d{12}__[^/]*\.sql$/;
 const FIXTURE_DIR_RE = /(^|\/)tests?\//;
 const inScope = (f) => VERSIONED_MIGRATION_RE.test(f) && !FIXTURE_DIR_RE.test(f);
 
@@ -328,9 +328,10 @@ export const SELF_TEST_FIXTURES = [
 
 const SCOPE_TEST_FIXTURES = [
     ['V-prefix migration is in scope', true, 'migrations/v1/V202607141200__v1.0.0.sql'],
-    ['B-prefix baseline migration is in scope', true, 'migrations/v1/B202607141200__v1.0.0.sql'],
+    ['baselines are skipped — literal by construction, and first to run', false,
+        'migrations/B202607061431__v0.1.x__Schema_and_Types.sql'],
     ['fixture in tests/ is excluded', false, 'tests/migrations/V202607141200__v1.0.0.sql'],
-    ['fixture in test/ is excluded', false, 'test/migrations/B202607141200__v1.0.0.sql'],
+    ['fixture in test/ is excluded', false, 'test/migrations/V202607141200__v1.0.0.sql'],
     ['repeatable migration is excluded', false, 'migrations/R__RefreshMetadata.sql'],
     ['non-migration sql file is excluded', false, 'scripts/seed.sql'],
 ];
