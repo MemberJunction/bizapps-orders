@@ -38,6 +38,16 @@ jobs:
         if: steps.migration_check.outputs.has_migrations == 'true'
         run: ./.github/scripts/validate-migration-filenames.sh
 
+      - name: EntityField Sequence must not be a literal placeholder
+        run: |
+          node ./.github/scripts/check-migration-entityfield-sequence.mjs --self-test
+          node ./.github/scripts/check-migration-entityfield-sequence.mjs ${{ github.event.pull_request.base.sha }} ${{ github.sha }}
+
+      - name: Versioned migrations must not contain spDeleteUnneededEntityFields
+        run: |
+          node ./.github/scripts/check-migration-no-prune.mjs --self-test
+          node ./.github/scripts/check-migration-no-prune.mjs ${{ github.event.pull_request.base.sha }} ${{ github.sha }}
+
       - name: Validate migration timestamps are newer than existing
         if: steps.migration_check.outputs.has_migrations == 'true'
         run: |
