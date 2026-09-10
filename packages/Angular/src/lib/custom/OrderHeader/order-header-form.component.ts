@@ -1,20 +1,27 @@
 import { Component, inject, ChangeDetectorRef } from '@angular/core';
-import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
+import { CompositeKey } from '@memberjunction/core';
 import type { RunViewParams } from '@memberjunction/core';
 import { UserInfoEngine } from '@memberjunction/core-entities';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
-import { OrderHeaderEntity, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
-import { MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
+import { OrderHeaderEntity, type DateCell, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
+import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
 import {
-    GetOrderJournalRollup,
+    BuildOrderJournalEntryRows,
+    BuildOrderJournalRollup,
+    ExcludedEntriesLabel,
+    GetOrderJournalOrigins,
     GetPaymentTypes,
     GetSellingCompanies,
-    JournalEntryViewParams,
+    LoadOrderJournalData,
+    LoadRevRecJournalEntries,
     SubscriptionViewParams,
     type OrderJournalCard,
+    type OrderJournalData,
+    type OrderJournalDateBasis,
+    type OrderJournalEntryRow,
 } from '../../data/orders-queries';
 import { FormatDate, FormatMoney, HasCents } from '../../panels/money-format';
 import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component';
@@ -90,11 +97,26 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public AccountingView: OrderAccountingView = 'summary';
 
-    /** Display-only rollup of every line journal. Never a stored JE. */
+    /** Display-only rollup of every journal this order caused. Never a stored JE. */
     public RollupLoading = false;
     public RollupError: string | null = null;
     public RollupCards: OrderJournalCard[] = [];
     public RollupJournalCount = 0;
+    /** Every included entry, unnetted — the By line view. */
+    public JournalRows: OrderJournalEntryRow[] = [];
+    /** "3 entries scheduled after 2026-09-10", or null when nothing is being hidden. */
+    public RollupExcludedLabel: string | null = null;
+    /** One line per payment fee entry this order shares in full with other orders. */
+    public RollupSharedNotes: string[] = [];
+
+    /**
+     * The two controls above both views, blank/effective by default.
+     *
+     * Blank As-of is the LIFETIME view — every entry, past and future — which is what makes the
+     * deferred-revenue release visible instead of folded into today's picture (#183 item 1).
+     */
+    public AccountingAsOf: string | null = null;
+    public AccountingBasis: OrderJournalDateBasis = 'effective';
 
     public Confirming = false;
     public ConfirmError: string | null = null;
@@ -300,7 +322,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         if (this.AccountingView === view) return;
         this.AccountingView = view;
         UserInfoEngine.Instance.SetSettingDebounced(ACCOUNTING_VIEW_SETTING, view);
-        if (view === 'summary') void this.refreshAccountingIfNeeded();
+        if (view !== 'waterfall' && !this.journalData) void this.refreshAccountingIfNeeded();
     }
 
     public CardIsBalanced(card: OrderJournalCard): boolean {
@@ -532,10 +554,6 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return this.BuildRelationshipViewParamsByEntityName(MJO_ENTITIES.OrderCharge, 'OrderHeaderID');
     }
 
-    public get JournalParams(): RunViewParams | null {
-        return JournalEntryViewParams(this.lineIDs);
-    }
-
     public get SubscriptionParams(): RunViewParams | null {
         return SubscriptionViewParams(this.lineIDs);
     }
@@ -571,6 +589,9 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public RevRecJournalEntries: mjBizAppsAccountingJournalEntryEntity[] = [];
 
+    /** The one fetched snapshot every accounting view is derived from. Null until the tab is opened. */
+    private journalData: OrderJournalData | null = null;
+
     private async loadPaymentTypes(): Promise<void> {
         try {
             this.PaymentTypes = await GetPaymentTypes(this.ProviderToUse?.CurrentUser);
@@ -579,99 +600,85 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         }
     }
 
+    /**
+     * Load every journal behind this order, once, and derive all three views from it.
+     *
+     * ONE fetch feeds Rolled up, By line and the waterfall. That is not just economy: the As-of date
+     * and the basis toggle are applied to the SAME snapshot by pure functions, so the two views
+     * cannot end up disagreeing about what is included (#183 item 9).
+     */
     private async refreshAccountingIfNeeded(): Promise<void> {
         if (this.ActiveTab !== 'accounting' || !this.record?.IsSaved) return;
-        await Promise.all([
-            this.loadOrderJournalRollup(),
-            this.loadRevRecJournalEntries(),
-        ]);
-    }
-
-    private async loadRevRecJournalEntries(): Promise<void> {
-        if (this.lineIDs.length === 0) {
-            this.RevRecJournalEntries = [];
-            return;
-        }
-
-        try {
-            const rv = new RunView();
-            const quotedLineIds = this.lineIDs.map(id => `'${id}'`).join(',');
-            
-            // 1. Fetch any subscription terms tied to these order lines
-            const termsRes = await rv.RunView<{ ID: string }>({
-                EntityName: 'MJ_BizApps_Orders: Subscription Terms',
-                ExtraFilter: `OrderLineID IN (${quotedLineIds})`,
-                Fields: ['ID'],
-                MaxRows: 200,
-                ResultType: 'simple',
-            }, new Metadata().CurrentUser);
-
-            const termIds = (termsRes.Success && termsRes.Results) ? termsRes.Results.map(t => `'${t.ID}'`) : [];
-            const allOrigins = [quotedLineIds, ...termIds].filter(Boolean).join(',');
-
-            // 2. Fetch Journal Entries matching order lines or their subscription terms
-            const jeRes = await rv.RunView<mjBizAppsAccountingJournalEntryEntity>({
-                EntityName: 'MJ_BizApps_Accounting: Journal Entries',
-                ExtraFilter: `LinkedRecordID IN (${allOrigins})`,
-                OrderBy: 'EffectiveDate ASC',
-                MaxRows: 500,
-                ResultType: 'entity_object',
-            }, new Metadata().CurrentUser);
-
-            if (jeRes.Success && jeRes.Results) {
-                await Promise.all(
-                    jeRes.Results.map(async (je) => {
-                        try {
-                            if (je.Lines && typeof je.Lines.Load === 'function') {
-                                await je.Lines.Load();
-                            }
-                        } catch {
-                            // ignore line load error
-                        }
-                    })
-                );
-
-                const recognitionEntries = jeRes.Results.filter(je => {
-                    const desc = (je.Description || '').toLowerCase();
-                    const typeStr = (je.EntryType || '').toLowerCase();
-                    return desc.includes('recognize') || typeStr.includes('recognition');
-                });
-
-                this.RevRecJournalEntries = recognitionEntries.length > 0 ? recognitionEntries : jeRes.Results;
-            }
-        } catch {
-            this.RevRecJournalEntries = [];
-        }
-    }
-
-    public OnJournalEntrySelected(je: mjBizAppsAccountingJournalEntryEntity): void {
-        const pk = new CompositeKey();
-        pk.LoadFromSingleKeyValuePair('ID', je.ID);
-        this.OnFormNavigate({
-            Kind: 'record',
-            EntityName: 'MJ_BizApps_Accounting: Journal Entries',
-            PrimaryKey: pk,
-        });
-    }
-
-    private async loadOrderJournalRollup(): Promise<void> {
         this.RollupLoading = true;
         this.RollupError = null;
         this.cdr.detectChanges();
         try {
-            const rollup = await GetOrderJournalRollup(this.lineIDs);
-            this.RollupCards = rollup.Cards;
-            this.RollupJournalCount = rollup.JournalCount;
+            const user = this.ProviderToUse?.CurrentUser;
+            const origins = await GetOrderJournalOrigins(String(this.record.ID ?? ''), this.lineIDs, user);
+            this.journalData = await LoadOrderJournalData(origins, user);
+            this.RevRecJournalEntries = await LoadRevRecJournalEntries(origins.LineAndTermIDs, user);
         } catch (error) {
-            this.RollupCards = [];
-            this.RollupJournalCount = 0;
-            this.RollupError = error instanceof Error ? error.message : 'Could not roll up the journals.';
+            this.journalData = null;
+            this.RevRecJournalEntries = [];
+            this.RollupError = error instanceof Error ? error.message : 'Could not load this order’s journals.';
         } finally {
+            this.applyAccountingView();
             this.RollupLoading = false;
             this.cdr.detectChanges();
         }
     }
 
+    /** Re-derive both views from the loaded snapshot. No I/O — moving the As-of date must not refetch. */
+    private applyAccountingView(): void {
+        const data = this.journalData;
+        if (!data) {
+            this.RollupCards = [];
+            this.RollupJournalCount = 0;
+            this.RollupExcludedLabel = null;
+            this.RollupSharedNotes = [];
+            this.JournalRows = [];
+            return;
+        }
+        const options = { AsOf: this.AccountingAsOf, Basis: this.AccountingBasis };
+        const rollup = BuildOrderJournalRollup(data, options);
+        this.RollupCards = rollup.Cards;
+        this.RollupJournalCount = rollup.JournalCount;
+        this.RollupExcludedLabel = ExcludedEntriesLabel(rollup, this.AccountingAsOf);
+        this.RollupSharedNotes = rollup.SharedPaymentNotes;
+        this.JournalRows = BuildOrderJournalEntryRows(data, options);
+    }
+
+    /** The As-of box. Blank means lifetime, which is the default and the point of item 1. */
+    public OnAccountingAsOfChanged(value: string): void {
+        this.AccountingAsOf = value || null;
+        this.applyAccountingView();
+    }
+
+    public SetAccountingBasis(basis: OrderJournalDateBasis): void {
+        if (this.AccountingBasis === basis) return;
+        this.AccountingBasis = basis;
+        this.applyAccountingView();
+    }
+
+    public SharedOrdersLabel(count: number): string {
+        return `Shared with ${count} other ${count === 1 ? 'order' : 'orders'}`;
+    }
+
+    public JournalDate(value: DateCell): string {
+        return FormatDate(value);
+    }
+
+    public OnJournalRowSelected(id: string): void {
+        this.OnFormNavigate({
+            Kind: 'record',
+            EntityName: MJO_ACCOUNTING_ENTITIES.JournalEntry,
+            PrimaryKey: CompositeKey.FromID(id),
+        });
+    }
+
+    public OnJournalEntrySelected(je: mjBizAppsAccountingJournalEntryEntity): void {
+        this.OnJournalRowSelected(String(je.ID ?? ''));
+    }
 
     private async defaultSellingCompany(): Promise<void> {
         if (this.record?.IsSaved || this.record?.CompanyID) return;

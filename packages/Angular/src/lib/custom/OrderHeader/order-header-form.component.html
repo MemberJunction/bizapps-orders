@@ -240,12 +240,12 @@
             <div class="mjo-oh-tabpane">
                 <div class="mjo-oh-acct__bar">
                     <div>
-                        <h2>{{ AccountingView === 'summary' ? 'Order journal' : 'Line journals' }}</h2>
+                        <h2>{{ AccountingView === 'summary' ? 'Order journal' : 'Journal entries' }}</h2>
                         <p>
                             @if (AccountingView === 'summary') {
-                                What this order booked, as one entry per company — not a stored row
+                                Gross debits and credits per account over this order's whole life — not a stored row
                             } @else {
-                                One stored journal per order line — open a row to drill in
+                                Every stored journal this order caused, unnetted — open a row to drill in
                             }
                         </p>
                     </div>
@@ -263,6 +263,40 @@
                     </div>
                 </div>
 
+                <!-- One set of controls for both views, so they can never disagree about what is in. -->
+                @if (AccountingView !== 'waterfall') {
+                    <div class="mjo-oh-acct__controls">
+                        <label class="mjo-oh-asof">
+                            <span>As of</span>
+                            <input
+                                type="date"
+                                [value]="AccountingAsOf ?? ''"
+                                (change)="OnAccountingAsOfChanged($any($event.target).value)"
+                                aria-label="Include entries dated on or before" />
+                        </label>
+                        @if (AccountingAsOf) {
+                            <button type="button" class="mjo-oh-asof__clear" (click)="OnAccountingAsOfChanged('')">
+                                Lifetime
+                            </button>
+                        }
+                        <div class="mjo-oh-switch mjo-oh-switch--sm" role="group" aria-label="Date basis">
+                            <button type="button" [class.is-on]="AccountingBasis === 'effective'" (click)="SetAccountingBasis('effective')">
+                                Effective date
+                            </button>
+                            <button type="button" [class.is-on]="AccountingBasis === 'posting'" (click)="SetAccountingBasis('posting')">
+                                Posting date
+                            </button>
+                        </div>
+                        <span class="mjo-oh-acct__basis">
+                            @if (AccountingBasis === 'posting') {
+                                GL date of the batch — Posted batches only
+                            } @else {
+                                Subledger date on the entry itself
+                            }
+                        </span>
+                    </div>
+                }
+
                 @if (AccountingView === 'waterfall') {
                     <div style="padding: 12px 0;">
                         <mj-deferred-revenue-waterfall
@@ -277,7 +311,13 @@
                     } @else if (RollupError) {
                         <div class="mjo-oh-hint">{{ RollupError }}</div>
                     } @else if (RollupCards.length === 0) {
-                        <div class="mjo-oh-hint">No journals yet — they appear when the order is confirmed.</div>
+                        <div class="mjo-oh-hint">
+                            @if (RollupExcludedLabel) {
+                                Nothing in view — {{ RollupExcludedLabel }}.
+                            } @else {
+                                No journals yet — they appear when the order is confirmed.
+                            }
+                        </div>
                     } @else {
                         @for (card of RollupCards; track card.CompanyID) {
                             <article class="mjo-oh-jecard">
@@ -330,19 +370,68 @@
                                 </table>
                             </article>
                         }
+                        @for (note of RollupSharedNotes; track note) {
+                            <p class="mjo-oh-acct__note">{{ note }}</p>
+                        }
                     }
-                } @else if (JournalParams) {
-                    <mj-explorer-entity-data-grid
-                        [Params]="JournalParams"
-                        [AllowLoad]="true"
-                        [ShowToolbar]="true"
-                        [ShowNewButton]="false"
-                        [Height]="'fit-content'"
-                        [MaxHeight]="RelatedGridHeight"
-                        (Navigate)="OnFormNavigate($event)">
-                    </mj-explorer-entity-data-grid>
+                    @if (RollupExcludedLabel) {
+                        <p class="mjo-oh-acct__excluded">
+                            {{ RollupExcludedLabel }} —
+                            <button type="button" class="mjo-oh-linkbtn" (click)="SetAccountingView('detail')">see By line</button>
+                        </p>
+                    }
                 } @else {
-                    <div class="mjo-oh-hint">No line journals until this order has saved lines.</div>
+                    @if (RollupLoading) {
+                        <div class="mjo-oh-hint">Loading journals…</div>
+                    } @else if (RollupError) {
+                        <div class="mjo-oh-hint">{{ RollupError }}</div>
+                    } @else if (JournalRows.length === 0) {
+                        <div class="mjo-oh-hint">
+                            @if (RollupExcludedLabel) {
+                                Nothing in view — {{ RollupExcludedLabel }}.
+                            } @else {
+                                No journals yet — they appear when the order is confirmed.
+                            }
+                        </div>
+                    } @else {
+                        <table class="mjo-oh-je__table mjo-oh-je__table--detail">
+                            <thead>
+                                <tr>
+                                    <th>Entry</th>
+                                    <th>Effective</th>
+                                    <th>Batch</th>
+                                    <th>Batch status</th>
+                                    <th>Posting date</th>
+                                    <th class="is-num">Debit</th>
+                                    <th class="is-num">Credit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (row of JournalRows; track row.ID) {
+                                    <tr class="is-clickable" (click)="OnJournalRowSelected(row.ID)">
+                                        <td>
+                                            <div class="mjo-oh-acctline__name">{{ row.EntryNumber }}</div>
+                                            <div class="mjo-oh-acctline__meta">
+                                                <span>{{ row.Description }}</span>
+                                                @if (row.SharedWithOtherOrders) {
+                                                    <span class="mjo-oh-dim">{{ SharedOrdersLabel(row.SharedWithOtherOrders) }}</span>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td>{{ JournalDate(row.EffectiveDate) }}</td>
+                                        <td>{{ row.BatchNumber || '—' }}</td>
+                                        <td>{{ row.BatchStatus || 'Not batched' }}</td>
+                                        <td>{{ JournalDate(row.BatchPostingDate) }}</td>
+                                        <td class="is-num" [class.is-quiet]="!row.Debit">{{ RollupAmount(row.Debit) }}</td>
+                                        <td class="is-num" [class.is-quiet]="!row.Credit">{{ RollupAmount(row.Credit) }}</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        @if (RollupExcludedLabel) {
+                            <p class="mjo-oh-acct__excluded">{{ RollupExcludedLabel }}, not listed above.</p>
+                        }
+                    }
                 }
             </div>
         }
