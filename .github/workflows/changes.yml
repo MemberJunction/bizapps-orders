@@ -45,6 +45,13 @@ jobs:
           MAX_EXISTING=$(git show ${{ github.event.pull_request.base.sha }}:migrations/ 2>/dev/null | \
             grep -oE 'V[0-9]{12}' | sed 's/^V//' | sort -n | tail -1 || echo "0")
 
+          # Fail on any modified existing migration files (migrations are append-only)
+          MODIFIED_FILES=$(git diff --diff-filter=M --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} -- migrations/ | grep -E '\.sql$' || true)
+          if [ -n "$MODIFIED_FILES" ]; then
+            echo "::error::Existing migration files were modified in-place: $MODIFIED_FILES. Migrations must be append-only forward migrations."
+            exit 1
+          fi
+
           # Check only newly added migration files (not modified existing ones, not renames)
           NEW_FILES=$(git diff --diff-filter=A --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} -- migrations/ | grep -E '\.sql$' || true)
           for file in $NEW_FILES; do

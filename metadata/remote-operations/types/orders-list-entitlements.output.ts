@@ -6,15 +6,6 @@
  *
  * NO import statements — definitions are emitted verbatim.
  */
-export type EntitlementDecision =
-    | 'Granted'
-    | 'NoGrant'
-    | 'NotYetValid'
-    | 'Expired'
-    | 'Revoked'
-    | 'Suspended'
-    | 'SubscriptionInactive';
-
 export interface ListedEntitlement {
     Code: string;
     HasAccess: boolean;

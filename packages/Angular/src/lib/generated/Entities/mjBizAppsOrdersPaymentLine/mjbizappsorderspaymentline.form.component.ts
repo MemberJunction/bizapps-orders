@@ -18,6 +18,7 @@ export class mjBizAppsOrdersPaymentLineFormComponent extends BaseFormComponent {
             { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
             { sectionKey: 'paymentApplicationDetails', sectionName: 'Payment Application Details', isExpanded: true },
             { sectionKey: 'accountingInformation', sectionName: 'Accounting Information', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

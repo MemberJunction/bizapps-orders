@@ -107,7 +107,7 @@ describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters',
         expect(params?.EntityName).toBe('MJ_BizApps_Accounting: Journal Entries');
         expect(params?.ExtraFilter).toContain("ID = 'je-direct-456'");
         expect(params?.ExtraFilter).toContain("LinkedRecordID = 'pay-hdr-123'");
-        expect(params?.ExtraFilter).toContain("SELECT ID FROM [__mj_BizAppsOrders].[PaymentLine] WHERE PaymentHeaderID = 'pay-hdr-123'");
+        expect(params?.ExtraFilter).toContain("SELECT ID FROM [__mj_BizAppsOrders].[vwPaymentLines] WHERE PaymentHeaderID = 'pay-hdr-123'");
     });
 
     it('registers PaymentJournalsPanel as a form panel contribution', () => {

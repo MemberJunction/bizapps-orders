@@ -522,7 +522,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         if (!this.record?.IsSaved || !this.record.ID) return null;
         return {
             EntityName: MJO_ENTITIES.PaymentHeader,
-            ExtraFilter: `ID IN (SELECT PaymentHeaderID FROM [__mj_BizAppsOrders].[PaymentLine] WHERE OrderHeaderID = '${this.record.ID}')`,
+            ExtraFilter: `ID IN (SELECT PaymentHeaderID FROM [__mj_BizAppsOrders].[vwPaymentLines] WHERE OrderHeaderID = '${this.record.ID}')`,
             ResultType: 'entity_object',
         };
     }
