@@ -9,7 +9,7 @@ COUNT=0
 
 echo "::notice::Validating migration file naming conventions..."
 
-for file in $(find "$MIGRATION_DIR" -name "V*.sql" -type f 2>/dev/null); do
+for file in $(find "$MIGRATION_DIR" -maxdepth 1 -name "V*.sql" -type f 2>/dev/null); do
   COUNT=$((COUNT + 1))
   basename=$(basename "$file")
 
