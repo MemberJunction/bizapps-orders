@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB12).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB15).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -19,7 +19,10 @@
  *   SB9   SubscriberScope=Organization rejects an order that has no customer organization
  *   SB10  recognition entries anchor to the SUBSCRIPTION TERM, not the order line (D46)
  *   SB11  RecognitionCadence=Quarterly yields 4 slices a year, not 12
- *   SB12  the order line's service period is overwritten by the term's computed window
+ *   SB12  a term start STATED on the line is honored, and the type computes the end from it
+ *   SB13  a stated start in the future defers the term and every recognition entry with it
+ *   SB14  each subscription line on one order carries its own term start
+ *   SB15  a renewal ignores a stated start and continues where existing coverage ends
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -45,6 +48,12 @@ import { ConfirmOrder, type OrderSpec } from '../order-builder.js';
 
 /** Mid-year on purpose: every anchored type must then produce a PARTIAL first term. */
 const JULY_1 = new Date('2026-07-01T00:00:00');
+
+/**
+ * The booking date the term-start checks turn on (D-TERMSTART): late in the month, so a term
+ * derived from it is visibly wrong whenever the agreement says coverage starts on the 1st.
+ */
+const BOOKED_AUG_27 = new Date('2026-08-27T00:00:00');
 
 interface TermRow {
     ID: string;
@@ -89,6 +98,31 @@ async function termsForOrder(ctx: IntegrationCheckContext, orderID: string): Pro
 }
 
 const isoDate = (v: string | Date) => new Date(v).toISOString().slice(0, 10);
+
+interface EntryRow {
+    EntryType: string;
+    EffectiveDate: string;
+}
+
+/**
+ * Every journal entry this order produced — the booking entry, whose origin is the line, and the
+ * recognition entries, whose origin is the term (D46). Both are needed together here: the point
+ * of a stated term start is that these two sets carry DIFFERENT dates.
+ */
+async function entriesForOrder(ctx: IntegrationCheckContext, orderID: string): Promise<EntryRow[]> {
+    return TxQuery<EntryRow>(
+        ctx,
+        `SELECT (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType,
+                je.EffectiveDate
+         FROM ${ACCT_SCHEMA}.vwJournalEntries je
+         WHERE je.LinkedRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}')
+            OR je.LinkedRecordID IN (
+                 SELECT st.ID FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+                 JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+                 WHERE ol.OrderHeaderID = '${orderID}')
+         ORDER BY je.EffectiveDate`,
+    );
+}
 
 export const SubscriptionChecks: NamedCheck[] = [
     {
@@ -422,39 +456,194 @@ export const SubscriptionChecks: NamedCheck[] = [
     },
     {
         Id: 'subscriptions.SB12',
-        Name: "SB12: the order line's service period is overwritten by the term's computed window",
+        Name: 'SB12: a term start stated on the line is honored, and the type computes the end from it',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
                 const f = Fx();
-                // Deliberately supply a WRONG service period. For a subscription line the term is
-                // authoritative — otherwise a user could type a window that disagrees with the
-                // coverage they actually bought, and revenue would follow the typo.
+                // THE CASE THIS BUNDLE EXISTS FOR (D-TERMSTART). An order booked 8/27 selling a
+                // membership the agreement says runs 8/1-7/31. Before this rule the term was forced
+                // onto the order date and recognition began in the wrong month; the stated dates
+                // were read by nobody and overwritten twice.
+                //
+                // Note the stated END is deliberately absurd: term length belongs to the type, and
+                // a stated end has no rule to reconcile it against, so it must be ignored while the
+                // stated START is obeyed.
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
-                    OrderDate: JULY_1,
+                    OrderDate: BOOKED_AUG_27,
                     BillToOrganizationID: f.Customers.OrganizationID,
                     Lines: [
                         {
-                            ProductID: f.Products.SubCalendar,
+                            ProductID: f.Products.SubRolling,
                             Quantity: 1,
                             UnitPrice: 1200,
-                            ServicePeriodStart: '2030-01-01',
+                            ServicePeriodStart: '2026-08-01',
                             ServicePeriodEnd: '2030-12-31',
                         },
                     ],
                 });
                 Assert(result.Saved, `confirm failed: ${result.Message}`);
-                const [term] = await termsForOrder(ctx, result.Order.ID as string);
 
+                const [term] = await termsForOrder(ctx, result.Order.ID as string);
+                AssertEqual(isoDate(term.StartDate), '2026-08-01', 'the term starts on the stated date');
+                AssertEqual(isoDate(term.EndDate), '2027-07-31', 'twelve months measured from the stated start');
+
+                // The line ends up holding the SETTLED term, which here begins on the very date
+                // that was typed. The stated 2030 end is gone.
                 const line = await TxOne<{ ServicePeriodStart: string; ServicePeriodEnd: string }>(
                     ctx,
                     `SELECT ServicePeriodStart, ServicePeriodEnd FROM ${ORDERS_SCHEMA}.OrderLine
                      WHERE OrderHeaderID = '${result.Order.ID}'`,
                 );
-                AssertEqual(isoDate(line.ServicePeriodStart), isoDate(term.StartDate), 'line start follows the term');
-                AssertEqual(isoDate(line.ServicePeriodEnd), isoDate(term.EndDate), 'line end follows the term');
-                AssertEqual(isoDate(line.ServicePeriodEnd), '2026-12-31', 'the typed 2030 window was discarded');
+                AssertEqual(isoDate(line.ServicePeriodStart), isoDate(term.StartDate), 'line start equals the term');
+                AssertEqual(isoDate(line.ServicePeriodEnd), isoDate(term.EndDate), 'line end equals the term');
+
+                // THE BOOKING DATE IS UNTOUCHED. This is the whole point of separating the two
+                // facts: the sale was booked 8/27 and the ledger must still say so, while the
+                // revenue is earned across the term that starts 8/1.
+                const entries = await entriesForOrder(ctx, result.Order.ID as string);
+                const booking = entries.find((e) => e.EntryType === 'OrderBooking');
+                Assert(!!booking, 'the order booked a journal entry');
+                AssertEqual(isoDate(booking!.EffectiveDate), '2026-08-27', 'booking entry keeps the ORDER date');
+
+                const releases = entries.filter((e) => e.EntryType === 'RevenueRecognition');
+                AssertEqual(releases.length, 12, 'monthly recognition across the term');
+                AssertEqual(
+                    isoDate(releases[0].EffectiveDate),
+                    '2026-08-01',
+                    'recognition starts in the month the TERM starts',
+                );
+            }),
+    },
+    {
+        Id: 'subscriptions.SB13',
+        Name: 'SB13: a stated term start in the future defers the term and every recognition entry',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // The other direction, and the one with a real accounting consequence: nothing may
+                // be recognized before coverage begins. A term forced onto the 8/27 order date
+                // would have earned August revenue for a membership that starts in September.
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: BOOKED_AUG_27,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [
+                        {
+                            ProductID: f.Products.SubRolling,
+                            Quantity: 1,
+                            UnitPrice: 1200,
+                            ServicePeriodStart: '2026-09-01',
+                        },
+                    ],
+                });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const [term] = await termsForOrder(ctx, result.Order.ID as string);
+                AssertEqual(isoDate(term.StartDate), '2026-09-01', 'term start');
+                AssertEqual(isoDate(term.EndDate), '2027-08-31', 'term end');
+
+                const entries = await entriesForOrder(ctx, result.Order.ID as string);
+                const booking = entries.find((e) => e.EntryType === 'OrderBooking');
+                AssertEqual(isoDate(booking!.EffectiveDate), '2026-08-27', 'booking entry keeps the ORDER date');
+
+                const early = entries
+                    .filter((e) => e.EntryType === 'RevenueRecognition')
+                    .filter((e) => isoDate(e.EffectiveDate) < '2026-09-01');
+                AssertEqual(early.length, 0, 'no revenue is recognized before coverage begins');
+            }),
+    },
+    {
+        Id: 'subscriptions.SB14',
+        Name: 'SB14: each subscription line on one order carries its own term start',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // Per-LINE, not per-order. One order can sell two memberships that begin on
+                // different dates, and a rule keyed to the order date cannot express that at all.
+                // The third line states nothing and must still derive from the order date, so this
+                // also proves the default and an override coexist on one confirm.
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: BOOKED_AUG_27,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [
+                        {
+                            ProductID: f.Products.SubRolling,
+                            Quantity: 1,
+                            UnitPrice: 1200,
+                            ServicePeriodStart: '2026-08-01',
+                        },
+                        {
+                            ProductID: f.Products.SubMonthly,
+                            Quantity: 1,
+                            UnitPrice: 100,
+                            ServicePeriodStart: '2027-01-01',
+                        },
+                        { ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 900 },
+                    ],
+                });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const rows = await TxQuery<{ ProductID: string; StartDate: string }>(
+                    ctx,
+                    `SELECT ol.ProductID, st.StartDate
+                     FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+                     JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+                     WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+                );
+                AssertEqual(rows.length, 3, 'one term per subscription line');
+
+                const startFor = (productID: string) =>
+                    isoDate(rows.find((r) => SameID(r.ProductID, productID))!.StartDate);
+                AssertEqual(startFor(f.Products.SubRolling), '2026-08-01', 'line 1 honors its own start');
+                AssertEqual(startFor(f.Products.SubMonthly), '2027-01-01', 'line 2 honors a different start');
+                AssertEqual(
+                    startFor(f.Products.SubFiscal),
+                    '2026-08-27',
+                    'line 3 states none and still derives from the order date',
+                );
+            }),
+    },
+    {
+        Id: 'subscriptions.SB15',
+        Name: 'SB15: a renewal still begins the day after existing coverage, whatever start it states',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const first = await buySubscription(ctx, 'SubRolling', 1200);
+                Assert(first.Saved, `first confirm failed: ${first.Message}`);
+                const [term1] = await termsForOrder(ctx, first.Order.ID as string);
+                AssertEqual(isoDate(term1.EndDate), '2027-06-30', 'the term being renewed');
+
+                // Coverage may neither overlap nor gap, so the extension has to start where the
+                // existing term ends — a stated start cannot move it, and the confirm must NOT be
+                // refused over a field the customer never sees.
+                const renewal = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: BOOKED_AUG_27,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [
+                        {
+                            ProductID: f.Products.SubRolling,
+                            Quantity: 1,
+                            UnitPrice: 1200,
+                            RenewsSubscriptionID: term1.SubscriptionID,
+                            ServicePeriodStart: '2026-08-01',
+                        },
+                    ],
+                });
+                Assert(renewal.Saved, `renewal confirm failed: ${renewal.Message}`);
+
+                const [term2] = await termsForOrder(ctx, renewal.Order.ID as string);
+                AssertEqual(Number(term2.TermNumber), 2, 'the renewal is term 2 of the same subscription');
+                Assert(SameID(term2.SubscriptionID, term1.SubscriptionID), 'same subscription');
+                AssertEqual(isoDate(term2.StartDate), '2027-07-01', 'the day after existing coverage ends');
+                AssertEqual(isoDate(term2.EndDate), '2028-06-30', 'a full term from there');
             }),
     },
 ];
