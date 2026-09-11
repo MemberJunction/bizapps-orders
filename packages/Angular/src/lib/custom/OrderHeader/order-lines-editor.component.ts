@@ -605,7 +605,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const rv = new RunView();
         const res = await rv.RunView<{ Authorization: string; Type: string }>({
             EntityName: 'MJ: Authorization Roles',
-            ExtraFilter: `RoleID IN (${quoted}) AND Type LIKE 'Allow%' AND Authorization LIKE 'MJ.BizApps.Orders.Price.Override%'`,
+            // [Authorization] must be bracketed: it is a RESERVED T-SQL keyword, so an unbracketed
+            // reference makes SQL Server reject the whole statement with "Incorrect syntax near
+            // the keyword 'Authorization'" — the select list brackets it, this filter did not.
+            ExtraFilter: `[RoleID] IN (${quoted}) AND [Type] LIKE 'Allow%' AND [Authorization] LIKE 'MJ.BizApps.Orders.Price.Override%'`,
             ResultType: 'simple',
         });
         const names = (res.Success ? res.Results : [])
