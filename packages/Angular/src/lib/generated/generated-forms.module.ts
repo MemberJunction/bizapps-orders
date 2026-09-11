@@ -32,15 +32,15 @@ import { mjBizAppsOrdersOrderChargeFormComponent } from "./Entities/mjBizAppsOrd
 import { mjBizAppsOrdersOrderCompanyPolicyFormComponent } from "./Entities/mjBizAppsOrdersOrderCompanyPolicy/mjbizappsordersordercompanypolicy.form.component";
 import { mjBizAppsOrdersOrderHeaderFormComponent } from "./Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component";
 import { mjBizAppsOrdersOrderLineDimensionFormComponent } from "./Entities/mjBizAppsOrdersOrderLineDimension/mjbizappsordersorderlinedimension.form.component";
-import { mjBizAppsOrdersOrderLinePriceComponentFormComponent } from "./Entities/mjBizAppsOrdersOrderLinePriceComponent/mjbizappsordersorderlinepricecomponent.form.component";
 import { mjBizAppsOrdersOrderLineFormComponent } from "./Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component";
+import { mjBizAppsOrdersOrderLinePriceComponentFormComponent } from "./Entities/mjBizAppsOrdersOrderLinePriceComponent/mjbizappsordersorderlinepricecomponent.form.component";
 import { mjBizAppsOrdersOrderSequenceFormComponent } from "./Entities/mjBizAppsOrdersOrderSequence/mjbizappsordersordersequence.form.component";
 import { mjBizAppsOrdersPaymentDetailFormComponent } from "./Entities/mjBizAppsOrdersPaymentDetail/mjbizappsorderspaymentdetail.form.component";
 import { mjBizAppsOrdersPaymentHeaderFormComponent } from "./Entities/mjBizAppsOrdersPaymentHeader/mjbizappsorderspaymentheader.form.component";
 import { mjBizAppsOrdersPaymentIntentFormComponent } from "./Entities/mjBizAppsOrdersPaymentIntent/mjbizappsorderspaymentintent.form.component";
 import { mjBizAppsOrdersPaymentLineFormComponent } from "./Entities/mjBizAppsOrdersPaymentLine/mjbizappsorderspaymentline.form.component";
-import { mjBizAppsOrdersPaymentProviderTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentProviderType/mjbizappsorderspaymentprovidertype.form.component";
 import { mjBizAppsOrdersPaymentProviderFormComponent } from "./Entities/mjBizAppsOrdersPaymentProvider/mjbizappsorderspaymentprovider.form.component";
+import { mjBizAppsOrdersPaymentProviderTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentProviderType/mjbizappsorderspaymentprovidertype.form.component";
 import { mjBizAppsOrdersPaymentSequenceFormComponent } from "./Entities/mjBizAppsOrdersPaymentSequence/mjbizappsorderspaymentsequence.form.component";
 import { mjBizAppsOrdersPaymentTermsTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentTermsType/mjbizappsorderspaymenttermstype.form.component";
 import { mjBizAppsOrdersPaymentTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentType/mjbizappsorderspaymenttype.form.component";
@@ -50,83 +50,29 @@ import { mjBizAppsOrdersPriceTierFormComponent } from "./Entities/mjBizAppsOrder
 import { mjBizAppsOrdersProductBundleItemFormComponent } from "./Entities/mjBizAppsOrdersProductBundleItem/mjbizappsordersproductbundleitem.form.component";
 import { mjBizAppsOrdersProductCategoryFormComponent } from "./Entities/mjBizAppsOrdersProductCategory/mjbizappsordersproductcategory.form.component";
 import { mjBizAppsOrdersProductEntitlementFormComponent } from "./Entities/mjBizAppsOrdersProductEntitlement/mjbizappsordersproductentitlement.form.component";
+import { mjBizAppsOrdersProductFormComponent } from "./Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component";
 import { mjBizAppsOrdersProductPriceFormComponent } from "./Entities/mjBizAppsOrdersProductPrice/mjbizappsordersproductprice.form.component";
 import { mjBizAppsOrdersProductTypeFormComponent } from "./Entities/mjBizAppsOrdersProductType/mjbizappsordersproducttype.form.component";
-import { mjBizAppsOrdersProductFormComponent } from "./Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component";
 import { mjBizAppsOrdersPromotionCodeFormComponent } from "./Entities/mjBizAppsOrdersPromotionCode/mjbizappsorderspromotioncode.form.component";
+import { mjBizAppsOrdersPromotionFormComponent } from "./Entities/mjBizAppsOrdersPromotion/mjbizappsorderspromotion.form.component";
 import { mjBizAppsOrdersPromotionTargetFormComponent } from "./Entities/mjBizAppsOrdersPromotionTarget/mjbizappsorderspromotiontarget.form.component";
 import { mjBizAppsOrdersPromotionTypeFormComponent } from "./Entities/mjBizAppsOrdersPromotionType/mjbizappsorderspromotiontype.form.component";
-import { mjBizAppsOrdersPromotionFormComponent } from "./Entities/mjBizAppsOrdersPromotion/mjbizappsorderspromotion.form.component";
 import { mjBizAppsOrdersRevenueRecognitionTypeFormComponent } from "./Entities/mjBizAppsOrdersRevenueRecognitionType/mjbizappsordersrevenuerecognitiontype.form.component";
 import { mjBizAppsOrdersSalesAuthorityFormComponent } from "./Entities/mjBizAppsOrdersSalesAuthority/mjbizappsorderssalesauthority.form.component";
 import { mjBizAppsOrdersSalesRuleFormComponent } from "./Entities/mjBizAppsOrdersSalesRule/mjbizappsorderssalesrule.form.component";
 import { mjBizAppsOrdersStoredValueAccountFormComponent } from "./Entities/mjBizAppsOrdersStoredValueAccount/mjbizappsordersstoredvalueaccount.form.component";
 import { mjBizAppsOrdersStoredValueTransactionFormComponent } from "./Entities/mjBizAppsOrdersStoredValueTransaction/mjbizappsordersstoredvaluetransaction.form.component";
 import { mjBizAppsOrdersSubscriptionEventFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionEvent/mjbizappsorderssubscriptionevent.form.component";
+import { mjBizAppsOrdersSubscriptionFormComponent } from "./Entities/mjBizAppsOrdersSubscription/mjbizappsorderssubscription.form.component";
 import { mjBizAppsOrdersSubscriptionSequenceFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionSequence/mjbizappsorderssubscriptionsequence.form.component";
 import { mjBizAppsOrdersSubscriptionTermFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionTerm/mjbizappsorderssubscriptionterm.form.component";
 import { mjBizAppsOrdersSubscriptionTypeFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionType/mjbizappsorderssubscriptiontype.form.component";
-import { mjBizAppsOrdersSubscriptionFormComponent } from "./Entities/mjBizAppsOrdersSubscription/mjbizappsorderssubscription.form.component";
    
 
 @NgModule({
 declarations: [
-    mjBizAppsOrdersChargeTypeFormComponent,
-    mjBizAppsOrdersCheckoutSessionFormComponent,
-    mjBizAppsOrdersCheckoutWidgetDistributionFormComponent,
-    mjBizAppsOrdersCheckoutWidgetFormComponent,
-    mjBizAppsOrdersCustomerPaymentMethodFormComponent,
-    mjBizAppsOrdersCustomerPaymentTermsFormComponent,
-    mjBizAppsOrdersCustomerTaxExemptionFormComponent,
-    mjBizAppsOrdersEntitlementGrantFormComponent,
-    mjBizAppsOrdersEventOrderLineFormComponent,
-    mjBizAppsOrdersEventProductFormComponent,
-    mjBizAppsOrdersOrderAdjustmentAllocationFormComponent,
-    mjBizAppsOrdersOrderAdjustmentFormComponent,
-    mjBizAppsOrdersOrderChargeAllocationFormComponent,
-    mjBizAppsOrdersOrderChargeFormComponent,
-    mjBizAppsOrdersOrderCompanyPolicyFormComponent,
-    mjBizAppsOrdersOrderHeaderFormComponent,
-    mjBizAppsOrdersOrderLineDimensionFormComponent,
-    mjBizAppsOrdersOrderLinePriceComponentFormComponent,
-    mjBizAppsOrdersOrderLineFormComponent,
-    mjBizAppsOrdersOrderSequenceFormComponent],
-imports: [
-    CommonModule,
-    FormsModule,
-    BaseFormsModule,
-    EntityViewerModule,
-    LinkDirectivesModule
+    mjBizAppsOrdersEventOrderLineFormComponent
 ],
-exports: [
-]
-})
-export class GeneratedForms_SubModule_0 { }
-    
-
-
-@NgModule({
-declarations: [
-    mjBizAppsOrdersPaymentDetailFormComponent,
-    mjBizAppsOrdersPaymentHeaderFormComponent,
-    mjBizAppsOrdersPaymentIntentFormComponent,
-    mjBizAppsOrdersPaymentLineFormComponent,
-    mjBizAppsOrdersPaymentProviderTypeFormComponent,
-    mjBizAppsOrdersPaymentProviderFormComponent,
-    mjBizAppsOrdersPaymentSequenceFormComponent,
-    mjBizAppsOrdersPaymentTermsTypeFormComponent,
-    mjBizAppsOrdersPaymentTypeFormComponent,
-    mjBizAppsOrdersPriceListAssignmentFormComponent,
-    mjBizAppsOrdersPriceListFormComponent,
-    mjBizAppsOrdersPriceTierFormComponent,
-    mjBizAppsOrdersProductBundleItemFormComponent,
-    mjBizAppsOrdersProductCategoryFormComponent,
-    mjBizAppsOrdersProductEntitlementFormComponent,
-    mjBizAppsOrdersProductPriceFormComponent,
-    mjBizAppsOrdersProductTypeFormComponent,
-    mjBizAppsOrdersProductFormComponent,
-    mjBizAppsOrdersPromotionCodeFormComponent,
-    mjBizAppsOrdersPromotionTargetFormComponent],
 imports: [
     CommonModule,
     FormsModule,
@@ -143,18 +89,8 @@ export class GeneratedForms_SubModule_1 { }
 
 @NgModule({
 declarations: [
-    mjBizAppsOrdersPromotionTypeFormComponent,
-    mjBizAppsOrdersPromotionFormComponent,
-    mjBizAppsOrdersRevenueRecognitionTypeFormComponent,
-    mjBizAppsOrdersSalesAuthorityFormComponent,
-    mjBizAppsOrdersSalesRuleFormComponent,
-    mjBizAppsOrdersStoredValueAccountFormComponent,
-    mjBizAppsOrdersStoredValueTransactionFormComponent,
-    mjBizAppsOrdersSubscriptionEventFormComponent,
-    mjBizAppsOrdersSubscriptionSequenceFormComponent,
-    mjBizAppsOrdersSubscriptionTermFormComponent,
-    mjBizAppsOrdersSubscriptionTypeFormComponent,
-    mjBizAppsOrdersSubscriptionFormComponent],
+    mjBizAppsOrdersEntitlementGrantFormComponent
+],
 imports: [
     CommonModule,
     FormsModule,
@@ -171,11 +107,492 @@ export class GeneratedForms_SubModule_2 { }
 
 @NgModule({
 declarations: [
+    mjBizAppsOrdersCheckoutSessionFormComponent,
+    mjBizAppsOrdersPromotionCodeFormComponent
 ],
 imports: [
-    GeneratedForms_SubModule_0,
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_3 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersOrderSequenceFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_4 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersCustomerPaymentMethodFormComponent,
+    mjBizAppsOrdersPaymentDetailFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_6 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersPromotionTargetFormComponent,
+    mjBizAppsOrdersStoredValueTransactionFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_7 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersEventProductFormComponent,
+    mjBizAppsOrdersSubscriptionEventFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_10 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersChargeTypeFormComponent,
+    mjBizAppsOrdersPaymentLineFormComponent,
+    mjBizAppsOrdersPriceListAssignmentFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_11 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersOrderCompanyPolicyFormComponent,
+    mjBizAppsOrdersPriceListFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_12 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersCheckoutWidgetDistributionFormComponent,
+    mjBizAppsOrdersSalesRuleFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_13 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersSubscriptionSequenceFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_15 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersSalesAuthorityFormComponent,
+    mjBizAppsOrdersSubscriptionFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_16 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersPaymentHeaderFormComponent,
+    mjBizAppsOrdersPaymentProviderTypeFormComponent,
+    mjBizAppsOrdersProductCategoryFormComponent,
+    mjBizAppsOrdersSubscriptionTermFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_18 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersCheckoutWidgetFormComponent,
+    mjBizAppsOrdersOrderChargeFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_19 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersOrderAdjustmentAllocationFormComponent,
+    mjBizAppsOrdersOrderHeaderFormComponent,
+    mjBizAppsOrdersPaymentTermsTypeFormComponent,
+    mjBizAppsOrdersPriceTierFormComponent,
+    mjBizAppsOrdersPromotionFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_20 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersOrderLineFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_21 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersProductTypeFormComponent,
+    mjBizAppsOrdersRevenueRecognitionTypeFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_22 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersProductPriceFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_23 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersSubscriptionTypeFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_24 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersOrderLineDimensionFormComponent,
+    mjBizAppsOrdersProductEntitlementFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_25 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersPaymentProviderFormComponent,
+    mjBizAppsOrdersPaymentSequenceFormComponent,
+    mjBizAppsOrdersStoredValueAccountFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_26 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersProductBundleItemFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_27 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersCustomerPaymentTermsFormComponent,
+    mjBizAppsOrdersPromotionTypeFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_28 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersOrderChargeAllocationFormComponent,
+    mjBizAppsOrdersOrderLinePriceComponentFormComponent,
+    mjBizAppsOrdersPaymentTypeFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_29 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersOrderAdjustmentFormComponent,
+    mjBizAppsOrdersProductFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_30 { }
+    
+
+
+@NgModule({
+declarations: [
+    mjBizAppsOrdersCustomerTaxExemptionFormComponent,
+    mjBizAppsOrdersPaymentIntentFormComponent
+],
+imports: [
+    CommonModule,
+    FormsModule,
+    BaseFormsModule,
+    EntityViewerModule,
+    LinkDirectivesModule
+],
+exports: [
+]
+})
+export class GeneratedForms_SubModule_31 { }
+    
+
+
+@NgModule({
+declarations: [
+],
+imports: [
     GeneratedForms_SubModule_1,
-    GeneratedForms_SubModule_2
+    GeneratedForms_SubModule_2,
+    GeneratedForms_SubModule_3,
+    GeneratedForms_SubModule_4,
+    GeneratedForms_SubModule_6,
+    GeneratedForms_SubModule_7,
+    GeneratedForms_SubModule_10,
+    GeneratedForms_SubModule_11,
+    GeneratedForms_SubModule_12,
+    GeneratedForms_SubModule_13,
+    GeneratedForms_SubModule_15,
+    GeneratedForms_SubModule_16,
+    GeneratedForms_SubModule_18,
+    GeneratedForms_SubModule_19,
+    GeneratedForms_SubModule_20,
+    GeneratedForms_SubModule_21,
+    GeneratedForms_SubModule_22,
+    GeneratedForms_SubModule_23,
+    GeneratedForms_SubModule_24,
+    GeneratedForms_SubModule_25,
+    GeneratedForms_SubModule_26,
+    GeneratedForms_SubModule_27,
+    GeneratedForms_SubModule_28,
+    GeneratedForms_SubModule_29,
+    GeneratedForms_SubModule_30,
+    GeneratedForms_SubModule_31
 ]
 })
 export class GeneratedFormsModule { }

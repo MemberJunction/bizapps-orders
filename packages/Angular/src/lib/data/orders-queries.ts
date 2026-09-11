@@ -44,7 +44,7 @@
  */
 import { Metadata, RunView, type RunViewParams, type UserInfo } from '@memberjunction/core';
 import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
-import { IsBefore, LoadOrdersEngine, OrdersEngine, Today, type DateCell } from '@mj-biz-apps/orders-entities';
+import { IsBefore, LoadOrdersEngine, OrdersEngine, Today, ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersCustomerTaxExemptionEntity,
@@ -65,6 +65,7 @@ import type {
     mjBizAppsOrdersSubscriptionEventEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
 } from '@mj-biz-apps/orders-entities';
+import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from './entity-names';
 
 /** Ids reach filter strings as SQL text, so they are shape-checked first. */
@@ -466,36 +467,174 @@ export async function GetOrderLineIDs(orderHeaderID: string, user?: UserInfo): P
 
 /* ── The order's consequences: what it booked, and what it started ─────────────
  *
- * Both tabs render through `mj-entity-data-grid` (@memberjunction/ng-entity-viewer), which takes a
- * `RunViewParams` and does its own loading, paging and column generation from entity metadata. So
- * the job here is NOT to fetch and reshape rows — it is to hand the grid the right question.
+ * The subscriptions tab renders through `mj-entity-data-grid` (@memberjunction/ng-entity-viewer),
+ * which takes a `RunViewParams` and does its own loading, paging and column generation — so the job
+ * for that one is NOT to fetch and reshape rows, it is to hand the grid the right question. A
+ * subscription records the line that brought it into existence (`OrderLineID`, D39/D40), so it is
+ * keyed on the order's LINES and an order with no lines can have none.
  *
- * BOTH ARE KEYED ON THE ORDER'S LINES, not the order:
- *   · a journal entry points at the ORDER LINE that caused it (`LinkedRecordID`, D25) — one entry
- *     per line, per company;
- *   · a subscription records the line that brought it into existence (`OrderLineID`, D39/D40).
- * There is no column on either that names the order header, which is why the line ids come first and
- * why an order with no lines can have neither.
+ * The accounting tab used to work the same way and no longer can: a journal entry names the one
+ * record that caused it (`LinkedRecordID`, D25), and for a single order that is four different
+ * kinds of record. See the section below.
  */
 
-/**
- * What this order booked into the ledger, as grid params.
+/* ── The order's accounting tab: origins, dates, and the gross rollup ─────────
  *
- * Newest first: a corrected or reversed order accumulates entries, and the one that explains the
- * current state is the most recent.
+ * THE BUG THIS SHAPE EXISTS TO PREVENT (golive #183). The rollup used to fetch journals for the
+ * ORDER LINES only, throw away the dates, and hand the lines to `NetLines`. `NetLines` nets debits
+ * against credits per (company × account × dimensions) and DROPS any group that comes out at zero —
+ * correct for building a GL batch, wrong for a display. On an event order the November recognition
+ * debit cancelled the booking credit, so the Deferred Revenue row vanished and the screen read
+ * `Dr AR 895 / Cr Sales 895`: revenue, on a screen, for an event that has not happened.
  *
- * @returns Params for `mj-entity-data-grid`, or **null** when the order has no lines. Null means "do
- *          not load": an `IN ()` with nothing in it is not valid SQL, and a filter that matches
- *          everything would show another order's ledger.
+ * So this section keeps debits and credits apart ({@link GrossLines}), keeps every group, and reads
+ * the dates it needs to answer "as of when?" — and `NetLines` is left exactly as it is, because the
+ * server's batch engine shares it and netting is right there.
+ *
+ * ONE LOAD, THREE VIEWS. {@link LoadOrderJournalData} fetches once; {@link BuildOrderJournalRollup}
+ * and {@link BuildOrderJournalEntryRows} are pure functions over that snapshot. Rolled up and By
+ * line therefore cannot disagree about what is included, and moving the As-of date re-renders
+ * without another round trip.
  */
-export function JournalEntryViewParams(orderLineIDs: string[]): RunViewParams | null {
-    const list = uuidList(orderLineIDs);
-    if (!list) return null;
+
+/** Which date decides whether an entry is "in" — the entry's own, or its batch's GL date. */
+export type OrderJournalDateBasis = 'effective' | 'posting';
+
+/** The two controls above the accounting tab, shared by Rolled up and By line. */
+export interface OrderJournalViewOptions {
+    /** `YYYY-MM-DD` (or anything {@link ToISODate} reads), null/undefined for lifetime — the default. */
+    AsOf?: DateCell;
+    /** Defaults to `'effective'`. */
+    Basis?: OrderJournalDateBasis;
+}
+
+/**
+ * Every record whose journal entries belong to an order.
+ *
+ * A JE points at the ONE record that caused it (`LinkedRecordID`, D25), and for a single order that
+ * is four different kinds of record: the order line (booking, and an event's recognition entries),
+ * the subscription term (a membership's recognition entries — `OrderJournalEntryFactory.ts:435`
+ * picks the term over the line whenever there is one), the payment allocation line (Dr Cash / Cr AR,
+ * intercompany legs, refund reversals) and the payment header (the processing fee).
+ *
+ * Filtering on the lines alone — which is what the rollup and the By line grid both used to do —
+ * therefore misses every membership recognition entry and every payment entry on the order.
+ */
+export interface OrderJournalOrigins {
+    /** Ids to match `LinkedRecordID` against. Empty means "this order has no journals", never "all". */
+    IDs: string[];
+    /** Just the ledger side — order lines and their subscription terms. What rev-rec charts. */
+    LineAndTermIDs: string[];
+    /** Payment header id (lowercased) → how many OTHER orders that payment is also allocated to. */
+    SharedPaymentOrderCounts: Record<string, number>;
+}
+
+const NO_ORIGINS: OrderJournalOrigins = { IDs: [], LineAndTermIDs: [], SharedPaymentOrderCounts: {} };
+
+interface PaymentAllocationRow {
+    ID: string;
+    PaymentHeaderID: string;
+    OrderHeaderID: string | null;
+}
+
+/**
+ * How many OTHER orders each payment is allocated to. Pure.
+ *
+ * A payment's header entry (the processing fee) is one JE, and a payment can settle several orders.
+ * Andrew's call on #183 is to show it in FULL on each order and say so, rather than pro-rate a fee
+ * across orders and have four screens each showing a number that appears nowhere in the ledger.
+ *
+ * @param rows Allocation lines for the payments in question — every order, not just this one.
+ * @param orderHeaderID The order being displayed; it is not counted as one of the "other" orders.
+ */
+export function CountSharedPaymentOrders(
+    rows: Array<{ PaymentHeaderID?: string | null; OrderHeaderID?: string | null }>,
+    orderHeaderID: string,
+): Record<string, number> {
+    const mine = orderHeaderID.toLowerCase();
+    const others = new Map<string, Set<string>>();
+    for (const row of rows) {
+        const payment = (row.PaymentHeaderID ?? '').toLowerCase();
+        const order = (row.OrderHeaderID ?? '').toLowerCase();
+        if (!payment || !order || order === mine) continue;
+        const seen = others.get(payment) ?? new Set<string>();
+        seen.add(order);
+        others.set(payment, seen);
+    }
+    const counts: Record<string, number> = {};
+    for (const [payment, seen] of others) counts[payment] = seen.size;
+    return counts;
+}
+
+/**
+ * Resolve every origin whose journals belong to this order.
+ *
+ * Three reads, because there is no single column that names the order: terms hang off the lines,
+ * allocations name the order header, and the payment headers come from the allocations.
+ *
+ * @returns Empty ids when the order has no lines AND no payments — callers must treat that as
+ *          "nothing to show", never as an unfiltered query.
+ */
+export async function GetOrderJournalOrigins(
+    orderHeaderID: string,
+    orderLineIDs: string[],
+    user?: UserInfo,
+): Promise<OrderJournalOrigins> {
+    const lineList = uuidList(orderLineIDs);
+    const isOrder = UUID_PATTERN.test(orderHeaderID);
+    if (!lineList && !isOrder) return NO_ORIGINS;
+
+    const terms = lineList
+        ? await runRows<{ ID: string }>(
+              MJO_ENTITIES.SubscriptionTerm,
+              [`OrderLineID IN (${lineList})`],
+              'ID',
+              500,
+              user,
+              ['ID'],
+          )
+        : [];
+
+    const allocations = isOrder
+        ? await runRows<PaymentAllocationRow>(
+              MJO_ENTITIES.PaymentLine,
+              [`OrderHeaderID = '${orderHeaderID}'`],
+              'ID',
+              500,
+              user,
+              ['ID', 'PaymentHeaderID', 'OrderHeaderID'],
+          )
+        : [];
+
+    const paymentIDs = [
+        ...new Set(allocations.map((row) => row.PaymentHeaderID ?? '').filter((id) => UUID_PATTERN.test(id))),
+    ];
+
+    // Second pass over the SAME payments, this time unfiltered by order, to learn who else they pay.
+    const paymentList = uuidList(paymentIDs);
+    const siblings = paymentList
+        ? await runRows<PaymentAllocationRow>(
+              MJO_ENTITIES.PaymentLine,
+              [`PaymentHeaderID IN (${paymentList})`],
+              'ID',
+              1000,
+              user,
+              ['ID', 'PaymentHeaderID', 'OrderHeaderID'],
+          )
+        : [];
+
+    const isUUID = (id: string): boolean => UUID_PATTERN.test(id);
+    const LineAndTermIDs = [...orderLineIDs, ...terms.map((term) => term.ID)].filter(isUUID);
+    const IDs = [
+        ...LineAndTermIDs,
+        ...allocations.map((allocation) => allocation.ID),
+        ...paymentIDs,
+    ].filter(isUUID);
+
     return {
-        EntityName: MJO_ACCOUNTING_ENTITIES.JournalEntry,
-        ExtraFilter: `LinkedRecordID IN (${list})`,
-        OrderBy: '__mj_CreatedAt DESC',
-        ResultType: 'entity_object',
+        IDs,
+        LineAndTermIDs,
+        SharedPaymentOrderCounts: CountSharedPaymentOrders(siblings, orderHeaderID),
     };
 }
 
@@ -505,7 +644,7 @@ export interface OrderJournalDimension {
     Value: string;
 }
 
-/** One row of the display-only order journal (NetLines over every line JE). */
+/** One row of the display-only order journal — gross, so an account may carry BOTH columns. */
 export interface OrderJournalRollupRow {
     Key: string;
     CompanyID: string;
@@ -514,6 +653,7 @@ export interface OrderJournalRollupRow {
     AccountCode: string;
     AccountName: string;
     Dimensions: OrderJournalDimension[];
+    /** Which way the account nets. A gross row can still show a debit AND a credit. */
     Side: NetGroup['side'];
     Debit: number;
     Credit: number;
@@ -535,15 +675,42 @@ export interface OrderJournalRollup {
     TotalDebit: number;
     TotalCredit: number;
     JournalCount: number;
+    /** Entries the As-of date pushed out of view. */
+    ExcludedAfterAsOf: number;
+    /** Entries excluded on the posting-date basis because their batch is not Posted (or absent). */
+    ExcludedNotPosted: number;
+    /** One line per payment whose fee entry is also carried in full on other orders. */
+    SharedPaymentNotes: string[];
 }
 
-interface JournalHeaderRow {
+/** One stored journal entry, with the batch context By line shows next to it. */
+export interface OrderJournalEntryRow {
+    ID: string;
+    EntryNumber: string;
+    Company: string;
+    Description: string;
+    EffectiveDate: DateCell;
+    BatchNumber: string;
+    BatchStatus: string;
+    BatchPostingDate: DateCell;
+    Debit: number;
+    Credit: number;
+    /** >0 when this entry is a payment fee shown in full on this many other orders as well. */
+    SharedWithOtherOrders: number;
+}
+
+export interface JournalHeaderRow {
     ID: string;
     CompanyID: string;
     Company: string;
+    EntryNumber: string | null;
+    Description: string | null;
+    EffectiveDate: DateCell;
+    JournalEntryBatchID: string | null;
+    LinkedRecordID: string | null;
 }
 
-interface JournalLineRow {
+export interface JournalLineRow {
     ID: string;
     JournalEntryID: string;
     GLAccountID: string;
@@ -552,7 +719,7 @@ interface JournalLineRow {
     CreditAmount: number | null;
 }
 
-interface JournalLineDimRow {
+export interface JournalLineDimRow {
     JournalEntryLineID: string;
     DimensionID: string;
     DimensionValueID: string;
@@ -560,30 +727,194 @@ interface JournalLineDimRow {
     DimensionValue: string;
 }
 
-interface GLAccountRow {
+export interface JournalBatchRow {
+    ID: string;
+    JournalEntryBatchNumber: string | null;
+    Status: string | null;
+    PostingDate: DateCell;
+}
+
+export interface GLAccountRow {
     ID: string;
     Code: string;
     Name: string;
 }
 
-interface RollupLabels {
+export interface RollupLabels {
     Company: Record<string, string>;
     Account: Record<string, { Code: string; Name: string }>;
     Dimension: Record<string, string>;
     DimensionValue: Record<string, string>;
 }
 
-const EMPTY_ROLLUP: OrderJournalRollup = { Cards: [], TotalDebit: 0, TotalCredit: 0, JournalCount: 0 };
+/** Everything the accounting tab needs, fetched once and then filtered in memory. */
+export interface OrderJournalData {
+    Journals: JournalHeaderRow[];
+    Lines: JournalLineRow[];
+    Dims: JournalLineDimRow[];
+    Accounts: GLAccountRow[];
+    /** Batch id, lowercased → the batch. Entries with no batch are simply absent. */
+    Batches: Record<string, JournalBatchRow>;
+    /** Payment header id, lowercased → other orders sharing that payment's fee entry. */
+    SharedPaymentOrderCounts: Record<string, number>;
+}
+
+const EMPTY_DATA: OrderJournalData = {
+    Journals: [],
+    Lines: [],
+    Dims: [],
+    Accounts: [],
+    Batches: {},
+    SharedPaymentOrderCounts: {},
+};
+
+const EMPTY_ROLLUP: OrderJournalRollup = {
+    Cards: [],
+    TotalDebit: 0,
+    TotalCredit: 0,
+    JournalCount: 0,
+    ExcludedAfterAsOf: 0,
+    ExcludedNotPosted: 0,
+    SharedPaymentNotes: [],
+};
 
 /**
- * Turn NetLines groups into display rows. Pure — the form never nets itself.
+ * Fetch every journal behind an order, once.
  *
- * Preserves {@link NetLines} order (company, then every debit, then every credit).
- * Labels are looked up by lowercased id so SQL Server / PostgreSQL UUID casing cannot split a key.
+ * `EffectiveDate` and `JournalEntryBatchID` are on the select list deliberately: the old rollup read
+ * `['ID','CompanyID','Company']` and so had no way to answer "as of when", which is how a
+ * forward-dated recognition entry came to be silently folded into today's picture.
  */
-export function PresentOrderJournalRollup(groups: NetGroup[], labels: RollupLabels): OrderJournalRollupRow[] {
+export async function LoadOrderJournalData(
+    origins: OrderJournalOrigins,
+    user?: UserInfo,
+): Promise<OrderJournalData> {
+    const list = uuidList(origins.IDs);
+    if (!list) return EMPTY_DATA;
+
+    const Journals = await runRows<JournalHeaderRow>(
+        MJO_ACCOUNTING_ENTITIES.JournalEntry,
+        [`LinkedRecordID IN (${list})`],
+        'EffectiveDate',
+        500,
+        user,
+        ['ID', 'CompanyID', 'Company', 'EntryNumber', 'Description', 'EffectiveDate', 'JournalEntryBatchID', 'LinkedRecordID'],
+    );
+    if (Journals.length === 0) return { ...EMPTY_DATA, SharedPaymentOrderCounts: origins.SharedPaymentOrderCounts };
+
+    const { lines: Lines, dims: Dims } = await loadJournalLinesAndDims(Journals.map((j) => j.ID), user);
+    const Accounts = await loadGLAccounts(Lines.map((line) => line.GLAccountID), user);
+    const Batches = await loadJournalBatches(Journals.map((j) => j.JournalEntryBatchID), user);
+    return { Journals, Lines, Dims, Accounts, Batches, SharedPaymentOrderCounts: origins.SharedPaymentOrderCounts };
+}
+
+/** What the As-of date and the basis toggle left in, and what they took out. */
+export interface OrderJournalDateFilter {
+    Journals: JournalHeaderRow[];
+    ExcludedAfterAsOf: number;
+    ExcludedNotPosted: number;
+}
+
+/**
+ * Apply the As-of date and the date basis. Pure.
+ *
+ * On the **effective** basis an entry is dated by its own `EffectiveDate` — the subledger date — and
+ * every entry has one.
+ *
+ * On the **posting** basis an entry is dated by the `PostingDate` of the batch it belongs to, and
+ * only a `Posted` batch counts: an entry sitting in a Pending, Approved or Sent batch, or in no
+ * batch at all, has not reached the GL and so is excluded outright, As-of date or not.
+ */
+export function FilterOrderJournals(
+    data: OrderJournalData,
+    options: OrderJournalViewOptions = {},
+): OrderJournalDateFilter {
+    const asOf = options.AsOf ? ToISODate(options.AsOf) : null;
+    const posting = options.Basis === 'posting';
+    const result: OrderJournalDateFilter = { Journals: [], ExcludedAfterAsOf: 0, ExcludedNotPosted: 0 };
+
+    for (const journal of data.Journals) {
+        const batch = batchOf(data, journal);
+        if (posting && (batch?.Status ?? '') !== 'Posted') {
+            result.ExcludedNotPosted += 1;
+            continue;
+        }
+        const day = ToISODate(posting ? batch?.PostingDate : journal.EffectiveDate);
+        if (asOf && (day === null || day > asOf)) {
+            result.ExcludedAfterAsOf += 1;
+            continue;
+        }
+        result.Journals.push(journal);
+    }
+    return result;
+}
+
+/** One (company × GL account × dimension combo), with debits and credits kept apart. */
+export interface GrossGroup {
+    companyId: string;
+    glAccountId: string;
+    dims: NettableLine['dims'];
+    dimKey: string;
+    debit: number;
+    credit: number;
+    sourceLineCount: number;
+}
+
+/**
+ * The gross sibling of `NetLines`: same grouping, but debits and credits stay in their own columns
+ * and NO group is dropped. Pure.
+ *
+ * This is the actual fix for #183. `NetLines` collapses each group to one side and deletes anything
+ * that nets to zero, which is right for a GL batch and destructive for a display — an account that
+ * received money and then released it reads as if it was never involved. Here the same account keeps
+ * both figures, so the reader watches 895 arrive in Deferred Revenue and leave again.
+ */
+export function GrossLines(lines: NettableLine[]): GrossGroup[] {
+    const map = new Map<string, GrossGroup>();
+    for (const line of lines) {
+        const dims = [...line.dims].sort((a, b) => a.DimensionID.localeCompare(b.DimensionID));
+        const dimKey = dims.map((d) => `${d.DimensionID}:${d.DimensionValueID}`).join('|');
+        const key = `${line.companyId}#${line.glAccountId}#${dimKey}`;
+        let group = map.get(key);
+        if (!group) {
+            group = {
+                companyId: line.companyId,
+                glAccountId: line.glAccountId,
+                dims,
+                dimKey,
+                debit: 0,
+                credit: 0,
+                sourceLineCount: 0,
+            };
+            map.set(key, group);
+        }
+        group.debit += line.debit;
+        group.credit += line.credit;
+        group.sourceLineCount += 1;
+    }
+    return sortAsJournal([...map.values()]);
+}
+
+/** A journal lists every debit, then every credit, company by company. A both-sided row nets first. */
+function sortAsJournal(groups: GrossGroup[]): GrossGroup[] {
+    return [...groups].sort((a, b) => {
+        const byCompany = a.companyId.localeCompare(b.companyId);
+        if (byCompany !== 0) return byCompany;
+        const sideA = a.debit >= a.credit ? 0 : 1;
+        const sideB = b.debit >= b.credit ? 0 : 1;
+        if (sideA !== sideB) return sideA - sideB;
+        return a.glAccountId.localeCompare(b.glAccountId);
+    });
+}
+
+/**
+ * Turn grouped journal lines into display rows. Pure — the form never aggregates itself.
+ *
+ * Preserves the caller's order. Labels are looked up by lowercased id so SQL Server / PostgreSQL
+ * UUID casing cannot split a key.
+ */
+export function PresentOrderJournalRollup(groups: GrossGroup[], labels: RollupLabels): OrderJournalRollupRow[] {
     return groups.map((group) => {
-        const amount = Math.abs(group.net);
         const account = labels.Account[group.glAccountId.toLowerCase()];
         return {
             Key: `${group.companyId}#${group.glAccountId}#${group.dimKey}`,
@@ -593,15 +924,15 @@ export function PresentOrderJournalRollup(groups: NetGroup[], labels: RollupLabe
             AccountCode: account?.Code ?? '',
             AccountName: account?.Name || group.glAccountId,
             Dimensions: presentDimensions(group.dims, labels),
-            Side: group.side,
-            Debit: group.side === 'Debit' ? amount : 0,
-            Credit: group.side === 'Credit' ? amount : 0,
+            Side: group.debit >= group.credit ? 'Debit' : 'Credit',
+            Debit: group.debit,
+            Credit: group.credit,
             SourceLineCount: group.sourceLineCount,
         };
     });
 }
 
-/** Split a flat rollup into one card per company, keeping NetLines order inside each. */
+/** Split a flat rollup into one card per company, keeping the incoming order inside each. */
 export function GroupOrderJournalByCompany(rows: OrderJournalRollupRow[]): OrderJournalCard[] {
     const cards: OrderJournalCard[] = [];
     const index = new Map<string, OrderJournalCard>();
@@ -627,29 +958,167 @@ export function GroupOrderJournalByCompany(rows: OrderJournalRollupRow[]): Order
 }
 
 /**
- * The order-level journal: every line JE rolled up with {@link NetLines}.
+ * The order-level journal: every entry from every origin, gross, as of the chosen date and basis.
  *
- * This is a DISPLAY aggregation. Orders books one JE per line; there is no stored
- * "order journal" row.
+ * A DISPLAY aggregation. Orders books one JE per line (and per term, per allocation, per payment);
+ * there is no stored "order journal" row. Pure over {@link LoadOrderJournalData}'s snapshot.
  */
-export async function GetOrderJournalRollup(
-    orderLineIDs: string[],
-    user?: UserInfo,
-): Promise<OrderJournalRollup> {
-    const journals = await loadJournalsForOrderLines(orderLineIDs, user);
-    if (journals.length === 0) return EMPTY_ROLLUP;
+export function BuildOrderJournalRollup(
+    data: OrderJournalData,
+    options: OrderJournalViewOptions = {},
+): OrderJournalRollup {
+    const filtered = FilterOrderJournals(data, options);
+    if (filtered.Journals.length === 0) {
+        return {
+            ...EMPTY_ROLLUP,
+            ExcludedAfterAsOf: filtered.ExcludedAfterAsOf,
+            ExcludedNotPosted: filtered.ExcludedNotPosted,
+        };
+    }
 
-    const { lines, dims } = await loadJournalLinesAndDims(journals.map((j) => j.ID), user);
-    const accounts = await loadGLAccounts(lines.map((line) => line.GLAccountID), user);
-    const nettable = toNettableLines(journals, lines, dims);
-    const rows = PresentOrderJournalRollup(NetLines(nettable), rollupLabels(journals, lines, dims, accounts));
+    const kept = new Set(filtered.Journals.map((journal) => journal.ID.toLowerCase()));
+    const lines = data.Lines.filter((line) => kept.has(line.JournalEntryID.toLowerCase()));
+    const labels = rollupLabels(filtered.Journals, lines, data.Dims, data.Accounts);
+    const rows = PresentOrderJournalRollup(GrossLines(toNettableLines(filtered.Journals, lines, data.Dims)), labels);
     const cards = GroupOrderJournalByCompany(rows);
     return {
         Cards: cards,
         TotalDebit: cards.reduce((sum, card) => sum + card.TotalDebit, 0),
         TotalCredit: cards.reduce((sum, card) => sum + card.TotalCredit, 0),
-        JournalCount: journals.length,
+        JournalCount: filtered.Journals.length,
+        ExcludedAfterAsOf: filtered.ExcludedAfterAsOf,
+        ExcludedNotPosted: filtered.ExcludedNotPosted,
+        SharedPaymentNotes: sharedPaymentNotes(data, filtered.Journals),
     };
+}
+
+/**
+ * Every included entry, unnetted, with its batch context. Pure.
+ *
+ * Same snapshot and same filter as {@link BuildOrderJournalRollup}, which is the only way the two
+ * views can be guaranteed to agree about what is in scope.
+ */
+export function BuildOrderJournalEntryRows(
+    data: OrderJournalData,
+    options: OrderJournalViewOptions = {},
+): OrderJournalEntryRow[] {
+    const filtered = FilterOrderJournals(data, options);
+    const totals = new Map<string, { Debit: number; Credit: number }>();
+    for (const line of data.Lines) {
+        const key = line.JournalEntryID.toLowerCase();
+        const total = totals.get(key) ?? { Debit: 0, Credit: 0 };
+        total.Debit += line.DebitAmount ?? 0;
+        total.Credit += line.CreditAmount ?? 0;
+        totals.set(key, total);
+    }
+
+    return filtered.Journals.map((journal) => {
+        const batch = batchOf(data, journal);
+        const total = totals.get(journal.ID.toLowerCase());
+        return {
+            ID: journal.ID,
+            EntryNumber: journal.EntryNumber ?? '',
+            Company: journal.Company,
+            Description: journal.Description ?? '',
+            EffectiveDate: journal.EffectiveDate,
+            BatchNumber: batch?.JournalEntryBatchNumber ?? '',
+            BatchStatus: batch?.Status ?? '',
+            BatchPostingDate: batch?.PostingDate ?? null,
+            Debit: total?.Debit ?? 0,
+            Credit: total?.Credit ?? 0,
+            SharedWithOtherOrders: sharedCount(data, journal),
+        };
+    });
+}
+
+/**
+ * The one-line "what you are not seeing" note under the rollup, or null when nothing is hidden.
+ *
+ * @example ExcludedEntriesLabel(rollup, '2026-09-10') // '3 entries scheduled after 2026-09-10'
+ */
+export function ExcludedEntriesLabel(rollup: OrderJournalRollup, asOf?: DateCell): string | null {
+    const parts: string[] = [];
+    if (rollup.ExcludedAfterAsOf > 0) {
+        parts.push(`${plural(rollup.ExcludedAfterAsOf)} scheduled after ${ToISODate(asOf) ?? 'the As-of date'}`);
+    }
+    if (rollup.ExcludedNotPosted > 0) {
+        parts.push(`${plural(rollup.ExcludedNotPosted)} not yet posted`);
+    }
+    return parts.length ? parts.join(', ') : null;
+}
+
+function plural(count: number): string {
+    return `${count} ${count === 1 ? 'entry' : 'entries'}`;
+}
+
+function batchOf(data: OrderJournalData, journal: JournalHeaderRow): JournalBatchRow | undefined {
+    return journal.JournalEntryBatchID ? data.Batches[journal.JournalEntryBatchID.toLowerCase()] : undefined;
+}
+
+function sharedCount(data: OrderJournalData, journal: JournalHeaderRow): number {
+    return data.SharedPaymentOrderCounts[(journal.LinkedRecordID ?? '').toLowerCase()] ?? 0;
+}
+
+function sharedPaymentNotes(data: OrderJournalData, journals: JournalHeaderRow[]): string[] {
+    const notes: string[] = [];
+    for (const journal of journals) {
+        const others = sharedCount(data, journal);
+        if (others > 0) {
+            notes.push(
+                `${journal.EntryNumber || 'A payment fee entry'} is shared with ${others} other ` +
+                    `${others === 1 ? 'order' : 'orders'} and is shown here in full, not pro-rated.`,
+            );
+        }
+    }
+    return notes;
+}
+
+/**
+ * The recognition entries the Rev-Rec waterfall charts.
+ *
+ * Behaviour is unchanged from the copy that used to sit inline on the order form — #183 item 10 is
+ * "no change" to the waterfall. It moved here so it shares the ONE origin resolver instead of
+ * running its own subscription-term lookup, and so its two swallowed `catch {}` blocks could go.
+ *
+ * Fed line + term origins ONLY, deliberately: payment entries are not rev-rec, and the fallback on
+ * the last line would otherwise sweep them onto the chart whenever an order has no recognition
+ * entries at all.
+ */
+export async function LoadRevRecJournalEntries(
+    lineAndTermIDs: string[],
+    user?: UserInfo,
+): Promise<mjBizAppsAccountingJournalEntryEntity[]> {
+    const list = uuidList(lineAndTermIDs);
+    if (!list) return [];
+
+    const entries = await run<mjBizAppsAccountingJournalEntryEntity>(
+        MJO_ACCOUNTING_ENTITIES.JournalEntry,
+        [`LinkedRecordID IN (${list})`],
+        'EffectiveDate',
+        500,
+        user,
+    );
+    await Promise.all(entries.map((entry) => loadEntryLines(entry)));
+    const recognition = entries.filter(IsRecognitionEntry);
+    return recognition.length > 0 ? recognition : entries;
+}
+
+/** A recognition entry names itself, in either the description or the entry type. Pure. */
+export function IsRecognitionEntry(entry: { Description?: string | null; EntryType?: string | null }): boolean {
+    const description = (entry.Description || '').toLowerCase();
+    const type = (entry.EntryType || '').toLowerCase();
+    return description.includes('recognize') || type.includes('recognition');
+}
+
+async function loadEntryLines(entry: mjBizAppsAccountingJournalEntryEntity): Promise<void> {
+    if (!entry.Lines || typeof entry.Lines.Load !== 'function') return;
+    try {
+        await entry.Lines.Load();
+    } catch (error) {
+        // One entry's lines failing must not blank the whole chart — but it must not be silent
+        // either, which is what the bare `catch {}` this replaced did.
+        console.error(`[orders-queries] Could not load lines for journal entry ${entry.ID}:`, error);
+    }
 }
 
 /**
@@ -663,12 +1132,15 @@ export function BuildPaymentJournalFilter(payment: mjBizAppsOrdersPaymentHeaderE
         filters.push(`ID = '${payment.JournalEntryID}'`);
     }
     filters.push(`LinkedRecordID = '${payment.ID}'`);
-    filters.push(`LinkedRecordID IN (SELECT ID FROM [__mj_BizAppsOrders].[PaymentLine] WHERE PaymentHeaderID = '${payment.ID}')`);
+    filters.push(`LinkedRecordID IN (SELECT ID FROM [__mj_BizAppsOrders].[vwPaymentLines] WHERE PaymentHeaderID = '${payment.ID}')`);
     return filters.join(' OR ');
 }
 
 /**
  * Rollup of all journal entries produced by a payment and its line allocations.
+ *
+ * Still NETTED, deliberately: this is the payment form's own summary and #183 was about the ORDER
+ * rollup. `netToGross` is the adapter, not a behaviour change.
  */
 export async function GetPaymentJournalRollup(
     payment: mjBizAppsOrdersPaymentHeaderEntity,
@@ -689,9 +1161,11 @@ export async function GetPaymentJournalRollup(
     const { lines, dims } = await loadJournalLinesAndDims(journals.map((j) => j.ID), user);
     const accounts = await loadGLAccounts(lines.map((line) => line.GLAccountID), user);
     const nettable = toNettableLines(journals, lines, dims);
-    const rows = PresentOrderJournalRollup(NetLines(nettable), rollupLabels(journals, lines, dims, accounts));
+    const groups = NetLines(nettable).map(netToGross);
+    const rows = PresentOrderJournalRollup(groups, rollupLabels(journals, lines, dims, accounts));
     const cards = GroupOrderJournalByCompany(rows);
     return {
+        ...EMPTY_ROLLUP,
         Cards: cards,
         TotalDebit: cards.reduce((sum, card) => sum + card.TotalDebit, 0),
         TotalCredit: cards.reduce((sum, card) => sum + card.TotalCredit, 0),
@@ -699,24 +1173,25 @@ export async function GetPaymentJournalRollup(
     };
 }
 
-function presentDimensions(dims: NetGroup['dims'], labels: RollupLabels): OrderJournalDimension[] {
+/** A netted group, re-expressed in the gross row shape — one side populated, the other zero. */
+function netToGross(group: NetGroup): GrossGroup {
+    const amount = Math.abs(group.net);
+    return {
+        companyId: group.companyId,
+        glAccountId: group.glAccountId,
+        dims: group.dims,
+        dimKey: group.dimKey,
+        debit: group.side === 'Debit' ? amount : 0,
+        credit: group.side === 'Credit' ? amount : 0,
+        sourceLineCount: group.sourceLineCount,
+    };
+}
+
+function presentDimensions(dims: NettableLine['dims'], labels: RollupLabels): OrderJournalDimension[] {
     return dims.map((dim) => ({
         Name: labels.Dimension[dim.DimensionID.toLowerCase()] || dim.DimensionID,
         Value: labels.DimensionValue[dim.DimensionValueID.toLowerCase()] || dim.DimensionValueID,
     }));
-}
-
-async function loadJournalsForOrderLines(orderLineIDs: string[], user?: UserInfo): Promise<JournalHeaderRow[]> {
-    const list = uuidList(orderLineIDs);
-    if (!list) return [];
-    return runRows<JournalHeaderRow>(
-        MJO_ACCOUNTING_ENTITIES.JournalEntry,
-        [`LinkedRecordID IN (${list})`],
-        '__mj_CreatedAt DESC',
-        500,
-        user,
-        ['ID', 'CompanyID', 'Company'],
-    );
 }
 
 async function loadJournalLinesAndDims(
@@ -759,6 +1234,26 @@ async function loadGLAccounts(ids: string[], user?: UserInfo): Promise<GLAccount
         user,
         ['ID', 'Code', 'Name'],
     );
+}
+
+/** The batches the fetched entries belong to, keyed by lowercased id. Entries with no batch are absent. */
+async function loadJournalBatches(
+    ids: Array<string | null>,
+    user?: UserInfo,
+): Promise<Record<string, JournalBatchRow>> {
+    const list = uuidList(ids.filter((id): id is string => !!id));
+    if (!list) return {};
+    const rows = await runRows<JournalBatchRow>(
+        MJO_ACCOUNTING_ENTITIES.JournalEntryBatch,
+        [`ID IN (${list})`],
+        'PostingDate',
+        500,
+        user,
+        ['ID', 'JournalEntryBatchNumber', 'Status', 'PostingDate'],
+    );
+    const byID: Record<string, JournalBatchRow> = {};
+    for (const row of rows) byID[row.ID.toLowerCase()] = row;
+    return byID;
 }
 
 function toNettableLines(
@@ -1025,6 +1520,82 @@ export async function GetSubscriptionTerms(
     );
 }
 
+/**
+ * The two facts that decide whether a renewal's term start is dictated by the rules.
+ *
+ * Mirrors the server's `loadSubscriptionState` deliberately: a screen that predicts the term start
+ * differently from the engine that computes it is worse than a screen that predicts nothing.
+ */
+export interface MJOSubscriptionContinuation {
+    Status: string;
+    /** End of the LATEST coverage term — not `Subscription.EndDate`, which is something else. */
+    LatestTermEnd: Date | null;
+}
+
+/**
+ * Where coverage on `subscriptionID` currently ends, and whether it is live.
+ *
+ * `LatestTermEnd` comes from the highest-numbered `SubscriptionTerm` rather than from
+ * `Subscription.EndDate`, which is the reachable-looking wrong answer: that column is the FINAL
+ * service date after a cancellation or migration, so it is null on every healthy subscription and
+ * would read as "no coverage" for exactly the subscriptions that have some.
+ *
+ * Two reads because they answer two questions, and neither is derivable from the other: a canceled
+ * subscription still has terms, and a live one's coverage end lives only on its latest term.
+ */
+export async function GetSubscriptionContinuation(
+    subscriptionID: string,
+    user?: UserInfo,
+): Promise<MJOSubscriptionContinuation | null> {
+    if (!UUID_PATTERN.test(subscriptionID)) return null;
+
+    const subs = await run<mjBizAppsOrdersSubscriptionEntity>(
+        MJO_ENTITIES.Subscription,
+        [`ID = '${subscriptionID}'`],
+        'ID',
+        1,
+        user,
+    );
+    const sub = subs[0];
+    if (!sub) return null;
+
+    // Newest term first, one row: the same ordering the server reads, so the two agree about which
+    // term is "latest" even for a subscription whose terms were not written in order.
+    const terms = await run<mjBizAppsOrdersSubscriptionTermEntity>(
+        MJO_ENTITIES.SubscriptionTerm,
+        [`SubscriptionID = '${subscriptionID}'`],
+        'TermNumber DESC',
+        1,
+        user,
+    );
+
+    return { Status: sub.Status, LatestTermEnd: terms[0]?.EndDate ?? null };
+}
+
+/**
+ * When a term continuing this coverage would begin — the day after it ends — or null when no
+ * coverage dictates the start.
+ *
+ * Null is the answer for a subscription that is NOT live, and for a live one with no terms yet.
+ * Both cases run the ordinary start rules on the server (`ComputeAction` only forces
+ * `ExtendExisting` for an `Active`/`Trialing` target, and an extension with no prior term end falls
+ * through to `ComputeStartDate`), which means a stated start is honored and a caller must not
+ * present the start as dictated.
+ */
+export function ContinuationStartFrom(state: MJOSubscriptionContinuation | null): Date | null {
+    if (!state) return null;
+    if (state.Status !== 'Active' && state.Status !== 'Trialing') return null;
+    if (!state.LatestTermEnd) return null;
+
+    const end = state.LatestTermEnd instanceof Date ? state.LatestTermEnd : new Date(state.LatestTermEnd);
+    if (Number.isNaN(end.getTime())) return null;
+
+    // UTC components on purpose. A SQL `date` round-trips as UTC midnight, so reading LOCAL parts
+    // west of Greenwich would land a day early and hand back the day coverage ends as the day the
+    // next term starts.
+    return new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() + 1));
+}
+
 /** What happened to a subscription, newest first. */
 export async function GetSubscriptionEvents(
     subscriptionID: string,
@@ -1084,13 +1655,33 @@ export interface MJOProductOption {
     Taxable: boolean;
     /** NULL = no cap. 1 = one unit per line (conference tickets). */
     MaxQuantityPerLine: number | null;
+    /**
+     * Set when buying this product starts a subscription — the same column the server reads to
+     * decide which lines get a term (`OrderEntityServer.subscriptionLines`).
+     *
+     * The catalog row carries it because a line editor otherwise cannot tell a membership from a
+     * mug: `TypeName` is the product TYPE, and a subscription is a property of the product. Fields
+     * that only apply to a term — the term start — would either have to render on every line or
+     * force a per-line catalog lookup in the browser.
+     */
+    SubscriptionTypeID: string | null;
 }
 
 /** Flatten a product + its type into the picker row. */
 export function CatalogOptionFrom(
     product: Pick<
         mjBizAppsOrdersProductEntity,
-        'ID' | 'Name' | 'SKU' | 'ProductType' | 'ProductTypeID' | 'CompanyID' | 'Company' | 'StandaloneSellingPrice' | 'IsTaxable' | 'MaxQuantityPerLine'
+        | 'ID'
+        | 'Name'
+        | 'SKU'
+        | 'ProductType'
+        | 'ProductTypeID'
+        | 'CompanyID'
+        | 'Company'
+        | 'StandaloneSellingPrice'
+        | 'IsTaxable'
+        | 'MaxQuantityPerLine'
+        | 'SubscriptionTypeID'
     >,
     type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
     listPrice: number,
@@ -1107,6 +1698,7 @@ export function CatalogOptionFrom(
         ListPrice: product.StandaloneSellingPrice || listPrice || 0,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
+        SubscriptionTypeID: product.SubscriptionTypeID ?? null,
     };
 }
 

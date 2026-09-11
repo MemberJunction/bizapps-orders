@@ -18,6 +18,7 @@ export class mjBizAppsOrdersCustomerPaymentMethodFormComponent extends BaseFormC
         this.initSections([
             { sectionKey: 'ownership', sectionName: 'Ownership', isExpanded: true },
             { sectionKey: 'paymentDetails', sectionName: 'Payment Details', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentDetails', sectionName: 'Payment Details', isExpanded: false }
         ]);

@@ -113,3 +113,4 @@ export * from './date-cell';
  */
 export * from './overdue';
 export * from './configuration-types';
+export * from './base-entity-augmentation';

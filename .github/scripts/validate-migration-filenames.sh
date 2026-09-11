@@ -1,6 +1,6 @@
 #!/bin/bash
 # Validates migration file naming conventions
-# Expected format: V[YYYYMMDDHHMM]__v[VERSION].x_[DESCRIPTION].sql
+# Expected format: [VB][YYYYMMDDHHMM]__v[VERSION].x_[DESCRIPTION].sql
 
 MIGRATION_DIR="${1:-migrations}"
 ERRORS=()
@@ -9,18 +9,18 @@ COUNT=0
 
 echo "::notice::Validating migration file naming conventions..."
 
-for file in $(find "$MIGRATION_DIR" -name "V*.sql" -type f 2>/dev/null); do
+for file in $(find "$MIGRATION_DIR" -maxdepth 1 -name "[VB]*.sql" -type f 2>/dev/null); do
   COUNT=$((COUNT + 1))
   basename=$(basename "$file")
 
-  # Check format: V followed by 12-digit timestamp
-  if ! echo "$basename" | grep -qE '^V[0-9]{12}__'; then
-    ERRORS+=("$basename: Does not match pattern V[YYYYMMDDHHMM]__")
+  # Check format: V or B followed by 12-digit timestamp
+  if ! echo "$basename" | grep -qE '^[VB][0-9]{12}__'; then
+    ERRORS+=("$basename: Does not match pattern [VB][YYYYMMDDHHMM]__")
     continue
   fi
 
   # Extract and validate timestamp components
-  timestamp=$(echo "$basename" | grep -oE '^V[0-9]{12}' | sed 's/^V//')
+  timestamp=$(echo "$basename" | grep -oE '^[VB][0-9]{12}' | sed -E 's/^[VB]//')
   hours=${timestamp:8:2}
   minutes=${timestamp:10:2}
 
@@ -38,6 +38,12 @@ for file in $(find "$MIGRATION_DIR" -name "V*.sql" -type f 2>/dev/null); do
     WARNINGS+=("$basename: Date is in the future ($file_date)")
   fi
 done
+
+# Fail if no migrations were found/inspected
+if [ "$COUNT" -eq 0 ]; then
+  echo "::error::Validated 0 migration files in $MIGRATION_DIR. Pattern [VB]*.sql matched nothing."
+  exit 1
+fi
 
 # Report results
 if [ ${#WARNINGS[@]} -gt 0 ]; then

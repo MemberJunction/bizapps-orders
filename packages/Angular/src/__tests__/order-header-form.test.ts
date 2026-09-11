@@ -82,7 +82,7 @@ describe('BizAppsOrderHeaderFormComponent', () => {
             'utf8',
         );
         expect(ts).toContain('EntityName: MJO_ENTITIES.PaymentHeader');
-        expect(ts).toContain("ID IN (SELECT PaymentHeaderID FROM [__mj_BizAppsOrders].[PaymentLine] WHERE OrderHeaderID = '${this.record.ID}')");
+        expect(ts).toContain("ID IN (SELECT PaymentHeaderID FROM [__mj_BizAppsOrders].[vwPaymentLines] WHERE OrderHeaderID = '${this.record.ID}')");
         expect(html).toContain("[Height]=\"'fit-content'\"");
         expect(html).toContain('[MaxHeight]="RelatedGridHeight"');
     });

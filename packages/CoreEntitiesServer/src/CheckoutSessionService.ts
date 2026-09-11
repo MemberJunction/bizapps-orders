@@ -529,7 +529,7 @@ export class CheckoutSessionService {
         const extEntityName = productType.OrderLineExtensionEntity;
         configObj.extensionEntityName = extEntityName;
 
-        const extEntityInfo = md.Entities.find(e => e.Name === extEntityName);
+        const extEntityInfo = md.EntityByName(extEntityName);
         if (!extEntityInfo) return;
 
         const discoveredFields: Array<{
@@ -684,7 +684,9 @@ export class CheckoutSessionService {
     ): Promise<OrderLineEntity> {
         const line = (await order.Lines.Create()) as OrderLineEntity;
         if (targetExtensionEntity) {
-            await line.Extension.EnsureEntity(targetExtensionEntity);
+            await line.EnsureISAChild(targetExtensionEntity);
+        } else {
+            await line.EnsureISAChild();
         }
         return line;
     }
@@ -733,9 +735,8 @@ export class CheckoutSessionService {
             '__mj_updatedat'
         ]);
 
-        if (extensionEntityName && line.Extension) {
-            const ext = await line.Extension.EnsureEntity(extensionEntityName);
-            if (ext) {
+        const ext = await line.EnsureISAChild(extensionEntityName ?? undefined);
+        if (ext) {
                 const extFieldsByName = new Map<string, EntityFieldInfo>(
                     (ext.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f])
                 );
@@ -764,7 +765,6 @@ export class CheckoutSessionService {
                     }
                 }
             }
-        }
     }
 
     /**

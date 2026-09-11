@@ -486,6 +486,62 @@ export interface JournalEntryPreview {
 }
 
 /**
+ * Input for `Orders.CheckEntitlement`.
+ *
+ * Asked by capability Code, not SKU. PersonID is authoritative; email is a convenience
+ * resolution (normalised, ambiguous-if-duplicate). AsOf is diagnostics only (historical
+ * audit). The trust path omits it. Future values are rejected. CacheUntil is always
+ * issued from wall-clock now, never from AsOf.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface CheckEntitlementInput {
+    /** Authoritative person key. When present, Email is ignored. */
+    PersonID?: string;
+    /** Convenience. Normalised; more than one matching person is treated as no grant. */
+    Email?: string;
+    /** `ProductEntitlement.Code` — unique per product, not globally. Convention: APP_AREA_TIER. */
+    Code: string;
+    /** Diagnostics only (historical audit). Omit on the trust path. Future values are rejected. */
+    AsOf?: string;
+    /** Optional narrowing via the template product's company. */
+    CompanyID?: string;
+}
+
+/**
+ * Output for `Orders.CheckEntitlement`.
+ *
+ * `Decision` is why, not just whether — expired, revoked, never bought, and not-yet-valid
+ * are three screens. Unknown person and known-person-without-access share this shape
+ * (`HasAccess: false`, `Decision: 'NoGrant'`). Dates are ISO strings.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export type EntitlementDecision =
+    | 'Granted'
+    | 'NoGrant'
+    | 'NotYetValid'
+    | 'Expired'
+    | 'Revoked'
+    | 'Suspended'
+    | 'SubscriptionInactive';
+
+export interface CheckEntitlementOutput {
+    HasAccess: boolean;
+    Decision: EntitlementDecision;
+    ValidFrom?: string;
+    /** When access actually ends — grant window, or subscription access-through after cancel. */
+    ValidTo?: string;
+    /** ResourceQuantity — seats. Null for Feature/AccessLevel. */
+    Quantity?: number;
+    /** Audit handle of the winning grant. */
+    GrantID?: string;
+    EvaluatedAt: string;
+    /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. Fail closed when stale. */
+    CacheUntil: string;
+}
+
+/**
  * Input for `Orders.FulfillOrderLines`.
  *
  * Flipping lines to Fulfilled and advancing the order when the last one is done are ONE decision,
@@ -751,6 +807,50 @@ export interface OrdersGetOverdueWorklistOutput {
     Truncated: boolean;
     /** Aging buckets over the returned set. */
     Buckets: { Current: number; Days1To30: number; Days31To60: number; Days61Plus: number };
+}
+
+/**
+ * Input for `Orders.ListEntitlements`.
+ *
+ * The person's library. Same identity rules as CheckEntitlement. Heavier auth scope
+ * than the point check — a library key must not become an authorization oracle.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface ListEntitlementsInput {
+    PersonID?: string;
+    Email?: string;
+    /** Diagnostics only (historical audit). Future values are rejected. CacheUntil is from wall-clock now. */
+    AsOf?: string;
+    CompanyID?: string;
+    /** When false, only in-force capabilities. Default true. */
+    IncludeInactive?: boolean;
+}
+
+/**
+ * Output for `Orders.ListEntitlements`.
+ *
+ * One row per Code, each evaluated the same way as a point check. Not a second
+ * source of truth for access — the LXP still asks at the gate.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface ListedEntitlement {
+    Code: string;
+    HasAccess: boolean;
+    Decision: EntitlementDecision;
+    ValidFrom?: string;
+    /** When access actually ends — grant window, or subscription access-through after cancel. */
+    ValidTo?: string;
+    Quantity?: number;
+    GrantID?: string;
+    /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. */
+    CacheUntil: string;
+}
+
+export interface ListEntitlementsOutput {
+    EvaluatedAt: string;
+    Items: ListedEntitlement[];
 }
 
 /**
@@ -1532,6 +1632,24 @@ export interface RecordProcessRunNowOutput {
     errorMessage?: string;
 }
 
+/** Input for `Sonar.RecomputeModel`. */
+export interface SonarRecomputeModelInput {
+    /** The `MJ_BizApps_Sonar: Score Models` model to recompute + persist. Must be published (have a current version). */
+    modelID: string;
+}
+
+/** Output of `Sonar.RecomputeModel` — the run summary. */
+export interface SonarRecomputeModelOutput {
+    /** ID of the persisted `MJ_BizApps_Sonar: Score Recompute Runs` row. */
+    runID: string;
+    /** Run-level status (`Succeeded` / `Failed`). */
+    status: string;
+    /** Number of members scored + persisted. */
+    recordsScored: number;
+    /** Run-level error detail when `status` is not `Succeeded`. */
+    errorMessage?: string;
+}
+
 /** Input for the task-graph control operations. */
 export interface TaskGraphControlInput {
     /** Parent task ID identifying the graph. */
@@ -1903,6 +2021,22 @@ export class OrdersCapturePaymentOperation extends BaseRemotableOperation<Orders
 }
 
 // ============================================================
+// Orders.CheckEntitlement — Check Entitlement
+// ============================================================
+/**
+ * Check Entitlement
+ * Does this person currently have this entitlement? Asked by Code (the capability), not SKU. PersonID is authoritative; email is a convenience and is refused when it matches more than one person. Access is evaluated (status + window + subscription access-through), never read off EntitlementGrant.Status. Unknown person and known person without access return the same shape. Fail closed. v1 evaluates person grants only.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.CheckEntitlement'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<CheckEntitlementInput, CheckEntitlementOutput> {
+    public readonly OperationKey = "Orders.CheckEntitlement";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
 // Orders.FulfillOrderLines — Fulfill Order Lines
 // ============================================================
 /**
@@ -1947,6 +2081,22 @@ export class OrdersGetOverdueWorklistOperation extends BaseRemotableOperation<Or
     public readonly OperationKey = "Orders.GetOverdueWorklist";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:read";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ListEntitlements — List Entitlements
+// ============================================================
+/**
+ * List Entitlements
+ * The person's entitlement library, one row per Code, each evaluated the same way as CheckEntitlement. An optimisation for UI, not a second source of truth for access. Heavier scope than the point check so a library key cannot become an authorization oracle.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ListEntitlements'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersListEntitlementsOperation extends BaseRemotableOperation<ListEntitlementsInput, ListEntitlementsOutput> {
+    public readonly OperationKey = "Orders.ListEntitlements";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:entitlement-read";
     public readonly RequiresSystemUser = false;
 }
 
@@ -2218,6 +2368,22 @@ export class RecordProcessRunNowOperation extends BaseRemotableOperation<RecordP
     public readonly OperationKey = "RecordProcess.RunNow";
     public readonly ExecutionMode = 'LongRunning' as const;
     public readonly RequiredScope = "recordprocess:execute";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Sonar.RecomputeModel — Recompute Score Model
+// ============================================================
+/**
+ * Recompute Score Model
+ * Recompute AND persist a full run for a published Score Model (RecomputeOrchestrator.recompute): records a ScoreRecomputeRun, upserts every Score + contributions + history, and streams member-scored progress. LongRunning. Implemented by SonarRecomputeModelServerOperation in @mj-biz-apps/sonar-server (registered via @RegisterClass).
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Sonar.RecomputeModel'. This generated base provides the typed contract only (client-safe).
+ */
+export class SonarRecomputeModelOperation extends BaseRemotableOperation<SonarRecomputeModelInput, SonarRecomputeModelOutput> {
+    public readonly OperationKey = "Sonar.RecomputeModel";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "sonar:recompute";
     public readonly RequiresSystemUser = false;
 }
 

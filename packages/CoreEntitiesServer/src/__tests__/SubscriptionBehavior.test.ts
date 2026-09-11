@@ -129,6 +129,146 @@ describe('start and end dates follow the type', () => {
     });
 });
 
+/**
+ * A TERM START STATED ON THE LINE (D-TERMSTART).
+ *
+ * The booking date and the start of coverage are different facts. An order booked 8/27 can sell a
+ * membership that everyone agreed runs 8/1–7/31, and until the line could state that, the term was
+ * forced onto the order date and recognition began in the wrong month.
+ *
+ * These cases are the engine half of that rule. What they collectively pin is that the stated date
+ * passes through UNCHANGED — no `StartMode` shifts it, no time-of-day drifts it, and no later
+ * change to the order date moves it — while the END stays the type's to compute.
+ */
+describe('a stated term start (D-TERMSTART)', () => {
+    const BOOKED = new Date('2026-08-27T00:00:00Z');
+
+    it('starts the term on the stated date, with the term length measured from there', () => {
+        const term = decide(rules(), BOOKED, 1200, {
+            RequestedStartDate: new Date('2026-08-01T00:00:00Z'),
+        }).Term!;
+        expect(iso(term.StartDate)).toBe('2026-08-01');
+        expect(iso(term.EndDate)).toBe('2027-07-31');
+    });
+
+    it('honors a start in the FUTURE just as readily as one in the past', () => {
+        // Both directions matter and only one is obvious. Deferring coverage to next month is the
+        // ordinary case for an agreement signed late in August.
+        const term = decide(rules(), BOOKED, 1200, {
+            RequestedStartDate: new Date('2026-09-01T00:00:00Z'),
+        }).Term!;
+        expect(iso(term.StartDate)).toBe('2026-09-01');
+        expect(iso(term.EndDate)).toBe('2027-08-31');
+    });
+
+    it('derives the start from the purchase date when the line states none', () => {
+        // The regression pin for every order that never touches the field: absent a stated start,
+        // nothing about the old behaviour may change.
+        const term = decide(rules(), BOOKED).Term!;
+        expect(iso(term.StartDate)).toBe('2026-08-27');
+        expect(iso(term.EndDate)).toBe('2027-08-26');
+    });
+
+    it('yields the same term whatever the purchase date, once a start is stated', () => {
+        // The engine-level half of "an explicit term start stops following the order date". The
+        // other half is that nothing re-derives the column on save, so the two together are what
+        // make the date stick.
+        const requested = { RequestedStartDate: new Date('2026-08-01T00:00:00Z') };
+        const booked = decide(rules(), BOOKED, 1200, requested).Term!;
+        const rebooked = decide(rules(), new Date('2026-11-15T00:00:00Z'), 1200, requested).Term!;
+        expect(iso(rebooked.StartDate)).toBe(iso(booked.StartDate));
+        expect(iso(rebooked.EndDate)).toBe(iso(booked.EndDate));
+    });
+
+    it('takes the stated date as given rather than re-applying DeferredStartDays', () => {
+        // `DeferredStartDays` answers "how long after the sale does coverage begin", which has
+        // nothing left to say once someone names the date. Adding 30 days to a stated 8/1 would
+        // produce a term start nobody asked for and no screen explains.
+        const term = decide(rules({ StartMode: 'Deferred', DeferredStartDays: 30 }), BOOKED, 1200, {
+            RequestedStartDate: new Date('2026-08-01T00:00:00Z'),
+        }).Term!;
+        expect(iso(term.StartDate)).toBe('2026-08-01');
+    });
+
+    it('normalizes a stated start carrying a time of day, so it cannot drift a day', () => {
+        // Same hazard `utcDay` exists for: a stated start is a calendar date, and leaving it
+        // un-snapped lets a local-vs-UTC midnight put the term on the wrong day.
+        const term = decide(rules(), BOOKED, 1200, {
+            RequestedStartDate: new Date('2026-08-01T23:30:00Z'),
+        }).Term!;
+        expect(iso(term.StartDate)).toBe('2026-08-01');
+    });
+
+    it('lets the anchor govern the end while honoring the stated start', () => {
+        // CalendarAnchored keeps its whole purpose — everyone renews together — because the anchor
+        // still decides where the first term ends. The stated start only decides where it begins,
+        // so a 9/1 start on a 1/1 anchor is a partial first period and prorates like any other
+        // mid-cycle join.
+        const decision = decide(
+            rules({ StartMode: 'CalendarAnchored', AnchorMonth: 1, AnchorDay: 1, PartialPeriodMode: 'Prorate' }),
+            BOOKED,
+            1200,
+            { RequestedStartDate: new Date('2026-09-01T00:00:00Z') },
+        );
+        const term = decision.Term!;
+        expect(iso(term.StartDate)).toBe('2026-09-01');
+        expect(iso(term.EndDate)).toBe('2026-12-31');
+        expect(term.IsProrated).toBe(true);
+        expect(term.ProrationFactor).toBe(0.334247); // 122 of 365 days
+        expect(term.Amount).toBe(401.1);
+    });
+
+    it('reports rather than honors a stated start on an extension', () => {
+        // Coverage may neither overlap nor gap, so an extension has to begin the day after the
+        // current term ends. Refusing the order would block a legitimate renewal over a field the
+        // customer never sees; the flag is how the dropped date stays traceable.
+        const active = { ID: 'sub-1', Status: 'Active', LatestTermEnd: new Date('2027-06-30T00:00:00Z'), LatestTermNumber: 1 };
+        const decision = decide(rules(), BOOKED, 1200, {
+            Existing: active,
+            RequestedStartDate: new Date('2026-08-01T00:00:00Z'),
+        });
+        expect(decision.Action).toBe('ExtendExisting');
+        expect(iso(decision.Term!.StartDate)).toBe('2027-07-01');
+        expect(decision.StartOverrideIgnored).toBe(true);
+    });
+
+    it('reports nothing when the stated start already IS the continuation date', () => {
+        // The likeliest thing a diligent order taker types on a renewal is the right date. The
+        // rule and the request agree, so there is no discrepancy — reporting one would read "the
+        // term start 2027-07-01 was not used ... the term begins 2027-07-01", and a warning that
+        // fires on the normal case is a warning everyone learns to skim past.
+        const active = { ID: 'sub-1', Status: 'Active', LatestTermEnd: new Date('2027-06-30T00:00:00Z'), LatestTermNumber: 1 };
+        const decision = decide(rules(), BOOKED, 1200, {
+            Existing: active,
+            RequestedStartDate: new Date('2027-07-01T00:00:00Z'),
+        });
+        expect(decision.Action).toBe('ExtendExisting');
+        expect(iso(decision.Term!.StartDate)).toBe('2027-07-01');
+        expect(decision.StartOverrideIgnored).toBe(false);
+    });
+
+    it('reports nothing when an extension had no stated start to drop', () => {
+        const active = { ID: 'sub-1', Status: 'Active', LatestTermEnd: new Date('2027-06-30T00:00:00Z'), LatestTermNumber: 1 };
+        const decision = decide(rules(), BOOKED, 1200, { Existing: active });
+        expect(decision.Action).toBe('ExtendExisting');
+        expect(decision.StartOverrideIgnored).toBe(false);
+    });
+
+    it('honors a stated start on a fresh subscription for a lapsed subscriber', () => {
+        // Reactivation has no coverage to continue from, so there is nothing to displace the
+        // stated date — this is the case that would regress if the override were keyed on the
+        // ACTION rather than on whether prior coverage actually supplied the start.
+        const lapsed = { ID: 'sub-1', Status: 'Canceled', LatestTermEnd: new Date('2026-06-30T00:00:00Z'), LatestTermNumber: 3 };
+        const decision = decide(rules({ ReactivationMode: 'ReactivateExisting' }), BOOKED, 1200, {
+            Existing: lapsed,
+            RequestedStartDate: new Date('2026-09-01T00:00:00Z'),
+        });
+        expect(decision.Action).toBe('Reactivate');
+        expect(iso(decision.Term!.StartDate)).toBe('2026-09-01');
+        expect(decision.StartOverrideIgnored).toBe(false);
+    });
+});
+
 describe('proration', () => {
     const prorated = rules({
         StartMode: 'CalendarAnchored',

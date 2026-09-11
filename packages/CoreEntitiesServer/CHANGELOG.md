@@ -1,5 +1,21 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.12.0
+
+### Minor Changes
+
+- b8b2131: Fix PaymentLines query to use vwPaymentLines view with user permissions, expose \_mj**Latitude / \_mj**Longitude in GraphQL schema, and forward-heal Event Products IS-A parent fields.
+- ecbfe69: Support prospective subtype resolution with SubtypeSelector and EnsureISAChild for OrderLine extension entities.
+
+### Patch Changes
+
+- 888983a: Name the price rule that actually won on the order line instead of labelling every resolved price "base price". The winning rule's name already reached the browser as the resolution walk's `Base`/`Rule` component label and was being discarded, so a line priced off a member list read as base-priced. Also fixes both component mappers, which read a field named `Kind` where the resolver emits `ComponentType`, and names the rule (with a currency symbol) in the override picker's `Default` row.
+- 9b63bf1: Honor a term start stated on a subscription order line instead of always deriving it from the order date (#121). `OrderDate` remains the booking date and still dates the booking journal entry; a `ServicePeriodStart` set on the line now starts the term on that date, with the subscription type's rules computing the end (and any anchored-period proration) from it. An extension continues existing coverage as before, and reports a stated start only when the term genuinely begins on a different date. The order line editor gains a "Term start" field on subscription lines that shows the order date as its default and offers a reset back to it; on a line renewing live coverage the field is read-only and shows the date the term will actually begin, since a renewal continues where existing coverage ends.
+- Updated dependencies [b8b2131]
+- Updated dependencies [e9bf1f9]
+- Updated dependencies [ecbfe69]
+  - @mj-biz-apps/orders-entities@5.12.0
+
 ## 5.11.0
 
 ### Patch Changes

@@ -1,5 +1,46 @@
 # @mj-biz-apps/orders-ng
 
+## 5.12.0
+
+### Minor Changes
+
+- b8b2131: Fix PaymentLines query to use vwPaymentLines view with user permissions, expose \_mj**Latitude / \_mj**Longitude in GraphQL schema, and forward-heal Event Products IS-A parent fields.
+- ecbfe69: Support prospective subtype resolution with SubtypeSelector and EnsureISAChild for OrderLine extension entities.
+
+### Patch Changes
+
+- 9c7680d: The Order Line form could not open once the price-override authorizations were seeded.
+
+  `overrideKindFromLiveRoles` filters `MJ: Authorization Roles` to find out whether the current
+  user may override a price. Its `ExtraFilter` referenced `Authorization` unbracketed, and
+  `Authorization` is a RESERVED T-SQL keyword, so SQL Server rejected the entire statement:
+
+      Incorrect syntax near the keyword 'Authorization'.
+
+  The generated select list brackets the column (`[Authorization]`); only this hand-written
+  filter did not, which is why nothing caught it.
+
+  The bug has been present since the price-override feature shipped, but was unreachable: the
+  call is gated on `priceOverrideCatalogInstalled()`, so on a host without the authorization
+  catalog the query never ran. Seeding the three `MJ.BizApps.Orders.Price.*` authorizations
+  switches the path on — so the form breaks on exactly the hosts that adopt the feature.
+
+  `[RoleID]` and `[Type]` are bracketed in the same filter for consistency; neither is reserved,
+  so neither was failing.
+
+- 6a33597: Shows the order accounting tab gross, over every origin, with an As-of date and a date-basis toggle.
+
+  The rolled-up view netted debits against credits per account and then dropped any account that came out at zero, with no idea what date anything was effective. On an event order the forward-dated recognition entry cancelled the booking credit, so the Deferred Revenue row disappeared and the screen read `Dr AR 895 / Cr Sales 895` — revenue on screen for an event that has not happened. It now sums debits and credits separately and keeps every account, so the money is visibly parked in deferred revenue and released into sales.
+
+  Both views also now gather entries from every origin that affects the order — order lines, their subscription terms, payment allocation lines and the payment header fee entry — rather than from order lines alone, which had been hiding every membership recognition entry and every payment entry. A payment shared across orders shows its fee entry in full on each, labelled rather than pro-rated. An optional As-of date (blank by default, meaning the whole life of the order) and an Effective/Posting date basis apply to Rolled up and By line together, and By line now lists each entry unnetted with its batch, batch status and posting date. The Rev-Rec waterfall is unchanged.
+
+- 888983a: Name the price rule that actually won on the order line instead of labelling every resolved price "base price". The winning rule's name already reached the browser as the resolution walk's `Base`/`Rule` component label and was being discarded, so a line priced off a member list read as base-priced. Also fixes both component mappers, which read a field named `Kind` where the resolver emits `ComponentType`, and names the rule (with a currency symbol) in the override picker's `Default` row.
+- 9b63bf1: Honor a term start stated on a subscription order line instead of always deriving it from the order date (#121). `OrderDate` remains the booking date and still dates the booking journal entry; a `ServicePeriodStart` set on the line now starts the term on that date, with the subscription type's rules computing the end (and any anchored-period proration) from it. An extension continues existing coverage as before, and reports a stated start only when the term genuinely begins on a different date. The order line editor gains a "Term start" field on subscription lines that shows the order date as its default and offers a reset back to it; on a line renewing live coverage the field is read-only and shows the date the term will actually begin, since a renewal continues where existing coverage ends.
+- Updated dependencies [b8b2131]
+- Updated dependencies [e9bf1f9]
+- Updated dependencies [ecbfe69]
+  - @mj-biz-apps/orders-entities@5.12.0
+
 ## 5.11.0
 
 ### Patch Changes

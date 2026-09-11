@@ -18,6 +18,7 @@ export class mjBizAppsOrdersSubscriptionEventFormComponent extends BaseFormCompo
             { sectionKey: 'eventContext', sectionName: 'Event Context', isExpanded: true },
             { sectionKey: 'eventDetails', sectionName: 'Event Details', isExpanded: true },
             { sectionKey: 'relatedRecords', sectionName: 'Related Records', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

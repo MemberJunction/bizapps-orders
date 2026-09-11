@@ -584,6 +584,71 @@
     text-align: center;
 }
 
+/* As-of + basis controls: one row above whichever of the two views is showing. */
+.mjo-oh-acct__controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--mj-space-2) var(--mj-space-3);
+    margin-bottom: var(--mj-space-3);
+}
+
+.mjo-oh-asof {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    font-size: var(--mj-text-xs);
+    font-weight: var(--mj-font-semibold);
+    color: var(--mj-text-secondary);
+}
+
+.mjo-oh-asof input {
+    font: inherit;
+    font-weight: var(--mj-font-normal);
+    padding: 4px 8px;
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-primary);
+}
+
+.mjo-oh-asof__clear,
+.mjo-oh-linkbtn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-brand-primary);
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.mjo-oh-switch--sm button {
+    padding: 4px 10px;
+}
+
+.mjo-oh-acct__basis,
+.mjo-oh-acct__note,
+.mjo-oh-acct__excluded {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+}
+
+.mjo-oh-acct__note,
+.mjo-oh-acct__excluded {
+    margin: var(--mj-space-2) 0 0;
+}
+
+.mjo-oh-je__table--detail tbody tr.is-clickable {
+    cursor: pointer;
+}
+
+.mjo-oh-je__table--detail tbody tr.is-clickable:hover {
+    background: var(--mj-bg-surface-sunken);
+}
+
 .mjo-oh-jecard {
     border: 1px solid var(--mj-border-default);
     border-radius: var(--mj-radius-md);

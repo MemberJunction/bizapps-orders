@@ -21,6 +21,7 @@ export class mjBizAppsOrdersOrderChargeFormComponent extends BaseFormComponent {
             { sectionKey: 'pricingAndCalculation', sectionName: 'Pricing and Calculation', isExpanded: true },
             { sectionKey: 'taxDetails', sectionName: 'Tax Details', isExpanded: true },
             { sectionKey: 'overrideDetails', sectionName: 'Override Details', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderChargeAllocations', sectionName: 'Order Charge Allocations', isExpanded: false }
         ]);
