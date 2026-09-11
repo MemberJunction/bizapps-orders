@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB16).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB17).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -21,6 +21,7 @@
  *   OB14 a back-dated order is booked on the date it states
  *   OB15 confirm-after-draft with lines not loaded still books memberships
  *   OB16 a Draft with no lines saves (lines are required only at confirm)
+ *   OB17 a draft line can be removed and replaced — the removed row actually leaves the database
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -619,6 +620,48 @@ export const OrderBookingChecks: NamedCheck[] = [
                 );
                 AssertEqual(persisted.Status, 'Draft', 'persisted as Draft');
                 AssertEqual(Number(persisted.N), 0, 'still zero lines on disk');
+            }),
+    },
+    {
+        Id: 'order-booking.OB17',
+        Name: 'OB17: removing a draft line deletes the row, so a replacement can take its number',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // golive #187, both halves in one check. The order save takes line persistence over
+                // from MJ's standard collection pass, and that pass is what issues the queued
+                // deletes. Without them the removed row stays on disk holding LineNumber 1 — which
+                // makes the replacement's insert violate UQ_OrderLine_OrderHeader_LineNumber, and
+                // makes a removal with no replacement succeed while changing nothing.
+                const f = Fx();
+                const built = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }],
+                });
+                Assert(
+                    await built.Order.Save(),
+                    `draft must save: ${built.Order.LatestResult?.CompleteMessage ?? ''}`,
+                );
+
+                built.Order.Lines.Remove(built.Order.Lines.Items[0]);
+                const replacement = await built.Order.Lines.Create();
+                replacement.ProductID = f.Products.WidgetA;
+                replacement.Quantity = 2;
+
+                Assert(
+                    await built.Order.Save(),
+                    `removing and replacing a draft line must save: ${built.Order.LatestResult?.CompleteMessage ?? ''}`,
+                );
+
+                const persisted = await TxOne<{ N: number; Qty: number }>(
+                    ctx,
+                    `SELECT COUNT(*) AS N, MAX(Quantity) AS Qty
+                       FROM ${ORDERS_SCHEMA}.OrderLine
+                      WHERE OrderHeaderID = '${built.Order.ID}'`,
+                );
+                AssertEqual(Number(persisted.N), 1, 'the removed row is gone, not orphaned alongside its replacement');
+                AssertEqual(Number(persisted.Qty), 2, 'the surviving row is the replacement');
             }),
     },
 ];
