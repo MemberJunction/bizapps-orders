@@ -1,5 +1,23 @@
 # @mj-biz-apps/orders-server
 
+## 5.12.0
+
+### Minor Changes
+
+- b8b2131: Fix PaymentLines query to use vwPaymentLines view with user permissions, expose \_mj**Latitude / \_mj**Longitude in GraphQL schema, and forward-heal Event Products IS-A parent fields.
+- ecbfe69: Support prospective subtype resolution with SubtypeSelector and EnsureISAChild for OrderLine extension entities.
+
+### Patch Changes
+
+- Updated dependencies [b8b2131]
+- Updated dependencies [e9bf1f9]
+- Updated dependencies [888983a]
+- Updated dependencies [ecbfe69]
+- Updated dependencies [9b63bf1]
+  - @mj-biz-apps/orders-entities@5.12.0
+  - @mj-biz-apps/orders-core-entities-server@5.12.0
+  - @mj-biz-apps/orders-actions@5.12.0
+
 ## 5.11.0
 
 ### Patch Changes
