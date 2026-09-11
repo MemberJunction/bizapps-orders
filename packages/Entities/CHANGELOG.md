@@ -1,5 +1,13 @@
 # @mj-biz-apps/orders-entities
 
+## 5.12.0
+
+### Minor Changes
+
+- b8b2131: Fix PaymentLines query to use vwPaymentLines view with user permissions, expose \_mj**Latitude / \_mj**Longitude in GraphQL schema, and forward-heal Event Products IS-A parent fields.
+- e9bf1f9: Forward-heal missing EntityField registrations for Price Tiers (ProductPrice) and Product Categories (RootParentProductCategoryID, ParentProductCategoryIDDepth, ParentProductCategoryIDPath, ParentProductCategoryIDIsLeaf, ParentProductCategoryIDChildCount).
+- ecbfe69: Support prospective subtype resolution with SubtypeSelector and EnsureISAChild for OrderLine extension entities.
+
 ## 5.11.0
 
 ### Minor Changes
