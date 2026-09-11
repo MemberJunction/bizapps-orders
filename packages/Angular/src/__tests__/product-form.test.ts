@@ -12,6 +12,7 @@ import {
     ShouldConfirmEventRevRec,
 } from '../lib/custom/Product/product-save-guard-form.component';
 import { OrdersEngine } from '@mj-biz-apps/orders-entities';
+import { LoadProductLookupNames } from '../lib/panels/product-lookup-names';
 import { BizAppsProductPricingWidgetComponent } from '../lib/custom/Product/widgets/product-pricing-widget.component';
 import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
 import '../public-api';
@@ -329,6 +330,59 @@ describe('Event product save guard (golive #211)', () => {
             expect(superCalls).toBe(1);
         } finally {
             BaseFormComponent.prototype.SaveRecord = realSuperSave;
+        }
+    });
+});
+
+describe('Product lookup names (walkthrough Pin 28)', () => {
+    // Measured on HH-CONF: ProductType came back null and RevenueRecognitionType still read the
+    // pre-save name while the id had already moved on. The ids are what may be trusted.
+    const staleRecord = {
+        ProductTypeID: 'pt-event',
+        ProductCategoryID: 'cat-conf',
+        RevenueRecognitionTypeID: 'rr-allbackend',
+        SuccessorProductID: null,
+        ProductType: null,
+        ProductCategory: null,
+        RevenueRecognitionType: 'Up Front',
+        SuccessorProduct: null,
+    } as never;
+
+    const engine = {
+        EnsureLoaded: async () => undefined,
+        ProductTypeByID: (id: string) => (id === 'pt-event' ? { Name: 'Event' } : undefined),
+        ProductCategoryByID: (id: string) => (id === 'cat-conf' ? { Name: 'Conferences' } : undefined),
+        RevenueRecognitionTypeByID: (id: string) =>
+            id === 'rr-allbackend' ? { Name: 'All Back End (On Completion)' } : undefined,
+        ProductByID: () => undefined,
+    };
+
+    it('resolves names from the ids, not the record’s virtual fields', async () => {
+        const spy = vi.spyOn(OrdersEngine, 'Instance', 'get').mockReturnValue(engine as never);
+        try {
+            await expect(LoadProductLookupNames(staleRecord)).resolves.toEqual({
+                Type: 'Event',
+                Category: 'Conferences',
+                RevRec: 'All Back End (On Completion)',
+                Successor: '—',
+            });
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('falls back to the virtual field when the engine cannot answer', async () => {
+        const spy = vi.spyOn(OrdersEngine, 'Instance', 'get').mockReturnValue({
+            EnsureLoaded: async () => {
+                throw new Error('engine down');
+            },
+        } as never);
+        try {
+            const names = await LoadProductLookupNames(staleRecord);
+            expect(names.RevRec).toBe('Up Front');
+            expect(names.Type).toBe('—');
+        } finally {
+            spy.mockRestore();
         }
     });
 });
