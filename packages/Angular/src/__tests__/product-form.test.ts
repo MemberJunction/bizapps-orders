@@ -1,10 +1,16 @@
 import '@angular/compiler';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersProductFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
 import { BizAppsProductFormComponent } from '../lib/custom/Product/product-form.component';
+import {
+    BizAppsProductSaveGuardFormComponent,
+    EVENT_PRODUCT_EXTENSION_ENTITY,
+    ShouldConfirmEventRevRec,
+} from '../lib/custom/Product/product-save-guard-form.component';
+import { OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { BizAppsProductPricingWidgetComponent } from '../lib/custom/Product/widgets/product-pricing-widget.component';
 import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
 import '../public-api';
@@ -14,12 +20,17 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
         expect(BizAppsProductFormComponent.prototype instanceof mjBizAppsOrdersProductFormComponent).toBe(true);
     });
 
-    it('leaves the generated Product form as the registered form', () => {
+    // Changed for golive #211: the save-guard subclass now outranks the generated form. It reuses
+    // the generated TEMPLATE, so the rendered form is unchanged; BizAppsProductFormComponent (the
+    // custom template Amith unregistered) stays unregistered.
+    it('registers the save-guard subclass over the generated Product form', () => {
         const activeReg = MJGlobal.Instance.ClassFactory.GetRegistration(
             BaseFormComponent,
             'MJ_BizApps_Orders: Products'
         );
-        expect(activeReg?.SubClass?.name).toBe('mjBizAppsOrdersProductFormComponent');
+        expect(activeReg?.SubClass?.name).toBe('BizAppsProductSaveGuardFormComponent');
+        expect(BizAppsProductSaveGuardFormComponent.prototype instanceof mjBizAppsOrdersProductFormComponent).toBe(true);
+
         const customReg = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
             BaseFormComponent,
             'MJ_BizApps_Orders: Products'
@@ -164,5 +175,142 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
 
         expect(openedEntity).toBe('MJ_BizApps_Orders: Product Categories');
         expect(openedKey.ToURLSegment()).toBe('cat-123');
+    });
+});
+
+describe('Event product save guard (golive #211)', () => {
+    const UP_FRONT = 'rr-upfront';       // IsDeferred = false
+    const ALL_BACK_END = 'rr-allbackend'; // IsDeferred = true
+    const deferredByID: Record<string, boolean> = { [UP_FRONT]: false, [ALL_BACK_END]: true };
+    const isDeferredByID = (id: string) => deferredByID[id];
+
+    it('prompts for an event product whose own type is non-deferred', () => {
+        expect(ShouldConfirmEventRevRec({
+            hasEventExtension: true,
+            revRecTypeID: UP_FRONT,
+            productTypeDefaultRevRecID: ALL_BACK_END,
+            isDeferredByID,
+        })).toBe(true);
+    });
+
+    it('stays quiet for an event product on a deferred type', () => {
+        expect(ShouldConfirmEventRevRec({
+            hasEventExtension: true,
+            revRecTypeID: ALL_BACK_END,
+            productTypeDefaultRevRecID: UP_FRONT,
+            isDeferredByID,
+        })).toBe(false);
+    });
+
+    it('stays quiet for a non-event product on a non-deferred type', () => {
+        expect(ShouldConfirmEventRevRec({
+            hasEventExtension: false,
+            revRecTypeID: UP_FRONT,
+            productTypeDefaultRevRecID: null,
+            isDeferredByID,
+        })).toBe(false);
+    });
+
+    it('prompts when a blank type inherits a non-deferred default from the product type', () => {
+        expect(ShouldConfirmEventRevRec({
+            hasEventExtension: true,
+            revRecTypeID: '   ',
+            productTypeDefaultRevRecID: UP_FRONT,
+            isDeferredByID,
+        })).toBe(true);
+    });
+
+    it('stays quiet when there is no effective type at all — booking fails loudly on its own', () => {
+        expect(ShouldConfirmEventRevRec({
+            hasEventExtension: true,
+            revRecTypeID: null,
+            productTypeDefaultRevRecID: null,
+            isDeferredByID,
+        })).toBe(false);
+    });
+
+    it('stays quiet for a type id the engine cannot resolve', () => {
+        expect(ShouldConfirmEventRevRec({
+            hasEventExtension: true,
+            revRecTypeID: 'rr-unknown',
+            productTypeDefaultRevRecID: null,
+            isDeferredByID,
+        })).toBe(false);
+    });
+
+    it('resolves both lookups from the live record, not the form cache', async () => {
+        const instance = Object.create(BizAppsProductSaveGuardFormComponent.prototype) as BizAppsProductSaveGuardFormComponent;
+        // The record was switched to Up Front in this session; a cached RevenueRecRecord would
+        // still say All Back End. Only the live ids may be read.
+        instance.record = {
+            ProductTypeID: 'pt-event',
+            RevenueRecognitionTypeID: UP_FRONT,
+            ISAChild: null,
+        } as never;
+        (instance as unknown as { RevenueRecRecord: unknown }).RevenueRecRecord = { ID: ALL_BACK_END, IsDeferred: true };
+
+        const engine = {
+            EnsureLoaded: async () => undefined,
+            ProductTypeByID: (id: string) =>
+                id === 'pt-event'
+                    ? { ProductExtensionEntity: EVENT_PRODUCT_EXTENSION_ENTITY, DefaultRevenueRecognitionTypeID: ALL_BACK_END }
+                    : undefined,
+            RevenueRecognitionTypeByID: (id: string) => ({ ID: id, IsDeferred: deferredByID[id] }),
+        };
+        const spy = vi.spyOn(OrdersEngine, 'Instance', 'get').mockReturnValue(engine as never);
+        try {
+            await expect((instance as never as { NeedsEventRevRecConfirmation(): Promise<boolean> }).NeedsEventRevRecConfirmation()).resolves.toBe(true);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('declining writes nothing and returns false; confirming saves', async () => {
+        const instance = Object.create(BizAppsProductSaveGuardFormComponent.prototype) as BizAppsProductSaveGuardFormComponent;
+        const seam = instance as unknown as {
+            NeedsEventRevRecConfirmation(): Promise<boolean>;
+            Confirm(message: string): boolean;
+        };
+        seam.NeedsEventRevRecConfirmation = async () => true;
+
+        let superCalls = 0;
+        const realSuperSave = BaseFormComponent.prototype.SaveRecord;
+        BaseFormComponent.prototype.SaveRecord = async () => {
+            superCalls++;
+            return true;
+        };
+        try {
+            seam.Confirm = () => false;
+            await expect(instance.SaveRecord(true)).resolves.toBe(false);
+            expect(superCalls).toBe(0);
+
+            seam.Confirm = () => true;
+            await expect(instance.SaveRecord(true)).resolves.toBe(true);
+            expect(superCalls).toBe(1);
+        } finally {
+            BaseFormComponent.prototype.SaveRecord = realSuperSave;
+        }
+    });
+
+    it('saves without asking when the product is not an event product', async () => {
+        const instance = Object.create(BizAppsProductSaveGuardFormComponent.prototype) as BizAppsProductSaveGuardFormComponent;
+        const seam = instance as unknown as { NeedsEventRevRecConfirmation(): Promise<boolean>; Confirm(m: string): boolean };
+        seam.NeedsEventRevRecConfirmation = async () => false;
+        seam.Confirm = () => {
+            throw new Error('must not prompt');
+        };
+
+        let superCalls = 0;
+        const realSuperSave = BaseFormComponent.prototype.SaveRecord;
+        BaseFormComponent.prototype.SaveRecord = async () => {
+            superCalls++;
+            return true;
+        };
+        try {
+            await expect(instance.SaveRecord(true)).resolves.toBe(true);
+            expect(superCalls).toBe(1);
+        } finally {
+            BaseFormComponent.prototype.SaveRecord = realSuperSave;
+        }
     });
 });

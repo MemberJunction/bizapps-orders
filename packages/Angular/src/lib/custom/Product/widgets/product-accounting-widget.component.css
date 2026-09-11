@@ -34,3 +34,15 @@
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 16px;
 }
+
+/*
+ * golive #211 walkthrough (Pin 21): MJ's `mj-form-field` host computes to `display: contents`, so
+ * the component is not the grid item — its label and its control are, and the grid above put them
+ * in SEPARATE 260px cells. That is why the "Revenue Recognition Type Name" label sat on top of the
+ * picker's search-mode chip and the dropdown clipped every option. Making the host a real block
+ * puts each field back in one cell; `min-width: 0` lets that cell shrink instead of overflowing.
+ */
+.mjo-card-body > mj-form-field {
+    display: block;
+    min-width: 0;
+}

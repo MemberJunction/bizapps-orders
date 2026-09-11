@@ -20,6 +20,7 @@ import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
 
 // Custom Form Components
 import { BizAppsProductFormComponent, LoadProductFormComponent } from './Product/product-form.component';
+import { BizAppsProductSaveGuardFormComponent, LoadProductSaveGuardFormComponent } from './Product/product-save-guard-form.component';
 import { BizAppsProductPricingWidgetComponent } from './Product/widgets/product-pricing-widget.component';
 import { BizAppsProductPromotionsWidgetComponent } from './Product/widgets/product-promotions-widget.component';
 import { BizAppsProductAccountingWidgetComponent } from './Product/widgets/product-accounting-widget.component';
@@ -38,6 +39,7 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
 @NgModule({
     declarations: [
         BizAppsProductFormComponent,
+        BizAppsProductSaveGuardFormComponent,
         BizAppsProductPricingWidgetComponent,
         BizAppsProductPromotionsWidgetComponent,
         BizAppsProductAccountingWidgetComponent,
@@ -67,6 +69,7 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
     ],
     exports: [
         BizAppsProductFormComponent,
+        BizAppsProductSaveGuardFormComponent,
         BizAppsProductPricingWidgetComponent,
         BizAppsProductPromotionsWidgetComponent,
         BizAppsProductAccountingWidgetComponent,
@@ -86,6 +89,7 @@ export class CustomFormsModule {}
 /** Tree-shaking prevention anchor function */
 export function LoadCustomForms(): void {
     LoadProductFormComponent();
+    LoadProductSaveGuardFormComponent();
     LoadPriceListFormComponent();
     LoadPromotionFormComponent();
     LoadOrderHeaderFormComponent();
