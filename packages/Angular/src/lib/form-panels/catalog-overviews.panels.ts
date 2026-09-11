@@ -14,6 +14,7 @@ import type {
 import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatMoney } from '../panels/money-format';
 import { FormatListPriceFromRows } from '../panels/catalog-list-price';
+import { LoadProductLookupNames } from '../panels/product-lookup-names';
 import { FormatShortDate, YesNo } from './document-form.helpers';
 import type { MJOOverviewCard } from './overview-cards.component';
 import { CountOverviewRows, LoadOverviewRows } from './overview-load';
@@ -184,7 +185,7 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
     public async ngOnInit(): Promise<void> {
         if (!this.Record?.IsSaved) return;
         const p = this.FormComponent.ProviderToUse;
-        const [prices, entitlements, events, orderCount] = await Promise.all([
+        const [prices, entitlements, events, orderCount, names] = await Promise.all([
             LoadOverviewRows<Pick<mjBizAppsOrdersProductPriceEntity, 'PriceList' | 'PricingModel' | 'Amount' | 'Status'>>(
                 p, MJO_ENTITIES.ProductPrice, `ProductID='${this.Record.ID}'`, ['PriceList', 'PricingModel', 'Amount', 'Status'],
             ),
@@ -195,6 +196,7 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
                 p, MJO_ENTITIES.EventProduct, `ID='${this.Record.ID}'`, ['VenueName', 'Capacity', 'EventStartsAt', 'EventEndsAt'], 1,
             ),
             CountOverviewRows(p, MJO_ENTITIES.OrderLine, `ProductID='${this.Record.ID}'`),
+            LoadProductLookupNames(this.Record),
         ]);
         const event = events[0];
         const cards: MJOOverviewCard[] = [
@@ -202,8 +204,8 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
                 Title: 'What this sells',
                 Icon: 'fa-solid fa-id-card',
                 Facts: [
-                    { Label: 'Type', Value: this.Record.ProductType || '—' },
-                    { Label: 'Category', Value: this.Record.ProductCategory || '—' },
+                    { Label: 'Type', Value: names.Type },
+                    { Label: 'Category', Value: names.Category },
                     { Label: 'Company', Value: this.Record.Company || '—' },
                     { Label: 'Available from', Value: FormatShortDate(this.Record.AvailableFrom) || 'Open' },
                     { Label: 'Available to', Value: FormatShortDate(this.Record.AvailableTo) || 'Open' },
@@ -236,9 +238,9 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
                 Icon: 'fa-solid fa-chart-column',
                 Facts: [
                     { Label: 'Order lines', Value: String(orderCount) },
-                    { Label: 'Rev-rec', Value: this.Record.RevenueRecognitionType || '—' },
+                    { Label: 'Rev-rec', Value: names.RevRec },
                     { Label: 'Tax', Value: this.Record.IsTaxable ? 'Taxable' : 'Exempt' },
-                    { Label: 'Successor', Value: this.Record.SuccessorProduct || '—' },
+                    { Label: 'Successor', Value: names.Successor },
                 ],
             },
         ];

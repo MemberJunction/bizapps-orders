@@ -1,8 +1,9 @@
-import { ChangeDetectorRef, Component, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 import { LoadProductListPriceLabel } from '../panels/catalog-list-price';
+import { LoadProductLookupNames, type ProductLookupNames } from '../panels/product-lookup-names';
 import { ProductAvatarIcon, ProductStatusChipClass } from './document-form.helpers';
 
 @RegisterClassEx(BaseFormPanel, {
@@ -21,8 +22,10 @@ import { ProductAvatarIcon, ProductStatusChipClass } from './document-form.helpe
     templateUrl: './product-header.panel.html',
     styleUrls: ['./document-hero.css'],
 })
-export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> {
+export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> implements OnInit {
     public ListPriceLabel = '—';
+    /** Resolved by id — the record's virtual name fields are unreliable (Pin 28). */
+    public Lookups: ProductLookupNames = { Type: '—', Category: '—', RevRec: '—', Successor: '—' };
     private listPriceFor: string | null = null;
     private cdr = inject(ChangeDetectorRef, { optional: true });
 
@@ -30,8 +33,13 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
         return this.Record.Name || 'New product';
     }
 
+    public async ngOnInit(): Promise<void> {
+        this.Lookups = await LoadProductLookupNames(this.Record);
+        this.cdr?.markForCheck();
+    }
+
     public get TypeName(): string {
-        return this.Record.ProductType || '—';
+        return this.Lookups.Type;
     }
 
     public get AvatarIcon(): string {
@@ -57,6 +65,6 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
     }
 
     public get RevRec(): string {
-        return this.Record.RevenueRecognitionType || '—';
+        return this.Lookups.RevRec;
     }
 }

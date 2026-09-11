@@ -41,6 +41,12 @@ export { CLASS_REGISTRATIONS } from './lib/generated/class-registrations-manifes
 export { GeneratedFormsModule } from './lib/generated/generated-forms.module';
 export { CustomFormsModule } from './lib/custom/custom-forms.module';
 export { BizAppsProductFormComponent } from './lib/custom/Product/product-form.component';
+export {
+    BizAppsProductSaveGuardFormComponent,
+    ShouldConfirmEventRevRec,
+    EVENT_REV_REC_CONFIRM_MESSAGE,
+    EVENT_PRODUCT_EXTENSION_ENTITY,
+} from './lib/custom/Product/product-save-guard-form.component';
 export { BizAppsProductPricingWidgetComponent } from './lib/custom/Product/widgets/product-pricing-widget.component';
 export { BizAppsProductPromotionsWidgetComponent } from './lib/custom/Product/widgets/product-promotions-widget.component';
 export { BizAppsProductAccountingWidgetComponent } from './lib/custom/Product/widgets/product-accounting-widget.component';

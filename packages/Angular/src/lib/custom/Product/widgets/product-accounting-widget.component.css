@@ -31,6 +31,22 @@
 .mjo-card-body {
     padding: 16px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    /* 380px, not 260px: MJ's own `.mj-forms-field` is a `200px 1fr` label/value grid, so a
+       narrower cell leaves the value ~79px and wraps it mid-word. See the note below. */
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
     gap: 16px;
+}
+
+/*
+ * golive #211 walkthrough (Pin 21): MJ's `mj-form-field` host computes to `display: contents`, so
+ * the component is not the grid item — its label and its control are, and the grid above put them
+ * in SEPARATE 260px cells. That is why the "Revenue Recognition Type Name" label sat on top of the
+ * picker's search-mode chip and the dropdown clipped every option. Making the host a real block
+ * puts each field back in one cell; `min-width: 0` lets that cell shrink instead of overflowing.
+ * The cell then has to be wide enough for MJ's internal `200px 1fr` label/value grid, which is why
+ * the columns above widened to 380px at the same time.
+ */
+.mjo-card-body > mj-form-field {
+    display: block;
+    min-width: 0;
 }
