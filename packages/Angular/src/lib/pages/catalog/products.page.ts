@@ -48,10 +48,8 @@ type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> }
     imports: [CommonModule, MJAlertComponent, EntityViewerModule],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-sitemap" class="mjo-cat__note">
-                <strong>The catalog is the behaviour root.</strong>
-                A product's type decides recognition, taxability, fulfillment and recurrence, and every
-                order line inherits those answers — which is why an order screen never asks for them
-                again.
+                Product type determines revenue recognition, taxability, fulfillment and recurrence for
+                every order line.
         </mj-alert>
 
         <div class="mjo-products-viewer-container">
@@ -106,9 +104,8 @@ type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> }
                     </table>
                 </div>
                 <div class="mj-card-pad small muted">
-                    <b>What a type decides:</b> whether a line ships, how its revenue is recognised,
-                    whether it is taxable, and whether it recurs. A product inherits all four and may
-                    override any — so a line never has to be asked.
+                    A product type sets whether the product ships, how revenue is recognized, whether it is
+                    taxable and whether it recurs. Products inherit these settings and can override them.
                 </div>
             </div>
 
@@ -139,19 +136,15 @@ type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> }
                     </table>
                 </div>
                 <div class="mj-card-pad small muted">
-                    Categories group for reporting and supply defaults. They do NOT decide
-                    behaviour — that is the type's job. Keeping the two apart is what stops a
-                    reporting change from altering how something is taxed.
+                    Categories are used for reporting and defaults. Behavior is set by product type.
                 </div>
             </div>
         </div>
 
         <mj-alert Variant="info" Icon="fa-solid fa-puzzle-piece" class="mjo-cat__block">
-                <strong>Type extensions carry what only that type needs.</strong>
-                An event has a venue and a date; a subscription has a term length. Rather than a
-                products table with columns most rows leave null, a type names an extension entity
-                and the extra facts live there. The order line gets a matching extension, so a line
-                selling a ticket can hold ticket facts without every other line pretending to.
+                <strong>Type extensions.</strong>
+                Some product types have additional fields (for example, an event has a venue and date).
+                These are stored on an extension record linked to the product and the order line.
         </mj-alert>
     `,
     styles: [

@@ -44,9 +44,8 @@ interface MJOUnapplication {
     template: `
         <p class="mjo-note mjo-rf__note">
             <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-            <strong>A refund is a new payment, never an edit of the capture.</strong>
-                The original happened and has an entry; rewriting it would destroy the trail of money that
-                actually moved. The reversal mirrors it — same accounts, sides swapped.
+            <strong>A refund is recorded as a new payment that reverses the original.</strong>
+            The original payment is not changed.
         </p>
 
         <div class="mjo-rf__split">
@@ -54,7 +53,7 @@ interface MJOUnapplication {
                 <div class="mj-card">
                     <div class="mj-card-head">
                         <i class="fa-solid fa-receipt" aria-hidden="true"></i>
-                        <h3>Refunding against</h3>
+                        <h3>Original payment</h3>
                     </div>
                     <div class="mj-card-pad">
                         <mjo-stated-value Label="Payment">{{ PaymentNumber ?? '—' }}</mjo-stated-value>
@@ -70,8 +69,7 @@ interface MJOUnapplication {
                         </mjo-stated-value>
 
                         <div class="small muted mjo-rf__hint">
-                            The processor kept its {{ Fee | mjoMoney }} cut, so the refund does not give it
-                            back. Reversing it would claim money from the processor that never returns.
+                            The {{ Fee | mjoMoney }} processing fee is not refunded.
                         </div>
                     </div>
                 </div>
@@ -79,7 +77,7 @@ interface MJOUnapplication {
                 <div class="mj-card mjo-rf__amount">
                     <div class="mj-card-head">
                         <i class="fa-solid fa-money-bill-transfer" aria-hidden="true"></i>
-                        <h3>How much</h3>
+                        <h3>Refund amount</h3>
                     </div>
                     <div class="mj-card-pad">
                         <label class="mj-field">
@@ -90,15 +88,14 @@ interface MJOUnapplication {
                                 (change)="SetAmount($any($event.target).value)"
                                 aria-label="Refund amount">
                             <div class="hint">
-                                Never more than {{ Refundable | mjoMoney }} remains refundable. Partial refunds
-                                accumulate against that cap.
+                                Up to {{ Refundable | mjoMoney }} can be refunded.
                             </div>
                         </label>
 
                         <label class="mj-field">
                             <label>Reason</label>
                             <input class="mj-input" [(ngModel)]="Reason" name="reason"
-                                   placeholder="Why is this being refunded?">
+                                   placeholder="Reason for refund">
                         </label>
                     </div>
                 </div>
@@ -108,8 +105,8 @@ interface MJOUnapplication {
                 <div class="mj-card">
                     <div class="mj-card-head">
                         <i class="fa-solid fa-arrows-split-up-and-left" aria-hidden="true"></i>
-                        <h3>How it un-applies</h3>
-                        <span class="right small muted">proportional to the original allocation</span>
+                        <h3>Orders affected</h3>
+                        <span class="right small muted">in proportion to the original payment</span>
                     </div>
                     <table class="mj-table mj-table--compact">
                         <thead>
@@ -117,7 +114,7 @@ interface MJOUnapplication {
                                 <th>Order</th>
                                 <th class="num">Originally</th>
                                 <th class="num">Share</th>
-                                <th class="num">Un-applies</th>
+                                <th class="num">Reversed</th>
                                 <th class="num">New balance</th>
                             </tr>
                         </thead>
@@ -142,9 +139,8 @@ interface MJOUnapplication {
                     </table>
                     <div class="mj-card-pad mjo-rf__foot">
                         <div class="small muted">
-                            A payment split across three orders refunds across the same three, in the same
-                            ratio. Choosing which one to claw back from would be re-making a decision the
-                            original payment already made.
+                            A payment applied to several orders is refunded across those orders in the same
+                            proportions.
                         </div>
                     </div>
                 </div>
@@ -154,20 +150,16 @@ interface MJOUnapplication {
                      colour on a screen that moves money spends the alarm on the wrong thing. -->
                 <p class="mjo-note mjo-rf__note">
                     <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-                    <strong>Guards.</strong>
-                    A refund cannot exceed what remains after earlier refunds, and a captured
-                    payment is never edited — the refund is a NEW payment that reverses it. Both
-                    rules are enforced server-side, so a stale screen cannot talk its way past
-                    them.
+                    <strong>Limits.</strong>
+                    A refund cannot exceed the remaining refundable amount. The original payment is
+                    never edited.
                 </p>
 
                 <p class="mjo-note mjo-rf__note">
                     <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
-                    <strong>Mirrored entry.</strong>
-                        Cash is credited and A/R debited — the capture's entry with the directions
-                        swapped. The processing fee is NOT reversed unless the provider actually
-                        returned it, because our cost was incurred whether or not the customer kept
-                        the goods.
+                    <strong>Accounting.</strong>
+                    The refund posts a reversing entry against the original payment. The processing
+                    fee is reversed only if the provider returned it.
                 </p>
 
                 <div class="mjo-rf__actions">

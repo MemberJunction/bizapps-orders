@@ -66,13 +66,13 @@ interface MJONextAction {
                 Label="Never contacted"
                 Icon="fa-regular fa-envelope"
                 [Value]="String(NeverContacted)"
-                Detail="Start here — the cheapest collections" />
+                Detail="No reminder sent yet" />
 
             <mjo-stat-tile
                 Label="Credit available to apply"
                 Icon="fa-solid fa-piggy-bank"
                 [Value]="CreditDisplay"
-                Detail="Spend this before chasing cash" />
+                Detail="Apply before following up" />
         </div>
 
         @if (LoadError) {
@@ -84,10 +84,8 @@ interface MJONextAction {
 
         <p class="mjo-note mjo-ov__error">
             <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-            <strong>Dunning notifies a person; nothing here auto-cancels.</strong>
-                A failed card is usually an expired card, not a lost customer. Escalation is a
-                sequence of reminders with a human at the end of it — cancelling access on a missed
-                payment turns a billing problem into a churn problem.
+            <strong>Reminders notify the customer.</strong>
+            Nothing on this screen cancels an order or subscription.
         </p>
 
         <div class="mj-card mjo-ov__aging">
@@ -102,9 +100,8 @@ interface MJONextAction {
 
         @if (Truncated) {
             <mj-alert Variant="warning" Icon="fa-solid fa-triangle-exclamation" class="mjo-ov__truncated">
-                    <strong>This list was capped.</strong>
-                    More rows are overdue than are shown. Narrow it with a filter rather than working from a
-                    partial list that looks complete.
+                    <strong>List truncated.</strong>
+                    Not all overdue orders are shown. Add a filter to narrow the list.
             </mj-alert>
         }
 
@@ -253,19 +250,19 @@ export class MJOOverduePageComponent implements OnInit {
         if (row.AvailableCredit > 0) {
             return {
                 Icon: 'fa-solid fa-piggy-bank',
-                Text: `Apply their ${FormatMoney(row.AvailableCredit)} credit first`,
+                Text: `Apply ${FormatMoney(row.AvailableCredit)} credit`,
                 Tone: 'success',
             };
         }
         if (row.GraceThroughDate) {
             return {
                 Icon: 'fa-solid fa-hourglass-half',
-                Text: `Call before grace ends ${FormatDate(row.GraceThroughDate, { Short: true })}`,
+                Text: `Call before grace period ends ${FormatDate(row.GraceThroughDate, { Short: true })}`,
                 Tone: 'warning',
             };
         }
         if (row.DaysOverdue > 60) {
-            return { Icon: 'fa-solid fa-phone', Text: 'Phone call — email is not working', Tone: 'error' };
+            return { Icon: 'fa-solid fa-phone', Text: 'Phone call', Tone: 'error' };
         }
         if (row.DaysOverdue > 30) {
             return { Icon: 'fa-regular fa-envelope', Text: 'Second reminder', Tone: 'info' };
@@ -287,7 +284,7 @@ export class MJOOverduePageComponent implements OnInit {
             // a server call failed is worse than reporting nothing at all.
             this.LoadError =
                 result.ErrorMessage?.trim() ||
-                'The overdue worklist could not be loaded, so this is not a statement that nothing is overdue.';
+                'The overdue worklist could not be loaded.';
             this.AllRows = [];
             this.Rows = [];
             this.cdr.detectChanges();

@@ -65,9 +65,8 @@ export interface MJOJournalEntry {
                     {{ companyCount }} {{ companyCount === 1 ? 'company' : 'companies' }} ·
                     {{ allBalanced ? 'all balanced' : 'NOT balanced' }}
                 </span>
-                <span class="mj-chip mj-chip--outline">one entry per line, always</span>
                 @if (Pending) {
-                    <span class="mj-chip mj-chip--info">will land Pending</span>
+                    <span class="mj-chip mj-chip--info">will post as Pending</span>
                 }
             </div>
 
@@ -158,11 +157,11 @@ export class MJOJournalEntryPreviewComponent {
     /** The entries, one per order line. */
     @Input() Entries: MJOJournalEntry[] = [];
 
-    /** Add the "will land Pending" chip — true while previewing a confirm. */
+    /** Add the "will post as Pending" chip — true while previewing a confirm. */
     @Input() Pending = false;
 
     /** Shown when there is nothing to project. */
-    @Input() EmptyText = 'No journal entries — this order has not booked.';
+    @Input() EmptyText = 'No journal entries. The order has not been confirmed.';
 
     /** A user asked to open an entry in Accounting. The host decides how. */
     @Output() OpenInAccounting = new EventEmitter<MJOJournalEntry>();

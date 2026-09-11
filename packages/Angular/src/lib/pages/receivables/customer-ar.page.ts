@@ -93,7 +93,7 @@ interface MJOCustomerSummary {
                                 </span>
                             </button>
                         } @empty {
-                            <div class="small muted">Nobody owes anything.</div>
+                            <div class="small muted">No customers with an open balance.</div>
                         }
                     </div>
                 </div>
@@ -129,10 +129,9 @@ interface MJOCustomerSummary {
 
                             @if (Selected.Credit > 0) {
                                 <mj-alert Variant="success" Icon="fa-solid fa-piggy-bank" class="mjo-ar__credit">
-                                        <strong>{{ money(Selected.Credit) }} of credit is sitting unused</strong>
-                                        while {{ money(Selected.Open) }} is owed. Applying it first is almost always
-                                        the right move — and it is one click, because the credit is just another
-                                        order balance.
+                                        <strong>This customer has {{ money(Selected.Credit) }} of credit and owes
+                                        {{ money(Selected.Open) }}.</strong>
+                                        Consider applying the credit first.
                                 </mj-alert>
                             }
                         </div>
@@ -161,7 +160,7 @@ interface MJOCustomerSummary {
                         <div class="mj-card">
                             <div class="mj-card-head">
                                 <i class="fa-solid fa-piggy-bank" aria-hidden="true"></i>
-                                <h3>Credits they hold</h3>
+                                <h3>Credits on account</h3>
                             </div>
                             <div class="mj-card-pad">
                                 @for (credit of CreditItems; track credit.ID) {
@@ -172,16 +171,11 @@ interface MJOCustomerSummary {
                                         </b>
                                     </div>
                                 } @empty {
-                                    <div class="small muted">
-                                        No credit on file. A credit is an order paid for more than it
-                                        was worth — there is no separate instrument to look up.
-                                    </div>
+                                    <div class="small muted">No credit on account.</div>
                                 }
                                 @if (CreditItems.length) {
                                     <div class="small muted mjo-ar__note">
-                                        Spend this before invoicing them again. Chasing cash from a
-                                        customer already holding your money is the call nobody wants
-                                        to make twice.
+                                        Apply this credit before issuing the next invoice.
                                     </div>
                                 }
                             </div>
@@ -245,7 +239,7 @@ interface MJOCustomerSummary {
                                     } @empty {
                                         <tr>
                                             <td colspan="5" class="small muted">
-                                                No subscriptions. Nothing here renews on its own.
+                                                No subscriptions.
                                             </td>
                                         </tr>
                                     }
@@ -256,8 +250,8 @@ interface MJOCustomerSummary {
                 } @else {
                     <div class="mj-empty mjo-ar__empty">
                         <i class="fa-solid fa-user-tag" aria-hidden="true"></i>
-                        <div class="t">Pick a customer</div>
-                        <div class="small">Their aging, open items and credits appear here.</div>
+                        <div class="t">Select a customer</div>
+                        <div class="small">Aging, open items and credits will appear here.</div>
                     </div>
                 }
             </div>

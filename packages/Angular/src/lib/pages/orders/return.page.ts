@@ -55,16 +55,15 @@ interface MJOReturnLine {
     imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-rotate-left" class="mjo-rt__note">
-                <strong>A return is a new order that mirrors the original.</strong>
-                Same accounts, sides swapped, positive amounts — a ledger line with a negative debit is not
-                a thing. The booked order is never edited.
+                <strong>A return is recorded as a new order that reverses the original.</strong>
+                The original order is not changed.
         </mj-alert>
 
         @if (Origin) {
             <div class="mj-card mjo-rt__origin">
                 <div class="mj-card-pad mjo-rt__origin-row">
                     <div>
-                        <div class="sec-label mjo-rt__origin-label">Returning against</div>
+                        <div class="sec-label mjo-rt__origin-label">Original order</div>
                         <div class="mono mjo-rt__origin-number">{{ Origin.OrderNumber }}</div>
                     </div>
                     <mjo-stated-value Label="Customer">
@@ -79,15 +78,15 @@ interface MJOReturnLine {
                     <div class="mj-card">
                         <div class="mj-card-head">
                             <i class="fa-solid fa-boxes-packing" aria-hidden="true"></i>
-                            <h3>What is coming back</h3>
-                            <span class="right small muted">capped by what is still returnable</span>
+                            <h3>Items to return</h3>
+                            <span class="right small muted">limited to quantity not yet returned</span>
                         </div>
                         <table class="mj-table mj-table--compact">
                             <thead>
                                 <tr>
                                     <th>Product</th>
                                     <th class="num">Bought</th>
-                                    <th class="num">Already back</th>
+                                    <th class="num">Already returned</th>
                                     <th class="num">Returning</th>
                                     <th class="num">Unit</th>
                                     <th class="num">Credit</th>
@@ -109,7 +108,7 @@ interface MJOReturnLine {
                                                 [attr.aria-label]="'Quantity returning of ' + line.ProductName">
                                             <div class="secondary">
                                                 @if (line.Returning >= remaining(line)) {
-                                                    at the cap
+                                                    max reached
                                                 } @else {
                                                     max {{ remaining(line) }}
                                                 }
@@ -117,7 +116,7 @@ interface MJOReturnLine {
                                         </td>
                                         <td class="num">
                                             {{ line.UnitPrice | mjoMoney }}
-                                            <div class="secondary">from the origin</div>
+                                            <div class="secondary">from the original order</div>
                                         </td>
                                         <td class="num strong mj-money--credit">{{ credit(line) | mjoMoney }}</td>
                                     </tr>
@@ -129,7 +128,7 @@ interface MJOReturnLine {
                     <div class="mj-card mjo-rt__reason">
                         <div class="mj-card-head">
                             <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
-                            <h3>Why</h3>
+                            <h3>Reason</h3>
                         </div>
                         <div class="mj-card-pad">
                             <label class="mj-field">
@@ -148,7 +147,7 @@ interface MJOReturnLine {
                     <div class="mj-card">
                         <div class="mj-card-head">
                             <i class="fa-solid fa-calculator" aria-hidden="true"></i>
-                            <h3>What this credits</h3>
+                            <h3>Credit summary</h3>
                         </div>
                         <div class="mj-card-pad">
                             <div class="mj-ladder">
@@ -157,7 +156,7 @@ interface MJOReturnLine {
                                     <span class="amt">{{ GoodsTotal | mjoMoney }}</span>
                                 </div>
                                 <div class="mj-ladder-row">
-                                    <span class="label">Tax given back</span>
+                                    <span class="label">Tax refunded</span>
                                     <span class="amt">{{ TaxTotal | mjoMoney }}</span>
                                 </div>
                                 <div class="mj-ladder-row is-total">
@@ -165,32 +164,19 @@ interface MJOReturnLine {
                                     <span class="amt mj-money--credit">{{ CreditTotal | mjoMoney }}</span>
                                 </div>
                             </div>
-
-                            <div class="mj-ladder-note">
-                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-                                <span>
-                                    Pricing is skipped entirely for a negative quantity — there is no volume band
-                                    for −1, and asking would produce a message about quantity instead of one
-                                    about the return.
-                                </span>
-                            </div>
                         </div>
                     </div>
 
                     <mj-alert Variant="info" Icon="fa-solid fa-scale-balanced" class="mjo-rt__note">
-                            <strong>Mirrored entry.</strong>
-                            The return books the origin's entry with debit and credit swapped and
-                            positive amounts — same accounts, opposite direction. It is never an
-                            edit of the booked order, because that order genuinely happened and
-                            rewriting it would destroy the trail of money that moved.
+                            <strong>Accounting.</strong>
+                            The return posts a reversing entry against the original order's accounts.
+                            The original entry is not changed.
                     </mj-alert>
 
                     <mj-alert Variant="info" Icon="fa-solid fa-hand-holding-dollar" class="mjo-rt__note">
-                            <strong>How to settle it.</strong>
-                            A return creates a credit — an order with a negative balance. It can be
-                            spent on the customer's next order or refunded as cash. Nothing is
-                            refunded automatically: which one happens is a decision, and the system
-                            should not make it silently.
+                            <strong>Settlement.</strong>
+                            The return creates a credit on the customer's account. Apply it to another
+                            order or issue a refund. Refunds are not issued automatically.
                     </mj-alert>
 
                     <div class="mjo-rt__actions">
@@ -207,8 +193,8 @@ interface MJOReturnLine {
         } @else {
             <div class="mj-empty mjo-rt__empty">
                 <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-                <div class="t">Pick an order to return against</div>
-                <div class="small">A return always settles from the order it unwinds.</div>
+                <div class="t">Select an order to return</div>
+                <div class="small">Choose the original order to start a return.</div>
             </div>
         }
     `,

@@ -82,7 +82,7 @@ interface MJOAttentionItem {
                         Label="Open balance"
                         Icon="fa-solid fa-scale-balanced"
                         [Value]="OpenBalanceDisplay"
-                        Detail="Confirmed orders still carrying a balance"
+                        Detail="Unpaid balance on confirmed orders"
                         (Clicked)="OpenExplorerPreset('unpaid')" />
 
                     <mjo-stat-tile
@@ -97,7 +97,7 @@ interface MJOAttentionItem {
                         Label="Credits held"
                         Icon="fa-solid fa-piggy-bank"
                         [Value]="CreditsDisplay"
-                        Detail="Offer these before invoicing again"
+                        Detail="Customer credit available to apply"
                         (Clicked)="OpenExplorerPreset('credits')" />
                 </div>
 
@@ -105,7 +105,7 @@ interface MJOAttentionItem {
                     <div class="mj-card">
                         <div class="mj-card-head">
                             <i class="fa-solid fa-list-check" aria-hidden="true"></i>
-                            <h3>Needs someone</h3>
+                            <h3>Work queues</h3>
                         </div>
                         <div class="mj-card-pad mjo-dash__queues">
                             @for (queue of Queues; track queue.Label) {
@@ -123,7 +123,7 @@ interface MJOAttentionItem {
                                     <i class="fa-solid fa-chevron-right muted tiny" aria-hidden="true"></i>
                                 </a>
                             } @empty {
-                                <div class="small muted">Nothing is waiting. Unusual, and worth enjoying.</div>
+                                <div class="small muted">No open work items.</div>
                             }
                         </div>
                     </div>
@@ -142,7 +142,7 @@ interface MJOAttentionItem {
                     <div class="mj-card">
                         <div class="mj-card-head">
                             <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
-                            <h3>Where orders are sitting</h3>
+                            <h3>Orders by status</h3>
                         </div>
                         <div class="mj-card-pad">
                             <mjo-bar-list [Rows]="StatusMix" EmptyText="No orders yet." />
@@ -154,8 +154,8 @@ interface MJOAttentionItem {
                     <div class="mj-card">
                         <div class="mj-card-head">
                             <i class="fa-solid fa-building" aria-hidden="true"></i>
-                            <h3>Top Organizations</h3>
-                            <span class="right small muted">by spend</span>
+                            <h3>Top organization customers</h3>
+                            <span class="right small muted">by order total</span>
                         </div>
                         <div class="mj-card-pad mjo-dash__leaderboard">
                             @for (org of TopOrganizations; track (org.ID ?? org.Name); let idx = $index) {
@@ -177,8 +177,8 @@ interface MJOAttentionItem {
                     <div class="mj-card">
                         <div class="mj-card-head">
                             <i class="fa-solid fa-users" aria-hidden="true"></i>
-                            <h3>Top People</h3>
-                            <span class="right small muted">by spend</span>
+                            <h3>Top individual customers</h3>
+                            <span class="right small muted">by order total</span>
                         </div>
                         <div class="mj-card-pad mjo-dash__leaderboard">
                             @for (person of TopPeople; track (person.ID ?? person.Name); let idx = $index) {
@@ -204,7 +204,7 @@ interface MJOAttentionItem {
                             <i class="fa-solid fa-table-list" aria-hidden="true"></i>
                             <h3>Active Orders</h3>
                             <span class="right">
-                                <a href="#" class="small" (click)="OnTabChange('explorer')">Full-screen Explorer →</a>
+                                <a href="#" class="small" (click)="OnTabChange('explorer')">Open in Orders Explorer</a>
                             </span>
                         </div>
                         <div class="mjo-dash__viewer-host">
@@ -222,19 +222,19 @@ interface MJOAttentionItem {
                     <div class="mj-card">
                         <div class="mj-card-head">
                             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                            <h3>Worth a look</h3>
+                            <h3>Attention needed</h3>
                         </div>
                         <div class="mj-card-pad">
                             @for (item of WorthALook; track item.Order.ID) {
                                 <mj-alert [Variant]="item.Tone" [Icon]="item.Icon" Role="note">
                                     <strong>{{ item.Headline }}</strong>
                                     {{ item.Detail }}
-                                    <a href="#" class="small" (click)="openFrom($event, item.Order)">Work it →</a>
+                                    <a href="#" class="small" (click)="openFrom($event, item.Order)">Open order</a>
                                 </mj-alert>
                             } @empty {
                                 <mj-empty-state
                                     Icon="fa-solid fa-circle-check"
-                                    Title="Nothing is asking for attention"
+                                    Title="No items need attention"
                                     Size="compact" />
                             }
                         </div>
@@ -256,7 +256,7 @@ interface MJOAttentionItem {
                 <div class="mjo-fulfillment-pane">
                     <p class="mjo-note mjo-fq__note">
                         <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-                        Everything here is already paid for and booked. What is outstanding is the goods, and what this queue controls is the physical line fulfillment state.
+                        Order lines waiting to ship. Marking a line fulfilled updates shipping status only. It does not change the order's accounting.
                     </p>
                     <div class="mjo-explorer-wrapper">
                         @if (OrderLineEntityInfo) {
@@ -283,19 +283,19 @@ interface MJOAttentionItem {
                             Icon="fa-solid fa-clock"
                             Tone="default"
                             [Value]="Aging30Display"
-                            Detail="First reminder interval" />
+                            Detail="First reminder" />
                         <mjo-stat-tile
                             Label="61–90 days"
                             Icon="fa-solid fa-triangle-exclamation"
                             Tone="alert"
                             [Value]="Aging60Display"
-                            Detail="Escalated collection required" />
+                            Detail="Second reminder" />
                         <mjo-stat-tile
                             Label="90+ days overdue"
                             Icon="fa-solid fa-circle-xmark"
                             Tone="alert"
                             [Value]="Aging90Display"
-                            Detail="High risk receivables" />
+                            Detail="At risk" />
                     </div>
 
                     <div class="mjo-dash__split mjo-dash__split--wide" style="margin-top: var(--mj-space-6);">
@@ -304,7 +304,7 @@ interface MJOAttentionItem {
                                 <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
                                 <h3>Overdue Collections Worklist</h3>
                                 <span class="right">
-                                    <a href="#" class="small" (click)="OpenExplorerPreset('overdue')">Open in Explorer →</a>
+                                    <a href="#" class="small" (click)="OpenExplorerPreset('overdue')">Open in Orders Explorer</a>
                                 </span>
                             </div>
                             <div class="mjo-dash__viewer-host" style="min-height: 520px;">
@@ -756,8 +756,8 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
                 Order: biggestCredit,
                 Tone: 'info',
                 Icon: 'fa-solid fa-piggy-bank',
-                Headline: `${this.customerOf(biggestCredit)} is holding ${FormatMoney(Math.abs((biggestCredit.Balance ?? 0)))}.`,
-                Detail: 'Spend it before invoicing them again.',
+                Headline: `${this.customerOf(biggestCredit)} has ${FormatMoney(Math.abs((biggestCredit.Balance ?? 0)))} credit on account.`,
+                Detail: 'Apply it to their next open order.',
             });
         }
 
@@ -808,7 +808,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get OpenValueDisplay(): string {
-        return `${FormatMoney(this.open.reduce((s, o) => s + (o.TotalGross ?? 0), 0), { Round: true })} of orders`;
+        return `Total order value ${FormatMoney(this.open.reduce((s, o) => s + (o.TotalGross ?? 0), 0), { Round: true })}`;
     }
 
     public get OpenBalanceDisplay(): string {
@@ -872,10 +872,9 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         ).length;
 
         const all: MJOQueue[] = [
-            { Label: 'Drafts waiting to be finished', Count: drafts, Icon: 'fa-solid fa-pen-ruler', Tone: 'neutral', PageId: 'list', Preset: 'drafts' },
+            { Label: 'Draft orders', Count: drafts, Icon: 'fa-solid fa-pen-ruler', Tone: 'neutral', PageId: 'list', Preset: 'drafts' },
             {
-                Label: 'Fulfillment queue (items waiting to ship)',
-                Note: 'Order lines ready for picking and shipment',
+                Label: 'Lines waiting to ship',
                 Count: awaitingFulfillment,
                 Icon: 'fa-solid fa-dolly',
                 Tone: 'warning',
@@ -883,8 +882,8 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
             },
             { Label: 'Overdue invoices', Count: this.overdue.length, Icon: 'fa-solid fa-hourglass-half', Tone: 'error', PageId: 'list', Preset: 'overdue' },
             {
-                Label: 'Credits customers are holding',
-                Note: 'Spendable — offer them before invoicing again',
+                Label: 'Customer credits on account',
+                Note: 'Available to apply to open orders',
                 Count: this.credits.length,
                 Icon: 'fa-solid fa-piggy-bank',
                 Tone: 'success',

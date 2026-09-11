@@ -49,7 +49,7 @@ export interface OrdersNavBadges {
 
 /** Orders — take an order, then work the ones you have. */
 export const ORDERS_SUB_PAGES: OrdersSubPage[] = [
-    { Id: 'dashboard', Label: 'Dashboard', Icon: 'fa-solid fa-gauge-high', Description: 'Is today normal?' },
+    { Id: 'dashboard', Label: 'Dashboard', Icon: 'fa-solid fa-gauge-high' },
     { Id: 'list', Label: 'All orders', Icon: 'fa-solid fa-table-list' },
     { Id: 'fulfillment', Label: 'Fulfillment queue', Icon: 'fa-solid fa-dolly', Group: 'Work' },
     { Id: 'returns', Label: 'Returns', Icon: 'fa-solid fa-rotate-left', Group: 'Work' },
@@ -57,7 +57,7 @@ export const ORDERS_SUB_PAGES: OrdersSubPage[] = [
 
 /** Payments — take the cash, and say what it settles. */
 export const PAYMENTS_SUB_PAGES: OrdersSubPage[] = [
-    { Id: 'dashboard', Label: 'Dashboard', Icon: 'fa-solid fa-gauge-high', Description: 'What came in, and does it tie?' },
+    { Id: 'dashboard', Label: 'Dashboard', Icon: 'fa-solid fa-gauge-high', Description: 'Cash received and reconciliation' },
     { Id: 'list', Label: 'All payments', Icon: 'fa-solid fa-table-list' },
     { Id: 'refund', Label: 'Refunds', Icon: 'fa-solid fa-arrow-rotate-left', Group: 'Work' },
     { Id: 'credit', Label: 'Account credits', Icon: 'fa-solid fa-piggy-bank', Group: 'Work' },
@@ -72,7 +72,7 @@ export const PAYMENTS_SUB_PAGES: OrdersSubPage[] = [
  * subscription is "will it renew and will it get paid".
  */
 export const RECEIVABLES_SUB_PAGES: OrdersSubPage[] = [
-    { Id: 'aging', Label: 'Customer A/R', Icon: 'fa-solid fa-user-tag', Description: 'One customer, whole picture' },
+    { Id: 'aging', Label: 'Customer A/R', Icon: 'fa-solid fa-user-tag', Description: 'Balances by customer' },
     { Id: 'overdue', Label: 'Overdue worklist', Icon: 'fa-solid fa-hourglass-half' },
     { Id: 'subscriptions', Label: 'Subscriptions', Icon: 'fa-solid fa-rotate', Description: 'Terms and renewals' },
 ];

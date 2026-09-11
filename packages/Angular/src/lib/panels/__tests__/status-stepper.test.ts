@@ -42,7 +42,7 @@ describe('BuildOrderStages', () => {
 
     it('warns that confirming is irreversible', () => {
         const confirm = BuildOrderStages('Draft').find((s) => s.Stage === 'Confirmed');
-        expect(confirm!.Note).toMatch(/not undoable|exactly once/i);
+        expect(confirm!.Note).toMatch(/cannot be undone/i);
     });
 });
 

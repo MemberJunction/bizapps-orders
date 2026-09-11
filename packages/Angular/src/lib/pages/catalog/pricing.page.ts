@@ -37,10 +37,9 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
     imports: [CommonModule, EntityViewerModule, MJAlertComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-tags" class="mjo-pr__note">
-                <strong>One row is one price rule.</strong>
-                Bands and seasons are several rows rather than one row with more columns, and priority
-                disambiguates. Ties between equal-priority rules are refused when the rule is
-                <b>saved</b> — a price that depends on row order is a price nobody can explain.
+                <strong>Each row is one price rule.</strong>
+                Quantity bands and seasonal prices are separate rules. Priority decides which rule
+                applies. Overlapping rules with the same priority are rejected on save.
         </mj-alert>
 
         <div class="mjo-pr__viewer-host">
@@ -83,8 +82,7 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                             } @empty {
                                 <tr>
                                     <td colspan="3" class="small muted">
-                                        No price lists. Every product then prices from its own
-                                        default — which is a valid configuration, not a gap.
+                                        No price lists. Products use their default price.
                                     </td>
                                 </tr>
                             }
@@ -96,13 +94,12 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
             <div class="mj-card">
                 <div class="mj-card-head">
                     <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
-                    <h3>How a price resolves</h3>
+                    <h3>How a price is determined</h3>
                 </div>
                 <div class="mj-card-pad">
                     <ol class="mjo-pr__walk">
                         <li>
-                            <b>A price typed on the line</b> — wins outright. Nothing below is
-                            consulted, and the line records that it was stated.
+                            <b>A price entered on the line</b> is used first.
                         </li>
                         <li>
                             <b>A rule on the customer's price list</b>, highest priority first,
@@ -112,13 +109,11 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                             <b>A rule on the standard list</b>, same ordering.
                         </li>
                         <li>
-                            <b>The product's standalone selling price</b> — the floor, so a line can
-                            always be priced.
+                            <b>The product's standalone selling price</b> is used when no rule matches.
                         </li>
                     </ol>
                     <div class="small muted mjo-pr__note">
-                        The walk stops at the first answer. That is what makes a price explainable:
-                        there is exactly one reason for it, and it can be named.
+                        The first match is used.
                     </div>
                 </div>
             </div>
@@ -144,8 +139,7 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                             } @empty {
                                 <tr>
                                     <td colspan="2" class="small muted">
-                                        No banded prices. A product without bands charges one unit
-                                        price at every quantity.
+                                        No quantity bands.
                                     </td>
                                 </tr>
                             }
@@ -153,10 +147,8 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                     </table>
                 </div>
                 <div class="mj-card-pad small muted">
-                    Bands are read by quantity, and the band that matches sets the unit price for
-                    <b>every</b> unit — not just the ones above the threshold. That is the
-                    difference between a tier and a bracket, and getting it wrong is a silent
-                    overcharge.
+                    The matching band sets the unit price for all units on the line, not only the units
+                    above the threshold.
                 </div>
             </div>
 
@@ -179,8 +171,7 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                             } @empty {
                                 <tr>
                                     <td colspan="2" class="small muted">
-                                        No recurrence restrictions — every rule applies whenever its
-                                        effective window is open.
+                                        No recurrence restrictions.
                                     </td>
                                 </tr>
                             }
@@ -188,21 +179,11 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                     </table>
                 </div>
                 <div class="mj-card-pad small muted">
-                    A happy hour or a weekday rate is the SAME rule with a narrower window, not a
-                    second pricing system. Recurrence narrows when a rule is eligible; priority still
-                    decides which eligible rule wins.
+                    Recurrence limits when a rule applies (for example, weekdays only). Priority still
+                    decides between eligible rules.
                 </div>
             </div>
         </div>
-
-        <mj-alert Variant="warning" Icon="fa-solid fa-triangle-exclamation" class="mjo-pr__block">
-                <strong>Ambiguity is refused at write time.</strong>
-                Two rules with the same priority that could both match are rejected when the rule is
-                SAVED, not resolved when a price is asked for. A price that depends on which row the
-                database returned first is a price nobody can explain — and the person who created
-                the ambiguity is the one who should resolve it, while they still remember what they
-                meant.
-        </mj-alert>
     `,
     styles: [
         `

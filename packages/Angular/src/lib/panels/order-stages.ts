@@ -89,13 +89,13 @@ export function BuildOrderStages(
                 return {
                     Stage: stage,
                     Reachable: true,
-                    Note: 'Optional — going straight to Confirmed is legal.',
+                    Note: 'Optional. An order can go straight to Confirmed.',
                 };
             case 'Confirmed':
                 return {
                     Stage: stage,
                     Reachable: at < STAGE_ORDER.indexOf('Confirmed'),
-                    Note: 'Books one journal entry per line. Fires exactly once, and is not undoable.',
+                    Note: 'Posts journal entries. This cannot be undone.',
                 };
             default:
                 return { Stage: stage, Reachable: false, Note: null };
