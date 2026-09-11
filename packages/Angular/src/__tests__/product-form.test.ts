@@ -8,6 +8,7 @@ import { BizAppsProductFormComponent } from '../lib/custom/Product/product-form.
 import {
     BizAppsProductSaveGuardFormComponent,
     EVENT_PRODUCT_EXTENSION_ENTITY,
+    EVENT_REV_REC_CONFIRM_MESSAGE,
     ShouldConfirmEventRevRec,
 } from '../lib/custom/Product/product-save-guard-form.component';
 import { OrdersEngine } from '@mj-biz-apps/orders-entities';
@@ -269,9 +270,18 @@ describe('Event product save guard (golive #211)', () => {
         const instance = Object.create(BizAppsProductSaveGuardFormComponent.prototype) as BizAppsProductSaveGuardFormComponent;
         const seam = instance as unknown as {
             NeedsEventRevRecConfirmation(): Promise<boolean>;
-            Confirm(message: string): boolean;
+            ConfirmService: { Confirm(options: unknown): Promise<boolean> };
         };
         seam.NeedsEventRevRecConfirmation = async () => true;
+
+        let asked: { message?: string; confirmText?: string } | null = null;
+        let answer = false;
+        seam.ConfirmService = {
+            Confirm: async (options) => {
+                asked = options as { message?: string };
+                return answer;
+            },
+        };
 
         let superCalls = 0;
         const realSuperSave = BaseFormComponent.prototype.SaveRecord;
@@ -280,11 +290,14 @@ describe('Event product save guard (golive #211)', () => {
             return true;
         };
         try {
-            seam.Confirm = () => false;
             await expect(instance.SaveRecord(true)).resolves.toBe(false);
             expect(superCalls).toBe(0);
+            // MJ's dialog, not window.confirm — it is asked with the issue's wording and a
+            // labelled affirmative button.
+            expect(asked!.message).toBe(EVENT_REV_REC_CONFIRM_MESSAGE);
+            expect(asked!.confirmText).toBe('Save anyway');
 
-            seam.Confirm = () => true;
+            answer = true;
             await expect(instance.SaveRecord(true)).resolves.toBe(true);
             expect(superCalls).toBe(1);
         } finally {
@@ -294,10 +307,15 @@ describe('Event product save guard (golive #211)', () => {
 
     it('saves without asking when the product is not an event product', async () => {
         const instance = Object.create(BizAppsProductSaveGuardFormComponent.prototype) as BizAppsProductSaveGuardFormComponent;
-        const seam = instance as unknown as { NeedsEventRevRecConfirmation(): Promise<boolean>; Confirm(m: string): boolean };
+        const seam = instance as unknown as {
+            NeedsEventRevRecConfirmation(): Promise<boolean>;
+            ConfirmService: { Confirm(options: unknown): Promise<boolean> };
+        };
         seam.NeedsEventRevRecConfirmation = async () => false;
-        seam.Confirm = () => {
-            throw new Error('must not prompt');
+        seam.ConfirmService = {
+            Confirm: async () => {
+                throw new Error('must not prompt');
+            },
         };
 
         let superCalls = 0;

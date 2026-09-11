@@ -1,7 +1,8 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { LogError } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import { MJConfirmService } from '@memberjunction/ng-ui-components';
 import { OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersProductFormComponent } from '../../generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
 
@@ -10,7 +11,7 @@ export const EVENT_PRODUCT_EXTENSION_ENTITY = 'MJ_BizApps_Orders: Event Products
 
 /** Wording is from golive #211. */
 export const EVENT_REV_REC_CONFIRM_MESSAGE =
-    'This event product will recognize revenue at booking, not at the event date. Continue?';
+    'This event product will recognize revenue at booking, not at the event date.';
 
 export type EventRevRecConfirmInput = {
     hasEventExtension: boolean;
@@ -57,20 +58,26 @@ export function ShouldConfirmEventRevRec(input: EventRevRecConfirmInput): boolea
     templateUrl: '../../generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component.html',
 })
 export class BizAppsProductSaveGuardFormComponent extends mjBizAppsOrdersProductFormComponent {
+    /** MJ's house confirmation dialog — native `window.confirm` is banned in this codebase. */
+    protected ConfirmService = inject(MJConfirmService);
+
     /**
      * Confirms first when this is an event product booking revenue up front. Declining writes
      * nothing and leaves the form dirty and in edit mode; confirming saves exactly as before.
      */
     public override async SaveRecord(StopEditModeAfterSave: boolean): Promise<boolean> {
         if (await this.NeedsEventRevRecConfirmation()) {
-            if (!this.Confirm(EVENT_REV_REC_CONFIRM_MESSAGE)) return false;
+            const proceed = await this.ConfirmService.Confirm({
+                title: 'Recognize revenue at booking?',
+                message: EVENT_REV_REC_CONFIRM_MESSAGE,
+                detail: 'Event products normally defer revenue until the event date.',
+                type: 'warning',
+                confirmText: 'Save anyway',
+                cancelText: 'Cancel',
+            });
+            if (!proceed) return false;
         }
         return super.SaveRecord(StopEditModeAfterSave);
-    }
-
-    /** Seam over `window.confirm` so tests can answer it. Not a dialog service. */
-    protected Confirm(message: string): boolean {
-        return window.confirm(message);
     }
 
     /**
