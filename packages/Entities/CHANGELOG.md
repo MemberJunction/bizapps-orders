@@ -1,5 +1,238 @@
 # @mj-biz-apps/orders-entities
 
+## 5.11.0
+
+### Minor Changes
+
+- a6ad8c5: `V202609061900` could not apply on any host but the one it was generated from.
+
+  The migration seeds five `EntityFieldValue` rows for `OrderLine.FulfillmentStatus` against a
+  hardcoded `EntityFieldID` — `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField
+  IDs per host, so that GUID exists only on the authoring database. Everywhere else the insert
+  hits `FK_EntityFieldValue_EntityField` and aborts the whole migration at batch 8 of 233,
+  taking the rest of the 5.10.0 upgrade with it — and, because `mj app upgrade` resolves
+  dependencies to latest, blocking every app that depends on orders too.
+
+  The field is now resolved by natural key (`Entity.BaseTable = 'OrderLine'` +
+  `EntityField.Name = 'FulfillmentStatus'`), with a `THROW` if it is genuinely absent rather
+  than a silent no-op. Each of the five values is guarded independently on
+  `(EntityFieldID, Value)`, so a host that already carries some of them keeps its own rows and
+  IDs and only gains the missing ones — an install that had Fulfilled/Pending/Returned gains
+  NotApplicable and PartiallyFulfilled and nothing else moves.
+
+  The file is edited in place rather than superseded: it has never applied successfully
+  anywhere except the authoring database, so no host carries a checksum for it.
+
+## 5.10.0
+
+### Minor Changes
+
+- 76b3d3e: Forward CodeGen remainder for V202609031400 (ProductPrice.Name / ProductCategoryID / Applicability). That file added the columns and SPs but omitted EntityField inserts. Recaptured on a clean DB with includeSchemas limited to \_\_mj_BizAppsOrders; the migration is the full SQL log, not a subset.
+
+## 5.9.0
+
+### Minor Changes
+
+- e121d98: Rebuild `vwEventOrderLines` so Event Order Lines can be read again.
+
+  `EventOrderLine` IS-A `OrderLine`, and its base view lists every inherited column explicitly.
+  5.7.0 added `PriceOverridden` / `PriceOverrideReason` to `OrderLine` and rebuilt `vwOrderLines`,
+  but nothing rebuilt the **child** IS-A view — so it still carried the pre-5.7.0 parent column list.
+
+  CodeGen cannot heal this: a host's `mj.config.cjs` carries this app's schema in `excludeSchemas`
+  (written back on every `mj app install`/`upgrade`), because the BizApps apps own their own views.
+  So CodeGen registers the inherited fields on the child entity and then reports them as unreadable.
+
+  The failure is quiet, which is the dangerous part: every read of the entity fails with
+  "column … does not exist", and a grid renders that as **"no data"** rather than an error — Event
+  Order Lines looks empty while its table is full.
+
+  `vwEventOrderLines` is the only IS-A child of `OrderLine` in this schema, verified against a live
+  database where these were the only two unreadable fields across every `__mj_BizApps*` entity.
+
+## 5.8.0
+
+### Minor Changes
+
+- 2981938: Stop the PriceOverride metadata seed hard-coding EntityField `Sequence`.
+
+  `V202609041600` inserted `PriceOverridden` and `PriceOverrideReason` at Sequence **43** and **44** —
+  whatever happened to be free on the authoring database. On AIDP stage 42/43/44 are held by
+  `ParentOrderLineIDPath`, `ParentOrderLineIDIsLeaf` and `ParentOrderLineIDChildCount`: CodeGen
+  hierarchy virtuals, which exist per host depending on schema shape. The insert hit
+  `UQ_EntityField_EntityID_Sequence` and the 5.7.0 upgrade stopped at batch 1/10, taking sales down
+  with it as a dependent.
+
+  Both values are now `MAX(Sequence) + 1`, evaluated per host. The two inserts are separate
+  statements, so the second sees the first.
+
+## 5.7.0
+
+### Minor Changes
+
+- bbb5171: OrdersEngine now caches Products, Product Prices, Product Categories, Product Types, Subscription Types, and Revenue Recognition Types (@RegisterForStartup). Confirm, pricing, checkout, fulfilment, and the catalog picker read those arrays instead of per-call RunView. Confirm looks up rev-rec types by normalized ID and inherits ProductType.DefaultRevenueRecognitionTypeID when the product left it blank. GL Account Roles stay on AccountingEngineBase; booking no longer force-refreshes that cache. Confirm also inherits ProductType.DefaultSubscriptionTypeID when the product left SubscriptionTypeID blank. `@mj-biz-apps/accounting-engine-base` is a real dependency of orders-core-entities-server (static import, declared in package.json), not a peer. Local filter-eval helpers are PascalCase (`EvaluateFilter`, `IsCompositeFilter`, `ParseFilterField`). Order-line price override is a pencil that expands a named-price picker (custom amount only when Custom is selected) plus Override Explanation when the price diverges from default. OrderLine gains PriceOverridden and PriceOverrideReason. Ship/bill addresses bind AddressID from the party; custom addresses can be linked onto the person/org profile.
+- bb9a5f2: Ship the three price-override Authorizations to hosts.
+
+  `metadata/authorizations/.price-override.json` declares `MJ.BizApps.Orders.Price.Override` and its
+  two children, but metadata is a dev-time source — the install engine never reads that directory, so
+  records reach a host only through a migration. Without one the price-override permission checks
+  would find no authorization to test against anywhere but the developer's own database, and
+  `scripts/check-release-seed-coverage.mjs` blocked the release saying exactly that.
+
+  The seed guards on **ID or Name**, because `__mj.Authorization` carries `UQ_Authorization` on
+  `Name`: on a host that created these via `mj sync push`, MJ assigned its own IDs, so an ID-only
+  guard passes and the insert then trips the unique constraint. The children resolve their parent by
+  name rather than by the literal ID for the same reason.
+
+### Patch Changes
+
+- a436049: License declarations now agree on BUSL-1.1 everywhere.
+
+  The manifest was corrected earlier; the README badge still advertised ISC, which is the
+  first license statement a reader meets and outranked `LICENSE`, `package.json`,
+  `mj-app.json` and every workspace package in practice. The badge now reads BUSL-1.1 and
+  links to `LICENSE`.
+
+- 4dfa35c: Unbreak the build: `FieldIsDirty` was called but never defined.
+
+  `next` has not compiled since #155. Nine call sites across Entities and Angular call
+  `BaseEntity.FieldIsDirty(...)`, which **does not exist in MemberJunction** — a code search across
+  the whole MJ repo finds nothing, and 6.1.0-edge.5 is the newest edge. `orders-entities` failed to
+  compile, which cascaded into `orders-core-entities-server` as dozens of "has no exported member"
+  errors.
+
+  Adds `anyFieldIsDirty(entity, names)` over MJ's real API (`GetFieldByName(name)?.Dirty`) and a
+  `FieldIsDirty(...names)` method on `OrderLineEntity` and `OrderHeaderEntity`. Call sites holding a
+  _generated_ entity type — `Lines.Items`, and the Angular services — go through the helper directly,
+  since the generated class has no such method.
+
+  Also fixes two unrelated breaks in the same run: `Products$`/`ProductPrices$` had no explicit
+  return type, so TypeScript could not name the inferred `Observable` (TS2742) — `rxjs` is now a
+  declared dependency rather than a transitive one — and `CreateEmptyFilter` was imported with the
+  wrong casing (`createEmptyFilter`).
+
+## 5.6.0
+
+## 5.5.0
+
+### Minor Changes
+
+- 24f8625: Stop the Metadata_Sync seed from writing host-owned user rows, and guard the rest by natural key.
+
+  The generated seed contained two `spCreateUserApplication` calls for specific developer accounts.
+  `UserApplication` is not declared as metadata by this app — there is no `metadata/user-applications`
+  directory and `metadata/applications/.mj-sync.json` declares no related entity for it. It was
+  captured incidentally by the SQL log that generated the file, because the shared user views in
+  `metadata/user-views/` hardcode an owning `UserID`. MJ creates `UserApplication` itself when a user
+  is granted an application, so seeding it forced one deployment's user nav onto every other host and
+  collided with the row the host had already made under its own ID. Those two statements are removed.
+
+  The remaining creates are guarded on `[ID]` **or** the table's natural key, generated from the live
+  unique-constraint definitions (including the filter predicate for the six filtered indexes). A host
+  that acquired a row under a different ID is now skipped rather than colliding. No error is
+  swallowed: a genuine failure still aborts the migration.
+
+## 5.4.0
+
+### Minor Changes
+
+- d29cc6c: Make the Metadata_Sync migration idempotent — it cannot upgrade a host that ever ran `mj sync push`.
+
+  `V202609020400__v5.3.x__Metadata_Sync.sql` fails on the first record against any database that already
+  holds this app's metadata:
+
+  ```
+  Migration failed for schema '__mj_BizAppsOrders': Failed at batch 1/248 (lines 1-83):
+  Violation of PRIMARY KEY constraint 'PK_RevenueRecognitionType'.
+  The duplicate key value is (a1d4e7b0-3c62-4f85-9a17-2b3c4d5e6f01).
+  ```
+
+  That is not a hypothetical. It is what an upgrade hits on AIDP stage, where **78 of the 91 declared
+  metadata primaryKeys already exist** because somebody ran `mj sync push` against that database
+  directly — the stopgap `docs/database-migrations.md` explicitly sanctions ("If a consumer needs it
+  sooner, a one-off `mj sync push` against the target environment bridges the gap"). The seed was
+  generated against a clean database, so every `spCreate*` is an unguarded INSERT.
+
+  Neither skipping nor deleting works: skipping leaves the 13 genuinely-missing rows uncreated, and the
+  78 that exist include `ProductType` / `PaymentType` rows that live order data references by FK.
+
+  All **154** `spCreate*` calls are now wrapped:
+
+  ```sql
+  IF NOT EXISTS (SELECT 1 FROM [${flyway:defaultSchema}].[RevenueRecognitionType] WHERE [ID] = @ID_83a57164)
+  EXEC [${flyway:defaultSchema}].spCreateRevenueRecognitionType @ID = @ID_83a57164, ...
+  ```
+
+  so the migration creates what is missing and steps over what is already there. The 93 `spUpdate*` calls
+  are untouched — they target rows CodeGen already made and are naturally re-runnable.
+
+  Verified both directions on SQL Server 2022 with MJ core v6.1.0-edge.5:
+
+  - **Existing metadata** (the AIDP case, colliding ID present): applies cleanly, and twice more, with
+    row counts unchanged.
+  - **Fresh install** (core 69 + common 22 + tasks 7 + accounting 8 + orders 16): still seeds everything
+    — Application 1, Remote Operations 44, ProductType 11, PaymentType 11, both party-order queries.
+    Release seed coverage still passes.
+
+  Minor, not patch: this repo requires a minor-or-higher bump for any change under `migrations/`
+  (`changes_and_migrations` enforces it), and the rule holds here — on a host that took the sanctioned
+  `mj sync push` shortcut this migration now _does_ something it previously could not, creating the rows
+  that were missing. On a fresh install its effect is unchanged.
+
+## 5.3.0
+
+### Minor Changes
+
+- 406bcaa: First `Metadata_Sync` migration for bizapps-orders — the app's seed metadata now actually ships.
+
+  `bizapps-orders` has never had one. `plans/entitlement-read-contract.md` said so outright: *"There is
+  no `*Metadata_Sync*.sql`in`migrations/`, and no migration inserts a `RemoteOperation` row."* Since
+  `mj-app.json`'s `metadata.directory` is a dev-time pointer the install engine never reads, and
+  `mj app install` applies migrations and nothing else, all 25 directories under `metadata/` shipped
+  nowhere: a clean install produced every table, view and CRUD proc, and no Application row, no Actions,
+  no Remote Operations, and none of the seeded lookups — with every install step reporting success.
+
+  `V202609020400__v5.3.x__Metadata_Sync.sql` carries 279 records (134 created, 93 updated, 0 errors),
+  generated by `mj sync push --dir metadata --ci` against a database built from migrations only —
+  MJ core v6.1.0-edge.5, common, tasks, accounting, then this app.
+
+  Also fixes `metadata/.mj-sync.json`'s `directoryOrder`, which omitted every category directory. With
+  `queries` sorting before `query-categories`, the push aborted on
+  `Lookup failed: No record found in 'MJ: Query Categories' where Name='Orders'` — so the seed could not
+  be generated at all until the order was corrected.
+
+  Minor, not patch: this release carries a migration.
+
+### Patch Changes
+
+- 4fcc102: Move to MJ `6.1.0-edge.5`, and raise the cross-repo dependency floors that were resolving to ancient releases.
+
+  69 `@memberjunction/*` pins move `^6.1.0-edge.4` → `^6.1.0-edge.5`.
+
+  **The floors are the real fix.** `@mj-biz-apps/accounting-*` was declared `>=0.1.0`, and as a _peer_
+  dependency pnpm resolved it to the lowest satisfying version — `accounting-server@0.1.0`, whose own MJ
+  dependencies are `edge.3`. So a tree that declared edge.5 everywhere still pulled **48** MJ packages at
+  edge.2/3/4 through one ancient sibling. `@mj-biz-apps/tasks-entities` was worse: pinned **exactly** at
+  `1.2.3`.
+
+  Floors now match what is actually published, which is the convention this repo already stated when it
+  moved to edge.4 ("app dependency floors to the latest releases, read from npm at cut time"):
+
+  |                                 | was                       | now        |
+  | ------------------------------- | ------------------------- | ---------- |
+  | `accounting-*`                  | `>=0.1.0`                 | `>=0.5.0`  |
+  | `common-entities` / `common-ng` | `>=0.1.0`, `>=5.35.0`     | `>=5.37.0` |
+  | `tasks-entities`                | `1.2.3` (exact), `^1.2.3` | `>=1.4.1`  |
+
+  Verified after a clean install: `accounting-actions` resolves 0.5.0 (was 0.1.0), a single
+  `@memberjunction/core` at edge.5, build 6/6, and 1441 unit tests passing.
+
+  Some MJ packages still resolve at edge.3/4 through `common-ng@5.37.0` and `accounting-*@0.5.0`, which
+  are themselves published against older edges. That clears when those repos republish — their edge.5
+  bumps are open alongside this one.
+
+## 5.2.1
+
 ## 5.2.0
 
 ### Minor Changes

@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Metadata, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { CanPriceOrderLocally, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, type PreviewComponent, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { anyFieldIsDirty } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
 
@@ -22,9 +23,15 @@ export interface MJOLinePrice {
     NetAmount: number | null;
     PriceListName: string | null;
     /**
-     * WHERE the price came from, in the words the badge shows: the price list's name,
-     * or `'base price'` when the winning rule belonged to no list. Null ONLY when no
-     * price resolved at all.
+     * WHERE the price came from, in the words the badge shows: the NAME of the rule that
+     * won — `'Member 195'` — falling back to `'base price'` when the walk returned no
+     * component to name. Null ONLY when no price resolved at all.
+     *
+     * It read `'base price'` unconditionally until 2026-09-10, which was not merely vague
+     * but wrong: a line priced off a member list was labelled as base-priced, which a
+     * finance user checking an order against a contract would read as proof the list did
+     * not apply. The name was already on the client — `PriceResolver` emits it as the
+     * winning component's `Label` — and was being discarded here (golive #194).
      *
      * Distinct from `PriceListName` on purpose. The badge treats a null source as
      * "pricing finished and found nothing" and says *no price rule* — so feeding it
@@ -213,7 +220,7 @@ export class MJOPricingScheduler {
                     Quantity: Number(l.Quantity ?? 0),
                     // A STATED price is passed through and PINS the line. An absent one is what
                     // tells the engine to resolve — sending 0 would read as a deliberate free line.
-                    UnitPrice: l.GetFieldByName('UnitPrice')?.Dirty ? Number(l.UnitPrice) : null,
+                    UnitPrice: anyFieldIsDirty(l, ['UnitPrice']) ? Number(l.UnitPrice) : null,
                     DiscountPct: Number(l.DiscountPct ?? 0),
                 })),
                 PromotionCodes: order.PromotionCodes.Codes,
@@ -284,7 +291,7 @@ export class MJOPricingScheduler {
             line.Quantity = Number(source.Quantity ?? 0);
             // A STATED price PINS the line; an absent one is what tells the engine to resolve.
             // Assigning 0 would read as a deliberate free line.
-            if (source.GetFieldByName('UnitPrice')?.Dirty) line.UnitPrice = Number(source.UnitPrice);
+            if (anyFieldIsDirty(source, ['UnitPrice'])) line.UnitPrice = Number(source.UnitPrice);
             line.DiscountPct = Number(source.DiscountPct ?? 0);
             lines.push(line);
         }
@@ -315,7 +322,7 @@ export class MJOPricingScheduler {
             DiscountAmount: Number(line.DiscountAmount ?? 0),
             LineTotalNet: Math.round((Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) - Number(line.DiscountAmount ?? 0)) * 100) / 100,
             Components: result.PriceComponents.get(line)?.Components?.map((c) => ({
-                Kind: String((c as { Kind?: string }).Kind ?? ''),
+                Kind: String((c as { ComponentType?: string }).ComponentType ?? ''),
                 Label: String((c as { Label?: string }).Label ?? ''),
                 Amount: Number((c as { Amount?: number }).Amount ?? 0),
             })),
@@ -359,7 +366,10 @@ export class MJOPricingScheduler {
     ): MJOPricingResult {
         const lines: MJOLinePrice[] = out.Lines.map((priced, i) => {
             const line = order.Lines.Items[i];
-            const stated = line?.GetFieldByName('UnitPrice')?.Dirty === true;
+            const stated =
+                (line ? anyFieldIsDirty(line, ['UnitPrice']) : false) ||
+                line?.GetFieldByName('PriceOverridden')?.Value === true ||
+                line?.GetFieldByName('PriceOverridden')?.Value === 1;
             const extended = round(Number(priced.UnitPrice) * Number(line?.Quantity ?? 0));
             return {
                 // Positional: an unsaved line has no id, and the engine answers by position.
@@ -371,7 +381,7 @@ export class MJOPricingScheduler {
                 Error: null,
                 // Null means "priced and found nothing", which the badge renders as *no price rule*.
                 // A resolved price with no list is base pricing, and must not read as unpriced.
-                PriceSource: priced.UnitPrice > 0 ? (stated ? 'stated' : 'base price') : null,
+                PriceSource: priced.UnitPrice > 0 ? (stated ? 'stated' : (WinningRuleLabel(priced.Components) ?? 'base price')) : null,
                 Components: (priced.Components ?? []) as unknown as PreviewComponent[],
                 WasStated: stated,
             };
@@ -393,6 +403,24 @@ export class MJOPricingScheduler {
         if (this.timer) clearTimeout(this.timer);
         this.timer = null;
     }
+}
+
+/**
+ * The component that NAMES the price, out of the walk's decomposition.
+ *
+ * `Base` is what `DefaultPriceResolver` emits for the ProductPrice row that won
+ * (`PriceResolver.ts`), and `Rule` is what a pricing plugin emits for the same job.
+ * Everything after them — adjustment, charge, tax — describes what happened TO the
+ * price, not where it came from, so none of those may label the line.
+ *
+ * Selected by TYPE rather than by position because position is not a contract: the
+ * order of the decomposition is the resolver's business and a plugin may prepend to it.
+ *
+ * @returns The rule's name, or null when nothing in the walk names one.
+ */
+export function WinningRuleLabel(components?: ReadonlyArray<{ Kind: string; Label: string }>): string | null {
+    const hit = components?.find((c) => c.Kind === 'Base' || c.Kind === 'Rule');
+    return hit?.Label?.trim() || null;
 }
 
 /** Round to cents the way the engine does, so client and server agree on the last penny. */

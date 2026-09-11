@@ -27,7 +27,7 @@ const generated = readFileSync(
     join(
         import.meta.dirname,
         '..', '..', '..', '..', '..',
-        'Entities', 'src', 'generated', 'entity_subclasses.ts',
+        'Entities', 'src', 'generated', 'entities', '__mj_BizAppsOrders.ts',
     ),
     'utf8',
 );

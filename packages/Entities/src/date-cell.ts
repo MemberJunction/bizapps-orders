@@ -146,6 +146,19 @@ export function LocalDay(date: Date): string {
     return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * Today's LOCAL calendar day as a `Date` safe to ASSIGN to a `date`-typed entity field.
+ *
+ * The assignment-side counterpart of {@link Today}. `new Date()` is an instant, and an instant
+ * serialises in UTC — so a price rule created at 8pm Central lands in the column dated TOMORROW
+ * and refuses to apply for the rest of the user's working day. A SQL `date` column round-trips as
+ * midnight UTC on its calendar day, so that is the shape this constructs: the local day, pinned to
+ * midnight UTC, which {@link ToISODate} and every UTC-parts reader then give back unchanged.
+ */
+export function TodayAsDateValue(): Date {
+    return new Date(`${Today()}T00:00:00Z`);
+}
+
 /** The UTC calendar fields, zero-padded. */
 function utcDay(date: Date): string {
     return `${String(date.getUTCFullYear()).padStart(4, '0')}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;

@@ -112,6 +112,11 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             return super.Save(options);
         }
 
+        // If the entity is not dirty and dirty state is not ignored, nothing to book or save
+        if (!this.Dirty && !options?.IgnoreDirtyState) {
+            return super.Save(options);
+        }
+
         const payment = await this.loadPayment();
         // Nothing to book yet for an allocation against a Pending payment — no cash has landed.
         // It books when the payment reaches Captured, not here.

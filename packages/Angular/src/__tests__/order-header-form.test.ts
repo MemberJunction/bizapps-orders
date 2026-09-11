@@ -5,6 +5,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import type { mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import type {
+    MJOPricingResult,
+    MJOPricingState,
+} from '../lib/services/pricing-scheduler.service';
 import { mjBizAppsOrdersOrderHeaderFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component';
 import {
     BizAppsOrderHeaderFormComponent,
@@ -12,6 +17,7 @@ import {
     ORDER_FORM_SAVED_TABS,
     OrderFormTabs,
 } from '../lib/custom/OrderHeader/order-header-form.component';
+import { MJOOrderLinesEditorComponent } from '../lib/custom/OrderHeader/order-lines-editor.component';
 import { OrderHeaderExpandedFromPref } from '../lib/custom/OrderHeader/order-header-prefs';
 
 const here = import.meta.dirname;
@@ -76,7 +82,7 @@ describe('BizAppsOrderHeaderFormComponent', () => {
             'utf8',
         );
         expect(ts).toContain('EntityName: MJO_ENTITIES.PaymentHeader');
-        expect(ts).toContain("ID IN (SELECT PaymentHeaderID FROM [__mj_BizAppsOrders].[PaymentLine] WHERE OrderHeaderID = '${this.record.ID}')");
+        expect(ts).toContain("ID IN (SELECT PaymentHeaderID FROM [__mj_BizAppsOrders].[vwPaymentLines] WHERE OrderHeaderID = '${this.record.ID}')");
         expect(html).toContain("[Height]=\"'fit-content'\"");
         expect(html).toContain('[MaxHeight]="RelatedGridHeight"');
     });
@@ -160,6 +166,136 @@ describe('order header link wiring', () => {
         expect(header).toContain('Check / ACH reference');
         expect(header).toMatch(/FieldName="Status"[\s\S]*?\[EditMode\]="false"/);
         expect(header).toMatch(/FieldName="FulfillmentStatus"[\s\S]*?\[EditMode\]="false"/);
+    });
+
+    // Issue bc-aidp-next-golive#186 — an unpaid $895 order rendered its Balance as `—`. The dash is the
+    // "not computed yet" marker, so a screen showing it for a real debt is claiming not to
+    // know. These pin the two halves: a real zero prints, and an unknown falls back.
+    describe('hero money trio (bc-aidp-next-golive#186)', () => {
+        const form = (
+            record: Partial<mjBizAppsOrdersOrderHeaderEntity> | null,
+            pricing: MJOPricingState = { Result: null, Loading: false, Error: null },
+        ): BizAppsOrderHeaderFormComponent => {
+            const instance = Object.create(
+                BizAppsOrderHeaderFormComponent.prototype,
+            ) as BizAppsOrderHeaderFormComponent;
+            instance.record = record as mjBizAppsOrdersOrderHeaderEntity;
+            instance.Pricing = pricing;
+            return instance;
+        };
+
+        const priced = (net: number, gross: number): MJOPricingState => ({
+            Result: { Lines: [], Totals: { NetTotal: net, GrossTotal: gross } } as unknown as MJOPricingResult,
+            Loading: false,
+            Error: null,
+        });
+
+        it('shows the amount owed on a confirmed unpaid order', () => {
+            const instance = form({ IsSaved: true, TotalGross: 895, AmountPaid: 0, Balance: 895 });
+            expect(instance.Money('balance')).toBe('$895');
+            expect(instance.Money('paid')).toBe('$0');
+        });
+
+        it('prints a genuine zero balance rather than a dash', () => {
+            const instance = form({ IsSaved: true, TotalGross: 200, AmountPaid: 200, Balance: 0 });
+            expect(instance.Money('balance')).toBe('$0');
+        });
+
+        it('derives the balance when the rollup has not landed yet', () => {
+            // The server used to hand back Balance = null on a freshly-confirmed order, which is
+            // what produced the reported dash. Even if that ever recurs, the tile owes a number.
+            const instance = form(
+                { IsSaved: true, TotalGross: null, AmountPaid: 0, Balance: null },
+                priced(895, 895),
+            );
+            expect(instance.Money('balance')).toBe('$895');
+        });
+
+        it('shows paid and balance on an unsaved draft instead of two dashes', () => {
+            const instance = form({ IsSaved: false, AmountPaid: 0, Balance: null }, priced(895, 895));
+            expect(instance.Money('paid')).toBe('$0');
+            expect(instance.Money('balance')).toBe('$895');
+        });
+
+        it('keeps cents across the trio when any figure has them', () => {
+            const instance = form({ IsSaved: true, TotalGross: 895.5, AmountPaid: 100, Balance: 795.5 });
+            expect(instance.Money('total')).toBe('$895.50');
+            expect(instance.Money('paid')).toBe('$100.00');
+            expect(instance.Money('balance')).toBe('$795.50');
+        });
+
+        it('says loading, not unknown, while the first price is in flight', () => {
+            const instance = form(
+                { IsSaved: false, AmountPaid: 0, Balance: null },
+                { Result: null, Loading: true, Error: null },
+            );
+            expect(instance.Money('balance')).toBe('…');
+        });
+
+        it('still shows a dash when there is no record at all', () => {
+            const instance = form(null);
+            expect(instance.Money('balance')).toBe('—');
+            expect(instance.Money('paid')).toBe('—');
+        });
+    });
+
+    it('shows an override explanation under the consequence chips and hides same-company revenue', () => {
+        const lines = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
+            'utf8',
+        );
+        expect(lines).toContain('mjo-ol-card__why');
+        expect(lines).toContain('OverrideReasonText(line)');
+        expect(lines).toContain('ShowsForeignRevenue(line)');
+        expect(lines).not.toMatch(/@if \(product\.CompanyName\) \{\s*<mjo-consequence-chip Kind="company"/);
+    });
+
+    it('hides the override picker behind a pencil and stamps PriceOverridden / PriceOverrideReason', () => {
+        const lines = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
+            'utf8',
+        );
+        const ts = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.ts'),
+            'utf8',
+        );
+        expect(lines).toContain('mjo-ol-price__pencil');
+        expect(lines).toContain('ToggleOverrideEditor(line)');
+        expect(lines).toContain('IsOverrideEditorOpen(line)');
+        expect(lines).toContain('Override Explanation');
+        expect(lines).toContain('(input)="SetOverrideReason(line, $event)"');
+        expect(lines).toContain('Use Default Price');
+        expect(ts).toContain("this.stamp(line, 'PriceOverridden', true)");
+        expect(ts).toContain("this.stamp(line, 'PriceOverrideReason', reason === '' ? null : reason)");
+        expect(ts).toContain("this.stamp(line, 'PriceOverridden', false)");
+    });
+
+    it('IsOverridden reads PriceOverridden, and ShowsForeignRevenue hides same-company revenue', () => {
+        const instance = Object.create(MJOOrderLinesEditorComponent.prototype) as MJOOrderLinesEditorComponent;
+        (instance as unknown as { _order: { CompanyID: string; Company: string } })._order = {
+            CompanyID: 'co-1',
+            Company: 'Acme',
+        };
+
+        const overridden = {
+            GetFieldByName: (name: string) => (name === 'PriceOverridden' ? { Value: true } : null),
+            FieldIsDirty: () => false,
+        };
+        expect(instance.IsOverridden(overridden as never)).toBe(true);
+        expect(instance.OverrideReasonText({
+            GetFieldByName: (name: string) => (name === 'PriceOverrideReason' ? { Value: 'Board rate' } : null),
+        } as never)).toBe('Board rate');
+
+        (instance as unknown as { ProductFor: () => { CompanyID: string; CompanyName: string } }).ProductFor = () => ({
+            CompanyID: 'co-1',
+            CompanyName: 'Acme',
+        });
+        expect(instance.ShowsForeignRevenue({ ID: 'l1' } as never)).toBe(false);
+        (instance as unknown as { ProductFor: () => { CompanyID: string; CompanyName: string } }).ProductFor = () => ({
+            CompanyID: 'co-2',
+            CompanyName: 'Other Co',
+        });
+        expect(instance.ShowsForeignRevenue({ ID: 'l1' } as never)).toBe(true);
     });
 
     it('keeps existing line extensions collapsed behind a disclosure', () => {

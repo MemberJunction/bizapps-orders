@@ -1,5 +1,121 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.11.0
+
+### Patch Changes
+
+- Updated dependencies [a6ad8c5]
+  - @mj-biz-apps/orders-entities@5.11.0
+
+## 5.10.0
+
+### Patch Changes
+
+- Updated dependencies [76b3d3e]
+  - @mj-biz-apps/orders-entities@5.10.0
+
+## 5.9.0
+
+### Patch Changes
+
+- Updated dependencies [e121d98]
+  - @mj-biz-apps/orders-entities@5.9.0
+
+## 5.8.0
+
+### Patch Changes
+
+- Updated dependencies [2981938]
+  - @mj-biz-apps/orders-entities@5.8.0
+
+## 5.7.0
+
+### Minor Changes
+
+- bbb5171: OrdersEngine now caches Products, Product Prices, Product Categories, Product Types, Subscription Types, and Revenue Recognition Types (@RegisterForStartup). Confirm, pricing, checkout, fulfilment, and the catalog picker read those arrays instead of per-call RunView. Confirm looks up rev-rec types by normalized ID and inherits ProductType.DefaultRevenueRecognitionTypeID when the product left it blank. GL Account Roles stay on AccountingEngineBase; booking no longer force-refreshes that cache. Confirm also inherits ProductType.DefaultSubscriptionTypeID when the product left SubscriptionTypeID blank. `@mj-biz-apps/accounting-engine-base` is a real dependency of orders-core-entities-server (static import, declared in package.json), not a peer. Local filter-eval helpers are PascalCase (`EvaluateFilter`, `IsCompositeFilter`, `ParseFilterField`). Order-line price override is a pencil that expands a named-price picker (custom amount only when Custom is selected) plus Override Explanation when the price diverges from default. OrderLine gains PriceOverridden and PriceOverrideReason. Ship/bill addresses bind AddressID from the party; custom addresses can be linked onto the person/org profile.
+
+### Patch Changes
+
+- a436049: License declarations now agree on BUSL-1.1 everywhere.
+
+  The manifest was corrected earlier; the README badge still advertised ISC, which is the
+  first license statement a reader meets and outranked `LICENSE`, `package.json`,
+  `mj-app.json` and every workspace package in practice. The badge now reads BUSL-1.1 and
+  links to `LICENSE`.
+
+- Updated dependencies [a436049]
+- Updated dependencies [bbb5171]
+- Updated dependencies [bb9a5f2]
+- Updated dependencies [4dfa35c]
+  - @mj-biz-apps/orders-entities@5.7.0
+
+## 5.6.0
+
+### Minor Changes
+
+- e48bc43: Stop the order Balance rendering as a dash, and stop it erasing itself (bc-aidp-next-golive#186).
+
+  `TotalGross`, `AmountPaid`, `Balance` and `FulfillmentStatus` on `OrderHeader` are maintained by
+  `spRecalcOrderHeaderTotals`, which the OrderLine and PaymentLine triggers fire. On a
+  create-and-confirm the header is written before any line exists, so `Balance` is legitimately NULL
+  at that moment — and `OrderEntityServer.Save()` never read the refreshed row back onto the entity.
+  `SaveEntityGraphOperation` returns `root.GetAll()`, so the browser adopted that NULL, and
+  `FormatMoney` renders NULL as an em-dash. A confirmed, unpaid $895 order therefore reported its
+  balance as `—`, which in that formatter means "not computed", not "nothing owed".
+
+  The stored value did not survive either. Every SP-parameter field is sent on the next update
+  regardless of dirty state, and a nullable column carrying NULL emits `@<Col>_Clear=1`, which
+  `spUpdateOrderHeader` obeys by writing NULL over the trigger's value; a stale `AmountPaid = 0` needs
+  no flag at all to overwrite a captured payment. So editing anything on a confirmed order erased its
+  totals — the figures payment allocation and the aging report read.
+
+  - `OrderEntityServer` now adopts the row's rollups before `Save()` returns, on the full path (after
+    lines, payments, entitlements, inside the transaction) and on the header-only shortcut, where the
+    refresh exists to overwrite whatever the caller believed about those four columns before the
+    update is sent.
+  - The merge rule moved to `OrderRollupBehavior` and is explicit that the ROW wins, including when it
+    reports NULL: a row saying "not computed yet" is more current than an entity's leftover figure.
+  - The order form's Balance and Paid tiles no longer return a bare dash for a record that exists.
+    `AmountPaid` is NOT NULL, and the balance falls back to the pricing preview's total less anything
+    paid, so an unsaved draft shows real figures instead of two dashes.
+  - `V202609021530__v0.1.x__Repair_OrderHeader_Rollups.sql` re-derives `TotalGross`, `AmountPaid` and
+    `Balance` from lines and captured payments for the rows that disagree with them, repairing orders
+    already erased. It deliberately leaves `FulfillmentStatus` alone: that column has unrelated drift
+    from never being backfilled when it was added, and correcting it inside a money repair would
+    quietly change what the fulfilment queue shows.
+
+### Patch Changes
+
+- @mj-biz-apps/orders-entities@5.6.0
+
+## 5.5.0
+
+### Patch Changes
+
+- Updated dependencies [24f8625]
+  - @mj-biz-apps/orders-entities@5.5.0
+
+## 5.4.0
+
+### Patch Changes
+
+- Updated dependencies [d29cc6c]
+  - @mj-biz-apps/orders-entities@5.4.0
+
+## 5.3.0
+
+### Patch Changes
+
+- Updated dependencies [4fcc102]
+- Updated dependencies [406bcaa]
+  - @mj-biz-apps/orders-entities@5.3.0
+
+## 5.2.1
+
+### Patch Changes
+
+- @mj-biz-apps/orders-entities@5.2.1
+
 ## 5.2.0
 
 ### Minor Changes

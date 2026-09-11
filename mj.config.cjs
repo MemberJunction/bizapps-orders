@@ -256,7 +256,7 @@ module.exports = {
     folderPath: './migrations/codegen/',
     appendToFile: false,
     convertCoreSchemaToFlywayMigrationFile: true,
-    omitRecurringScriptsFromLog: false,
+    omitRecurringScriptsFromLog: true,
     schemaPlaceholders: [
       // Order matters: the more-specific schema must come first because
       // substitution runs sequentially with a greedy regex. If '__mj' were

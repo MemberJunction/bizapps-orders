@@ -27,6 +27,9 @@ export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './Fu
 
 export { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 
+export { MergeOrderRollups, ORDER_ROLLUP_FIELDS } from './OrderRollupBehavior.js';
+export type { OrderRollupField, OrderRollups, ResolvedOrderRollups } from './OrderRollupBehavior.js';
+
 export { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 export type { JEDraft, JELineDraft, OrderLineDraft } from './OrderJournalEntryFactory.js';
 
@@ -39,7 +42,12 @@ export {
 } from './RevenueRecognition.js';
 export type { RevRecContext, RevRecEntry, RevRecSchedule } from './RevenueRecognition.js';
 
-export { SubscriptionBehavior, LoadSubscriptionBehavior } from './SubscriptionBehavior.js';
+export {
+    SubscriptionBehavior,
+    LoadSubscriptionBehavior,
+    ResolveSubscriptionTypeID,
+    SubscriptionTypeRulesFrom,
+} from './SubscriptionBehavior.js';
 export type {
     SubscriptionTypeRules,
     SubscriptionPurchaseContext,

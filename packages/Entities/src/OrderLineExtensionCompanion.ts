@@ -43,23 +43,24 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
 
     /** The live extension entity instance, if provisioned. */
     public get Entity(): BaseEntity | null {
-        return this._entity;
+        return this._entity ?? this.Owner.ISAChild ?? null;
     }
 
     /** True when this companion has an extension entity attached or specified. */
     public get IsConfigured(): boolean {
-        return !!this._entity || !!this._entityName || !!this._wireData;
+        return !!this._entity || !!this.Owner.ISAChild || !!this._entityName || !!this._wireData;
     }
 
     /** True when the extension entity is persisted in the database. */
     public get IsSaved(): boolean {
-        return this._entity?.IsSaved ?? (!this._wireData?.IsNew && !!this._wireData);
+        return this.Entity?.IsSaved ?? (!this._wireData?.IsNew && !!this._wireData);
     }
 
     /** True when the extension entity has uncommitted changes. */
     public override get Dirty(): boolean {
-        if (this._entity) {
-            return !this._entity.IsSaved || this._entity.Dirty;
+        const entity = this.Entity;
+        if (entity) {
+            return !entity.IsSaved || entity.Dirty;
         }
         return !!this._wireData?.IsNew;
     }
@@ -84,6 +85,16 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
 
         if (this._entity && (!entityName || this._entity.EntityInfo?.Name === entityName)) {
             return this._entity;
+        }
+
+        const child = await this.Owner.EnsureISAChild(targetName);
+        if (child) {
+            this.SetEntity(child);
+            if (this._wireData) {
+                child.SetMany(this._wireData.Fields, true);
+                this._wireData = null;
+            }
+            return child;
         }
 
         const provider = this.Owner.ProviderToUse as unknown as IMetadataProvider;
@@ -130,8 +141,7 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
             }
         }
 
-        this._entity = ext;
-        this._entityName = targetName;
+        this.SetEntity(ext);
         return ext;
     }
 

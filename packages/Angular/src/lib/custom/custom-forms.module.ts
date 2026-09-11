@@ -6,6 +6,7 @@
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { DragDropModule } from '@angular/cdk/drag-drop';
 
 // MemberJunction Form Primitives
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
@@ -14,6 +15,7 @@ import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 
 
 import { MJButtonDirective, MJTabNavComponent } from '@memberjunction/ng-ui-components';
+import { FilterBuilderModule } from '@memberjunction/ng-filter-builder';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
 
 // Custom Form Components
@@ -28,6 +30,7 @@ import { BizAppsPriceListFormComponent, LoadPriceListFormComponent } from './Pri
 import { BizAppsPromotionFormComponent, LoadPromotionFormComponent } from './Promotion/promotion-form.component';
 import { BizAppsOrderHeaderFormComponent, LoadOrderHeaderFormComponent } from './OrderHeader/order-header-form.component';
 import { MJOOrderLinesEditorComponent } from './OrderHeader/order-lines-editor.component';
+import { MJOPartyAddressPickerComponent } from './OrderHeader/party-address-picker.component';
 import { BizAppsSubscriptionFormComponent, LoadSubscriptionFormComponent } from './Subscription/subscription-form.component';
 import { BizAppsSubscriptionTermFormComponent, LoadSubscriptionTermFormComponent } from './SubscriptionTerm/subscription-term-form.component';
 import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } from './PaymentHeader/payment-header-form.component';
@@ -51,12 +54,15 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
     imports: [
         CommonModule,
         FormsModule,
+        DragDropModule,
         BaseFormsModule,
         EntityViewerModule,
         LinkDirectivesModule,
         MJButtonDirective,
         MJTabNavComponent,
+        FilterBuilderModule,
         MJOOrderLinesEditorComponent,
+        MJOPartyAddressPickerComponent,
         DeferredRevenueWaterfallModule,
     ],
     exports: [

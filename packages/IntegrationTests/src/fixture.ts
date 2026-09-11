@@ -385,6 +385,7 @@ export async function CreateProductPrice(
     productID: string,
     amount: number,
     opts: {
+        Name?: string;
         PricingModel?: string;
         FeeType?: string;
         Priority?: number;
@@ -394,6 +395,8 @@ export async function CreateProductPrice(
         EffectiveFrom?: string;
         EffectiveTo?: string | null;
         PackageQuantity?: number | null;
+        ProductCategoryID?: string | null;
+        Applicability?: string | null;
     } = {},
 ): Promise<string | null> {
     const feeType = opts.FeeType ?? 'Standard';
@@ -413,8 +416,23 @@ export async function CreateProductPrice(
         return upsertViaEntity(ctx, PRODUCT_PRICE_ENTITY, existing[0].ID, { Amount: amount });
     }
 
+    const name =
+        opts.Name ??
+        [
+            opts.PriceListID ? 'List' : 'Base',
+            opts.FeeType && opts.FeeType !== 'Standard' ? opts.FeeType : null,
+            opts.MinQuantity != null ? `qty${opts.MinQuantity}` : null,
+            opts.Priority ? `p${opts.Priority}` : null,
+            String(amount),
+        ]
+            .filter(Boolean)
+            .join(' ')
+            .slice(0, 100);
+
     return createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
-        ProductID: productID,
+        ProductID: opts.ProductCategoryID ? null : productID,
+        ProductCategoryID: opts.ProductCategoryID ?? null,
+        Name: name,
         PricingModel: opts.PricingModel ?? 'PerUnit',
         FeeType: opts.FeeType ?? 'Standard',
         Amount: amount,
@@ -426,6 +444,7 @@ export async function CreateProductPrice(
         MinQuantity: opts.MinQuantity ?? null,
         MaxQuantity: opts.MaxQuantity ?? null,
         PackageQuantity: opts.PackageQuantity ?? null,
+        Applicability: opts.Applicability ?? null,
     });
 }
 

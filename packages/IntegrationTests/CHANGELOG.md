@@ -1,5 +1,98 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.11.0
+
+### Patch Changes
+
+- Updated dependencies [a6ad8c5]
+  - @mj-biz-apps/orders-entities@5.11.0
+  - @mj-biz-apps/orders-core-entities-server@5.11.0
+  - @mj-biz-apps/orders-server@5.11.0
+
+## 5.10.0
+
+### Patch Changes
+
+- Updated dependencies [76b3d3e]
+  - @mj-biz-apps/orders-entities@5.10.0
+  - @mj-biz-apps/orders-core-entities-server@5.10.0
+  - @mj-biz-apps/orders-server@5.10.0
+
+## 5.9.0
+
+### Patch Changes
+
+- Updated dependencies [e121d98]
+  - @mj-biz-apps/orders-entities@5.9.0
+  - @mj-biz-apps/orders-core-entities-server@5.9.0
+  - @mj-biz-apps/orders-server@5.9.0
+
+## 5.8.0
+
+### Patch Changes
+
+- Updated dependencies [2981938]
+  - @mj-biz-apps/orders-entities@5.8.0
+  - @mj-biz-apps/orders-core-entities-server@5.8.0
+  - @mj-biz-apps/orders-server@5.8.0
+
+## 5.7.0
+
+### Patch Changes
+
+- Updated dependencies [a436049]
+- Updated dependencies [bbb5171]
+- Updated dependencies [bb9a5f2]
+- Updated dependencies [4dfa35c]
+  - @mj-biz-apps/orders-core-entities-server@5.7.0
+  - @mj-biz-apps/orders-entities@5.7.0
+  - @mj-biz-apps/orders-server@5.7.0
+
+## 5.6.0
+
+### Patch Changes
+
+- Updated dependencies [e48bc43]
+  - @mj-biz-apps/orders-core-entities-server@5.6.0
+  - @mj-biz-apps/orders-server@5.6.0
+  - @mj-biz-apps/orders-entities@5.6.0
+
+## 5.5.0
+
+### Patch Changes
+
+- Updated dependencies [24f8625]
+  - @mj-biz-apps/orders-entities@5.5.0
+  - @mj-biz-apps/orders-core-entities-server@5.5.0
+  - @mj-biz-apps/orders-server@5.5.0
+
+## 5.4.0
+
+### Patch Changes
+
+- Updated dependencies [d29cc6c]
+  - @mj-biz-apps/orders-entities@5.4.0
+  - @mj-biz-apps/orders-core-entities-server@5.4.0
+  - @mj-biz-apps/orders-server@5.4.0
+
+## 5.3.0
+
+### Patch Changes
+
+- Updated dependencies [4fcc102]
+- Updated dependencies [406bcaa]
+  - @mj-biz-apps/orders-entities@5.3.0
+  - @mj-biz-apps/orders-core-entities-server@5.3.0
+  - @mj-biz-apps/orders-server@5.3.0
+
+## 5.2.1
+
+### Patch Changes
+
+- @mj-biz-apps/orders-core-entities-server@5.2.1
+- @mj-biz-apps/orders-entities@5.2.1
+- @mj-biz-apps/orders-server@5.2.1
+
 ## 5.2.0
 
 ### Patch Changes

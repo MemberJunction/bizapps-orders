@@ -19,6 +19,7 @@ export class mjBizAppsOrdersEntitlementGrantFormComponent extends BaseFormCompon
             { sectionKey: 'beneficiaryInformation', sectionName: 'Beneficiary Information', isExpanded: true },
             { sectionKey: 'grantTerms', sectionName: 'Grant Terms', isExpanded: true },
             { sectionKey: 'statusAndLifecycle', sectionName: 'Status and Lifecycle', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

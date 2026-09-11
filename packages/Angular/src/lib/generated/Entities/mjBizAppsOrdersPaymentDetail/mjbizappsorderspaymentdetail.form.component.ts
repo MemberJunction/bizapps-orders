@@ -21,6 +21,7 @@ export class mjBizAppsOrdersPaymentDetailFormComponent extends BaseFormComponent
             { sectionKey: 'instrumentDetails', sectionName: 'Instrument Details', isExpanded: true },
             { sectionKey: 'bankDetails', sectionName: 'Bank Details', isExpanded: true },
             { sectionKey: 'transactionDetails', sectionName: 'Transaction Details', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderHeaders', sectionName: 'Order Headers', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false },

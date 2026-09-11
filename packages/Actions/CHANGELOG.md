@@ -1,5 +1,34 @@
 # @mj-biz-apps/orders-actions
 
+## 5.11.0
+
+## 5.10.0
+
+## 5.9.0
+
+## 5.8.0
+
+## 5.7.0
+
+### Patch Changes
+
+- a436049: License declarations now agree on BUSL-1.1 everywhere.
+
+  The manifest was corrected earlier; the README badge still advertised ISC, which is the
+  first license statement a reader meets and outranked `LICENSE`, `package.json`,
+  `mj-app.json` and every workspace package in practice. The badge now reads BUSL-1.1 and
+  links to `LICENSE`.
+
+## 5.6.0
+
+## 5.5.0
+
+## 5.4.0
+
+## 5.3.0
+
+## 5.2.1
+
 ## 5.2.0
 
 ## 5.1.0

@@ -13,9 +13,11 @@ import { BaseEntity, EntityFieldInfo, IMetadataProvider, LogError, Metadata, Run
 // '@memberjunction/core-entities-server' once MJ publishes the engine.
 import { IdentityClaimEngineServer } from './identityClaimContracts.js';
 import {
+    LoadOrdersEngine,
     OrderHeaderEntity,
     OrderLineEntity,
     OrderPricingService,
+    OrdersEngine,
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersCheckoutSessionEntity,
     mjBizAppsOrdersCheckoutWidgetDistributionEntity,
@@ -353,16 +355,10 @@ export class CheckoutSessionService {
             }
         }
         if (allowed.size === 0 && typeof configObj.productSku === 'string' && configObj.productSku.trim()) {
-            const rv = new RunView();
-            const escapedSku = EscapeText(configObj.productSku.trim());
-            const prodRes = await rv.RunView<{ ID: string }>({
-                EntityName: PRODUCT_ENTITY,
-                ExtraFilter: `SKU = '${escapedSku}'`,
-                ResultType: 'simple'
-            }, contextUser);
-            if (prodRes?.Success && prodRes.Results?.length) {
-                allowed.add(prodRes.Results[0].ID);
-            }
+            const md = new Metadata();
+            await LoadOrdersEngine(Metadata.Provider, contextUser ?? md.CurrentUser);
+            const hit = OrdersEngine.Instance.ProductBySKU(configObj.productSku);
+            if (hit) allowed.add(hit.ID);
         }
         return allowed;
     }
@@ -498,16 +494,8 @@ export class CheckoutSessionService {
         const productSku = typeof configObj.productSku === 'string' ? configObj.productSku : undefined;
 
         if (!productId && productSku) {
-            const rv = new RunView();
-            const escapedSku = EscapeText(productSku.trim());
-            const prodRes = await rv.RunView<{ ID: string }>({
-                EntityName: PRODUCT_ENTITY,
-                ExtraFilter: `SKU = '${escapedSku}'`,
-                ResultType: 'simple'
-            }, contextUser);
-            if (prodRes?.Success && prodRes.Results && prodRes.Results.length > 0) {
-                productId = prodRes.Results[0].ID;
-            }
+            await LoadOrdersEngine(Metadata.Provider, contextUser ?? md.CurrentUser);
+            productId = OrdersEngine.Instance.ProductBySKU(productSku)?.ID;
         }
 
         // Always write the resolved id back so a SKU-only widget still gives the
@@ -541,7 +529,7 @@ export class CheckoutSessionService {
         const extEntityName = productType.OrderLineExtensionEntity;
         configObj.extensionEntityName = extEntityName;
 
-        const extEntityInfo = md.Entities.find(e => e.Name === extEntityName);
+        const extEntityInfo = md.EntityByName(extEntityName);
         if (!extEntityInfo) return;
 
         const discoveredFields: Array<{
@@ -696,7 +684,9 @@ export class CheckoutSessionService {
     ): Promise<OrderLineEntity> {
         const line = (await order.Lines.Create()) as OrderLineEntity;
         if (targetExtensionEntity) {
-            await line.Extension.EnsureEntity(targetExtensionEntity);
+            await line.EnsureISAChild(targetExtensionEntity);
+        } else {
+            await line.EnsureISAChild();
         }
         return line;
     }
@@ -745,9 +735,8 @@ export class CheckoutSessionService {
             '__mj_updatedat'
         ]);
 
-        if (extensionEntityName && line.Extension) {
-            const ext = await line.Extension.EnsureEntity(extensionEntityName);
-            if (ext) {
+        const ext = await line.EnsureISAChild(extensionEntityName ?? undefined);
+        if (ext) {
                 const extFieldsByName = new Map<string, EntityFieldInfo>(
                     (ext.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f])
                 );
@@ -776,7 +765,6 @@ export class CheckoutSessionService {
                     }
                 }
             }
-        }
     }
 
     /**

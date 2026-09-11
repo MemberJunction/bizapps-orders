@@ -11,7 +11,7 @@ import {
     mjBizAppsOrdersRevenueRecognitionTypeEntity,
 } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersProductFormComponent } from '../../generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
-import { FormatMoney } from '../../panels/money-format';
+import { LoadProductListPriceLabel } from '../../panels/catalog-list-price';
 
 export type ProductFormPane = 'overview' | 'pricing' | 'promos' | 'accounting' | 'fulfillment' | 'subscriptions' | 'bundles' | 'systemMetadata';
 
@@ -49,6 +49,7 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
     public EventProductLoading = false;
     public ProductTypeRecord: mjBizAppsOrdersProductTypeEntity | null = null;
     public RevenueRecRecord: mjBizAppsOrdersRevenueRecognitionTypeEntity | null = null;
+    public ListPriceLabel = 'No price';
 
     protected navigationService = inject(NavigationService, { optional: true });
 
@@ -71,6 +72,7 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         }
 
         await this.syncSubtypeExtension();
+        this.ListPriceLabel = await LoadProductListPriceLabel(this.record?.ID);
     }
 
     public SelectPane(pane: ProductFormPane): void {
@@ -89,8 +91,10 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         if (this.ProductTypeRecord?.ProductExtensionEntity === 'MJ_BizApps_Orders: Event Products') {
             return true;
         }
-        const typeName = (this.record?.ProductType as string) ?? this.ProductTypeRecord?.Name ?? '';
-        return typeName.toLowerCase().includes('event') || typeName.toLowerCase().includes('conference') || typeName.toLowerCase().includes('summit') || this.record?.ISAChild != null;
+        if (this.record?.ISAChild?.EntityInfo?.Name === 'MJ_BizApps_Orders: Event Products') {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -131,11 +135,8 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         return `${venue} · ${start}`;
     }
 
-    /**
-     * Formats the base price into currency.
-     */
     public get FormattedBasePrice(): string {
-        return FormatMoney(this.record?.StandaloneSellingPrice || 0);
+        return this.ListPriceLabel;
     }
 
     /**
@@ -212,21 +213,9 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         if (this.HasEventExtension && !this.EventProductChild) {
             this.EventProductLoading = true;
             try {
-                if (this.record.ISAChild && this.record.ISAChild.EntityInfo.Name === 'MJ_BizApps_Orders: Event Products') {
-                    this.EventProductChild = this.record.ISAChild as mjBizAppsOrdersEventProductEntity;
-                } else if (this.record.IsSaved && this.record.ID) {
-                    const ep = await md.GetEntityObject<mjBizAppsOrdersEventProductEntity>('MJ_BizApps_Orders: Event Products', md.CurrentUser);
-                    if (await ep.Load(this.record.ID)) {
-                        this.EventProductChild = ep;
-                    } else {
-                        await ep.NewRecord();
-                        ep.ID = this.record.ID;
-                        this.EventProductChild = ep;
-                    }
-                } else {
-                    const ep = await md.GetEntityObject<mjBizAppsOrdersEventProductEntity>('MJ_BizApps_Orders: Event Products', md.CurrentUser);
-                    await ep.NewRecord();
-                    this.EventProductChild = ep;
+                const child = await this.record.EnsureISAChild('MJ_BizApps_Orders: Event Products');
+                if (child) {
+                    this.EventProductChild = child as mjBizAppsOrdersEventProductEntity;
                 }
             } catch (err) {
                 console.error('Failed to initialize EventProduct specialized profile:', err);

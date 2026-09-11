@@ -1,3 +1,9 @@
+<!--
+    CARD SHELL ONLY — the fields are PROJECTED by the caller.
+    Same reason as the subscription widget: mj-collapsible-panel's @ContentChildren
+    hide-when-empty check cannot see fields declared inside a child component's view,
+    so they are declared in the panel template and projected in here. See golive#184.
+-->
 <div class="mjo-ful-widget-wrap">
     <div class="mjo-ful-card">
         <div class="mjo-card-head">
@@ -5,61 +11,7 @@
             <span>Catalog Availability &amp; Entitlement Timing</span>
         </div>
         <div class="mjo-card-body">
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="AvailableFrom"
-                Type="datepicker"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="AvailableTo"
-                Type="datepicker"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="EntitlementGrantTiming"
-                Type="select"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="EntitlementQuantityMode"
-                Type="select"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="EntitlementValidityMode"
-                Type="select"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="SuccessorProductID"
-                Type="textbox"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                LinkType="Record"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
+            <ng-content></ng-content>
         </div>
     </div>
 </div>

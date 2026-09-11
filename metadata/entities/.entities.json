@@ -57,7 +57,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:37.604Z",
+      "lastModified": "2026-09-02T03:26:35.819Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -81,7 +81,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:37.643Z",
+      "lastModified": "2026-09-02T03:26:35.847Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -104,7 +104,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:37.680Z",
+      "lastModified": "2026-09-02T03:26:35.875Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -116,6 +116,7 @@
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products"
     },
     "fields": {
+      "SubtypeSelector": "{\"Path\": \"ProductTypeID.ProductExtensionEntity\"}",
       "Configuration": {
         "UI": {
           "Form": {
@@ -125,10 +126,17 @@
           }
         }
       }
+    }
+  },
+  {
+    "_comments": [
+      "Order Lines declarative SubtypeSelector routes extension to ProductType.OrderLineExtensionEntity via ProductID."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines"
     },
-    "sync": {
-      "lastModified": "2026-08-24T20:19:37.753Z",
-      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    "fields": {
+      "SubtypeSelector": "{\"Path\": \"ProductID.ProductTypeID.OrderLineExtensionEntity\"}"
     }
   },
   {
@@ -150,7 +158,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:37.790Z",
+      "lastModified": "2026-09-02T03:26:35.960Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -173,7 +181,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:37.717Z",
+      "lastModified": "2026-09-02T03:26:35.933Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -196,7 +204,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:37.823Z",
+      "lastModified": "2026-09-02T03:26:36.014Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -219,7 +227,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:37.887Z",
+      "lastModified": "2026-09-02T03:26:35.988Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -242,7 +250,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:37.858Z",
+      "lastModified": "2026-09-02T03:26:36.039Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -265,7 +273,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:37.950Z",
+      "lastModified": "2026-09-02T03:26:36.097Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -288,7 +296,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:38.019Z",
+      "lastModified": "2026-09-02T03:26:36.246Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -311,7 +319,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:37.984Z",
+      "lastModified": "2026-09-02T03:26:36.129Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -334,7 +342,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:38.087Z",
+      "lastModified": "2026-09-02T03:26:36.159Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -357,7 +365,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:38.052Z",
+      "lastModified": "2026-09-02T03:26:36.194Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   },
@@ -380,7 +388,7 @@
       }
     },
     "sync": {
-      "lastModified": "2026-08-24T20:19:38.114Z",
+      "lastModified": "2026-09-02T03:26:36.224Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
   }

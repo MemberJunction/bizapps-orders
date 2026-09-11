@@ -5,7 +5,25 @@
             <span>General Ledger &amp; Revenue Recognition Classification</span>
         </div>
         <div class="mjo-card-body">
-            <mj-form-field 
+            <!--
+                CompanyID moved here from the generated `financialAndAccounting` section,
+                which this panel now replaces (replacesSectionKey). Every other field in
+                that section was already rendered twice, except StandaloneSellingPrice —
+                deliberately deprecated off generated forms by
+                metadata/entities/.product-standalone-selling-price-deprecation.json, so it
+                is NOT carried over.
+            -->
+            <mj-form-field
+                [Record]="Product"
+                [ShowLabel]="true"
+                FieldName="CompanyID"
+                Type="textbox"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                LinkType="Record"
+                (Navigate)="Navigate.emit($event)"
+            ></mj-form-field>
+            <mj-form-field
                 [Record]="Product"
                 [ShowLabel]="true"
                 FieldName="RevenueRecognitionTypeID"
@@ -15,7 +33,7 @@
                 LinkType="Record"
                 (Navigate)="Navigate.emit($event)"
             ></mj-form-field>
-            <mj-form-field 
+            <mj-form-field
                 [Record]="Product"
                 [ShowLabel]="true"
                 FieldName="IsTaxable"
@@ -29,15 +47,6 @@
                 [ShowLabel]="true"
                 FieldName="TaxCategory"
                 Type="textbox"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="StandaloneSellingPrice"
-                Type="number"
                 [EditMode]="EditMode"
                 [FormContext]="FormContext"
                 (Navigate)="Navigate.emit($event)"

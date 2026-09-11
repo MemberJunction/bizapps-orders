@@ -81,7 +81,9 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 
 vi.mock('@mj-biz-apps/orders-entities', () => ({
     mjBizAppsOrdersOrderHeaderEntity: MockOrderHeader,
-    mjBizAppsOrdersEntitlementGrantEntity: MockEntitlementGrant
+    mjBizAppsOrdersEntitlementGrantEntity: MockEntitlementGrant,
+    LoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
+    OrdersEngine: { Instance: {} },
 }));
 
 import { GuestOrderClaimDriver } from '../GuestOrderClaimDriver.js';
