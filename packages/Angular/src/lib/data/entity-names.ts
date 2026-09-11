@@ -83,6 +83,8 @@ export const MJO_ACCOUNTING_ENTITIES = {
      * CanCreate nor CanUpdate).
      */
     JournalEntry: 'MJ_BizApps_Accounting: Journal Entries',
+    /** The GL batch a journal entry rides into Business Central on — carries the posting date and status. */
+    JournalEntryBatch: 'MJ_BizApps_Accounting: Journal Entry Batches',
     JournalEntryLine: 'MJ_BizApps_Accounting: Journal Entry Lines',
     JournalEntryLineDimension: 'MJ_BizApps_Accounting: Journal Entry Line Dimensions',
     GLAccount: 'MJ_BizApps_Accounting: GL Accounts',
