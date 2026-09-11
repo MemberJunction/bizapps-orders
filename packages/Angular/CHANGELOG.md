@@ -1,5 +1,13 @@
 # @mj-biz-apps/orders-ng
 
+## 5.12.1
+
+### Patch Changes
+
+- b1159b5: Confirm before saving an event product whose effective revenue recognition type is not deferred, and fix the accounting widget's field layout so the revenue recognition picker is usable.
+- c85f402: Resolve the product header and overview lookup names (type, category, rev-rec, successor) from their ids instead of the record's virtual name columns, which load null and go stale after a save.
+  - @mj-biz-apps/orders-entities@5.12.1
+
 ## 5.12.0
 
 ### Minor Changes
