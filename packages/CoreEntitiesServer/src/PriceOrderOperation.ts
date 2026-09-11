@@ -146,7 +146,7 @@ export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput,
                     LineTotalNet: net,
                     LineTotalGross: Math.round((net + charge + tax) * 100) / 100,
                     Components: result.PriceComponents.get(line)?.Components?.map((c) => ({
-                        Kind: String((c as { Kind?: string }).Kind ?? ''),
+                        Kind: String((c as { ComponentType?: string }).ComponentType ?? ''),
                         Label: String((c as { Label?: string }).Label ?? ''),
                         Amount: Number((c as { Amount?: number }).Amount ?? 0),
                     })),
