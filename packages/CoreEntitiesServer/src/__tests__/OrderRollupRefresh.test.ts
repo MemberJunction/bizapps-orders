@@ -96,11 +96,15 @@ describe('OrderEntityServer.refreshRolledUpTotals', () => {
 describe('OrderEntityServer.Save', () => {
     const source = readFileSync(join(here, '../OrderEntityServer.ts'), 'utf8');
 
-    it('refreshes the rollups on both paths that reach the database', () => {
+    it('refreshes the rollups on every path that reaches the database', () => {
         // The full path writes lines and payments and then has to ask what they came to. The
         // header-only shortcut refreshes for the opposite reason: it is the update that used to
         // carry a client's stale NULL to spUpdateOrderHeader and erase the stored total.
-        expect(source.match(/await this\.refreshRolledUpTotals\(\)/g)).toHaveLength(2);
+        //
+        // The third is the delete pass (golive #187). Deleting a removed line fires the rollup
+        // trigger, so the header write that follows must carry the row's new totals rather than
+        // the caller's pre-delete ones — the same failure as the shortcut, reached a different way.
+        expect(source.match(/await this\.refreshRolledUpTotals\(\)/g)).toHaveLength(3);
     });
 
     it('refreshes before the transaction commits, so a rollback takes it with it', () => {

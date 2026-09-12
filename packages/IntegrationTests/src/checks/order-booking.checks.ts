@@ -662,6 +662,26 @@ export const OrderBookingChecks: NamedCheck[] = [
                 );
                 AssertEqual(Number(persisted.N), 1, 'the removed row is gone, not orphaned alongside its replacement');
                 AssertEqual(Number(persisted.Qty), 2, 'the surviving row is the replacement');
+
+                // AND THE HEADER AGREES WITH THE LINES. The delete fires the rollup trigger, which
+                // recalculates these on the row; writing the header from what the caller still held
+                // would put the pre-delete figures back. Removing to EMPTY is the case that proves
+                // it, because nothing is inserted afterwards to fire the trigger a second time.
+                built.Order.Lines.Remove(built.Order.Lines.Items[0]);
+                Assert(
+                    await built.Order.Save(),
+                    `removing the last line must save: ${built.Order.LatestResult?.CompleteMessage ?? ''}`,
+                );
+
+                const emptied = await TxOne<{ N: number; TotalGross: number }>(
+                    ctx,
+                    `SELECT (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = h.ID) AS N,
+                            h.TotalGross
+                       FROM ${ORDERS_SCHEMA}.OrderHeader h
+                      WHERE h.ID = '${built.Order.ID}'`,
+                );
+                AssertEqual(Number(emptied.N), 0, 'the last line is gone too');
+                AssertEqual(Number(emptied.TotalGross ?? 0), 0, 'an order with no lines must not still carry a total');
             }),
     },
 ];

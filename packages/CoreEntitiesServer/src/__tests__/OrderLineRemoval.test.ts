@@ -187,43 +187,45 @@ describe('OrderEntityServer.deleteRemovedLines', () => {
     });
 });
 
+/** Drive the real `Save()` with every seam it touches stubbed, logging the ones that matter. */
+function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) {
+    const instance = orderWith(removed, retained);
+    Object.assign(instance, {
+        passesStatusTransition: () => true,
+        ApplyPersonPartyDefaults: vi.fn().mockResolvedValue(undefined),
+        willBookOnThisSave: () => false,
+        deleteLineDependents: vi.fn().mockResolvedValue(undefined),
+        expandBundles: vi.fn().mockResolvedValue(undefined),
+        prepareLines: vi.fn().mockResolvedValue(undefined),
+        saveTaxReasons: vi.fn().mockResolvedValue(undefined),
+        savePriceComponents: vi.fn().mockResolvedValue(undefined),
+        refreshRolledUpTotals: vi.fn(async () => {
+            log.push('refresh-rollups');
+        }),
+        ProviderToUse: {
+            BeginTransaction: vi.fn().mockResolvedValue(undefined),
+            CommitTransaction: vi.fn().mockResolvedValue(undefined),
+            RollbackTransaction: vi.fn().mockResolvedValue(undefined),
+        },
+    });
+    // Both are accessors backed by the field list a real entity loads, so they are shadowed.
+    Object.defineProperty(instance, 'IsSaved', { value: true });
+    Object.defineProperty(instance, 'OrderNumber', { value: 'ORD-000003', writable: true });
+
+    const headerSave = vi.spyOn(OrderHeaderEntity.prototype, 'Save').mockImplementation(async () => {
+        log.push('save-header');
+        return true;
+    });
+    return { instance, headerSave };
+}
+
 describe('OrderEntityServer.Save — removal ordering', () => {
     it('issues the deletes before any retained line is written', async () => {
         // THE assertion. `expandBundles` re-stamps LineNumber by position and the browser has
         // already done the same, so the removed row and its replacement both claim LineNumber 1.
         // Freeing the number first is the only thing that makes the insert legal.
         const log: string[] = [];
-        const removedLine = fakeLine(1, log);
-        const retainedLine = fakeLine(1, log);
-
-        const instance = orderWith([removedLine], [retainedLine]);
-        const seams = {
-            passesStatusTransition: () => true,
-            ApplyPersonPartyDefaults: vi.fn().mockResolvedValue(undefined),
-            willBookOnThisSave: () => false,
-            deleteLineDependents: vi.fn().mockResolvedValue(undefined),
-            expandBundles: vi.fn().mockResolvedValue(undefined),
-            prepareLines: vi.fn().mockResolvedValue(undefined),
-            saveTaxReasons: vi.fn().mockResolvedValue(undefined),
-            savePriceComponents: vi.fn().mockResolvedValue(undefined),
-            refreshRolledUpTotals: vi.fn().mockResolvedValue(undefined),
-            ProviderToUse: {
-                BeginTransaction: vi.fn().mockResolvedValue(undefined),
-                CommitTransaction: vi.fn().mockResolvedValue(undefined),
-                RollbackTransaction: vi.fn().mockResolvedValue(undefined),
-            },
-        };
-        Object.assign(instance, seams);
-        // Both are accessors backed by the field list a real entity loads, so they are shadowed.
-        Object.defineProperty(instance, 'IsSaved', { value: true });
-        Object.defineProperty(instance, 'OrderNumber', { value: 'ORD-000003', writable: true });
-
-        const headerSave = vi
-            .spyOn(OrderHeaderEntity.prototype, 'Save')
-            .mockImplementation(async () => {
-                log.push('save-header');
-                return true;
-            });
+        const { instance, headerSave } = savableOrder([fakeLine(1, log)], [fakeLine(1, log)], log);
 
         try {
             await expect(instance.Save()).resolves.toBe(true);
@@ -231,6 +233,48 @@ describe('OrderEntityServer.Save — removal ordering', () => {
             headerSave.mockRestore();
         }
 
-        expect(log).toEqual(['delete-line:1', 'save-header', 'save-line:1']);
+        // The trailing refresh is the pre-existing one every successful save ends with.
+        expect(log).toEqual([
+            'delete-line:1',
+            'refresh-rollups',
+            'save-header',
+            'save-line:1',
+            'refresh-rollups',
+        ]);
+    });
+
+    it('re-reads the header rollups after a delete, before the header is written', async () => {
+        // The delete fires trg_OrderLine_RollupTotals, which recalculates the header's totals on
+        // the row. Writing the header from what the client still holds would put the pre-delete
+        // figures back — and on a removal that empties the order nothing is inserted afterwards to
+        // fire the trigger again, so the stale total is the one that sticks. Measured live before
+        // this call existed: an order with no lines and a header still reading $45.
+        const log: string[] = [];
+        const { instance, headerSave } = savableOrder([fakeLine(1, log)], [], log);
+
+        try {
+            await instance.Save();
+        } finally {
+            headerSave.mockRestore();
+        }
+
+        expect(log.indexOf('refresh-rollups')).toBeGreaterThan(log.indexOf('delete-line:1'));
+        expect(log.indexOf('refresh-rollups')).toBeLessThan(log.indexOf('save-header'));
+    });
+
+    it('does not re-read the rollups when nothing was removed', async () => {
+        // The hot path. An ordinary edit must not pay for a query the delete pass never made.
+        const log: string[] = [];
+        const { instance, headerSave } = savableOrder([], [fakeLine(1, log)], log);
+
+        try {
+            await instance.Save();
+        } finally {
+            headerSave.mockRestore();
+        }
+
+        // One refresh only — the unconditional one at the end of a successful save.
+        expect(log.filter((entry) => entry === 'refresh-rollups')).toHaveLength(1);
+        expect(log.indexOf('refresh-rollups')).toBeGreaterThan(log.indexOf('save-header'));
     });
 });

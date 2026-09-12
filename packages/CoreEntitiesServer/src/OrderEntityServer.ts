@@ -459,7 +459,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // renumbers the survivors just below, so the numbers must already be free; and a
             // successful `super.Save()` can call `AcceptChanges()` on the collection, which empties
             // `Removed` — by the time the line writers run there may be nothing left to read.
-            await this.deleteRemovedLines();
+            // AND THE ROW'S TOTALS NOW WIN, because the delete just moved them.
+            //
+            // `trg_OrderLine_RollupTotals` fires on DELETE and recalculates the header's four
+            // rollup columns on the ROW. `this` still carries whatever the client sent, so the
+            // `super.Save()` below would write those stale figures straight back over the
+            // correction. Adding a replacement line hides it — that insert re-fires the trigger and
+            // the row ends up right — but a removal that empties the order inserts nothing
+            // afterwards, and the stale total is what sticks: measured as an order with no lines
+            // and a header still reading $45.
+            //
+            // Same hazard and same remedy as the header-only path above, for the same reason: a
+            // figure the database owns must not be reinstated from what the caller believed.
+            if (await this.deleteRemovedLines()) {
+                await this.refreshRolledUpTotals();
+            }
 
             // Capture BEFORE any header write. A draft that is being confirmed already has a PK
             // and persisted lines; a brand-new confirm does not. The two paths write lines at
@@ -995,10 +1009,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * Removing a line from a BOOKED order is already refused at validation
      * (`OrderHeaderEntity.refuseBookedMoneyEdits`, which counts `Lines.Removed`), so everything that
      * arrives here belongs to a draft. That is what keeps the dependent list below short.
+     *
+     * @returns whether any row was deleted — the caller re-reads the header's rollups when so,
+     * because the delete moved them on the row. See the call site.
      */
-    private async deleteRemovedLines(): Promise<void> {
+    private async deleteRemovedLines(): Promise<boolean> {
         const removed = this.Lines.Removed.filter((line) => line.IsSaved);
-        if (!removed.length) return;
+        if (!removed.length) return false;
 
         for (const line of removed) {
             await this.deleteLineDependents(line);
@@ -1008,6 +1025,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
         }
+        return true;
     }
 
     /**
