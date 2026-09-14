@@ -40,10 +40,9 @@ import { MJO_ENTITIES } from '../../data/entity-names';
              thing ("writes no journal entry") in different words, permanently, above the work. -->
         <p class="mjo-note mjo-fq__note">
             <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-            Everything here is already paid for and booked — nothing on this screen writes a journal
-            entry. What is outstanding is the goods, and what this queue controls is the order's
-            stage: one with nothing to ship auto-advances past Posted, one with a physical line waits
-            here.
+            Order lines waiting to ship. Marking a line fulfilled updates shipping status only. It does
+            not change the order's accounting. An order with nothing to ship moves to Fulfilled
+            automatically.
         </p>
 
         @if (Result) {
@@ -58,15 +57,14 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                     {{ Result.AdvancedCount === 1 ? 'order' : 'orders' }} advanced to Fulfilled.
                 }
                 @if (Result.RefusedCount) {
-                    {{ Result.RefusedCount }} refused — those lines were already shipped or are
-                    not fulfillable.
+                    {{ Result.RefusedCount }} skipped: already shipped or not fulfillable.
                 }
             </mj-alert>
         }
 
         @if (Error) {
             <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-fq__note" role="alert">
-                <strong>Nothing was marked.</strong> {{ Error }}
+                <strong>No lines were updated.</strong> {{ Error }}
             </mj-alert>
         }
 

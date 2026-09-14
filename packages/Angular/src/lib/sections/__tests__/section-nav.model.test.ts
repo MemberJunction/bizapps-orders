@@ -58,10 +58,15 @@ describe('BuildLeftNavSections', () => {
     });
 
     it('maps label, icon and description through', () => {
-        const [first] = BuildLeftNavSections(ORDERS_SUB_PAGES)[0].items;
+        const [first] = BuildLeftNavSections(PAYMENTS_SUB_PAGES)[0].items;
         expect(first.label).toBe('Dashboard');
         expect(first.icon).toBe('fa-solid fa-gauge-high');
-        expect(first.description).toBe('Is today normal?');
+        expect(first.description).toBe('Cash received and reconciliation');
+    });
+
+    it('leaves description undefined for a page that declares none', () => {
+        const [first] = BuildLeftNavSections(ORDERS_SUB_PAGES)[0].items;
+        expect(first.description).toBeUndefined();
     });
 
     it('renders a badge where one is supplied', () => {

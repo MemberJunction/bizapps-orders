@@ -138,7 +138,7 @@ export class MJOConsequenceChipComponent {
     imports: [CommonModule],
     template: `
         @if (Overridden) {
-            <span class="mjo-price-badge mjo-price-badge--override" title="Typed directly — this wins over any resolved price.">
+            <span class="mjo-price-badge mjo-price-badge--override" title="Manually entered price.">
                 <i class="fa-solid fa-pen" aria-hidden="true"></i> overridden
             </span>
         } @else if (Source) {
