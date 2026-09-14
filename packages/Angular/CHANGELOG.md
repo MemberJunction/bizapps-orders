@@ -1,5 +1,25 @@
 # @mj-biz-apps/orders-ng
 
+## 5.12.2
+
+### Patch Changes
+
+- b20af95: Search the whole active catalog from the add-product box on an order line, rank the results, and give each row its own company.
+
+  `GetCatalogOptions()` asked `GetProducts()` for 500 rows, and `GetProducts()` applied that cap by sorting the catalog by name and slicing — **before** any search ran. So on a catalog over 500 active products, everything sorting past the 500th name was unreachable from the picker no matter what an order taker typed, and nothing on screen said a product had been withheld. The cap bought nothing: `OrdersEngine` already loads the entire Products table into memory (`IgnoreMaxRows: true`, as every BaseEngine dataset does), so the slice only discarded rows the browser was already holding. `MaxRows` is now optional on `GetProducts()` and unbounded when omitted; a caller that genuinely wants a short list still passes one. `GetSellingCompanies()` loses the cap for the same reason and a sharper one — it derives companies from which companies own products, so the cap did not shorten that list, it dropped companies whose products all sorted past the 500th, and a company missing there cannot raise an order.
+
+  Matching was `includes()` with no ranking, so typing `sum` put "Executive Summary Report" level with "Summit Ticket" in whatever order the catalog array arrived in. The new `RankCatalogMatches()` orders by name-starts-with, then SKU-starts-with, then contains; within a tier the order's own selling company comes first, then alphabetically. Relevance outranks company deliberately: cross-company selling is intended — BCC sells SoundPost products — so company is a disambiguator between similar names, not a filter, and burying an exact name match under every own-company partial match would hide the row someone typed out in full. The function is pure and exported so the ordering is testable without Angular.
+
+  Each picker row now carries its company as its own marked element rather than as the third item in a muted "SKU · type · company" run, flagged when it differs from the order's selling company — the same test `ShowsForeignRevenue()` already applied to lines already added, so the label someone chose by is still there afterwards. Cross-company products keep appearing; they are marked, never hidden.
+
+- 7c16e2d: Rewrite the Orders app's on-screen copy in plain business language, applying the screen-by-screen
+  replacement list from bc-aidp-next-golive#210: section subtitles and rail descriptions, the Orders
+  and Payments dashboards, the fulfillment, returns, refund, account-credit, customer A/R, overdue,
+  subscriptions, products and pricing pages, the order document, and the shared allocation grid,
+  journal-entry preview, order-stage notes and price badge. Headings now name what a panel shows and
+  helper text says what the screen does; the design-rationale explanations are removed.
+  - @mj-biz-apps/orders-entities@5.12.2
+
 ## 5.12.1
 
 ### Patch Changes
