@@ -1,5 +1,7 @@
 # @mj-biz-apps/orders-entities
 
+## 5.12.2
+
 ## 5.12.1
 
 ## 5.12.0
