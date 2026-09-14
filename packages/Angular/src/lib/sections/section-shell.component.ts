@@ -34,7 +34,7 @@ import {
  * <mjo-section-shell
  *   Title="Orders"
  *   Icon="fa-solid fa-file-invoice-dollar"
- *   Subtitle="Take an order, then work the ones you have"
+ *   Subtitle="Orders, fulfillment and returns"
  *   [NavSections]="NavSections"
  *   [ActivePageId]="ActivePageId"
  *   [Loading]="IsLoading"

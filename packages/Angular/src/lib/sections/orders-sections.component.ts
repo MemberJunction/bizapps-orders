@@ -636,7 +636,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         <mjo-section-shell
             Title="Orders"
             Icon="fa-solid fa-file-invoice-dollar"
-            Subtitle="Take an order, then work the ones you have"
+            Subtitle="Orders, fulfillment and returns"
             [NavSections]="NavSections"
             [ActivePageId]="ActivePageId"
             [Loading]="IsLoading"
@@ -750,7 +750,7 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
         <mjo-section-shell
             Title="Payments"
             Icon="fa-solid fa-money-check-dollar"
-            Subtitle="Record the cash, then say what it settles"
+            Subtitle="Payments, refunds and account credits"
             [NavSections]="NavSections"
             [ActivePageId]="ActivePageId"
             [Loading]="IsLoading"
@@ -836,7 +836,7 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
         <mjo-section-shell
             Title="Receivables"
             Icon="fa-solid fa-chart-column"
-            Subtitle="Where each relationship stands before you pick up the phone"
+            Subtitle="Customer balances, aging and subscriptions"
             [NavSections]="NavSections"
             [ActivePageId]="ActivePageId"
             [Loading]="IsLoading"
@@ -916,7 +916,7 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
         <mjo-section-shell
             Title="Catalog"
             Icon="fa-solid fa-box-open"
-            Subtitle="Products, prices, promotions and the charges every order inherits"
+            Subtitle="Products, pricing, promotions, charges and tax"
             [NavSections]="NavSections"
             [ActivePageId]="ActivePageId"
             [Loading]="IsLoading"

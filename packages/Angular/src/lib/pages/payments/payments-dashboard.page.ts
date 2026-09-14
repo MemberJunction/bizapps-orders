@@ -48,7 +48,7 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                 Label="Unallocated"
                 Icon="fa-solid fa-equals"
                 Value="$0.00"
-                Detail="Always — a payment cannot capture unless it balances" />
+                Detail="Captured payments are fully applied" />
 
             <mjo-stat-tile
                 Label="Awaiting capture"
@@ -60,7 +60,7 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                 Label="Processor fees"
                 Icon="fa-solid fa-receipt"
                 [Value]="FeeTotal"
-                Detail="Our cost, never netted against a customer's balance" />
+                Detail="Recorded as an expense, not deducted from customer balances" />
         </div>
 
         <div class="mjo-pd__split mjo-pd__split--three">
@@ -68,17 +68,17 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                 <div class="mj-card-head">
                     <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
                     <h3>Cash received per day</h3>
+                    <span class="right small muted">last 7 days</span>
                 </div>
                 <div class="mj-card-pad">
                     <mjo-day-bars [Bars]="CashPerDay" Unit="received" />
-                    <div class="small muted mjo-pd__note">Amounts received, not payment counts.</div>
                 </div>
             </div>
 
             <div class="mj-card">
                 <div class="mj-card-head">
                     <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
-                    <h3>How they paid</h3>
+                    <h3>Payments by method</h3>
                 </div>
                 <div class="mj-card-pad">
                     <mjo-bar-list [Rows]="TenderMix" EmptyText="No payments yet." />
@@ -92,13 +92,9 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                 </div>
                 <div class="mj-card-pad">
                     <mj-alert Variant="success" Icon="fa-solid fa-circle-check">
-                            <strong>Every captured payment balances.</strong>
-                            The amount-equals-allocations rule is enforced at the capture transition, so an
-                            unbalanced payment cannot exist to be found later.
-                    </mj-alert>
-                    <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-pd__note">
-                            A refund is a <b>new payment</b>, never an edit of the capture — so chargebacks and
-                            reversals show in the refunds list rather than as a mutated original.
+                            <strong>Every captured payment is fully applied to orders.</strong>
+                            Refunds, chargebacks and reversals are recorded as separate payments and appear
+                            in the refunds list. The original payment is not changed.
                     </mj-alert>
                 </div>
             </div>
@@ -108,7 +104,7 @@ import { MJO_ENTITIES } from '../../data/entity-names';
             <div class="mj-card mjo-pd__viewer-card">
                 <div class="mj-card-head">
                     <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
-                    <h3>Payments List</h3>
+                    <h3>Payments</h3>
                 </div>
                 <div class="mjo-pd__viewer-host">
                     @if (PaymentEntityInfo) {
@@ -125,20 +121,19 @@ import { MJO_ENTITIES } from '../../data/entity-names';
             <div class="mj-card">
                 <div class="mj-card-head">
                     <i class="fa-solid fa-receipt" aria-hidden="true"></i>
-                    <h3>Cost of taking money</h3>
+                    <h3>Processing fees</h3>
                 </div>
                 <div class="mj-card-pad">
                     <div class="mjo-pd__row">
-                        <span class="small muted">Processor fees, captured payments</span>
+                        <span class="small muted">Fees on captured payments</span>
                         <b class="mj-num">{{ FeeTotal }}</b>
                     </div>
                     <div class="mjo-pd__row">
-                        <span class="small muted">Effective rate on what we took</span>
+                        <span class="small muted">Effective fee rate</span>
                         <b class="mj-num">{{ EffectiveRate }}</b>
                     </div>
                     <div class="small muted mjo-pd__note">
-                        Booked as OUR expense against gross A/R, never netted into the customer's
-                        balance — netting would leave a residue no payment could ever clear.
+                        Fees are recorded as an expense. Customer balances are not reduced by fees.
                     </div>
                 </div>
             </div>

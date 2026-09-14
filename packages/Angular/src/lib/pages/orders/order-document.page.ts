@@ -47,8 +47,7 @@ export interface MJOIssuer {
                 <i class="fa-solid fa-print" aria-hidden="true"></i> Print
             </button>
             <span class="small muted spacer">
-                The confirmed order <b>is</b> the receivable — this is that order rendered, not a
-                separate invoice record.
+                {{ IsCredit ? 'Credit memo view of the confirmed order.' : 'Invoice view of the confirmed order.' }}
             </span>
         </div>
 
@@ -175,9 +174,9 @@ export interface MJOIssuer {
 
                 <footer class="mj-doc-foot">
                     @if (IsCredit) {
-                        <strong>How this credit can be used.</strong>
-                        Apply it against another invoice, or request a refund to the original payment
-                        method. It does not expire.
+                        <strong>Using this credit.</strong>
+                        Apply it to another invoice or request a refund to the original payment method.
+                        It does not expire.
                     } @else {
                         <strong>How to pay.</strong>
                         {{ Issuer.RemittanceNote ?? 'Please reference the order number with your payment.' }}
@@ -191,8 +190,8 @@ export interface MJOIssuer {
         } @else {
             <div class="mj-empty mjo-doc__empty">
                 <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
-                <div class="t">No document</div>
-                <div class="small">A bill exists once an order confirms — a draft has no number yet.</div>
+                <div class="t">No document yet</div>
+                <div class="small">An invoice is available once the order is confirmed.</div>
             </div>
         }
     `,

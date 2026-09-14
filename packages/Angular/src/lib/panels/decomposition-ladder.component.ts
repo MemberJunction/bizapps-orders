@@ -140,7 +140,7 @@ export class MJODecompositionLadderComponent {
     @Input() Footnote: string | null = null;
 
     /** Shown when there is nothing to decompose yet. */
-    @Input() EmptyText = 'Add a line to see what this order comes to.';
+    @Input() EmptyText = 'Add a line to see the order total.';
 
     protected readonly expanded = new Set<number>();
 

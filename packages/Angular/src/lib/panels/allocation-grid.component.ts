@@ -119,10 +119,9 @@ export type MJOAllocationMap = Record<string, number>;
                             <td colspan="7">
                                 <div class="mj-empty mjo-ag__empty">
                                     <i class="fa-solid fa-check" aria-hidden="true"></i>
-                                    <div class="t">Nothing open</div>
+                                    <div class="t">No open orders</div>
                                     <div class="small">
-                                        This customer owes nothing. Cash taken now becomes credit on whichever
-                                        order it is applied to.
+                                        This payment will create a credit on the order it is applied to.
                                     </div>
                                 </div>
                             </td>
@@ -150,25 +149,15 @@ export type MJOAllocationMap = Record<string, number>;
             <mj-alert Variant="success" Icon="fa-solid fa-piggy-bank" class="mjo-ag__effect">
                     <strong>This creates account credit.</strong>
                     @for (order of overAppliedOrders; track order.ID) {
-                        {{ order.OrderNumber }} goes to {{ formatLeaves(order) }} —
-                        {{ creditAmount(order) }} of spendable credit.
+                        {{ order.OrderNumber }} will have a credit balance of {{ creditAmount(order) }}.
                     }
-                    <div class="small mjo-ag__effect-note">
-                        Legitimate and common. No separate credit record is created; the negative balance
-                        <b>is</b> the credit.
-                    </div>
             </mj-alert>
         }
 
         @if (companiesInvolved.length > 1) {
             <mj-alert Variant="warning" Icon="fa-solid fa-building-columns" class="mjo-ag__effect">
                     <strong>This allocation crosses companies.</strong>
-                    Cash landed with one entity but settles receivables owned by
-                    {{ companiesInvolved.join(' and ') }}.
-                    <div class="small mjo-ag__effect-note">
-                        The intercompany legs book <b>here, at allocation</b> — not at capture. A capture only
-                        says how much cash arrived; only an allocation says whose revenue it settles.
-                    </div>
+                    Intercompany entries will be created for {{ companiesInvolved.join(' and ') }}.
             </mj-alert>
         }
     `,
@@ -219,7 +208,6 @@ export type MJOAllocationMap = Record<string, number>;
             }
 
             .mjo-ag__effect { margin-top: var(--mj-space-3); }
-            .mjo-ag__effect-note { margin-top: 4px; }
 
             @media (max-width: 760px) {
                 .mjo-ag__co,
@@ -271,11 +259,11 @@ export class MJOAllocationGridComponent {
     }
 
     protected get unallocatedNote(): string {
-        if (this.Unallocated === 0) return 'Balanced — ready to capture.';
+        if (this.Unallocated === 0) return 'Fully applied. Ready to capture.';
         if (this.Unallocated > 0) {
             return `${FormatMoney(this.Unallocated)} of this payment is not yet applied to anything.`;
         }
-        return `Applied ${FormatMoney(-this.Unallocated)} more than was received — reduce an allocation.`;
+        return `Applied ${FormatMoney(-this.Unallocated)} more than received. Reduce an allocation.`;
     }
 
     protected get overAppliedOrders(): MJOAllocatableOrder[] {

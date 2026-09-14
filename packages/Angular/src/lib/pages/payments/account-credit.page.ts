@@ -43,17 +43,15 @@ import { GetOrders } from '../../data/orders-queries';
     imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, EntityViewerModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-piggy-bank" class="mjo-cr__note">
-                <strong>A credit is an order with a negative balance.</strong>
-                There is no credit table and no stored balance — a second record holding the same number is
-                a second thing that can disagree with it. Spending one writes a <b>zero-amount</b> payment
-                with two offsetting lines: no new cash entered the business, this only re-attributes money
-                already received.
+                <strong>A credit is an order with a negative balance (the customer paid more than was owed).</strong>
+                Applying a credit records a zero-amount payment that moves the credit to another order.
+                No new cash is received.
         </mj-alert>
 
         <div class="mj-card mjo-cr__list">
             <div class="mj-card-head">
                 <i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i>
-                <h3>Credits customers are holding</h3>
+                <h3>Customer credits on account</h3>
                 <span class="right small muted">{{ TotalDisplay }} across {{ Credits.length }}</span>
             </div>
             <div class="mjo-cr__viewer-host">
@@ -74,7 +72,7 @@ import { GetOrders } from '../../data/orders-queries';
             <div class="mjo-cr__flow">
                 <div class="mj-card mjo-cr__side mjo-cr__side--from">
                     <div class="mj-card-pad">
-                        <span class="mj-chip mj-chip--success">From — the credit</span>
+                        <span class="mj-chip mj-chip--success">From (credit)</span>
                         <div class="mjo-cr__order">{{ Source.OrderNumber }}</div>
                         <mjo-stated-value Label="Available">
                             <b class="mj-money--credit">{{ Available | mjoMoney }}</b>
@@ -94,7 +92,7 @@ import { GetOrders } from '../../data/orders-queries';
 
                 <div class="mj-card mjo-cr__side mjo-cr__side--to">
                     <div class="mj-card-pad">
-                        <span class="mj-chip mj-chip--brand">To — an open order</span>
+                        <span class="mj-chip mj-chip--brand">To (open order)</span>
                         <label class="mj-field mjo-cr__field">
                             <label>Target order</label>
                             <mj-dropdown
@@ -111,8 +109,7 @@ import { GetOrders } from '../../data/orders-queries';
                             @if (IsCrossCompany) {
                                 <mj-alert Variant="warning" Icon="fa-solid fa-building-columns" class="mjo-cr__cross">
                                         <strong>This crosses companies.</strong>
-                                        The intercompany legs are required, not optional — a single
-                                        Dr A/R / Cr A/R spanning two legal entities could not be booked at all.
+                                        Intercompany entries will be created.
                                 </mj-alert>
                             }
                         }
@@ -122,12 +119,9 @@ import { GetOrders } from '../../data/orders-queries';
 
             <div class="mjo-cr__actions">
                 <mj-alert Variant="info" Icon="fa-solid fa-scale-balanced" class="mjo-cr__note">
-                        <strong>The payment this writes, and what books.</strong>
-                        A payment whose Amount is ZERO, carrying two offsetting allocations: the
-                        credit order is drawn down, the target order is settled. Zero is not a
-                        degenerate case — no new cash entered the business. The money arrived
-                        earlier, on the payment that over-paid the first order; this only
-                        re-attributes it, so cash nets to nothing and A/R moves between orders.
+                        <strong>What is recorded.</strong>
+                        A zero-amount payment with two allocations: one reduces the credit, one pays
+                        down the target order.
                 </mj-alert>
 
                 <button
@@ -138,7 +132,7 @@ import { GetOrders } from '../../data/orders-queries';
                     <i class="fa-solid fa-check" aria-hidden="true"></i>
                     {{ Busy ? 'Applying…' : 'Apply credit' }}
                 </button>
-                <span class="small muted">No cash moves — this re-attributes money already received.</span>
+                <span class="small muted">No cash changes hands.</span>
                 @if (Error) {
                     <span class="small mjo-cr__error">{{ Error }}</span>
                 }

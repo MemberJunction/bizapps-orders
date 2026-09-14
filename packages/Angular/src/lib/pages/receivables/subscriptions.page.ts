@@ -70,11 +70,8 @@ interface MJORecognitionPeriod {
             <div class="mjo-sub__left">
                 <p class="mjo-note mjo-sub__note">
                     <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-                    <strong>Why this cannot double-bill.</strong>
-                        A renewal is refused when a term already covers the period it would create.
-                        The check is against COVERAGE, not against whether a job has run — so a
-                        retried batch, a manual nudge and a scheduled sweep all reach the same
-                        answer.
+                    A renewal is blocked when a term already covers the period, so a subscription
+                    cannot be billed twice for the same period.
                 </p>
 
                 <div class="mjo-sub__viewer-host">
@@ -117,16 +114,15 @@ interface MJORecognitionPeriod {
 
                             <p class="mjo-note mjo-sub__note">
                                 <i class="fa-solid fa-user-group" aria-hidden="true"></i>
-                                Holder and beneficiary are separate on purpose, and it decides what counts
-                                    as a duplicate — which is why ten seats for ten staff are ten subscriptions
-                                    rather than ten collisions.
+                                Holder is the paying party. Beneficiary receives the service. Each beneficiary
+                                has its own subscription.
                             </p>
 
                             @if (RenewalDue) {
                                 <mj-alert Variant="warning" Icon="fa-solid fa-hourglass-half" class="mjo-sub__note">
                                         <strong>Renews in {{ DaysToRenewal }} days.</strong>
-                                        With auto-renew on, the system places a confirmed order at lead time —
-                                        invoicing ahead of the period, which is how subscription billing works.
+                                        With auto-renew on, a renewal order is created and invoiced before the
+                                        new term starts.
                                 </mj-alert>
                             }
                         </div>
@@ -172,12 +168,6 @@ interface MJORecognitionPeriod {
                                 </tbody>
                             </table>
                         </div>
-                        <div class="mj-card-pad small muted">
-                            A renewal APPENDS a term rather than moving a pointer, so "current" is
-                            the term whose window covers today — a fact that cannot go stale. It
-                            also keeps the difference visible between a customer buying more
-                            coverage and the system renewing them under standing authority.
-                        </div>
                     </div>
 
                     <div class="mj-card mjo-sub__recog">
@@ -192,10 +182,7 @@ interface MJORecognitionPeriod {
                                     <span class="small muted">{{ dateOf(event['OccurredAt']) }}</span>
                                 </div>
                             } @empty {
-                                <div class="small muted">
-                                    No events yet. A subscription that has only ever been sold has
-                                    nothing to say here.
-                                </div>
+                                <div class="small muted">No history yet.</div>
                             }
                         </div>
                     </div>
@@ -218,10 +205,8 @@ interface MJORecognitionPeriod {
                             </div>
 
                             <div class="small muted mjo-sub__note">
-                                These are <b>real forward-dated entries written at booking</b>, not a schedule a
-                                nightly job materialises. Batches only sweep them when the date filter explicitly
-                                reaches forward, so they sit harmlessly until their period arrives. A change nets
-                                against them; they are never edited.
+                                Recognition entries are created at booking with future dates and post when their
+                                period arrives. Changes are recorded as adjusting entries.
                             </div>
                         </div>
                     </div>
