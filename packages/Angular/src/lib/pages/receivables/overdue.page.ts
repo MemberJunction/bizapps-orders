@@ -63,10 +63,10 @@ interface MJONextAction {
                 [Detail]="OldestDetail" />
 
             <mjo-stat-tile
-                Label="Never contacted"
+                Label="Overdue one-time orders"
                 Icon="fa-regular fa-envelope"
-                [Value]="String(NeverContacted)"
-                Detail="No reminder sent yet" />
+                [Value]="String(OverdueOneTimeOrders)"
+                Detail="No subscription attached" />
 
             <mjo-stat-tile
                 Label="Credit available to apply"
@@ -230,8 +230,8 @@ export class MJOOverduePageComponent implements OnInit {
         return oldest ? `${oldest.OrderNumber} · ${oldest.CustomerName}` : 'Nothing overdue';
     }
 
-    /** No contact record yet means nobody has asked — the cheapest thing to try. */
-    public get NeverContacted(): number {
+    /** Overdue rows with no subscription attached: one-time orders rather than renewals. */
+    public get OverdueOneTimeOrders(): number {
         return this.AllRows.filter((r) => !r.SubscriptionID && r.DaysOverdue > 0).length;
     }
 

@@ -283,13 +283,13 @@ interface MJOAttentionItem {
                             Icon="fa-solid fa-clock"
                             Tone="default"
                             [Value]="Aging30Display"
-                            Detail="First reminder" />
+                            Detail="Second reminder" />
                         <mjo-stat-tile
                             Label="61–90 days"
                             Icon="fa-solid fa-triangle-exclamation"
                             Tone="alert"
                             [Value]="Aging60Display"
-                            Detail="Second reminder" />
+                            Detail="Phone call" />
                         <mjo-stat-tile
                             Label="90+ days overdue"
                             Icon="fa-solid fa-circle-xmark"
@@ -874,7 +874,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         const all: MJOQueue[] = [
             { Label: 'Draft orders', Count: drafts, Icon: 'fa-solid fa-pen-ruler', Tone: 'neutral', PageId: 'list', Preset: 'drafts' },
             {
-                Label: 'Lines waiting to ship',
+                Label: 'Orders waiting to ship',
                 Count: awaitingFulfillment,
                 Icon: 'fa-solid fa-dolly',
                 Tone: 'warning',

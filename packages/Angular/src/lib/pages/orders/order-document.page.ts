@@ -46,7 +46,9 @@ export interface MJOIssuer {
             <button type="button" mjButton variant="outline" (click)="print()">
                 <i class="fa-solid fa-print" aria-hidden="true"></i> Print
             </button>
-            <span class="small muted spacer">Invoice view of the confirmed order.</span>
+            <span class="small muted spacer">
+                {{ IsCredit ? 'Credit memo view of the confirmed order.' : 'Invoice view of the confirmed order.' }}
+            </span>
         </div>
 
         @if (Order) {

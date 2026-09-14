@@ -132,8 +132,8 @@ interface MJOReturnLine {
                         </div>
                         <div class="mj-card-pad">
                             <label class="mj-field">
-                                <label>Reason</label>
                                 <mj-dropdown
+                                    AriaLabel="Reason"
                                     [Data]="ReturnReasons"
                                     [ValuePrimitive]="true"
                                     [(ngModel)]="Reason"

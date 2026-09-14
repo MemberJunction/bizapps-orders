@@ -81,7 +81,6 @@ interface MJOUnapplication {
                     </div>
                     <div class="mj-card-pad">
                         <label class="mj-field">
-                            <label>Refund amount</label>
                             <input
                                 class="mj-input is-num"
                                 [value]="Amount"
