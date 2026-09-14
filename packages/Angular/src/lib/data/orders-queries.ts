@@ -43,6 +43,7 @@
  * @module @mj-biz-apps/orders-ng
  */
 import { Metadata, RunView, type RunViewParams, type UserInfo } from '@memberjunction/core';
+import { UUIDsEqual } from '@memberjunction/global';
 import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
 import { IsBefore, LoadOrdersEngine, OrdersEngine, Today, ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
 import type {
@@ -1613,22 +1614,32 @@ export async function GetSubscriptionEvents(
 
 /* ── Catalog ─────────────────────────────────────────────────────────────────── */
 
-/** Active products, for a picker. */
+/**
+ * Active products, for a picker.
+ *
+ * `MaxRows` is OPTIONAL AND UNBOUNDED BY DEFAULT, unlike the worklist reads above. This is not a
+ * `RunView` — `OrdersEngine` has already loaded the whole Products table into memory
+ * (`IgnoreMaxRows: true`, as every BaseEngine dataset does), so a cap here does not save a round
+ * trip or a row read. It only throws away rows the process is already holding.
+ *
+ * That distinction was invisible while the cap was 500: products whose names sort past the 500th
+ * were unreachable from the add-product picker no matter what the user typed, because the slice ran
+ * BEFORE the search did. Pass `MaxRows` only when a caller genuinely wants a short list (a probe, a
+ * preview); a picker that searches must not.
+ */
 export async function GetProducts(
     options: { Search?: string; MaxRows?: number; User?: UserInfo } = {},
 ): Promise<mjBizAppsOrdersProductEntity[]> {
     const md = new Metadata();
     await LoadOrdersEngine(Metadata.Provider, options.User ?? md.CurrentUser);
     const q = options.Search?.trim().toLowerCase() ?? '';
-    const max = options.MaxRows ?? 200;
-    return OrdersEngine.Instance.Products.filter((p) => {
+    const matches = OrdersEngine.Instance.Products.filter((p) => {
         if (p.Status !== 'Active') return false;
         if (p.Name?.startsWith('IT-ORD-')) return false;
         if (q && !p.Name?.toLowerCase().includes(q) && !(p.SKU ?? '').toLowerCase().includes(q)) return false;
         return true;
-    })
-        .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''))
-        .slice(0, max);
+    }).sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''));
+    return options.MaxRows === undefined ? matches : matches.slice(0, options.MaxRows);
 }
 
 /** Price rules, highest priority first — that is the order that resolves a tie. */
@@ -1708,6 +1719,57 @@ function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null })
 }
 
 /**
+ * Catalog rows matching `query`, most useful first.
+ *
+ * A plain `includes()` over the catalog is what an order taker experiences as a broken picker: type
+ * `sum` and "Executive Summary Report" sits level with "Summit Ticket", in whatever order the
+ * catalog array happened to arrive in. Both ARE matches; only one is what was being typed.
+ *
+ * The ranking is three tiers, then two tiebreaks:
+ *   0. the NAME starts with the query
+ *   1. the SKU starts with the query
+ *   2. either merely contains it
+ *   ...then the order's own selling company before other companies, then alphabetically by name.
+ *
+ * RELEVANCE OUTRANKS COMPANY, deliberately. Cross-company selling is intended — BCC sells SoundPost
+ * products — so a company is a disambiguator between similar names, not a filter: burying an exact
+ * name match under every own-company partial match would hide the row the user typed out in full.
+ * Company still decides every tie, which is where it actually helps.
+ *
+ * An empty query ranks everything at tier 0, so the unsearched list is own-company-first and
+ * alphabetical — the ordering a picker opens with.
+ *
+ * Pure and exported so the ordering can be tested without Angular; the component only slices it.
+ */
+export function RankCatalogMatches(
+    options: readonly MJOProductOption[],
+    query: string,
+    ownCompanyID?: string | null,
+): MJOProductOption[] {
+    const q = query.trim().toLowerCase();
+    const ranked: { option: MJOProductOption; tier: number; own: number }[] = [];
+    for (const option of options) {
+        const name = (option.Name ?? '').toLowerCase();
+        const sku = (option.SKU ?? '').toLowerCase();
+        let tier: number;
+        if (!q || name.startsWith(q)) tier = 0;
+        else if (sku.startsWith(q)) tier = 1;
+        else if (name.includes(q) || sku.includes(q)) tier = 2;
+        else continue;
+        const own = ownCompanyID && option.CompanyID && UUIDsEqual(option.CompanyID, ownCompanyID) ? 0 : 1;
+        ranked.push({ option, tier, own });
+    }
+    return ranked
+        .sort(
+            (a, b) =>
+                a.tier - b.tier ||
+                a.own - b.own ||
+                (a.option.Name ?? '').localeCompare(b.option.Name ?? ''),
+        )
+        .map((r) => r.option);
+}
+
+/**
  * Products the picker can add, with an indicative list price.
  *
  * The figure comes from the PRICE RULES, not `StandaloneSellingPrice`: SSP is
@@ -1717,7 +1779,7 @@ function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null })
  */
 /** Catalog picker rows from OrdersEngine — live, not a session snapshot. */
 export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
-    const products = await GetProducts({ MaxRows: 500, User: user });
+    const products = await GetProducts({ User: user });
     const engine = OrdersEngine.Instance;
     return products.map((product) => {
         const list = engine.BaseProductPrices(product.ID)[0];
@@ -1922,7 +1984,10 @@ export async function RecentCustomers(limit = 8, user?: UserInfo): Promise<MJOCu
  * (`test-harnesses/purge-fixture-data.mjs`).
  */
 export async function GetSellingCompanies(user?: UserInfo): Promise<MJOCompanyOption[]> {
-    const products = await GetProducts({ MaxRows: 500, User: user });
+    // Uncapped on purpose: this derives the company list from which companies own products, so a cap
+    // does not shorten a list of companies — it silently DROPS companies whose products all sort
+    // past the cap, and a company missing here cannot raise an order at all.
+    const products = await GetProducts({ User: user });
     const byID = new Map<string, string>();
     for (const p of products) {
         const id = String(p.CompanyID ?? '');
