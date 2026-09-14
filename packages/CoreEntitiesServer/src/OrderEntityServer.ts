@@ -128,6 +128,21 @@ const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const BOOKED_STATUSES = new Set(['Confirmed']);
 
 /**
+ * What has to come out before a removed DRAFT line can be deleted — child before parent, because
+ * an allocation points at its adjustment. See `deleteLineDependents` for why the list stops here.
+ */
+const REMOVED_LINE_DEPENDENT_ENTITIES = [
+    'MJ_BizApps_Orders: Order Line Price Components',
+    'MJ_BizApps_Orders: Order Charge Allocations',
+    'MJ_BizApps_Orders: Order Adjustment Allocations',
+    'MJ_BizApps_Orders: Order Adjustments',
+    'MJ_BizApps_Orders: Order Line Dimensions',
+] as const;
+
+/** Per-table ceiling on one removed line's dependent rows. Reaching it is a refusal, not a page. */
+const DEPENDENT_ROW_CAP = 1000;
+
+/**
  * The subset of `AccountingEngineBase` this class uses. Declared structurally so the accounting
  * peer stays an optional, dynamically-imported dependency at build time.
  */
@@ -428,6 +443,37 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         try {
             await dbProvider.BeginTransaction();
+
+            // REMOVALS FIRST, before anything renumbers or writes a line.
+            //
+            // `SkipRelatedCollections` below opts this save out of MJ's standard collection pass,
+            // and that pass is where a removed child gets deleted — deliberately BEFORE the
+            // retained ones are written, because a removed child may still hold a unique key a
+            // re-sequenced sibling is about to take (`relatedRecordCollection.ts`, ContributeSaveWork).
+            // Taking over the writes without taking over the deletes left the removals queued and
+            // unissued: the deleted row kept LineNumber 1, the replacement was re-stamped to 1, and
+            // UQ_OrderLine_OrderHeader_LineNumber refused it. Worse, a removal with nothing added
+            // raised no error at all and simply left the row on disk (golive #187).
+            //
+            // It runs HERE rather than inside `savePendingLines` for two reasons: `expandBundles`
+            // renumbers the survivors just below, so the numbers must already be free; and a
+            // successful `super.Save()` can call `AcceptChanges()` on the collection, which empties
+            // `Removed` — by the time the line writers run there may be nothing left to read.
+            // AND THE ROW'S TOTALS NOW WIN, because the delete just moved them.
+            //
+            // `trg_OrderLine_RollupTotals` fires on DELETE and recalculates the header's four
+            // rollup columns on the ROW. `this` still carries whatever the client sent, so the
+            // `super.Save()` below would write those stale figures straight back over the
+            // correction. Adding a replacement line hides it — that insert re-fires the trigger and
+            // the row ends up right — but a removal that empties the order inserts nothing
+            // afterwards, and the stale total is what sticks: measured as an order with no lines
+            // and a header still reading $45.
+            //
+            // Same hazard and same remedy as the header-only path above, for the same reason: a
+            // figure the database owns must not be reinstated from what the caller believed.
+            if (await this.deleteRemovedLines()) {
+                await this.refreshRolledUpTotals();
+            }
 
             // Capture BEFORE any header write. A draft that is being confirmed already has a PK
             // and persisted lines; a brand-new confirm does not. The two paths write lines at
@@ -951,6 +997,85 @@ export class OrderEntityServer extends OrderHeaderEntity {
     ): Promise<void> {
         await this.savePendingLines(options, decisions);
         await this.savePriceComponents(options);
+    }
+
+    /**
+     * Issue the deletes this save's line pass would otherwise never issue (golive #187).
+     *
+     * Only lines that reached the database are here to delete: a line added and removed in the same
+     * editing session was dropped from `removed` at `Remove()` time by MJ itself, so this does not
+     * re-invent that.
+     *
+     * Removing a line from a BOOKED order is already refused at validation
+     * (`OrderHeaderEntity.refuseBookedMoneyEdits`, which counts `Lines.Removed`), so everything that
+     * arrives here belongs to a draft. That is what keeps the dependent list below short.
+     *
+     * @returns whether any row was deleted — the caller re-reads the header's rollups when so,
+     * because the delete moved them on the row. See the call site.
+     */
+    private async deleteRemovedLines(): Promise<boolean> {
+        const removed = this.Lines.Removed.filter((line) => line.IsSaved);
+        if (!removed.length) return false;
+
+        for (const line of removed) {
+            await this.deleteLineDependents(line);
+            if (!(await line.Delete())) {
+                throw new Error(
+                    `Failed to delete removed order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`,
+                );
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Clear the rows that point at a removed draft line, so its own delete is not refused.
+     *
+     * `spDeleteOrderLine` is a bare `DELETE ... WHERE ID = @ID` and not one of the thirteen foreign
+     * keys into `OrderLine` cascades, so a line that has been saved even once — which means it has
+     * price components — cannot be deleted until these come out first.
+     *
+     * The list is only what a DRAFT line's own save path writes, child before parent. Subscriptions,
+     * terms, entitlement grants, payment lines and gift-card accounts are all written at BOOKING,
+     * and a booked order refuses removals outright, so they cannot be reached from here. An
+     * `EventOrderLine` is an IS-A child rather than a dependent row, and `BaseEntity.Delete()`
+     * already walks that chain itself.
+     *
+     * Deletes go through the entity so row-level security and the change log see them; the repo has
+     * no raw-DELETE precedent and this is not the place to start one.
+     */
+    private async deleteLineDependents(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const filter = `OrderLineID='${RequireUUID(line.ID, 'OrderLineID')}'`;
+
+        for (const entityName of REMOVED_LINE_DEPENDENT_ENTITIES) {
+            const result = await rv.RunView<BaseEntity>(
+                {
+                    EntityName: entityName,
+                    ExtraFilter: filter,
+                    ResultType: 'entity_object',
+                    MaxRows: DEPENDENT_ROW_CAP,
+                },
+                this.ContextCurrentUser,
+            );
+            const rows = result?.Results ?? [];
+            // The cap is a guard, not a page size: silently deleting the first thousand and leaving
+            // the rest would fail the line's own delete with an opaque FK error a row later.
+            if (rows.length >= DEPENDENT_ROW_CAP) {
+                throw new Error(
+                    `Order line ${line.LineNumber} has ${DEPENDENT_ROW_CAP} or more ${entityName} rows; ` +
+                        `refusing to delete it rather than clearing only part of them.`,
+                );
+            }
+            for (const row of rows) {
+                if (!(await row.Delete())) {
+                    throw new Error(
+                        `Failed to delete ${entityName} for removed order line ${line.LineNumber}: ` +
+                            `${ExtractEntityErrorMessage(row)}`,
+                    );
+                }
+            }
+        }
     }
 
     private async savePendingLines(
