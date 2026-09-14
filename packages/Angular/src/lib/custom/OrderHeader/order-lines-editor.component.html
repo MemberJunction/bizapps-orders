@@ -252,7 +252,20 @@
                         (mousedown)="AddProduct(product)">
                         <span class="mjo-ol-pick__body">
                             <span class="name">{{ product.Name }}</span>
-                            <span class="sub">{{ product.SKU }} · {{ product.TypeName }} · {{ product.CompanyName }}</span>
+                            <span class="mjo-ol-pick__meta">
+                                <span class="sub">{{ product.SKU }} · {{ product.TypeName }}</span>
+                                @if (product.CompanyName) {
+                                    <span
+                                        class="mjo-ol-pick__company"
+                                        [class.is-foreign]="IsForeignCompany(product)"
+                                        [attr.title]="IsForeignCompany(product)
+                                            ? 'Sold by ' + product.CompanyName + ', not this order\'s company'
+                                            : product.CompanyName">
+                                        <i class="fa-solid fa-building" aria-hidden="true"></i>
+                                        {{ product.CompanyName }}
+                                    </span>
+                                }
+                            </span>
                         </span>
                         <span class="end">
                             <span class="mjo-ol-pick__price">{{ product.ListPrice | mjoMoney }}</span>

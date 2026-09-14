@@ -38,6 +38,7 @@ import {
     ContinuationStartFrom,
     GetCatalogOptions,
     GetSubscriptionContinuation,
+    RankCatalogMatches,
     type MJOProductOption,
 } from '../../data/orders-queries';
 import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
@@ -47,6 +48,15 @@ import {
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
 import { anyFieldIsDirty } from '@mj-biz-apps/orders-entities';
+
+/**
+ * How many catalog rows the picker offers at once.
+ *
+ * The list is capped for the READER, not for the search — the search runs over the whole active
+ * catalog. Bounded because the drop-down scrolls inside 240px and a list nobody scrolls to the end
+ * of is a list that stopped helping; the ranking is what puts the right row inside this window.
+ */
+const PICKER_RESULT_LIMIT = 12;
 
 /**
  * Inline catalog picker + line cards for an order header.
@@ -95,6 +105,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     @Output() public Navigate = new EventEmitter<FormNavigationEvent>();
 
     public Catalog: MJOProductOption[] = [];
+    /** Bumped whenever `Catalog` is replaced, so `PickerResults` knows its cache is stale. */
+    private catalogVersion = 0;
+    private pickerCache: { Key: string; Results: MJOProductOption[] } | null = null;
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
     public ProductQuery = '';
     public PickerCursor = 0;
@@ -114,12 +127,29 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return [...(this._order?.Lines.Items ?? [])];
     }
 
+    /**
+     * The rows the picker shows, ranked by `RankCatalogMatches`.
+     *
+     * MEMOISED, and that is not premature. This is a getter the template reads, so Angular calls it
+     * on every change-detection pass — and it now ranks the ENTIRE active catalog rather than the
+     * first 500 rows, because the 500-row cap is what made products past it unfindable. Re-sorting
+     * every product on every keystroke's worth of change detection is the cost of removing the cap;
+     * the cache key is the only thing that can change the answer, so nothing goes stale.
+     */
     public get PickerResults(): MJOProductOption[] {
-        const q = this.ProductQuery.trim().toLowerCase();
-        const matches = this.Catalog.filter(
-            (p) => !q || p.Name.toLowerCase().includes(q) || p.SKU.toLowerCase().includes(q),
-        );
-        return matches.slice(0, 8);
+        const query = this.ProductQuery.trim().toLowerCase();
+        const companyID = String(this._order?.CompanyID ?? '');
+        const key = `${this.catalogVersion}|${companyID}|${query}`;
+        if (this.pickerCache?.Key !== key) {
+            this.pickerCache = {
+                Key: key,
+                Results: RankCatalogMatches(this.Catalog, query, companyID || null).slice(
+                    0,
+                    PICKER_RESULT_LIMIT,
+                ),
+            };
+        }
+        return this.pickerCache.Results;
     }
 
     public OpenPicker(): void {
@@ -129,6 +159,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public OnProductQueryChange(): void {
+        // Back to the top on every edit. The list is RANKED now, so row 0 is the best match for what
+        // was just typed — leaving the cursor where it was points it at whatever happens to occupy
+        // that position in a different result set, which is what Enter would then add.
+        this.PickerCursor = 0;
         if (this.PickerOpen) this.updatePickerFlip();
     }
 
@@ -362,15 +396,27 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return this.Catalog.find((p) => UUIDsEqual(p.ID, line.ProductID));
     }
 
-    /** True when the line books to a different company than the order's selling company. */
-    public ShowsForeignRevenue(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        const product = this.ProductFor(line);
-        if (!product?.CompanyName) return false;
+    /**
+     * True when this product belongs to a different company than the order's selling company.
+     *
+     * Selling another company's product is INTENDED — BCC sells SoundPost products — so this marks
+     * a row, it never hides one. It is the same test for a picker row and for a line already added,
+     * which is the point of it being one function: the label a user chose by must still be there
+     * after they chose it.
+     */
+    public IsForeignCompany(product: MJOProductOption): boolean {
+        if (!product.CompanyName) return false;
         const sellingID = this._order?.CompanyID;
         if (product.CompanyID && sellingID) return !UUIDsEqual(product.CompanyID, sellingID);
         const sellingName = this._order?.Company;
         if (!sellingName) return true;
         return product.CompanyName.trim().toLowerCase() !== String(sellingName).trim().toLowerCase();
+    }
+
+    /** True when the line books to a different company than the order's selling company. */
+    public ShowsForeignRevenue(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const product = this.ProductFor(line);
+        return product ? this.IsForeignCompany(product) : false;
     }
 
     public PricedLine(line: mjBizAppsOrdersOrderLineEntity): MJOLinePrice | undefined {
@@ -688,6 +734,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             this.Catalog = [];
             this.CatalogError = error instanceof Error ? error.message : String(error);
         }
+        this.catalogVersion++;
     }
 
     private updatePickerFlip(): void {
