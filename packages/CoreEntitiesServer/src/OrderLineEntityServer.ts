@@ -40,7 +40,17 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { IsBooked, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderLineEntity, OrdersEngine } from '@mj-biz-apps/orders-entities';
+import {
+    HostOrderLineEditVeto,
+    IsBooked,
+    LineGross,
+    LoadOrdersEngine,
+    NetAfterDiscount,
+    OrderLineEntity,
+    OrdersEngine,
+    ResolveOrderLineEditRefusal,
+    type OrderLineEditKind,
+} from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 
@@ -97,8 +107,69 @@ export class OrderLineEntityServer extends OrderLineEntity {
         }
 
         await this.refuseNewLineOnBookedOrder(result);
+        await this.refuseVetoedEdit(result, this.IsSaved ? 'update' : 'create');
 
         return result;
+    }
+
+    /**
+     * Ask whoever else has a stake in this line whether it may change (bc-aidp-next-golive#206 item 1).
+     *
+     * COVERS EDITS, NOT JUST CREATES. `refuseNewLineOnBookedOrder` above returns early on `IsSaved`,
+     * because Orders' own booked rule is about ADDING to a booked order. A deal lock is not: a line
+     * that already exists is exactly what the contract was derived from, so changing it after the
+     * close is the damaging case, and the one the tester actually hit.
+     *
+     * A THROWN VETO IS A REFUSAL, not an allowance. A vetoer that cannot reach what it needs to judge
+     * has not said yes, and treating "could not tell" as "go ahead" is how a frozen record gets
+     * edited. The message names the fault so it is fixed rather than worked around.
+     */
+    private async refuseVetoedEdit(result: ValidationResult, kind: OrderLineEditKind): Promise<void> {
+        const veto = HostOrderLineEditVeto();
+        if (!veto || !this.OrderHeaderID) return;
+
+        const refusal = await ResolveOrderLineEditRefusal(
+            veto,
+            {
+                OrderHeaderID: this.OrderHeaderID,
+                OrderLineID: this.IsSaved ? (this.ID ?? null) : null,
+                Kind: kind,
+            },
+            'The edit was not applied.',
+        );
+        if (!refusal) return;
+
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo('OrderHeaderID', refusal, this.OrderHeaderID, ValidationErrorType.Failure),
+        );
+    }
+
+    /**
+     * Deleting a line is an edit too, and validation does not run on the delete path.
+     *
+     * #206 item 1 asks for adding, editing AND deleting to be refused on a locked deal. `Delete()` never
+     * calls `ValidateAsync`, so without this the grid's delete button would remain the one way through
+     * a lock that refuses everything else -- and deleting the line a contract was derived from is the
+     * most damaging of the three, not the least.
+     */
+    public override async Delete(options?: Parameters<BaseEntity['Delete']>[0]): Promise<boolean> {
+        const veto = HostOrderLineEditVeto();
+        if (veto && this.OrderHeaderID) {
+            const refusal = await ResolveOrderLineEditRefusal(
+                veto,
+                { OrderHeaderID: this.OrderHeaderID, OrderLineID: this.ID ?? null, Kind: 'delete' },
+                'Nothing was deleted.',
+            );
+            if (refusal) {
+                // Reported the way a failed delete reports elsewhere: false, with the reason on the
+                // result, rather than a throw that a grid would surface as an unhandled error.
+                this.LatestResult.Success = false;
+                this.LatestResult.Message = refusal;
+                return false;
+            }
+        }
+        return super.Delete(options);
     }
 
     /** Set by OrderEntityServer when saving lines as part of an order graph save/booking. */
