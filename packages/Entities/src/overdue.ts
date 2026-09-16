@@ -56,8 +56,10 @@ export interface OverdueFacts {
  * Whether an order is overdue as of a given day.
  *
  * @param order - The order, in any shape carrying the three fields.
- * @param asOfDay - The reference day as `YYYY-MM-DD`. Pass the operator's local day (`Today()`), not
- *   a UTC instant: an order due today is not overdue at 8pm in New York because London has ticked over.
+ * @param asOfDay - The reference day as `YYYY-MM-DD`. Pass the business day (`Today()`), not a UTC
+ *   instant and not the viewer's local day: an order due today is not overdue at 8pm UTC just because
+ *   the calendar has already turned over in UTC, or in whichever zone the browser happens to be in —
+ *   only the configured business time zone's calendar decides when "today" ends.
  * @returns True only when money is genuinely owed and the date has passed.
  */
 export function IsOverdue(order: OverdueFacts, asOfDay: string): boolean {

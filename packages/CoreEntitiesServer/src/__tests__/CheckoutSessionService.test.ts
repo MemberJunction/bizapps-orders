@@ -1288,4 +1288,63 @@ describe('CheckoutSessionService', () => {
             }
         });
     });
+
+    /**
+     * bc-aidp-next-golive#168 whole-branch fix round: defence-in-depth against a module-evaluation-
+     * ordering question that cannot be proven from this checkout (see the code comment at both call
+     * sites). The server DOES pre-warm `BusinessTimeZoneEngine` via `@RegisterForStartup()` +
+     * `StartupManager.Instance.Startup()` — that premise is settled, not what this guards. What these
+     * two tests prove is narrower and still real: the PRODUCTION PATH ITSELF calls
+     * `BusinessTimeZoneEngine.Instance.Config()` before it reads `TodayAsDateValue()`, so a cold or
+     * not-yet-loaded engine still gets configured on this call rather than silently reading whatever
+     * state (possibly UTC-fallback, possibly stale) the engine happened to be in already.
+     *
+     * This spies on `Config()` directly rather than reaching into `_configurations`/`_loaded` — the
+     * two private fields the existing `OrderDate defaults` tests above poke by reflection to PIN the
+     * zone. Doing the same here would assume the very call this test exists to prove happened. A
+     * spy on the real, unmocked `BusinessTimeZoneEngine.Instance.Config` fails honestly if the
+     * `await BusinessTimeZoneEngine.Instance.Config(...)` line at either call site is reverted: the
+     * spy is simply never invoked.
+     */
+    describe('BusinessTimeZoneEngine defence-in-depth (bc-aidp-next-golive#168)', () => {
+        it('UpdateDraft configures the engine, with the caller and the metadata provider, before deriving OrderDate from it', async () => {
+            const provider = Metadata.Provider;
+            const configSpy = vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined);
+            try {
+                const res = await CheckoutSessionService.UpdateDraft(
+                    'sess-123',
+                    KEY,
+                    'guest@example.com',
+                    [{ ProductID: 'prod-1', Quantity: 1 }],
+                    testUser
+                );
+                expect(res.Success).toBe(true);
+                expect(configSpy).toHaveBeenCalledWith(false, testUser, provider);
+                // Config() must run before TodayAsDateValue() is read — the spy resolved to
+                // `undefined` on purpose, so if the call order were reversed there would be
+                // nothing to distinguish; what matters here is that it was called at all, which
+                // a reverted production line makes impossible.
+                expect(configSpy).toHaveBeenCalledTimes(1);
+            } finally {
+                configSpy.mockRestore();
+            }
+        });
+
+        it('CompleteCheckout configures the engine, with the caller and the metadata provider, before deriving OrderDate from it', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            const provider = Metadata.Provider;
+            const configSpy = vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined);
+            try {
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(configSpy).toHaveBeenCalledWith(false, testUser, provider);
+                expect(configSpy).toHaveBeenCalledTimes(1);
+            } finally {
+                configSpy.mockRestore();
+            }
+        });
+    });
 });

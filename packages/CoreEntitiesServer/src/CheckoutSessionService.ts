@@ -9,6 +9,7 @@
  */
 
 import { BaseEntity, EntityFieldInfo, IMetadataProvider, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 // Local fallback engine — see identityClaimContracts.ts. Restore this import to
 // '@memberjunction/core-entities-server' once MJ publishes the engine.
 import { IdentityClaimEngineServer } from './identityClaimContracts.js';
@@ -874,6 +875,10 @@ export class CheckoutSessionService {
         order.Status = 'Draft';
         order.Origin = 'Widget';
         order.SourceCheckoutWidgetID = widget.ID;
+        // Defence-in-depth: the server pre-warms this engine at startup (@RegisterForStartup),
+        // but that pre-warm only reaches modules already evaluated when Startup() runs, which
+        // this checkout cannot prove. Config() is a no-op once loaded.
+        await BusinessTimeZoneEngine.Instance.Config(false, contextUser ?? md.CurrentUser, Metadata.Provider);
         order.OrderDate = TodayAsDateValue();
 
         const normalizedEmail = (email || '').trim().toLowerCase();
@@ -1313,6 +1318,10 @@ export class CheckoutSessionService {
             order.Origin = 'Widget';
             order.OrderType = 'Sale';
             order.SourceCheckoutWidgetID = widget.ID;
+            // Defence-in-depth: the server pre-warms this engine at startup (@RegisterForStartup),
+            // but that pre-warm only reaches modules already evaluated when Startup() runs, which
+            // this checkout cannot prove. Config() is a no-op once loaded.
+            await BusinessTimeZoneEngine.Instance.Config(false, contextUser ?? md.CurrentUser, Metadata.Provider);
             order.OrderDate = TodayAsDateValue();
 
             let sequence = 1;
