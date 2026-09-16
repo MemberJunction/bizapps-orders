@@ -76,15 +76,37 @@ export function IsOverdue(order: OverdueFacts, asOfDay: string): boolean {
 /**
  * The same rule as a T-SQL boolean expression, for the layered base view.
  *
+ * "Today" is `bt.Today` from `[__mj_BizAppsCommon].[fnBusinessToday]()`, which the view CROSS JOINs
+ * once ({@link OverdueViewSQL}): the calendar day it is in the business time zone, not the UTC day
+ * `GETUTCDATE()` gives, which is already tomorrow for the whole American evening.
+ *
  * @param alias - The table/view alias the columns hang off, e.g. `g` in `SELECT g.* FROM ... g`.
+ * @param todayExpression - The SQL expression for the business day; the default is the joined function.
  */
-export function OverdueSQL(alias: string): string {
+export function OverdueSQL(alias: string, todayExpression: string = 'bt.Today'): string {
     const quoted = NON_OWING_STATUSES.map((s) => `'${s}'`).join(',');
     return (
         `${alias}.Balance > 0 ` +
         `AND ${alias}.DueDate IS NOT NULL ` +
-        `AND ${alias}.DueDate < CAST(GETUTCDATE() AS date) ` +
+        `AND ${alias}.DueDate < ${todayExpression} ` +
         `AND ${alias}.Status NOT IN (${quoted})`
+    );
+}
+
+/**
+ * The whole outer view, ready to paste into a migration. The migration is a COPY of this text and
+ * `overdue.test.ts` asserts the newest one still matches, so the predicate cannot be retyped by hand.
+ */
+export function OverdueViewSQL(): string {
+    return (
+        'CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]\n' +
+        'AS\n' +
+        'SELECT\n' +
+        '    g.*,\n' +
+        `    CASE WHEN ${OverdueSQL('g')}\n` +
+        '         THEN 1 ELSE 0 END AS IsOverdue\n' +
+        'FROM [${flyway:defaultSchema}].[vwOrderHeadersGenerated] g\n' +
+        'CROSS JOIN [__mj_BizAppsCommon].[fnBusinessToday]() AS bt;'
     );
 }
 
