@@ -1087,8 +1087,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         const persisted: mjBizAppsOrdersOrderLineEntity[] = [];
         for (const line of this.Lines.Items) {
-            const serverLine = line as unknown as { BypassBookedCheck?: boolean };
+            const serverLine = line as unknown as { BypassBookedCheck?: boolean; BypassExternalEditVeto?: boolean };
             serverLine.BypassBookedCheck = true;
+            // Orders writing its own line through the order graph (#206 item 1). Separate flag from
+            // the one above: that skips the booked-PARENT rule, this skips an EXTERNAL app freeze.
+            serverLine.BypassExternalEditVeto = true;
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
@@ -2037,8 +2040,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // could never show subscription detail for a line. Set here because the
             // line is already being saved on the next statement; it costs no extra write.
             line.SubscriptionID = subscriptionID;
-            const serverLine = line as unknown as { BypassBookedCheck?: boolean };
+            const serverLine = line as unknown as { BypassBookedCheck?: boolean; BypassExternalEditVeto?: boolean };
             serverLine.BypassBookedCheck = true;
+            // Orders writing its own line through the order graph (#206 item 1). Separate flag from
+            // the one above: that skips the booked-PARENT rule, this skips an EXTERNAL app freeze.
+            serverLine.BypassExternalEditVeto = true;
             await line.Save(options);
         }
 

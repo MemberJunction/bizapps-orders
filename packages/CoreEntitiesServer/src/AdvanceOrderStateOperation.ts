@@ -43,6 +43,7 @@ import {
 import { IsAwaitingFulfillment, type FulfillableLine } from './FulfillmentBehavior.js';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
+import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
@@ -296,6 +297,9 @@ export class AdvanceOrderStateOperation extends BaseRemotableOperation<
             if (!IsAwaitingFulfillment(shaped)) continue;
 
             const entity = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+            // Orders writing its own line. An app that froze this line freezes what a PERSON
+            // may change, not Orders closing its own books (#206 item 1).
+            MarkAsOrdersOwnWrite(entity);
             if (!(await entity.Load(row.ID))) {
                 remaining++;
                 continue;

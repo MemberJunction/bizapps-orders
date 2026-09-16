@@ -35,4 +35,23 @@ what did not happen.
 
 The registry is empty by default, so a host that does not run Sales pays nothing and refuses nothing.
 
-14 tests.
+**Nothing registers into it yet, and that is why this merges first.** Sales resolves
+`orders-entities` from npm, so the Sales side cannot call `RegisterOrderLineEditVeto` until this has
+shipped. Inert on every host until it does; golive#206 item 1 is not closed until Sales registers one.
+
+**Orders own writes go past the check.** It is asked on every save of a line, and Orders saves lines
+constantly after a deal is won — fulfilment, the journal entry id once the order books, bundle
+quantity ripples, the reversal line on a subscription cancel. The vetoer is handed an order id, a
+line id and create/update/delete, so it cannot tell those from a person typing in a grid; the
+distinction is made where it is known, by `MarkAsOrdersOwnWrite`. The deal close itself was never
+affected, because the deal server confirms the order before writing the Won status — everything
+after the close would have been.
+
+**The vetoer is handed a user.** It has to read something to answer, and on the server that read
+needs one. It matters more than usual because the seam fails closed: a vetoer that throws for want of
+a user would refuse every line edit on every order.
+
+20 tests. Six of them drive `OrderLineEntityServer` itself rather than the registry, which is how a
+refused DELETE was found to throw instead of refusing: it assigned onto `LatestResult`, and core
+returns null from that getter on an entity that was loaded and never saved — while typing it
+non-null, so nothing caught it.

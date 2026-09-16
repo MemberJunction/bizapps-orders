@@ -24,14 +24,26 @@
  * So Orders asks a question and someone else answers it. Sales registers the answer at bootstrap,
  * the same way this ecosystem already registers transports and engines.
  *
- * ── SHIPPED WITH A CALLER, DELIBERATELY ─────────────────────────────────────────────────────────
+ * ── NOTHING REGISTERS INTO THIS YET, AND THAT IS THE POINT OF MERGING IT ────────────────────────
  *
- * A registry nothing registers into is worse than no registry: it reads like a working feature and
- * is a no-op. This lands together with the Sales side that fills it, and the check that consults it
- * is on the line's own validation path rather than behind a flag.
+ * An earlier version of this comment said the seam "lands together with the Sales side that fills
+ * it". It does not, and saying so would have been the only untrue sentence in the file: no Sales PR
+ * calls `RegisterOrderLineEditVeto`, because Sales resolves `orders-entities` from npm and cannot
+ * call a function that has not shipped.
+ *
+ * So this merges first, inert, on purpose. `HostOrderLineEditVeto()` returns null on every host until
+ * something registers, the checks that consult it return early, and nothing changes for anyone. The
+ * alternative — holding it until its caller exists — cannot work, because its caller cannot be
+ * written until this is published.
+ *
+ * A registry nothing registers into is still worse than no registry if it is left that way. The
+ * thing that stops that here is bc-aidp-next-golive#206 item 1, which is not closed until the Sales
+ * side registers one.
  *
  * @module @mj-biz-apps/orders-entities
  */
+
+import type { UserInfo } from '@memberjunction/core';
 
 /** What is being attempted, so a vetoer can allow some edits and refuse others. */
 export type OrderLineEditKind = 'create' | 'update' | 'delete';
@@ -43,6 +55,20 @@ export interface OrderLineEditContext {
     /** The line itself. Null on a create, which has no id yet. */
     OrderLineID: string | null;
     Kind: OrderLineEditKind;
+    /**
+     * Who is attempting the edit, for the vetoer's own lookup.
+     *
+     * A vetoer has to read something to answer — Sales reads the deal behind the order — and on the
+     * server `RunView` needs a user to do that under row-level security. Without this the vetoer's
+     * only options are to query as nobody or to reach for a system user and skip RLS entirely.
+     *
+     * It matters more here than it usually would, because this seam FAILS CLOSED: a vetoer that
+     * throws is treated as a refusal. A vetoer that throws for want of a user would refuse every line
+     * edit on every order, not only the ones a deal has any claim on.
+     *
+     * Null when the caller genuinely has none — the browser path, where the provider supplies it.
+     */
+    ContextUser: UserInfo | null;
 }
 
 /**
