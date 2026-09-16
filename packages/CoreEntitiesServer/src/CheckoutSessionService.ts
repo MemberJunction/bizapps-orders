@@ -25,6 +25,7 @@ import {
     mjBizAppsOrdersPaymentIntentEntity,
     mjBizAppsOrdersProductEntity,
     mjBizAppsOrdersProductTypeEntity,
+    TodayAsDateValue,
     type CheckoutWidgetConfiguration,
     type ProductTypeConfiguration
 } from '@mj-biz-apps/orders-entities';
@@ -873,7 +874,7 @@ export class CheckoutSessionService {
         order.Status = 'Draft';
         order.Origin = 'Widget';
         order.SourceCheckoutWidgetID = widget.ID;
-        order.OrderDate = new Date();
+        order.OrderDate = TodayAsDateValue();
 
         const normalizedEmail = (email || '').trim().toLowerCase();
         session.Email = normalizedEmail;
@@ -1312,7 +1313,7 @@ export class CheckoutSessionService {
             order.Origin = 'Widget';
             order.OrderType = 'Sale';
             order.SourceCheckoutWidgetID = widget.ID;
-            order.OrderDate = new Date();
+            order.OrderDate = TodayAsDateValue();
 
             let sequence = 1;
             for (const inputLine of linesInput) {
