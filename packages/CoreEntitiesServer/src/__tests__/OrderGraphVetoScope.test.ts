@@ -160,3 +160,44 @@ describe('saving the whole order WHILE BOOKING', () => {
         expect(asked, 'and the vetoer should not even be consulted').toBe(false);
     });
 });
+
+describe('the shape Orders own cancellation reversal relies on', () => {
+    /**
+     * `CancelSubscriptionOperation` marks its reversal line with `MarkAsOrdersOwnWrite` AND adds it to
+     * `order.Lines`, so the graph loop runs over it and ASSIGNS the flag — overwriting the mark. That is
+     * only safe because the save counts as booking, and nothing tested that it does.
+     *
+     * It is a brand-new order created straight into `Confirmed`: not saved, so no `ConfirmedAt` yet.
+     * If `willBookOnThisSave()` ever stopped returning true for that shape, the loop would set the
+     * bypass to false and a registered vetoer would refuse Orders' own reversal.
+     */
+    it('a new order created as Confirmed counts as booking', () => {
+        const header = Object.create(OrderEntityServer.prototype) as {
+            willBookOnThisSave(): boolean;
+        };
+        Object.defineProperty(header, 'bookingInFlight', { value: false, writable: true });
+        Object.defineProperty(header, 'IsSaved', { value: false, writable: true });
+        Object.defineProperty(header, 'Status', { value: 'Confirmed', writable: true });
+        Object.defineProperty(header, 'ConfirmedAt', { value: null, writable: true });
+
+        expect(
+            header.willBookOnThisSave(),
+            'the cancellation reversal is saved through the graph, and its mark survives only if this books',
+        ).toBe(true);
+    });
+
+    it('an ALREADY-booked order saving again does not count as booking', () => {
+        // The other half, and the one that makes the first assertion mean something: if this also
+        // returned true, the bypass would be set on every save of a booked order and the scoping
+        // would be decorative.
+        const header = Object.create(OrderEntityServer.prototype) as {
+            willBookOnThisSave(): boolean;
+        };
+        Object.defineProperty(header, 'bookingInFlight', { value: false, writable: true });
+        Object.defineProperty(header, 'IsSaved', { value: true, writable: true });
+        Object.defineProperty(header, 'Status', { value: 'Confirmed', writable: true });
+        Object.defineProperty(header, 'ConfirmedAt', { value: new Date(), writable: true });
+
+        expect(header.willBookOnThisSave()).toBe(false);
+    });
+});
