@@ -8,6 +8,7 @@ import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntit
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
+import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
 
 import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
 import { GetOrders } from '../../data/orders-queries';
@@ -59,6 +60,7 @@ import { GetOrders } from '../../data/orders-queries';
                     <mj-entity-viewer
                         [Entity]="OrderEntityInfo"
                         [ViewEntity]="CreditOrdersView"
+                        [GridState]="OrderGridState"
                         (RecordSelected)="OnRecordSelected($event)"
                         (RecordOpened)="OnRecordOpened($event)">
                     </mj-entity-viewer>
@@ -213,6 +215,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
     @Output() Applied = new EventEmitter<void>();
 
     public OrderEntityInfo: EntityInfo | null = null;
+    public readonly OrderGridState = MJO_ORDER_HEADER_GRID_STATE;
     public Credits: mjBizAppsOrdersOrderHeaderEntity[] = [];
     public Targets: mjBizAppsOrdersOrderHeaderEntity[] = [];
 

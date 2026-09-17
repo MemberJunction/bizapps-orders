@@ -12,6 +12,7 @@ import { MJOStatTileComponent } from '../../panels/stat-tile.component';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { MJO_ENTITIES } from '../../data/entity-names';
+import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
 
 /** What to do next with a row. */
 interface MJONextAction {
@@ -110,6 +111,7 @@ interface MJONextAction {
                 <mj-entity-viewer
                     [Entity]="OrderEntityInfo"
                     [ViewEntity]="OverdueView"
+                    [GridState]="OrderGridState"
                     (RecordOpened)="OnRecordOpened($event)">
                 </mj-entity-viewer>
             } @else {
@@ -168,6 +170,7 @@ export class MJOOverduePageComponent implements OnInit {
     @Output() OrderOpened = new EventEmitter<OverdueWorklistRow>();
 
     public OrderEntityInfo: EntityInfo | null = null;
+    public readonly OrderGridState = MJO_ORDER_HEADER_GRID_STATE;
     public AllRows: OverdueWorklistRow[] = [];
     public Rows: OverdueWorklistRow[] = [];
     public Buckets: MJOAgingBuckets = { Current: 0, Days1To30: 0, Days31To60: 0, Days61Plus: 0 };
