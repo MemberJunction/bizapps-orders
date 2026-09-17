@@ -30,7 +30,44 @@
     },
     "fields": {
       "BaseViewGenerated": false,
-      "GeneratedBaseViewName": "vwOrderHeadersGenerated"
+      "GeneratedBaseViewName": "vwOrderHeadersGenerated",
+      "AllowUserSearchAPI": true,
+      "AutoUpdateAllowUserSearchAPI": false
+    },
+    "relatedEntities": {
+      "MJ: Entity Fields": [
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Exact",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=OrderNumber&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Exact",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=ExternalDocumentNumber&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": false,
+            "AutoUpdateIncludeInUserSearchAPI": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=ID&EntityID=@parent:ID"
+          }
+        }
+      ]
     },
     "sync": {
       "lastModified": "2026-08-13T16:13:08.477Z",
@@ -46,6 +83,8 @@
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Headers"
     },
     "fields": {
+      "AllowUserSearchAPI": true,
+      "AutoUpdateAllowUserSearchAPI": false,
       "Configuration": {
         "UI": {
           "Form": {
@@ -55,6 +94,32 @@
           }
         }
       }
+    },
+    "relatedEntities": {
+      "MJ: Entity Fields": [
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Exact",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=PaymentNumber&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Exact",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=ProviderChargeID&EntityID=@parent:ID"
+          }
+        }
+      ]
     },
     "sync": {
       "lastModified": "2026-09-02T03:26:35.819Z",
@@ -70,6 +135,8 @@
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscriptions"
     },
     "fields": {
+      "AllowUserSearchAPI": true,
+      "AutoUpdateAllowUserSearchAPI": false,
       "Configuration": {
         "UI": {
           "Form": {
@@ -79,6 +146,41 @@
           }
         }
       }
+    },
+    "relatedEntities": {
+      "MJ: Entity Fields": [
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Exact",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=SubscriptionNumber&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Exact",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=ProviderSubscriptionID&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": false,
+            "AutoUpdateIncludeInUserSearchAPI": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=ID&EntityID=@parent:ID"
+          }
+        }
+      ]
     },
     "sync": {
       "lastModified": "2026-09-02T03:26:35.847Z",
@@ -117,6 +219,8 @@
     },
     "fields": {
       "SubtypeSelector": "{\"Path\": \"ProductTypeID.ProductExtensionEntity\"}",
+      "AllowUserSearchAPI": true,
+      "AutoUpdateAllowUserSearchAPI": false,
       "Configuration": {
         "UI": {
           "Form": {
@@ -126,6 +230,45 @@
           }
         }
       }
+    },
+    "relatedEntities": {
+      "MJ: Entity Fields": [
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "BeginsWith",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=Name&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Exact",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=SKU&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": false,
+            "AutoUpdateIncludeInUserSearchAPI": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=ID&EntityID=@parent:ID"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-09-10T23:31:28.267Z",
+      "checksum": "419f77a6efddc3f8c1c7a0a933e335c4e9e30ea67f1c5f71b76d5a1318eadcd2"
     }
   },
   {
@@ -137,6 +280,10 @@
     },
     "fields": {
       "SubtypeSelector": "{\"Path\": \"ProductID.ProductTypeID.OrderLineExtensionEntity\"}"
+    },
+    "sync": {
+      "lastModified": "2026-09-10T23:31:28.268Z",
+      "checksum": "2015fd48f5ba4a7f4741c0364453d7952f5327b1cd71710a6873a57cdbe84b39"
     }
   },
   {
@@ -147,6 +294,8 @@
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Price Lists"
     },
     "fields": {
+      "AllowUserSearchAPI": true,
+      "AutoUpdateAllowUserSearchAPI": false,
       "Configuration": {
         "UI": {
           "Form": {
@@ -156,6 +305,32 @@
           }
         }
       }
+    },
+    "relatedEntities": {
+      "MJ: Entity Fields": [
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "BeginsWith",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=Name&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Exact",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=Code&EntityID=@parent:ID"
+          }
+        }
+      ]
     },
     "sync": {
       "lastModified": "2026-09-02T03:26:35.960Z",
@@ -170,6 +345,8 @@
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotions"
     },
     "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false,
       "Configuration": {
         "UI": {
           "Form": {
@@ -308,6 +485,8 @@
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Authorities"
     },
     "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false,
       "Configuration": {
         "UI": {
           "Form": {
@@ -331,6 +510,8 @@
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Stored Value Accounts"
     },
     "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false,
       "Configuration": {
         "UI": {
           "Form": {
@@ -390,6 +571,131 @@
     "sync": {
       "lastModified": "2026-09-02T03:26:36.224Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Entitlements"
+    },
+    "fields": {
+      "AllowUserSearchAPI": true,
+      "AutoUpdateAllowUserSearchAPI": false
+    },
+    "relatedEntities": {
+      "MJ: Entity Fields": [
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "BeginsWith",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=Name&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Exact",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=Code&EntityID=@parent:ID"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotion Codes"
+    },
+    "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Stored Value Transactions"
+    },
+    "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Customer Payment Terms"
+    },
+    "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Customer Tax Exemptions"
+    },
+    "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Intents"
+    },
+    "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Sequences"
+    },
+    "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Lines"
+    },
+    "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Bundle Items"
+    },
+    "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Prices"
+    },
+    "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Price Tiers"
+    },
+    "fields": {
+      "AllowUserSearchAPI": false,
+      "AutoUpdateAllowUserSearchAPI": false
     }
   }
 ]
