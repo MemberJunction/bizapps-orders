@@ -47,11 +47,24 @@ distinction is made where it is known, by `MarkAsOrdersOwnWrite`. The deal close
 affected, because the deal server confirms the order before writing the Won status — everything
 after the close would have been.
 
+**The WHOLE-ORDER path is scoped to booking, not exempted.** A line reaches the database two ways: on
+its own, which is what the deal form's grid does, and as part of the order graph, header and lines
+together, which is what the deal workspace does. An earlier revision set the bypass unconditionally in
+the graph loops, on the reasoning that it belongs wherever `BypassBookedCheck` is set. That put the
+reported defect back on a different screen: the grid refused a line on a Won deal while the workspace
+saved the whole order and was never asked. The two flags part company there — `BypassBookedCheck`
+means "the header already ran the booked rule", which is true, and `BypassExternalEditVeto` means
+"this write is Orders' own", which that loop cannot claim, since it runs on any header save with dirty
+lines. It is now `this.bookingInFlight`: booking is Orders confirming its own order, and nothing at the
+header level runs the external veto. `deleteRemovedLines` gets the same treatment — it set no bypass
+at all, so a veto during a booking-time removal would have refused the close that creates the record
+being protected.
+
 **The vetoer is handed a user.** It has to read something to answer, and on the server that read
 needs one. It matters more than usual because the seam fails closed: a vetoer that throws for want of
 a user would refuse every line edit on every order.
 
-20 tests. Six of them drive `OrderLineEntityServer` itself rather than the registry, which is how a
+25 tests. Six of them drive `OrderLineEntityServer` itself rather than the registry, which is how a
 refused DELETE was found to throw instead of refusing: it assigned onto `LatestResult`, and core
 returns null from that getter on an entity that was loaded and never saved — while typing it
 non-null, so nothing caught it.
