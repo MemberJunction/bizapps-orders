@@ -9,6 +9,7 @@ import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
+import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
 import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 
 /** A customer with a balance, as the left rail lists them. */
@@ -148,6 +149,7 @@ interface MJOCustomerSummary {
                                 <mj-entity-viewer
                                     [Entity]="OrderEntityInfo"
                                     [ViewEntity]="CustomerOpenOrdersView"
+                                    [GridState]="OrderGridState"
                                     (RecordOpened)="OnRecordOpened($event)">
                                 </mj-entity-viewer>
                             } @else {
@@ -372,6 +374,7 @@ export class MJOCustomerARPageComponent implements OnInit {
     @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
 
     public OrderEntityInfo: EntityInfo | null = null;
+    public readonly OrderGridState = MJO_ORDER_HEADER_GRID_STATE;
     public Customers: MJOCustomerSummary[] = [];
     public SelectedKey: string | null = null;
 

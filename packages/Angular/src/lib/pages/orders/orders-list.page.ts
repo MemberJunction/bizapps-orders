@@ -4,6 +4,7 @@ import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-e
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../../data/entity-names';
+import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
 
 /**
  * `mjo-orders-list-page` — All Orders view powered by MemberJunction's native `<mj-entity-viewer>`.
@@ -21,6 +22,7 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                 @if (OrderEntityInfo) {
                     <mj-entity-viewer
                         [Entity]="OrderEntityInfo"
+                        [GridState]="OrderGridState"
                         (RecordOpened)="OnRecordOpened($event)">
                     </mj-entity-viewer>
                 } @else {
@@ -80,6 +82,7 @@ export class MJOOrdersListPageComponent implements OnInit {
     @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
 
     public OrderEntityInfo: EntityInfo | null = null;
+    public readonly OrderGridState = MJO_ORDER_HEADER_GRID_STATE;
 
     public ngOnInit(): void {
         const md = new Metadata();
