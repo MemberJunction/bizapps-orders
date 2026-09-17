@@ -59,7 +59,7 @@ import {
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
-import { OrderLineEntityServer } from './OrderLineEntityServer.js';
+import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
@@ -1904,6 +1904,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // in this.Lines would otherwise Save() as the leaf, whose clean-leaf
             // finalizeSave used to throw on parent virtuals (OrderHeader).
             const stampTarget = this.resolveOrderLineForStamp(line);
+            /**
+             * Orders' OWN write, and marked as one rather than left to the graph loops.
+             *
+             * The three loops set the bypass from `bookingInFlight`, and this runs only while booking,
+             * so on the common path the flag is already true. It is not true on either of the other two
+             * ways this line can arrive: loaded fresh above when it is not in `this.Lines`, or resolved
+             * UP the IS-A chain by `resolveOrderLineForStamp`, which returns the parent Order Line of an
+             * Event or Subscription line — an object no loop ever touched.
+             *
+             * Nothing refuses it today, because the deal server confirms the order BEFORE it writes the
+             * Won status, so the freeze is not yet in place while this runs. That is an ordering in
+             * another app, and this write does not need to depend on it: stamping the entry the booking
+             * just created is Orders' own bookkeeping by any reading.
+             */
+            MarkAsOrdersOwnWrite(stampTarget);
             stampTarget.JournalEntryID = jeID;
 
             const saveOptions = new EntitySaveOptions();

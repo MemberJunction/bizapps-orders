@@ -295,6 +295,66 @@ describe('REMOVING a line through the order graph', () => {
     });
 });
 
+describe('stamping the journal entry the booking just created', () => {
+    /**
+     * The changeset lists "the journal entry id once the order books" among Orders' own writes, and
+     * until this was added the code did not say so anywhere.
+     *
+     * On the common path it did not need to: this runs only inside `if (booking)`, so the line found
+     * in `this.Lines` already carries the bypass the graph loop set. Two other objects reach the same
+     * `Save`, and no loop has ever touched either — a line loaded fresh when it is not in `this.Lines`,
+     * and the one exercised here: `resolveOrderLineForStamp` walks UP the IS-A chain, so an Event or
+     * Subscription line in the collection is not what gets stamped, its parent Order Line is.
+     *
+     * Nothing refuses it today, because Sales confirms the order BEFORE writing the Won status, so the
+     * freeze is not yet in place. That is an ordering in another repository, and this write has no
+     * reason to depend on it.
+     */
+    const CHILD = 'b1c2d3e4-0000-4000-8000-000000000004';
+    const JE = 'b1c2d3e4-0000-4000-8000-0000000000fe';
+
+    it('marks the IS-A PARENT it stamps, which no graph loop ever touched', async () => {
+        let asked = 0;
+        RegisterOrderLineEditVeto({
+            MayEdit: async () => {
+                asked++;
+                return FROZEN;
+            },
+        });
+
+        // The parent Order Line is what owns JournalEntryID and what actually gets saved.
+        const calls = { asked: 0 };
+        const parent = realLine(calls) as ReturnType<typeof realLine> & { JournalEntryID?: string };
+        // A generated accessor routes through `Set()`, which `Object.create` leaves without Fields.
+        Object.defineProperty(parent, 'JournalEntryID', { value: null, writable: true });
+
+        // The Event Order Line actually sitting in `this.Lines`, whose ID the draft names.
+        const child = Object.create(OrderLineEntityServer.prototype) as object;
+        Object.defineProperty(child, 'ID', { value: CHILD, writable: true });
+        Object.defineProperty(child, '_parentEntity', { value: parent, writable: true });
+
+        const header = Object.create(OrderEntityServer.prototype) as {
+            stampJournalEntryIDs(drafts: unknown[], result: unknown, options?: unknown): Promise<void>;
+        };
+        Object.defineProperty(header, 'Lines', { value: { Items: [child] }, writable: true });
+        // Never reached: the child is found in `this.Lines`, so nothing is loaded.
+        Object.defineProperty(header, 'ProviderToUse', { value: {}, writable: true });
+        Object.defineProperty(header, 'ContextCurrentUser', { value: { ID: 'user-1' }, writable: true });
+
+        await expect(
+            header.stampJournalEntryIDs(
+                [{ IsBooking: true, OrderLineID: CHILD }],
+                { Results: [{ JournalEntryID: JE }] },
+            ),
+        ).resolves.toBeUndefined();
+
+        expect(parent.JournalEntryID, 'the parent is what carries the entry').toBe(JE);
+        expect(parent.BypassExternalEditVeto, 'and no loop ever set this on the parent').toBe(true);
+        expect(asked, 'stamping the entry the booking just created is Orders own bookkeeping').toBe(0);
+        expect(calls.asked, 'the parent was really saved, not skipped').toBe(1);
+    });
+});
+
 describe('every graph loop that writes a line is scoped the same way', () => {
     /**
      * STRUCTURAL, and deliberately so. Three loops in `OrderEntityServer` set this flag —

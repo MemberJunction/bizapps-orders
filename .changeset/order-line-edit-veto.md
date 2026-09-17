@@ -64,7 +64,7 @@ being protected.
 needs one. It matters more than usual because the seam fails closed: a vetoer that throws for want of
 a user would refuse every line edit on every order.
 
-28 tests. Six of them drive `OrderLineEntityServer` itself rather than the registry, which is how a
+29 tests. Six of them drive `OrderLineEntityServer` itself rather than the registry, which is how a
 refused DELETE was found to throw instead of refusing: it assigned onto `LatestResult`, and core
 returns null from that getter on an entity that was loaded and never saved — while typing it
 non-null, so nothing caught it.
@@ -74,5 +74,14 @@ removal loop are each driven for real, in both directions; the subscription loop
 structural check, because reaching it needs a provider, a user and a decisions map, which would test
 the harness rather than the rule. That check asserts the one property all three share and any fourth
 loop would inherit: the bypass is never assigned unconditionally, which is the exact shape of the
-defect found in review. Each of the five mutants — one per loop, plus dropping and inverting the
-removal loop's assignment — fails the suite.
+defect found in review.
+
+Writing those turned up a write this description was already claiming: the journal entry id, stamped
+once the order books. `resolveOrderLineForStamp` walks UP the IS-A chain, so what gets saved is the
+parent Order Line of an Event or Subscription line — an object no graph loop has touched, as is a line
+loaded fresh because it was not in `this.Lines`. Nothing refuses it today, since Sales confirms the
+order before writing the Won status and the freeze is not yet in place, but that is an ordering in
+another repository and this write has no reason to depend on it. It is marked now, and driven.
+
+Each of the six mutants — one per loop, dropping and inverting the removal loop's assignment, and
+unmarking the stamp — fails the suite.
