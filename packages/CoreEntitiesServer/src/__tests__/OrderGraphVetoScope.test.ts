@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { RegisterOrderLineEditVeto } from '@mj-biz-apps/orders-entities';
 import { OrderEntityServer } from '../OrderEntityServer.js';
 import { OrderLineEntityServer } from '../OrderLineEntityServer.js';
@@ -28,6 +30,27 @@ import { OrderLineEntityServer } from '../OrderLineEntityServer.js';
 const ORDER = 'b1c2d3e4-0000-4000-8000-000000000001';
 const FROZEN = 'This deal is closed. Reopen it to change what was sold.';
 
+/**
+ * `super.X()` resolves on the prototype ABOVE `OrderLineEntityServer.prototype`, which is SHARED by
+ * every instance in the module registry. Vitest isolates per file today, which is the only reason
+ * patching one in place has been harmless; every patch is recorded here and undone in `afterEach`
+ * rather than left to that.
+ *
+ * Two are needed — `super.ValidateAsync` on the save path and `super.Delete` on the delete path —
+ * and each is the step AFTER the rule under test, never the rule itself.
+ */
+const protoPatches: Array<() => void> = [];
+
+function patchParentProto(instance: object, name: string, value: unknown): void {
+    const proto = Object.getPrototypeOf(Object.getPrototypeOf(instance)) as Record<string, unknown>;
+    const original = Object.getOwnPropertyDescriptor(proto, name);
+    protoPatches.push(() => {
+        if (original) Object.defineProperty(proto, name, original);
+        else delete proto[name];
+    });
+    Object.defineProperty(proto, name, { value, writable: true, configurable: true });
+}
+
 /** A real `OrderLineEntityServer` whose Save runs the REAL ValidateAsync, so the real veto decides. */
 function realLine(calls: { asked: number }) {
     const line = Object.create(OrderLineEntityServer.prototype) as OrderLineEntityServer & {
@@ -50,16 +73,7 @@ function realLine(calls: { asked: number }) {
     // `super.ValidateAsync()` and the booked-parent check are not what this is about; stub only those,
     // so `refuseVetoedEdit` — the thing under test — still runs for real.
     Object.defineProperty(line, 'refuseNewLineOnBookedOrder', { value: async () => undefined, writable: true });
-    // `super.ValidateAsync()` lives on a SHARED prototype, so patching it leaks to every instance in
-    // the module registry. Vitest isolates per file today, which is the only reason that was harmless;
-    // it is restored in `afterEach` rather than left to that.
-    patchedProto = Object.getPrototypeOf(Object.getPrototypeOf(line));
-    originalValidate = Object.getOwnPropertyDescriptor(patchedProto, 'ValidateAsync');
-    Object.defineProperty(patchedProto, 'ValidateAsync', {
-        value: async () => ({ Success: true, Errors: [] }),
-        writable: true,
-        configurable: true,
-    });
+    patchParentProto(line, 'ValidateAsync', async () => ({ Success: true, Errors: [] }));
     // `ExtractEntityErrorMessage` walks LeafEntity/RootEntity and reads LatestResult off each. Those
     // are real getters on BaseEntity that `Object.create` leaves unusable, so they are shadowed here —
     // and LatestResult is populated on failure the way a real save does, because carrying the veto's
@@ -101,17 +115,10 @@ function orderWith(line: unknown, booking: boolean) {
     return order;
 }
 
-let patchedProto: object | null = null;
-let originalValidate: PropertyDescriptor | undefined;
-
 afterEach(() => {
     RegisterOrderLineEditVeto(null);
-    if (patchedProto) {
-        if (originalValidate) Object.defineProperty(patchedProto, 'ValidateAsync', originalValidate);
-        else delete (patchedProto as Record<string, unknown>).ValidateAsync;
-        patchedProto = null;
-        originalValidate = undefined;
-    }
+    // Reverse order: two patches of the same name must unwind to the original, not to each other.
+    while (protoPatches.length) protoPatches.pop()!();
 });
 
 describe('saving the whole order, NOT booking', () => {
@@ -199,5 +206,120 @@ describe('the shape Orders own cancellation reversal relies on', () => {
         Object.defineProperty(header, 'ConfirmedAt', { value: new Date(), writable: true });
 
         expect(header.willBookOnThisSave()).toBe(false);
+    });
+});
+
+describe('REMOVING a line through the order graph', () => {
+    /**
+     * `deleteRemovedLines` set no bypass at all before this change, which no review asked about. It is
+     * the same asymmetry as the save loops, pointing the other way: the loop runs on any header save
+     * with removed lines, so outside booking it is as likely to be a person on the deal workspace as
+     * Orders itself — and while booking, a refusal would block the close that creates the record the
+     * freeze exists to protect.
+     *
+     * A refusal still surfaces here as a THROW rather than a validation refusal. The second review
+     * called that out and called it non-blocking, and it is left alone deliberately: changing the shape
+     * of a failed removal is a different change from deciding who may make one.
+     */
+    function orderRemoving(line: unknown, booking: boolean) {
+        const order = Object.create(OrderEntityServer.prototype) as {
+            deleteRemovedLines(): Promise<boolean>;
+        };
+        Object.defineProperty(order, 'bookingInFlight', { value: booking, writable: true });
+        Object.defineProperty(order, 'Lines', { value: { Removed: [line] }, writable: true });
+        // Clearing the rows that point at a removed line is a different subject, and it runs first.
+        Object.defineProperty(order, 'deleteLineDependents', { value: async () => undefined, writable: true });
+        return order;
+    }
+
+    /** A real line whose own `Delete()` runs for real, so the real veto decides. */
+    function removableLine(track: { reachedDb: number }) {
+        const line = Object.create(OrderLineEntityServer.prototype) as OrderLineEntityServer & {
+            BypassExternalEditVeto?: boolean;
+        };
+        for (const [k, v] of Object.entries({
+            OrderHeaderID: ORDER,
+            ID: 'b1c2d3e4-0000-4000-8000-000000000003',
+            IsSaved: true,
+            ContextCurrentUser: { ID: 'user-1' },
+            Fields: [],
+            LineNumber: 1,
+            // The refusal is recorded through `RegisterResultHistoryEntry`, and `ExtractEntityErrorMessage`
+            // reads it back out of here to build the thrown message.
+            _resultHistory: [],
+        })) {
+            Object.defineProperty(line, k, { value: v, writable: true });
+        }
+        // Real getters on BaseEntity that `Object.create` leaves unusable, as in `realLine` above.
+        Object.defineProperty(line, 'LeafEntity', { value: null, writable: true });
+        Object.defineProperty(line, 'RootEntity', { value: null, writable: true });
+        // Only the row delete itself is stubbed. Counting it is what makes "refused" mean "stopped
+        // BEFORE the row was touched" rather than just "returned false".
+        patchParentProto(line, 'Delete', async () => {
+            track.reachedDb++;
+            return true;
+        });
+        return line;
+    }
+
+    it('asks the veto when not booking, and a refusal stops the delete before the row', async () => {
+        RegisterOrderLineEditVeto({ MayEdit: async () => FROZEN });
+        const track = { reachedDb: 0 };
+        const line = removableLine(track);
+
+        // The operator has to be told WHY, same as on the save path.
+        await expect(orderRemoving(line, false).deleteRemovedLines()).rejects.toThrow(
+            new RegExp(FROZEN.slice(0, 30)),
+        );
+        expect(line.BypassExternalEditVeto, 'the graph loop must not claim this write as Orders own').toBe(
+            false,
+        );
+        expect(track.reachedDb, 'the row must not be deleted by a refused removal').toBe(0);
+    });
+
+    it('does not ask WHILE BOOKING, because a refusal there would block the close', async () => {
+        let asked = false;
+        RegisterOrderLineEditVeto({
+            MayEdit: async () => {
+                asked = true;
+                return FROZEN;
+            },
+        });
+        const track = { reachedDb: 0 };
+        const line = removableLine(track);
+
+        await expect(orderRemoving(line, true).deleteRemovedLines()).resolves.toBe(true);
+        expect(line.BypassExternalEditVeto, 'booking is the one case that may claim the bypass').toBe(true);
+        expect(asked, 'and the vetoer should not even be consulted').toBe(false);
+        expect(track.reachedDb, 'the removal went through').toBe(1);
+    });
+});
+
+describe('every graph loop that writes a line is scoped the same way', () => {
+    /**
+     * STRUCTURAL, and deliberately so. Three loops in `OrderEntityServer` set this flag —
+     * `savePendingLines`, `materializeSubscriptions` and `deleteRemovedLines` — and the first and last
+     * are driven for real above. The subscription loop needs a provider, a user and a decisions map
+     * before it is reachable, which would test the harness rather than the rule.
+     *
+     * One property covers all three, and any loop added later: the bypass is never set
+     * UNCONDITIONALLY. `= true` in a graph loop is precisely the defect the second review found, so
+     * this fails if it comes back anywhere in the file.
+     *
+     * `MarkAsOrdersOwnWrite` in OrderLineEntityServer is unconditional on purpose and is not in scope
+     * here: it is called by Orders' own writers, one line at a time, which is the claim it makes.
+     *
+     * Comments are stripped first. A comment quoting the old form must not satisfy a check about the
+     * new one — that mistake has already been made once in this codebase.
+     */
+    it('never assigns the bypass unconditionally', () => {
+        const source = readFileSync(join(import.meta.dirname, '..', 'OrderEntityServer.ts'), 'utf8');
+        const codeOnly = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+        const assignments = [...codeOnly.matchAll(/BypassExternalEditVeto\s*=\s*([^;]+);/g)].map((m) => m[1].trim());
+        expect(assignments.length, 'the three graph loops').toBe(3);
+        for (const rhs of assignments) {
+            expect(rhs, `an unconditional bypass is the defect itself: ${rhs}`).toBe('this.bookingInFlight');
+        }
     });
 });

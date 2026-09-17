@@ -64,7 +64,15 @@ being protected.
 needs one. It matters more than usual because the seam fails closed: a vetoer that throws for want of
 a user would refuse every line edit on every order.
 
-25 tests. Six of them drive `OrderLineEntityServer` itself rather than the registry, which is how a
+28 tests. Six of them drive `OrderLineEntityServer` itself rather than the registry, which is how a
 refused DELETE was found to throw instead of refusing: it assigned onto `LatestResult`, and core
 returns null from that getter on an entity that was loaded and never saved — while typing it
 non-null, so nothing caught it.
+
+All three graph loops are covered, not just the one the defect was reported on. The save loop and the
+removal loop are each driven for real, in both directions; the subscription loop is held by a
+structural check, because reaching it needs a provider, a user and a decisions map, which would test
+the harness rather than the rule. That check asserts the one property all three share and any fourth
+loop would inherit: the bypass is never assigned unconditionally, which is the exact shape of the
+defect found in review. Each of the five mutants — one per loop, plus dropping and inverting the
+removal loop's assignment — fails the suite.

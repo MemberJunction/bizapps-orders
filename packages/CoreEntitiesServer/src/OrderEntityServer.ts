@@ -1029,8 +1029,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
              * review called out and called non-blocking. Left as-is deliberately: changing the shape of
              * a failed removal is a different change from deciding who may make one.
              */
-            (line as unknown as { BypassExternalEditVeto?: boolean }).BypassExternalEditVeto =
-                this.bookingInFlight;
+            const serverLine = line as unknown as { BypassExternalEditVeto?: boolean };
+            serverLine.BypassExternalEditVeto = this.bookingInFlight;
             if (!(await line.Delete())) {
                 throw new Error(
                     `Failed to delete removed order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`,
