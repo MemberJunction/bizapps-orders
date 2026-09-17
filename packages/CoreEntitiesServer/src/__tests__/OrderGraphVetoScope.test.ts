@@ -50,11 +50,16 @@ function realLine(calls: { asked: number }) {
     // `super.ValidateAsync()` and the booked-parent check are not what this is about; stub only those,
     // so `refuseVetoedEdit` — the thing under test — still runs for real.
     Object.defineProperty(line, 'refuseNewLineOnBookedOrder', { value: async () => undefined, writable: true });
-    Object.defineProperty(
-        Object.getPrototypeOf(Object.getPrototypeOf(line)),
-        'ValidateAsync',
-        { value: async () => ({ Success: true, Errors: [] }), writable: true, configurable: true },
-    );
+    // `super.ValidateAsync()` lives on a SHARED prototype, so patching it leaks to every instance in
+    // the module registry. Vitest isolates per file today, which is the only reason that was harmless;
+    // it is restored in `afterEach` rather than left to that.
+    patchedProto = Object.getPrototypeOf(Object.getPrototypeOf(line));
+    originalValidate = Object.getOwnPropertyDescriptor(patchedProto, 'ValidateAsync');
+    Object.defineProperty(patchedProto, 'ValidateAsync', {
+        value: async () => ({ Success: true, Errors: [] }),
+        writable: true,
+        configurable: true,
+    });
     // `ExtractEntityErrorMessage` walks LeafEntity/RootEntity and reads LatestResult off each. Those
     // are real getters on BaseEntity that `Object.create` leaves unusable, so they are shadowed here —
     // and LatestResult is populated on failure the way a real save does, because carrying the veto's
@@ -96,7 +101,18 @@ function orderWith(line: unknown, booking: boolean) {
     return order;
 }
 
-afterEach(() => RegisterOrderLineEditVeto(null));
+let patchedProto: object | null = null;
+let originalValidate: PropertyDescriptor | undefined;
+
+afterEach(() => {
+    RegisterOrderLineEditVeto(null);
+    if (patchedProto) {
+        if (originalValidate) Object.defineProperty(patchedProto, 'ValidateAsync', originalValidate);
+        else delete (patchedProto as Record<string, unknown>).ValidateAsync;
+        patchedProto = null;
+        originalValidate = undefined;
+    }
+});
 
 describe('saving the whole order, NOT booking', () => {
     it('asks the veto, and a refusal stops the save', async () => {
