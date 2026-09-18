@@ -60,6 +60,13 @@ header level runs the external veto. `deleteRemovedLines` gets the same treatmen
 at all, so a veto during a booking-time removal would have refused the close that creates the record
 being protected.
 
+**THE VETO IS ASKED ONCE PER LINE, and a vetoer that reads the database has to expect that.**
+Every line save asks, so one order-graph save of a five-line order consults it six times (measured, not reasoned). A fifty-line order asks fifty times. That is the right shape — each
+line is a separate write and a vetoer is entitled to answer differently per line — but it means an
+implementation that looks a record up per call will issue one query per line. The context carries
+`OrderHeaderID`, which is the natural key to cache on for the life of a request. Written down here
+because it is an expectation on the CONSUMER that no signature expresses.
+
 **The vetoer is handed a user.** It has to read something to answer, and on the server that read
 needs one. It matters more than usual because the seam fails closed: a vetoer that throws for want of
 a user would refuse every line edit on every order.
