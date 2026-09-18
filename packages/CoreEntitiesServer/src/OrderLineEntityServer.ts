@@ -154,7 +154,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
      *
      * #206 item 1 asks for adding, editing AND deleting to be refused on a locked deal. `Delete()` never
      * calls `ValidateAsync`, so without this the grid's delete button would remain the one way through
-     * a lock that refuses everything else -- and deleting the line a contract was derived from is the
+     * a lock that refuses everything else — and deleting the line a contract was derived from is the
      * most damaging of the three, not the least.
      */
     public override async Delete(options?: Parameters<BaseEntity['Delete']>[0]): Promise<boolean> {
@@ -419,8 +419,8 @@ export class OrderLineEntityServer extends OrderLineEntity {
  * Mark a line as Orders' own write, so an external freeze does not stop Orders' bookkeeping.
  *
  * A FUNCTION rather than eight hand-set booleans. The failure this guards against is a writer that
- * forgets, and a named call at the point the entity is acquired is harder to forget -- and far easier
- * to grep for -- than a property assignment buried further down. It also keeps the cast in one place:
+ * forgets, and a named call at the point the entity is acquired is harder to forget — and far easier
+ * to grep for — than a property assignment buried further down. It also keeps the cast in one place:
  * the operations hold the GENERATED entity type, which does not know about the server subclass.
  *
  * Call it where the line is obtained, before anything is set on it.

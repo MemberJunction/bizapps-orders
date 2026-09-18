@@ -115,7 +115,7 @@ export function HostOrderLineEditVeto(): OrderLineEditVeto | null {
  * acceptable, so a throw becomes a refusal that names the fault and says nothing was applied.
  *
  * @param whenFailed appended to a thrown vetoer's message, so the caller can say what did NOT happen
- *                   -- "the edit was not applied" reads differently from "nothing was deleted".
+ *                   — "the edit was not applied" reads differently from "nothing was deleted".
  */
 export async function ResolveOrderLineEditRefusal(
     veto: OrderLineEditVeto | null,
