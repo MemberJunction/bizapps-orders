@@ -9,6 +9,7 @@ import {
     ProductFulfillmentPanel,
     ProductSubscriptionsPanel,
 } from '../lib/form-panels/product-widget.panels';
+import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
 import '../public-api';
 
 /**
@@ -38,6 +39,7 @@ const WIDGETS_DIR = '../lib/custom/Product/widgets/';
 const SUBSCRIPTION_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-subscription-widget.component.html`);
 const FULFILLMENT_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-fulfillment-widget.component.html`);
 const ACCOUNTING_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-accounting-widget.component.html`);
+const PRODUCT_HEADER_HTML = ReadRepoFile('../lib/form-panels/product-header.panel.html');
 const GENERATED_PRODUCT_FORM_HTML = ReadRepoFile(
     '../lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component.html'
 );
@@ -139,5 +141,34 @@ describe('Contributed sections hide when every field is empty', () => {
         expect(FieldNames(PanelTemplate(ProductAccountingPanel))).toEqual([]);
         expect(FieldNames(ACCOUNTING_WIDGET_HTML).length).toBeGreaterThan(0);
         expect(ACCOUNTING_WIDGET_HTML).toContain('bizapps-product-gl-links');
+    });
+});
+
+/**
+ * golive#233 — the header claimed `productIdentification` but rendered a read-only hero, so
+ * Name, SKU and Description had no input anywhere on the form. A claim hides the generated
+ * section outright, rail item and Manage Sections entry included, so there is no fallback:
+ * the claiming panel is the only place those fields can be edited. Name is required, so a
+ * product could be neither created nor renamed.
+ */
+describe('The Product header panel owns the identification fields it claims', () => {
+    it('claims the generated productIdentification section', () => {
+        expect(PanelRegistrationMetadata(ProductHeaderPanel)?.['replacesSectionKey']).toBe(
+            'productIdentification'
+        );
+    });
+
+    it('renders every field of that section, bound to EditMode', () => {
+        const rendered = FieldNames(PRODUCT_HEADER_HTML);
+        const claimed = GeneratedSectionFields('productIdentification');
+        expect(claimed).toContain('Name');
+
+        const lost = claimed.filter((field) => !rendered.includes(field));
+        expect(lost, 'replacing a generated section must not drop its fields').toEqual([]);
+
+        // Read-only interpolation of a claimed field is what caused the bug; the fields have
+        // to be real inputs when the form is in edit mode.
+        expect(PRODUCT_HEADER_HTML).toContain('[EditMode]="EditMode"');
+        expect(PRODUCT_HEADER_HTML).toContain('@if (EditMode) {');
     });
 });
