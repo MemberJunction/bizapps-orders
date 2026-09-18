@@ -12,6 +12,9 @@
             </div>
         </div>
     </div>
+    @if (!EditMode && Record.Description) {
+        <p class="mjo-doc-hero__description">{{ Record.Description }}</p>
+    }
     <div class="mjo-doc-hero__stats">
         <div class="mjo-doc-stat">
             <span class="mjo-doc-stat__label">List price</span>
@@ -26,4 +29,27 @@
             <span class="mjo-doc-stat__value">{{ Record.IsTaxable ? 'Taxable' : 'Exempt' }}</span>
         </div>
     </div>
+    <!-- This panel claims the generated `productIdentification` section, so it OWNS
+         Name, SKU and Description: they render nowhere else on the form. Editing them
+         has to live here, or the section's only fields are unreachable and a product
+         can never be named. Same contract the Common identity headers honor. -->
+    @if (EditMode) {
+        <div class="mjo-doc-hero__edit">
+            <div class="mjo-doc-hero__field">
+                <mj-form-field [Record]="Record" [ShowLabel]="true" FieldName="Name"
+                    Type="textbox" [EditMode]="EditMode" [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)"></mj-form-field>
+            </div>
+            <div class="mjo-doc-hero__field">
+                <mj-form-field [Record]="Record" [ShowLabel]="true" FieldName="SKU"
+                    Type="textbox" [EditMode]="EditMode" [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)"></mj-form-field>
+            </div>
+            <div class="mjo-doc-hero__field mjo-doc-hero__field--span">
+                <mj-form-field [Record]="Record" [ShowLabel]="true" FieldName="Description"
+                    Type="textarea" [EditMode]="EditMode" [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)"></mj-form-field>
+            </div>
+        </div>
+    }
 </div>
