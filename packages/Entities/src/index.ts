@@ -27,6 +27,7 @@ export * from './PartyAffiliationBehavior';
 export * from './booked-money';
 export * from './field-dirty';
 export * from './line-quantity';
+export * from './order-line-edit-veto';
 
 /**
  * `OrderHeaderEntity` — the shared (client + server) order subclass carrying every rule decidable

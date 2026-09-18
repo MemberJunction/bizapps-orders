@@ -50,6 +50,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import type { OrderEntityServer } from './OrderEntityServer.js';
 import { RequireOptionalUUID } from './sql-guards.js';
+import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
@@ -304,6 +305,9 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             order.Notes = `Automatic renewal of ${due.SubscriptionNumber} (term ${due.TermNumber + 1})`;
 
             const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+            // Orders writing its own line. An app that froze this line freezes what a PERSON
+            // may change, not Orders closing its own books (#206 item 1).
+            MarkAsOrdersOwnWrite(line);
             line.NewRecord();
             line.ProductID = due.ProductID;
             line.LineNumber = 1;

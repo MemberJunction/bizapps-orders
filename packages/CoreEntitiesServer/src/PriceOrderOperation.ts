@@ -28,6 +28,7 @@ import { RegisterClass } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { OrderPricingService } from '@mj-biz-apps/orders-entities';
+import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
@@ -104,6 +105,9 @@ export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput,
         const lines: mjBizAppsOrdersOrderLineEntity[] = [];
         for (const spec of input.Lines) {
             const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+            // Orders writing its own line. An app that froze this line freezes what a PERSON
+            // may change, not Orders closing its own books (#206 item 1).
+            MarkAsOrdersOwnWrite(line);
             line.NewRecord();
             line.ProductID = spec.ProductID;
             line.Quantity = Number(spec.Quantity ?? 0);

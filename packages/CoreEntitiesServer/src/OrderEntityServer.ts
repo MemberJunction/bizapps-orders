@@ -59,7 +59,7 @@ import {
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
-import { OrderLineEntityServer } from './OrderLineEntityServer.js';
+import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
@@ -1019,6 +1019,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         for (const line of removed) {
             await this.deleteLineDependents(line);
+            /**
+             * The same rule as the two save loops, for the same reason. Removing a line is a write to
+             * it, and outside booking this loop is as likely to be a person on the deal workspace as
+             * Orders itself — so the veto is asked. While booking it is Orders confirming its own
+             * order, and a refusal there would block the close that creates the record being protected.
+             *
+             * The refused case still surfaces as a THROW rather than a validation refusal, which the
+             * review called out and called non-blocking. Left as-is deliberately: changing the shape of
+             * a failed removal is a different change from deciding who may make one.
+             */
+            const serverLine = line as unknown as { BypassExternalEditVeto?: boolean };
+            serverLine.BypassExternalEditVeto = this.bookingInFlight;
             if (!(await line.Delete())) {
                 throw new Error(
                     `Failed to delete removed order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`,
@@ -1087,8 +1099,26 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         const persisted: mjBizAppsOrdersOrderLineEntity[] = [];
         for (const line of this.Lines.Items) {
-            const serverLine = line as unknown as { BypassBookedCheck?: boolean };
+            const serverLine = line as unknown as { BypassBookedCheck?: boolean; BypassExternalEditVeto?: boolean };
             serverLine.BypassBookedCheck = true;
+            /**
+             * ONLY WHILE BOOKING, and the two flags part company here.
+             *
+             * `BypassBookedCheck` is safe to set unconditionally on this loop: it means "the booked-parent
+             * rule already ran at the header", and it did. `BypassExternalEditVeto` means "this write is
+             * Orders' own", and THIS LOOP CANNOT CLAIM THAT — it runs on any header save with dirty
+             * lines, including one a person started from the deal workspace's Add/Remove buttons.
+             *
+             * Setting it unconditionally put golive#206 item 1's defect back on a different screen: the
+             * deal form's grid refused a line on a locked deal while the workspace, one screen over,
+             * saved the whole order and was never asked. Item 1 says "whichever screen or API path it
+             * comes from".
+             *
+             * Booking is the case that genuinely is Orders' own work — the deal close confirms the order,
+             * and the freeze is not in place yet when it does. Nothing at the header level runs the
+             * external veto, so outside booking this loop has to let the line be asked.
+             */
+            serverLine.BypassExternalEditVeto = this.bookingInFlight;
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
@@ -1874,6 +1904,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // in this.Lines would otherwise Save() as the leaf, whose clean-leaf
             // finalizeSave used to throw on parent virtuals (OrderHeader).
             const stampTarget = this.resolveOrderLineForStamp(line);
+            /**
+             * Orders' OWN write, and marked as one rather than left to the graph loops.
+             *
+             * The three loops set the bypass from `bookingInFlight`, and this runs only while booking,
+             * so on the common path the flag is already true. It is not true on either of the other two
+             * ways this line can arrive: loaded fresh above when it is not in `this.Lines`, or resolved
+             * UP the IS-A chain by `resolveOrderLineForStamp`, which returns the parent Order Line of an
+             * Event or Subscription line — an object no loop ever touched.
+             *
+             * Nothing refuses it today, because the deal server confirms the order BEFORE it writes the
+             * Won status, so the freeze is not yet in place while this runs. That is an ordering in
+             * another app, and this write does not need to depend on it: stamping the entry the booking
+             * just created is Orders' own bookkeeping by any reading.
+             */
+            MarkAsOrdersOwnWrite(stampTarget);
             stampTarget.JournalEntryID = jeID;
 
             const saveOptions = new EntitySaveOptions();
@@ -2037,8 +2082,26 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // could never show subscription detail for a line. Set here because the
             // line is already being saved on the next statement; it costs no extra write.
             line.SubscriptionID = subscriptionID;
-            const serverLine = line as unknown as { BypassBookedCheck?: boolean };
+            const serverLine = line as unknown as { BypassBookedCheck?: boolean; BypassExternalEditVeto?: boolean };
             serverLine.BypassBookedCheck = true;
+            /**
+             * ONLY WHILE BOOKING, and the two flags part company here.
+             *
+             * `BypassBookedCheck` is safe to set unconditionally on this loop: it means "the booked-parent
+             * rule already ran at the header", and it did. `BypassExternalEditVeto` means "this write is
+             * Orders' own", and THIS LOOP CANNOT CLAIM THAT — it runs on any header save with dirty
+             * lines, including one a person started from the deal workspace's Add/Remove buttons.
+             *
+             * Setting it unconditionally put golive#206 item 1's defect back on a different screen: the
+             * deal form's grid refused a line on a locked deal while the workspace, one screen over,
+             * saved the whole order and was never asked. Item 1 says "whichever screen or API path it
+             * comes from".
+             *
+             * Booking is the case that genuinely is Orders' own work — the deal close confirms the order,
+             * and the freeze is not in place yet when it does. Nothing at the header level runs the
+             * external veto, so outside booking this loop has to let the line be asked.
+             */
+            serverLine.BypassExternalEditVeto = this.bookingInFlight;
             await line.Save(options);
         }
 
