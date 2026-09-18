@@ -31,6 +31,7 @@
  */
 import {
     BaseEntity,
+    BaseEntityResult,
     EntitySaveOptions,
     IMetadataProvider,
     IRunViewProvider,
@@ -40,7 +41,17 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { IsBooked, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderLineEntity, OrdersEngine } from '@mj-biz-apps/orders-entities';
+import {
+    HostOrderLineEditVeto,
+    IsBooked,
+    LineGross,
+    LoadOrdersEngine,
+    NetAfterDiscount,
+    OrderLineEntity,
+    OrdersEngine,
+    ResolveOrderLineEditRefusal,
+    type OrderLineEditKind,
+} from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 
@@ -97,12 +108,129 @@ export class OrderLineEntityServer extends OrderLineEntity {
         }
 
         await this.refuseNewLineOnBookedOrder(result);
+        await this.refuseVetoedEdit(result, this.IsSaved ? 'update' : 'create');
 
         return result;
     }
 
+    /**
+     * Ask whoever else has a stake in this line whether it may change (bc-aidp-next-golive#206 item 1).
+     *
+     * COVERS EDITS, NOT JUST CREATES. `refuseNewLineOnBookedOrder` above returns early on `IsSaved`,
+     * because Orders' own booked rule is about ADDING to a booked order. A deal lock is not: a line
+     * that already exists is exactly what the contract was derived from, so changing it after the
+     * close is the damaging case, and the one the tester actually hit.
+     *
+     * A THROWN VETO IS A REFUSAL, not an allowance. A vetoer that cannot reach what it needs to judge
+     * has not said yes, and treating "could not tell" as "go ahead" is how a frozen record gets
+     * edited. The message names the fault so it is fixed rather than worked around.
+     */
+    private async refuseVetoedEdit(result: ValidationResult, kind: OrderLineEditKind): Promise<void> {
+        const veto = HostOrderLineEditVeto();
+        if (!veto || !this.OrderHeaderID || this.BypassExternalEditVeto) return;
+
+        const refusal = await ResolveOrderLineEditRefusal(
+            veto,
+            {
+                OrderHeaderID: this.OrderHeaderID,
+                OrderLineID: this.IsSaved ? (this.ID ?? null) : null,
+                Kind: kind,
+                // The vetoer reads something to answer, and on the server that read needs a user.
+                // `refuseNewLineOnBookedOrder` passes the same one to its own RunView.
+                ContextUser: this.ContextCurrentUser ?? null,
+            },
+            'The edit was not applied.',
+        );
+        if (!refusal) return;
+
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo('OrderHeaderID', refusal, this.OrderHeaderID, ValidationErrorType.Failure),
+        );
+    }
+
+    /**
+     * Deleting a line is an edit too, and validation does not run on the delete path.
+     *
+     * #206 item 1 asks for adding, editing AND deleting to be refused on a locked deal. `Delete()` never
+     * calls `ValidateAsync`, so without this the grid's delete button would remain the one way through
+     * a lock that refuses everything else — and deleting the line a contract was derived from is the
+     * most damaging of the three, not the least.
+     */
+    public override async Delete(options?: Parameters<BaseEntity['Delete']>[0]): Promise<boolean> {
+        const veto = HostOrderLineEditVeto();
+        if (veto && this.OrderHeaderID && !this.BypassExternalEditVeto) {
+            const refusal = await ResolveOrderLineEditRefusal(
+                veto,
+                {
+                    OrderHeaderID: this.OrderHeaderID,
+                    OrderLineID: this.ID ?? null,
+                    Kind: 'delete',
+                    ContextUser: this.ContextCurrentUser ?? null,
+                },
+                'Nothing was deleted.',
+            );
+            if (refusal) {
+                /**
+                 * REGISTERED, NOT ASSIGNED ONTO `LatestResult`.
+                 *
+                 * An earlier version set `this.LatestResult.Success` directly, and that threw. Core
+                 * returns `null` from that getter when the result history is empty — while TYPING it
+                 * as non-null, so nothing caught it — and the history is empty on exactly the entity
+                 * this path gets: the delete resolver loads a line and deletes it without ever saving.
+                 *
+                 * So the refusal arrived as a TypeError instead of as the message explaining the
+                 * freeze. The delete was still stopped, but by the unhandled error this whole approach
+                 * exists to avoid.
+                 *
+                 * `RegisterResultHistoryEntry` is what core itself uses to record a failed delete, and
+                 * it is also what makes the message readable when an Event Order Line delete cascades
+                 * up to its parent line.
+                 */
+                const failed = new BaseEntityResult();
+                failed.Success = false;
+                failed.Type = 'delete';
+                failed.Message = refusal;
+                failed.StartedAt = new Date();
+                failed.EndedAt = new Date();
+                failed.OriginalValues = this.Fields.map((f) => ({ FieldName: f.CodeName, Value: f.OldValue }));
+                this.RegisterResultHistoryEntry(failed);
+                return false;
+            }
+        }
+        return super.Delete(options);
+    }
+
     /** Set by OrderEntityServer when saving lines as part of an order graph save/booking. */
     public BypassBookedCheck = false;
+
+    /**
+     * Set by Orders' OWN writers, so an external freeze does not stop Orders' bookkeeping.
+     *
+     * ── WHY THIS IS SEPARATE FROM THE CHECK ITSELF ──────────────────────────────────────────────
+     *
+     * The external check is asked on every save of a line, and Orders saves lines constantly AFTER a
+     * deal is won: marking one fulfilled, stamping the journal entry id once the order books,
+     * rippling a bundle's quantities, writing the reversal line when a subscription is cancelled.
+     * Every one of those is Orders doing its own work on a line some other app has frozen.
+     *
+     * The vetoer cannot tell them apart. It is handed an order id, a line id and create/update/delete
+     * — nothing that says whether a person typed in a grid or Orders is closing its own books. So the
+     * distinction has to be made HERE, by the only code that knows.
+     *
+     * The deal close itself is unaffected either way: the deal server confirms the order before it
+     * writes the Won status, so the freeze is not in place yet. It is everything after the close that
+     * would have broken.
+     *
+     * ── WHY NOT `BypassBookedCheck` ─────────────────────────────────────────────────────────────
+     *
+     * That one means "this write comes through the order graph, so the booked-parent rule has already
+     * been applied at the header". This one means "this write is Orders' own, so an external freeze
+     * does not apply". They coincide on the graph path and nowhere else — a fulfillment write needs
+     * this and not that. One flag meaning two rules is a flag that gets set for one reason and
+     * silently changes the other.
+     */
+    public BypassExternalEditVeto = false;
 
     /**
      * A new line saved on its own (not through the order graph) still has to
@@ -285,6 +413,20 @@ export class OrderLineEntityServer extends OrderLineEntity {
         this.LineTotalNet = net;
         this.LineTotalGross = money(net + (this.LineTax ?? 0) + (this.ChargeAmount ?? 0));
     }
+}
+
+/**
+ * Mark a line as Orders' own write, so an external freeze does not stop Orders' bookkeeping.
+ *
+ * A FUNCTION rather than eight hand-set booleans. The failure this guards against is a writer that
+ * forgets, and a named call at the point the entity is acquired is harder to forget — and far easier
+ * to grep for — than a property assignment buried further down. It also keeps the cast in one place:
+ * the operations hold the GENERATED entity type, which does not know about the server subclass.
+ *
+ * Call it where the line is obtained, before anything is set on it.
+ */
+export function MarkAsOrdersOwnWrite(line: unknown): void {
+    (line as { BypassExternalEditVeto?: boolean }).BypassExternalEditVeto = true;
 }
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */
