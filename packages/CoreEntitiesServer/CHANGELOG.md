@@ -1,5 +1,11 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.13.1
+
+### Patch Changes
+
+- @mj-biz-apps/orders-entities@5.13.1
+
 ## 5.13.0
 
 ### Minor Changes
