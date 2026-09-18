@@ -20,7 +20,8 @@
  * only bite once an order is booked, which this never does.
  */
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import dotenv from 'dotenv';
 import sql from 'mssql';
 
@@ -29,6 +30,17 @@ dotenv.config({ path: path.resolve(here, '..', '.env'), quiet: true });
 dotenv.config({ path: path.resolve(here, '../../MJ/.env'), quiet: true });
 
 const FROZEN = 'This deal is closed. Reopen it to change what was sold.';
+
+/**
+ * Resolve the orders packages through `packages/Server`, which declares them, rather than from the
+ * repo root, which does not link `@mj-biz-apps/*` at all. Same shape as `resolve-app-packages.mjs`
+ * next door, and it does not depend on pnpm's node_modules layout staying put.
+ */
+const requireFromServer = createRequire(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'packages', 'Server', 'package.json'),
+);
+const importFromServer = (specifier) =>
+    import(pathToFileURL(requireFromServer.resolve(specifier)).href);
 
 let failures = 0;
 const check = (label, ok, detail) => {
@@ -57,12 +69,9 @@ async function main() {
     const user =
         UserCache.Users.find((u) => u?.Type?.trim().toLowerCase() === 'owner') ?? UserCache.Users[0];
 
-    await import('../packages/Server/dist/index.js');
+    await importFromServer('@mj-biz-apps/orders-server');
     const { Metadata } = await import('@memberjunction/core');
-    // By path: the repo root has no @mj-biz-apps links, only the packages do.
-    const { RegisterOrderLineEditVeto } = await import(
-        '../packages/Server/node_modules/@mj-biz-apps/orders-entities/dist/index.js'
-    );
+    const { RegisterOrderLineEditVeto } = await importFromServer('@mj-biz-apps/orders-entities');
     const md = new Metadata();
 
     // Pick a PRODUCT first and take its company, so the two always agree. Companies live in
