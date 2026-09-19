@@ -1968,6 +1968,14 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @Field({nullable: true}) 
     PriceOverrideReason?: string;
         
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    DimensionID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    DimensionValueID?: string;
+        
     @Field() 
     @MaxLength(201)
     Person: string;
@@ -2087,6 +2095,12 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     @Field({ nullable: true })
     PriceOverrideReason: string | null;
 
+    @Field({ nullable: true })
+    DimensionID: string | null;
+
+    @Field({ nullable: true })
+    DimensionValueID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -2204,6 +2218,12 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     PriceOverrideReason?: string | null;
+
+    @Field({ nullable: true })
+    DimensionID?: string | null;
+
+    @Field({ nullable: true })
+    DimensionValueID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -4758,6 +4778,14 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field({nullable: true, description: `Optional staff note for why the engine price was overridden. NULL when PriceOverridden = 0 or when no reason was given.`}) 
     PriceOverrideReason?: string;
         
+    @Field({nullable: true, description: `The GL dimension this line is tagged on — the analysis axis, from __mj_BizAppsAccounting.Dimension. NULL leaves the line untagged, which books a valid entry that simply cannot be reported on by dimension. Set together with DimensionValueID (CK_OrderLine_DimensionPair).`}) 
+    @MaxLength(36)
+    DimensionID?: string;
+        
+    @Field({nullable: true, description: `The value of DimensionID this line is tagged with, from __mj_BizAppsAccounting.DimensionValue. Carried with DimensionID onto every journal entry line the order line produces. Set together with DimensionID (CK_OrderLine_DimensionPair).`}) 
+    @MaxLength(36)
+    DimensionValueID?: string;
+        
     @Field() 
     @MaxLength(40)
     OrderHeader: string;
@@ -4910,6 +4938,12 @@ export class CreatemjBizAppsOrdersOrderLineInput {
     @Field({ nullable: true })
     PriceOverrideReason: string | null;
 
+    @Field({ nullable: true })
+    DimensionID: string | null;
+
+    @Field({ nullable: true })
+    DimensionValueID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -5012,6 +5046,12 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field({ nullable: true })
     PriceOverrideReason?: string | null;
+
+    @Field({ nullable: true })
+    DimensionID?: string | null;
+
+    @Field({ nullable: true })
+    DimensionValueID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
