@@ -32,6 +32,8 @@ export type { OrderRollupField, OrderRollups, ResolvedOrderRollups } from './Ord
 
 export { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 export type { JEDraft, JELineDraft, OrderLineDraft } from './OrderJournalEntryFactory.js';
+export { MergeLineDimensions } from './LineDimensionMerge.js';
+export type { LineDimensionColumns, LineDimensionTag } from './LineDimensionMerge.js';
 
 export {
     RevenueRecognitionDriver,

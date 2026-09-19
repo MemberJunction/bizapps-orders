@@ -37,10 +37,13 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 import {
     ContinuationStartFrom,
     GetCatalogOptions,
+    GetDimensionOptions,
     GetSubscriptionContinuation,
     RankCatalogMatches,
+    type MJODimensionOption,
     type MJOProductOption,
 } from '../../data/orders-queries';
+import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
 import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 import {
     ExtensionCollapsedHint,
@@ -77,6 +80,7 @@ const PICKER_RESULT_LIMIT = 12;
         MJOConsequenceChipComponent,
         MJOPriceSourceBadgeComponent,
         MJOMoneyPipe,
+        MJOOrderLineDetailsPanelComponent,
     ],
     templateUrl: './order-lines-editor.component.html',
     styleUrls: ['./order-lines-editor.component.css'],
@@ -636,6 +640,63 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return ExtensionCollapsedHint(this.extensionEntityName(line));
     }
 
+    /* ── Line details (golive #236) ──────────────────────────────────────────
+     *
+     * GL dimensions are per-line and there can be five of them, so they live behind a panel rather
+     * than on the card. The card is already carrying product, quantity, price, the override editor,
+     * consequence chips, term start and the extension disclosure; five more pickers on every row
+     * would charge every reader for something most of them never open.
+     */
+
+    /** The line whose details panel is open, or null. One at a time — the panel is modal. */
+    public DetailsLine: mjBizAppsOrdersOrderLineEntity | null = null;
+
+    /** Every dimension a line may be tagged with, read once per bound order. */
+    public DimensionCatalog: MJODimensionOption[] = [];
+
+    public OpenDetails(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        event.preventDefault();
+        event.stopPropagation();
+        this.DetailsLine = line;
+    }
+
+    public CloseDetails(): void {
+        this.DetailsLine = null;
+        // The panel edited `line.Dimensions` in memory, so the summary on the card is already stale
+        // by the time it closes.
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * What the card's details button reports without opening anything.
+     *
+     * Read straight off the line — `DimensionID` / `DimensionValueID` are columns, so they arrive
+     * with the line itself and there is nothing to load first. An unknown id still reports as
+     * tagged rather than as untagged: a tag pointing at a dimension this order's date has aged out
+     * is a thing to go and look at, and "No dimension" would hide it.
+     */
+    public DimensionSummary(line: mjBizAppsOrdersOrderLineEntity): string {
+        if (!this.DimensionCatalog.length) return 'Details';
+        if (!line.DimensionID) return 'No dimension';
+        const dimension = this.DimensionCatalog.find((d) => UUIDsEqual(d.ID, line.DimensionID ?? ''));
+        const value = dimension?.Values.find((v) => UUIDsEqual(v.ID, line.DimensionValueID ?? ''));
+        if (!dimension) return 'Tagged';
+        return value ? `${dimension.Code} · ${value.Code}` : dimension.Code;
+    }
+
+    /**
+     * Read the dimension catalog for the order's own date.
+     *
+     * The order date, not today's: `DimensionValue` is effective-dated, and a back-dated order has
+     * to offer the values that were live when it was placed. Failure leaves the catalog empty, and
+     * the panel says so rather than rendering an empty picker list that reads as "no dimensions
+     * exist".
+     */
+    private async loadDimensionCatalog(): Promise<void> {
+        const asOf = this._order?.OrderDate ? new Date(this._order.OrderDate) : new Date();
+        this.DimensionCatalog = await GetDimensionOptions(asOf);
+    }
+
     public ngOnDestroy(): void {
         this.unbindOrder();
         this.pricing.CancelPending();
@@ -647,6 +708,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     private async onOrderBound(): Promise<void> {
         if (this.Catalog.length === 0) await this.loadCatalog();
+        if (this.DimensionCatalog.length === 0) await this.loadDimensionCatalog();
         if (this._order && !this._order.Lines.IsLoaded && this._order.IsSaved) {
             await this._order.Lines.Load();
         }
@@ -658,6 +720,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     private unbindOrder(): void {
+        this.DetailsLine = null;
+        // Dropped rather than kept across orders, unlike the product catalog: dimension values are
+        // effective-dated and this list was filtered against the PREVIOUS order's date, so reusing
+        // it would offer one order the values that were live for another.
+        this.DimensionCatalog = [];
         this.expandedLineIds.clear();
         this.hydratingLineIds.clear();
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
