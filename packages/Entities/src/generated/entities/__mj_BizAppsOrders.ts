@@ -9996,6 +9996,25 @@ export class mjBizAppsOrdersOrderLinePriceComponentEntity extends BaseEntity<mjB
  */
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Lines')
 export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOrderLineEntityType> {
+
+  /**
+  * Related records: MJ_BizApps_Orders: Order Line Dimensions
+  *
+  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Order Lines record — see
+  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
+  * the 'MJ_BizApps_Orders: Order Lines → MJ_BizApps_Orders: Order Line Dimensions' relationship; edit that row, not this file.
+  *
+  */
+  public readonly Dimensions = this.DeclareRelatedRecords<mjBizAppsOrdersOrderLineDimensionEntity>({
+      Name: 'Dimensions',
+        RelatedEntity: 'MJ_BizApps_Orders: Order Line Dimensions',
+        RelatedEntityJoinField: 'OrderLineID',
+        OrderBy: '__mj_CreatedAt ASC',
+        Load: 'explicit',
+        OnRemove: 'delete',
+        Source: 'database',
+  });
+
     /**
     * Loads the MJ_BizApps_Orders: Order Lines record from the database
     * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Lines record.

@@ -29,6 +29,7 @@ import {
     userPriceOverrideKind,
     type ApplicablePrice,
     type PriceOverrideKind,
+    type mjBizAppsOrdersOrderLineDimensionEntity,
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
@@ -37,10 +38,14 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 import {
     ContinuationStartFrom,
     GetCatalogOptions,
+    GetDimensionOptions,
+    GetLineDimensionsForOrder,
     GetSubscriptionContinuation,
     RankCatalogMatches,
+    type MJODimensionOption,
     type MJOProductOption,
 } from '../../data/orders-queries';
+import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
 import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 import {
     ExtensionCollapsedHint,
@@ -77,6 +82,7 @@ const PICKER_RESULT_LIMIT = 12;
         MJOConsequenceChipComponent,
         MJOPriceSourceBadgeComponent,
         MJOMoneyPipe,
+        MJOOrderLineDetailsPanelComponent,
     ],
     templateUrl: './order-lines-editor.component.html',
     styleUrls: ['./order-lines-editor.component.css'],
@@ -636,6 +642,90 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return ExtensionCollapsedHint(this.extensionEntityName(line));
     }
 
+    /* ── Line details (golive #236) ──────────────────────────────────────────
+     *
+     * GL dimensions are per-line and there can be five of them, so they live behind a panel rather
+     * than on the card. The card is already carrying product, quantity, price, the override editor,
+     * consequence chips, term start and the extension disclosure; five more pickers on every row
+     * would charge every reader for something most of them never open.
+     */
+
+    /** The line whose details panel is open, or null. One at a time — the panel is modal. */
+    public DetailsLine: mjBizAppsOrdersOrderLineEntity | null = null;
+
+    /** Every dimension a line may be tagged with, read once per bound order. */
+    public DimensionCatalog: MJODimensionOption[] = [];
+
+    public OpenDetails(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        event.preventDefault();
+        event.stopPropagation();
+        this.DetailsLine = line;
+    }
+
+    public CloseDetails(): void {
+        this.DetailsLine = null;
+        // The panel edited `line.Dimensions` in memory, so the summary on the card is already stale
+        // by the time it closes.
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * What the card's details button reports without opening anything.
+     *
+     * Says nothing until the tags are actually loaded. A count read off an unloaded collection is
+     * zero, and "No dimensions" on a line that is in fact tagged is the one answer this button must
+     * never give — an untagged line is the defect, so a false negative reads as a problem that is
+     * not there and a false positive hides one that is.
+     */
+    public DimensionSummary(line: mjBizAppsOrdersOrderLineEntity): string {
+        if (!this.DimensionCatalog.length) return 'Details';
+        if (line.IsSaved && !line.Dimensions.IsLoaded) return 'Details';
+        const tagged = line.Dimensions.Items.length;
+        return tagged === 0 ? 'No dimensions' : `${tagged} of ${this.DimensionCatalog.length} tagged`;
+    }
+
+    /**
+     * Fill every saved line's `Dimensions` collection from ONE query.
+     *
+     * Per-line `Load()` would be a query per row on an order that may carry dozens. The collection
+     * exposes `SetLoadedItems` for exactly this — the same distribution accounting does when it
+     * reads a journal entry's lines and their dimension tags together.
+     *
+     * KEYED CASE-INSENSITIVELY. SQL Server returns `UNIQUEIDENTIFIER` uppercased while a
+     * browser-minted id is lower case, so a case-sensitive map silently hands every line an empty
+     * set — which would look exactly like the untagged state this work exists to fix.
+     */
+    private async hydrateLineDimensions(): Promise<void> {
+        const saved = (this._order?.Lines.Items ?? []).filter((line) => line.IsSaved);
+        if (!saved.length) return;
+
+        const tags = await GetLineDimensionsForOrder(saved.map((line) => line.ID));
+        const byLine = new Map<string, mjBizAppsOrdersOrderLineDimensionEntity[]>();
+        for (const tag of tags) {
+            const key = tag.OrderLineID.toLowerCase();
+            const list = byLine.get(key) ?? [];
+            list.push(tag);
+            byLine.set(key, list);
+        }
+        for (const line of saved) {
+            if (line.Dimensions.IsLoaded) continue;
+            line.Dimensions.SetLoadedItems(byLine.get(line.ID.toLowerCase()) ?? []);
+        }
+    }
+
+    /**
+     * Read the dimension catalog for the order's own date.
+     *
+     * The order date, not today's: `DimensionValue` is effective-dated, and a back-dated order has
+     * to offer the values that were live when it was placed. Failure leaves the catalog empty, and
+     * the panel says so rather than rendering an empty picker list that reads as "no dimensions
+     * exist".
+     */
+    private async loadDimensionCatalog(): Promise<void> {
+        const asOf = this._order?.OrderDate ? new Date(this._order.OrderDate) : new Date();
+        this.DimensionCatalog = await GetDimensionOptions(asOf);
+    }
+
     public ngOnDestroy(): void {
         this.unbindOrder();
         this.pricing.CancelPending();
@@ -647,10 +737,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     private async onOrderBound(): Promise<void> {
         if (this.Catalog.length === 0) await this.loadCatalog();
+        if (this.DimensionCatalog.length === 0) await this.loadDimensionCatalog();
         if (this._order && !this._order.Lines.IsLoaded && this._order.IsSaved) {
             await this._order.Lines.Load();
         }
         await this.hydrateExtensions();
+        await this.hydrateLineDimensions();
         await this.resolveOverrideKind();
         this.schedulePricing();
         void this.refreshAllApplicable();
@@ -658,6 +750,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     private unbindOrder(): void {
+        this.DetailsLine = null;
+        // Dropped rather than kept across orders, unlike the product catalog: dimension values are
+        // effective-dated and this list was filtered against the PREVIOUS order's date, so reusing
+        // it would offer one order the values that were live for another.
+        this.DimensionCatalog = [];
         this.expandedLineIds.clear();
         this.hydratingLineIds.clear();
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so

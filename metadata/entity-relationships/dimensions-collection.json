@@ -1,0 +1,8 @@
+{
+  "Name": "Dimensions",
+  "Source": "database",
+  "Load": "explicit",
+  "OnRemove": "delete",
+  "OrderBy": "__mj_CreatedAt ASC",
+  "ClearAfterSave": false
+}

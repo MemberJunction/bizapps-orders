@@ -131,5 +131,40 @@
       "lastModified": "2026-09-02T03:26:36.813Z",
       "checksum": "4efa7a1101423c98ac5ca100fd10f44b127e74952955971d46dc7c7ad653b26f"
     }
+  },
+  {
+    "_comments": [
+      "Declares Order Lines -> Order Line Dimensions as a related-record collection.",
+      "",
+      "OrderLineDimension has existed since the baseline and OrderJournalEntryFactory already reads it",
+      "and rides each tag onto every JE line the order line produces. Nothing ever WROTE a row, so every",
+      "order-originated journal entry reached the ledger untagged (golive #236).",
+      "",
+      "A collection rather than direct inserts from the caller, because a tag cannot be written before",
+      "its line exists: a line added in the browser has no ID until the order saves. The collection",
+      "stamps OrderLineID at save, so an unsaved line can carry its dimensions and the whole graph",
+      "lands in one transaction.",
+      "",
+      "This rides along without any change to OrderEntityServer. The header's own save passes",
+      "SkipRelatedCollections, but savePendingLines saves each line with the caller's plain options, so",
+      "each line contributes its own Dimensions work to that save plan.",
+      "",
+      "OnRemove delete matches the cascade OrderEntityServer already performs: 'MJ_BizApps_Orders: Order",
+      "Line Dimensions' is a member of REMOVED_LINE_DEPENDENT_ENTITIES, which sweeps a removed draft",
+      "line's children because no FK into OrderLine cascades. Both paths stay — the sweep covers a line",
+      "removed without its collection loaded.",
+      "",
+      "OrderBy __mj_CreatedAt: the table carries no sequence column, and UQ_OrderLineDimension_Line_Dimension",
+      "already allows only one value per dimension per line, so there is nothing to renumber.",
+      "",
+      "Keyed by entity NAMES, like every record in this file: EntityRelationship IDs are minted by CodeGen",
+      "and would stop matching the first time this database is rebuilt from zero."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:dimensions-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Lines&RelatedEntity=MJ_BizApps_Orders: Order Line Dimensions&RelatedEntityJoinField=OrderLineID"
+    }
   }
 ]

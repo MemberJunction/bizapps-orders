@@ -1,0 +1,102 @@
+@if (IsOpen) {
+    <!-- Click-outside-to-close, as a pointer affordance only: it is hidden from assistive technology
+         and out of the tab order because it duplicates the Close button and Escape, and a scrim that
+         a screen reader announces is one more thing to read past on the way into the panel. -->
+    <button
+        type="button"
+        class="mjo-ldp__scrim"
+        (click)="Close()"
+        aria-hidden="true"
+        tabindex="-1"></button>
+
+    <aside class="mjo-ldp" role="dialog" aria-modal="true" aria-labelledby="mjo-ldp-title">
+
+        <header class="mjo-ldp__head">
+            <div class="mjo-ldp__id">
+                <div class="mjo-ldp__name" id="mjo-ldp-title">{{ ProductName || 'Order line' }}</div>
+                <div class="mjo-ldp__meta">
+                    {{ ProductSKU }}
+                    @if (ProductType) {
+                        · {{ ProductType }}
+                    }
+                    @if (Line?.LineNumber) {
+                        · Line {{ Line?.LineNumber }}
+                    }
+                </div>
+            </div>
+            <button type="button" class="mjo-ldp__close" (click)="Close()" aria-label="Close line details">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+        </header>
+
+        <div class="mjo-ldp__body">
+            @if (LoadError) {
+                <p class="mjo-ldp__error" role="alert">{{ LoadError }}</p>
+            }
+
+            <section class="mjo-ldp__section">
+                <h3 class="mjo-ldp__section-title">GL Dimensions</h3>
+                <p class="mjo-ldp__section-hint">
+                    These ride onto every journal entry line this order line produces. An untagged
+                    line still books — it just reaches the ledger with nothing to report on.
+                </p>
+
+                @if (IsBooked) {
+                    <p class="mjo-ldp__locked">
+                        This line is booked, so its tags are the ones its journal entry already
+                        carries and can no longer be changed.
+                    </p>
+                }
+
+                @for (dimension of Dimensions; track dimension.ID) {
+                    <div class="mjo-ldp__field">
+                        <label
+                            class="mjo-ldp__label"
+                            [attr.for]="CanEdit ? 'mjo-ldp-' + dimension.ID : null">
+                            {{ dimension.Name }}
+                        </label>
+
+                        @if (CanEdit) {
+                            <select
+                                class="mjo-ldp__select"
+                                [id]="'mjo-ldp-' + dimension.ID"
+                                [value]="SelectedValueID(dimension)"
+                                (change)="SetValue(dimension, $event)">
+                                <option value="">— none —</option>
+                                @for (value of dimension.Values; track value.ID) {
+                                    <option [value]="value.ID">{{ value.Code }} — {{ value.Name }}</option>
+                                }
+                            </select>
+                            @if (dimension.Values.length === 0) {
+                                <span class="mjo-ldp__note">
+                                    No value of this dimension is in effect on this order's date.
+                                </span>
+                            }
+                        } @else {
+                            <span class="mjo-ldp__value" [class.is-empty]="!SelectedValueID(dimension)">
+                                {{ SelectedValueLabel(dimension) || '— none —' }}
+                            </span>
+                        }
+                    </div>
+                } @empty {
+                    <p class="mjo-ldp__note">
+                        No dimensions are defined. They arrive from Business Central through
+                        accounting's ERP sync, so until that has run there is nothing to tag a line
+                        with.
+                    </p>
+                }
+            </section>
+        </div>
+
+        <footer class="mjo-ldp__foot">
+            <span class="mjo-ldp__foot-hint">
+                @if (CanEdit) {
+                    Tagged on {{ TaggedCount }} of {{ Dimensions.length }}. Changes save with the order.
+                } @else {
+                    Tagged on {{ TaggedCount }} of {{ Dimensions.length }}.
+                }
+            </span>
+            <button type="button" class="mjo-ldp__done" (click)="Close()">Done</button>
+        </footer>
+    </aside>
+}
