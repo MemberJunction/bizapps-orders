@@ -20,6 +20,7 @@
     "application-settings",
     "action-categories",
     "actions",
+    "scheduled-jobs",
     "entity-actions",
     "query-categories",
     "queries",

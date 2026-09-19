@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR11).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR14).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -21,9 +21,14 @@
  *   SR9   Subscription.RenewalLeadDays overrides the type's default
  *   SR10  Preview reports what is due without placing anything
  *   SR11  the renewal LINE links back via RenewsSubscriptionID and logs a lifecycle event
+ *   SR12  the Action the scheduler dispatches reaches the operation and places the renewal
+ *   SR13  Preview arrives from a scheduler as the STRING "true" and still writes nothing
+ *   SR14  the schedule points at this Action, and ships disabled and set to preview
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
+import { BaseAction } from '@memberjunction/actions';
+import type { RunActionParams } from '@memberjunction/actions-base';
 import { BaseRemotableOperation } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import {
@@ -41,6 +46,7 @@ import {
     ORDERS_SCHEMA,
     SameID,
     TeardownOrdersFixture,
+    TxMaybeOne,
     TxOne,
     TxQuery,
 } from '../fixture.js';
@@ -119,6 +125,43 @@ function daysBefore(date: string, days: number): string {
     const d = new Date(date);
     d.setUTCDate(d.getUTCDate() - days);
     return d.toISOString().slice(0, 10);
+}
+
+/** The key both the Action metadata and the `@RegisterClass` decorator name. */
+const ACTION_DRIVER_CLASS = 'Orders.SpawnRenewals';
+
+/**
+ * Run the renewal Action the way the scheduler runs it — resolved from the ClassFactory under the
+ * key the metadata names, with every parameter a STRING, because that is what a `ScheduledJob`
+ * Configuration stores. Importing the class instead would prove the code works and prove nothing
+ * about whether the scheduler can find it or survive its own encoding.
+ */
+async function spawnRenewalsViaAction(
+    ctx: IntegrationCheckContext,
+    inputs: Record<string, string>,
+): Promise<{ Success: boolean; ResultCode?: string; Message?: string; Placed: number; Skipped: number; Candidates: RenewalOutput['Candidates'] }> {
+    const action = MJGlobal.Instance.ClassFactory.CreateInstance<BaseAction>(BaseAction, ACTION_DRIVER_CLASS);
+    Assert(action != null, `'${ACTION_DRIVER_CLASS}' is not registered — the Load anchor is missing from the server bootstrap`);
+
+    const params = {
+        ContextUser: ctx.User,
+        Provider: ctx.Provider,
+        Params: Object.entries(inputs).map(([Name, Value]) => ({ Name, Value, Type: 'Input' as const })),
+        Filters: [],
+    } as unknown as RunActionParams;
+
+    const result = await action!.Run(params);
+    const output = <T,>(name: string): T | undefined =>
+        params.Params?.find((p) => p.Name?.toLowerCase() === name.toLowerCase())?.Value as T | undefined;
+
+    return {
+        Success: result.Success,
+        ResultCode: result.ResultCode,
+        Message: result.Message,
+        Placed: Number(output<number>('Placed') ?? 0),
+        Skipped: Number(output<number>('Skipped') ?? 0),
+        Candidates: output<RenewalOutput['Candidates']>('Candidates') ?? [],
+    };
 }
 
 export const SubscriptionRenewalChecks: NamedCheck[] = [
@@ -403,6 +446,106 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 );
                 const data = JSON.parse(event.EventData) as Record<string, unknown>;
                 AssertEqual(Number(data.LeadDays), 90, `the event records the lead time applied: ${event.EventData}`);
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR12',
+        Name: 'SR12: the Action the scheduler dispatches places the renewal',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+
+                // SR1 already proves the operation renews. What is unproven until here is the only
+                // thing the schedule actually depends on: that the Action reaches it. The operation
+                // has been correct and uncalled since it was written — a shim that silently does
+                // nothing would reproduce exactly the symptom this bundle exists to prevent.
+                const out = await spawnRenewalsViaAction(ctx, {
+                    SubscriptionID,
+                    AsOfDate: daysBefore(Term.EndDate, 10),
+                });
+                Assert(out.Success, `the action did not run: ${out.ResultCode} ${out.Message}`);
+                AssertEqual(out.Placed, 1, `expected one renewal through the action: ${out.Message}`);
+
+                const terms = await termsOf(ctx, SubscriptionID);
+                AssertEqual(terms.length, 2, 'and the term it bought is on the subscription');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR13',
+        Name: 'SR13: Preview survives the scheduler storing it as the string "true"',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+
+                // A ScheduledJob stores every parameter as text, so a job configured for preview
+                // hands the action the STRING "true" — and "false" is a truthy string. Read as a
+                // plain boolean, a job set to preview bills real customers, and it does it on the
+                // one run nobody expected to write anything.
+                const out = await spawnRenewalsViaAction(ctx, {
+                    SubscriptionID,
+                    AsOfDate: daysBefore(Term.EndDate, 10),
+                    Preview: 'true',
+                });
+                Assert(out.Success, `the action did not run: ${out.ResultCode} ${out.Message}`);
+                AssertEqual(out.ResultCode, 'PREVIEWED', 'and it reports the run as a preview');
+                AssertEqual(out.Placed, 0, 'a preview places nothing');
+                AssertEqual(out.Candidates.length, 1, 'but still reports what is due');
+
+                const terms = await termsOf(ctx, SubscriptionID);
+                AssertEqual(terms.length, 1, 'no term was created');
+
+                // The other half of the trap: "false" must not read as truthy either.
+                const live = await spawnRenewalsViaAction(ctx, {
+                    SubscriptionID,
+                    AsOfDate: daysBefore(Term.EndDate, 10),
+                    Preview: 'false',
+                });
+                AssertEqual(live.Placed, 1, `"false" means place them: ${live.Message}`);
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR14',
+        Name: 'SR14: the schedule points at the action, and ships disabled and set to preview',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const action = await TxMaybeOne<{ ID: string; DriverClass: string; Status: string }>(
+                    ctx,
+                    `SELECT ID, DriverClass, Status FROM __mj.Action WHERE Name = 'Spawn Renewals'`,
+                );
+                Assert(action != null, 'the action row exists — push the app metadata if not');
+                AssertEqual(action!.Status, 'Active', 'and it is active');
+                AssertEqual(action!.DriverClass, ACTION_DRIVER_CLASS, 'pointing at the registered key');
+
+                const job = await TxMaybeOne<{ Configuration: string; Status: string; CronExpression: string }>(
+                    ctx,
+                    `SELECT Configuration, Status, CronExpression FROM __mj.ScheduledJob WHERE Name = 'Orders — Spawn Renewals (daily)'`,
+                );
+                Assert(job != null, 'the scheduled job row exists — push the app metadata if not');
+
+                // The failure this catches is the expensive one: a job whose Configuration names an
+                // ActionID that no longer exists runs every night, fails every night, and renews
+                // nobody — which looks exactly like the subscriptions not being due yet.
+                const config = JSON.parse(job!.Configuration ?? '{}') as { ActionID?: string; Params?: Array<{ ActionParamID: string; Value: string }> };
+                Assert(
+                    config.ActionID != null && SameID(config.ActionID, action!.ID),
+                    `the job's Configuration names this action: ${job!.Configuration}`,
+                );
+
+                // Shipping it live would start billing customers on whatever day this metadata
+                // reached a host, with nobody having read the list first. Going live is a decision,
+                // not a deployment.
+                AssertEqual(job!.Status, 'Disabled', 'and it ships disabled');
+
+                const previewParam = await TxMaybeOne<{ ID: string }>(
+                    ctx,
+                    `SELECT ID FROM __mj.ActionParam WHERE ActionID = '${action!.ID}' AND Name = 'Preview'`,
+                );
+                Assert(previewParam != null, 'the Preview parameter is declared');
+                const configured = config.Params?.find((p) => SameID(p.ActionParamID, previewParam!.ID));
+                AssertEqual(String(configured?.Value), 'true', `and the job is configured for preview: ${job!.Configuration}`);
             }),
     },
 ];
