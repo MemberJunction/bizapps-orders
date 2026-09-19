@@ -37,12 +37,37 @@
  */
 import { GL_ROLE, type GLAccountResolver } from './GLAccountResolver.js';
 
+/** One analytical tag on a ledger line. Mirrors accounting's `JournalEntryLineDimensionDraft`. */
+export interface PaymentJELineDimension {
+    DimensionID: string;
+    DimensionValueID: string;
+}
+
 /** One ledger line of the capture entry. */
 export interface PaymentJELine {
     GLAccountID: string;
     DebitAmount?: number;
     CreditAmount?: number;
     Description: string;
+    /**
+     * Analytical tags carried onto the journal entry line (issue #238).
+     *
+     * Accounting has accepted these since the contract was written — `JournalEntryLineDraft`
+     * declares `Dimensions?`, the pipeline validates them and `AccountingEngine` writes
+     * `JournalEntryLineDimension` rows — but this type had no field to put them in, so every
+     * payment line posted bare while the order side posted tagged.
+     *
+     * The omission is not merely a reporting gap. Accounting's `normalizeLines` merges same-side
+     * lines on (account, DIMENSION SET), so two `Cr Due To` credits owed to different companies
+     * collapse into one netted line the moment they share an account — which is exactly what the
+     * single-receivable/single-payable chart of accounts does. The counterparty tag is what keeps
+     * them apart.
+     *
+     * The fee entry below sets no dimensions: a processing fee is a header fact with no order line
+     * behind it, so there is no source to read a value from and inventing one would be a claim the
+     * underlying fact does not support.
+     */
+    Dimensions?: PaymentJELineDimension[];
 }
 
 export interface PaymentJEDraft {

@@ -66,17 +66,14 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
-import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
-import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
-import {
-    PaymentAllocationFactory,
-    type OrderLineShare,
-} from './PaymentAllocationFactory.js';
+import { PaymentAllocationFactory } from './PaymentAllocationFactory.js';
+import { LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
-import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { ORDER_HEADER_ENTITY } from './entity-names.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -359,21 +356,23 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
 
         if (unbookedLines.length === 0) return;
 
-        await AccountingEngineBase.Instance.Config(false, user, provider);
+        // Both builders configure the accounting engine on the way in, so the intercompany pairs
+        // and account links are current without a separate Config call here.
         const resolver = await BuildGLAccountResolver(provider, user);
         const factory = new PaymentAllocationFactory(
             resolver,
-            (source, target, asOf) => {
-                const hit = AccountingEngineBase.Instance.ResolveIntercompanyAccounts(source, target, asOf);
-                return hit ? { DueToGLAccountID: hit.DueTo.GLAccountID, DueFromGLAccountID: hit.DueFrom.GLAccountID } : null;
-            },
+            await BuildIntercompanyLookup(provider, user),
             EntityIDFor(PAYMENT_LINE_ENTITY),
         );
 
         const allDrafts: PaymentJEDraft[] = [];
 
         for (const line of unbookedLines) {
-            const orderLines = await this.loadOrderLines(line.OrderHeaderID);
+            const orderLines = await LoadOrderLineShares(
+                provider as unknown as IRunViewProvider,
+                user,
+                line.OrderHeaderID,
+            );
             if (orderLines.length === 0) {
                 throw new Error(
                     `Cannot allocate ${line.Amount} to order ${line.OrderHeaderID}: the order has no lines, so ` +
@@ -420,27 +419,6 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         }
     }
 
-    private async loadOrderLines(orderHeaderID: string): Promise<OrderLineShare[]> {
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ ID: string; CompanyID: string; LineTotalGross: number }>(
-            {
-                EntityName: ORDER_LINE_ENTITY,
-                ExtraFilter: `OrderHeaderID='${orderHeaderID}'`,
-                Fields: ['ID', 'CompanyID', 'LineTotalGross'],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            this.ContextCurrentUser,
-        );
-        if (!res?.Success) {
-            throw new Error(`Could not read the order's lines to allocate the payment: ${res?.ErrorMessage ?? 'unknown error'}`);
-        }
-        return (res.Results ?? []).map((l) => ({
-            OrderLineID: l.ID,
-            CompanyID: l.CompanyID,
-            Amount: Number(l.LineTotalGross ?? 0),
-        }));
-    }
 
     private async loadOrderNumber(orderHeaderID: string): Promise<string> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
