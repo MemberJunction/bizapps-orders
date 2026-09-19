@@ -21,6 +21,10 @@
                     <span>{{ Record.Company }}</span>
                 }
             </div>
+            <bizapps-related-chips
+                [Links]="RelatedLinks"
+                [Provider]="FormComponent.ProviderToUse"
+                (Navigate)="FormComponent.OnFormNavigate($event)" />
         </div>
     </div>
     <div class="mjo-doc-hero__stats">

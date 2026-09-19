@@ -29,6 +29,22 @@
  * WHY THE DUE-TO CREDITS STAY SEPARATE: `Cr Due To B 200` and `Cr Due To C 300` are two lines, not
  * one netted `Cr Due To 500`. Aggregation is recoverable downstream; the derivation is not.
  *
+ * WHAT EVERY LINE IS TAGGED WITH (issue #238)
+ * Two independent sources, and they answer different questions:
+ *
+ *   The MATCH pins the counterparty per leg — the collector's Due To names the owner, the owner's
+ *   Due From names the collector. Separating the legs today is the per-entity account itself; under
+ *   a chart with one shared receivable and one shared payable it is only this tag, because
+ *   accounting merges same-side lines on (account, dimension set).
+ *
+ *   The ORDER LINE's own tags ride onto the Cash, AR and intercompany legs alike, because booking
+ *   debited AR with them. Clearing a tagged receivable with an untagged credit leaves every
+ *   dimension permanently out of balance on an account that nets to zero in total.
+ *
+ * An order whose lines carry no tags produces exactly the entries it produced before any of this,
+ * line for line — the split is by DISTINCT tag set, and one set (including the empty one) is one
+ * slice.
+ *
  * A MISSING PAIR IS FATAL. There is no fallback account, because a guessed intercompany account
  * still balances — the misposting would be invisible until two entities' books disagree.
  *
@@ -39,7 +55,7 @@
  *   DOC:      plans/archive/intercompany-balancing.md
  */
 import { GL_ROLE, type GLAccountResolver } from './GLAccountResolver.js';
-import type { PaymentJEDraft, PaymentJELine } from './PaymentJournalEntryFactory.js';
+import type { PaymentJEDraft, PaymentJELine, PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 
 /** One order line's contribution, as far as allocation is concerned. */
 export interface OrderLineShare {
@@ -48,6 +64,16 @@ export interface OrderLineShare {
     CompanyID: string;
     /** The line's gross amount. Used as the pro-rating weight. */
     Amount: number;
+    /**
+     * The line's `OrderLineDimension` tags — the same rows `OrderJournalEntryFactory` stamps on
+     * every line of the booking entry (D31). Omitted or empty means the line carries none, which
+     * is still the common case until order lines are tagged systematically.
+     *
+     * These ride onto the payment's Cash and AR lines because booking DEBITED AR with them: a
+     * receivable tagged on the way in and cleared on the way out untagged never nets to zero for
+     * any dimension, which makes the tag on the booking side useless for reconciliation.
+     */
+    Dimensions?: PaymentJELineDimension[];
 }
 
 /** What one company is owed out of a single payment line. */
@@ -60,6 +86,17 @@ export interface CompanyShare {
 export interface IntercompanyPair {
     DueToGLAccountID: string;
     DueFromGLAccountID: string;
+    /**
+     * Values pinned on the match for the DUE TO leg — in practice the Counterparty saying which
+     * company sits on the other side (issue #238).
+     *
+     * The two legs are tagged separately because they land on DIFFERENT companies' books and name
+     * each other: the collector's Due To points at the owner, the owner's Due From points back at
+     * the collector. One shared list would put the wrong company on one of them.
+     */
+    DueToDimensions?: PaymentJELineDimension[];
+    /** Values pinned on the match for the DUE FROM leg. See `DueToDimensions`. */
+    DueFromDimensions?: PaymentJELineDimension[];
 }
 
 /**
@@ -119,6 +156,17 @@ const isoDate = (d: Date): string => new Date(d).toISOString().slice(0, 10);
 
 /** SQL Server returns uppercase GUIDs, randomUUID() lowercase. */
 const key = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
+
+/**
+ * Spread-in helper: attach `Dimensions` only when there are some.
+ *
+ * An empty array would travel to accounting and read as "this line was considered and tagged with
+ * nothing", which is indistinguishable in the draft from a line built before tagging existed.
+ * Omitting the key keeps an untagged order's drafts identical to what they have always been.
+ */
+function dims(list: PaymentJELineDimension[]): { Dimensions?: PaymentJELineDimension[] } {
+    return list.length > 0 ? { Dimensions: list } : {};
+}
 
 /** Swap debit and credit — reversal is mirroring, never negation (D53). */
 function mirrorIf(reverse: boolean, lines: PaymentJELine[]): PaymentJELine[] {
@@ -195,6 +243,107 @@ export function AllocateByCompany(
     return shares.filter((s) => s.Amount !== 0);
 }
 
+/** A slice of one company's share: an amount, and the dimension tags it was earned under. */
+export interface DimensionSlice {
+    Amount: number;
+    Dimensions: PaymentJELineDimension[];
+}
+
+/** Order-insensitive identity of a dimension set, so two lines tagged alike group together. */
+function dimKey(dims: PaymentJELineDimension[] | undefined): string {
+    return (dims ?? [])
+        .map((d) => `${key(d.DimensionID)}:${key(d.DimensionValueID)}`)
+        .sort()
+        .join('|');
+}
+
+/**
+ * Pinned configuration wins over what the settled line happened to carry.
+ *
+ * Only the intercompany legs merge two sources at all. The pin is a deliberate statement about
+ * THIS leg — the counterparty is a fact about the pair, not about whatever the order line was
+ * tagged with — so when both name the same Dimension, the pin is the answer.
+ */
+function mergeDimensions(
+    pinned: PaymentJELineDimension[] | undefined,
+    contextual: PaymentJELineDimension[] | undefined,
+): PaymentJELineDimension[] {
+    const merged = [...(pinned ?? [])];
+    const claimed = new Set(merged.map((d) => key(d.DimensionID)));
+    for (const d of contextual ?? []) {
+        if (!claimed.has(key(d.DimensionID))) merged.push(d);
+    }
+    return merged;
+}
+
+/** Sum slices that carry the same dimension set — used for the collector's single cash leg. */
+function groupSlices(slices: DimensionSlice[]): DimensionSlice[] {
+    const buckets = new Map<string, DimensionSlice>();
+    for (const slice of slices) {
+        const k = dimKey(slice.Dimensions);
+        const existing = buckets.get(k);
+        if (existing) existing.Amount = money(existing.Amount + slice.Amount);
+        else buckets.set(k, { Amount: slice.Amount, Dimensions: slice.Dimensions });
+    }
+    return [...buckets.values()].filter((s) => s.Amount !== 0);
+}
+
+/**
+ * Split one company's share across the DISTINCT dimension sets of the lines it settles.
+ *
+ * Pure and exported for the same reason `AllocateByCompany` is: this divides money a second time,
+ * and a slip strands a cent on the wrong tag rather than the wrong company — which is harder to
+ * see, because the company totals still reconcile.
+ *
+ * A company whose lines are all tagged alike (including all untagged) yields exactly ONE slice for
+ * the whole share, so an order with no dimensions produces precisely the lines it produced before
+ * this existed. Weighting is by line amount, and the largest slice absorbs the rounding residue,
+ * mirroring `AllocateByCompany` — two different rules for splitting the same money would drift.
+ */
+export function SliceByDimensions(
+    share: CompanyShare,
+    orderLines: OrderLineShare[],
+    targetOrderLineID?: string | null,
+): DimensionSlice[] {
+    const mine = targetOrderLineID
+        ? orderLines.filter((l) => key(l.OrderLineID) === key(targetOrderLineID))
+        : orderLines.filter((l) => key(l.CompanyID) === key(share.CompanyID));
+
+    const buckets = new Map<string, { Dimensions: PaymentJELineDimension[]; Weight: number }>();
+    for (const l of mine) {
+        const k = dimKey(l.Dimensions);
+        const existing = buckets.get(k);
+        const weight = Math.abs(l.Amount ?? 0);
+        if (existing) existing.Weight = money(existing.Weight + weight);
+        else buckets.set(k, { Dimensions: [...(l.Dimensions ?? [])], Weight: weight });
+    }
+
+    const groups = [...buckets.values()];
+    const weighted = groups.filter((g) => g.Weight > 0);
+
+    // One tag set — or a targeted line, or lines that all weigh nothing — needs no second split.
+    // Falling back to the first group rather than to no tags at all matters for the targeted case,
+    // where a zero-amount line still carries the tags the whole allocation belongs to.
+    if (weighted.length <= 1) {
+        return [{ Amount: share.Amount, Dimensions: (weighted[0] ?? groups[0])?.Dimensions ?? [] }];
+    }
+
+    const weightTotal = money(weighted.reduce((s, g) => s + g.Weight, 0));
+    const slices: DimensionSlice[] = weighted.map((g) => ({
+        Amount: money((share.Amount * g.Weight) / weightTotal),
+        Dimensions: g.Dimensions,
+    }));
+
+    const residue = money(share.Amount - money(slices.reduce((s, x) => s + x.Amount, 0)));
+    if (residue !== 0) {
+        let largest = 0;
+        for (let i = 1; i < slices.length; i++) if (slices[i].Amount > slices[largest].Amount) largest = i;
+        slices[largest].Amount = money(slices[largest].Amount + residue);
+    }
+
+    return slices.filter((s) => s.Amount !== 0);
+}
+
 export class PaymentAllocationFactory {
     constructor(
         private readonly _resolver: GLAccountResolver,
@@ -228,21 +377,34 @@ export class PaymentAllocationFactory {
         // Payments are company-level: there is no product to walk from, so the company default is
         // both the start and the end of resolution (D12).
         const cashAccount = await this._resolver.Resolve(GL_ROLE.Cash, null, null, receiving, asOf);
-        const receivingLines: PaymentJELine[] = [
-            {
-                GLAccountID: cashAccount,
-                DebitAmount: total,
-                Description: `${label} ${ctx.PaymentNumber} — cash for order ${ctx.OrderNumber}`,
-            },
-        ];
+
+        // Every share, split again by the tags of the lines it settles (issue #238). An order whose
+        // lines carry no dimensions yields one slice per company, and the entries below are then
+        // line for line what they were before tagging existed.
+        const slicesFor = (share: CompanyShare): DimensionSlice[] =>
+            SliceByDimensions(share, ctx.OrderLines, ctx.TargetOrderLineID);
+
+        // Cash is ONE debit for the whole payment line, but it stands for every settled line —
+        // including the other companies' — so it splits across all of their tag sets. Leaving it
+        // bare while the credits are tagged would unbalance every dimension-filtered trial balance
+        // the tags exist to produce.
+        const receivingLines: PaymentJELine[] = groupSlices(shares.flatMap(slicesFor)).map((slice) => ({
+            GLAccountID: cashAccount,
+            DebitAmount: slice.Amount,
+            Description: `${label} ${ctx.PaymentNumber} — cash for order ${ctx.OrderNumber}`,
+            ...dims(slice.Dimensions),
+        }));
 
         if (ownShare) {
             const arAccount = await this._resolver.Resolve(GL_ROLE.AccountsReceivable, null, null, receiving, asOf);
-            receivingLines.push({
-                GLAccountID: arAccount,
-                CreditAmount: ownShare.Amount,
-                Description: `${label} ${ctx.PaymentNumber} — clear receivable on order ${ctx.OrderNumber}`,
-            });
+            for (const slice of slicesFor(ownShare)) {
+                receivingLines.push({
+                    GLAccountID: arAccount,
+                    CreditAmount: slice.Amount,
+                    Description: `${label} ${ctx.PaymentNumber} — clear receivable on order ${ctx.OrderNumber}`,
+                    ...dims(slice.Dimensions),
+                });
+            }
         }
         // No `else` and no error: a shared-services entity collecting purely on others' behalf owns
         // no line, so it has no receivable to clear. Its entry is Dr Cash / Cr Due To …, which is
@@ -267,12 +429,19 @@ export class PaymentAllocationFactory {
                 );
             }
 
-            // The collector owes the owner.
-            receivingLines.push({
-                GLAccountID: pair.DueToGLAccountID,
-                CreditAmount: share.Amount,
-                Description: `${label} ${ctx.PaymentNumber} — due to company ${share.CompanyID} for order ${ctx.OrderNumber}`,
-            });
+            const shareSlices = slicesFor(share);
+
+            // The collector owes the owner. The counterparty pinned on the match is what says WHO —
+            // without it the company survives only as a GUID in the description, and under a chart
+            // with one shared payable account two owners' credits merge into one netted line.
+            for (const slice of shareSlices) {
+                receivingLines.push({
+                    GLAccountID: pair.DueToGLAccountID,
+                    CreditAmount: slice.Amount,
+                    Description: `${label} ${ctx.PaymentNumber} — due to company ${share.CompanyID} for order ${ctx.OrderNumber}`,
+                    ...dims(mergeDimensions(pair.DueToDimensions, slice.Dimensions)),
+                });
+            }
 
             // …and the owner's customer receivable becomes a receivable from the collector.
             const otherAR = await this._resolver.Resolve(
@@ -282,18 +451,23 @@ export class PaymentAllocationFactory {
                 share.CompanyID,
                 asOf,
             );
-            const lines: PaymentJELine[] = [
-                {
+            const lines: PaymentJELine[] = [];
+            for (const slice of shareSlices) {
+                lines.push({
                     GLAccountID: pair.DueFromGLAccountID,
-                    DebitAmount: share.Amount,
+                    DebitAmount: slice.Amount,
                     Description: `${label} ${ctx.PaymentNumber} — due from company ${receiving} for order ${ctx.OrderNumber}`,
-                },
-                {
+                    ...dims(mergeDimensions(pair.DueFromDimensions, slice.Dimensions)),
+                });
+            }
+            for (const slice of shareSlices) {
+                lines.push({
                     GLAccountID: otherAR,
-                    CreditAmount: share.Amount,
+                    CreditAmount: slice.Amount,
                     Description: `${label} ${ctx.PaymentNumber} — clear receivable on order ${ctx.OrderNumber}`,
-                },
-            ];
+                    ...dims(slice.Dimensions),
+                });
+            }
             otherDrafts.push(this.toDraft(ctx, mirrorIf(ctx.IsReversal, lines), share.CompanyID));
         }
 

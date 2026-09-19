@@ -17,6 +17,7 @@ import '@mj-biz-apps/orders-actions';
 import { LoadGenerateInvoiceAction } from './custom/generate-invoice.action.js';
 import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action.js';
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
+import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -133,6 +134,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGenerateInvoiceAction();       // 'Orders.GenerateInvoice' — an order, rendered (D-INV)
     LoadSendDocumentAction();          // 'Orders.SendDocument' — an order, rendered AND sent (§4.4)
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
+    LoadSpawnRenewalsAction();         // 'Orders.SpawnRenewals' — the scheduler's way in to the renewal operation
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class

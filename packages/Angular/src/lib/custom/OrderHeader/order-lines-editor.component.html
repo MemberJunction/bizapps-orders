@@ -56,6 +56,17 @@
 
                 <div class="mjo-ol-card__tot">{{ PricedLine(line)?.NetAmount | mjoMoney }}</div>
 
+                <!-- Details, on every line and not just editable ones: a booked line's dimensions are
+                     what its journal entry carries, which is exactly when someone wants to look. -->
+                <button
+                    type="button"
+                    class="mjo-ol-iconbtn"
+                    (click)="OpenDetails(line, $event)"
+                    [attr.title]="DimensionSummary(line)"
+                    [attr.aria-label]="'Details for ' + (ProductFor(line)?.Name ?? 'line')">
+                    <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                </button>
+
                 @if (EditMode) {
                     <button
                         type="button"
@@ -285,4 +296,16 @@
         }
     </div>
     }
+
+    <!-- Line details. Rendered once and handed whichever line is open, rather than one per card:
+         the panel is modal, so a second instance could never be visible. -->
+    <mjo-order-line-details-panel
+        [Line]="DetailsLine"
+        [ProductName]="DetailsLine ? (ProductFor(DetailsLine)?.Name ?? '') : ''"
+        [ProductSKU]="DetailsLine ? (ProductFor(DetailsLine)?.SKU ?? '') : ''"
+        [ProductType]="DetailsLine ? (ProductFor(DetailsLine)?.TypeName ?? '') : ''"
+        [Dimensions]="DimensionCatalog"
+        [EditMode]="EditMode"
+        (Closed)="CloseDetails()">
+    </mjo-order-line-details-panel>
 </div>

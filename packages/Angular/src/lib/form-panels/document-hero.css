@@ -299,3 +299,56 @@
         grid-column: auto;
     }
 }
+
+.mjo-doc-hero__description {
+    margin: 0;
+    color: var(--mj-text-secondary);
+    font-size: var(--mj-text-sm);
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+/* mj-form-field is display: contents — its label and control would otherwise
+   become direct children of this grid. Each field sits in a wrapping cell. */
+.mjo-doc-hero__edit {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: var(--mj-space-3) var(--mj-space-4);
+    padding-top: var(--mj-space-4);
+    border-top: 1px solid var(--mj-border-subtle);
+}
+
+.mjo-doc-hero__field {
+    min-width: 0;
+}
+
+.mjo-doc-hero__field--span {
+    grid-column: 1 / -1;
+}
+
+/* Label above the control. The shared field is a 200px | 1fr row, which needs
+   ~28rem per field — far more than a hero column gets. */
+.mjo-doc-hero__field ::ng-deep .mj-forms-field {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 0;
+}
+
+.mjo-doc-hero__field ::ng-deep .mj-forms-field-label {
+    font-size: var(--mj-text-xs);
+    font-weight: var(--mj-font-bold);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--mj-text-muted);
+}
+
+.mjo-doc-hero__field ::ng-deep .mj-forms-field--editing:hover {
+    margin: 0;
+    padding: 0;
+}
+
+.mjo-doc-hero__field ::ng-deep .mj-forms-field-control {
+    width: 100%;
+}

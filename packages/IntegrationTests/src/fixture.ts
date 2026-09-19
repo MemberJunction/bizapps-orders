@@ -55,6 +55,9 @@ import {
     PROMOTION_TARGET_ENTITY,
     GL_ACCOUNT_ENTITY,
     INTERCOMPANY_ACCOUNT_MATCH_ENTITY,
+    INTERCOMPANY_ACCOUNT_MATCH_DIMENSION_ENTITY,
+    DIMENSION_ENTITY,
+    DIMENSION_VALUE_ENTITY,
     COMPANY_TAX_NEXUS_ENTITY,
 } from './entity-names.js';
 
@@ -612,6 +615,71 @@ export async function upsertViaEntity(
 export const DUE_TO_CODE = '21900';
 export const DUE_FROM_CODE = '11900';
 
+/**
+ * The dimension that says which company sits on the other side of an intercompany balance (#238).
+ *
+ * Provisioned by the fixture rather than assumed, because the whole point of the check that uses it
+ * is that the value reaches the ledger. A suite that silently found no dimension configured would
+ * assert nothing and pass.
+ */
+export const COUNTERPARTY_DIMENSION_CODE = 'COUNTERPARTY';
+
+/**
+ * Create an accounting Dimension, or return the existing one.
+ *
+ * COMMITTED, not written inside a check's transaction — the same rule the GL links follow. The
+ * accounting engine caches dimensions and validates every JE line against that cache, so a
+ * dimension that exists only inside a rolled-back transaction makes booking fail with
+ * DIMENSION_UNKNOWN in whichever check runs next. Callers refresh the engine after provisioning.
+ */
+export async function EnsureDimension(
+    ctx: IntegrationCheckContext,
+    code: string,
+    name: string,
+    description?: string,
+): Promise<string> {
+    const existing = await TxMaybeOne<{ ID: string }>(
+        ctx,
+        `SELECT ID FROM ${ACCT_SCHEMA}.Dimension WHERE Code='${Quote(code)}'`,
+    );
+    if (existing?.ID) return existing.ID;
+    return createViaEntity(ctx, DIMENSION_ENTITY, {
+        Code: code,
+        Name: name,
+        Description: description ?? name,
+        IsActive: 1,
+    });
+}
+
+/** Create one value under a Dimension, or return the existing one. */
+export async function EnsureDimensionValue(
+    ctx: IntegrationCheckContext,
+    dimensionID: string,
+    code: string,
+    name: string,
+): Promise<string> {
+    const existing = await TxMaybeOne<{ ID: string }>(
+        ctx,
+        `SELECT ID FROM ${ACCT_SCHEMA}.DimensionValue WHERE DimensionID='${dimensionID}' AND Code='${Quote(code)}'`,
+    );
+    if (existing?.ID) return existing.ID;
+    return createViaEntity(ctx, DIMENSION_VALUE_ENTITY, {
+        DimensionID: dimensionID,
+        Code: code,
+        Name: name,
+        IsActive: 1,
+    });
+}
+
+/** The Counterparty value standing for one company. */
+export async function EnsureCounterpartyValue(
+    ctx: IntegrationCheckContext,
+    dimensionID: string,
+    companyID: string,
+): Promise<string> {
+    return EnsureDimensionValue(ctx, dimensionID, `CO-${companyID}`, `Company ${companyID}`);
+}
+
 /** Create a company's GL account for a code, or return the existing one. */
 export async function EnsureGLAccount(
     ctx: IntegrationCheckContext,
@@ -664,18 +732,69 @@ export async function EnsureIntercompanyAccounts(
             `SELECT ID FROM ${ACCT_SCHEMA}.IntercompanyAccountMatch
               WHERE SourceCompanyID='${source}' AND TargetCompanyID='${target}' AND Status='Active'`,
         );
-        if (existing?.ID) continue;
 
-        const dueTo = await EnsureGLAccount(ctx, source, DUE_TO_CODE, 'Due To Affiliates', 'Liability');
-        const dueFrom = await EnsureGLAccount(ctx, target, DUE_FROM_CODE, 'Due From Affiliates', 'Asset');
-        await createViaEntity(ctx, INTERCOMPANY_ACCOUNT_MATCH_ENTITY, {
-            SourceCompanyID: source,
-            TargetCompanyID: target,
-            DueToGLAccountID: dueTo,
-            DueFromGLAccountID: dueFrom,
-            Status: 'Active',
-        });
+        let matchID = existing?.ID;
+        if (!matchID) {
+            const dueTo = await EnsureGLAccount(ctx, source, DUE_TO_CODE, 'Due To Affiliates', 'Liability');
+            const dueFrom = await EnsureGLAccount(ctx, target, DUE_FROM_CODE, 'Due From Affiliates', 'Asset');
+            matchID = await createViaEntity(ctx, INTERCOMPANY_ACCOUNT_MATCH_ENTITY, {
+                SourceCompanyID: source,
+                TargetCompanyID: target,
+                DueToGLAccountID: dueTo,
+                DueFromGLAccountID: dueFrom,
+                Status: 'Active',
+            });
+        }
+
+        // PINNED EVEN WHEN THE MATCH ALREADY EXISTED. The fixture companies outlive a run, so a
+        // match committed by an earlier one is still there at the next Setup. Pinning only on the
+        // create path meant the counterparty was configured exactly once, on a database that had
+        // never run this suite — everywhere else IC13 would assert against an unpinned match and
+        // report the product as broken. That is the failure mode the check exists to prevent, so
+        // the fixture must not be able to produce it.
+        //
+        // EACH LEG NAMES THE OTHER COMPANY, and they are not the same value: the collector's Due To
+        // points at the owner, the owner's Due From points back at the collector. Pinning one value
+        // for both sides would produce a pair that balances and identifies the wrong counterparty on
+        // one of the two books — the same class of invisible error as reading the pair backwards.
+        const dimensionID = await EnsureDimension(
+            ctx,
+            COUNTERPARTY_DIMENSION_CODE,
+            'Counterparty',
+            'The other company on an intercompany balance.',
+        );
+        await EnsureIntercompanyPin(ctx, matchID, 'DueTo', dimensionID, await EnsureCounterpartyValue(ctx, dimensionID, target));
+        await EnsureIntercompanyPin(ctx, matchID, 'DueFrom', dimensionID, await EnsureCounterpartyValue(ctx, dimensionID, source));
     }
+}
+
+/**
+ * Pin one dimension value to one side of a match, or leave the existing pin alone.
+ *
+ * Idempotent because the match is: `UQ_IntercompanyAccountMatchDimension` is (match, side,
+ * dimension), so a second Setup against the same committed match would otherwise fail the whole
+ * bundle on a unique-key violation.
+ */
+async function EnsureIntercompanyPin(
+    ctx: IntegrationCheckContext,
+    matchID: string,
+    side: 'DueTo' | 'DueFrom',
+    dimensionID: string,
+    dimensionValueID: string,
+): Promise<void> {
+    const existing = await TxMaybeOne<{ ID: string }>(
+        ctx,
+        `SELECT ID FROM ${ACCT_SCHEMA}.IntercompanyAccountMatchDimension
+          WHERE IntercompanyAccountMatchID='${matchID}' AND Side='${side}' AND DimensionID='${dimensionID}'`,
+    );
+    if (existing?.ID) return;
+    await createViaEntity(ctx, INTERCOMPANY_ACCOUNT_MATCH_DIMENSION_ENTITY, {
+        IntercompanyAccountMatchID: matchID,
+        Side: side,
+        DimensionID: dimensionID,
+        DimensionValueID: dimensionValueID,
+        Sequence: 0,
+    });
 }
 
 /**
@@ -921,6 +1040,13 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
         `DELETE FROM ${ACCT_SCHEMA}.GLAccountLink
           WHERE RecordID IN (SELECT CAST(ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.ChargeType)`,
         `DELETE FROM ${ACCT_SCHEMA}.JournalEntrySequence WHERE CompanyID IN (${companies})`,
+        // The pinned counterparty rows are children of the match, so they go first or the FK holds.
+        `DELETE iamd FROM ${ACCT_SCHEMA}.IntercompanyAccountMatchDimension iamd
+           JOIN ${ACCT_SCHEMA}.IntercompanyAccountMatch iam ON iam.ID = iamd.IntercompanyAccountMatchID
+          WHERE iam.SourceCompanyID IN (${companies}) OR iam.TargetCompanyID IN (${companies})`,
+        `DELETE FROM ${ACCT_SCHEMA}.DimensionValue
+          WHERE DimensionID IN (SELECT ID FROM ${ACCT_SCHEMA}.Dimension WHERE Code = '${COUNTERPARTY_DIMENSION_CODE}')
+            AND Code IN (SELECT 'CO-' + CAST(ID AS NVARCHAR(40)) FROM __mj.Company WHERE ID IN (${companies}))`,
         `DELETE FROM ${ACCT_SCHEMA}.IntercompanyAccountMatch
           WHERE SourceCompanyID IN (${companies}) OR TargetCompanyID IN (${companies})
              OR DueToGLAccountID IN (SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID IN (${companies}))

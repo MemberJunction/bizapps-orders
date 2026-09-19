@@ -50,6 +50,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import type { OrderEntityServer } from './OrderEntityServer.js';
 import { RequireOptionalUUID } from './sql-guards.js';
+import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
@@ -136,9 +137,19 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
 
         const out: SpawnRenewalsOutput = { Success: true, Candidates: [], Placed: 0, Skipped: 0 };
         const limit = input.MaxCount ?? Number.MAX_SAFE_INTEGER;
+        /**
+         * Orders this pass has committed to: PLACED on a live pass, WOULD-place on a preview.
+         *
+         * Counted separately from `Placed` because the cap has to bind identically in both modes.
+         * Keyed on `Placed`, it never binds on a preview — `Placed` stays 0 — so the preview
+         * enumerates every due subscription while the live pass stops at the cap, and the list a
+         * person confirms at the go-live gate is not the list the first live pass produces. A
+         * candidate the idempotency guard rejects does not consume the cap: nothing was placed.
+         */
+        let committed = 0;
 
         for (const due of candidates) {
-            if (out.Placed >= limit) break;
+            if (committed >= limit) break;
 
             const candidate: RenewalCandidate = {
                 SubscriptionID: due.SubscriptionID,
@@ -159,6 +170,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
 
             if (input.Preview) {
                 out.Skipped++;
+                committed++;
                 continue;
             }
 
@@ -167,6 +179,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
                 candidate.OrderID = order.ID;
                 candidate.OrderNumber = order.Number;
                 out.Placed++;
+                committed++;
             } catch (err) {
                 // One subscription's failure must not stop the batch — an unattended job that
                 // aborts on the first bad row silently stops renewing everyone behind it.
@@ -304,6 +317,9 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             order.Notes = `Automatic renewal of ${due.SubscriptionNumber} (term ${due.TermNumber + 1})`;
 
             const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+            // Orders writing its own line. An app that froze this line freezes what a PERSON
+            // may change, not Orders closing its own books (#206 item 1).
+            MarkAsOrdersOwnWrite(line);
             line.NewRecord();
             line.ProductID = due.ProductID;
             line.LineNumber = 1;
