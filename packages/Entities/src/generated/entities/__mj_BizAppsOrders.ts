@@ -813,6 +813,14 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: PriceOverrideReason
         * * Display Name: Price Override Reason
         * * SQL Data Type: nvarchar(MAX)`),
+    DimensionID: z.string().nullable().describe(`
+        * * Field Name: DimensionID
+        * * Display Name: Dimension ID
+        * * SQL Data Type: uniqueidentifier`),
+    DimensionValueID: z.string().nullable().describe(`
+        * * Field Name: DimensionValueID
+        * * Display Name: Dimension Value ID
+        * * SQL Data Type: uniqueidentifier`),
     Person: z.string().describe(`
         * * Field Name: Person
         * * Display Name: Person
@@ -1897,6 +1905,18 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Display Name: Override Explanation
         * * SQL Data Type: nvarchar(MAX)
         * * Description: Optional staff note for why the engine price was overridden. NULL when PriceOverridden = 0 or when no reason was given.`),
+    DimensionID: z.string().nullable().describe(`
+        * * Field Name: DimensionID
+        * * Display Name: Dimension ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimensions (vwDimensions.ID)
+        * * Description: The GL dimension this line is tagged on — the analysis axis, from __mj_BizAppsAccounting.Dimension. NULL leaves the line untagged, which books a valid entry that simply cannot be reported on by dimension. Set together with DimensionValueID (CK_OrderLine_DimensionPair).`),
+    DimensionValueID: z.string().nullable().describe(`
+        * * Field Name: DimensionValueID
+        * * Display Name: Dimension Value ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimension Values (vwDimensionValues.ID)
+        * * Description: The value of DimensionID this line is tagged with, from __mj_BizAppsAccounting.DimensionValue. Carried with DimensionID onto every journal entry line the order line produces. Set together with DimensionID (CK_OrderLine_DimensionPair).`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -1933,6 +1953,14 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Field Name: JournalEntry
         * * Display Name: Journal Entry Reference
         * * SQL Data Type: nvarchar(40)`),
+    Dimension: z.string().nullable().describe(`
+        * * Field Name: Dimension
+        * * Display Name: Dimension
+        * * SQL Data Type: nvarchar(100)`),
+    DimensionValue: z.string().nullable().describe(`
+        * * Field Name: DimensionValue
+        * * Display Name: Dimension Value
+        * * SQL Data Type: nvarchar(200)`),
     RootParentOrderLineID: z.string().nullable().describe(`
         * * Field Name: RootParentOrderLineID
         * * Display Name: Root Parent Order Line ID
@@ -7315,6 +7343,32 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
+    * * Field Name: DimensionID
+    * * Display Name: Dimension ID
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get DimensionID(): string | null {
+        return this.Get('DimensionID');
+    }
+    set DimensionID(value: string | null) {
+        this.Set('DimensionID', value);
+    }
+
+    /**
+    * * Field Name: DimensionValueID
+    * * Display Name: Dimension Value ID
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get DimensionValueID(): string | null {
+        return this.Get('DimensionValueID');
+    }
+    set DimensionValueID(value: string | null) {
+        this.Set('DimensionValueID', value);
+    }
+
+    /**
     * * Field Name: Person
     * * Display Name: Person
     * * SQL Data Type: nvarchar(201)
@@ -9996,25 +10050,6 @@ export class mjBizAppsOrdersOrderLinePriceComponentEntity extends BaseEntity<mjB
  */
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Lines')
 export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOrderLineEntityType> {
-
-  /**
-  * Related records: MJ_BizApps_Orders: Order Line Dimensions
-  *
-  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Order Lines record — see
-  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
-  * the 'MJ_BizApps_Orders: Order Lines → MJ_BizApps_Orders: Order Line Dimensions' relationship; edit that row, not this file.
-  *
-  */
-  public readonly Dimensions = this.DeclareRelatedRecords<mjBizAppsOrdersOrderLineDimensionEntity>({
-      Name: 'Dimensions',
-        RelatedEntity: 'MJ_BizApps_Orders: Order Line Dimensions',
-        RelatedEntityJoinField: 'OrderLineID',
-        OrderBy: '__mj_CreatedAt ASC',
-        Load: 'explicit',
-        OnRemove: 'delete',
-        Source: 'database',
-  });
-
     /**
     * Loads the MJ_BizApps_Orders: Order Lines record from the database
     * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Lines record.
@@ -10639,6 +10674,34 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
 
     /**
+    * * Field Name: DimensionID
+    * * Display Name: Dimension ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimensions (vwDimensions.ID)
+    * * Description: The GL dimension this line is tagged on — the analysis axis, from __mj_BizAppsAccounting.Dimension. NULL leaves the line untagged, which books a valid entry that simply cannot be reported on by dimension. Set together with DimensionValueID (CK_OrderLine_DimensionPair).
+    */
+    get DimensionID(): string | null {
+        return this.Get('DimensionID');
+    }
+    set DimensionID(value: string | null) {
+        this.Set('DimensionID', value);
+    }
+
+    /**
+    * * Field Name: DimensionValueID
+    * * Display Name: Dimension Value ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimension Values (vwDimensionValues.ID)
+    * * Description: The value of DimensionID this line is tagged with, from __mj_BizAppsAccounting.DimensionValue. Carried with DimensionID onto every journal entry line the order line produces. Set together with DimensionID (CK_OrderLine_DimensionPair).
+    */
+    get DimensionValueID(): string | null {
+        return this.Get('DimensionValueID');
+    }
+    set DimensionValueID(value: string | null) {
+        this.Set('DimensionValueID', value);
+    }
+
+    /**
     * * Field Name: OrderHeader
     * * Display Name: Order Header
     * * SQL Data Type: nvarchar(40)
@@ -10717,6 +10780,24 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     */
     get JournalEntry(): string | null {
         return this.Get('JournalEntry');
+    }
+
+    /**
+    * * Field Name: Dimension
+    * * Display Name: Dimension
+    * * SQL Data Type: nvarchar(100)
+    */
+    get Dimension(): string | null {
+        return this.Get('Dimension');
+    }
+
+    /**
+    * * Field Name: DimensionValue
+    * * Display Name: Dimension Value
+    * * SQL Data Type: nvarchar(200)
+    */
+    get DimensionValue(): string | null {
+        return this.Get('DimensionValue');
     }
 
     /**

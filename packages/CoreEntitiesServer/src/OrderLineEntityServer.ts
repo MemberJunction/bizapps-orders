@@ -107,6 +107,26 @@ export class OrderLineEntityServer extends OrderLineEntity {
             );
         }
 
+        // The GL dimension tag is a PAIR (golive #236). `CK_OrderLine_DimensionPair` already refuses
+        // a half-set row, but a raw CHECK violation names the constraint rather than the field, and
+        // arrives from inside the order's transaction after every other line has been written. Said
+        // here, it names which half is missing while the caller can still fix it.
+        const dimensionHalves = [this.DimensionID, this.DimensionValueID];
+        if (dimensionHalves.some((half) => !!half) && dimensionHalves.some((half) => !half)) {
+            const missing = this.DimensionID ? 'DimensionValueID' : 'DimensionID';
+            result.Success = false;
+            result.Errors.push(
+                new ValidationErrorInfo(
+                    missing,
+                    `A GL dimension tag needs both halves: the dimension names the axis and the value ` +
+                        `names the point on it, and a journal entry line carries the pair. Set ${missing}, ` +
+                        `or clear both to leave this line untagged.`,
+                    this[missing],
+                    ValidationErrorType.Failure,
+                ),
+            );
+        }
+
         await this.refuseNewLineOnBookedOrder(result);
         await this.refuseVetoedEdit(result, this.IsSaved ? 'update' : 'create');
 

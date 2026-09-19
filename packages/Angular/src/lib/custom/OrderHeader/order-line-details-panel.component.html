@@ -30,70 +30,101 @@
         </header>
 
         <div class="mjo-ldp__body">
-            @if (LoadError) {
-                <p class="mjo-ldp__error" role="alert">{{ LoadError }}</p>
-            }
-
             <section class="mjo-ldp__section">
-                <h3 class="mjo-ldp__section-title">GL Dimensions</h3>
+                <h3 class="mjo-ldp__section-title">GL Dimension</h3>
                 <p class="mjo-ldp__section-hint">
-                    These ride onto every journal entry line this order line produces. An untagged
-                    line still books — it just reaches the ledger with nothing to report on.
+                    Carried onto every journal entry line this order line produces. An untagged line
+                    still books — it just reaches the ledger with nothing to report on.
                 </p>
 
                 @if (IsBooked) {
                     <p class="mjo-ldp__locked">
-                        This line is booked, so its tags are the ones its journal entry already
-                        carries and can no longer be changed.
+                        This line is booked, so its tag is the one its journal entry already carries
+                        and can no longer be changed.
                     </p>
                 }
 
-                @for (dimension of Dimensions; track dimension.ID) {
-                    <div class="mjo-ldp__field">
-                        <label
-                            class="mjo-ldp__label"
-                            [attr.for]="CanEdit ? 'mjo-ldp-' + dimension.ID : null">
-                            {{ dimension.Name }}
-                        </label>
-
-                        @if (CanEdit) {
-                            <select
-                                class="mjo-ldp__select"
-                                [id]="'mjo-ldp-' + dimension.ID"
-                                [value]="SelectedValueID(dimension)"
-                                (change)="SetValue(dimension, $event)">
-                                <option value="">— none —</option>
-                                @for (value of dimension.Values; track value.ID) {
-                                    <option [value]="value.ID">{{ value.Code }} — {{ value.Name }}</option>
-                                }
-                            </select>
-                            @if (dimension.Values.length === 0) {
-                                <span class="mjo-ldp__note">
-                                    No value of this dimension is in effect on this order's date.
-                                </span>
-                            }
-                        } @else {
-                            <span class="mjo-ldp__value" [class.is-empty]="!SelectedValueID(dimension)">
-                                {{ SelectedValueLabel(dimension) || '— none —' }}
-                            </span>
-                        }
-                    </div>
-                } @empty {
+                @if (Dimensions.length === 0) {
                     <p class="mjo-ldp__note">
                         No dimensions are defined. They arrive from Business Central through
                         accounting's ERP sync, so until that has run there is nothing to tag a line
                         with.
                     </p>
+                } @else if (CanEdit) {
+                    <div class="mjo-ldp__field">
+                        <label class="mjo-ldp__label" for="mjo-ldp-dimension">Dimension</label>
+                        <select
+                            class="mjo-ldp__select"
+                            id="mjo-ldp-dimension"
+                            [value]="SelectedDimensionID"
+                            (change)="SetDimension($event)">
+                            <option value="">— none —</option>
+                            @for (dimension of Dimensions; track dimension.ID) {
+                                <option [value]="dimension.ID">{{ dimension.Code }} — {{ dimension.Name }}</option>
+                            }
+                        </select>
+                    </div>
+
+                    @if (SelectedDimensionID) {
+                        <div class="mjo-ldp__field">
+                            <label class="mjo-ldp__label" for="mjo-ldp-value">Value</label>
+                            <select
+                                class="mjo-ldp__select"
+                                id="mjo-ldp-value"
+                                [class.is-required]="NeedsValue"
+                                [value]="SelectedValueID"
+                                (change)="SetValue($event)">
+                                <option value="">— choose a value —</option>
+                                @for (value of ValuesForSelectedDimension; track value.ID) {
+                                    <option [value]="value.ID">{{ value.Code }} — {{ value.Name }}</option>
+                                }
+                            </select>
+
+                            @if (ValuesForSelectedDimension.length === 0) {
+                                <span class="mjo-ldp__note">
+                                    No value of this dimension is in effect on this order's date.
+                                    Clear the dimension, or pick another.
+                                </span>
+                            } @else if (NeedsValue) {
+                                <span class="mjo-ldp__required" role="alert">
+                                    Pick a value, or clear the dimension. A dimension names the axis;
+                                    without a value there is nothing to tag the entry with, and the
+                                    line will not save.
+                                </span>
+                            }
+                        </div>
+
+                        <button type="button" class="mjo-ldp__clear" (click)="ClearTag()">
+                            Clear dimension
+                        </button>
+                    }
+                } @else {
+                    <div class="mjo-ldp__field">
+                        <span class="mjo-ldp__label">Dimension</span>
+                        <span class="mjo-ldp__value" [class.is-empty]="!SelectedDimensionID">
+                            @if (SelectedDimension; as dimension) {
+                                {{ dimension.Code }} — {{ dimension.Name }}
+                            } @else {
+                                — none —
+                            }
+                        </span>
+                    </div>
+                    @if (SelectedDimensionID) {
+                        <div class="mjo-ldp__field">
+                            <span class="mjo-ldp__label">Value</span>
+                            <span class="mjo-ldp__value">{{ SelectedValueLabel }}</span>
+                        </div>
+                    }
                 }
             </section>
         </div>
 
         <footer class="mjo-ldp__foot">
             <span class="mjo-ldp__foot-hint">
-                @if (CanEdit) {
-                    Tagged on {{ TaggedCount }} of {{ Dimensions.length }}. Changes save with the order.
-                } @else {
-                    Tagged on {{ TaggedCount }} of {{ Dimensions.length }}.
+                @if (NeedsValue) {
+                    Needs a value before the order can save.
+                } @else if (CanEdit) {
+                    Changes save with the order.
                 }
             </span>
             <button type="button" class="mjo-ldp__done" (click)="Close()">Done</button>

@@ -154,6 +154,36 @@
     font-size: var(--mj-text-xs);
 }
 
+/* An axis chosen with no point on it. CK_OrderLine_DimensionPair refuses the row, so the field is
+   marked before the save rather than after it comes back. */
+.mjo-ldp__select.is-required { border-color: var(--mj-border-error); }
+
+.mjo-ldp__required {
+    display: block;
+    margin-top: var(--mj-space-1);
+    font-size: var(--mj-text-xs);
+    line-height: 1.5;
+    color: var(--mj-status-error-text);
+}
+
+.mjo-ldp__clear {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-link);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.mjo-ldp__clear:hover { color: var(--mj-text-link-hover); }
+
+.mjo-ldp__clear:focus-visible {
+    outline: 2px solid var(--mj-border-focus);
+    outline-offset: 2px;
+}
+
 .mjo-ldp__value {
     display: block;
     font-size: var(--mj-text-sm);

@@ -29,7 +29,6 @@ import {
     userPriceOverrideKind,
     type ApplicablePrice,
     type PriceOverrideKind,
-    type mjBizAppsOrdersOrderLineDimensionEntity,
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
@@ -39,7 +38,6 @@ import {
     ContinuationStartFrom,
     GetCatalogOptions,
     GetDimensionOptions,
-    GetLineDimensionsForOrder,
     GetSubscriptionContinuation,
     RankCatalogMatches,
     type MJODimensionOption,
@@ -672,45 +670,18 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     /**
      * What the card's details button reports without opening anything.
      *
-     * Says nothing until the tags are actually loaded. A count read off an unloaded collection is
-     * zero, and "No dimensions" on a line that is in fact tagged is the one answer this button must
-     * never give — an untagged line is the defect, so a false negative reads as a problem that is
-     * not there and a false positive hides one that is.
+     * Read straight off the line — `DimensionID` / `DimensionValueID` are columns, so they arrive
+     * with the line itself and there is nothing to load first. An unknown id still reports as
+     * tagged rather than as untagged: a tag pointing at a dimension this order's date has aged out
+     * is a thing to go and look at, and "No dimension" would hide it.
      */
     public DimensionSummary(line: mjBizAppsOrdersOrderLineEntity): string {
         if (!this.DimensionCatalog.length) return 'Details';
-        if (line.IsSaved && !line.Dimensions.IsLoaded) return 'Details';
-        const tagged = line.Dimensions.Items.length;
-        return tagged === 0 ? 'No dimensions' : `${tagged} of ${this.DimensionCatalog.length} tagged`;
-    }
-
-    /**
-     * Fill every saved line's `Dimensions` collection from ONE query.
-     *
-     * Per-line `Load()` would be a query per row on an order that may carry dozens. The collection
-     * exposes `SetLoadedItems` for exactly this — the same distribution accounting does when it
-     * reads a journal entry's lines and their dimension tags together.
-     *
-     * KEYED CASE-INSENSITIVELY. SQL Server returns `UNIQUEIDENTIFIER` uppercased while a
-     * browser-minted id is lower case, so a case-sensitive map silently hands every line an empty
-     * set — which would look exactly like the untagged state this work exists to fix.
-     */
-    private async hydrateLineDimensions(): Promise<void> {
-        const saved = (this._order?.Lines.Items ?? []).filter((line) => line.IsSaved);
-        if (!saved.length) return;
-
-        const tags = await GetLineDimensionsForOrder(saved.map((line) => line.ID));
-        const byLine = new Map<string, mjBizAppsOrdersOrderLineDimensionEntity[]>();
-        for (const tag of tags) {
-            const key = tag.OrderLineID.toLowerCase();
-            const list = byLine.get(key) ?? [];
-            list.push(tag);
-            byLine.set(key, list);
-        }
-        for (const line of saved) {
-            if (line.Dimensions.IsLoaded) continue;
-            line.Dimensions.SetLoadedItems(byLine.get(line.ID.toLowerCase()) ?? []);
-        }
+        if (!line.DimensionID) return 'No dimension';
+        const dimension = this.DimensionCatalog.find((d) => UUIDsEqual(d.ID, line.DimensionID ?? ''));
+        const value = dimension?.Values.find((v) => UUIDsEqual(v.ID, line.DimensionValueID ?? ''));
+        if (!dimension) return 'Tagged';
+        return value ? `${dimension.Code} · ${value.Code}` : dimension.Code;
     }
 
     /**
@@ -742,7 +713,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             await this._order.Lines.Load();
         }
         await this.hydrateExtensions();
-        await this.hydrateLineDimensions();
         await this.resolveOverrideKind();
         this.schedulePricing();
         void this.refreshAllApplicable();
