@@ -36,6 +36,10 @@ on:
   push:
     branches: [next]
 
+# This workflow only reads the repo; never grant the default token more than that.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

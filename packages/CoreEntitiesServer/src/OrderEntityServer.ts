@@ -67,7 +67,7 @@ import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
-import { RequireUUID } from './sql-guards.js';
+import { EscapeText, RequireUUID } from './sql-guards.js';
 import {
     MergeOrderRollups,
     ORDER_ROLLUP_FIELDS,
@@ -1302,7 +1302,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const res = await rv.RunView<{ ID: string; Code: string }>(
             {
                 EntityName: CHARGE_TYPE_ENTITY,
-                ExtraFilter: `ID IN (${unique.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`,
+                ExtraFilter: `ID IN (${unique.map((id) => `'${EscapeText(id)}'`).join(',')})`,
                 ResultType: 'simple',
             },
             this.ContextCurrentUser as UserInfo,
@@ -1748,7 +1748,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const res = await rv.RunView<{ EventStartsAt: string; EventEndsAt: string | null }>(
             {
                 EntityName: EVENT_PRODUCT_ENTITY,
-                ExtraFilter: `ID='${line.ProductID}'`,
+                // The line's ProductID is a client-writable field and this runs before the FK has
+                // had a chance to reject a malformed value — validated like every other id that
+                // reaches filter text.
+                ExtraFilter: `ID='${RequireUUID(line.ProductID, 'ProductID')}'`,
                 Fields: ['EventStartsAt', 'EventEndsAt'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -2289,14 +2292,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (types.length === 0) return null;
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const quoted = types.map((t) => `'${t.replace(/'/g, "''")}'`).join(',');
+        const quoted = types.map((t) => `'${EscapeText(t)}'`).join(',');
         const date = asOf.toISOString().slice(0, 10);
 
         const result = await rv.RunView<{ ToOrganizationID: string; StartDate: string }>(
             {
                 EntityName: RELATIONSHIP_ENTITY,
+                // The person id traces back to client-writable ship-to/bill-to fields and this
+                // runs during Save, before any FK could reject a malformed value — so it is
+                // validated here like every other id that reaches filter text.
                 ExtraFilter:
-                    `FromPersonID='${personID}' AND ToOrganizationID IS NOT NULL ` +
+                    `FromPersonID='${RequireUUID(personID, 'PersonID')}' AND ToOrganizationID IS NOT NULL ` +
                     `AND Status='Active' ` +
                     `AND (StartDate IS NULL OR StartDate <= '${date}') ` +
                     `AND (EndDate IS NULL OR EndDate >= '${date}') ` +

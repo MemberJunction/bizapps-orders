@@ -61,6 +61,7 @@ import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { PaymentAllocationFactory, type OrderLineShare } from './PaymentAllocationFactory.js';
+import { RequireUUID } from './sql-guards.js';
 
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
@@ -219,7 +220,8 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         }>(
             {
                 EntityName: PAYMENT_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.PaymentHeaderID}'`,
+                // Client-writable FK, validated before it reaches filter text.
+                ExtraFilter: `ID='${RequireUUID(this.PaymentHeaderID, 'PaymentHeaderID')}'`,
                 Fields: ['PaymentNumber', 'ReceivingCompanyID', 'Status', 'PaymentDate'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -245,7 +247,8 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const res = await rv.RunView<{ ID: string; CompanyID: string; LineTotalGross: number }>(
             {
                 EntityName: ORDER_LINE_ENTITY,
-                ExtraFilter: `OrderHeaderID='${this.OrderHeaderID}'`,
+                // Client-writable FK, validated before it reaches filter text.
+                ExtraFilter: `OrderHeaderID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['ID', 'CompanyID', 'LineTotalGross'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -267,7 +270,8 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const res = await rv.RunView<{ OrderNumber: string }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.OrderHeaderID}'`,
+                // Client-writable FK, validated before it reaches filter text.
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['OrderNumber'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -333,7 +337,9 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const orders = await rv.RunView<{ TotalGross: number; OrderNumber: string }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.OrderHeaderID}'`,
+                // Client-writable FK, validated before it reaches filter text (non-null here —
+                // the guard at the top of this method returned already when it was absent).
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['TotalGross', 'OrderNumber'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -347,7 +353,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const siblings = await rv.RunView<{ ID: string; Amount: number }>(
             {
                 EntityName: PAYMENT_LINE_ENTITY,
-                ExtraFilter: `OrderHeaderID='${this.OrderHeaderID}'`,
+                ExtraFilter: `OrderHeaderID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['ID', 'Amount'],
                 ResultType: 'simple',
                 BypassCache: true,

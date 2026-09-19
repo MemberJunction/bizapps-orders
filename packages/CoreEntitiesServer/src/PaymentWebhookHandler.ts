@@ -53,6 +53,7 @@ import {
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
+import { EscapeSQLString } from './sql-guards.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 
@@ -231,8 +232,9 @@ async function findIntent(
     if (!event.ProviderIntentID) return null;
     // Escaped rather than interpolated raw: this value came off the wire. It is inside a verified
     // payload, so it is not attacker-controlled in practice — but "verified" and "safe to concatenate
-    // into SQL" are different claims, and only one of them is being made here.
-    const safe = event.ProviderIntentID.replace(/'/g, "''");
+    // into SQL" are different claims, and only one of them is being made here. `EscapeSQLString`
+    // rather than an inline replace: it also strips null bytes, which end a quoted literal early.
+    const safe = EscapeSQLString(event.ProviderIntentID);
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const result = await rv.RunView<{ ID: string; Status: string; ProviderEventID: string | null }>(
         {

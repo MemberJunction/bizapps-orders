@@ -36,6 +36,7 @@
  */
 import { RegisterClass } from '@memberjunction/global';
 import { IRunViewProvider, RunView } from '@memberjunction/core';
+import { EscapeSQLString } from './sql-guards.js';
 import {
     BasePaymentProvider,
     type CaptureRequest,
@@ -177,7 +178,8 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
             }>(
                 {
                     EntityName: STORED_VALUE_ACCOUNT_ENTITY,
-                    ExtraFilter: `ID = '${target.StoredValueAccountID}'`,
+                    // Escaped rather than interpolated raw — the target rides in on the request.
+                    ExtraFilter: `ID = '${EscapeSQLString(target.StoredValueAccountID)}'`,
                     ResultType: 'simple',
                 },
                 this.User,
@@ -205,7 +207,8 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
             const result = await rv.RunView<{ ID: string; OrderNumber: string; Balance: number | null }>(
                 {
                     EntityName: ORDER_ENTITY,
-                    ExtraFilter: `ID = '${target.SourceOrderHeaderID}'`,
+                    // Escaped rather than interpolated raw — the target rides in on the request.
+                    ExtraFilter: `ID = '${EscapeSQLString(target.SourceOrderHeaderID)}'`,
                     ResultType: 'simple',
                 },
                 this.User,
