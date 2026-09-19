@@ -71,6 +71,7 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
+import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import {
     PaymentAllocationFactory,
     type OrderLineShare,
@@ -343,7 +344,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             const res = await rv.RunView<BaseEntity>(
                 {
                     EntityName: PAYMENT_LINE_ENTITY,
-                    ExtraFilter: `PaymentHeaderID='${this.ID}' AND BookedAt IS NULL`,
+                    // A client MAY supply the primary key on create, so it is validated too.
+                    ExtraFilter: `PaymentHeaderID='${RequireUUID(this.ID, 'ID')}' AND BookedAt IS NULL`,
                     ResultType: 'entity_object',
                     BypassCache: true,
                 },
@@ -425,7 +427,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         const res = await rv.RunView<{ ID: string; CompanyID: string; LineTotalGross: number }>(
             {
                 EntityName: ORDER_LINE_ENTITY,
-                ExtraFilter: `OrderHeaderID='${orderHeaderID}'`,
+                // Traces back to a client-writable line FK — validated before filter text.
+                ExtraFilter: `OrderHeaderID='${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['ID', 'CompanyID', 'LineTotalGross'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -447,7 +450,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         const res = await rv.RunView<{ OrderNumber: string }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${orderHeaderID}'`,
+                ExtraFilter: `ID='${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['OrderNumber'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -472,7 +475,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         const res = await rv.RunView<{ Amount: number }>(
             {
                 EntityName: PAYMENT_LINE_ENTITY,
-                ExtraFilter: `PaymentHeaderID='${this.ID}'`,
+                ExtraFilter: `PaymentHeaderID='${RequireUUID(this.ID, 'ID')}'`,
                 Fields: ['Amount'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -596,7 +599,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         const result = await rv.RunView<{ ID: string; ProviderIntentID: string }>(
             {
                 EntityName: 'MJ_BizApps_Orders: Payment Intents',
-                ExtraFilter: `ID = '${intentID}'`,
+                // Client-writable FK, validated before it reaches filter text.
+                ExtraFilter: `ID = '${RequireUUID(intentID, 'PaymentIntentID')}'`,
                 ResultType: 'simple',
             },
             this.ContextCurrentUser,
@@ -620,7 +624,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         const result = await rv.RunView<{ ID: string; FunctionalCurrencyCode: string | null }>(
             {
                 EntityName: 'MJ_BizApps_Accounting: Accounting Company Profiles',
-                ExtraFilter: `ID = '${this.ReceivingCompanyID}'`,
+                // Client-writable FK. The optional guard keeps an absent value on today's
+                // no-match → USD-default path while refusing an injected string.
+                ExtraFilter: `ID = '${RequireOptionalUUID(this.ReceivingCompanyID, 'ReceivingCompanyID')}'`,
                 ResultType: 'simple',
             },
             this.ContextCurrentUser,

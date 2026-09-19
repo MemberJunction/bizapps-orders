@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [next, main]
 
+# This workflow only reads the repo; never grant the default token more than that.
+permissions:
+  contents: read
+
 concurrency:
   group: changes-${{ github.ref }}
   cancel-in-progress: true
@@ -23,8 +27,12 @@ jobs:
 
       - name: Resolve current base branch tip
         id: base
+        # The ref goes through an env var, not ${{ }} inside `run:` — inline expansion of
+        # request-controlled context into a shell script is the GitHub Actions injection vector.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.ref }}
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
           echo "sha=$(git rev-parse FETCH_HEAD)" >> $GITHUB_OUTPUT
 
       - name: Check for migration file changes

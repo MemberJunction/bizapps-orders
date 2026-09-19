@@ -40,7 +40,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
-import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { EscapeSQLString, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 
@@ -175,7 +175,9 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             const existing = await rv.RunView<{ ID: string }>(
                 {
                     EntityName: PAYMENT_HEADER_ENTITY,
-                    ExtraFilter: `IdempotencyKey = '${idempotencyKey.replace(/'/g, "''")}'`,
+                    // Caller-supplied free text — escaped via the guard module, which also strips
+                    // null bytes, rather than an inline quote-doubling replace.
+                    ExtraFilter: `IdempotencyKey = '${EscapeSQLString(idempotencyKey)}'`,
                     ResultType: 'simple',
                 },
                 user,
@@ -272,7 +274,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
                 const again = await rv.RunView<{ ID: string }>(
                     {
                         EntityName: PAYMENT_HEADER_ENTITY,
-                        ExtraFilter: `IdempotencyKey = '${idempotencyKey.replace(/'/g, "''")}'`,
+                        ExtraFilter: `IdempotencyKey = '${EscapeSQLString(idempotencyKey)}'`,
                         ResultType: 'simple',
                     },
                     user,
