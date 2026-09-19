@@ -64,6 +64,7 @@ import { PaymentAllocationFactory, type OrderLineShare } from './PaymentAllocati
 
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
+const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 
@@ -94,7 +95,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
      * is not a guard.
      */
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
-        const problem = await this.checkApplicationTotal();
+        const problem = (await this.checkNamedInstalment()) ?? (await this.checkApplicationTotal());
         if (problem) {
             // Registered rather than thrown: a rejected application is a business outcome the
             // caller inspects on LatestResult, the same contract every other save failure uses.
@@ -322,6 +323,33 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             );
         }
         return result;
+    }
+
+    /**
+     * A payment aimed at one instalment must name an instalment OF THE ORDER IT SETTLES. The FK
+     * cannot say that — it only knows the row exists — and a cheque pointed at another order's
+     * instalment would roll up into both orders' schedules at once.
+     */
+    private async checkNamedInstalment(): Promise<string | null> {
+        if (!this.OrderHeaderPaymentScheduleID) return null;
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ OrderHeaderID: string; InstallmentNumber: number }>(
+            {
+                EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+                ExtraFilter: `ID='${this.OrderHeaderPaymentScheduleID}'`,
+                Fields: ['OrderHeaderID', 'InstallmentNumber'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        const row = res?.Results?.[0];
+        // An instalment we cannot read is the FK's problem to report.
+        if (!row) return null;
+        if (String(row.OrderHeaderID).toLowerCase() !== String(this.OrderHeaderID ?? '').toLowerCase()) {
+            return `Instalment ${row.InstallmentNumber} belongs to a different order than this payment line settles.`;
+        }
+        return null;
     }
 
     /** Returns a message when this application would take the order out of range, else null. */

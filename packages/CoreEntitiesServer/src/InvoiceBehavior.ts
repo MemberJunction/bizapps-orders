@@ -189,7 +189,49 @@ export interface LadderRow {
     /** Shown after the label in muted type — a promo code, a tax rate. */
     Note: string | null;
     Amount: number;
-    Kind: 'Subtotal' | 'Discount' | 'Charge' | 'Tax' | 'Total' | 'Payment' | 'Due';
+    Kind: 'Subtotal' | 'Discount' | 'Charge' | 'Tax' | 'Total' | 'Instalment' | 'Payment' | 'Due';
+}
+
+/**
+ * The instalment a document demands (plan §6, D87).
+ *
+ * EVERY DOCUMENT HAS ONE. An order with no schedule rows is billed as one implicit instalment for the
+ * whole of a company's gross, synthesised by {@link ImplicitInstalment} — so the document code below
+ * never asks whether a schedule exists, and an order with no schedule renders exactly as it did.
+ */
+export interface InvoiceInstalmentFacts {
+    CompanyID: string;
+    /** 1-based position within the order and company. */
+    InstallmentNumber: number;
+    /** How many live instalments this company's schedule has. One means "the whole order". */
+    InstallmentCount: number;
+    DueDate: string | null;
+    Amount: number;
+    AmountPaid: number;
+    /** Frozen at invoicing; null while Scheduled, when the number is derived from position instead. */
+    DocumentNumber: string | null;
+    /** What prints between the total and the amount due. */
+    Payments: Array<{ Label: string; Amount: number }>;
+}
+
+/** The whole of one company's share, as one instalment: what every order without a schedule bills. */
+export function ImplicitInstalment(input: {
+    CompanyID: string;
+    Gross: number;
+    AmountPaid: number;
+    DueDate: string | null;
+    Payments: Array<{ Label: string; Amount: number }>;
+}): InvoiceInstalmentFacts {
+    return {
+        CompanyID: input.CompanyID,
+        InstallmentNumber: 1,
+        InstallmentCount: 1,
+        DueDate: input.DueDate,
+        Amount: input.Gross,
+        AmountPaid: input.AmountPaid,
+        DocumentNumber: null,
+        Payments: input.Payments,
+    };
 }
 
 /** One sendable document: an order, restricted to what one selling company is owed for. */
@@ -331,6 +373,27 @@ export function PaymentStatusLabel(gross: number, paid: number): string {
 export function DocumentNumber(orderNumber: string, index: number, total: number): string {
     if (total <= 1) return orderNumber;
     return `${orderNumber}-${String.fromCharCode(65 + index)}`;
+}
+
+/**
+ * The instalment's document number, derived from position — `ORD-1234-2`, or `ORD-1234-B2` when the
+ * order is also split by company. A one-instalment schedule prints the plain order number, so an order
+ * without a schedule is unchanged.
+ *
+ * ONE FUNCTION, because the format is unconfirmed against what Bill.com and Business Central accept
+ * and must be cheap to change. It is computed ONCE, by `Orders.IssueInstalmentInvoice`, and frozen on
+ * the row (D87) — never recomputed for a document the customer already holds.
+ */
+export function InstalmentDocumentNumber(
+    orderNumber: string,
+    companyIndex: number,
+    companyCount: number,
+    installmentNumber: number,
+    installmentCount: number,
+): string {
+    const base = DocumentNumber(orderNumber, companyIndex, companyCount);
+    if (installmentCount <= 1) return base;
+    return companyCount > 1 ? `${base}${installmentNumber}` : `${base}-${installmentNumber}`;
 }
 
 /**
@@ -493,6 +556,8 @@ export function BuildLadder(input: {
     Payments: Array<{ Label: string; Amount: number }>;
     AmountDue: number;
     DueLabel: string;
+    /** Printed only when it is one of several. */
+    Instalment?: Pick<InvoiceInstalmentFacts, 'InstallmentNumber' | 'InstallmentCount' | 'Amount' | 'DueDate'> | null;
 }): LadderRow[] {
     const rows: LadderRow[] = [{ Label: 'Subtotal', Note: null, Amount: input.ListSubtotal, Kind: 'Subtotal' }];
 
@@ -518,6 +583,17 @@ export function BuildLadder(input: {
     }
 
     rows.push({ Label: 'Total', Note: null, Amount: Money(input.Gross), Kind: 'Total' });
+
+    // The instalment demanded, when the document is one of several. A single instalment IS the
+    // total and would print the same figure twice.
+    if (input.Instalment && input.Instalment.InstallmentCount > 1) {
+        rows.push({
+            Label: `Instalment ${input.Instalment.InstallmentNumber} of ${input.Instalment.InstallmentCount}`,
+            Note: input.Instalment.DueDate ? `due ${input.Instalment.DueDate}` : null,
+            Amount: Money(input.Instalment.Amount),
+            Kind: 'Instalment',
+        });
+    }
 
     for (const p of input.Payments) {
         if (Money(p.Amount) === 0) continue;
@@ -549,6 +625,11 @@ export function BuildDocuments(input: {
     AsOf: string;
     /** Render only this company's document. Omit for all of them. */
     OnlyCompanyID?: string | null;
+    /**
+     * The instalment to demand. Omit for the implicit one — the whole of each company's gross, due on
+     * the header's date — which is what every order without a schedule bills.
+     */
+    Instalment?: InvoiceInstalmentFacts | null;
 }): InvoiceDocument[] {
     const { Order: order, Lines: lines, Charges: charges, Adjustments: adjustments, Payments: payments } = input;
 
@@ -665,7 +746,20 @@ export function BuildDocuments(input: {
             .filter(({ Amount }) => Amount !== 0);
 
         const amountPaid = Money(myPayments.reduce((s, p) => s + p.Amount, 0));
-        const amountDue = Money(gross - amountPaid);
+
+        // What this document demands. An explicit instalment for another company is not this
+        // document's business; anything else is the whole of this company's share.
+        const instalment =
+            input.Instalment && input.Instalment.CompanyID.toLowerCase() === companyID.toLowerCase()
+                ? input.Instalment
+                : ImplicitInstalment({
+                      CompanyID: companyID,
+                      Gross: gross,
+                      AmountPaid: amountPaid,
+                      DueDate: dueDate,
+                      Payments: myPayments.map(({ Payment, Amount }) => ({ Label: `Payment ${Payment.PaymentNumber}`, Amount })),
+                  });
+        const amountDue = Money(instalment.Amount - instalment.AmountPaid);
 
         const ladderCharges = myCharges
             .filter((c) => c.Charge.Category !== 'Tax')
@@ -704,12 +798,10 @@ export function BuildDocuments(input: {
             DiscountTotal: discountTotal,
             Charges: [...ladderCharges, ...taxRows],
             Gross: gross,
-            Payments: myPayments.map(({ Payment, Amount }) => ({
-                Label: `Payment ${Payment.PaymentNumber}`,
-                Amount,
-            })),
+            Payments: instalment.Payments,
             AmountDue: amountDue,
             DueLabel: kind === 'Credit Memo' ? 'Credit due you' : 'Amount due',
+            Instalment: instalment,
         });
 
         // The one invariant worth stating on the document itself: the ladder must reach the total.
@@ -728,14 +820,18 @@ export function BuildDocuments(input: {
 
         documents.push({
             Kind: kind,
-            DocumentNumber: DocumentNumber(order.OrderNumber, index, companyIDs.length),
+            // A frozen number wins; otherwise derived from position, which for the implicit
+            // instalment is exactly the number this document always had.
+            DocumentNumber:
+                instalment.DocumentNumber ??
+                InstalmentDocumentNumber(order.OrderNumber, index, companyIDs.length, instalment.InstallmentNumber, instalment.InstallmentCount),
             OrderNumber: order.OrderNumber,
             OrderHeaderID: order.ID,
             OrderDate: String(order.OrderDate).slice(0, 10),
-            DueDate: dueDate,
-            DaysUntilDue: dueDate && amountDue > 0 ? DaysBetween(input.AsOf, dueDate) : null,
+            DueDate: instalment.DueDate,
+            DaysUntilDue: instalment.DueDate && amountDue > 0 ? DaysBetween(input.AsOf, instalment.DueDate) : null,
             Status: order.Status,
-            PaymentStatusLabel: PaymentStatusLabel(gross, amountPaid),
+            PaymentStatusLabel: PaymentStatusLabel(instalment.Amount, instalment.AmountPaid),
 
             CompanyID: companyID,
             CompanyName: companyName(companyID),
@@ -768,7 +864,7 @@ export function BuildDocuments(input: {
             ChargeTotal: chargeTotal,
             TaxTotal: taxTotal,
             Gross: gross,
-            AmountPaid: amountPaid,
+            AmountPaid: instalment.AmountPaid,
             AmountDue: amountDue,
 
             Payments: myPayments.map(({ Payment, Amount }) => ({

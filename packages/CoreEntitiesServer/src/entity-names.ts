@@ -14,3 +14,6 @@ export const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 
 /** The order line entity. */
 export const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+
+/** One instalment of an order's billing schedule (AIDP-24). */
+export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';

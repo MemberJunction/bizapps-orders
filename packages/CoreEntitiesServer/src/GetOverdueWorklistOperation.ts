@@ -75,6 +75,8 @@ interface OrderShape extends Record<string, unknown> {
     OrderNumber: string;
     OrderDate: string;
     DueDate: string | null;
+    /** The earliest unpaid instalment's due date, or DueDate when the order has no schedule (AIDP-24). */
+    NextDueDate: string | null;
     Status: string;
     CompanyID: string;
     Company?: string;
@@ -150,8 +152,10 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
         // threshold is relative to `asOf`, and expressing that as a date predicate
         // per row is less clear than one comparison.
         const minDays = input?.MinDaysOverdue ?? 0;
+        // Aged from the day that is actually due — the next unpaid instalment's, which the view
+        // computes as NextDueDate and which IS the header's DueDate for an order with no schedule.
         const aged = rows
-            .map((row) => ({ row, days: daysBetween(toISODate(row.DueDate) ?? asOf, asOf) }))
+            .map((row) => ({ row, days: daysBetween(toISODate(row.NextDueDate ?? row.DueDate) ?? asOf, asOf) }))
             .filter(({ days }) => days >= minDays);
 
         const credits = await this.creditsByCustomer(aged.map((a) => a.row), provider, user);
@@ -162,7 +166,7 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
                 OrderHeaderID: row.ID,
                 OrderNumber: row.OrderNumber,
                 OrderDate: toISODate(row.OrderDate) ?? '',
-                DueDate: toISODate(row.DueDate) ?? '',
+                DueDate: toISODate(row.NextDueDate ?? row.DueDate) ?? '',
                 DaysOverdue: days,
                 CompanyID: row.CompanyID,
                 CompanyName: row.Company ?? '',
