@@ -507,6 +507,17 @@
           "primaryKey": {
             "ID": "D9F5A3B2-7E8C-4D2A-AF64-9B1F2C3D4E55"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-34 - Party Roster",
+            "Sequence": 34,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "A674F471-E717-4DFF-A301-1C606EF37250"
+          }
         }
       ]
     },

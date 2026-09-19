@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-34 - Party Roster",
+    "Description": "Orders' contribution to the shared Party Signals category. CR1-CR2 prove the Party Customer Roster query is discoverable by the shared party pickers and that the rows it returns honour the four-column contract, so a picker can offer customers before the rest of the directory instead of searching the whole organization file.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "The Party Customer Roster query is registered in the Party Signals category and its description carries the [signal: order|orders] marker; the query runs successfully, and every row has PartyKind of organization or person, a non-empty PartyID, and a Count of at least one."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "party-roster"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "0300E5B4-7F81-4A12-ABB4-B137B1725CB4"
+  }
+}
