@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, it, expect } from 'vitest';
 import { IsOverdue, OverdueFilter, OverdueSQL, NON_OWING_STATUSES, type OverdueFacts } from '../overdue';
 
@@ -70,12 +73,34 @@ describe('the SQL and the filter say what the function says', () => {
         expect(sql).toContain("g.Status NOT IN ('Draft','Quoted','Voided')");
     });
 
-    it('the RunView filter carries all four clauses, with the caller-supplied day', () => {
+    it('the view reads the NEXT unpaid due date, and the committed migration says exactly that', () => {
+        // The layered view computes NextDueDate in a CROSS APPLY aliased `nd`; the predicate must
+        // read it there, not the header's own column, or an instalment order ages on the wrong day.
+        const sql = OverdueSQL('g', 'nd.NextDueDate');
+        expect(sql).toContain('nd.NextDueDate IS NOT NULL');
+        expect(sql).toContain('nd.NextDueDate < CAST(GETUTCDATE() AS date)');
+        expect(sql).not.toContain('g.DueDate');
+
+        // Drift guard on the migration itself: the newest file defining vwOrderHeaders carries this
+        // exact predicate, so retyping it by hand fails here rather than on a collections list.
+        const dir = fileURLToPath(new URL('../../../../migrations/', import.meta.url));
+        const newest = readdirSync(dir)
+            .filter((f) => f.endsWith('.sql'))
+            .sort()
+            .filter((f) => readFileSync(dir + f, 'utf8').includes('CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]'))
+            .pop();
+        expect(newest, 'a migration defines vwOrderHeaders').toBeDefined();
+        expect(readFileSync(dir + newest, 'utf8')).toContain(`CASE WHEN ${sql}`);
+    });
+
+    it('the RunView filter carries all four clauses, against NextDueDate, with the caller-supplied day', () => {
         const filter = OverdueFilter(DAY);
         expect(filter).toContain('Balance > 0');
-        expect(filter).toContain('DueDate IS NOT NULL');
-        expect(filter).toContain(`DueDate < '${DAY}'`);
+        expect(filter).toContain('NextDueDate IS NOT NULL');
+        expect(filter).toContain(`NextDueDate < '${DAY}'`);
         expect(filter).toContain("Status NOT IN ('Draft','Quoted','Voided')");
+        // Never the header column: for a scheduled order that is the wrong day.
+        expect(filter).not.toMatch(/(?<!Next)DueDate/);
     });
 
     it('both halves exclude EVERY non-owing status, from the one list', () => {

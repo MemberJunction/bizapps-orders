@@ -49,6 +49,7 @@ import { MJORefundPageComponent } from '../pages/payments/refund.page';
 import { MJOAccountCreditPageComponent } from '../pages/payments/account-credit.page';
 import { MJOPaymentsDashboardPageComponent } from '../pages/payments/payments-dashboard.page';
 import { MJOOverduePageComponent } from '../pages/receivables/overdue.page';
+import { MJOBillingPageComponent } from '../pages/receivables/billing.page';
 import { MJOCustomerARPageComponent } from '../pages/receivables/customer-ar.page';
 import { MJOSubscriptionsPageComponent } from '../pages/receivables/subscriptions.page';
 import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/catalog/products.page';
@@ -886,6 +887,8 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
         switch (pageId) {
             case 'overdue':
                 return MJOOverduePageComponent;
+            case 'billing':
+                return MJOBillingPageComponent;
             case 'aging':
                 return MJOCustomerARPageComponent;
             case 'subscriptions':

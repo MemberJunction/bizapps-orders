@@ -10,6 +10,23 @@ export type { GLRole, ResolverEntityIDs } from './GLAccountResolver.js';
 
 export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './GetOverdueWorklistOperation.js';
 
+// Payment schedules (AIDP-24, plan D85–D88): instalments on the order, the tie invariant, the
+// invoicing act, the billing worklist, and the AR reclass seam AIDP-25 fills.
+export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './GetBillingWorklistOperation.js';
+export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
+export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
+export { EmitInstalmentReclassEntry } from './InstalmentReclass.js';
+export type { InstalmentReclassContext } from './InstalmentReclass.js';
+export {
+    AddMonths,
+    BuildPaymentSchedule,
+    DefaultScheduleWeights,
+    ExplainShortfalls,
+    SCHEDULE_DEFAULTS,
+    ScheduleShortfalls,
+} from './PaymentScheduleBehavior.js';
+export type { ScheduleCadence, ScheduleLineFacts, ScheduleRowDraft, ScheduleRowFacts, ScheduleShortfall } from './PaymentScheduleBehavior.js';
+
 // Fulfilment (D15) — a logistics fact, deliberately disconnected from revenue.
 export {
     AutoAdvances,
@@ -25,7 +42,7 @@ export type { FulfillableLine, FulfillmentStatus, FlipRefusal, QueueGrouping } f
 export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from './GetFulfillmentQueueOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
-export { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 
 export { MergeOrderRollups, ORDER_ROLLUP_FIELDS } from './OrderRollupBehavior.js';
 export type { OrderRollupField, OrderRollups, ResolvedOrderRollups } from './OrderRollupBehavior.js';
@@ -402,6 +419,8 @@ export {
     DiscountTotalOf,
     DocumentNumber,
     DueDateFor,
+    ImplicitInstalment,
+    InstalmentDocumentNumber,
     LineDiscountOf,
     ListAmountOf,
     ListSubtotalOf,
@@ -414,6 +433,7 @@ export type {
     InvoiceAdjustmentFacts,
     InvoiceChargeFacts,
     InvoiceDocument,
+    InvoiceInstalmentFacts,
     InvoiceIssuerFacts,
     InvoiceLineFacts,
     InvoiceOrderFacts,
