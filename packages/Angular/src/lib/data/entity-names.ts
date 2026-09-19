@@ -22,6 +22,7 @@ export const MJO_ENTITIES = {
     PaymentHeader: 'MJ_BizApps_Orders: Payment Headers',
     PaymentDetail: 'MJ_BizApps_Orders: Payment Details',
     PaymentLine: 'MJ_BizApps_Orders: Payment Lines',
+    OrderHeaderPaymentSchedule: 'MJ_BizApps_Orders: Order Header Payment Schedules',
     Product: 'MJ_BizApps_Orders: Products',
     ProductType: 'MJ_BizApps_Orders: Product Types',
     ProductCategory: 'MJ_BizApps_Orders: Product Categories',

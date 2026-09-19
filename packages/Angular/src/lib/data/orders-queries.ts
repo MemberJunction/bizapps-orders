@@ -45,7 +45,7 @@
 import { Metadata, RunView, type RunViewParams, type UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
-import { IsBefore, LoadOrdersEngine, OrdersEngine, Today, ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
+import { IsBefore, LoadOrdersEngine, OrdersEngine, OverdueFilter, Today, ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersCustomerTaxExemptionEntity,
@@ -307,8 +307,9 @@ export async function GetOrders(
 
     switch (options.Preset) {
         case 'overdue':
-            filters.push(`Balance > 0 AND DueDate IS NOT NULL AND DueDate < '${today}'`);
-            filters.push(`Status NOT IN ('Draft','Quoted','Voided')`);
+            // ONE definition of overdue (overdue.ts) — reads NextDueDate, so an instalment order
+            // ages on its next unpaid instalment rather than the header date.
+            filters.push(OverdueFilter(today));
             break;
         case 'unpaid':
             filters.push(`Balance > 0 AND Status NOT IN ('Draft','Quoted','Voided')`);

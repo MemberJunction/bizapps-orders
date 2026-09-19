@@ -17,7 +17,7 @@ import { MaxLength } from 'class-validator';
 import * as mj_core_schema_server_object_types from '@memberjunction/server'
 
 
-import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
     
 
 //****************************************************************************
@@ -3732,6 +3732,311 @@ export class mjBizAppsOrdersOrderCompanyPolicyResolver extends ResolverBase {
 }
 
 //****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Order Header Payment Schedules
+//****************************************************************************
+@ObjectType({ description: `One instalment of an order\'s billing schedule (D85). Editable while Scheduled provided the per-company sum still ties to the order; immutable once Invoiced (D88). An order with no rows is billed as one implicit instalment on its DueDate.` })
+export class mjBizAppsOrdersOrderHeaderPaymentSchedule_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field() 
+    @MaxLength(36)
+    OrderHeaderID: string;
+        
+    @Field({description: `The selling company this instalment bills for. Stamped server-side from the order's lines (D86), never authored; a multi-company order carries one schedule per company.`}) 
+    @MaxLength(36)
+    CompanyID: string;
+        
+    @Field(() => Int, {description: `1-based position within the order and company. Unique per (order, company). Part of the frozen document number, so it must not be renumbered after invoicing.`}) 
+    InstallmentNumber: number;
+        
+    @Field({description: `When this instalment is due. Re-datable while Scheduled; frozen once Invoiced. The earliest unpaid row's DueDate is the order's NextDueDate, which ageing reads.`}) 
+    DueDate: Date;
+        
+    @Field(() => Float, {description: `The instalment amount. Per (order, company) the non-Canceled rows must sum to that company's LineTotalGross once the order is Confirmed; enforced at confirm and again at invoicing.`}) 
+    Amount: number;
+        
+    @Field({description: `Scheduled | Invoiced | Paid | Canceled | WrittenOff. Scheduled -> Invoiced is Orders.IssueInstalmentInvoice; Invoiced <-> Paid follows the rollup; WrittenOff and Canceled are explicit and never overwritten.`}) 
+    @MaxLength(20)
+    Status: string;
+        
+    @Field({nullable: true, description: `The invoice number the customer holds, frozen by Orders.IssueInstalmentInvoice and never recomputed (D87). NULL while Scheduled. Format: ORD-1234-2, or ORD-1234-B2 on a company-split order.`}) 
+    @MaxLength(40)
+    DocumentNumber?: string;
+        
+    @Field({nullable: true, description: `When the instalment was invoiced. NULL while Scheduled. Set once, never cleared.`}) 
+    InvoicedAt?: Date;
+        
+    @Field({nullable: true, description: `Who issued the instalment invoice.`}) 
+    @MaxLength(36)
+    InvoicedByUserID?: string;
+        
+    @Field({nullable: true, description: `The AR reclass journal entry (Unbilled Receivable -> Accounts Receivable) booked when the instalment was invoiced. Soft reference into accounting. NULL until the reclass entry ships (AIDP-25).`}) 
+    @MaxLength(36)
+    JournalEntryID?: string;
+        
+    @Field({nullable: true, description: `The outbound system that holds the invoice (e.g. BillCom). Written by the delivery integration, not by Orders.`}) 
+    @MaxLength(40)
+    ExternalSystem?: string;
+        
+    @Field({nullable: true, description: `The external system's own invoice id, so "what is this invoice's Bill.com id" is answerable from the database.`}) 
+    @MaxLength(100)
+    ExternalInvoiceRef?: string;
+        
+    @Field({nullable: true, description: `When the invoice was delivered to the customer. NULL means unsent — the audit fact behind reversing an unsent invoice.`}) 
+    SentAt?: Date;
+        
+    @Field(() => Float, {description: `Trigger-maintained: payments named to this row plus the oldest-due-first share of payments applied to the order as a whole. Never authored.`}) 
+    AmountPaid: number;
+        
+    @Field(() => Float, {nullable: true, description: `Trigger-maintained: Amount - AmountPaid, computed in the same statement as AmountPaid. Never authored.`}) 
+    Balance?: number;
+        
+    @Field({nullable: true, description: `What this instalment is for, as it should print on the invoice (e.g. "Year 2 of 3").`}) 
+    @MaxLength(500)
+    Description?: string;
+        
+    @Field({nullable: true, description: `Free text. Editable at any status.`}) 
+    Notes?: string;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field() 
+    @MaxLength(40)
+    OrderHeader: string;
+        
+    @Field() 
+    @MaxLength(50)
+    Company: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    InvoicedByUser?: string;
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Order Header Payment Schedules
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersOrderHeaderPaymentScheduleInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    OrderHeaderID?: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string;
+
+    @Field(() => Int, { nullable: true })
+    InstallmentNumber?: number;
+
+    @Field({ nullable: true })
+    DueDate?: Date;
+
+    @Field(() => Float, { nullable: true })
+    Amount?: number;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field({ nullable: true })
+    DocumentNumber: string | null;
+
+    @Field({ nullable: true })
+    InvoicedAt: Date | null;
+
+    @Field({ nullable: true })
+    InvoicedByUserID: string | null;
+
+    @Field({ nullable: true })
+    JournalEntryID: string | null;
+
+    @Field({ nullable: true })
+    ExternalSystem: string | null;
+
+    @Field({ nullable: true })
+    ExternalInvoiceRef: string | null;
+
+    @Field({ nullable: true })
+    SentAt: Date | null;
+
+    @Field(() => Float, { nullable: true })
+    AmountPaid?: number;
+
+    @Field(() => Float, { nullable: true })
+    Balance: number | null;
+
+    @Field({ nullable: true })
+    Description: string | null;
+
+    @Field({ nullable: true })
+    Notes: string | null;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Order Header Payment Schedules
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersOrderHeaderPaymentScheduleInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    OrderHeaderID?: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string;
+
+    @Field(() => Int, { nullable: true })
+    InstallmentNumber?: number;
+
+    @Field({ nullable: true })
+    DueDate?: Date;
+
+    @Field(() => Float, { nullable: true })
+    Amount?: number;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field({ nullable: true })
+    DocumentNumber?: string | null;
+
+    @Field({ nullable: true })
+    InvoicedAt?: Date | null;
+
+    @Field({ nullable: true })
+    InvoicedByUserID?: string | null;
+
+    @Field({ nullable: true })
+    JournalEntryID?: string | null;
+
+    @Field({ nullable: true })
+    ExternalSystem?: string | null;
+
+    @Field({ nullable: true })
+    ExternalInvoiceRef?: string | null;
+
+    @Field({ nullable: true })
+    SentAt?: Date | null;
+
+    @Field(() => Float, { nullable: true })
+    AmountPaid?: number;
+
+    @Field(() => Float, { nullable: true })
+    Balance?: number | null;
+
+    @Field({ nullable: true })
+    Description?: string | null;
+
+    @Field({ nullable: true })
+    Notes?: string | null;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Order Header Payment Schedules
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersOrderHeaderPaymentScheduleViewResult {
+    @Field(() => [mjBizAppsOrdersOrderHeaderPaymentSchedule_])
+    Results: mjBizAppsOrdersOrderHeaderPaymentSchedule_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersOrderHeaderPaymentSchedule_)
+export class mjBizAppsOrdersOrderHeaderPaymentScheduleResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersOrderHeaderPaymentScheduleViewResult)
+    async RunmjBizAppsOrdersOrderHeaderPaymentScheduleViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersOrderHeaderPaymentScheduleViewResult)
+    async RunmjBizAppsOrdersOrderHeaderPaymentScheduleViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersOrderHeaderPaymentScheduleViewResult)
+    async RunmjBizAppsOrdersOrderHeaderPaymentScheduleDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Order Header Payment Schedules';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersOrderHeaderPaymentSchedule_, { nullable: true })
+    async mjBizAppsOrdersOrderHeaderPaymentSchedule(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersOrderHeaderPaymentSchedule_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Order Header Payment Schedules', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwOrderHeaderPaymentSchedules')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Order Header Payment Schedules', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Order Header Payment Schedules', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersOrderHeaderPaymentSchedule_)
+    async CreatemjBizAppsOrdersOrderHeaderPaymentSchedule(
+        @Arg('input', () => CreatemjBizAppsOrdersOrderHeaderPaymentScheduleInput) input: CreatemjBizAppsOrdersOrderHeaderPaymentScheduleInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Order Header Payment Schedules', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersOrderHeaderPaymentSchedule_)
+    async UpdatemjBizAppsOrdersOrderHeaderPaymentSchedule(
+        @Arg('input', () => UpdatemjBizAppsOrdersOrderHeaderPaymentScheduleInput) input: UpdatemjBizAppsOrdersOrderHeaderPaymentScheduleInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Order Header Payment Schedules', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersOrderHeaderPaymentSchedule_)
+    async DeletemjBizAppsOrdersOrderHeaderPaymentSchedule(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Order Header Payment Schedules', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
 // ENTITY CLASS for MJ_BizApps_Orders: Order Headers
 //****************************************************************************
 @ObjectType({ description: `An order header — the customer\'s commitment AND the receivable (D2). On the FIRST transition to Confirmed, one balanced journal entry per line is booked into BizApps Accounting (D10). CompanyID is the originating/owning company — a document/visibility anchor, never GL resolution. No currency columns (FX deferred, D24).` })
@@ -3939,6 +4244,9 @@ export class mjBizAppsOrdersOrderHeader_ {
         
     @Field(() => Float, {nullable: true}) 
     _mj__Longitude_ShipToAddressID?: number;
+        
+    @Field({nullable: true}) 
+    NextDueDate?: Date;
         
     @Field(() => Int) 
     IsOverdue: number;
@@ -6241,6 +6549,10 @@ export class mjBizAppsOrdersPaymentLine_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `The instalment this allocation settles, when the payer said which one ("this is for the 2027 payment"). NULL applies the money to the order as a whole, oldest instalment first. Frozen with the rest of the allocation once the payment is Captured.`}) 
+    @MaxLength(36)
+    OrderHeaderPaymentScheduleID?: string;
+        
     @Field() 
     @MaxLength(40)
     PaymentHeader: string;
@@ -6284,6 +6596,9 @@ export class CreatemjBizAppsOrdersPaymentLineInput {
     @Field({ nullable: true })
     BookedAt: Date | null;
 
+    @Field({ nullable: true })
+    OrderHeaderPaymentScheduleID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6317,6 +6632,9 @@ export class UpdatemjBizAppsOrdersPaymentLineInput {
 
     @Field({ nullable: true })
     BookedAt?: Date | null;
+
+    @Field({ nullable: true })
+    OrderHeaderPaymentScheduleID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

@@ -9,7 +9,7 @@ import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-e
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { GetOrders } from '../../data/orders-queries';
-import { LocalDay, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { LocalDay, OverdueFilter, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
@@ -553,7 +553,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return {
             EntityID: this.OrderEntityInfo.ID,
             Entity: this.OrderEntityInfo.Name,
-            WhereClause: `Balance > 0 AND DueDate IS NOT NULL AND DueDate < '${today}' AND Status NOT IN ('Draft','Quoted','Voided')`,
+            WhereClause: OverdueFilter(today),
             ID: 'preset-aging-overdue',
             Name: 'Overdue Collections'
         } as unknown as MJUserViewEntityExtended;
@@ -594,7 +594,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         let presetName = 'All Orders';
         switch (preset) {
             case 'overdue':
-                whereClause = `Balance > 0 AND DueDate IS NOT NULL AND DueDate < '${today}' AND Status NOT IN ('Draft','Quoted','Voided')`;
+                whereClause = OverdueFilter(today);
                 presetName = 'Overdue Orders';
                 break;
             case 'unpaid':

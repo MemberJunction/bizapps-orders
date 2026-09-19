@@ -26,6 +26,15 @@
  *
  * `overdue.test.ts` asserts the two agree on the same rows, which is the part that can be mechanised.
  *
+ * ## Which day is "due" — the next unpaid instalment's (AIDP-24)
+ *
+ * An order billed in instalments is overdue when ANY unpaid instalment is past due, which is the same
+ * as saying its EARLIEST unpaid instalment is. So the day this rule reads is the order's
+ * `NextDueDate` — a virtual column of `vwOrderHeaders` that is the earliest due date among live,
+ * unpaid schedule rows, or the header's own `DueDate` when the order has no schedule. That fallback
+ * is what keeps an order without a schedule reading exactly as it always has: for it, `NextDueDate`
+ * IS `DueDate`. Nothing here asks whether a schedule exists.
+ *
  * ## It compares days; it does not parse them
  *
  * `DueDateISO` is already a `YYYY-MM-DD` calendar day. Reading a date cell — which may be a `Date` or
@@ -48,7 +57,10 @@ export const NON_OWING_STATUSES = ['Draft', 'Quoted', 'Voided'] as const;
 export interface OverdueFacts {
     Status?: string | null;
     Balance?: number | null;
-    /** The due day as `YYYY-MM-DD`, already normalized. Null means no terms were ever set. */
+    /**
+     * The NEXT UNPAID due day as `YYYY-MM-DD`, already normalized — the entity's `NextDueDate`, which
+     * is the header's `DueDate` for an order without a schedule. Null means no terms were ever set.
+     */
     DueDateISO?: string | null;
 }
 
@@ -77,13 +89,15 @@ export function IsOverdue(order: OverdueFacts, asOfDay: string): boolean {
  * The same rule as a T-SQL boolean expression, for the layered base view.
  *
  * @param alias - The table/view alias the columns hang off, e.g. `g` in `SELECT g.* FROM ... g`.
+ * @param dueDateExpression - The SQL expression for the day that is due. The view passes
+ *   `nd.NextDueDate` (its CROSS APPLY over the schedule rows); the default is the header's own column.
  */
-export function OverdueSQL(alias: string): string {
+export function OverdueSQL(alias: string, dueDateExpression: string = `${alias}.DueDate`): string {
     const quoted = NON_OWING_STATUSES.map((s) => `'${s}'`).join(',');
     return (
         `${alias}.Balance > 0 ` +
-        `AND ${alias}.DueDate IS NOT NULL ` +
-        `AND ${alias}.DueDate < CAST(GETUTCDATE() AS date) ` +
+        `AND ${dueDateExpression} IS NOT NULL ` +
+        `AND ${dueDateExpression} < CAST(GETUTCDATE() AS date) ` +
         `AND ${alias}.Status NOT IN (${quoted})`
     );
 }
@@ -98,5 +112,5 @@ export function OverdueSQL(alias: string): string {
  */
 export function OverdueFilter(asOfDay: string): string {
     const quoted = NON_OWING_STATUSES.map((s) => `'${s}'`).join(',');
-    return `Status NOT IN (${quoted}) AND DueDate IS NOT NULL AND DueDate < '${asOfDay}' AND Balance > 0`;
+    return `Status NOT IN (${quoted}) AND NextDueDate IS NOT NULL AND NextDueDate < '${asOfDay}' AND Balance > 0`;
 }
