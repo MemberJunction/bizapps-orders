@@ -1,0 +1,30 @@
+[
+  {
+    "fields": {
+      "PipelineID": "5F1E03E7-06C8-46BB-B0AE-216065446FFF",
+      "Version": 1,
+      "AlgorithmID": "F966965D-3A87-4DD6-91E0-4F9D1AF17796",
+      "ArtifactFileID": "1867A843-486F-4993-B63A-05AAE89F4DD2",
+      "FittedPreprocessing": "{\"ops\":[{\"op\":\"onehot\",\"col\":\"PrimaryProductName\",\"vocabulary\":[\"Certification exam fee\",\"Competition entry (per cheese)\",\"Conference Registration\",\"Corporate Membership (annual)\",\"Enthusiast Membership (annual)\",\"Individual Membership (annual)\",\"Journal of Artisan Cheese (annual)\",\"Recertification fee\",\"SmallBusiness Membership (annual)\",\"Workshop Registration\"]},{\"op\":\"onehot\",\"col\":\"OrderMonth\",\"vocabulary\":[\"1\",\"10\",\"11\",\"12\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\"]},{\"op\":\"onehot\",\"col\":\"GrossTier\",\"vocabulary\":[\"+\",\"-\",\"< \"]}],\"output_columns\":[\"PrimaryProductName=Certification exam fee\",\"PrimaryProductName=Competition entry (per cheese)\",\"PrimaryProductName=Conference Registration\",\"PrimaryProductName=Corporate Membership (annual)\",\"PrimaryProductName=Enthusiast Membership (annual)\",\"PrimaryProductName=Individual Membership (annual)\",\"PrimaryProductName=Journal of Artisan Cheese (annual)\",\"PrimaryProductName=Recertification fee\",\"PrimaryProductName=SmallBusiness Membership (annual)\",\"PrimaryProductName=Workshop Registration\",\"OrderMonth=1\",\"OrderMonth=10\",\"OrderMonth=11\",\"OrderMonth=12\",\"OrderMonth=2\",\"OrderMonth=3\",\"OrderMonth=4\",\"OrderMonth=5\",\"OrderMonth=6\",\"OrderMonth=7\",\"OrderMonth=8\",\"OrderMonth=9\",\"GrossTier=+\",\"GrossTier=-\",\"GrossTier=< \",\"CustomerPriorOrders\",\"OrderLinesCount\"]}",
+      "FeatureSchema": "[{\"Name\":\"PrimaryProductName\",\"Kind\":\"numeric\"},{\"Name\":\"CustomerPriorOrders\",\"Kind\":\"numeric\"},{\"Name\":\"OrderLinesCount\",\"Kind\":\"numeric\"},{\"Name\":\"OrderMonth\",\"Kind\":\"numeric\"},{\"Name\":\"GrossTier\",\"Kind\":\"numeric\"}]",
+      "TargetVariable": "LatePaymentOutcome",
+      "ProblemType": "classification",
+      "Metrics": "{\"accuracy\":0.955,\"f1\":0.9755434782608695,\"precision\":0.9598930481283422,\"recall\":0.9917127071823204,\"auc\":0.9797361151497529}",
+      "HoldoutMetrics": "{\"accuracy\":0.845,\"f1\":0.9126760563380282,\"precision\":0.8950276243093923,\"recall\":0.9310344827586207,\"auc\":0.7391688770999115}",
+      "FeatureImportance": "{\"PrimaryProductName=Certification exam fee\":0.000136976528905485,\"PrimaryProductName=Competition entry (per cheese)\":0.004562256058972275,\"PrimaryProductName=Conference Registration\":0.01928037897373299,\"PrimaryProductName=Corporate Membership (annual)\":0.005094071588279803,\"PrimaryProductName=Enthusiast Membership (annual)\":0.008219532800724478,\"PrimaryProductName=Individual Membership (annual)\":0.044331118711787534,\"PrimaryProductName=Journal of Artisan Cheese (annual)\":0.0005002746351426401,\"PrimaryProductName=Recertification fee\":0.0004910262414881292,\"PrimaryProductName=SmallBusiness Membership (annual)\":0.017549148126548765,\"PrimaryProductName=Workshop Registration\":0.10818031804988304,\"OrderMonth=1\":0.03341682957485295,\"OrderMonth=10\":0.005952890659096147,\"OrderMonth=11\":0.005092213399401465,\"OrderMonth=12\":0.07186510194854219,\"OrderMonth=2\":0.025175919185093636,\"OrderMonth=3\":0.026061447584966625,\"OrderMonth=4\":0.010955392025951948,\"OrderMonth=5\":0.015533546637891004,\"OrderMonth=6\":0.013965696486986841,\"OrderMonth=7\":0.01531098659372958,\"OrderMonth=8\":0.007912023064638413,\"OrderMonth=9\":0.006392788681874166,\"GrossTier=+\":0.007525762451694514,\"GrossTier=-\":0.009006747393603286,\"GrossTier=< \":0.003402491177915701,\"CustomerPriorOrders\":0.49764542335089906,\"OrderLinesCount\":0.03643963806739717}",
+      "Lineage": "{\"pipelineId\":\"5F1E03E7-06C8-46BB-B0AE-216065446FFF\",\"pipelineVersion\":1,\"targetEntityName\":\"MJ_BizApps_Orders: Order Headers\",\"sourceBindings\":[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"}],\"featureSteps\":{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"PrimaryProductName\",\"CustomerPriorOrders\",\"OrderLinesCount\",\"OrderMonth\",\"GrossTier\"]},{\"Id\":\"onehot-PrimaryProductName\",\"Kind\":\"onehot\",\"Column\":\"PrimaryProductName\"},{\"Id\":\"onehot-OrderMonth\",\"Kind\":\"onehot\",\"Column\":\"OrderMonth\"},{\"Id\":\"onehot-GrossTier\",\"Kind\":\"onehot\",\"Column\":\"GrossTier\"}]},\"asOfStrategy\":{\"Mode\":\"none\"},\"sidecarVersion\":\"predictive-studio-agent\",\"lockedHoldoutRowCount\":200,\"trainingRowCount\":800,\"assembledAt\":\"2026-09-19T18:06:53.317Z\"}",
+      "TrainedAt": "2026-09-19T18:06:53.317Z",
+      "TrainingDurationSec": 0,
+      "TrainingRowCount": 800,
+      "Status": "Published",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "514219E6-98DE-4D74-8141-DBBD1029AC0D"
+    },
+    "sync": {
+      "lastModified": "2026-09-19T18:19:21.100Z",
+      "checksum": "0e4feacda017d8ae6d35053a1120440420dbf928a6e644b36109400e03daf858"
+    }
+  }
+]

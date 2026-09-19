@@ -1,0 +1,30 @@
+[
+  {
+    "fields": {
+      "Name": "Score MJ_BizApps_Orders: Order Headers with model 514219E6-98DE-4D74-8141-DBBD1029AC0D (Monthly)",
+      "EntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "Status": "Active",
+      "WorkType": "ML Model",
+      "ScopeType": "Filter",
+      "ScopeFilter": "Status = 'Confirmed' AND Balance > 0",
+      "OnChangeEnabled": false,
+      "ScheduleEnabled": true,
+      "CronExpression": "0 0 1 * *",
+      "Timezone": "UTC",
+      "OnDemandEnabled": true,
+      "OutputMapping": "{\"fields\":{\"PredictedLatePaymentProbability\":\"$.score\",\"PredictedPaymentScoredAt\":\"$.scoredAt\"}}",
+      "SkipUnchanged": true,
+      "BatchSize": 100,
+      "MaxConcurrency": 1,
+      "Configuration": "{\"modelId\":\"514219E6-98DE-4D74-8141-DBBD1029AC0D\",\"primaryKeyField\":\"ID\"}",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "57AB4431-E629-4E5E-9F1D-E16627C46FFC"
+    },
+    "sync": {
+      "lastModified": "2026-09-19T18:19:39.843Z",
+      "checksum": "b2d50920a88e0f9b606735f849f8d629ab2dd0489c7eaf30e14af1bc3fd758a0"
+    }
+  }
+]

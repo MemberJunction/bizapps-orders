@@ -1,0 +1,13 @@
+{
+  "entity": "MJ: Record Processes",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "filter": "ID = '57AB4431-E629-4E5E-9F1D-E16627C46FFC'",
+    "createNewFileIfNotFound": true,
+    "newFileName": ".record-processes.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true
+  }
+}

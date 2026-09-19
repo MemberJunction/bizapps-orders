@@ -380,6 +380,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // has now found three times.
         if (!this.passesStatusTransition()) return false;
 
+        this.syncPredictivePaymentFieldsPreSave();
+
         await this.ApplyPersonPartyDefaults();
 
         const booking = this.willBookOnThisSave();
@@ -827,6 +829,31 @@ export class OrderEntityServer extends OrderHeaderEntity {
             this.buildFailureResult(new Error(this.statusTransitionRefusal(verdict))),
         );
         return false;
+    }
+
+    // ─── Predictive Scoring Synchronization ────────────────────────────────────
+
+    /**
+     * Synchronizes PredictedPaymentRiskBand when PredictedLatePaymentProbability changes or is set.
+     * Low (<0.10), Medium (0.10-0.25), High (0.25-0.50), or Critical (>=0.50).
+     */
+    public syncPredictivePaymentFieldsPreSave(): void {
+        try {
+            let probDirty = false;
+            try {
+                const probField = typeof this.GetFieldByName === 'function' ? this.GetFieldByName('PredictedLatePaymentProbability') : null;
+                probDirty = probField?.Dirty ?? false;
+            } catch {
+                probDirty = false;
+            }
+            if (this.PredictedLatePaymentProbability != null && (probDirty || !this.PredictedPaymentRiskBand)) {
+                this.PredictedPaymentRiskBand = ComputePredictivePaymentRiskBand(this.PredictedLatePaymentProbability);
+            } else if (this.PredictedLatePaymentProbability == null && probDirty) {
+                this.PredictedPaymentRiskBand = null;
+            }
+        } catch {
+            // Tolerate test mocks where BaseEntity._fields is uninitialized
+        }
     }
 
     // ─── Booking ───────────────────────────────────────────────────────────────
@@ -1594,6 +1621,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const amountField = line.GetFieldByName('DiscountAmount');
         if (!(amountField?.Dirty === true || (line.DiscountAmount ?? 0) > 0)) {
             line.DiscountAmount = terms.DiscountAmount;
+        }
+        if (!line.ServicePeriodStart && terms.ServicePeriodStart) {
+            line.ServicePeriodStart = new Date(terms.ServicePeriodStart);
+        }
+        if (!line.ServicePeriodEnd && terms.ServicePeriodEnd) {
+            line.ServicePeriodEnd = new Date(terms.ServicePeriodEnd);
         }
         return true;
     }
@@ -2855,4 +2888,31 @@ function ExtractEntityErrorMessage(entity: BaseEntity | null | undefined): strin
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */
 export function LoadOrderEntityServer(): void {
     // intentionally empty
+}
+
+/**
+ * Resolves the predictive payment risk band for an order from its predicted late payment probability.
+ * Thresholds:
+ * - < 0.10: 'Low'
+ * - < 0.25: 'Medium'
+ * - < 0.50: 'High'
+ * - >= 0.50: 'Critical'
+ * - null/undefined/NaN: null
+ */
+export function ComputePredictivePaymentRiskBand(
+    probability: number | null | undefined
+): OrderHeaderEntity['PredictedPaymentRiskBand'] {
+    if (probability == null || Number.isNaN(probability)) {
+        return null;
+    }
+    if (probability < 0.10) {
+        return 'Low';
+    }
+    if (probability < 0.25) {
+        return 'Medium';
+    }
+    if (probability < 0.50) {
+        return 'High';
+    }
+    return 'Critical';
 }

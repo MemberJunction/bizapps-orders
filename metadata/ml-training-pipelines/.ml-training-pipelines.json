@@ -1,0 +1,77 @@
+[
+  {
+    "fields": {
+      "Name": "Identify orders at risk of payment default or late payment prior to completio… (RandomForest)",
+      "Description": "Identify orders at risk of payment default or late payment prior to completion so that the finance team can intervene early.",
+      "Version": 1,
+      "Status": "Draft",
+      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetVariable": "LatePaymentOutcome",
+      "ProblemType": "classification",
+      "AlgorithmID": "F966965D-3A87-4DD6-91E0-4F9D1AF17796",
+      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"}]",
+      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"PrimaryProductName\",\"CustomerPriorOrders\",\"OrderLinesCount\",\"OrderMonth\",\"GrossTier\"]},{\"Id\":\"onehot-PrimaryProductName\",\"Kind\":\"onehot\",\"Column\":\"PrimaryProductName\"},{\"Id\":\"onehot-OrderMonth\",\"Kind\":\"onehot\",\"Column\":\"OrderMonth\"},{\"Id\":\"onehot-GrossTier\",\"Kind\":\"onehot\",\"Column\":\"GrossTier\"}]}",
+      "AsOfStrategy": "{\"Mode\":\"none\"}",
+      "LeakageGuard": "{\"DenyFields\":[\"Balance\",\"AmountPaid\",\"DueDate\",\"IsOverdue\"],\"SingleFeatureDominanceThreshold\":0.6}",
+      "ValidationStrategy": "{\"Strategy\":\"kfold\",\"K\":5,\"LockedHoldoutFraction\":0.2}",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "5F1E03E7-06C8-46BB-B0AE-216065446FFF"
+    },
+    "sync": {
+      "lastModified": "2026-09-19T18:19:10.106Z",
+      "checksum": "c4c8534542cf371f4a00a6fc0ea937044761cad8df99c6c9400f77a098afc280"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Identify orders at risk of payment default or late payment prior to completio… (LightGBM)",
+      "Description": "Identify orders at risk of payment default or late payment prior to completion so that the finance team can intervene early.",
+      "Version": 1,
+      "Status": "Draft",
+      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetVariable": "LatePaymentOutcome",
+      "ProblemType": "classification",
+      "AlgorithmID": "B2FD5E4A-75D4-401A-A1DA-F223A5234FDA",
+      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"}]",
+      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"PrimaryProductName\",\"CustomerPriorOrders\",\"OrderLinesCount\",\"OrderMonth\",\"GrossTier\"]},{\"Id\":\"onehot-PrimaryProductName\",\"Kind\":\"onehot\",\"Column\":\"PrimaryProductName\"},{\"Id\":\"onehot-OrderMonth\",\"Kind\":\"onehot\",\"Column\":\"OrderMonth\"},{\"Id\":\"onehot-GrossTier\",\"Kind\":\"onehot\",\"Column\":\"GrossTier\"}]}",
+      "AsOfStrategy": "{\"Mode\":\"none\"}",
+      "LeakageGuard": "{\"DenyFields\":[\"Balance\",\"AmountPaid\",\"DueDate\",\"IsOverdue\"],\"SingleFeatureDominanceThreshold\":0.6}",
+      "ValidationStrategy": "{\"Strategy\":\"kfold\",\"K\":5,\"LockedHoldoutFraction\":0.2}",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "907117CB-F9D7-4D70-BE94-A6B5465896C1"
+    },
+    "sync": {
+      "lastModified": "2026-09-19T18:19:10.106Z",
+      "checksum": "5b4d721364ef7030c573c9ac4f6bc2a26be4c7545b4642400c10ed6cf204b76f"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Identify orders at risk of payment default or late payment prior to completio… (XGBoost)",
+      "Description": "Identify orders at risk of payment default or late payment prior to completion so that the finance team can intervene early.",
+      "Version": 1,
+      "Status": "Draft",
+      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetVariable": "LatePaymentOutcome",
+      "ProblemType": "classification",
+      "AlgorithmID": "25E83BF9-C5EE-4BDF-A891-D36D871B73E3",
+      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"}]",
+      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"PrimaryProductName\",\"CustomerPriorOrders\",\"OrderLinesCount\",\"OrderMonth\",\"GrossTier\"]},{\"Id\":\"onehot-PrimaryProductName\",\"Kind\":\"onehot\",\"Column\":\"PrimaryProductName\"},{\"Id\":\"onehot-OrderMonth\",\"Kind\":\"onehot\",\"Column\":\"OrderMonth\"},{\"Id\":\"onehot-GrossTier\",\"Kind\":\"onehot\",\"Column\":\"GrossTier\"}]}",
+      "AsOfStrategy": "{\"Mode\":\"none\"}",
+      "LeakageGuard": "{\"DenyFields\":[\"Balance\",\"AmountPaid\",\"DueDate\",\"IsOverdue\"],\"SingleFeatureDominanceThreshold\":0.6}",
+      "ValidationStrategy": "{\"Strategy\":\"kfold\",\"K\":5,\"LockedHoldoutFraction\":0.2}",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "35F47C23-2384-4BA7-90A0-AC069C58237A"
+    },
+    "sync": {
+      "lastModified": "2026-09-19T18:19:10.106Z",
+      "checksum": "9e57705bec6a3e597b4be7559bd641117d988c41120718d3e3a564f6f0efd22f"
+    }
+  }
+]

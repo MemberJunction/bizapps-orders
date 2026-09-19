@@ -64,6 +64,8 @@ export async function LoadReversalContext(
         UnitPrice: number;
         DiscountPct: number;
         DiscountAmount: number;
+        ServicePeriodStart?: Date | string | null;
+        ServicePeriodEnd?: Date | string | null;
     };
 
     // The origin and every reversal already pointing at it, in ONE view. Splitting them costs a
@@ -123,6 +125,8 @@ export async function LoadReversalContext(
             DiscountPct: Number(origin.DiscountPct ?? 0),
             DiscountAmount: Number(origin.DiscountAmount ?? 0),
             OrderNumber: null,
+            ServicePeriodStart: origin.ServicePeriodStart ? new Date(origin.ServicePeriodStart) : null,
+            ServicePeriodEnd: origin.ServicePeriodEnd ? new Date(origin.ServicePeriodEnd) : null,
         },
         AlreadyReversed: Math.round(alreadyReversed * 1e4) / 1e4,
     };

@@ -1,0 +1,19 @@
+[
+  {
+    "fields": {
+      "MLModelID": "514219E6-98DE-4D74-8141-DBBD1029AC0D",
+      "RecordProcessID": "57AB4431-E629-4E5E-9F1D-E16627C46FFC",
+      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetColumn": "PredictedLatePaymentProbability",
+      "Mode": "Materialized",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "FFD2B840-F415-4739-8922-61E651F3AF04"
+    },
+    "sync": {
+      "lastModified": "2026-09-19T18:19:30.000Z",
+      "checksum": "5f8370d8e56c89268eca896d9900628b25e73e9464d3876079350a39c88f66ee"
+    }
+  }
+]
