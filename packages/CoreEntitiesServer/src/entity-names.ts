@@ -14,3 +14,6 @@ export const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 
 /** The order line entity. */
 export const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+
+/** The order line's accounting dimension tags (D31). */
+export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';

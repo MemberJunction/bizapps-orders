@@ -58,13 +58,12 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
-import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
-import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
-import { PaymentAllocationFactory, type OrderLineShare } from './PaymentAllocationFactory.js';
+import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
+import { LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
-const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 
 /** Payment statuses whose allocations belong in the ledger. */
@@ -157,7 +156,11 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
-        const orderLines = await this.loadOrderLines();
+        const orderLines = await LoadOrderLineShares(
+            provider as unknown as IRunViewProvider,
+            user,
+            this.OrderHeaderID,
+        );
         if (orderLines.length === 0) {
             throw new Error(
                 `Cannot allocate ${this.Amount} to order ${this.OrderHeaderID}: the order has no lines, so ` +
@@ -166,15 +169,12 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         }
         const order = await this.loadOrderNumber();
 
-        // The intercompany lookup is accounting's (BA-D26), read from its cache. Config is cheap
-        // after the first call and keeps the pair current when one is added mid-session.
-        await AccountingEngineBase.Instance.Config(false, user, provider);
+        // The intercompany lookup is accounting's (BA-D26), read from its cache — both builders
+        // below configure the engine on the way in, so the pair stays current when one is added
+        // mid-session without a separate Config call here.
         const factory = new PaymentAllocationFactory(
             await BuildGLAccountResolver(provider, user),
-            (source, target, asOf) => {
-                const hit = AccountingEngineBase.Instance.ResolveIntercompanyAccounts(source, target, asOf);
-                return hit ? { DueToGLAccountID: hit.DueTo.GLAccountID, DueFromGLAccountID: hit.DueFrom.GLAccountID } : null;
-            },
+            await BuildIntercompanyLookup(provider, user),
             EntityIDFor(PAYMENT_LINE_ENTITY),
         );
 
@@ -236,31 +236,6 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         };
     }
 
-    /** Every line of the order, with the company that owns it — the pro-rating basis. */
-    private async loadOrderLines(): Promise<OrderLineShare[]> {
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        // LineTotalGross (= net + tax) is the basis on purpose: it is exactly what booking DEBITED
-        // to AR for the line, and what the order's TotalGross rolls up from. Allocating on any
-        // other basis would clear a different amount than was ever receivable.
-        const res = await rv.RunView<{ ID: string; CompanyID: string; LineTotalGross: number }>(
-            {
-                EntityName: ORDER_LINE_ENTITY,
-                ExtraFilter: `OrderHeaderID='${this.OrderHeaderID}'`,
-                Fields: ['ID', 'CompanyID', 'LineTotalGross'],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            this.ContextCurrentUser,
-        );
-        if (!res?.Success) {
-            throw new Error(`Could not read the order's lines to allocate the payment: ${res?.ErrorMessage ?? 'unknown error'}`);
-        }
-        return (res.Results ?? []).map((l) => ({
-            OrderLineID: l.ID,
-            CompanyID: l.CompanyID,
-            Amount: Number(l.LineTotalGross ?? 0),
-        }));
-    }
 
     private async loadOrderNumber(): Promise<string> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);

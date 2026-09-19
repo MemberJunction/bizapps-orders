@@ -84,16 +84,19 @@ export type {
 export {
     PaymentAllocationFactory,
     AllocateByCompany,
+    SliceByDimensions,
     IntercompanyPairMissingError,
 } from './PaymentAllocationFactory.js';
 export type {
     OrderLineShare,
     CompanyShare,
+    DimensionSlice,
     IntercompanyPair,
     IntercompanyLookup,
     PaymentLineAllocationContext,
     PaymentAllocationResult,
 } from './PaymentAllocationFactory.js';
+export { LoadOrderLineShares } from './PaymentAllocationInputs.js';
 
 export { PaymentHeaderEntityServer, LoadPaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentLineEntityServer.js';
