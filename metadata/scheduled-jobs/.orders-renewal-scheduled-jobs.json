@@ -40,6 +40,9 @@
       "so a mis-set lead day invoices 25 customers and gets noticed rather than invoicing the book. The",
       "remainder is not dropped — those subscriptions are still due tomorrow. Raise or remove it once a",
       "few live passes have been read.",
+      "  · The cap binds on a PREVIEW identically, which is what makes the gate meaningful: the",
+      "    Candidates list a person confirms is the same 25 the pass places once Preview goes false,",
+      "    rather than every subscription in the 90-day window.",
       "",
       "OwnerUserID / NotifyUserID are deliberately unset: they name people, which differs per environment,",
       "and a metadata row that asserted one would overwrite whoever the host had chosen."

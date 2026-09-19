@@ -1,5 +1,6 @@
 ---
 '@mj-biz-apps/orders-server': minor
+'@mj-biz-apps/orders-core-entities-server': minor
 ---
 
 Give the renewal operation a scheduler, and a schedule that ships disabled.
@@ -34,3 +35,14 @@ scheduler's string encoding in both directions, and the schedule's configuration
 that exists while shipping disabled and set to preview. That last one catches the expensive failure
 — a job whose configuration points at nothing runs every night, fails every night, and renews
 nobody, which looks exactly like the subscriptions not being due yet.
+
+`MaxCount` now bounds a preview as well as a live pass. It was keyed on orders PLACED, which stays
+zero on a preview, so the cap never bound there: the list a person confirmed at the gate was every
+subscription in the window, and the pass that followed stopped at 25. The gate is only a gate if the
+two are the same list.
+
+A pass that leaves a due subscription unrenewed now reports `PARTIAL` and `Success: false`. The
+operation catches each booking failure so one bad row cannot stop the batch, and it reports success
+regardless — which meant a night on which every renewal threw wrote a green run, and a job that
+notifies only on failure told nobody. That is indistinguishable from nothing having been due, which
+is the symptom this whole change exists to end.

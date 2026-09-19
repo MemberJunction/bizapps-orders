@@ -44,11 +44,25 @@ function strParam(params: RunActionParams, name: string): string | null {
     return value.length ? value : null;
 }
 
+/**
+ * `null` means ABSENT; a value that is present but unreadable comes back as `NaN` so the caller
+ * refuses it. Folding the two together is what would make a mis-typed `MaxCount` read as "no cap
+ * was asked for" — the cap silently disappears in exactly the mis-configuration it exists to catch.
+ */
 function numParam(params: RunActionParams, name: string): number | null {
     const raw = param(params, name);
-    if (raw == null || raw === '') return null;
-    const value = Number(raw);
-    return Number.isFinite(value) ? value : null;
+    if (!supplied(params, name)) return null;
+    return Number(raw);
+}
+
+/**
+ * Whether the caller actually gave us this parameter. A scheduler writes an unset parameter as an
+ * empty string rather than omitting the row, so blank is absent — otherwise clearing a value in
+ * the job editor turns into a job that fails every night instead of one that takes the default.
+ */
+function supplied(params: RunActionParams, name: string): boolean {
+    const raw = param(params, name);
+    return raw != null && String(raw).trim().length > 0;
 }
 
 /**
@@ -80,7 +94,7 @@ function setOutput(params: RunActionParams, name: string, value: unknown): void 
  * Place the renewal orders that are due, or report what would be placed.
  *
  * Inputs: `AsOfDate`, `Preview`, `MaxCount`, `SubscriptionID` — all optional.
- * Outputs: `Placed`, `Skipped`, `CandidateCount`, `Candidates`, `Preview`.
+ * Outputs: `Placed`, `Skipped`, `CandidateCount`, `Candidates`, `PreviewedOnly`.
  */
 @RegisterClass(BaseAction, 'Orders.SpawnRenewals')
 export class SpawnRenewalsAction extends BaseAction {
@@ -139,18 +153,21 @@ export class SpawnRenewalsAction extends BaseAction {
 
         const maxCount = numParam(params, 'MaxCount');
         if (maxCount !== null) {
+            // Refused rather than dropped. A dropped MaxCount is not a smaller cap, it is NO cap —
+            // the operation falls back to MAX_SAFE_INTEGER — so '1,000' would invoice the book it
+            // was written to protect.
             if (!Number.isInteger(maxCount) || maxCount < 1) {
                 return {
                     Success: false,
                     ResultCode: 'INVALID_MAX_COUNT',
-                    Message: `MaxCount is a cap on orders placed in one pass, so it must be a whole number of at least 1 — got '${maxCount}'.`,
+                    Message: `MaxCount is a cap on orders placed in one pass, so it must be a whole number of at least 1 — got '${String(param(params, 'MaxCount'))}'.`,
                 };
             }
             input.MaxCount = maxCount;
         }
 
         const preview = boolParam(params, 'Preview');
-        if (preview === null && param(params, 'Preview') != null) {
+        if (preview === null && supplied(params, 'Preview')) {
             return {
                 Success: false,
                 ResultCode: 'INVALID_PREVIEW',
@@ -181,7 +198,35 @@ export class SpawnRenewalsAction extends BaseAction {
         // than as a count. The scheduler stores it on the ScheduledJobRun, which is where the
         // person confirming the list reads it.
         setOutput(params, 'Candidates', output.Candidates);
-        setOutput(params, 'Preview', input.Preview === true);
+        // NOT named `Preview`. `setOutput` matches by name, so writing the flag back under the
+        // input's own name overwrites the value the job was called with and flips that row's Type
+        // — destroying the one record of whether this pass was a rehearsal or the real thing.
+        setOutput(params, 'PreviewedOnly', input.Preview === true);
+
+        // A LIVE PASS THAT LEFT A DUE SUBSCRIPTION UNRENEWED IS NOT A SUCCESS. The operation
+        // catches each booking failure on purpose — one bad row must not stop the batch — records
+        // the reason on the candidate and carries on reporting Success. Passing that straight
+        // through is how a night on which every renewal threw writes a green ScheduledJobRun, and
+        // a job that notifies only on failure then tells nobody: it renews nobody and looks exactly
+        // like nothing having been due. Both ways a live candidate goes unplaced need a person —
+        // a booking that threw, and a prior pass whose term write failed after its order was
+        // booked. A preview places nothing by definition, so nothing there is unplaced.
+        const unplaced = input.Preview === true ? [] : output.Candidates.filter((c) => !c.OrderID);
+        if (!output.Success || unplaced.length > 0) {
+            const detail = unplaced
+                .slice(0, 3)
+                .map((c) => `${c.SubscriptionNumber}: ${c.SkippedReason ?? 'no reason reported'}`)
+                .join('; ');
+            return {
+                Success: false,
+                ResultCode: output.Success ? 'PARTIAL' : 'OPERATION_REPORTED_FAILURE',
+                Params: params.Params,
+                Message:
+                    `${output.Placed} renewal order(s) placed; ${unplaced.length} due subscription(s) were NOT renewed ` +
+                    `(every reason is on Candidates)${detail ? `: ${detail}` : ''}` +
+                    `${unplaced.length > 3 ? `, and ${unplaced.length - 3} more` : ''}.`,
+            };
+        }
 
         return {
             Success: true,

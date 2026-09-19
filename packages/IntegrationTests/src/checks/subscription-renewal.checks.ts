@@ -140,8 +140,17 @@ async function spawnRenewalsViaAction(
     ctx: IntegrationCheckContext,
     inputs: Record<string, string>,
 ): Promise<{ Success: boolean; ResultCode?: string; Message?: string; Placed: number; Skipped: number; Candidates: RenewalOutput['Candidates'] }> {
-    const action = MJGlobal.Instance.ClassFactory.CreateInstance<BaseAction>(BaseAction, ACTION_DRIVER_CLASS);
-    Assert(action != null, `'${ACTION_DRIVER_CLASS}' is not registered — the Load anchor is missing from the server bootstrap`);
+    // TryCreateInstance, not CreateInstance. `CreateInstance` does not return null for an
+    // unregistered key — it hands back `new BaseAction()`, because `abstract` is erased at runtime
+    // and BaseAction carries no @RequiresSubclass marker. A `!= null` assert can therefore never
+    // fire, and a missing Load anchor would surface as a TypeError from `.Run()` about
+    // InternalRunAction rather than as the one sentence that names the cause.
+    const resolved = MJGlobal.Instance.ClassFactory.TryCreateInstance<BaseAction>(BaseAction, ACTION_DRIVER_CLASS);
+    Assert(
+        resolved.Resolved && resolved.Instance != null,
+        `'${ACTION_DRIVER_CLASS}' is not registered — the Load anchor is missing from the server bootstrap${resolved.Reason ? `: ${resolved.Reason}` : ''}`,
+    );
+    const action = resolved.Instance!;
 
     const params = {
         ContextUser: ctx.User,
@@ -150,7 +159,7 @@ async function spawnRenewalsViaAction(
         Filters: [],
     } as unknown as RunActionParams;
 
-    const result = await action!.Run(params);
+    const result = await action.Run(params);
     const output = <T,>(name: string): T | undefined =>
         params.Params?.find((p) => p.Name?.toLowerCase() === name.toLowerCase())?.Value as T | undefined;
 
@@ -521,7 +530,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
 
                 const job = await TxMaybeOne<{ Configuration: string; Status: string; CronExpression: string }>(
                     ctx,
-                    `SELECT Configuration, Status, CronExpression FROM __mj.ScheduledJob WHERE Name = 'Orders — Spawn Renewals (daily)'`,
+                    `SELECT Configuration, Status, CronExpression FROM __mj.ScheduledJob WHERE Name = N'Orders — Spawn Renewals (daily)'`,
                 );
                 Assert(job != null, 'the scheduled job row exists — push the app metadata if not');
 

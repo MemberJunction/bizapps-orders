@@ -76,7 +76,7 @@
             "ValueType": "Scalar",
             "IsArray": false,
             "IsRequired": false,
-            "Description": "Cap on orders placed in one pass. The safety valve for the first live run, where a mis-set lead time would otherwise invoice an entire book of business at once. Capped runs are not lost work — the subscriptions left over are still due on the next pass."
+            "Description": "Cap on orders placed in one pass, and on the candidates a preview reports, so the list confirmed at the go-live gate is the pass that follows it. The safety valve for the first live run, where a mis-set lead time would otherwise invoice an entire book of business at once. Capped runs are not lost work — the subscriptions left over are still due on the next pass. A value that is not a whole number of at least 1 is refused, never dropped: a dropped cap is no cap."
           },
           "primaryKey": {
             "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B204"
@@ -174,6 +174,20 @@
           "sync": {
             "lastModified": "2026-09-19T16:14:41.579Z",
             "checksum": "5ed6db81f390bfca700601ecb270ece60d081c78e06f9b0ef980c4770d2e1efa"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewedOnly",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when this pass reported its list and wrote nothing. Deliberately NOT named Preview: an output is written back onto the param row of the same name, so reusing the input's name would overwrite the value the job was called with — and whether a run was a rehearsal or the real thing is the one fact the run record has to keep."
+          },
+          "primaryKey": {
+            "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B20A"
           }
         }
       ]
