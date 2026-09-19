@@ -28,6 +28,13 @@ The factory now merges the line's column tag with any `OrderLineDimension` child
 column winning on its own axis: accounting refuses a journal entry line tagged twice on one
 dimension, so a conflict would otherwise fail the whole booking rather than show itself.
 
+Three migrations, and none is optional: the columns, then the CodeGen output for them (EntityField
+registrations, the rebuilt `vwOrderLines`, `spCreateOrderLine` and `spUpdateOrderLine`, and the
+rebuilt `vwEventOrderLines` for the IS-A child). A host's `mj.config.cjs` carries this app's schema
+in `excludeSchemas`, so `mj codegen` on a host will register the fields in metadata but will not
+rebuild the view or the procedures — leaving an entity that declares fields its base view cannot
+produce, which reads as "no data" rather than an error.
+
 Note the shape this fixes and the shape it does not: one tag per line means a revenue line can be
 filed under Venture **or** Product **or** ARR-Type, not all of them. The chart-of-accounts design
 asks for five axes on a revenue line.
