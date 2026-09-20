@@ -790,14 +790,6 @@ export interface ListEntitlementsInput {
     IncludeInactive?: boolean;
 }
 
-/**
- * Output for `Orders.ListEntitlements`.
- *
- * One row per Code, each evaluated the same way as a point check. Not a second
- * source of truth for access — the LXP still asks at the gate.
- *
- * NO import statements — definitions are emitted verbatim.
- */
 export interface ListedEntitlement {
     Code: string;
     HasAccess: boolean;

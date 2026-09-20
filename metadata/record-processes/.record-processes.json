@@ -12,7 +12,7 @@
       "CronExpression": "0 0 1 * *",
       "Timezone": "UTC",
       "OnDemandEnabled": true,
-      "OutputMapping": "{\"fields\":{\"PredictedLatePaymentProbability\":\"$.score\",\"PredictedPaymentScoredAt\":\"$.scoredAt\"}}",
+      "OutputMapping": null,
       "SkipUnchanged": true,
       "BatchSize": 100,
       "MaxConcurrency": 1,
@@ -23,8 +23,56 @@
       "ID": "57AB4431-E629-4E5E-9F1D-E16627C46FFC"
     },
     "sync": {
-      "lastModified": "2026-09-19T18:19:39.843Z",
-      "checksum": "b2d50920a88e0f9b606735f849f8d629ab2dd0489c7eaf30e14af1bc3fd758a0"
+      "lastModified": "2026-09-20T23:03:35.633Z",
+      "checksum": "1c98057e1dcc2a7ffbd46825121f93fac8360d7daef4d9c45d88a4623fc69ab5"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Score Person Customer LTV with model DAB40DD7-AD2A-4DAC-A117-96D56CB6CE6B (Weekly)",
+      "EntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "Status": "Active",
+      "WorkType": "ML Model",
+      "ScopeType": "Filter",
+      "ScopeFilter": "Status = 'Confirmed' AND BillToPersonID IS NOT NULL",
+      "OnChangeEnabled": false,
+      "ScheduleEnabled": true,
+      "CronExpression": "0 0 * * 0",
+      "Timezone": "UTC",
+      "OnDemandEnabled": true,
+      "OutputMapping": null,
+      "SkipUnchanged": true,
+      "BatchSize": 100,
+      "MaxConcurrency": 1,
+      "Configuration": "{\"modelId\":\"DAB40DD7-AD2A-4DAC-A117-96D56CB6CE6B\",\"primaryKeyField\":\"ID\"}",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "80EFD2C2-B873-422C-9845-504258B9DEC4"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Score Organization Customer LTV with model FFA04AA8-1D29-425D-AAFF-2E9FF4DCCC8B (Weekly)",
+      "EntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "Status": "Active",
+      "WorkType": "ML Model",
+      "ScopeType": "Filter",
+      "ScopeFilter": "Status = 'Confirmed' AND BillToOrganizationID IS NOT NULL",
+      "OnChangeEnabled": false,
+      "ScheduleEnabled": true,
+      "CronExpression": "0 0 * * 0",
+      "Timezone": "UTC",
+      "OnDemandEnabled": true,
+      "OutputMapping": null,
+      "SkipUnchanged": true,
+      "BatchSize": 100,
+      "MaxConcurrency": 1,
+      "Configuration": "{\"modelId\":\"FFA04AA8-1D29-425D-AAFF-2E9FF4DCCC8B\",\"primaryKeyField\":\"ID\"}",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "A81E0AEA-8B52-485E-8951-27569C38439D"
     }
   }
 ]

@@ -4,16 +4,42 @@
       "MLModelID": "514219E6-98DE-4D74-8141-DBBD1029AC0D",
       "RecordProcessID": "57AB4431-E629-4E5E-9F1D-E16627C46FFC",
       "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
-      "TargetColumn": "PredictedLatePaymentProbability",
-      "Mode": "Materialized",
+      "TargetColumn": null,
+      "Mode": "Scheduled",
       "SkipEmbeddings": false
     },
     "primaryKey": {
       "ID": "FFD2B840-F415-4739-8922-61E651F3AF04"
     },
     "sync": {
-      "lastModified": "2026-09-19T18:19:30.000Z",
-      "checksum": "5f8370d8e56c89268eca896d9900628b25e73e9464d3876079350a39c88f66ee"
+      "lastModified": "2026-09-20T23:03:35.562Z",
+      "checksum": "4b41b81ccace542e7e686d3cf483c31507ed54e3f4e7cc947c697e2c9e77201e"
+    }
+  },
+  {
+    "fields": {
+      "MLModelID": "DAB40DD7-AD2A-4DAC-A117-96D56CB6CE6B",
+      "RecordProcessID": "80EFD2C2-B873-422C-9845-504258B9DEC4",
+      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetColumn": null,
+      "Mode": "Scheduled",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "28BCB67F-CDD5-4E5C-BBEF-B833E8ECE3D8"
+    }
+  },
+  {
+    "fields": {
+      "MLModelID": "FFA04AA8-1D29-425D-AAFF-2E9FF4DCCC8B",
+      "RecordProcessID": "A81E0AEA-8B52-485E-8951-27569C38439D",
+      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetColumn": null,
+      "Mode": "Scheduled",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "1B95A8CB-AE36-4B44-A0C5-F60AC1396E24"
     }
   }
 ]

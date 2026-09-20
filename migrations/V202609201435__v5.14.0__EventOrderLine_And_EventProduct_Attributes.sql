@@ -6,6 +6,21 @@
 -- =============================================================================
 
 ---------------------------------------------------------------------------
+-- 0. Heal orphan EntityField records
+---------------------------------------------------------------------------
+-- Remove legacy lat/lng on Event Products (not a geo write target)
+DELETE FROM [${mjSchema}].[EntityField]
+WHERE EntityID = 'B090A662-A97A-4748-B109-2FA716C14651'
+  AND Name IN ('__mj_Latitude', '__mj_Longitude');
+
+-- Remove legacy Root* fields on non-hierarchy recursive FKs (superseded by Configuration.Hierarchy opt-in)
+DELETE FROM [${mjSchema}].[EntityField]
+WHERE (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'RootReversesPaymentHeaderID')
+   OR (EntityID = 'B35DD5C3-9A6B-42D1-9049-297EE45ED2D5' AND Name = 'RootSuccessorProductID')
+   OR (EntityID = '29E748BF-E356-4AC1-BCE5-71E05279BAF8' AND Name IN ('RootMigratesFromSubscriptionID', 'RootMigratesToSubscriptionID'));
+GO
+
+---------------------------------------------------------------------------
 -- 1. Hand DDL: EventProduct Extensions
 -- -------------------------------------------------------------------------
 ALTER TABLE [${flyway:defaultSchema}].[EventProduct]

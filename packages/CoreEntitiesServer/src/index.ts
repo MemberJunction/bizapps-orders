@@ -385,7 +385,7 @@ export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyA
 
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 
-export { OrderEntityServer, LoadOrderEntityServer, ComputePredictivePaymentRiskBand } from './OrderEntityServer.js';
+export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';
 
 // Invoicing (D-INV): an invoice is a PRESENTATION of an order, never a record. The decisions are in

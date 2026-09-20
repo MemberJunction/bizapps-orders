@@ -4034,16 +4034,6 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(20)
     FulfillmentStatus?: string;
         
-    @Field(() => Float, {nullable: true, description: `0.0000 to 1.0000 probability that the order will default or pay past Net terms.`}) 
-    PredictedLatePaymentProbability?: number;
-        
-    @Field({nullable: true, description: `Categorical risk tier derived from payment default probability: Low, Medium, High, Critical.`}) 
-    @MaxLength(20)
-    PredictedPaymentRiskBand?: string;
-        
-    @Field({nullable: true, description: `Timestamp when the order was last scored by the predictive payment model.`}) 
-    PredictedPaymentScoredAt?: Date;
-        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -4114,27 +4104,6 @@ export class mjBizAppsOrdersOrderHeader_ {
         
     @Field(() => Int, {nullable: true}) 
     IsOverdue?: number;
-        
-    @Field({nullable: true}) 
-    @MaxLength(6)
-    LatePaymentOutcome?: string;
-        
-    @Field({nullable: true}) 
-    @MaxLength(200)
-    PrimaryProductName?: string;
-        
-    @Field(() => Int, {nullable: true}) 
-    OrderLinesCount?: number;
-        
-    @Field(() => Int, {nullable: true}) 
-    CustomerPriorOrders?: number;
-        
-    @Field(() => Int, {nullable: true}) 
-    OrderMonth?: number;
-        
-    @Field({nullable: true}) 
-    @MaxLength(2)
-    GrossTier?: string;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
@@ -4248,15 +4217,6 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     @Field({ nullable: true })
     FulfillmentStatus?: string;
 
-    @Field(() => Float, { nullable: true })
-    PredictedLatePaymentProbability: number | null;
-
-    @Field({ nullable: true })
-    PredictedPaymentRiskBand: string | null;
-
-    @Field({ nullable: true })
-    PredictedPaymentScoredAt: Date | null;
-
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -4368,15 +4328,6 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     FulfillmentStatus?: string;
-
-    @Field(() => Float, { nullable: true })
-    PredictedLatePaymentProbability?: number | null;
-
-    @Field({ nullable: true })
-    PredictedPaymentRiskBand?: string | null;
-
-    @Field({ nullable: true })
-    PredictedPaymentScoredAt?: Date | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -9666,7 +9617,7 @@ export class mjBizAppsOrdersProduct_ {
     @MaxLength(36)
     RevenueRecognitionTypeID?: string;
         
-    @Field(() => Float, {nullable: true, description: `DEPRECATED — do not use as a list price or quote. What someone pays is MJ_BizApps_Orders: Product Prices (Name, Amount, Applicability). Bundle SSP allocation already reads those rows. Column retained so historical SPs and existing data still validate; do not populate it for new products.`}) 
+    @Field(() => Float, {nullable: true, description: `Standalone selling price for ASC 606 bundle revenue allocation (BO-D35; fields now, allocation engine later).`}) 
     StandaloneSellingPrice?: number;
         
     @Field({nullable: true}) 
