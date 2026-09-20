@@ -20,8 +20,8 @@
       "ID": "5F1E03E7-06C8-46BB-B0AE-216065446FFF"
     },
     "sync": {
-      "lastModified": "2026-09-19T18:19:10.106Z",
-      "checksum": "c4c8534542cf371f4a00a6fc0ea937044761cad8df99c6c9400f77a098afc280"
+      "lastModified": "2026-09-20T23:33:23.102Z",
+      "checksum": "df4ef8e20e515b4017efc038850c17f61a007bf6b951bacd8688180b39c63dfd"
     }
   },
   {
@@ -45,8 +45,8 @@
       "ID": "907117CB-F9D7-4D70-BE94-A6B5465896C1"
     },
     "sync": {
-      "lastModified": "2026-09-19T18:19:10.106Z",
-      "checksum": "5b4d721364ef7030c573c9ac4f6bc2a26be4c7545b4642400c10ed6cf204b76f"
+      "lastModified": "2026-09-20T23:33:23.102Z",
+      "checksum": "38c72985ea9f0dbfc549059410dda9ac08180b326305d07a4a20e0af42c4ac05"
     }
   },
   {
@@ -70,8 +70,8 @@
       "ID": "35F47C23-2384-4BA7-90A0-AC069C58237A"
     },
     "sync": {
-      "lastModified": "2026-09-19T18:19:10.106Z",
-      "checksum": "9e57705bec6a3e597b4be7559bd641117d988c41120718d3e3a564f6f0efd22f"
+      "lastModified": "2026-09-20T23:33:23.106Z",
+      "checksum": "00d8b211202cd2705b9e96fca70631c05b70fc14f4e7d2da7473ee7f6d0807c6"
     }
   },
   {
@@ -80,19 +80,23 @@
       "Description": "Predict cumulative customer lifetime gross revenue at the person level to enable early tier classification and VIP treatment.",
       "Version": 1,
       "Status": "Draft",
-      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetEntityID": "7A94ADA9-7880-4FAE-97D8-DB0E934C3F5F",
       "TargetVariable": "CustomerActualLTV",
       "ProblemType": "regression",
       "AlgorithmID": "B2FD5E4A-75D4-401A-A1DA-F223A5234FDA",
-      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"}]",
-      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"PrimaryProductName\",\"CustomerPriorOrders\",\"OrderLinesCount\",\"OrderMonth\",\"GrossTier\",\"CustomerTenureMonths\",\"CustomerActiveSubs\"]},{\"Id\":\"onehot-PrimaryProductName\",\"Kind\":\"onehot\",\"Column\":\"PrimaryProductName\"},{\"Id\":\"onehot-OrderMonth\",\"Kind\":\"onehot\",\"Column\":\"OrderMonth\"},{\"Id\":\"onehot-GrossTier\",\"Kind\":\"onehot\",\"Column\":\"GrossTier\"}]}",
+      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Common: People\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Lines\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Subscriptions\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Common: Activities\"}]",
+      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"FirstOrderGross\",\"FirstOrderMonth\",\"CustomerTenureDays\",\"DaysSinceLastOrder\",\"TotalOrders\",\"OrdersLast12Months\",\"DistinctProductsCount\",\"TotalItemsCount\",\"ActiveSubscriptionsCount\",\"TotalSubscriptionsCount\",\"ActivityCount\",\"DaysSinceLastActivity\"]}]}",
       "AsOfStrategy": "{\"Mode\":\"none\"}",
-      "LeakageGuard": "{\"DenyFields\":[\"Balance\",\"AmountPaid\",\"DueDate\",\"IsOverdue\",\"CustomerActualLTV\",\"CustomerAvgOrderGross\"],\"SingleFeatureDominanceThreshold\":0.6}",
+      "LeakageGuard": "{\"DenyFields\":[\"TotalGross\",\"AmountPaid\",\"Balance\",\"DueDate\"],\"SingleFeatureDominanceThreshold\":0.6}",
       "ValidationStrategy": "{\"Strategy\":\"kfold\",\"K\":5,\"LockedHoldoutFraction\":0.2}",
       "SkipEmbeddings": false
     },
     "primaryKey": {
       "ID": "AC9B75DE-5C8F-44A6-AFC8-4EFD955DD9B8"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:33:23.135Z",
+      "checksum": "61d80f7bcdcbae64e0e7ff86985b021d4b2785b300105817147562f831e44619"
     }
   },
   {
@@ -101,19 +105,23 @@
       "Description": "Predict cumulative customer lifetime gross revenue at the person level to enable early tier classification and VIP treatment.",
       "Version": 1,
       "Status": "Draft",
-      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetEntityID": "7A94ADA9-7880-4FAE-97D8-DB0E934C3F5F",
       "TargetVariable": "CustomerActualLTV",
       "ProblemType": "regression",
       "AlgorithmID": "25E83BF9-C5EE-4BDF-A891-D36D871B73E3",
-      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"}]",
-      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"PrimaryProductName\",\"CustomerPriorOrders\",\"OrderLinesCount\",\"OrderMonth\",\"GrossTier\",\"CustomerTenureMonths\",\"CustomerActiveSubs\"]},{\"Id\":\"onehot-PrimaryProductName\",\"Kind\":\"onehot\",\"Column\":\"PrimaryProductName\"},{\"Id\":\"onehot-OrderMonth\",\"Kind\":\"onehot\",\"Column\":\"OrderMonth\"},{\"Id\":\"onehot-GrossTier\",\"Kind\":\"onehot\",\"Column\":\"GrossTier\"}]}",
+      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Common: People\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Lines\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Subscriptions\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Common: Activities\"}]",
+      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"FirstOrderGross\",\"FirstOrderMonth\",\"CustomerTenureDays\",\"DaysSinceLastOrder\",\"TotalOrders\",\"OrdersLast12Months\",\"DistinctProductsCount\",\"TotalItemsCount\",\"ActiveSubscriptionsCount\",\"TotalSubscriptionsCount\",\"ActivityCount\",\"DaysSinceLastActivity\"]}]}",
       "AsOfStrategy": "{\"Mode\":\"none\"}",
-      "LeakageGuard": "{\"DenyFields\":[\"Balance\",\"AmountPaid\",\"DueDate\",\"IsOverdue\",\"CustomerActualLTV\",\"CustomerAvgOrderGross\"],\"SingleFeatureDominanceThreshold\":0.6}",
+      "LeakageGuard": "{\"DenyFields\":[\"TotalGross\",\"AmountPaid\",\"Balance\",\"DueDate\"],\"SingleFeatureDominanceThreshold\":0.6}",
       "ValidationStrategy": "{\"Strategy\":\"kfold\",\"K\":5,\"LockedHoldoutFraction\":0.2}",
       "SkipEmbeddings": false
     },
     "primaryKey": {
       "ID": "9CE2C6B8-D8A2-4766-9EF1-9769B4292DB9"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:33:23.153Z",
+      "checksum": "d9f3c2e4a6327e9cef3022763021f11b8d3c8cf2ed9699b31013c8e8df320ce0"
     }
   },
   {
@@ -122,19 +130,23 @@
       "Description": "Predict cumulative customer lifetime gross revenue at the person level to enable early tier classification and VIP treatment.",
       "Version": 1,
       "Status": "Draft",
-      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetEntityID": "7A94ADA9-7880-4FAE-97D8-DB0E934C3F5F",
       "TargetVariable": "CustomerActualLTV",
       "ProblemType": "regression",
       "AlgorithmID": "F966965D-3A87-4DD6-91E0-4F9D1AF17796",
-      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"}]",
-      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"PrimaryProductName\",\"CustomerPriorOrders\",\"OrderLinesCount\",\"OrderMonth\",\"GrossTier\",\"CustomerTenureMonths\",\"CustomerActiveSubs\"]},{\"Id\":\"onehot-PrimaryProductName\",\"Kind\":\"onehot\",\"Column\":\"PrimaryProductName\"},{\"Id\":\"onehot-OrderMonth\",\"Kind\":\"onehot\",\"Column\":\"OrderMonth\"},{\"Id\":\"onehot-GrossTier\",\"Kind\":\"onehot\",\"Column\":\"GrossTier\"}]}",
+      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Common: People\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Lines\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Subscriptions\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Common: Activities\"}]",
+      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"FirstOrderGross\",\"FirstOrderMonth\",\"CustomerTenureDays\",\"DaysSinceLastOrder\",\"TotalOrders\",\"OrdersLast12Months\",\"DistinctProductsCount\",\"TotalItemsCount\",\"ActiveSubscriptionsCount\",\"TotalSubscriptionsCount\",\"ActivityCount\",\"DaysSinceLastActivity\"]}]}",
       "AsOfStrategy": "{\"Mode\":\"none\"}",
-      "LeakageGuard": "{\"DenyFields\":[\"Balance\",\"AmountPaid\",\"DueDate\",\"IsOverdue\",\"CustomerActualLTV\",\"CustomerAvgOrderGross\"],\"SingleFeatureDominanceThreshold\":0.6}",
+      "LeakageGuard": "{\"DenyFields\":[\"TotalGross\",\"AmountPaid\",\"Balance\",\"DueDate\"],\"SingleFeatureDominanceThreshold\":0.6}",
       "ValidationStrategy": "{\"Strategy\":\"kfold\",\"K\":5,\"LockedHoldoutFraction\":0.2}",
       "SkipEmbeddings": false
     },
     "primaryKey": {
       "ID": "EF9EE1B1-9CF2-4F60-B09E-B1361CA1CE70"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:33:23.166Z",
+      "checksum": "8c34f035df90dea0ffb5819353679df263e7dacb93dfe03eeba9bb1d2bb664c6"
     }
   },
   {
@@ -143,19 +155,23 @@
       "Description": "Predict cumulative customer lifetime gross revenue at the organization level to enable early tier classification and VIP treatment.",
       "Version": 1,
       "Status": "Draft",
-      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetEntityID": "C70448F9-9792-41D7-A82C-784B66429D54",
       "TargetVariable": "CustomerActualLTV",
       "ProblemType": "regression",
       "AlgorithmID": "B2FD5E4A-75D4-401A-A1DA-F223A5234FDA",
-      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"}]",
-      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"PrimaryProductName\",\"CustomerPriorOrders\",\"OrderLinesCount\",\"OrderMonth\",\"GrossTier\",\"CustomerTenureMonths\",\"CustomerActiveSubs\"]},{\"Id\":\"onehot-PrimaryProductName\",\"Kind\":\"onehot\",\"Column\":\"PrimaryProductName\"},{\"Id\":\"onehot-OrderMonth\",\"Kind\":\"onehot\",\"Column\":\"OrderMonth\"},{\"Id\":\"onehot-GrossTier\",\"Kind\":\"onehot\",\"Column\":\"GrossTier\"}]}",
+      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Common: Organizations\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Lines\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Subscriptions\"}]",
+      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"FirstOrderGross\",\"FirstOrderMonth\",\"CustomerTenureDays\",\"DaysSinceLastOrder\",\"TotalOrders\",\"OrdersLast12Months\",\"DistinctProductsCount\",\"TotalItemsCount\",\"ActiveSubscriptionsCount\",\"TotalSubscriptionsCount\"]}]}",
       "AsOfStrategy": "{\"Mode\":\"none\"}",
-      "LeakageGuard": "{\"DenyFields\":[\"Balance\",\"AmountPaid\",\"DueDate\",\"IsOverdue\",\"CustomerActualLTV\",\"CustomerAvgOrderGross\"],\"SingleFeatureDominanceThreshold\":0.6}",
+      "LeakageGuard": "{\"DenyFields\":[\"TotalGross\",\"AmountPaid\",\"Balance\",\"DueDate\"],\"SingleFeatureDominanceThreshold\":0.6}",
       "ValidationStrategy": "{\"Strategy\":\"kfold\",\"K\":5,\"LockedHoldoutFraction\":0.2}",
       "SkipEmbeddings": false
     },
     "primaryKey": {
       "ID": "6EDE93DE-1964-4E40-BF56-864B480B51D4"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:33:23.179Z",
+      "checksum": "b014aff10302913b9e20736bea7a377453813dbb4a627815e8f4b0edef58572a"
     }
   },
   {
@@ -164,19 +180,23 @@
       "Description": "Predict cumulative customer lifetime gross revenue at the organization level to enable early tier classification and VIP treatment.",
       "Version": 1,
       "Status": "Draft",
-      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetEntityID": "C70448F9-9792-41D7-A82C-784B66429D54",
       "TargetVariable": "CustomerActualLTV",
       "ProblemType": "regression",
       "AlgorithmID": "25E83BF9-C5EE-4BDF-A891-D36D871B73E3",
-      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"}]",
-      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"PrimaryProductName\",\"CustomerPriorOrders\",\"OrderLinesCount\",\"OrderMonth\",\"GrossTier\",\"CustomerTenureMonths\",\"CustomerActiveSubs\"]},{\"Id\":\"onehot-PrimaryProductName\",\"Kind\":\"onehot\",\"Column\":\"PrimaryProductName\"},{\"Id\":\"onehot-OrderMonth\",\"Kind\":\"onehot\",\"Column\":\"OrderMonth\"},{\"Id\":\"onehot-GrossTier\",\"Kind\":\"onehot\",\"Column\":\"GrossTier\"}]}",
+      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Common: Organizations\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Lines\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Subscriptions\"}]",
+      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"FirstOrderGross\",\"FirstOrderMonth\",\"CustomerTenureDays\",\"DaysSinceLastOrder\",\"TotalOrders\",\"OrdersLast12Months\",\"DistinctProductsCount\",\"TotalItemsCount\",\"ActiveSubscriptionsCount\",\"TotalSubscriptionsCount\"]}]}",
       "AsOfStrategy": "{\"Mode\":\"none\"}",
-      "LeakageGuard": "{\"DenyFields\":[\"Balance\",\"AmountPaid\",\"DueDate\",\"IsOverdue\",\"CustomerActualLTV\",\"CustomerAvgOrderGross\"],\"SingleFeatureDominanceThreshold\":0.6}",
+      "LeakageGuard": "{\"DenyFields\":[\"TotalGross\",\"AmountPaid\",\"Balance\",\"DueDate\"],\"SingleFeatureDominanceThreshold\":0.6}",
       "ValidationStrategy": "{\"Strategy\":\"kfold\",\"K\":5,\"LockedHoldoutFraction\":0.2}",
       "SkipEmbeddings": false
     },
     "primaryKey": {
       "ID": "FD851D6A-C67D-46A9-A932-013FC830FB40"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:33:23.192Z",
+      "checksum": "166efc0727409325a57293b344f17b2f041acdc40abefab4ba5afeb6eb18019f"
     }
   },
   {
@@ -185,19 +205,23 @@
       "Description": "Predict cumulative customer lifetime gross revenue at the organization level to enable early tier classification and VIP treatment.",
       "Version": 1,
       "Status": "Draft",
-      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetEntityID": "C70448F9-9792-41D7-A82C-784B66429D54",
       "TargetVariable": "CustomerActualLTV",
       "ProblemType": "regression",
       "AlgorithmID": "F966965D-3A87-4DD6-91E0-4F9D1AF17796",
-      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"}]",
-      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"PrimaryProductName\",\"CustomerPriorOrders\",\"OrderLinesCount\",\"OrderMonth\",\"GrossTier\",\"CustomerTenureMonths\",\"CustomerActiveSubs\"]},{\"Id\":\"onehot-PrimaryProductName\",\"Kind\":\"onehot\",\"Column\":\"PrimaryProductName\"},{\"Id\":\"onehot-OrderMonth\",\"Kind\":\"onehot\",\"Column\":\"OrderMonth\"},{\"Id\":\"onehot-GrossTier\",\"Kind\":\"onehot\",\"Column\":\"GrossTier\"}]}",
+      "SourceBindings": "[{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Common: Organizations\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Headers\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Order Lines\"},{\"Kind\":\"Entity\",\"Ref\":\"MJ_BizApps_Orders: Subscriptions\"}]",
+      "FeatureSteps": "{\"Steps\":[{\"Id\":\"select-raw\",\"Kind\":\"select\",\"Columns\":[\"FirstOrderGross\",\"FirstOrderMonth\",\"CustomerTenureDays\",\"DaysSinceLastOrder\",\"TotalOrders\",\"OrdersLast12Months\",\"DistinctProductsCount\",\"TotalItemsCount\",\"ActiveSubscriptionsCount\",\"TotalSubscriptionsCount\"]}]}",
       "AsOfStrategy": "{\"Mode\":\"none\"}",
-      "LeakageGuard": "{\"DenyFields\":[\"Balance\",\"AmountPaid\",\"DueDate\",\"IsOverdue\",\"CustomerActualLTV\",\"CustomerAvgOrderGross\"],\"SingleFeatureDominanceThreshold\":0.6}",
+      "LeakageGuard": "{\"DenyFields\":[\"TotalGross\",\"AmountPaid\",\"Balance\",\"DueDate\"],\"SingleFeatureDominanceThreshold\":0.6}",
       "ValidationStrategy": "{\"Strategy\":\"kfold\",\"K\":5,\"LockedHoldoutFraction\":0.2}",
       "SkipEmbeddings": false
     },
     "primaryKey": {
       "ID": "8EC6BE82-BC1F-4CA0-96D8-63BAFDE71E2A"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:33:23.203Z",
+      "checksum": "3d76717c74c97b507bc88740b1e6f3e2023631084b82a71835b130cbc77acd74"
     }
   }
 ]

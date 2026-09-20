@@ -30,11 +30,11 @@
   {
     "fields": {
       "Name": "Score Person Customer LTV with model DAB40DD7-AD2A-4DAC-A117-96D56CB6CE6B (Weekly)",
-      "EntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "EntityID": "7A94ADA9-7880-4FAE-97D8-DB0E934C3F5F",
       "Status": "Active",
       "WorkType": "ML Model",
       "ScopeType": "Filter",
-      "ScopeFilter": "Status = 'Confirmed' AND BillToPersonID IS NOT NULL",
+      "ScopeFilter": "Status = 'Active'",
       "OnChangeEnabled": false,
       "ScheduleEnabled": true,
       "CronExpression": "0 0 * * 0",
@@ -49,16 +49,20 @@
     },
     "primaryKey": {
       "ID": "80EFD2C2-B873-422C-9845-504258B9DEC4"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:33:23.235Z",
+      "checksum": "2b2a2e8e4e827052d2ad174b79fc47cb6b7cdeac493c493e64b32069611790a8"
     }
   },
   {
     "fields": {
       "Name": "Score Organization Customer LTV with model FFA04AA8-1D29-425D-AAFF-2E9FF4DCCC8B (Weekly)",
-      "EntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "EntityID": "C70448F9-9792-41D7-A82C-784B66429D54",
       "Status": "Active",
       "WorkType": "ML Model",
       "ScopeType": "Filter",
-      "ScopeFilter": "Status = 'Confirmed' AND BillToOrganizationID IS NOT NULL",
+      "ScopeFilter": "Status = 'Active'",
       "OnChangeEnabled": false,
       "ScheduleEnabled": true,
       "CronExpression": "0 0 * * 0",
@@ -73,6 +77,10 @@
     },
     "primaryKey": {
       "ID": "A81E0AEA-8B52-485E-8951-27569C38439D"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:33:23.250Z",
+      "checksum": "5ebdb5e05e0d1f628ebb81e51fed54c5c84ef993d6080b4bc40b5047fa50e94c"
     }
   }
 ]
