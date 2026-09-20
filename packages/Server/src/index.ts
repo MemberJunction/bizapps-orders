@@ -46,6 +46,8 @@ import {
     LoadSpawnRenewalsOperation,
     LoadEmailDeliveryChannel,
     LoadStoredValuePaymentProvider,
+    LoadBillComPaymentProvider,
+    LoadBillComInvoiceRail,
     LoadStripeACHPaymentProvider,
     LoadStripePaymentProvider,
     LoadSubscriptionBehavior,
@@ -127,6 +129,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadStripeACHPaymentProvider();    // US bank debits — settles LATE, so the webhook books the cash
     LoadManualPaymentProvider();       // cheque, wire, cash — no gateway to call
     LoadStoredValuePaymentProvider();  // gift cards and account credit, one driver (D38/D68)
+    LoadBillComPaymentProvider();      // Bill.com — the AR rail; refuses every checkout verb (golive #146/#148)
     LoadEnvironmentSecretResolver();   // the default CredentialsRef -> env lookup; replaceable
 
     // Actions. Same tree-shaking hazard as the operations above: without the anchor the action row
@@ -140,6 +143,7 @@ export function LoadBizAppsOrdersServer(): void {
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class
     // fallback rather than letting "nobody registered a channel" read as "the channel refused to send".
     LoadEmailDeliveryChannel();        // 'Email' — over MJ's communication framework
+    LoadBillComInvoiceRail();          // 'BillCom' — the outbound invoice rail over the published connector (golive #146)
 
     // Identity-claim drivers (guest checkout → account linking). Without these anchors the
     // @RegisterClass decorators are tree-shaken and MJ core's IdentityClaimEngine finds no

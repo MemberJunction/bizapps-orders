@@ -268,6 +268,29 @@ export type {
 
 export { StripePaymentProvider, LoadStripePaymentProvider, ToFormBody } from './StripePaymentProvider.js';
 export { StripeACHPaymentProvider, LoadStripeACHPaymentProvider } from './StripeACHPaymentProvider.js';
+export { BillComPaymentProvider, LoadBillComPaymentProvider } from './BillComPaymentProvider.js';
+export { BaseInvoiceRail, LoadBaseInvoiceRail } from './BaseInvoiceRail.js';
+export type {
+    RailCustomerFacts,
+    RailInvoiceLine,
+    RailInvoiceFacts,
+    RailInvoiceSnapshot,
+    RailPaymentRecord,
+    RailResult,
+    InvoiceRailConfig,
+} from './BaseInvoiceRail.js';
+export {
+    BuildInvoiceRail,
+    ResolveInvoiceRail,
+    FindInvoiceRailForCompany,
+    FindInvoiceRailProviderID,
+    ListInvoiceRailProviderIDs,
+    InvoiceRailNotConfiguredError,
+    INVOICE_RAIL_TYPE_CODES,
+} from './InvoiceRailResolver.js';
+export { BillComInvoiceRail, LoadBillComInvoiceRail, NormalizeReceivablePayment, BILLCOM_TRANSIENT } from './BillComInvoiceRail.js';
+export { BillComGateway, DefaultBillComGateway, UseBillComGatewaySeams, CurrentBillComGatewaySeams } from './BillComGateway.js';
+export type { BillComGatewaySeams } from './BillComGateway.js';
 export { ManualPaymentProvider, LoadManualPaymentProvider } from './ManualPaymentProvider.js';
 export {
     StoredValuePaymentProvider,
