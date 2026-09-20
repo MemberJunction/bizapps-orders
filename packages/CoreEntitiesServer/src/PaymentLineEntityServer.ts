@@ -61,6 +61,7 @@ import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
 import { LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import { PaymentAllocationFactory } from './PaymentAllocationFactory.js';
+import { RequireUUID } from './sql-guards.js';
 
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
@@ -312,7 +313,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const res = await rv.RunView<{ OrderHeaderID: string; InstallmentNumber: number }>(
             {
                 EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
-                ExtraFilter: `ID='${this.OrderHeaderPaymentScheduleID}'`,
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderPaymentScheduleID, 'OrderHeaderPaymentScheduleID')}'`,
                 Fields: ['OrderHeaderID', 'InstallmentNumber'],
                 ResultType: 'simple',
                 BypassCache: true,
