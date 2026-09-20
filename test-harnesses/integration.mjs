@@ -126,6 +126,7 @@ const ALL_BUNDLES = [
     'embedded-payment-detail',
     'payment-schedule',
     'party-roster',
+    'progress-measurement',
     'volume',
 ];
 

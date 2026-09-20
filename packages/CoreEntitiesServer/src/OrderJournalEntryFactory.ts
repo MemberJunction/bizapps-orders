@@ -125,6 +125,8 @@ interface RevRecTypeRow {
     Code: string;
     DriverClass: string;
     IsDeferred: boolean;
+    /** 'AtBooking' stages the whole schedule here; 'OnMeasurement' (POC) stages nothing (D90). */
+    ScheduleBasis: string;
 }
 
 interface LineDimensionRow {
@@ -747,7 +749,10 @@ export class OrderJournalEntryFactory {
             : [];
 
         // ── the forward-dated releases (D14/D43) ──
-        if (revRec.IsDeferred && !isGiftCard) {
+        // A percentage-of-completion type (ScheduleBasis 'OnMeasurement', D90) is deferred but its
+        // schedule is not knowable at booking: the credit parks in Deferred Revenue above and
+        // Orders.RecordProgress releases it as progress is attested. Nothing is staged here.
+        if (revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard) {
             // A subscription line's coverage window comes from its TERM (which applied anchoring,
             // deferral and proration); a non-subscription deferred line uses the line's own dates.
             const schedule = this.driverFor(revRec).BuildSchedule({
@@ -802,6 +807,7 @@ export class OrderJournalEntryFactory {
     }
 
     /**
+    /**
      * Where a contract-asset leg posts: Unbilled Receivable, or Deferred Revenue when nobody has
      * linked one (D92).
      *
@@ -835,6 +841,59 @@ export class OrderJournalEntryFactory {
                 Description: `Deferred revenue (unbilled, no contract-asset account) — ${where.ProductName}`,
             };
         }
+    }
+
+    /**
+     * The catch-up entry for one progress observation on a percentage-of-completion line (D90):
+     *
+     *     Dr  Deferred Revenue     |delta|
+     *         Cr  Sales            |delta|        (EffectiveDate = the measurement date)
+     *
+     * mirrored when `delta` is negative — a backward slide is the SAME entry with the sides swapped,
+     * through the idiom every other reversal here uses (D16), never a negative amount. Same accounts,
+     * same dimensions and same balance check as the forward-dated releases, so the two paths cannot
+     * drift apart. The caller owns the transaction and the arithmetic; this only shapes the draft.
+     */
+    public async BuildProgressDraft(
+        order: mjBizAppsOrdersOrderHeaderEntity,
+        line: mjBizAppsOrdersOrderLineEntity,
+        delta: number,
+        measurementDate: string,
+        note: string,
+    ): Promise<JEDraft> {
+        if (money(delta) === 0) {
+            throw new Error(`Order line ${line.ID}: a zero delta has no entry to build.`);
+        }
+        const product = (await this.loadProducts([line.ProductID])).get(line.ProductID.toLowerCase());
+        if (!product) {
+            throw new Error(`Order line ${line.ID} references product ${line.ProductID}, which was not found.`);
+        }
+        const companyID = line.CompanyID ?? product.CompanyID;
+        const asOf = new Date(measurementDate);
+        const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
+            this._resolver.Resolve(role, product.ID, product.ProductCategoryID, companyID, asOf, product.ProductTypeID);
+        const lineDims = MergeLineDimensions(
+            { DimensionID: line.DimensionID, DimensionValueID: line.DimensionValueID },
+            (await this.loadLineDimensions([line.ID])).get(line.ID) ?? [],
+        );
+
+        const amount = money(Math.abs(delta));
+        const lines = mirrorIf(delta < 0, [
+            { GLAccountID: await resolve(GL_ROLE.DeferredRevenue), DebitAmount: amount, Description: `Release deferred — ${product.Name}`, Dimensions: lineDims },
+            { GLAccountID: await resolve(GL_ROLE.Sales), CreditAmount: amount, Description: `Revenue — ${product.Name}`, Dimensions: lineDims },
+        ]);
+        this.assertBalanced(lines, order, line, 'progress recognition');
+
+        return {
+            EffectiveDate: measurementDate,
+            EntryType: 'RevenueRecognition',
+            Description:
+                `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                `${delta < 0 ? 'unrecognize' : 'recognize'} ${product.Name} ${note}`,
+            LinkedEntityID: this._orderLineEntityID,
+            LinkedRecordID: line.ID,
+            Lines: lines,
+        };
     }
 
     /** Resolve the driver through MJ's ClassFactory so subclasses registered on the same key win. */
@@ -919,6 +978,7 @@ export class OrderJournalEntryFactory {
                         Code: t.Code,
                         DriverClass: t.DriverClass,
                         IsDeferred: !!t.IsDeferred,
+                        ScheduleBasis: t.ScheduleBasis,
                     },
                 ]),
             );
@@ -927,7 +987,7 @@ export class OrderJournalEntryFactory {
         const result = await rv.RunView<RevRecTypeRow>(
             {
                 EntityName: 'MJ_BizApps_Orders: Revenue Recognition Types',
-                Fields: ['ID', 'Code', 'DriverClass', 'IsDeferred'],
+                Fields: ['ID', 'Code', 'DriverClass', 'IsDeferred', 'ScheduleBasis'],
                 ResultType: 'simple',
             },
             this._contextUser,
