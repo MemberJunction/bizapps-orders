@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609191200 — OrderHeaderPaymentSchedule: instalments on the order header
+-- V202609201200 — OrderHeaderPaymentSchedule: instalments on the order header
 -- (bc-aidp-next-golive#239 · orders PR #201 plan Parts A/C/D · D85–D88)
 -- =============================================================================
 -- An order can now be billed in instalments. Each row is an authored commitment —
@@ -51,113 +51,195 @@
 -- -----------------------------------------------------------------------------
 -- 1. The table
 -- -----------------------------------------------------------------------------
-IF OBJECT_ID('[${flyway:defaultSchema}].[OrderHeaderPaymentSchedule]', 'U') IS NULL
-BEGIN
-    CREATE TABLE [${flyway:defaultSchema}].[OrderHeaderPaymentSchedule] (
-        [ID]                 UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_OrderHeaderPaymentSchedule_ID] DEFAULT (newsequentialid()),
-        [OrderHeaderID]      UNIQUEIDENTIFIER NOT NULL,
-        -- Stamped server-side from the lines the row bills, never authored (D86).
-        [CompanyID]          UNIQUEIDENTIFIER NOT NULL,
-        [InstallmentNumber]  INT              NOT NULL,
-        [DueDate]            DATE             NOT NULL,
-        [Amount]             DECIMAL(18,2)    NOT NULL,
-        [Status]             NVARCHAR(20)     NOT NULL CONSTRAINT [DF_OrderHeaderPaymentSchedule_Status] DEFAULT (N'Scheduled'),
+CREATE TABLE [${flyway:defaultSchema}].[OrderHeaderPaymentSchedule] (
+    [ID]                 UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_OrderHeaderPaymentSchedule_ID] DEFAULT (newsequentialid()),
+    [OrderHeaderID]      UNIQUEIDENTIFIER NOT NULL,
+    -- Stamped server-side from the lines the row bills, never authored (D86).
+    [CompanyID]          UNIQUEIDENTIFIER NOT NULL,
+    [InstallmentNumber]  INT              NOT NULL,
+    [DueDate]            DATE             NOT NULL,
+    [Amount]             DECIMAL(18,2)    NOT NULL,
+    [Status]             NVARCHAR(20)     NOT NULL CONSTRAINT [DF_OrderHeaderPaymentSchedule_Status] DEFAULT (N'Scheduled'),
 
-        -- Invoice identity, frozen at invoicing (D87). There is still no Invoice table.
-        [DocumentNumber]     NVARCHAR(40)     NULL,
-        [InvoicedAt]         DATETIMEOFFSET   NULL,
-        [InvoicedByUserID]   UNIQUEIDENTIFIER NULL,
-        -- The AR reclass entry (Unbilled -> AR). Soft reference, like OrderLine.JournalEntryID.
-        -- Written by AIDP-25 (#240); NULL until then.
-        [JournalEntryID]     UNIQUEIDENTIFIER NULL,
+    -- Invoice identity, frozen at invoicing (D87). There is still no Invoice table.
+    [DocumentNumber]     NVARCHAR(40)     NULL,
+    [InvoicedAt]         DATETIMEOFFSET   NULL,
+    [InvoicedByUserID]   UNIQUEIDENTIFIER NULL,
+    -- The AR reclass entry (Unbilled -> AR). Soft reference, like OrderLine.JournalEntryID.
+    -- Written by AIDP-25 (#240); NULL until then.
+    [JournalEntryID]     UNIQUEIDENTIFIER NULL,
 
-        -- What the customer actually holds (D88, plan §8). Written by the outbound
-        -- delivery integration; unsent is SentAt IS NULL.
-        [ExternalSystem]     NVARCHAR(40)     NULL,
-        [ExternalInvoiceRef] NVARCHAR(100)    NULL,
-        [SentAt]             DATETIMEOFFSET   NULL,
+    -- What the customer actually holds (D88, plan §8). Written by the outbound
+    -- delivery integration; unsent is SentAt IS NULL.
+    [ExternalSystem]     NVARCHAR(40)     NULL,
+    [ExternalInvoiceRef] NVARCHAR(100)    NULL,
+    [SentAt]             DATETIMEOFFSET   NULL,
 
-        -- Trigger-maintained, same statement, same shape as OrderHeader (D41).
-        [AmountPaid]         DECIMAL(18,2)    NOT NULL CONSTRAINT [DF_OrderHeaderPaymentSchedule_AmountPaid] DEFAULT (0),
-        [Balance]            DECIMAL(18,2)    NULL,
-        [Description]        NVARCHAR(500)    NULL,
-        [Notes]              NVARCHAR(MAX)    NULL,
+    -- Trigger-maintained, same statement, same shape as OrderHeader (D41).
+    [AmountPaid]         DECIMAL(18,2)    NOT NULL CONSTRAINT [DF_OrderHeaderPaymentSchedule_AmountPaid] DEFAULT (0),
+    [Balance]            DECIMAL(18,2)    NULL,
+    [Description]        NVARCHAR(500)    NULL,
+    [Notes]              NVARCHAR(MAX)    NULL,
 
-        CONSTRAINT [PK_OrderHeaderPaymentSchedule] PRIMARY KEY CLUSTERED ([ID]),
-        CONSTRAINT [FK_OrderHeaderPaymentSchedule_OrderHeader] FOREIGN KEY ([OrderHeaderID])
-            REFERENCES [${flyway:defaultSchema}].[OrderHeader]([ID]),
-        CONSTRAINT [FK_OrderHeaderPaymentSchedule_Company] FOREIGN KEY ([CompanyID])
-            REFERENCES [__mj].[Company]([ID]),
-        CONSTRAINT [FK_OrderHeaderPaymentSchedule_InvoicedByUser] FOREIGN KEY ([InvoicedByUserID])
-            REFERENCES [__mj].[User]([ID]),
-        CONSTRAINT [UQ_OrderHeaderPaymentSchedule_Installment] UNIQUE ([OrderHeaderID], [CompanyID], [InstallmentNumber]),
-        CONSTRAINT [CK_OrderHeaderPaymentSchedule_Status]
-            CHECK ([Status] IN (N'Scheduled', N'Invoiced', N'Paid', N'Canceled', N'WrittenOff')),
-        CONSTRAINT [CK_OrderHeaderPaymentSchedule_Amount] CHECK ([Amount] > 0),
-        -- D87 as structure rather than convention: nothing past Scheduled without an identity.
-        -- Canceled is the one exception — a Scheduled row may be cancelled before it is ever invoiced.
-        CONSTRAINT [CK_OrderHeaderPaymentSchedule_InvoicedHasIdentity]
-            CHECK ([Status] IN (N'Scheduled', N'Canceled') OR ([DocumentNumber] IS NOT NULL AND [InvoicedAt] IS NOT NULL))
-    );
-END
+    CONSTRAINT [PK_OrderHeaderPaymentSchedule] PRIMARY KEY CLUSTERED ([ID]),
+    CONSTRAINT [FK_OrderHeaderPaymentSchedule_OrderHeader] FOREIGN KEY ([OrderHeaderID])
+        REFERENCES [${flyway:defaultSchema}].[OrderHeader]([ID]),
+    CONSTRAINT [FK_OrderHeaderPaymentSchedule_Company] FOREIGN KEY ([CompanyID])
+        REFERENCES [__mj].[Company]([ID]),
+    CONSTRAINT [FK_OrderHeaderPaymentSchedule_InvoicedByUser] FOREIGN KEY ([InvoicedByUserID])
+        REFERENCES [__mj].[User]([ID]),
+    CONSTRAINT [UQ_OrderHeaderPaymentSchedule_Installment] UNIQUE ([OrderHeaderID], [CompanyID], [InstallmentNumber]),
+    CONSTRAINT [CK_OrderHeaderPaymentSchedule_Status]
+        CHECK ([Status] IN (N'Scheduled', N'Invoiced', N'Paid', N'Canceled', N'WrittenOff')),
+    CONSTRAINT [CK_OrderHeaderPaymentSchedule_Amount] CHECK ([Amount] > 0),
+    -- D87 as structure rather than convention: nothing past Scheduled without an identity.
+    -- Canceled is the one exception — a Scheduled row may be cancelled before it is ever invoiced.
+    CONSTRAINT [CK_OrderHeaderPaymentSchedule_InvoicedHasIdentity]
+        CHECK ([Status] IN (N'Scheduled', N'Canceled') OR ([DocumentNumber] IS NOT NULL AND [InvoicedAt] IS NOT NULL))
+);
 GO
 
 -- A frozen document number is what the customer's AP department matches on. Two rows
 -- must never carry the same one.
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_OrderHeaderPaymentSchedule_DocumentNumber')
-BEGIN
-    CREATE UNIQUE NONCLUSTERED INDEX [UX_OrderHeaderPaymentSchedule_DocumentNumber]
-        ON [${flyway:defaultSchema}].[OrderHeaderPaymentSchedule] ([DocumentNumber])
-        WHERE [DocumentNumber] IS NOT NULL;
-END
+CREATE UNIQUE NONCLUSTERED INDEX [UX_OrderHeaderPaymentSchedule_DocumentNumber]
+    ON [${flyway:defaultSchema}].[OrderHeaderPaymentSchedule] ([DocumentNumber])
+    WHERE [DocumentNumber] IS NOT NULL;
 GO
 
--- Column descriptions: MS_Description is what CodeGen carries into EntityField.Description.
-IF NOT EXISTS (SELECT 1 FROM sys.extended_properties WHERE major_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeaderPaymentSchedule]') AND minor_id = 0 AND name = 'MS_Description')
-    EXEC sp_addextendedproperty @name = N'MS_Description',
-        @value = N'One instalment of an order''s billing schedule (D85). Editable while Scheduled provided the per-company sum still ties to the order; immutable once Invoiced (D88). An order with no rows is billed as one implicit instalment on its DueDate.',
-        @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-        @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule';
+-- Descriptions: MS_Description is what CodeGen carries into EntityField.Description.
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'One instalment of an order''s billing schedule (D85). Editable while Scheduled provided the per-company sum still ties to the order; immutable once Invoiced (D88). An order with no rows is billed as one implicit instalment on its DueDate.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule';
 GO
 
-DECLARE @descriptions TABLE (Col SYSNAME, Txt NVARCHAR(1000));
-INSERT INTO @descriptions (Col, Txt) VALUES
-    ('CompanyID',          N'The selling company this instalment bills for. Stamped server-side from the order''s lines (D86), never authored; a multi-company order carries one schedule per company.'),
-    ('InstallmentNumber',  N'1-based position within the order and company. Unique per (order, company). Part of the frozen document number, so it must not be renumbered after invoicing.'),
-    ('DueDate',            N'When this instalment is due. Re-datable while Scheduled; frozen once Invoiced. The earliest unpaid row''s DueDate is the order''s NextDueDate, which ageing reads.'),
-    ('Amount',             N'The instalment amount. Per (order, company) the non-Canceled rows must sum to that company''s LineTotalGross once the order is Confirmed; enforced at confirm and again at invoicing.'),
-    ('Status',             N'Scheduled | Invoiced | Paid | Canceled | WrittenOff. Scheduled -> Invoiced is Orders.IssueInstalmentInvoice; Invoiced <-> Paid follows the rollup; WrittenOff and Canceled are explicit and never overwritten.'),
-    ('DocumentNumber',     N'The invoice number the customer holds, frozen by Orders.IssueInstalmentInvoice and never recomputed (D87). NULL while Scheduled. Format: ORD-1234-2, or ORD-1234-B2 on a company-split order.'),
-    ('InvoicedAt',         N'When the instalment was invoiced. NULL while Scheduled. Set once, never cleared.'),
-    ('InvoicedByUserID',   N'Who issued the instalment invoice.'),
-    ('JournalEntryID',     N'The AR reclass journal entry (Unbilled Receivable -> Accounts Receivable) booked when the instalment was invoiced. Soft reference into accounting. NULL until the reclass entry ships (AIDP-25).'),
-    ('ExternalSystem',     N'The outbound system that holds the invoice (e.g. BillCom). Written by the delivery integration, not by Orders.'),
-    ('ExternalInvoiceRef', N'The external system''s own invoice id, so "what is this invoice''s Bill.com id" is answerable from the database.'),
-    ('SentAt',             N'When the invoice was delivered to the customer. NULL means unsent — the audit fact behind reversing an unsent invoice.'),
-    ('AmountPaid',         N'Trigger-maintained: payments named to this row plus the oldest-due-first share of payments applied to the order as a whole. Never authored.'),
-    ('Balance',            N'Trigger-maintained: Amount - AmountPaid, computed in the same statement as AmountPaid. Never authored.'),
-    ('Description',        N'What this instalment is for, as it should print on the invoice (e.g. "Year 2 of 3").'),
-    ('Notes',              N'Free text. Editable at any status.');
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The selling company this instalment bills for. Stamped server-side from the order''s lines (D86), never authored; a multi-company order carries one schedule per company.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'CompanyID';
+GO
 
-DECLARE @col SYSNAME, @txt NVARCHAR(1000);
-DECLARE cur CURSOR LOCAL FAST_FORWARD FOR SELECT Col, Txt FROM @descriptions;
-OPEN cur;
-FETCH NEXT FROM cur INTO @col, @txt;
-WHILE @@FETCH_STATUS = 0
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM sys.extended_properties
-        WHERE major_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeaderPaymentSchedule]')
-          AND minor_id = COLUMNPROPERTY(OBJECT_ID('[${flyway:defaultSchema}].[OrderHeaderPaymentSchedule]'), @col, 'ColumnId')
-          AND name = 'MS_Description'
-    )
-        EXEC sp_addextendedproperty @name = N'MS_Description', @value = @txt,
-            @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-            @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
-            @level2type = N'COLUMN', @level2name = @col;
-    FETCH NEXT FROM cur INTO @col, @txt;
-END
-CLOSE cur; DEALLOCATE cur;
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'1-based position within the order and company. Unique per (order, company). Part of the frozen document number, so it must not be renumbered after invoicing.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'InstallmentNumber';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'When this instalment is due. Re-datable while Scheduled; frozen once Invoiced. The earliest unpaid row''s DueDate is the order''s NextDueDate, which ageing reads.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'DueDate';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The instalment amount. Per (order, company) the non-Canceled rows must sum to that company''s LineTotalGross once the order is Confirmed; enforced at confirm and again at invoicing.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'Amount';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Scheduled | Invoiced | Paid | Canceled | WrittenOff. Scheduled -> Invoiced is Orders.IssueInstalmentInvoice; Invoiced <-> Paid follows the rollup; WrittenOff and Canceled are explicit and never overwritten.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'Status';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The invoice number the customer holds, frozen by Orders.IssueInstalmentInvoice and never recomputed (D87). NULL while Scheduled. Format: ORD-1234-2, or ORD-1234-B2 on a company-split order.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'DocumentNumber';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'When the instalment was invoiced. NULL while Scheduled. Set once, never cleared.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'InvoicedAt';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Who issued the instalment invoice.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'InvoicedByUserID';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The AR reclass journal entry (Unbilled Receivable -> Accounts Receivable) booked when the instalment was invoiced. Soft reference into accounting. NULL until the reclass entry ships (AIDP-25).',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'JournalEntryID';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The outbound system that holds the invoice (e.g. BillCom). Written by the delivery integration, not by Orders.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'ExternalSystem';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The external system''s own invoice id, so "what is this invoice''s Bill.com id" is answerable from the database.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'ExternalInvoiceRef';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'When the invoice was delivered to the customer. NULL means unsent — the audit fact behind reversing an unsent invoice.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'SentAt';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Trigger-maintained: payments named to this row plus the oldest-due-first share of payments applied to the order as a whole. Never authored.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'AmountPaid';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Trigger-maintained: Amount - AmountPaid, computed in the same statement as AmountPaid. Never authored.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'Balance';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'What this instalment is for, as it should print on the invoice (e.g. "Year 2 of 3").',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'Description';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Free text. Editable at any status.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderHeaderPaymentSchedule',
+    @level2type = N'COLUMN', @level2name = N'Notes';
 GO
 
 -- -----------------------------------------------------------------------------
@@ -166,26 +248,18 @@ GO
 --    below applies oldest-due-first. trg_PaymentLine_ImmutableAfterCapture is
 --    not relaxed: a mis-aimed payment is corrected by reversal, not by re-pointing.
 -- -----------------------------------------------------------------------------
-IF COL_LENGTH('${flyway:defaultSchema}.PaymentLine', 'OrderHeaderPaymentScheduleID') IS NULL
-BEGIN
-    ALTER TABLE [${flyway:defaultSchema}].[PaymentLine]
-        ADD [OrderHeaderPaymentScheduleID] UNIQUEIDENTIFIER NULL
-            CONSTRAINT [FK_PaymentLine_OrderHeaderPaymentSchedule]
-            REFERENCES [${flyway:defaultSchema}].[OrderHeaderPaymentSchedule]([ID]);
-END
+ALTER TABLE [${flyway:defaultSchema}].[PaymentLine]
+    ADD [OrderHeaderPaymentScheduleID] UNIQUEIDENTIFIER NULL
+        CONSTRAINT [FK_PaymentLine_OrderHeaderPaymentSchedule]
+        FOREIGN KEY REFERENCES [${flyway:defaultSchema}].[OrderHeaderPaymentSchedule]([ID]);
 GO
 
-IF NOT EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE major_id = OBJECT_ID('[${flyway:defaultSchema}].[PaymentLine]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID('[${flyway:defaultSchema}].[PaymentLine]'), 'OrderHeaderPaymentScheduleID', 'ColumnId')
-      AND name = 'MS_Description'
-)
-    EXEC sp_addextendedproperty @name = N'MS_Description',
-        @value = N'The instalment this allocation settles, when the payer said which one ("this is for the 2027 payment"). NULL applies the money to the order as a whole, oldest instalment first. Frozen with the rest of the allocation once the payment is Captured.',
-        @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-        @level1type = N'TABLE',  @level1name = N'PaymentLine',
-        @level2type = N'COLUMN', @level2name = N'OrderHeaderPaymentScheduleID';
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The instalment this allocation settles, when the payer said which one ("this is for the 2027 payment"). NULL applies the money to the order as a whole, oldest instalment first. Frozen with the rest of the allocation once the payment is Captured.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'PaymentLine',
+    @level2type = N'COLUMN', @level2name = N'OrderHeaderPaymentScheduleID';
 GO
 
 -- -----------------------------------------------------------------------------
