@@ -17,6 +17,9 @@ export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } 
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
+// Percentage-of-completion (AIDP-26, plan D90): the attestation, the catch-up entry, the worklist.
+export { RecordProgressOperation, LoadRecordProgressOperation } from './RecordProgressOperation.js';
+export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from './GetProgressWorklistOperation.js';
 export {
     AddMonths,
     BuildPaymentSchedule,
@@ -51,7 +54,7 @@ export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from '
 export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
-export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 
 export { MergeOrderRollups, ORDER_ROLLUP_FIELDS } from './OrderRollupBehavior.js';
 export type { OrderRollupField, OrderRollups, ResolvedOrderRollups } from './OrderRollupBehavior.js';
@@ -71,8 +74,11 @@ export {
     EvenOverTimeDriver,
     AllBackEndDriver,
     LoadRevenueRecognitionDrivers,
+    ProgressRecognitionDriver,
+    ManualAttestationDriver,
+    ComputeCatchUp,
 } from './RevenueRecognition.js';
-export type { RevRecContext, RevRecEntry, RevRecSchedule } from './RevenueRecognition.js';
+export type { RevRecContext, RevRecEntry, RevRecSchedule, ProgressMeasurement, CatchUp } from './RevenueRecognition.js';
 
 export {
     SubscriptionBehavior,

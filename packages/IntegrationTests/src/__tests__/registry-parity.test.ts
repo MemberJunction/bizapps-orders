@@ -64,6 +64,7 @@ import '../checks/ach-settlement.checks.js';
 import '../checks/embedded-payment-detail.checks.js';
 import '../checks/payment-schedule.checks.js';
 import '../checks/party-roster.checks.js';
+import '../checks/progress-measurement.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -113,6 +114,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'embedded-payment-detail': 14,
     'payment-schedule': 21,
     'party-roster': 2,
+    'progress-measurement': 6,
 };
 
 /**

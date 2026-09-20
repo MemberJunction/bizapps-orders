@@ -841,6 +841,66 @@ export interface OrdersGetOverdueWorklistOutput {
 }
 
 /**
+ * Input for `Orders.GetProgressWorklist`.
+ *
+ * The monthly attestation list: every open percentage-of-completion line with its last
+ * observation, so the delivery lead can state this period's (plan §9.4, version 1).
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersGetProgressWorklistInput {
+    /** Restrict to lines sold by these companies. Omit for everything in scope. */
+    CompanyIDs?: string[];
+    /** Include lines already attested at 100%. Off by default — a finished line has nothing to attest. */
+    IncludeComplete?: boolean;
+    /** Cap the result. Defaults to 500. */
+    MaxCount?: number;
+}
+
+/**
+ * Output for `Orders.GetProgressWorklist`.
+ *
+ * One row per booked percentage-of-completion line, with its last posted observation. Each row
+ * carries what `Orders.RecordProgress` needs (the line id) and what a signer needs to decide
+ * (the amount, the period, where it stood last time).
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface ProgressWorklistRow {
+    OrderLineID: string;
+    OrderHeaderID: string;
+    OrderNumber: string;
+    LineNumber: number;
+    ProductName: string;
+    CompanyID: string;
+    CompanyName: string;
+    /** Whichever party the order bills — organization wins, else the person. */
+    CustomerName: string;
+    /** The line's LineTotalNet — the amount the percent applies to. */
+    LineAmount: number;
+    ServicePeriodStart?: string | null;
+    ServicePeriodEnd?: string | null;
+    /** The last posted observation, or null when none has been recorded yet. */
+    LastMeasurementDate?: string | null;
+    /** Cumulative fraction at the last observation; 0 when none. */
+    LastPercentComplete: number;
+    /** Revenue recognised on the line to date — the sum of posted recognition amounts. */
+    RecognizedToDate: number;
+    /** Who signed the last observation. */
+    LastAttestedBy?: string | null;
+    OrderStatus: string;
+}
+
+export interface OrdersGetProgressWorklistOutput {
+    Success: boolean;
+    Message?: string;
+    Rows: ProgressWorklistRow[];
+    RowCount: number;
+    /** True when `MaxCount` clipped the result. */
+    Truncated: boolean;
+}
+
+/**
  * Input for `Orders.IssueInstalmentInvoice`.
  *
  * NO import statements — definitions are emitted verbatim.
@@ -1137,6 +1197,66 @@ export interface PriceOrderOutput {
 }
 
 /**
+ * Input for `Orders.RecordProgress`.
+ *
+ * One attested progress observation on a percentage-of-completion order line (plan D90). The
+ * percent is CUMULATIVE — "this much of the work is done" — and the operation posts the
+ * difference from what is already recognised, so the same input reverses a backward slide.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersRecordProgressInput {
+    /** The order line being attested. Its product's revenue recognition type must be OnMeasurement. */
+    OrderLineID: string;
+    /** The period this observation governs, `YYYY-MM-DD`. Becomes the entry's EffectiveDate. One per line per date. */
+    MeasurementDate: string;
+    /** Cumulative fraction complete, 0..1 (0.7 = 70%). */
+    PercentComplete: number;
+    /** The progress method (a ProgressRecognitionDriver key). Defaults to the revenue recognition type's DriverClass — ManualAttestation. */
+    MethodCode?: string;
+    /** Optional quantitative inputs behind the percent, kept for audit. */
+    MeasureNumerator?: number | null;
+    MeasureDenominator?: number | null;
+    /** Free text from the signer. */
+    Notes?: string | null;
+    /** Compute and return what WOULD post, writing nothing — for the confirmation step before finance commits. */
+    Preview?: boolean;
+}
+
+/**
+ * Output for `Orders.RecordProgress`.
+ *
+ * The catch-up arithmetic, echoed whether or not anything was written: what was recognised
+ * before, what the observation says should be recognised to date, and the delta between them.
+ * A zero delta is a success that wrote nothing.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersRecordProgressOutput {
+    Success: boolean;
+    Message?: string;
+    /** True when `Preview` was set: the numbers below are what WOULD post; nothing was written. */
+    Preview: boolean;
+    OrderLineID?: string;
+    OrderNumber?: string;
+    LineNumber?: number;
+    MeasurementDate?: string;
+    PercentComplete?: number;
+    /** The line's LineTotalNet — the amount the percent applies to. */
+    LineAmount?: number;
+    /** Revenue recognised on the line before this observation. */
+    RecognizedToDateBefore?: number;
+    /** LineAmount × PercentComplete, to the cent. */
+    RecognizedToDateAfter?: number;
+    /** After − Before. Negative on a backward slide; zero means no entry was written. */
+    RecognitionAmount?: number;
+    /** The observation row. Null on a preview. */
+    OrderLineProgressMeasurementID?: string | null;
+    /** The RevenueRecognition journal entry. Null on a preview and when the delta was zero. */
+    JournalEntryID?: string | null;
+}
+
+/**
  * Input for `Orders.RefundPayment`.
  *
  * A refund is a NEW payment, never an edit of the capture — the capture happened,
@@ -1387,6 +1507,22 @@ export class OrdersGetOverdueWorklistOperation extends BaseRemotableOperation<Or
 }
 
 // ============================================================
+// Orders.GetProgressWorklist — Get Progress Worklist
+// ============================================================
+/**
+ * Get Progress Worklist
+ * The monthly attestation list (plan §9.4, version 1): every booked percentage-of-completion order line with its last posted observation and revenue recognised to date, so the delivery lead can state this period's percent. Lines already attested at 100% are omitted unless asked for.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.GetProgressWorklist'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersGetProgressWorklistOperation extends BaseRemotableOperation<OrdersGetProgressWorklistInput, OrdersGetProgressWorklistOutput> {
+    public readonly OperationKey = "Orders.GetProgressWorklist";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
 // Orders.IssueInstalmentInvoice — Issue Instalment Invoice
 // ============================================================
 /**
@@ -1463,6 +1599,22 @@ export class OrdersPriceOrderOperation extends BaseRemotableOperation<PriceOrder
     public readonly OperationKey = "Orders.PriceOrder";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:read";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.RecordProgress — Record Progress
+// ============================================================
+/**
+ * Record Progress
+ * Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated before the last posted one; a posted observation is immutable.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.RecordProgress'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersRecordProgressOperation extends BaseRemotableOperation<OrdersRecordProgressInput, OrdersRecordProgressOutput> {
+    public readonly OperationKey = "Orders.RecordProgress";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 

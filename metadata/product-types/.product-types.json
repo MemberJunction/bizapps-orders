@@ -233,5 +233,26 @@
       "lastModified": "2026-09-02T03:26:25.911Z",
       "checksum": "0a3226c9103895a610bbf5f278455b820c5aa83b4bb8b24903e4269b876e7ae1"
     }
+  },
+  {
+    "fields": {
+      "Code": "Project",
+      "Name": "Project / Implementation",
+      "Description": "A multi-month engagement — an implementation, a consulting project — earned as the work is done. Recognition defaults to Percentage of Completion: the delivery lead attests cumulative progress on the close calendar (Receivables → Progress attestation) and revenue catches up to it.",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=PercentComplete",
+      "DefaultIsTaxable": 1,
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "Flat",
+      "DefaultEntitlementValidityMode": "Perpetual"
+    },
+    "primaryKey": {
+      "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F10"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T20:17:10.259Z",
+      "checksum": "ac712eac13935d6216078dacf5bb70e1b8fef9d5f91f1f0af39492e4a80a1d57"
+    }
   }
 ]

@@ -18,3 +18,4 @@ HH-ANTH,Harbor House Anthology,HH,BOOKS,PhysicalGood,UpFront,,WidgetB
 HH-MEM,Harbor House Membership,HH,MEMBERSHIPS,Membership,EvenOverTime,AnnualRolling,
 HH-CONF,Harbor House Conference Ticket,HH,CONFERENCES,Event,AllBackEnd,,EventTicketB
 ORPHAN-SKU,Unlinked Service,ORPHAN,MISC,Service,UpFront,,WidgetC
+IMPL-PROJ,Implementation Project (percent complete),BCP,SERVICES,Service,PercentComplete,,PocA
