@@ -21,6 +21,12 @@ describe('MJ_SERVER_EXTENSIONS', () => {
                 RootPath: '/checkout',
                 Settings: {},
             },
+            {
+                Enabled: true,
+                DriverClass: 'OrdersBillComWebhook',
+                RootPath: '/webhooks/billcom',
+                Settings: {},
+            },
         ]);
     });
 

@@ -1,0 +1,344 @@
+[
+  {
+    "_comments": [
+      "BILL.COM SCHEDULER ADAPTERS (golive #146/#148). Own dot-json, like .orders-renewal-actions.json.",
+      "MJ's scheduler dispatches Actions; no driver takes an operation key. These two rows are the adapters",
+      "for Orders.SendExternalInvoices and Orders.PollExternalPayments. The classes behind them hold no",
+      "logic — see packages/Server/src/custom/send-external-invoices.action.ts and poll-external-payments.action.ts.",
+      "SAFE TO SHIP Active: nothing invokes them until the ScheduledJobs in metadata/scheduled-jobs/ are",
+      "enabled, and those ship Disabled and configured for Preview."
+    ],
+    "fields": {
+      "Name": "Send External Invoices",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Work the external invoicing worklist: every billing unit that is invoiceable on its company's Bill.com rail and not yet sent is created there through Orders.IssueExternalInvoice. Runs the Orders.SendExternalInvoices operation, which carries the selection, the idempotency guard and the tie check — this Action only reads parameters and reports the result. Preview lists what would be sent and sends nothing.",
+      "Type": "Custom",
+      "DriverClass": "Orders.SendExternalInvoices",
+      "IconClass": "fa-solid fa-file-invoice-dollar",
+      "UserPrompt": "Send the invoices that are due to Bill.com, or preview what would be sent.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B01"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CompanyIDs",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Restrict the sweep to these selling companies (comma-separated IDs). Omit for every company with an active Bill.com provider row. A value that is not a list of IDs is refused."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B02"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxCount",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Cap on units sent in one pass, and on the units a preview lists, so the list confirmed at the go-live gate is the pass that follows it. The first-run safety valve: a mis-configuration invoices this many customers, not the book. Default 25. A value that is not a whole number of at least 1 is refused, never dropped: a dropped cap is no cap."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B03"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Preview",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True lists what WOULD be sent and sends nothing; false (the default) sends. A value that is neither is refused rather than guessed — the wrong guess sends customers invoices. A scheduler stores params as text, so \"false\" arrives as a string and is read as false, not as a truthy value."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B04"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "RetryTransientFailures",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True (the default) also retries units whose last send failed for a transient reason — a timeout, a 5xx, a lost session. Permanent failures (a customer with no email) are never retried; they wait in the Bill.com queue for a person."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B05"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Sent",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Units created on the rail this pass (or that would be, on a preview)."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B06"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Failed",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Units the rail or the tie check refused; each reason is on Results."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B07"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Skipped",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Units beyond MaxCount, in flight, or permanent failures. Not lost — still due next pass or waiting for a person."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B08"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Results",
+            "Type": "Output",
+            "ValueType": "Simple Object",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every unit considered, with its outcome. The deliverable of a preview run — stored on the ScheduledJobRun, where the person confirming the list reads it."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B09"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewedOnly",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when this pass was a rehearsal. Deliberately not named Preview, so the input's record survives."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B0A"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "fields": {
+      "Name": "Poll External Payments",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Read receivable payments from each company's Bill.com rail since the stored watermark and capture every cleared payment exactly once through Orders.CapturePayment, applied to the orders its invoices belong to. Runs the Orders.PollExternalPayments operation — this Action only reads parameters and reports the result. Preview decides everything and writes nothing. A pass that leaves unmatched or reversed payments for a person reports failure so the job notifies.",
+      "Type": "Custom",
+      "DriverClass": "Orders.PollExternalPayments",
+      "IconClass": "fa-solid fa-money-bill-transfer",
+      "UserPrompt": "Poll Bill.com for cleared customer payments and record them, or preview what would be recorded.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B11"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PaymentProviderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Poll one provider row (one company's Bill.com organisation) only. Omit for every active one."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B12"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Preview",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True decides every payment and writes nothing — no Payment rows, no dispositions, no watermark. False (the default) records. A value that is neither is refused rather than guessed. A scheduler stores params as text, so \"false\" arrives as a string and is read as false."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B13"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxCount",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Cap on payments considered per provider in one pass. Default 100. The remainder is read next pass (the watermark does not advance past a capped pass). A value that is not a whole number of at least 1 is refused."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B14"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SinceWatermark",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Override the stored watermark (ISO 8601) for a first run or a deliberate re-read. Safe: dedupe is by Bill.com payment id and by PaymentHeader.IdempotencyKey. An unreadable value is refused."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B15"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Captured",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Payments recorded this pass."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B16"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Held",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Payments not yet cleared, or with a status the decision table does not know."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B17"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Unmatched",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Payments applied to a Bill.com invoice Orders did not issue. Nothing captured; a person decides."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B18"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ReversalNeeded",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Payments captured earlier that Bill.com now reports void or failed. Reverse through the bank-return path."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B19"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Ignored",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Payments already known and unchanged."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B1A"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Outcomes",
+            "Type": "Output",
+            "ValueType": "Simple Object",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every payment considered, with its disposition and reason. Stored on the ScheduledJobRun."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B1B"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "NewWatermarks",
+            "Type": "Output",
+            "ValueType": "Simple Object",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "The watermark each provider row ended the pass on."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B1C"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewedOnly",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when this pass was a rehearsal."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B1D"
+          }
+        }
+      ]
+    }
+  }
+]

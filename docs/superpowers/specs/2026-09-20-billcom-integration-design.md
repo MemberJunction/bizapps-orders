@@ -529,3 +529,53 @@ Decisions above were made so work can start; each is reversible before phase 2 s
     follows the pluggable PaymentProvider pattern", and the poller needs a `PaymentProviderID` anyway.
 11. **Assumption:** Bill.com is enabled per company, and companies without a `BillCom` row keep
     native email invoicing untouched.
+
+---
+
+## 13. Addendum (2026-09-20, after implementation started) — webhooks, and what shipped
+
+### 13.1 Bill.com webhook support, verified against the public docs
+
+Read from developer.bill.com ("Webhook Events & Subscriptions", "Webhooks", release notes to May 2026):
+
+- **Mechanics.** `POST /v3/subscriptions` with `name`, `status.enabled`, `events[] {type, version}`,
+  `notificationUrl` (HTTPS). Every notification is signed **HMAC-SHA256 over the raw body, base64,
+  in `x-bill-sha-signature`**, keyed by the subscription's `securityKey`. Failed deliveries retry with
+  exponential backoff; a subscription that keeps failing is disabled by BILL. Limit: 10 subscriptions
+  per organisation; duplicates (same events + URL) are refused. The event catalog is served by
+  `GET /v3/events/catalog`. BILL's own guidance: webhooks are "a trigger for your system", not the
+  source of truth — validate with GET.
+- **AR coverage.** Invoice events only: `invoice.created`, `invoice.updated`, `invoice.archived`,
+  `invoice.restored` (the March 2026 release added a `createdBy` field to them). **There is no
+  payment-received event, and `invoice.updated` carries no receivable-payment id** — confirmed both
+  by the connector's own research (golive #49) and by the docs read today.
+- **Consequence.** The poll stays authoritative (§5.3). A webhook is useful only as a *latency
+  trigger*: a verified `invoice.*` event on an invoice we issued means "run the poll for this provider
+  now". That is what shipped: `POST /webhooks/billcom/:providerId` (`BillComWebhookExtension`,
+  `OrdersBillComWebhook`, registered in `mj.config.cjs`, the server-extensions manifest and
+  `package.json`), which verifies the signature through `BillComPaymentProvider.VerifyWebhook`
+  (`Credentials.WebhookSecret` ← `<CredentialsRef>_WEBHOOK_SECRET`), answers 202, and runs
+  `Orders.PollExternalPayments({ PaymentProviderID })` detached. Unverified or non-invoice
+  notifications never trigger anything. Registering the subscription in BILL is a setup step.
+
+### 13.2 What shipped on `feat/billcom-integration`
+
+Phase 1 (rail component), the pure behaviours, all five operations, both scheduler adapters and jobs,
+the native-delivery exclusion, the webhook receiver, three migrations, the metadata rows, a changeset,
+and the live harness. **Not done here:** applying the migrations and running CodeGen (no development
+database is configured in this checkout; the server addresses the new entities by name so nothing
+depends on generated getters), `mj sync push`, the Angular panel and queue page (Task 19), the
+integration check bundles (they need the applied schema), the release Metadata_Sync migration, and
+the spikes S1–S5 (they need sandbox credentials; the harness is ready).
+
+### 13.3 Deviations from the plan worth knowing
+
+- `ExternalInvoiceBehavior` lives in `packages/CoreEntitiesServer`, not `packages/Entities`, because
+  `InvoiceDocument` lives there on `next`; `ExternalPaymentBehavior` is in `packages/Entities` as planned.
+- Schedule (PR #220) support is **conditional**: every operation checks `provider.EntityByName` for the
+  schedule entity and treats a database without it as "all orders billed as a whole". The
+  `ExternalInvoice → OrderHeaderPaymentSchedule` FK is added only where the table exists.
+- The generated remote-operation base classes were added to `remote_operations.ts` by hand in exactly
+  CodeGen's emitted shape; the next CodeGen run reproduces them.
+- TypeScript here compiles without `strictNullChecks`, so union narrowing uses `=== false` / `=== true`
+  rather than truthiness, and `BaseEntity` rows load through `InnerLoad(CompositeKey.FromID(id))`.

@@ -44,8 +44,13 @@ describe('BillComPaymentProvider', () => {
         expect(refund.Reason).toMatch(/not a checkout rail/i);
     });
 
-    it('does not verify webhooks — Bill.com publishes no payment event', async () => {
-        const v = await driver().VerifyWebhook('{}', {});
-        expect(v.Valid).toBe(false);
+    it('verifies a Bill.com signature with the configured security key, and refuses without one', async () => {
+        const { SignBillComPayload } = await import('../BillComWebhook.js');
+        const body = JSON.stringify({ type: 'invoice.updated', data: { id: '00e1' } });
+        const d = driver();
+        expect((await d.VerifyWebhook(body, { 'x-bill-sha-signature': await SignBillComPayload(body, 'k') })).Valid).toBe(false);
+        d.Credentials = { WebhookSecret: 'k' };
+        expect((await d.VerifyWebhook(body, { 'x-bill-sha-signature': await SignBillComPayload(body, 'k') })).Valid).toBe(true);
+        expect(d.ParseWebhookEvent(body)).toMatchObject({ Kind: 'invoice.updated', ProviderChargeID: '00e1' });
     });
 });

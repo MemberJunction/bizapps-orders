@@ -2643,3 +2643,262 @@ export class WorkflowValidateOperation extends BaseRemotableOperation<WorkflowSa
     public readonly RequiresSystemUser = false;
 }
 
+// ============================================================
+// Orders.IssueExternalInvoice — Issue External Invoice
+// ============================================================
+export interface OrdersIssueExternalInvoiceInput {
+    /** The order the unit bills. */
+    OrderHeaderID: string;
+    /**
+     * The selling company of the document. Optional when the order sells for exactly one company or
+     * when an instalment is named (the instalment carries its company). Required for a schedule-less
+     * order that sells for several companies.
+     */
+    CompanyID?: string | null;
+    /** The Invoiced instalment to send, for an order billed on a schedule. Omit for an order billed as a whole. */
+    OrderHeaderPaymentScheduleID?: string | null;
+    /** Build and return the payload without contacting the rail or writing anything. */
+    Preview?: boolean;
+    /**
+     * Send a unit whose previous rail invoice was cancelled or whose send failed permanently.
+     * Re-issuing is a deliberate human act (design D-B7); the sweep never sets this for a cancelled unit.
+     */
+    AllowReissue?: boolean;
+}
+export type OrdersIssueExternalInvoiceResultCode =
+    | 'SENT'
+    | 'ALREADY_SENT'
+    | 'PREVIEWED'
+    | 'NO_RAIL'
+    | 'IN_FLIGHT'
+    | 'HAS_HISTORY'
+    | 'NOT_CONFIRMED'
+    | 'NAME_THE_INSTALMENT'
+    | 'NAME_THE_COMPANY'
+    | 'INSTALMENT_NOT_INVOICED'
+    | 'NO_CUSTOMER_EMAIL'
+    | 'TIE_FAILED'
+    | 'RAIL_REFUSED'
+    | 'ERROR';
+
+export interface OrdersIssueExternalInvoiceOutput {
+    Success: boolean;
+    Message?: string;
+    ResultCode: OrdersIssueExternalInvoiceResultCode;
+    /** The ExternalInvoice row (Sent, Failed, or the pre-existing Sent row on ALREADY_SENT). */
+    ExternalInvoiceID?: string | null;
+    /** The rail's invoice id (Bill.com `00e…`). */
+    ExternalInvoiceRef?: string | null;
+    /** The rail's customer id the invoice was issued to (Bill.com `0cu…`). */
+    ExternalCustomerRef?: string | null;
+    /** Our frozen document number, which is the rail's invoice number. */
+    DocumentNumber?: string | null;
+    Amount?: number | null;
+    DueDate?: string | null;
+    SentAt?: string | null;
+    /** On PREVIEWED: what would have been sent. */
+    Payload?: unknown;
+}
+/**
+ * Issue External Invoice
+ * Create one billing unit's invoice on the company's external AR rail (Bill.com): a Confirmed order billed as a whole, per selling company, or one Invoiced instalment. Idempotent per unit — a unit already on the rail returns its existing reference. Records the rail's invoice id on ExternalInvoice (authoritative) and on the instalment row; never touches Balance, PaymentStatus or the ledger.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.IssueExternalInvoice'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersIssueExternalInvoiceOperation extends BaseRemotableOperation<OrdersIssueExternalInvoiceInput, OrdersIssueExternalInvoiceOutput> {
+    public readonly OperationKey = "Orders.IssueExternalInvoice";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.CancelExternalInvoice — Cancel External Invoice
+// ============================================================
+export interface OrdersCancelExternalInvoiceInput {
+    /** The Sent ExternalInvoice row to withdraw. */
+    ExternalInvoiceID: string;
+    /** Why, in the person's words. Recorded on the row. */
+    Reason: string;
+}
+export type OrdersCancelExternalInvoiceResultCode =
+    | 'CANCELED'
+    | 'NOT_SENT'
+    | 'HAS_PAYMENT'
+    | 'PAYMENT_PENDING_ON_RAIL'
+    | 'RAIL_REFUSED'
+    | 'ERROR';
+
+export interface OrdersCancelExternalInvoiceOutput {
+    Success: boolean;
+    Message?: string;
+    ResultCode: OrdersCancelExternalInvoiceResultCode;
+    ExternalInvoiceID?: string | null;
+    CanceledAt?: string | null;
+}
+/**
+ * Cancel External Invoice
+ * Withdraw an unpaid invoice from the external rail (Bill.com archives it). Blocked when any payment is applied to the unit here or visible on the rail. No accounting event; the unit reads as unsent again and can be re-issued deliberately.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.CancelExternalInvoice'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersCancelExternalInvoiceOperation extends BaseRemotableOperation<OrdersCancelExternalInvoiceInput, OrdersCancelExternalInvoiceOutput> {
+    public readonly OperationKey = "Orders.CancelExternalInvoice";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.GetExternalInvoicingWorklist — Get External Invoicing Worklist
+// ============================================================
+export interface OrdersGetExternalInvoicingWorklistInput {
+    /** Restrict to these selling companies. Omit for every company with an active rail. */
+    CompanyIDs?: string[];
+    /** Cap on rows. Default 200. Truncation is reported, never silent. */
+    MaxCount?: number;
+    /** Also list units whose last send failed (State 'Failed') and stuck sends (State 'InFlight'). */
+    IncludeFailed?: boolean;
+}
+export interface ExternalInvoicingWorklistRow {
+    OrderHeaderID: string;
+    OrderNumber: string;
+    CompanyID: string;
+    CompanyName: string;
+    /** Null for an order billed as a whole. */
+    OrderHeaderPaymentScheduleID: string | null;
+    InstallmentNumber: number | null;
+    /** The number the rail invoice will carry. */
+    DocumentNumber: string;
+    Amount: number;
+    DueDate: string | null;
+    CustomerName: string;
+    /** Unsent: never attempted. Failed: last send refused. InFlight: a Sending row with no rail reference. */
+    State: 'Unsent' | 'Failed' | 'InFlight';
+    /** The ExternalInvoice row behind a Failed or InFlight state. */
+    ExternalInvoiceID: string | null;
+    LastError: string | null;
+    /** When the unit became invoiceable (ConfirmedAt or InvoicedAt), ISO. */
+    SinceAt: string | null;
+}
+
+export interface OrdersGetExternalInvoicingWorklistOutput {
+    Success: boolean;
+    Message?: string;
+    Rows: ExternalInvoicingWorklistRow[];
+    RowCount: number;
+    /** True when MaxCount clipped the result. */
+    Truncated: boolean;
+}
+/**
+ * Get External Invoicing Worklist
+ * Billing units that are invoiceable on a company's external rail and unsent — Confirmed schedule-less orders with a balance and no rail history, Invoiced instalments with SentAt NULL — plus failed and in-flight sends on request. Companies without an active rail never appear.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.GetExternalInvoicingWorklist'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersGetExternalInvoicingWorklistOperation extends BaseRemotableOperation<OrdersGetExternalInvoicingWorklistInput, OrdersGetExternalInvoicingWorklistOutput> {
+    public readonly OperationKey = "Orders.GetExternalInvoicingWorklist";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.SendExternalInvoices — Send External Invoices
+// ============================================================
+export interface OrdersSendExternalInvoicesInput {
+    /** Restrict to these selling companies. Omit for every company with an active rail. */
+    CompanyIDs?: string[];
+    /**
+     * Cap on units sent in one pass, and on the units a preview lists. The first-run safety valve:
+     * a mis-configuration invoices this many customers, not the book. Default 25.
+     */
+    MaxCount?: number;
+    /** List what WOULD be sent and send nothing. */
+    Preview?: boolean;
+    /** Also retry units whose last send failed for a transient reason (timeout, 5xx, session). Default true. */
+    RetryTransientFailures?: boolean;
+}
+export interface SendExternalInvoicesResult {
+    OrderNumber: string;
+    DocumentNumber: string;
+    CompanyID: string;
+    OrderHeaderPaymentScheduleID: string | null;
+    Amount: number;
+    ResultCode: string;
+    Message?: string;
+    ExternalInvoiceRef?: string | null;
+}
+
+export interface OrdersSendExternalInvoicesOutput {
+    Success: boolean;
+    Message?: string;
+    Sent: number;
+    Failed: number;
+    /** Units in the worklist beyond MaxCount, or skipped as permanent failures. Not lost — still due next pass. */
+    Skipped: number;
+    PreviewedOnly: boolean;
+    Results: SendExternalInvoicesResult[];
+}
+/**
+ * Send External Invoices
+ * The sweep: work the external invoicing worklist through Orders.IssueExternalInvoice, capped by MaxCount, with Preview listing what would be sent. Retries transient failures; never re-issues a cancelled unit. The scheduled caller for Bill.com invoicing.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.SendExternalInvoices'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersSendExternalInvoicesOperation extends BaseRemotableOperation<OrdersSendExternalInvoicesInput, OrdersSendExternalInvoicesOutput> {
+    public readonly OperationKey = "Orders.SendExternalInvoices";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.PollExternalPayments — Poll External Payments
+// ============================================================
+export interface OrdersPollExternalPaymentsInput {
+    /** Poll one provider row only. Omit for every active rail provider. */
+    PaymentProviderID?: string | null;
+    /** Decide everything, write nothing — no payments, no dispositions, no watermark. */
+    Preview?: boolean;
+    /** Cap on payments considered per provider in one pass. Default 100. The remainder is read next pass. */
+    MaxCount?: number;
+    /** Override the stored watermark (ISO). For a first run or a deliberate re-read; dedupe by payment id makes re-reading safe. */
+    SinceWatermark?: string | null;
+}
+export interface ExternalPaymentOutcome {
+    PaymentProviderID: string;
+    ExternalPaymentRef: string;
+    Amount: number;
+    ExternalStatus: string | null;
+    Disposition: 'Captured' | 'Held' | 'Unmatched' | 'Ignored' | 'ReversalNeeded';
+    Reason: string;
+    PaymentNumber?: string | null;
+    PaymentHeaderID?: string | null;
+}
+
+export interface OrdersPollExternalPaymentsOutput {
+    Success: boolean;
+    Message?: string;
+    ResultCode: 'COMPLETED' | 'PREVIEWED' | 'ATTENTION' | 'NO_PROVIDERS' | 'ERROR';
+    Captured: number;
+    Held: number;
+    Unmatched: number;
+    ReversalNeeded: number;
+    Ignored: number;
+    Outcomes: ExternalPaymentOutcome[];
+    NewWatermarks: Array<{ PaymentProviderID: string; Watermark: string | null }>;
+    PreviewedOnly: boolean;
+}
+/**
+ * Poll External Payments
+ * Read receivable payments from each company's external AR rail (Bill.com) since the stored watermark and capture every cleared payment exactly once through Orders.CapturePayment, fanned out to the orders its invoices belong to. Unknown statuses are held, unmatched invoices capture nothing, and reversals are flagged for a person. Poll-authoritative: Bill.com publishes no payment-received webhook.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.PollExternalPayments'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersPollExternalPaymentsOperation extends BaseRemotableOperation<OrdersPollExternalPaymentsInput, OrdersPollExternalPaymentsOutput> {
+    public readonly OperationKey = "Orders.PollExternalPayments";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}

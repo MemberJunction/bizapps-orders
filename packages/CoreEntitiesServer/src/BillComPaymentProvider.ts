@@ -13,6 +13,11 @@
  * to ask `SettlesAsynchronously` — the answer here is "no", because the poller only ever captures
  * what Bill.com already reports as cleared.
  *
+ * THE ONE REAL VERB: `VerifyWebhook`. Bill.com signs notifications HMAC-SHA256/base64 over the raw
+ * body with the subscription's security key (`x-bill-sha-signature`). The key arrives as
+ * `Credentials.WebhookSecret`, resolved from `CredentialsRef` by the secret resolver
+ * (`<REF>_WEBHOOK_SECRET`). A verified notification is only ever a nudge to poll — see `BillComWebhook.ts`.
+ *
  * @module @mj-biz-apps/orders-core-entities-server
  */
 import { RegisterClass } from '@memberjunction/global';
@@ -24,7 +29,9 @@ import {
     type CreateIntentResult,
     type RefundRequest,
     type RefundResult,
+    type WebhookEvent,
 } from './BasePaymentProvider.js';
+import { ParseBillComWebhookEvent, VerifyBillComSignature } from './BillComWebhook.js';
 
 const NOT_A_CHECKOUT_RAIL =
     'Bill.com is not a checkout rail. Invoices are created in Bill.com by the invoice rail, and payments ' +
@@ -48,6 +55,27 @@ export class BillComPaymentProvider extends BasePaymentProvider {
 
     public override async Refund(_request: RefundRequest): Promise<RefundResult> {
         return { Success: false, Reason: NOT_A_CHECKOUT_RAIL };
+    }
+
+    /** HMAC-SHA256/base64 over the raw body with the subscription's security key. No key → refused. */
+    public override async VerifyWebhook(rawBody: string, headers: Record<string, string | undefined>): Promise<{ Valid: boolean; Reason?: string }> {
+        return VerifyBillComSignature(rawBody, headers, this.Credentials?.WebhookSecret ?? null);
+    }
+
+    /**
+     * A Bill.com notification names an invoice, never a payment, so the generic event carries the
+     * invoice id as `ProviderChargeID` and the kind verbatim. The handler treats any of them as
+     * "poll this provider now".
+     */
+    public override ParseWebhookEvent(rawBody: string): WebhookEvent | null {
+        const e = ParseBillComWebhookEvent(rawBody);
+        if (!e) return null;
+        return {
+            EventID: e.EventID ?? `${e.Type}:${e.EntityID ?? 'unknown'}:${e.OccurredAt ?? ''}`,
+            Kind: e.Type,
+            ProviderChargeID: e.EntityID ?? undefined,
+            OccurredAt: e.OccurredAt ? new Date(e.OccurredAt) : undefined,
+        };
     }
 }
 

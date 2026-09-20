@@ -291,6 +291,41 @@ export {
 export { BillComInvoiceRail, LoadBillComInvoiceRail, NormalizeReceivablePayment, BILLCOM_TRANSIENT } from './BillComInvoiceRail.js';
 export { BillComGateway, DefaultBillComGateway, UseBillComGatewaySeams, CurrentBillComGatewaySeams } from './BillComGateway.js';
 export type { BillComGatewaySeams } from './BillComGateway.js';
+export { BILLCOM_SIGNATURE_HEADER, SignBillComPayload, VerifyBillComSignature, ParseBillComWebhookEvent, IsPaymentRelevant } from './BillComWebhook.js';
+export type { BillComWebhookEvent } from './BillComWebhook.js';
+export {
+    BuildExternalInvoicePayload,
+    DecideInvoiceable,
+    DecideCancel,
+    ClassifyIssueFailure,
+} from './ExternalInvoiceBehavior.js';
+export type {
+    BillingUnitKey,
+    ExternalInvoiceStatus,
+    ExternalInvoiceUnitFacts,
+    ExternalInvoiceLine,
+    ExternalInvoicePayload,
+    InvoiceableDecision,
+    InvoiceableCode,
+    CancelCode,
+} from './ExternalInvoiceBehavior.js';
+export {
+    IssueExternalInvoiceOperation,
+    LoadIssueExternalInvoiceOperation,
+    IssueOneUnit,
+    ScheduleSupported,
+    LoadExternalInvoiceForUnit,
+    LoadExternalInvoicesByRef,
+} from './IssueExternalInvoiceOperation.js';
+export type { ExternalInvoiceRow, IssueUnitOptions } from './IssueExternalInvoiceOperation.js';
+export { CancelExternalInvoiceOperation, LoadCancelExternalInvoiceOperation, paidOnUnit } from './CancelExternalInvoiceOperation.js';
+export {
+    GetExternalInvoicingWorklistOperation,
+    LoadGetExternalInvoicingWorklistOperation,
+    BuildExternalInvoicingWorklist,
+} from './GetExternalInvoicingWorklistOperation.js';
+export { SendExternalInvoicesOperation, LoadSendExternalInvoicesOperation } from './SendExternalInvoicesOperation.js';
+export { PollExternalPaymentsOperation, LoadPollExternalPaymentsOperation } from './PollExternalPaymentsOperation.js';
 export { ManualPaymentProvider, LoadManualPaymentProvider } from './ManualPaymentProvider.js';
 export {
     StoredValuePaymentProvider,
@@ -328,7 +363,7 @@ export type {
 } from './BaseDeliveryChannel.js';
 export { EmailDeliveryChannel, LoadEmailDeliveryChannel } from './EmailDeliveryChannel.js';
 export { ResolveDeliveryChannel, DeliveryChannelNotConfiguredError } from './DeliveryResolver.js';
-export { LoadOrderDeliveryContacts, LoadOrderStatus } from './DeliveryRecipientResolver.js';
+export { LoadOrderDeliveryContacts, LoadOrderStatus, LoadExternallyInvoiced } from './DeliveryRecipientResolver.js';
 
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
 export { OpenPaymentIntent } from './PaymentIntentService.js';

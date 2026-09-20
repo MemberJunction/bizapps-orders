@@ -124,3 +124,34 @@ export async function LoadOrderStatus(
     );
     return result?.Results?.[0]?.Status ?? null;
 }
+
+/**
+ * Whether a (order, selling company) unit is invoiced through an external rail — a live
+ * `ExternalInvoice` row, or an active rail on the company (design D-B11: the second condition is what
+ * prevents a double send in the window between confirm and the sweep). Absent tables or a missing
+ * company read as false, so a database that predates the rail behaves exactly as before.
+ */
+export async function LoadExternallyInvoiced(
+    orderID: string,
+    companyID: string | null | undefined,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<boolean> {
+    if (!companyID) return false;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const { FindInvoiceRailProviderID } = await import('./InvoiceRailResolver.js');
+    const { EXTERNAL_INVOICE_ENTITY } = await import('./entity-names.js');
+    const { RequireUUID } = await import('./sql-guards.js');
+    if (await FindInvoiceRailProviderID(companyID, provider, user)) return true;
+    if (!provider.EntityByName(EXTERNAL_INVOICE_ENTITY)) return false;
+    const live = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: EXTERNAL_INVOICE_ENTITY,
+            ExtraFilter: `OrderHeaderID='${RequireUUID(orderID, 'OrderHeaderID')}' AND CompanyID='${RequireUUID(companyID, 'CompanyID')}' AND Status IN ('Sending','Sent')`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    return (live.Results?.length ?? 0) > 0;
+}

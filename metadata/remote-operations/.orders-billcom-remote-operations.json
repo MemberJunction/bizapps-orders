@@ -1,0 +1,123 @@
+[
+  {
+    "fields": {
+      "Name": "Issue External Invoice",
+      "OperationKey": "Orders.IssueExternalInvoice",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Create one billing unit's invoice on the company's external AR rail (Bill.com): a Confirmed order billed as a whole, per selling company, or one Invoiced instalment. Idempotent per unit — a unit already on the rail returns its existing reference. Records the rail's invoice id on ExternalInvoice (authoritative) and on the instalment row; never touches Balance, PaymentStatus or the ledger.",
+      "InputTypeName": "OrdersIssueExternalInvoiceInput",
+      "InputTypeDefinition": "@file:types/orders-issue-external-invoice.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersIssueExternalInvoiceOutput",
+      "OutputTypeDefinition": "@file:types/orders-issue-external-invoice.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A01"
+    },
+    "_comments": [
+      "BILL.COM OPERATIONS (golive #146/#147/#148, design docs/superpowers/specs/2026-09-20-billcom-integration-design.md).",
+      "Own dot-json rather than an append to .orders-remote-operations.json: filePattern is **/.*.json, so",
+      "MetadataSync reads every dot-json here, and two sessions each adding a file conflict on nothing.",
+      "IDs are fixed here so the release Metadata_Sync migration can guard on ID or OperationKey."
+    ]
+  },
+  {
+    "fields": {
+      "Name": "Cancel External Invoice",
+      "OperationKey": "Orders.CancelExternalInvoice",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Withdraw an unpaid invoice from the external rail (Bill.com archives it). Blocked when any payment is applied to the unit here or visible on the rail. No accounting event; the unit reads as unsent again and can be re-issued deliberately.",
+      "InputTypeName": "OrdersCancelExternalInvoiceInput",
+      "InputTypeDefinition": "@file:types/orders-cancel-external-invoice.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersCancelExternalInvoiceOutput",
+      "OutputTypeDefinition": "@file:types/orders-cancel-external-invoice.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A02"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Get External Invoicing Worklist",
+      "OperationKey": "Orders.GetExternalInvoicingWorklist",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "Description": "Billing units that are invoiceable on a company's external rail and unsent — Confirmed schedule-less orders with a balance and no rail history, Invoiced instalments with SentAt NULL — plus failed and in-flight sends on request. Companies without an active rail never appear.",
+      "InputTypeName": "OrdersGetExternalInvoicingWorklistInput",
+      "InputTypeDefinition": "@file:types/orders-get-external-invoicing-worklist.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersGetExternalInvoicingWorklistOutput",
+      "OutputTypeDefinition": "@file:types/orders-get-external-invoicing-worklist.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A03"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Send External Invoices",
+      "OperationKey": "Orders.SendExternalInvoices",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "The sweep: work the external invoicing worklist through Orders.IssueExternalInvoice, capped by MaxCount, with Preview listing what would be sent. Retries transient failures; never re-issues a cancelled unit. The scheduled caller for Bill.com invoicing.",
+      "InputTypeName": "OrdersSendExternalInvoicesInput",
+      "InputTypeDefinition": "@file:types/orders-send-external-invoices.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersSendExternalInvoicesOutput",
+      "OutputTypeDefinition": "@file:types/orders-send-external-invoices.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "LongRunning",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A04"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Poll External Payments",
+      "OperationKey": "Orders.PollExternalPayments",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Read receivable payments from each company's external AR rail (Bill.com) since the stored watermark and capture every cleared payment exactly once through Orders.CapturePayment, fanned out to the orders its invoices belong to. Unknown statuses are held, unmatched invoices capture nothing, and reversals are flagged for a person. Poll-authoritative: Bill.com publishes no payment-received webhook.",
+      "InputTypeName": "OrdersPollExternalPaymentsInput",
+      "InputTypeDefinition": "@file:types/orders-poll-external-payments.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersPollExternalPaymentsOutput",
+      "OutputTypeDefinition": "@file:types/orders-poll-external-payments.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "LongRunning",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A05"
+    }
+  }
+]
