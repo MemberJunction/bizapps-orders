@@ -5,6 +5,8 @@ import {
     DefaultScheduleWeights,
     ExplainShortfalls,
     ScheduleShortfalls,
+    ScheduledCompanyIDs,
+    type ScheduleTimingFacts,
 } from '../PaymentScheduleBehavior.js';
 
 const CO_A = '00000000-0000-0000-0000-00000000000a';
@@ -94,5 +96,50 @@ describe('ScheduleShortfalls', () => {
     it('tolerates half a cent and nothing more', () => {
         expect(ScheduleShortfalls([{ CompanyID: CO_B, Amount: 200.004, Status: 'Scheduled' }], lines.slice(2))).toEqual([]);
         expect(ScheduleShortfalls([{ CompanyID: CO_B, Amount: 200.01, Status: 'Scheduled' }], lines.slice(2))).toHaveLength(1);
+    });
+});
+
+describe('ScheduledCompanyIDs', () => {
+    const row = (over: Partial<ScheduleTimingFacts> = {}): ScheduleTimingFacts => ({
+        CompanyID: CO_A,
+        Amount: 100,
+        Status: 'Scheduled',
+        DueDate: '2027-07-01',
+        ...over,
+    });
+
+    it('is EMPTY for no rows — which is what makes every order that exists today book unchanged', () => {
+        expect(ScheduledCompanyIDs([]).size).toBe(0);
+    });
+
+    it('names each company that has a live row, lower-cased', () => {
+        const ids = ScheduledCompanyIDs([row(), row({ CompanyID: CO_B.toUpperCase() })]);
+        expect([...ids].sort()).toEqual([CO_A, CO_B]);
+    });
+
+    it('counts a row live whatever its status, so long as it has not been cancelled', () => {
+        for (const Status of ['Scheduled', 'Invoiced', 'Paid', 'WrittenOff']) {
+            expect(ScheduledCompanyIDs([row({ Status })]).has(CO_A)).toBe(true);
+        }
+    });
+
+    it('ignores a Canceled row — a company whose only row was cancelled books normally', () => {
+        expect(ScheduledCompanyIDs([row({ Status: 'Canceled' })]).size).toBe(0);
+        expect(ScheduledCompanyIDs([row({ Status: 'Canceled' }), row()]).has(CO_A)).toBe(true);
+    });
+
+    it('does NOT depend on the due date — D91 asks whether a company is billed by instalment, not when', () => {
+        const past = ScheduledCompanyIDs([row({ DueDate: '2020-01-01' })]);
+        const future = ScheduledCompanyIDs([row({ DueDate: '2099-01-01' })]);
+        expect(past.has(CO_A)).toBe(true);
+        expect(future.has(CO_A)).toBe(true);
+    });
+
+    it('agrees with the tie check about which rows are live', () => {
+        // Both read LIVE_STATUSES, so a row that counts toward the tie also makes its company
+        // scheduled. If these ever diverged, a company could tie yet book at confirm anyway.
+        const rows = [row({ Status: 'Canceled' })];
+        expect(ScheduleShortfalls(rows, [{ CompanyID: CO_A, LineTotalGross: 0 }])).toEqual([]);
+        expect(ScheduledCompanyIDs(rows).size).toBe(0);
     });
 });

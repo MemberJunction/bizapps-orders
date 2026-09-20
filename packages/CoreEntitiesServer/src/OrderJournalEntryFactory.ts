@@ -16,6 +16,22 @@
  * Both discount fields are applied because the line applies both.
  * The entry balances by construction: net + discount = gross.
  *
+ * Plan D91 — A COMPANY BILLED BY INSTALMENT BOOKS NO VALUE HERE. The order and its schedule are
+ * the subledger; the ledger records what happened — billed, collected, earned. So when a company
+ * on the order carries live payment-schedule rows, confirm raises NO value entry for its lines:
+ * the same entry is raised once per instalment, at invoicing, for that instalment's slice, by
+ * `EmitInstalmentInvoiceEntry` (./InstalmentInvoiceEntry.ts). Both moments build their lines with
+ * {@link BuildValueEntryLines}, so they cannot drift into booking different shapes.
+ *
+ * An UP-FRONT line on such a company still earns at booking, so it emits `Dr Deferred Revenue /
+ * Cr Sales` — today's credit side with the AR debit replaced by Deferred. Deferred then runs to a
+ * debit balance until the instalments are invoiced, and THAT debit balance is the contract asset;
+ * it is presented as Unbilled Receivable by a period-end reclass, not by a second running account
+ * in this file. (This supersedes D89, which split the booking debit between AR and Unbilled and
+ * put the whole contract value on the balance sheet at signature.)
+ *
+ * An order with NO schedule — every order that exists today — is untouched, byte for byte.
+ *
  * Plan D14/D43 — RECOGNITION. The product's `RevenueRecognitionType` names a pluggable driver
  * (see ./RevenueRecognition.ts) that returns a schedule of dates and amounts. For a DEFERRED type
  * we emit one REAL FORWARD-DATED entry per schedule slice:
@@ -50,10 +66,12 @@ import {
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
+import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { GL_ROLE, GLAccountResolver, GLAccountResolutionError } from './GLAccountResolver.js';
 import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
 import { MergeLineDimensions } from './LineDimensionMerge.js';
+import type { InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
 
 /** Mirrors accounting's `JournalEntryLineDraft`. */
 export interface JELineDraft {
@@ -132,6 +150,126 @@ function isoDate(d: Date): string {
     return new Date(d).toISOString().slice(0, 10);
 }
 
+/**
+ * What one order line is worth, decomposed the way the ledger books it.
+ *
+ * THE LINE IS THE AUTHORITY ON ITS OWN MONEY. `net` is the stored `LineTotalNet`, never a
+ * recomputation: re-deriving it as quantity x UnitPrice is only correct for PerUnit pricing, and on
+ * a Flat rule the unit price is a DERIVED rate that cannot always represent the total — a flat 100
+ * at quantity 3 booked 99.99. The entry still BALANCED, which is exactly the failure this file's
+ * header warns about. Anchoring net to the stored total and deriving gross as net + discount keeps
+ * `net + discount = gross` true by construction.
+ *
+ * BOTH discount fields, in the same order `OrderLineEntityServer` applies them (D70) — the rate is
+ * used only for the discount split, which is the one part the line does not store separately.
+ *
+ * Amounts are ABSOLUTE. A negative quantity is a reversal, which is mirrored at the end (D16)
+ * rather than fed through as a negative debit.
+ *
+ * Shared with the instalment billing entry, which slices these same amounts — so a scheduled and a
+ * non-scheduled order cannot disagree about what a line is worth.
+ */
+export function LineAmounts(line: mjBizAppsOrdersOrderLineEntity): ValueEntryAmounts {
+    const grossFromRate = money(Math.abs(line.Quantity) * line.UnitPrice);
+    const pctDiscount = money(grossFromRate * (line.DiscountPct ?? 0));
+    const amountDiscount = money(Math.min(Math.max(0, grossFromRate - pctDiscount), line.DiscountAmount ?? 0));
+    const discount = money(pctDiscount + amountDiscount);
+    const net = money(Math.abs(Number(line.LineTotalNet ?? 0)));
+    return {
+        Net: net,
+        Tax: money(Math.abs(line.LineTax ?? 0)),
+        Charges: money(Math.abs(line.ChargeAmount ?? 0)),
+        Discount: discount,
+        Gross: money(net + discount),
+    };
+}
+
+/**
+ * The money a value entry is raised for: one line's own amounts, or one instalment's slice of them.
+ *
+ * Passed in rather than derived from a fraction so that a slice is EXACT. The caller owns the
+ * split — `SplitExactly` across the instalments — and hands the pieces here already reconciled;
+ * deriving them from a percentage inside this function would round each amount independently and
+ * the slices would stop summing to the line.
+ */
+export interface ValueEntryAmounts {
+    Net: number;
+    Tax: number;
+    Charges: number;
+    Discount: number;
+    /** `Net + Discount`. Carried rather than recomputed so a slice stays exact. */
+    Gross: number;
+}
+
+/** Where each leg of a value entry posts. Charge amounts are already sliced by the caller. */
+export interface ValueEntryAccounts {
+    AR: string;
+    Credit: string;
+    CreditLabel: string;
+    /** Null nets the discount into the revenue credit instead (plan D11). */
+    Discount: string | null;
+    ChargeCredits: Array<{ GLAccountID: string; Amount: number; Label: string }>;
+}
+
+/**
+ * The VALUE ENTRY — what the customer owes and what it is owed for (D10/D11):
+ *
+ *     Dr  Accounts Receivable      net + tax + charges
+ *     Dr  Sales Discounts          discount            (contra; omitted with no account)
+ *         Cr  Sales / Deferred     gross (or net when the discount nets in)
+ *         Cr  each charge and tax  its own amount
+ *
+ * ONE CONSTRUCTION, TWO MOMENTS (D91). An order with no payment schedule raises this at confirm,
+ * exactly as it always has. A company billed by instalment raises the same entry once per
+ * instalment, at invoicing, for that instalment's slice — so the two paths cannot drift into
+ * booking different shapes, which is the failure this extraction exists to prevent.
+ *
+ * Returns UNFILTERED lines including zeros; the caller drops zeros and mirrors reversals, because
+ * those rules belong to the entry, not to its arithmetic.
+ */
+export function BuildValueEntryLines(
+    amounts: ValueEntryAmounts,
+    accounts: ValueEntryAccounts,
+    label: string,
+    dimensions: Array<{ DimensionID: string; DimensionValueID: string }>,
+): JELineDraft[] {
+    const lines: JELineDraft[] = [
+        {
+            GLAccountID: accounts.AR,
+            DebitAmount: money(amounts.Net + amounts.Tax + amounts.Charges),
+            Description: `AR — ${label}`,
+            Dimensions: dimensions,
+        },
+        {
+            GLAccountID: accounts.Credit,
+            CreditAmount: accounts.Discount ? amounts.Gross : amounts.Net,
+            Description: `${accounts.CreditLabel} — ${label}`,
+            Dimensions: dimensions,
+        },
+    ];
+    if (accounts.Discount) {
+        lines.push({
+            GLAccountID: accounts.Discount,
+            DebitAmount: amounts.Discount,
+            Description: `Discount — ${label}`,
+            Dimensions: dimensions,
+        });
+    }
+    // CHARGE AND TAX CREDITS (D71). AR is debited for net + tax + charges, so every one of those
+    // needs a matching credit or the entry does not balance. Each charge credits an account
+    // resolved from its CHARGE TYPE, so shipping revenue and a tax liability go to different
+    // places without this function knowing what either means.
+    for (const c of accounts.ChargeCredits) {
+        lines.push({
+            GLAccountID: c.GLAccountID,
+            CreditAmount: c.Amount,
+            Description: `${c.Label} — ${label}`,
+            Dimensions: dimensions,
+        });
+    }
+    return lines;
+}
+
 export class OrderJournalEntryFactory {
     constructor(
         private readonly _resolver: GLAccountResolver,
@@ -158,6 +296,15 @@ export class OrderJournalEntryFactory {
         termsByLine?: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number }>,
         /** Months per recognition slice, per line, from the subscription type's cadence (D45). */
         recognitionMonthsByLine?: Map<string, number>,
+        /**
+         * The order's payment schedule rows, which decide how much of each line's debit is a
+         * CONTRACT ASSET rather than a receivable (D89). Passed in rather than queried here: the
+         * caller already reads them for the tie check and already owns the transaction, so the
+         * side effect stays visible at the call site and this factory stays testable without a
+         * live database. Absent or empty means one implicit instalment due at booking — every
+         * line debits AR exactly as it did before payment schedules existed.
+         */
+        scheduleRows?: ScheduleTimingFacts[],
     ): Promise<OrderLineDraft[]> {
         if (lines.length === 0) {
             throw new Error(`Order ${order.OrderNumber} has no lines to book.`);
@@ -169,17 +316,80 @@ export class OrderJournalEntryFactory {
         const dimensions = await this.loadLineDimensions(lines.map((l) => l.ID));
         const effectiveDate = this.effectiveDateOf(order);
         const asOf = new Date(effectiveDate);
+        const scheduledCompanies = ScheduledCompanyIDs(scheduleRows ?? []);
+
+        // The tie check (OrderEntityServer.verifyScheduleTies) already refuses a confirm whose
+        // schedule names a company with no lines. Assert it here anyway: if it were ever false, a
+        // company's whole value would silently never reach the ledger — no confirm entry because it
+        // is scheduled, and no invoice entry because it has no lines to slice.
+        const lineCompanies = new Set(lines.map((l) => String(l.CompanyID ?? '').toLowerCase()));
+        for (const scheduled of scheduledCompanies) {
+            if (!lineCompanies.has(scheduled)) {
+                throw new Error(
+                    `Order ${order.OrderNumber} has payment schedule rows for company ${scheduled}, ` +
+                        `which has no lines on this order. Nothing would ever book for it.`,
+                );
+            }
+        }
 
         const drafts: OrderLineDraft[] = [];
         for (const line of lines) {
             drafts.push(
                 ...(await this.buildLineDrafts(
                     order, line, products, revRecTypes, dimensions, effectiveDate, asOf, giftCardTypeIDs,
+                    scheduledCompanies,
                     termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
                 )),
             );
         }
         return drafts;
+    }
+
+    /**
+     * The facts the instalment billing entry needs about one company's lines (D91).
+     *
+     * Lives here, not in the operation, because every one of these numbers is decided by this
+     * file's arithmetic — `LineAmounts`, the product walk, the merged dimensions and the charge
+     * allocations. Rebuilding them at the call site is how the confirm entry and the invoice entry
+     * would drift into disagreeing about what a line is worth, which is the whole failure this
+     * rework exists to prevent.
+     *
+     * READS THE DATABASE: products, line dimensions and charge allocations, once for the set.
+     */
+    public async BuildInstalmentLineFacts(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        companyID: string,
+        asOf: Date,
+    ): Promise<InstalmentLineFacts[]> {
+        const mine = lines.filter((l) => String(l.CompanyID ?? '').toLowerCase() === companyID.toLowerCase());
+        if (!mine.length) return [];
+
+        const products = await this.loadProducts(mine.map((l) => l.ProductID));
+        const dimensions = await this.loadLineDimensions(mine.map((l) => l.ID));
+
+        const out: InstalmentLineFacts[] = [];
+        for (const line of mine) {
+            const product = products.get(line.ProductID.toLowerCase());
+            if (!product) {
+                throw new Error(`Order line ${line.ID} references product ${line.ProductID}, which was not found.`);
+            }
+            out.push({
+                ID: line.ID,
+                LineNumber: line.LineNumber,
+                ProductName: product.Name,
+                Quantity: line.Quantity,
+                ...LineAmounts(line),
+                ProductID: product.ID,
+                ProductCategoryID: product.ProductCategoryID,
+                ProductTypeID: product.ProductTypeID,
+                Dimensions: MergeLineDimensions(
+                    { DimensionID: line.DimensionID, DimensionValueID: line.DimensionValueID },
+                    dimensions.get(line.ID) ?? [],
+                ),
+                ChargeCredits: await this.chargeCreditsFor(line, companyID, asOf),
+            });
+        }
+        return out;
     }
 
     private async buildLineDrafts(
@@ -191,6 +401,7 @@ export class OrderJournalEntryFactory {
         effectiveDate: string,
         asOf: Date,
         giftCardTypeIDs: Set<string>,
+        scheduledCompanies: Set<string>,
         term?: { ID: string; StartDate: Date; EndDate: Date; Amount: number },
         recognitionMonths?: number,
     ): Promise<OrderLineDraft[]> {
@@ -238,18 +449,7 @@ export class OrderJournalEntryFactory {
         // with the line by definition rather than by two computations happening to
         // match. The rate is still used for the DISCOUNT split, which is the only part
         // the line does not store separately.
-        const grossFromRate = money(Math.abs(line.Quantity) * line.UnitPrice);
-        // BOTH discount fields, and in the same order OrderLineEntityServer applies them (D70).
-        // The journal entry must mirror the line's arithmetic exactly — if the two disagree, the
-        // entry still BALANCES (AR simply differs from the line total) and nothing downstream
-        // reports it, which is the failure mode this whole area keeps producing.
-        const pctDiscount = money(grossFromRate * (line.DiscountPct ?? 0));
-        const amountDiscount = money(Math.min(Math.max(0, grossFromRate - pctDiscount), line.DiscountAmount ?? 0));
-        const discount = money(pctDiscount + amountDiscount);
-        const net = money(Math.abs(Number(line.LineTotalNet ?? 0)));
-        const gross = money(net + discount);
-        const tax = money(Math.abs(line.LineTax ?? 0));
-        const charges = money(Math.abs(line.ChargeAmount ?? 0));
+        const { Net: net, Tax: tax, Charges: charges, Discount: discount, Gross: gross } = LineAmounts(line);
 
         const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
             this._resolver.Resolve(
@@ -311,47 +511,79 @@ export class OrderJournalEntryFactory {
             }
         }
 
-        // ── the booking entry (D10/D11) ──
-        const bookingLines: JELineDraft[] = [
-            {
-                GLAccountID: arAccount,
-                DebitAmount: money(net + tax + charges),
-                Description: `AR — ${product.Name}`,
-                Dimensions: lineDims,
-            },
-            {
-                GLAccountID: bookingCreditAccount,
-                CreditAmount: discountAccount ? gross : net,
-                Description: `${creditLabel} — ${product.Name}`,
-                Dimensions: lineDims,
-            },
-        ];
-        if (discountAccount) {
-            bookingLines.push({
-                GLAccountID: discountAccount,
-                DebitAmount: discount,
-                Description: `Discount — ${product.Name}`,
-                Dimensions: lineDims,
-            });
-        }
-        // ── CHARGE AND TAX CREDITS (D71) ──
-        // AR is debited for net + tax + charges, so every one of those needs a matching credit or
-        // the entry does not balance. Tax has been in the AR debit since booking was written and had
-        // no credit at all — it simply had never been non-zero, which is the kind of latent break
-        // that only surfaces the day the feature is used.
+        // ── the value entry (D10/D11), raised here only when this company is NOT on instalments ──
         //
-        // Each charge credits an account resolved from its CHARGE TYPE, so shipping revenue and a
-        // tax liability go to different places without this factory knowing what either means. The
-        // role name is a lookup key, not a claim about the account's nature — a tax charge links to
-        // a liability account through the same mechanism.
+        // D91: a company billed by instalment puts NO value on the ledger at confirm. Its AR, its
+        // revenue credit, its discount contra and its charge/tax credits are all raised later, one
+        // slice per instalment, by EmitInstalmentInvoiceEntry — which builds them through the very
+        // same BuildValueEntryLines, so the two moments cannot drift into different shapes.
+        //
+        // Nothing about the NON-scheduled path changes: same construction, same accounts, same
+        // amounts, same order of lines. That is the regression fence (order-booking.OB18).
         const chargeCredits = await this.chargeCreditsFor(line, companyID, asOf);
-        for (const c of chargeCredits) {
-            bookingLines.push({
-                GLAccountID: c.GLAccountID,
-                CreditAmount: c.Amount,
-                Description: `${c.Label} — ${product.Name}`,
-                Dimensions: lineDims,
-            });
+        const isScheduled = scheduledCompanies.has(companyID.toLowerCase());
+
+        // A gift card sold on instalments has no defined treatment — the liability is owed in full
+        // the moment the card exists, but the value entry that raises it would arrive in slices.
+        // Refuse rather than guess: nobody sells gift cards on a payment schedule, and a silent
+        // wrong answer here is a misstated liability.
+        if (isScheduled && isGiftCard) {
+            throw new Error(
+                `Order ${order.OrderNumber} line ${line.LineNumber} sells a gift card for a company ` +
+                    `billed by instalment. That combination has no defined accounting treatment — a ` +
+                    `card's liability arises in full at issue, not in billing slices. Remove the payment ` +
+                    `schedule for this company, or sell the gift card on its own order.`,
+            );
+        }
+
+        const bookingLines: JELineDraft[] = isScheduled
+            ? []
+            : BuildValueEntryLines(
+                  { Net: net, Tax: tax, Charges: charges, Discount: discount, Gross: gross },
+                  {
+                      AR: arAccount,
+                      Credit: bookingCreditAccount,
+                      CreditLabel: creditLabel,
+                      Discount: discountAccount,
+                      ChargeCredits: chargeCredits,
+                  },
+                  product.Name,
+                  lineDims,
+              );
+
+        // AN UP-FRONT LINE ON A SCHEDULED COMPANY STILL EARNS AT BOOKING. Its revenue is recognised
+        // when the sale happens — that is what "not deferred" means — so it needs a credit to Sales
+        // now even though nothing is billable yet. The offsetting debit is Deferred Revenue, which
+        // therefore runs to a DEBIT balance until the instalments are invoiced. That debit balance
+        // IS the contract asset (D91); it is presented as Unbilled by a period-end reclass, not by
+        // a second running account in this file.
+        //
+        // A deferred driver needs nothing here: its staged releases below already debit Deferred
+        // and credit Sales on their own dates, and they are untouched by the schedule.
+        if (isScheduled && !revRec.IsDeferred) {
+            const deferredAccount = await resolve(GL_ROLE.DeferredRevenue);
+            bookingLines.push(
+                {
+                    GLAccountID: deferredAccount,
+                    DebitAmount: net,
+                    Description: `Deferred revenue (earned, not yet billable) — ${product.Name}`,
+                    Dimensions: lineDims,
+                },
+                {
+                    GLAccountID: salesAccount,
+                    CreditAmount: discountAccount ? gross : net,
+                    Description: `Sales — ${product.Name}`,
+                    Dimensions: lineDims,
+                },
+            );
+            if (discountAccount) {
+                bookingLines.push({
+                    GLAccountID: discountAccount,
+                    DebitAmount: discount,
+                    Description: `Discount — ${product.Name}`,
+                    Dimensions: lineDims,
+                });
+            }
         }
 
         // Drop zero-amount lines. A fully-discounted line — a comped ticket, a 100%-off promotion —

@@ -161,6 +161,35 @@ export function ScheduleShortfalls(rows: ScheduleRowFacts[], lines: ScheduleLine
     return out;
 }
 
+/** A schedule row as the booking-scope test reads it. */
+export interface ScheduleTimingFacts extends ScheduleRowFacts {
+    /** `YYYY-MM-DD`, or anything `Date` parses. Carried for callers; the scope test ignores it. */
+    DueDate: string | Date;
+}
+
+/**
+ * The companies on this order that are BILLED BY INSTALMENT, lower-cased (D91).
+ *
+ * This is the whole scope trigger for the new booking model. A company with at least one live
+ * schedule row books no value at confirm — its value reaches the ledger when each instalment is
+ * invoiced. A company with none is every order that exists today and is untouched.
+ *
+ * `Canceled` rows have left the schedule, so a company whose only row was cancelled is NOT
+ * scheduled and books normally. That is the same liveness rule {@link ScheduleShortfalls} uses, by
+ * the same constant, so the tie check and the ledger cannot disagree about which rows count.
+ *
+ * Deliberately not a date test. D89 split the debit by which instalments were still future; D91
+ * does not split anything, so WHEN an instalment falls due no longer changes what confirm books —
+ * only WHETHER the company is billed by instalment at all.
+ */
+export function ScheduledCompanyIDs(rows: ScheduleTimingFacts[]): Set<string> {
+    const out = new Set<string>();
+    for (const row of rows) {
+        if (LIVE_STATUSES.has(row.Status)) out.add(String(row.CompanyID).toLowerCase());
+    }
+    return out;
+}
+
 /** The refusal, in words a person can act on. Names every company that is off and by how much. */
 export function ExplainShortfalls(orderNumber: string, shortfalls: ScheduleShortfall[], companyName?: (id: string) => string): string {
     const name = (id: string): string => companyName?.(id) ?? id;

@@ -13,10 +13,12 @@
  * and the order's schedule must tie to its lines, because an instalment on a schedule that is a
  * cent short is a document for the wrong amount.
  *
- * THE LEDGER HALF IS A SEAM. `EmitInstalmentReclassEntry` (`InstalmentReclass.ts`) is where the
- * `Dr AR / Cr Unbilled` entry will be booked once AIDP-25 (#240) ships the Unbilled role; today it
- * returns null and `JournalEntryID` stays empty. The call sits inside this transaction so that when
- * it does book, the number, the stamp and the entry commit or roll back together.
+ * THE LEDGER HALF IS WHERE THE VALUE ARRIVES (D91). A company billed by instalment books nothing
+ * at confirm, so `EmitInstalmentInvoiceEntry` (`InstalmentInvoiceEntry.ts`) raises this
+ * instalment's slice of the value entry — Dr AR / Cr Deferred Revenue, with its share of the
+ * discount, tax and charges — inside this transaction, so the number, the stamp and the entry
+ * commit or roll back together. It reads nothing itself: the order's lines and the company's
+ * sibling rows are read here and passed in.
  */
 import {
     BaseRemotableOperation,
@@ -32,10 +34,13 @@ import {
     type OrdersIssueInstalmentInvoiceInput,
     type OrdersIssueInstalmentInvoiceOutput,
     ToISODate,
+    type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
-import { EmitInstalmentReclassEntry } from './InstalmentReclass.js';
+import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { EmitInstalmentInvoiceEntry, type InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
+import { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 import { InstalmentDocumentNumber } from './InvoiceBehavior.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
@@ -43,6 +48,10 @@ import { RequireUUID } from './sql-guards.js';
 
 /** Order statuses that carry a booked receivable. */
 const BOOKED_STATUSES = new Set(['Confirmed', 'Posted', 'Fulfilled']);
+
+/** Entity names the billing-entry factory needs; not in entity-names.ts, matching OrderEntityServer. */
+const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
+const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 
 interface ScheduleRow extends Record<string, unknown> {
     ID: string;
@@ -53,6 +62,7 @@ interface ScheduleRow extends Record<string, unknown> {
     DueDate: string;
     Amount: number;
     Status: string;
+    AmountPaid: number;
     DocumentNumber: string | null;
     InvoicedAt: string | null;
     JournalEntryID: string | null;
@@ -147,6 +157,35 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
         );
         const invoicedAt = new Date();
 
+        // THE BILLING ENTRY'S FACTS, READ HERE (D91). The emitter queries nothing; every number it
+        // posts is decided by the factory's own arithmetic, so it is built here and handed over.
+        // Read before the transaction opens: these are pure reads and a failure should refuse the
+        // invoice rather than roll one back.
+        const lineEntities = await rv.RunView<mjBizAppsOrdersOrderLineEntity>(
+            { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID = '${RequireUUID(order.ID, 'OrderHeaderID')}'`, OrderBy: 'LineNumber', ResultType: 'entity_object' },
+            user,
+        );
+        if (!lineEntities.Success) {
+            return this.refuse(`Could not read order ${order.OrderNumber}'s lines to bill this instalment: ${lineEntities.ErrorMessage ?? 'unknown error'}`, echo);
+        }
+        const factory = new OrderJournalEntryFactory(
+            await BuildGLAccountResolver(provider, user),
+            EntityIDFor(ORDER_LINE_ENTITY),
+            EntityIDFor(SUBSCRIPTION_TERM_ENTITY),
+            EntityIDFor(CHARGE_TYPE_ENTITY),
+            provider,
+            user,
+        );
+        let instalmentLines: InstalmentLineFacts[];
+        try {
+            instalmentLines = await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], row.CompanyID, invoicedAt);
+        } catch (err) {
+            return this.refuse(err instanceof Error ? err.message : String(err), echo);
+        }
+        if (!instalmentLines.length) {
+            return this.refuse(`Order ${order.OrderNumber} has no lines for the company this instalment bills, so there is nothing to invoice.`, echo);
+        }
+
         const dbProvider = provider as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
@@ -160,7 +199,7 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
                 throw new Error(entity.LatestResult?.CompleteMessage ?? 'The instalment could not be updated.');
             }
 
-            const journalEntryID = await EmitInstalmentReclassEntry(
+            const journalEntryID = await EmitInstalmentInvoiceEntry(
                 {
                     OrderHeaderPaymentScheduleID: row.ID,
                     OrderHeaderID: order.ID,
@@ -170,6 +209,19 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
                     DocumentNumber: documentNumber,
                     Amount: Number(row.Amount),
                     InvoicedAt: invoicedAt,
+                    AmountPaid: Number(row.AmountPaid ?? 0),
+                    // `live` is this company's non-Canceled rows; the billing slice is taken
+                    // against them in InstallmentNumber order so every instalment's pieces of a
+                    // line sum to that line's full amount.
+                    Siblings: [...live]
+                        .sort((a, b) => Number(a.InstallmentNumber) - Number(b.InstallmentNumber))
+                        .map((r) => ({
+                            ID: r.ID,
+                            InstallmentNumber: Number(r.InstallmentNumber),
+                            Amount: Number(r.Amount),
+                            Status: r.Status,
+                        })),
+                    Lines: instalmentLines,
                 },
                 provider,
                 user,

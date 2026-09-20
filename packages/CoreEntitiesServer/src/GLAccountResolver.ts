@@ -58,6 +58,21 @@ export const GL_ROLE = {
      * OrderJournalEntryFactory, which records that it fell back rather than doing it silently.
      */
     GiftCardLiability: 'Gift Card Liability',
+    /**
+     * The contract asset, as a PRESENTATION account — and nothing in orders resolves it (D91).
+     *
+     * Accounting seeds the role (`V202609201200__v0.1.x__UnbilledReceivableRole.sql`) so a
+     * period-end reclass can present the contract asset under its own name. It is deliberately
+     * inert here: under D91 a contract's Deferred Revenue nets billing against recognition, and a
+     * debit balance on it IS the contract asset. Presenting that as Unbilled is a close-process
+     * entry (Dr Unbilled / Cr Deferred, auto-reversing), not a second running account maintained
+     * by the booking code — which is what D89 tried and what this supersedes.
+     *
+     * The string stays here as the one place the cross-repo name is written down: orders resolves
+     * roles by accounting's exact `Name`, so if anything ever does resolve this one, it has to
+     * agree with the seeded row character for character.
+     */
+    UnbilledReceivable: 'Unbilled Receivable',
 } as const;
 
 export type GLRole = (typeof GL_ROLE)[keyof typeof GL_ROLE];
