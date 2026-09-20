@@ -1887,6 +1887,41 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(2000)
     Comments?: string;
         
+    @Field({nullable: true, description: `Attendee operational lifecycle status: Registered, Attended, No Show, or Cancelled.`}) 
+    @MaxLength(20)
+    AttendanceStatus?: string;
+        
+    @Field({nullable: true, description: `Timestamp when the attendee credential badge was printed at registration desk or kiosk.`}) 
+    BadgePrintedAt?: Date;
+        
+    @Field({nullable: true, description: `Preferred attendee name override for badge printing (e.g. nickname or chosen name).`}) 
+    @MaxLength(200)
+    BadgeName?: string;
+        
+    @Field({nullable: true, description: `Organization or company name to display on the badge if different from primary organization.`}) 
+    @MaxLength(200)
+    BadgeCompany?: string;
+        
+    @Field({nullable: true, description: `Job title to display on attendee credential badge.`}) 
+    @MaxLength(200)
+    BadgeTitle?: string;
+        
+    @Field({nullable: true, description: `Ticket or registration tier: General, VIP, Speaker, Sponsor, Exhibitor, Staff, Student.`}) 
+    @MaxLength(50)
+    TicketTier?: string;
+        
+    @Field({nullable: true, description: `Table or seating assignment for seated meals, banquets, or breakout tracks.`}) 
+    @MaxLength(100)
+    TableAssignment?: string;
+        
+    @Field({nullable: true, description: `Accessibility and accommodation requests (wheelchair seating, ASL interpretation, etc.).`}) 
+    @MaxLength(2000)
+    SpecialRequests?: string;
+        
+    @Field({nullable: true, description: `Staff notes taken during check-in or on-site event operations.`}) 
+    @MaxLength(2000)
+    CheckInNotes?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(36)
     OrderHeaderID?: string;
@@ -2033,6 +2068,33 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     Comments: string | null;
 
     @Field({ nullable: true })
+    AttendanceStatus?: string;
+
+    @Field({ nullable: true })
+    BadgePrintedAt: Date | null;
+
+    @Field({ nullable: true })
+    BadgeName: string | null;
+
+    @Field({ nullable: true })
+    BadgeCompany: string | null;
+
+    @Field({ nullable: true })
+    BadgeTitle: string | null;
+
+    @Field({ nullable: true })
+    TicketTier: string | null;
+
+    @Field({ nullable: true })
+    TableAssignment: string | null;
+
+    @Field({ nullable: true })
+    SpecialRequests: string | null;
+
+    @Field({ nullable: true })
+    CheckInNotes: string | null;
+
+    @Field({ nullable: true })
     OrderHeaderID?: string;
 
     @Field({ nullable: true })
@@ -2155,6 +2217,33 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     Comments?: string | null;
+
+    @Field({ nullable: true })
+    AttendanceStatus?: string;
+
+    @Field({ nullable: true })
+    BadgePrintedAt?: Date | null;
+
+    @Field({ nullable: true })
+    BadgeName?: string | null;
+
+    @Field({ nullable: true })
+    BadgeCompany?: string | null;
+
+    @Field({ nullable: true })
+    BadgeTitle?: string | null;
+
+    @Field({ nullable: true })
+    TicketTier?: string | null;
+
+    @Field({ nullable: true })
+    TableAssignment?: string | null;
+
+    @Field({ nullable: true })
+    SpecialRequests?: string | null;
+
+    @Field({ nullable: true })
+    CheckInNotes?: string | null;
 
     @Field({ nullable: true })
     OrderHeaderID?: string;
@@ -2380,6 +2469,14 @@ export class mjBizAppsOrdersEventProduct_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `Event delivery format: In-Person, Virtual, or Hybrid.`}) 
+    @MaxLength(20)
+    EventFormat?: string;
+        
+    @Field({nullable: true, description: `Meeting/broadcast URL for virtual or hybrid event sessions (Zoom, Teams, etc.).`}) 
+    @MaxLength(1000)
+    VirtualMeetingUrl?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     Name?: string;
@@ -2490,6 +2587,12 @@ export class CreatemjBizAppsOrdersEventProductInput {
     RequiresAttendeeInfo?: boolean;
 
     @Field({ nullable: true })
+    EventFormat?: string;
+
+    @Field({ nullable: true })
+    VirtualMeetingUrl: string | null;
+
+    @Field({ nullable: true })
     Name?: string;
 
     @Field({ nullable: true })
@@ -2579,6 +2682,12 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Boolean, { nullable: true })
     RequiresAttendeeInfo?: boolean;
+
+    @Field({ nullable: true })
+    EventFormat?: string;
+
+    @Field({ nullable: true })
+    VirtualMeetingUrl?: string | null;
 
     @Field({ nullable: true })
     Name?: string;
@@ -3991,17 +4100,17 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(100)
     SourceCheckoutWidget?: string;
         
-    @Field(() => Float) 
-    _mj__Latitude_BillToAddressID: number;
+    @Field(() => Float, {nullable: true}) 
+    _mj__Latitude_BillToAddressID?: number;
         
-    @Field(() => Float) 
-    _mj__Longitude_BillToAddressID: number;
+    @Field(() => Float, {nullable: true}) 
+    _mj__Longitude_BillToAddressID?: number;
         
-    @Field(() => Float) 
-    _mj__Latitude_ShipToAddressID: number;
+    @Field(() => Float, {nullable: true}) 
+    _mj__Latitude_ShipToAddressID?: number;
         
-    @Field(() => Float) 
-    _mj__Longitude_ShipToAddressID: number;
+    @Field(() => Float, {nullable: true}) 
+    _mj__Longitude_ShipToAddressID?: number;
         
     @Field(() => Int, {nullable: true}) 
     IsOverdue?: number;
@@ -4877,7 +4986,7 @@ export class mjBizAppsOrdersOrderLine_ {
     @MaxLength(36)
     DimensionValueID?: string;
         
-    @Field({nullable: true})
+    @Field({nullable: true}) 
     @MaxLength(40)
     OrderHeader?: string;
         
@@ -4912,6 +5021,14 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     JournalEntry?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    Dimension?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    DimensionValue?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)

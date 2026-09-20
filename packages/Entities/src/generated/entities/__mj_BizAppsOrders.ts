@@ -693,6 +693,58 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Display Name: Comments
         * * SQL Data Type: nvarchar(2000)
         * * Description: Free-form notes for conference organizers about this attendee.`),
+    AttendanceStatus: z.union([z.literal('Attended'), z.literal('Cancelled'), z.literal('No Show'), z.literal('Registered')]).describe(`
+        * * Field Name: AttendanceStatus
+        * * Display Name: Attendance Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Registered
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Attended
+    *   * Cancelled
+    *   * No Show
+    *   * Registered
+        * * Description: Attendee operational lifecycle status: Registered, Attended, No Show, or Cancelled.`),
+    BadgePrintedAt: z.date().nullable().describe(`
+        * * Field Name: BadgePrintedAt
+        * * Display Name: Badge Printed At
+        * * SQL Data Type: datetimeoffset
+        * * Description: Timestamp when the attendee credential badge was printed at registration desk or kiosk.`),
+    BadgeName: z.string().nullable().describe(`
+        * * Field Name: BadgeName
+        * * Display Name: Badge Name
+        * * SQL Data Type: nvarchar(200)
+        * * Description: Preferred attendee name override for badge printing (e.g. nickname or chosen name).`),
+    BadgeCompany: z.string().nullable().describe(`
+        * * Field Name: BadgeCompany
+        * * Display Name: Badge Company
+        * * SQL Data Type: nvarchar(200)
+        * * Description: Organization or company name to display on the badge if different from primary organization.`),
+    BadgeTitle: z.string().nullable().describe(`
+        * * Field Name: BadgeTitle
+        * * Display Name: Badge Title
+        * * SQL Data Type: nvarchar(200)
+        * * Description: Job title to display on attendee credential badge.`),
+    TicketTier: z.string().nullable().describe(`
+        * * Field Name: TicketTier
+        * * Display Name: Ticket Tier
+        * * SQL Data Type: nvarchar(50)
+        * * Description: Ticket or registration tier: General, VIP, Speaker, Sponsor, Exhibitor, Staff, Student.`),
+    TableAssignment: z.string().nullable().describe(`
+        * * Field Name: TableAssignment
+        * * Display Name: Table Assignment
+        * * SQL Data Type: nvarchar(100)
+        * * Description: Table or seating assignment for seated meals, banquets, or breakout tracks.`),
+    SpecialRequests: z.string().nullable().describe(`
+        * * Field Name: SpecialRequests
+        * * Display Name: Special Requests
+        * * SQL Data Type: nvarchar(2000)
+        * * Description: Accessibility and accommodation requests (wheelchair seating, ASL interpretation, etc.).`),
+    CheckInNotes: z.string().nullable().describe(`
+        * * Field Name: CheckInNotes
+        * * Display Name: Check-In Notes
+        * * SQL Data Type: nvarchar(2000)
+        * * Description: Staff notes taken during check-in or on-site event operations.`),
     OrderHeaderID: z.string().describe(`
         * * Field Name: OrderHeaderID
         * * Display Name: Order Header
@@ -880,6 +932,22 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    EventFormat: z.union([z.literal('Hybrid'), z.literal('In-Person'), z.literal('Virtual')]).describe(`
+        * * Field Name: EventFormat
+        * * Display Name: Event Format
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: In-Person
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Hybrid
+    *   * In-Person
+    *   * Virtual
+        * * Description: Event delivery format: In-Person, Virtual, or Hybrid.`),
+    VirtualMeetingUrl: z.string().nullable().describe(`
+        * * Field Name: VirtualMeetingUrl
+        * * Display Name: Virtual Meeting URL
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: Meeting/broadcast URL for virtual or hybrid event sessions (Zoom, Teams, etc.).`),
     Name: z.string().describe(`
         * * Field Name: Name
         * * Display Name: Name
@@ -1992,11 +2060,11 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: nvarchar(40)`),
     Dimension: z.string().nullable().describe(`
         * * Field Name: Dimension
-        * * Display Name: Dimension
+        * * Display Name: Dimension Name
         * * SQL Data Type: nvarchar(100)`),
     DimensionValue: z.string().nullable().describe(`
         * * Field Name: DimensionValue
-        * * Display Name: Dimension Value
+        * * Display Name: Dimension Value Name
         * * SQL Data Type: nvarchar(200)`),
     RootParentOrderLineID: z.string().nullable().describe(`
         * * Field Name: RootParentOrderLineID
@@ -5999,7 +6067,6 @@ export class mjBizAppsOrdersCustomerPaymentTermsEntity extends BaseEntity<mjBizA
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Customer Payment Terms entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Table-Level: If both the start date and end date are specified, the end date must be after the start date to ensure a logical chronological order.
     * * Table-Level: Each record must be associated with either an Organization or a Person, but not both. One of these associations is required to ensure proper ownership.
     * @public
     * @method
@@ -6007,30 +6074,10 @@ export class mjBizAppsOrdersCustomerPaymentTermsEntity extends BaseEntity<mjBizA
     */
     public override Validate(): ValidationResult {
         const result = super.Validate();
-        this.ValidateEndedAtAfterStartedAt(result);
         this.ValidateOrganizationOrPersonAssociation(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
-    }
-
-    /**
-    * If both the start date and end date are specified, the end date must be after the start date to ensure a logical chronological order.
-    * @param result - the ValidationResult object to add any errors or warnings to
-    * @public
-    * @method
-    */
-    public ValidateEndedAtAfterStartedAt(result: ValidationResult) {
-    	if (this.StartedAt != null && this.EndedAt != null) {
-    		if (this.EndedAt <= this.StartedAt) {
-    			result.Errors.push(new ValidationErrorInfo(
-    				"EndedAt",
-    				"The end date must be after the start date.",
-    				this.EndedAt,
-    				ValidationErrorType.Failure
-    			));
-    		}
-    	}
     }
 
     /**
@@ -6535,7 +6582,6 @@ export class mjBizAppsOrdersEntitlementGrantEntity extends BaseEntity<mjBizAppsO
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Entitlement Grants entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Table-Level: If an entitlement's status is set to 'Revoked', a revocation date must be provided. Conversely, if the status is not 'Revoked', the revocation date must be empty.
     * * Table-Level: The validity end date must be on or after the validity start date if both dates are specified.
     * @public
     * @method
@@ -6543,35 +6589,10 @@ export class mjBizAppsOrdersEntitlementGrantEntity extends BaseEntity<mjBizAppsO
     */
     public override Validate(): ValidationResult {
         const result = super.Validate();
-        this.ValidateRevokedAtBasedOnStatus(result);
         this.ValidateValidToAfterOrEqualValidFrom(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
-    }
-
-    /**
-    * If an entitlement's status is set to 'Revoked', a revocation date must be provided. Conversely, if the status is not 'Revoked', the revocation date must be empty.
-    * @param result - the ValidationResult object to add any errors or warnings to
-    * @public
-    * @method
-    */
-    public ValidateRevokedAtBasedOnStatus(result: ValidationResult) {
-    	if (this.Status === 'Revoked' && this.RevokedAt == null) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"RevokedAt",
-    			"A revocation date must be provided when the status is 'Revoked'.",
-    			this.RevokedAt,
-    			ValidationErrorType.Failure
-    		));
-    	} else if (this.Status !== 'Revoked' && this.RevokedAt != null) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"RevokedAt",
-    			"A revocation date cannot be set unless the status is 'Revoked'.",
-    			this.RevokedAt,
-    			ValidationErrorType.Failure
-    		));
-    	}
     }
 
     /**
@@ -6987,6 +7008,130 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
     set Comments(value: string | null) {
         this.Set('Comments', value);
+    }
+
+    /**
+    * * Field Name: AttendanceStatus
+    * * Display Name: Attendance Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Registered
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Attended
+    *   * Cancelled
+    *   * No Show
+    *   * Registered
+    * * Description: Attendee operational lifecycle status: Registered, Attended, No Show, or Cancelled.
+    */
+    get AttendanceStatus(): 'Attended' | 'Cancelled' | 'No Show' | 'Registered' {
+        return this.Get('AttendanceStatus');
+    }
+    set AttendanceStatus(value: 'Attended' | 'Cancelled' | 'No Show' | 'Registered') {
+        this.Set('AttendanceStatus', value);
+    }
+
+    /**
+    * * Field Name: BadgePrintedAt
+    * * Display Name: Badge Printed At
+    * * SQL Data Type: datetimeoffset
+    * * Description: Timestamp when the attendee credential badge was printed at registration desk or kiosk.
+    */
+    get BadgePrintedAt(): Date | null {
+        return this.Get('BadgePrintedAt');
+    }
+    set BadgePrintedAt(value: Date | null) {
+        this.Set('BadgePrintedAt', value);
+    }
+
+    /**
+    * * Field Name: BadgeName
+    * * Display Name: Badge Name
+    * * SQL Data Type: nvarchar(200)
+    * * Description: Preferred attendee name override for badge printing (e.g. nickname or chosen name).
+    */
+    get BadgeName(): string | null {
+        return this.Get('BadgeName');
+    }
+    set BadgeName(value: string | null) {
+        this.Set('BadgeName', value);
+    }
+
+    /**
+    * * Field Name: BadgeCompany
+    * * Display Name: Badge Company
+    * * SQL Data Type: nvarchar(200)
+    * * Description: Organization or company name to display on the badge if different from primary organization.
+    */
+    get BadgeCompany(): string | null {
+        return this.Get('BadgeCompany');
+    }
+    set BadgeCompany(value: string | null) {
+        this.Set('BadgeCompany', value);
+    }
+
+    /**
+    * * Field Name: BadgeTitle
+    * * Display Name: Badge Title
+    * * SQL Data Type: nvarchar(200)
+    * * Description: Job title to display on attendee credential badge.
+    */
+    get BadgeTitle(): string | null {
+        return this.Get('BadgeTitle');
+    }
+    set BadgeTitle(value: string | null) {
+        this.Set('BadgeTitle', value);
+    }
+
+    /**
+    * * Field Name: TicketTier
+    * * Display Name: Ticket Tier
+    * * SQL Data Type: nvarchar(50)
+    * * Description: Ticket or registration tier: General, VIP, Speaker, Sponsor, Exhibitor, Staff, Student.
+    */
+    get TicketTier(): string | null {
+        return this.Get('TicketTier');
+    }
+    set TicketTier(value: string | null) {
+        this.Set('TicketTier', value);
+    }
+
+    /**
+    * * Field Name: TableAssignment
+    * * Display Name: Table Assignment
+    * * SQL Data Type: nvarchar(100)
+    * * Description: Table or seating assignment for seated meals, banquets, or breakout tracks.
+    */
+    get TableAssignment(): string | null {
+        return this.Get('TableAssignment');
+    }
+    set TableAssignment(value: string | null) {
+        this.Set('TableAssignment', value);
+    }
+
+    /**
+    * * Field Name: SpecialRequests
+    * * Display Name: Special Requests
+    * * SQL Data Type: nvarchar(2000)
+    * * Description: Accessibility and accommodation requests (wheelchair seating, ASL interpretation, etc.).
+    */
+    get SpecialRequests(): string | null {
+        return this.Get('SpecialRequests');
+    }
+    set SpecialRequests(value: string | null) {
+        this.Set('SpecialRequests', value);
+    }
+
+    /**
+    * * Field Name: CheckInNotes
+    * * Display Name: Check-In Notes
+    * * SQL Data Type: nvarchar(2000)
+    * * Description: Staff notes taken during check-in or on-site event operations.
+    */
+    get CheckInNotes(): string | null {
+        return this.Get('CheckInNotes');
+    }
+    set CheckInNotes(value: string | null) {
+        this.Set('CheckInNotes', value);
     }
 
     /**
@@ -7612,6 +7757,38 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: EventFormat
+    * * Display Name: Event Format
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: In-Person
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Hybrid
+    *   * In-Person
+    *   * Virtual
+    * * Description: Event delivery format: In-Person, Virtual, or Hybrid.
+    */
+    get EventFormat(): 'Hybrid' | 'In-Person' | 'Virtual' {
+        return this.Get('EventFormat');
+    }
+    set EventFormat(value: 'Hybrid' | 'In-Person' | 'Virtual') {
+        this.Set('EventFormat', value);
+    }
+
+    /**
+    * * Field Name: VirtualMeetingUrl
+    * * Display Name: Virtual Meeting URL
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: Meeting/broadcast URL for virtual or hybrid event sessions (Zoom, Teams, etc.).
+    */
+    get VirtualMeetingUrl(): string | null {
+        return this.Get('VirtualMeetingUrl');
+    }
+    set VirtualMeetingUrl(value: string | null) {
+        this.Set('VirtualMeetingUrl', value);
     }
 
     /**
@@ -10190,7 +10367,6 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     * * UnitPrice: The unit price for any item must be zero or greater. Negative prices are not allowed.
     * * Table-Level: An order line cannot be its own parent. If a parent order line is specified, it must refer to a different order line.
     * * Table-Level: If an order line's quantity is marked as overridden, it must be associated with a parent order line.
-    * * Table-Level: Rollup parent order lines must not have any discount, charge, or tax amounts. These financial values are only allowed on non-rollup lines.
     * * Table-Level: If both the service period start and end dates are provided, the end date must be on or after the start date.
     * @public
     * @method
@@ -10204,7 +10380,6 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
         this.ValidateUnitPriceIsNonNegative(result);
         this.ValidateParentOrderLineIDNotEqualToID(result);
         this.ValidateParentOrderLineRequiredWhenQuantityOverridden(result);
-        this.ValidateRollupParentAmounts(result);
         this.ValidateServicePeriodEndAfterStart(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
@@ -10310,25 +10485,6 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     			this.ParentOrderLineID,
     			ValidationErrorType.Failure
     		));
-    	}
-    }
-
-    /**
-    * Rollup parent order lines must not have any discount, charge, or tax amounts. These financial values are only allowed on non-rollup lines.
-    * @param result - the ValidationResult object to add any errors or warnings to
-    * @public
-    * @method
-    */
-    public ValidateRollupParentAmounts(result: ValidationResult) {
-    	if (this.IsRollupParent) {
-    		if (this.DiscountAmount !== 0 || this.ChargeAmount !== 0 || this.LineTax !== 0) {
-    			result.Errors.push(new ValidationErrorInfo(
-    				"IsRollupParent",
-    				"Rollup parent lines cannot have discount, charge, or tax amounts.",
-    				this.IsRollupParent,
-    				ValidationErrorType.Failure
-    			));
-    		}
     	}
     }
 
@@ -10899,7 +11055,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: Dimension
-    * * Display Name: Dimension
+    * * Display Name: Dimension Name
     * * SQL Data Type: nvarchar(100)
     */
     get Dimension(): string | null {
@@ -10908,7 +11064,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: DimensionValue
-    * * Display Name: Dimension Value
+    * * Display Name: Dimension Value Name
     * * SQL Data Type: nvarchar(200)
     */
     get DimensionValue(): string | null {
@@ -13275,7 +13431,6 @@ export class mjBizAppsOrdersPriceListAssignmentEntity extends BaseEntity<mjBizAp
     /**
     * Validate() method override for MJ_BizApps_Orders: Price List Assignments entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
     * * Table-Level: If both a start date and an end date are specified, the end date must be later than the start date.
-    * * Table-Level: Each record must be associated with either an Organization or a Person, but not both, to ensure proper ownership and categorization.
     * @public
     * @method
     * @override
@@ -13283,7 +13438,6 @@ export class mjBizAppsOrdersPriceListAssignmentEntity extends BaseEntity<mjBizAp
     public override Validate(): ValidationResult {
         const result = super.Validate();
         this.ValidateEndedAtAfterStartedAt(result);
-        this.ValidateOrganizationOrPersonExclusive(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
@@ -13305,33 +13459,6 @@ export class mjBizAppsOrdersPriceListAssignmentEntity extends BaseEntity<mjBizAp
     				ValidationErrorType.Failure
     			));
     		}
-    	}
-    }
-
-    /**
-    * Each record must be associated with either an Organization or a Person, but not both, to ensure proper ownership and categorization.
-    * @param result - the ValidationResult object to add any errors or warnings to
-    * @public
-    * @method
-    */
-    public ValidateOrganizationOrPersonExclusive(result: ValidationResult) {
-    	const hasOrganization = this.OrganizationID != null;
-    	const hasPerson = this.PersonID != null;
-    
-    	if (hasOrganization && hasPerson) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"OrganizationID",
-    			"Cannot specify both an Organization and a Person. Please choose only one.",
-    			this.OrganizationID,
-    			ValidationErrorType.Failure
-    		));
-    	} else if (!hasOrganization && !hasPerson) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"OrganizationID",
-    			"Either an Organization or a Person must be specified.",
-    			null,
-    			ValidationErrorType.Failure
-    		));
     	}
     }
 
@@ -14724,7 +14851,6 @@ export class mjBizAppsOrdersProductPriceEntity extends BaseEntity<mjBizAppsOrder
     * * Table-Level: The end date (Effective To) must be on or after the start date (Effective From) if an end date is specified.
     * * Table-Level: If both a minimum and maximum quantity are specified, the maximum quantity must be greater than or equal to the minimum quantity to ensure a valid range.
     * * Table-Level: If the pricing model is set to 'Package', a package quantity greater than zero must be specified.
-    * * Table-Level: Either a Product or a Product Category must be specified, but not both. One of these fields is required to define the scope of the record.
     * * Table-Level: The maximum recurrence day of the month must be greater than or equal to the minimum recurrence day of the month when both are specified.
     * @public
     * @method
@@ -14736,7 +14862,6 @@ export class mjBizAppsOrdersProductPriceEntity extends BaseEntity<mjBizAppsOrder
         this.ValidateEffectiveToGreaterThanOrEqualToEffectiveFrom(result);
         this.ValidateMaxQuantityGreaterThanOrEqualToMinQuantity(result);
         this.ValidatePackageQuantityForPackagePricingModel(result);
-        this.ValidateProductOrProductCategoryExclusivity(result);
         this.ValidateRecurrenceDayOfMonthRange(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
@@ -14819,33 +14944,6 @@ export class mjBizAppsOrdersProductPriceEntity extends BaseEntity<mjBizAppsOrder
                 ));
             }
         }
-    }
-
-    /**
-    * Either a Product or a Product Category must be specified, but not both. One of these fields is required to define the scope of the record.
-    * @param result - the ValidationResult object to add any errors or warnings to
-    * @public
-    * @method
-    */
-    public ValidateProductOrProductCategoryExclusivity(result: ValidationResult) {
-    	const hasProduct = this.ProductID != null;
-    	const hasCategory = this.ProductCategoryID != null;
-    
-    	if (hasProduct && hasCategory) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"ProductID",
-    			"Cannot specify both a Product and a Product Category. Please choose only one.",
-    			this.ProductID,
-    			ValidationErrorType.Failure
-    		));
-    	} else if (!hasProduct && !hasCategory) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"ProductID",
-    			"Either a Product or a Product Category must be specified.",
-    			this.ProductID,
-    			ValidationErrorType.Failure
-    		));
-    	}
     }
 
     /**
@@ -19262,7 +19360,6 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     /**
     * Validate() method override for MJ_BizApps_Orders: Subscriptions entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
     * * RenewalLeadDays: Renewal lead days must be a non-negative number (0 or greater) if specified.
-    * * Table-Level: A subscription cannot migrate from itself. The subscription being migrated from must be a different subscription.
     * * Table-Level: A subscription cannot migrate to itself. This prevents logical errors where a subscription's migration destination is set as its own record.
     * @public
     * @method
@@ -19271,7 +19368,6 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     public override Validate(): ValidationResult {
         const result = super.Validate();
         this.ValidateRenewalLeadDaysGreaterThanOrEqualToZero(result);
-        this.ValidateMigratesFromSubscriptionIDNotEqualToID(result);
         this.ValidateMigratesToSubscriptionIDNotEqualToID(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
@@ -19290,23 +19386,6 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     			"RenewalLeadDays",
     			"Renewal lead days must be 0 or greater.",
     			this.RenewalLeadDays,
-    			ValidationErrorType.Failure
-    		));
-    	}
-    }
-
-    /**
-    * A subscription cannot migrate from itself. The subscription being migrated from must be a different subscription.
-    * @param result - the ValidationResult object to add any errors or warnings to
-    * @public
-    * @method
-    */
-    public ValidateMigratesFromSubscriptionIDNotEqualToID(result: ValidationResult) {
-    	if (this.MigratesFromSubscriptionID != null && this.MigratesFromSubscriptionID === this.ID) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"MigratesFromSubscriptionID",
-    			"A subscription cannot migrate from itself. The Migrates From Subscription ID must be different from the Subscription ID.",
-    			this.MigratesFromSubscriptionID,
     			ValidationErrorType.Failure
     		));
     	}
