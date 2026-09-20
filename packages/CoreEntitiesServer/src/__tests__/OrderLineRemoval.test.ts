@@ -198,6 +198,9 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
         expandBundles: vi.fn().mockResolvedValue(undefined),
         prepareLines: vi.fn().mockResolvedValue(undefined),
         saveTaxReasons: vi.fn().mockResolvedValue(undefined),
+        // Deriving a line's GL dimensions runs after the line loop and reaches for accounting's
+        // vocabulary. The removal ORDER is what this file pins; the tagging is its own subject.
+        stampLineDimensions: vi.fn().mockResolvedValue(undefined),
         savePriceComponents: vi.fn().mockResolvedValue(undefined),
         refreshRolledUpTotals: vi.fn(async () => {
             log.push('refresh-rollups');
