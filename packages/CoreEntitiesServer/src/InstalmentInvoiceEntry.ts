@@ -1,0 +1,304 @@
+/**
+ * @fileoverview The BILLING ENTRY for one instalment: the value entry a non-scheduled order raises
+ * at confirm, raised here instead — once per instalment, for that instalment's slice (D91).
+ *
+ *     Dr  Accounts Receivable      this instalment's share of net + tax + charges
+ *     Dr  Sales Discounts          its share of the discount
+ *         Cr  Deferred Revenue     its share of gross (or net, when the discount nets in)
+ *         Cr  each charge and tax  its share of each
+ *
+ * WHY THE CREDIT IS ALWAYS DEFERRED REVENUE, even for an up-front line. Billing is not earning.
+ * The revenue side is already settled elsewhere — an up-front line credited Sales at confirm, a
+ * deferred driver's staged releases credit Sales on their own dates — so crediting Sales again
+ * here would recognise the same money twice. Deferred Revenue is the account that nets billing
+ * against recognition, and between the two events a contract's Deferred legitimately runs to a
+ * DEBIT balance. That debit balance is the contract asset; it is presented as Unbilled Receivable
+ * by a period-end reclass, not by a second running account in this code.
+ *
+ * WHY AT INVOICING RATHER THAN ON THE DUE DATE. Forward-dating or a due-date job would make AR
+ * appear whether or not anyone actually billed, and the due-with-no-invoice worklist — the control
+ * finance relies on — would then report on something the ledger had already assumed. Posting here
+ * keeps one thing reliably true: A RECEIVABLE EXISTS BECAUSE WE BILLED SOMEONE.
+ *
+ * IDEMPOTENCY IS THE CALLER'S. `Orders.IssueInstalmentInvoice` returns early for a row that is
+ * already `Invoiced` or `Paid` and never reaches here, so invoicing twice cannot bill twice. This
+ * function books what it is asked to book. It runs inside that operation's transaction, and
+ * `AccountingEngine` joins the caller's transaction rather than opening its own, so the number,
+ * the stamp and the entry commit or roll back together.
+ *
+ * NO QUERIES HERE. The operation already reads the order, its lines and the company's sibling
+ * rows; it passes them in. That keeps the read visible at the call site and this module testable
+ * without a database.
+ *
+ * @module @mj-biz-apps/orders-core-entities-server
+ */
+import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
+
+import { BuildGLAccountResolver, EntityIDFor, SubmitJournalEntryDrafts } from './AccountingBridge.js';
+import { SplitExactly } from './BundleBehavior.js';
+import { GL_ROLE } from './GLAccountResolver.js';
+import { BuildValueEntryLines, type JELineDraft } from './OrderJournalEntryFactory.js';
+import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
+
+/**
+ * The journal entry type this entry is classified as.
+ *
+ * `OrderBooking` because it IS the booking entry — the same construction, moved in time. Orders
+ * seeds four types (`metadata/journal-entry-types`) and accounting refuses an unseeded code
+ * (`ENTRY_TYPE_UNKNOWN`), so a new type would reach no host until a release regenerated a
+ * `*__Metadata_Sync.sql` and would fail everywhere until then.
+ */
+const INVOICE_ENTRY_TYPE = 'OrderBooking';
+
+const money = (n: number): number => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+/** One of the company's live schedule rows, in `InstallmentNumber` order. */
+export interface InstalmentSibling {
+    ID: string;
+    InstallmentNumber: number;
+    Amount: number;
+    Status: string;
+}
+
+/** One order line of the invoiced company, as the slice arithmetic reads it. */
+export interface InstalmentLineFacts {
+    ID: string;
+    LineNumber: number;
+    ProductName: string;
+    /** Negative quantity means the line reverses; its slices mirror, as booking's do (D16). */
+    Quantity: number;
+    Net: number;
+    Tax: number;
+    Charges: number;
+    Discount: number;
+    Gross: number;
+    ProductID: string;
+    ProductCategoryID: string | null;
+    ProductTypeID: string;
+    Dimensions: Array<{ DimensionID: string; DimensionValueID: string }>;
+    /** Charge/tax credits for the WHOLE line; each is sliced the same way the amounts are. */
+    ChargeCredits: Array<{ GLAccountID: string; Amount: number; Label: string }>;
+}
+
+/** Everything the billing entry needs, read once by the operation. */
+export interface InstalmentInvoiceContext {
+    OrderHeaderPaymentScheduleID: string;
+    OrderHeaderID: string;
+    OrderNumber: string;
+    CompanyID: string;
+    InstallmentNumber: number;
+    DocumentNumber: string;
+    Amount: number;
+    InvoicedAt: Date;
+    /** Already paid against this row at the moment of invoicing — a deposit taken before billing. */
+    AmountPaid: number;
+    /** The company's live rows in `InstallmentNumber` order, including this one. */
+    Siblings: InstalmentSibling[];
+    /** The company's lines on this order. */
+    Lines: InstalmentLineFacts[];
+}
+
+/** This row's index among its siblings, and the weights every slice is taken with. */
+function sliceWeights(context: InstalmentInvoiceContext): { index: number; weights: number[] } {
+    const weights = context.Siblings.map((s) => Math.max(0, Number(s.Amount ?? 0)));
+    const index = context.Siblings.findIndex((s) => s.ID.toLowerCase() === context.OrderHeaderPaymentScheduleID.toLowerCase());
+    return { index, weights };
+}
+
+/** This instalment's exact share of `total`, by the company's instalment amounts. */
+const slice = (total: number, index: number, weights: number[]): number =>
+    weights.length ? SplitExactly(Math.abs(total), weights)[index] : 0;
+
+/**
+ * Book the billing entry for one instalment and return its JournalEntryID, or null when there is
+ * nothing to bill (fully prepaid, or a zero instalment).
+ *
+ * WRITES TO THE LEDGER. Throws when accounting refuses the draft, which rolls the caller's
+ * transaction — and with it the document number and the `Invoiced` stamp — back.
+ */
+export async function EmitInstalmentInvoiceEntry(
+    context: InstalmentInvoiceContext,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string | null> {
+    const amount = money(context.Amount);
+    if (!(amount > 0)) {
+        console.warn(
+            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} has amount ` +
+                `${context.Amount}; no billing entry was posted. An instalment with no positive amount ` +
+                `bills nothing.`,
+        );
+        return null;
+    }
+
+    const { index, weights } = sliceWeights(context);
+    if (index < 0) {
+        throw new Error(
+            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} was not found ` +
+                `among the live rows passed for its company. The billing entry cannot be sliced.`,
+        );
+    }
+
+    const resolver = await BuildGLAccountResolver(provider, user);
+    const asOf = new Date(context.InvoicedAt);
+    const deferredByLine = new Map<string, string>();
+    const lines: JELineDraft[] = [];
+
+    for (const line of context.Lines) {
+        const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]): Promise<string> =>
+            resolver.Resolve(role, line.ProductID, line.ProductCategoryID, context.CompanyID, asOf, line.ProductTypeID);
+
+        const arAccount = await resolve(GL_ROLE.AccountsReceivable);
+        const deferredAccount = await resolve(GL_ROLE.DeferredRevenue);
+        deferredByLine.set(line.ID, deferredAccount);
+
+        // THE DISCOUNT RULE IS BOOKING'S, UNCHANGED: a contra account when one resolves, otherwise
+        // the discount nets into the revenue credit (plan D11).
+        let discountAccount: string | null = null;
+        if (money(line.Discount) !== 0) {
+            try {
+                discountAccount = await resolve(GL_ROLE.SalesDiscounts);
+            } catch {
+                discountAccount = null;
+            }
+        }
+
+        // Every amount sliced against the SAME weights, so each line's pieces sum across all
+        // instalments to that line's full amount. GROSS IS DERIVED, NOT SLICED: `net + discount =
+        // gross` has to hold WITHIN a slice as well as in total, and three independently rounded
+        // splits do not preserve it — 1000.01 net and 111.11 discount over three instalments slices
+        // to 333.35 + 37.04 = 370.39 while gross slices to 370.38, and the entry is a penny out.
+        // Deriving it keeps both invariants: each slice balances, and the slices still sum to the
+        // line, because sum(net_i) + sum(discount_i) = net + discount = gross.
+        const netPiece = slice(line.Net, index, weights);
+        const discountPiece = slice(line.Discount, index, weights);
+        const built = BuildValueEntryLines(
+            {
+                Net: netPiece,
+                Tax: slice(line.Tax, index, weights),
+                Charges: slice(line.Charges, index, weights),
+                Discount: discountPiece,
+                Gross: money(netPiece + discountPiece),
+            },
+            {
+                AR: arAccount,
+                Credit: deferredAccount,
+                CreditLabel: 'Deferred revenue',
+                Discount: discountAccount,
+                ChargeCredits: line.ChargeCredits.map((c) => ({
+                    ...c,
+                    Amount: slice(c.Amount, index, weights),
+                })),
+            },
+            line.ProductName,
+            line.Dimensions,
+        );
+
+        // A reversal line mirrors, exactly as booking mirrors it (D16): the same accounts with the
+        // sides swapped at a positive amount, never a negative debit.
+        lines.push(
+            ...(line.Quantity < 0
+                ? built.map((l) => ({ ...l, DebitAmount: l.CreditAmount, CreditAmount: l.DebitAmount }))
+                : built),
+        );
+    }
+
+    applyPrepayment(context, lines, deferredByLine);
+
+    const posted = lines.filter((l) => money(l.DebitAmount ?? 0) !== 0 || money(l.CreditAmount ?? 0) !== 0);
+    if (posted.length < 2) {
+        console.warn(
+            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} bills nothing ` +
+                `(${money(context.AmountPaid)} was already paid against it), so no journal entry was ` +
+                `posted. The document number and the Invoiced stamp still stand.`,
+        );
+        return null;
+    }
+    assertBalanced(posted, context);
+
+    const outcome = await SubmitJournalEntryDrafts(
+        [
+            {
+                EffectiveDate: asOf.toISOString().slice(0, 10),
+                EntryType: INVOICE_ENTRY_TYPE,
+                Description:
+                    `Order ${context.OrderNumber} instalment ${context.InstallmentNumber} invoiced as ` +
+                    `${context.DocumentNumber} — billing entry`,
+                // D25 provenance points at the SCHEDULE ROW, where instalment identity lives (D87),
+                // not at the order, which has many instalments.
+                LinkedEntityID: EntityIDFor(ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY),
+                LinkedRecordID: context.OrderHeaderPaymentScheduleID,
+                Lines: posted,
+            },
+        ],
+        `the billing entry for instalment ${context.InstallmentNumber} of order ${context.OrderNumber}`,
+        provider,
+        user,
+    );
+
+    const journalEntryID = outcome.Results?.[0]?.JournalEntryID;
+    if (!journalEntryID) {
+        throw new Error(
+            `Accounting reported success but returned no journal entry for the billing entry of ` +
+                `instalment ${context.InstallmentNumber} of order ${context.OrderNumber}.`,
+        );
+    }
+    return journalEntryID;
+}
+
+/**
+ * CASH TAKEN BEFORE THE BILL RAISES NO RECEIVABLE.
+ *
+ * A deposit already posted `Dr Cash / Cr Deferred Revenue` — it never touched AR, because there was
+ * nothing to relieve. So the amount already paid against this row must come off BOTH sides of the
+ * billing entry: the AR debit that would otherwise claim money we already hold, and the Deferred
+ * credit that would otherwise count the same obligation twice.
+ *
+ * Reduced pro-rata across the lines by `SplitExactly`, so the two sides stay equal and the entry
+ * balances by construction. Where a line's Deferred credit would go negative the sign flips to a
+ * debit, which is the same account running the other way rather than an illegal negative credit.
+ */
+function applyPrepayment(
+    context: InstalmentInvoiceContext,
+    lines: JELineDraft[],
+    deferredByLine: Map<string, string>,
+): void {
+    const prepaid = money(context.AmountPaid);
+    if (!(prepaid > 0)) return;
+
+    const arLines = lines.filter((l) => (l.DebitAmount ?? 0) > 0 && l.Description?.startsWith('AR — '));
+    const deferredAccounts = new Set(deferredByLine.values());
+    const creditLines = lines.filter((l) => (l.CreditAmount ?? 0) > 0 && deferredAccounts.has(l.GLAccountID));
+
+    reduce(arLines, prepaid, 'DebitAmount');
+    reduce(creditLines, prepaid, 'CreditAmount');
+}
+
+/** Take `total` off `field` across `lines`, pro-rata, flipping the side if one would go negative. */
+function reduce(lines: JELineDraft[], total: number, field: 'DebitAmount' | 'CreditAmount'): void {
+    if (!lines.length) return;
+    const other = field === 'DebitAmount' ? 'CreditAmount' : 'DebitAmount';
+    const shares = SplitExactly(total, lines.map((l) => Number(l[field] ?? 0)));
+    lines.forEach((l, i) => {
+        const after = money(Number(l[field] ?? 0) - shares[i]);
+        if (after >= 0) {
+            l[field] = after;
+        } else {
+            l[field] = 0;
+            l[other] = money(Number(l[other] ?? 0) + Math.abs(after));
+        }
+    });
+}
+
+/** The entry must balance before it is sent, with a message naming the instalment rather than a trigger. */
+function assertBalanced(lines: JELineDraft[], context: InstalmentInvoiceContext): void {
+    const debits = money(lines.reduce((s, l) => s + (l.DebitAmount ?? 0), 0));
+    const credits = money(lines.reduce((s, l) => s + (l.CreditAmount ?? 0), 0));
+    if (debits !== credits) {
+        throw new Error(
+            `The billing entry for instalment ${context.InstallmentNumber} of order ` +
+                `${context.OrderNumber} does not balance: debits ${debits} vs credits ${credits}. ` +
+                `Nothing was booked.`,
+        );
+    }
+}

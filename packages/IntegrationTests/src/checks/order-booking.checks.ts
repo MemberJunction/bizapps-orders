@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB17).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB18).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -22,6 +22,7 @@
  *   OB15 confirm-after-draft with lines not loaded still books memberships
  *   OB16 a Draft with no lines saves (lines are required only at confirm)
  *   OB17 a draft line can be removed and replaced — the removed row actually leaves the database
+ *   OB18 an order with NO payment schedule debits AR alone — no contract-asset line exists (D89)
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -49,6 +50,9 @@ import { Metadata } from '@memberjunction/core';
 import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from '../entity-names.js';
+
+/** `11300 Unbilled Revenue (Contract Asset)` — the D89 role's account in the world fixture. */
+const UNBILLED_CODE = '11300';
 
 /** The three-line multi-company order OB1–OB6 all read from — built once per check, inside its tx. */
 async function confirmMultiCompanyOrder(ctx: IntegrationCheckContext) {
@@ -682,6 +686,47 @@ export const OrderBookingChecks: NamedCheck[] = [
                 );
                 AssertEqual(Number(emptied.N), 0, 'the last line is gone too');
                 AssertEqual(Number(emptied.TotalGross ?? 0), 0, 'an order with no lines must not still carry a total');
+            }),
+    },
+    {
+        Id: 'order-booking.OB18',
+        Name: 'OB18: an order with NO payment schedule debits AR alone — no contract-asset line exists',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // THE REGRESSION FENCE FOR D89. Splitting the booking debit between Unbilled
+                // Receivable and AR must be INVISIBLE to every order that has no instalments —
+                // which is every order that exists today. PS2 proves the AR amount is unchanged;
+                // this proves the SHAPE is: one debit, to AR, and not a second line anywhere in the
+                // entry pointing at the contract asset. A split that merely happened to sum right
+                // would pass an amount check and fail here.
+                const f = Fx();
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 300 }],
+                });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const lines = await TxQuery<{ Code: string; DebitAmount: number; CreditAmount: number }>(
+                    ctx,
+                    `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
+                       FROM ${ORDERS_SCHEMA}.OrderLine ol
+                       JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ol.JournalEntryID
+                       JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                      WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+                );
+                AssertEqual(lines.length, 2, `exactly the two lines it booked before D89: ${JSON.stringify(lines)}`);
+                AssertEqual(
+                    lines.filter((l) => l.Code === UNBILLED_CODE).length,
+                    0,
+                    `no contract-asset line on an unscheduled order: ${JSON.stringify(lines)}`,
+                );
+                const debits = lines.filter((l) => Number(l.DebitAmount ?? 0) !== 0);
+                AssertEqual(debits.length, 1, `ONE debit line, not a split: ${JSON.stringify(lines)}`);
+                AssertEqual(debits[0].Code, '11201', 'and it is Accounts Receivable');
+                AssertEqual(Number(debits[0].DebitAmount), 300, 'for the whole order value');
             }),
     },
 ];

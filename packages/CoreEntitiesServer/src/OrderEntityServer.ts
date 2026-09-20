@@ -80,7 +80,7 @@ import {
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
-import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
+import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import { AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
@@ -596,12 +596,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // per-company gross does not exist until the lines are written. Throwing rolls the
                 // whole confirm back: no journal entries, no subscription, no sequence number spent.
                 // An order with no schedule rows has nothing to check and books exactly as before.
-                await this.verifyScheduleTies(lines);
+                const scheduleRows = await this.verifyScheduleTies(lines);
 
                 // Subscriptions before booking: a term must exist so recognition entries can anchor
                 // to it (D46) and use its anchored/prorated window rather than raw line dates.
                 const subs = await this.materializeSubscriptions(lines, decisions, options);
-                await this.bookLines(lines, options, subs);
+                await this.bookLines(lines, options, subs, scheduleRows);
                 await this.createInitialPayment(options);
 
                 // ENTITLEMENTS LAST, and INSIDE this transaction (D27/D76).
@@ -2046,6 +2046,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         lines: mjBizAppsOrdersOrderLineEntity[],
         options?: EntitySaveOptions,
         subs?: SubscriptionMaterialization,
+        /** The schedule, already read for the tie check — it decides the Unbilled/AR split (D89). */
+        scheduleRows?: ScheduleTimingFacts[],
     ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
@@ -2062,7 +2064,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             user,
         );
 
-        const drafts = await factory.BuildDrafts(this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine);
+        const drafts = await factory.BuildDrafts(this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows);
         // An order can legitimately produce NO entries: every line fully comped, so nothing to
         // debit or credit. Accounting refuses an empty draft set, quite correctly, so the call is
         // skipped rather than the order being refused for having no ledger impact.
@@ -3175,19 +3177,25 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
-     * Refuse a confirm whose payment schedule does not tie to its lines, naming the shortfall.
+     * Refuse a confirm whose payment schedule does not tie to its lines, naming the shortfall, and
+     * hand back the rows that survived the check.
      *
      * Treating an unscheduled remainder as "due on the header date" would silently under-bill —
      * the failure `InvoiceBehavior` already names. The check itself is `ScheduleShortfalls`, shared
      * with `Orders.IssueInstalmentInvoice` so both refuse for the same reason in the same words.
+     *
+     * The rows are RETURNED because booking needs them too (D89): which instalments are still
+     * future-dated is what decides how much of each line's debit is a contract asset rather than a
+     * receivable. One read, at the one place that already owns the transaction — the factory is
+     * handed the facts rather than querying for them.
      */
-    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
+    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<ScheduleTimingFacts[]> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const rows = await rv.RunView<{ CompanyID: string; Company?: string; Amount: number; Status: string }>(
+        const rows = await rv.RunView<ScheduleTimingFacts & { Company?: string }>(
             {
                 EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
                 ExtraFilter: `OrderHeaderID='${RequireUUID(this.ID, 'ID')}'`,
-                Fields: ['CompanyID', 'Company', 'Amount', 'Status'],
+                Fields: ['CompanyID', 'Company', 'Amount', 'Status', 'DueDate'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -3200,7 +3208,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             rows.Results ?? [],
             lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
         );
-        if (!shortfalls.length) return;
+        if (!shortfalls.length) return rows.Results ?? [];
         const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
         throw new Error(ExplainShortfalls(this.OrderNumber ?? '', shortfalls, (id) => String(names.get(id) ?? id)));
     }
