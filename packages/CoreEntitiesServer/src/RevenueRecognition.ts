@@ -157,7 +157,74 @@ export class AllBackEndDriver extends RevenueRecognitionDriver {
     }
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Percentage-of-completion — a SECOND family, not a fourth driver (plan §9.1, D90).
+ *
+ * The drivers above answer "given what we know at booking, when is this earned?" and run once.
+ * Percentage-of-completion answers "given what we now know about progress, how much should be
+ * earned TO DATE?" — which is not knowable at booking and cannot be expressed as
+ * `BuildSchedule(context) → entries` without the method lying about its contract. A POC type is
+ * `IsDeferred = 1` + `ScheduleBasis = 'OnMeasurement'`: it books to Deferred Revenue and stages NO
+ * release entries; `Orders.RecordProgress` posts the catch-up as observations arrive.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** One observation, as the driver sees it. Plain data, mirroring OrderLineProgressMeasurement. */
+export interface ProgressMeasurement {
+    /** Cumulative fraction earned, 0..1, when the signer states it directly. */
+    PercentComplete?: number | null;
+    /** Quantitative inputs, for a derived method (cost-to-cost, units delivered). */
+    MeasureNumerator?: number | null;
+    MeasureDenominator?: number | null;
+}
+
+/**
+ * Base progress driver. Subclass and register under a `MethodCode`:
+ *
+ *     @RegisterClass(ProgressRecognitionDriver, 'CostToCost')
+ *     export class CostToCostDriver extends ProgressRecognitionDriver { ... }
+ *
+ * Only `ManualAttestation` ships: nothing in this system holds cost or units today (plan §9.4).
+ */
+export abstract class ProgressRecognitionDriver {
+    /** Cumulative fraction earned, from one observation. Pure: no I/O. Throws on an unusable input. */
+    public abstract PercentComplete(m: ProgressMeasurement): number;
+}
+
+/**
+ * ManualAttestation — a named person states the cumulative percent and signs it. The number may
+ * have been derived anywhere; what posts is the attestation (D90).
+ */
+@RegisterClass(ProgressRecognitionDriver, 'ManualAttestation')
+export class ManualAttestationDriver extends ProgressRecognitionDriver {
+    public PercentComplete(m: ProgressMeasurement): number {
+        const p = Number(m.PercentComplete);
+        if (!Number.isFinite(p) || p < 0 || p > 1) {
+            throw new Error(`PercentComplete must be a fraction between 0 and 1 (got ${String(m.PercentComplete)}).`);
+        }
+        return p;
+    }
+}
+
+/** What one observation should post (plan §9.2). */
+export interface CatchUp {
+    /** LineTotalNet × percent, to the cent. At 100% it IS the line amount. */
+    Target: number;
+    /** Target − recognisedToDate. Negative on a backward slide; zero means "write nothing". */
+    Delta: number;
+}
+
+/**
+ * Cumulative catch-up: the entry is the difference between what the observation says should be
+ * earned to date and what already is. The backward-slide case is not a feature — it is what the
+ * subtraction does. Same `money()` rounding as OrderJournalEntryFactory, so the final catch-up at
+ * 100% lands the remaining cent regardless of rounding history.
+ */
+export function ComputeCatchUp(lineNet: number, percentComplete: number, recognizedToDate: number): CatchUp {
+    const target = money(lineNet * percentComplete);
+    return { Target: target, Delta: money(target - recognizedToDate) };
+}
+
 /** Tree-shaking anchor — the shipped drivers must be registered before booking runs. */
 export function LoadRevenueRecognitionDrivers(): void {
-    // intentionally empty
+    void ManualAttestationDriver;
 }

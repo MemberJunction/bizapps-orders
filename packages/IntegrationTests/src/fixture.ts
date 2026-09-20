@@ -366,6 +366,7 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             WidgetC: requireProduct('WidgetC'),
             EventA: requireProduct('EventA'),
             DeferredA: requireProduct('DeferredA'),
+            PocA: requireProduct('PocA'),
             SubRolling: requireProduct('SubRolling'),
             SubCalendar: requireProduct('SubCalendar'),
             SubFiscal: requireProduct('SubFiscal'),

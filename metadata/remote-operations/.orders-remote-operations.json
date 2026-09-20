@@ -449,5 +449,59 @@
       "lastModified": "2026-09-21T15:45:38.527Z",
       "checksum": "3433b673df672c542494fd6f7c295d5053513b32a0dae6fa835df6214360332c"
     }
+  },
+  {
+    "fields": {
+      "Name": "Record Progress",
+      "OperationKey": "Orders.RecordProgress",
+      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated before the last posted one; a posted observation is immutable.",
+      "InputTypeName": "OrdersRecordProgressInput",
+      "InputTypeDefinition": "@file:types/orders-record-progress.input.ts",
+      "OutputTypeName": "OrdersRecordProgressOutput",
+      "OutputTypeDefinition": "@file:types/orders-record-progress.output.ts",
+      "RequiredScope": "orders:write",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "InputTypeIsArray": false,
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F20"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T20:17:13.919Z",
+      "checksum": "8973fadac2206558d8d087a3b14f4640d5495c63b8da5c8b1465b67d9e53cc8b"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Get Progress Worklist",
+      "OperationKey": "Orders.GetProgressWorklist",
+      "Description": "The monthly attestation list (plan §9.4, version 1): every booked percentage-of-completion order line with its last posted observation and revenue recognised to date, so the delivery lead can state this period's percent. Lines already attested at 100% are omitted unless asked for.",
+      "InputTypeName": "OrdersGetProgressWorklistInput",
+      "InputTypeDefinition": "@file:types/orders-get-progress-worklist.input.ts",
+      "OutputTypeName": "OrdersGetProgressWorklistOutput",
+      "OutputTypeDefinition": "@file:types/orders-get-progress-worklist.output.ts",
+      "RequiredScope": "orders:read",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "InputTypeIsArray": false,
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F21"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T20:17:13.467Z",
+      "checksum": "0b0670c1a165041a4f67206cb880c8af9d8ab0d7b530cca773edd2dc27269f47"
+    }
   }
 ]
