@@ -21,6 +21,7 @@
  *   6  a return against (1)         the reversal path: mirrored entry, tax given back
  *   7  a paid order                 PaymentHeader/PaymentLine and the rollups they drive
  *   8  an overpayment               a negative balance, then spent as account credit on (9)
+ *   9  a project                    percentage of completion — two attested observations, two catch-ups
  *
  * …then a POPULATION of ~60 more, varied across every axis the engine has: product mix, quantity,
  * discount level, ship-to jurisdiction, promotion, shipping charge, subscription, event, return and
@@ -252,6 +253,23 @@ await confirm('a BUNDLE — expands into component lines under a rollup parent t
     ...buyer,
     Lines: [{ ProductID: f.Products.BundleA, Quantity: 2, UnitPrice: 100 }],
 });
+
+// A PROJECT earns as the work is done (D90). The line books to Deferred Revenue and stages nothing;
+// two attested observations then release 25% and 60% of it, so the ledger shows a catch-up entry
+// per period and the Receivables → Progress attestation page shows the line with where it stood.
+const project = await confirm('a PROJECT — percentage of completion, 25% then 60% attested', {
+    ...buyer,
+    OrderDate: new Date('2026-07-01T00:00:00Z'),
+    Lines: [{ ProductID: f.Products.PocA, Quantity: 1, UnitPrice: 12000, ServicePeriodStart: '2026-07-01', ServicePeriodEnd: '2026-12-31' }],
+});
+const { MJGlobal } = await import('@memberjunction/global');
+const { BaseRemotableOperation } = await import('@memberjunction/core');
+const recordProgress = MJGlobal.Instance.ClassFactory.CreateInstance(BaseRemotableOperation, 'Orders.RecordProgress');
+for (const [MeasurementDate, PercentComplete] of [['2026-07-31', 0.25], ['2026-08-31', 0.6]]) {
+    const r = await recordProgress.Execute({ OrderLineID: project.Lines[0].ID, MeasurementDate, PercentComplete }, { provider, user });
+    if (!r.Success || !r.Output?.Success) throw new Error(`RecordProgress ${MeasurementDate} failed: ${r.ErrorMessage ?? r.Output?.Message}`);
+    say('', `    ${MeasurementDate} attested at ${PercentComplete * 100}% → ${r.Output.Message}`);
+}
 
 // ── A VARIED POPULATION ────────────────────────────────────────────────────────────────────────
 // Deliberately NOT sixty copies of one order. Every axis the engine branches on gets varied, because
