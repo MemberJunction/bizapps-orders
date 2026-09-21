@@ -22,6 +22,7 @@ import {
     type UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import { OverdueFilter } from '@mj-biz-apps/orders-entities';
 import {
     OrdersGetOverdueWorklistOperation as OrdersGetOverdueWorklistOperationBase,
@@ -105,7 +106,8 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<OrdersGetOverdueWorklistOutput> {
-        const asOf = RequireDate(input?.AsOfDate ?? new Date().toISOString().slice(0, 10), 'AsOfDate');
+        await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+        const asOf = RequireDate(input?.AsOfDate ?? BusinessTimeZoneEngine.Instance.Today(), 'AsOfDate');
         const maxCount = input?.MaxCount ?? 500;
 
         // ONE definition, shared with the layered base view's `IsOverdue` column. Retyping the

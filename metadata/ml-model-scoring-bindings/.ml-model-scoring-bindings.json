@@ -1,0 +1,53 @@
+[
+  {
+    "fields": {
+      "MLModelID": "514219E6-98DE-4D74-8141-DBBD1029AC0D",
+      "RecordProcessID": "57AB4431-E629-4E5E-9F1D-E16627C46FFC",
+      "TargetEntityID": "FC529BC8-FF09-44A9-B454-26EAFDAC791B",
+      "TargetColumn": null,
+      "Mode": "Scheduled",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "FFD2B840-F415-4739-8922-61E651F3AF04"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:03:35.562Z",
+      "checksum": "4b41b81ccace542e7e686d3cf483c31507ed54e3f4e7cc947c697e2c9e77201e"
+    }
+  },
+  {
+    "fields": {
+      "MLModelID": "DAB40DD7-AD2A-4DAC-A117-96D56CB6CE6B",
+      "RecordProcessID": "80EFD2C2-B873-422C-9845-504258B9DEC4",
+      "TargetEntityID": "7A94ADA9-7880-4FAE-97D8-DB0E934C3F5F",
+      "TargetColumn": null,
+      "Mode": "Scheduled",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "28BCB67F-CDD5-4E5C-BBEF-B833E8ECE3D8"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:33:23.045Z",
+      "checksum": "d5de576d782789f1c6a92aa5669b1761b51aab0ba83ced5b8367769f051f6897"
+    }
+  },
+  {
+    "fields": {
+      "MLModelID": "FFA04AA8-1D29-425D-AAFF-2E9FF4DCCC8B",
+      "RecordProcessID": "A81E0AEA-8B52-485E-8951-27569C38439D",
+      "TargetEntityID": "C70448F9-9792-41D7-A82C-784B66429D54",
+      "TargetColumn": null,
+      "Mode": "Scheduled",
+      "SkipEmbeddings": false
+    },
+    "primaryKey": {
+      "ID": "1B95A8CB-AE36-4B44-A0C5-F60AC1396E24"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T23:33:23.060Z",
+      "checksum": "582cd935311ee634ac84f137d9398b7ad16406a134fa7f6a7a9a3ceeef5d6c77"
+    }
+  }
+]

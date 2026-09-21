@@ -1,8 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-
 import { describe, it, expect } from 'vitest';
-import { IsOverdue, OverdueFilter, OverdueSQL, NON_OWING_STATUSES, type OverdueFacts } from '../overdue';
+import { IsOverdue, OverdueFilter, OverdueSQL, OverdueViewSQL, NON_OWING_STATUSES, type OverdueFacts } from '../overdue';
 
 /**
  * Tier 1 for the overdue rule.
@@ -13,7 +12,8 @@ import { IsOverdue, OverdueFilter, OverdueSQL, NON_OWING_STATUSES, type OverdueF
  * owe. Nothing about that failure is loud.
  *
  * The second group is the drift guard: the TS predicate and the SQL fragment are two languages
- * stating one rule, and these tests assert they still say the same thing.
+ * stating one rule, and these tests assert they still say the same thing — against the NEXT unpaid
+ * due date (AIDP-24) and the BUSINESS day (#168), both of which the committed view must carry.
  */
 
 const DAY = '2026-08-10';
@@ -65,24 +65,42 @@ describe('IsOverdue', () => {
 describe('the SQL and the filter say what the function says', () => {
     // Not a proof — two languages cannot share code — but every clause of the rule is asserted to
     // appear in both, so dropping one from either half fails here rather than in production.
-    it('the view fragment carries all four clauses, qualified by the alias', () => {
+
+    it('the view fragment carries all four clauses, qualified by the alias, against the business day', () => {
         const sql = OverdueSQL('g');
         expect(sql).toContain('g.Balance > 0');
         expect(sql).toContain('g.DueDate IS NOT NULL');
-        expect(sql).toContain('CAST(GETUTCDATE() AS date)');
+        expect(sql).toContain('g.DueDate < bt.Today');
+        expect(sql).not.toContain('GETUTCDATE');
         expect(sql).toContain("g.Status NOT IN ('Draft','Quoted','Voided')");
     });
 
-    it('the view reads the NEXT unpaid due date, and the committed migration says exactly that', () => {
+    it('the view reads the NEXT unpaid due date against the business day', () => {
         // The layered view computes NextDueDate in a CROSS APPLY aliased `nd`; the predicate must
-        // read it there, not the header's own column, or an instalment order ages on the wrong day.
+        // read it there, not the header's own column, or an instalment order ages on the wrong day —
+        // and it compares against `bt.Today`, not the UTC clock, or every order ages a day early
+        // for the whole American evening.
         const sql = OverdueSQL('g', 'nd.NextDueDate');
         expect(sql).toContain('nd.NextDueDate IS NOT NULL');
-        expect(sql).toContain('nd.NextDueDate < CAST(GETUTCDATE() AS date)');
+        expect(sql).toContain('nd.NextDueDate < bt.Today');
         expect(sql).not.toContain('g.DueDate');
+        expect(sql).not.toContain('GETUTCDATE');
+    });
 
-        // Drift guard on the migration itself: the newest file defining vwOrderHeaders carries this
-        // exact predicate, so retyping it by hand fails here rather than on a collections list.
+    it('the whole outer view is emitted from here, with both joins', () => {
+        const view = OverdueViewSQL();
+        expect(view).toContain('CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]');
+        expect(view).toContain('    nd.NextDueDate,');
+        expect(view).toContain(`CASE WHEN ${OverdueSQL('g', 'nd.NextDueDate')}`);
+        expect(view).toContain('FROM [${flyway:defaultSchema}].[vwOrderHeadersGenerated] g');
+        expect(view).toContain('CROSS APPLY (');
+        expect(view).toContain("AND s.Status IN ('Scheduled','Invoiced')");
+        expect(view).toContain('CROSS JOIN [__mj_BizAppsCommon].[fnBusinessToday]() AS bt');
+    });
+
+    it('the committed migration is byte-for-byte what OverdueViewSQL emits', () => {
+        // The docs said "take the predicate from OverdueSQL, never retype it" and every migration
+        // retyped it anyway. This makes the emitter the source and the migration a copy.
         const dir = fileURLToPath(new URL('../../../../migrations/', import.meta.url));
         const newest = readdirSync(dir)
             .filter((f) => f.endsWith('.sql'))
@@ -90,7 +108,7 @@ describe('the SQL and the filter say what the function says', () => {
             .filter((f) => readFileSync(dir + f, 'utf8').includes('CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]'))
             .pop();
         expect(newest, 'a migration defines vwOrderHeaders').toBeDefined();
-        expect(readFileSync(dir + newest, 'utf8')).toContain(`CASE WHEN ${sql}`);
+        expect(readFileSync(dir + newest, 'utf8')).toContain(OverdueViewSQL());
     });
 
     it('the RunView filter carries all four clauses, against NextDueDate, with the caller-supplied day', () => {

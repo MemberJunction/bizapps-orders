@@ -839,6 +839,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         return false;
     }
 
+
     // ─── Booking ───────────────────────────────────────────────────────────────
 
     // `bookingInFlight` and `willBookOnThisSave()` moved to OrderHeaderEntity (both `protected`),
@@ -1634,6 +1635,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const amountField = line.GetFieldByName('DiscountAmount');
         if (!(amountField?.Dirty === true || (line.DiscountAmount ?? 0) > 0)) {
             line.DiscountAmount = terms.DiscountAmount;
+        }
+        if (!line.ServicePeriodStart && terms.ServicePeriodStart) {
+            line.ServicePeriodStart = new Date(terms.ServicePeriodStart);
+        }
+        if (!line.ServicePeriodEnd && terms.ServicePeriodEnd) {
+            line.ServicePeriodEnd = new Date(terms.ServicePeriodEnd);
         }
         return true;
     }
@@ -2960,3 +2967,5 @@ function ExtractEntityErrorMessage(entity: BaseEntity | null | undefined): strin
 export function LoadOrderEntityServer(): void {
     // intentionally empty
 }
+
+

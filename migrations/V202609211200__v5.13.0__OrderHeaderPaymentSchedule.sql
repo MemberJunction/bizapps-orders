@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609201200 — OrderHeaderPaymentSchedule: instalments on the order header
+-- V202609211200 — OrderHeaderPaymentSchedule: instalments on the order header
 -- (bc-aidp-next-golive#239 · orders PR #201 plan Parts A/C/D · D85–D88)
 -- =============================================================================
 -- An order can now be billed in instalments. Each row is an authored commitment —
@@ -504,15 +504,17 @@ GO
 --    header's own DueDate when the order has none — the implicit single instalment,
 --    so an order with no schedule reads exactly as it did.
 --
---    THE PREDICATE IS OverdueSQL('g', 'nd.NextDueDate') FROM packages/Entities/src/overdue.ts.
---    overdue.test.ts asserts every clause of it survives here. Change the module, not this.
+--    THE WHOLE VIEW IS OverdueViewSQL() FROM packages/Entities/src/overdue.ts — the predicate is
+--    OverdueSQL('g', 'nd.NextDueDate') against bt.Today from [__mj_BizAppsCommon].[fnBusinessToday]()
+--    (#168, PR #208), so the bizapps-common migration that creates that function must run first.
+--    overdue.test.ts asserts this file carries the emitter's text byte for byte. Change the module, not this.
 -- -----------------------------------------------------------------------------
 CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]
 AS
 SELECT
     g.*,
     nd.NextDueDate,
-    CASE WHEN g.Balance > 0 AND nd.NextDueDate IS NOT NULL AND nd.NextDueDate < CAST(GETUTCDATE() AS date) AND g.Status NOT IN ('Draft','Quoted','Voided')
+    CASE WHEN g.Balance > 0 AND nd.NextDueDate IS NOT NULL AND nd.NextDueDate < bt.Today AND g.Status NOT IN ('Draft','Quoted','Voided')
          THEN 1 ELSE 0 END AS IsOverdue
 FROM [${flyway:defaultSchema}].[vwOrderHeadersGenerated] g
 CROSS APPLY (
@@ -523,7 +525,8 @@ CROSS APPLY (
             AND s.Status IN ('Scheduled','Invoiced')
             AND s.Balance > 0),
         g.DueDate) AS NextDueDate
-) nd;
+) nd
+CROSS JOIN [__mj_BizAppsCommon].[fnBusinessToday]() AS bt;
 GO
 
 GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderHeaders] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
