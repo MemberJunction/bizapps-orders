@@ -40,6 +40,8 @@ export interface ReversalOrigin {
     DiscountAmount?: number;
     /** For the refusal message — an ID alone tells the reader nothing about what they mispointed at. */
     OrderNumber?: string | null;
+    ServicePeriodStart?: Date | string | null;
+    ServicePeriodEnd?: Date | string | null;
 }
 
 /** The reversal being attempted. Quantity is negative, as the caller wrote it. */
@@ -124,7 +126,13 @@ export function ValidateReversal(
 export function InheritedTerms(
     origin: ReversalOrigin,
     reversalQuantity: number,
-): { UnitPrice: number; DiscountPct: number; DiscountAmount: number } {
+): {
+    UnitPrice: number;
+    DiscountPct: number;
+    DiscountAmount: number;
+    ServicePeriodStart?: Date | string | null;
+    ServicePeriodEnd?: Date | string | null;
+} {
     const originQty = Math.abs(origin.Quantity);
     const share = originQty > 0 ? Math.abs(reversalQuantity) / originQty : 0;
     // Positive: the column is CHECK (DiscountAmount >= 0) and `NetAfterDiscount` reads it as a
@@ -134,5 +142,7 @@ export function InheritedTerms(
         UnitPrice: origin.UnitPrice,
         DiscountPct: origin.DiscountPct ?? 0,
         DiscountAmount: Math.round(allocated * 100) / 100,
+        ServicePeriodStart: origin.ServicePeriodStart,
+        ServicePeriodEnd: origin.ServicePeriodEnd,
     };
 }

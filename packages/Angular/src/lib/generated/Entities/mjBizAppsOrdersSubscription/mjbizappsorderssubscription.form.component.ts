@@ -22,7 +22,6 @@ export class mjBizAppsOrdersSubscriptionFormComponent extends BaseFormComponent 
             { sectionKey: 'renewalSettings', sectionName: 'Renewal Settings', isExpanded: true },
             { sectionKey: 'billingAndMigration', sectionName: 'Billing and Migration', isExpanded: true },
             { sectionKey: 'displayLabels', sectionName: 'Display Labels', isExpanded: true },
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID', sectionName: 'Subscriptions (Migrates To Subscription)', isExpanded: false },

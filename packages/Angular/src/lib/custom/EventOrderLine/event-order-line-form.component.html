@@ -1,0 +1,117 @@
+@if (record) {
+<mj-record-form-container [Record]="record" [FormComponent]="this"
+    (Navigate)="OnFormNavigate($event)"
+    (DeleteRequested)="OnDeleteRequested()"
+    (FavoriteToggled)="OnFavoriteToggled()"
+    (HistoryRequested)="OnHistoryRequested()"
+    (ListManagementRequested)="OnListManagementRequested()">
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="before-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+    <div class="mjo-eol-form">
+        <!-- 1. Essential / Primary Fields (Always Visible) -->
+        <div class="mjo-eol-primary-grid">
+            <div class="mjo-eol-field mjo-eol-field--attendee">
+                <mj-form-field 
+                    [Record]="record" 
+                    [ShowLabel]="true" 
+                    FieldName="PersonID" 
+                    Type="textbox" 
+                    [EditMode]="EditMode" 
+                    [FormContext]="formContext" 
+                    LinkType="Record"
+                    (Navigate)="OnFormNavigate($event)">
+                </mj-form-field>
+            </div>
+            <div class="mjo-eol-field mjo-eol-field--status">
+                <mj-form-field 
+                    [Record]="record" 
+                    [ShowLabel]="true" 
+                    FieldName="AttendanceStatus" 
+                    Type="select" 
+                    [EditMode]="EditMode" 
+                    [FormContext]="formContext"
+                    (Navigate)="OnFormNavigate($event)">
+                </mj-form-field>
+            </div>
+            <div class="mjo-eol-field mjo-eol-field--tier">
+                <mj-form-field 
+                    [Record]="record" 
+                    [ShowLabel]="true" 
+                    FieldName="TicketTier" 
+                    Type="textbox" 
+                    [EditMode]="EditMode" 
+                    [FormContext]="formContext"
+                    (Navigate)="OnFormNavigate($event)">
+                </mj-form-field>
+            </div>
+        </div>
+
+        <!-- 2. Progressive Disclosure Toggle Button -->
+        <div class="mjo-eol-disclosure-bar">
+            <button 
+                type="button" 
+                class="mjo-eol-toggle-btn" 
+                (click)="ToggleDetails()"
+                [attr.aria-expanded]="DetailsExpanded">
+                <i class="fa-solid" [class.fa-chevron-right]="!DetailsExpanded" [class.fa-chevron-down]="DetailsExpanded" aria-hidden="true"></i>
+                <span class="mjo-eol-toggle-label">
+                    {{ DetailsExpanded ? 'Hide Attendee Details' : 'Additional Details (Badge, Seating, Dietary & Notes)' }}
+                </span>
+                @if (!DetailsExpanded && HasPopulatedDetails) {
+                    <span class="mjo-eol-has-data-chip">Configured</span>
+                }
+            </button>
+        </div>
+
+        <!-- 3. Expandable Details (Progressive Disclosure) -->
+        @if (DetailsExpanded) {
+        <div class="mjo-eol-details-panel">
+            <!-- Group A: Credential & Badge Printing -->
+            <div class="mjo-eol-group">
+                <div class="mjo-eol-group__header">
+                    <i class="fa-solid fa-id-badge" aria-hidden="true"></i>
+                    <span>Badge & Credentials</span>
+                </div>
+                <div class="mjo-eol-group__grid mjo-eol-group__grid--4">
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BadgeName" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BadgeCompany" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BadgeTitle" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BadgePrintedAt" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                </div>
+            </div>
+
+            <!-- Group B: Seating, Logistics & Accommodations -->
+            <div class="mjo-eol-group">
+                <div class="mjo-eol-group__header">
+                    <i class="fa-solid fa-chair" aria-hidden="true"></i>
+                    <span>Seating & Logistics</span>
+                </div>
+                <div class="mjo-eol-group__grid mjo-eol-group__grid--3">
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="TableAssignment" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="CheckInAt" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="SpecialRequests" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                </div>
+            </div>
+
+            <!-- Group C: Dietary Preferences, Allergies & Notes -->
+            <div class="mjo-eol-group">
+                <div class="mjo-eol-group__header">
+                    <i class="fa-solid fa-utensils" aria-hidden="true"></i>
+                    <span>Dietary & Operational Notes</span>
+                </div>
+                <div class="mjo-eol-group__grid mjo-eol-group__grid--4">
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="DietaryPreferences" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Allergies" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Comments" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="CheckInNotes" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                </div>
+            </div>
+        </div>
+        }
+    </div>
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+</mj-record-form-container>
+}
