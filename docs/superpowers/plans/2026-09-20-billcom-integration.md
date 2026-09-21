@@ -41,11 +41,12 @@
 | 9 ExternalPaymentBehavior | done, 17 tests |
 | 10 operation contracts | done; generated bases hand-emitted, `mj sync push` **not run** |
 | 11–14 operations | done; **integration check bundles not written** (need the applied schema) |
-| 13 delivery exclusion | done, unit-tested |
+| 13 delivery exclusion | done, unit-tested (`DeliveryBehavior.test.ts`, externally-invoiced cases) |
 | 15, 18 Actions + jobs | done; metadata **not pushed** |
 | 16 ExternalPayment/SyncState | migration written; **not applied** |
 | 17 poller | done; `CapturePayment` allocations now accept `OrderHeaderPaymentScheduleID` (PR #220's column) |
 | webhook receiver (not in the original plan) | `BillComWebhookExtension` + `BillComWebhook.ts`, unit-tested, registered in manifest/package.json/mj.config |
+| adversarial review (2026-09-20) | 17 findings, 14 fixed, 3 deferred — spec §13.5. Contract changes: `Refused` disposition, `PART_PAID` result code, `BasePaymentProvider.CollectsAtCapture`, `BaseInvoiceRail.CheckConfiguration` |
 | 19 Angular | **not started** |
 | 20 release plumbing | **not started** |
 
