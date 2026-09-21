@@ -141,5 +141,5 @@ outer view now computes `NextDueDate` in a `CROSS APPLY`: the earliest `DueDate`
 schedule rows, or the header's own `DueDate` when the order has none. `IsOverdue` reads it through
 `OverdueSQL('g', 'nd.NextDueDate')`, `OverdueFilter()` reads the `NextDueDate` column, and
 `GetOverdueWorklist` ages from it. An order with no schedule is unchanged: for it `NextDueDate`
-**is** `DueDate`. The migration is `V202609201200__v5.13.0__OrderHeaderPaymentSchedule.sql`, and
+**is** `DueDate`. The migration is `V202609211200__v5.13.0__OrderHeaderPaymentSchedule.sql`, and
 `overdue.test.ts` asserts the newest view migration carries exactly the predicate the module emits.

@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609201200 — OrderHeaderPaymentSchedule: instalments on the order header
+-- V202609211200 — OrderHeaderPaymentSchedule: instalments on the order header
 -- (bc-aidp-next-golive#239 · orders PR #201 plan Parts A/C/D · D85–D88)
 -- =============================================================================
 -- An order can now be billed in instalments. Each row is an authored commitment —
@@ -506,7 +506,7 @@ GO
 --
 --    THE WHOLE VIEW IS OverdueViewSQL() FROM packages/Entities/src/overdue.ts — the predicate is
 --    OverdueSQL('g', 'nd.NextDueDate') against bt.Today from [__mj_BizAppsCommon].[fnBusinessToday]()
---    (#168), so the bizapps-common migration that creates that function must run first.
+--    (#168, PR #208), so the bizapps-common migration that creates that function must run first.
 --    overdue.test.ts asserts this file carries the emitter's text byte for byte. Change the module, not this.
 -- -----------------------------------------------------------------------------
 CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]
