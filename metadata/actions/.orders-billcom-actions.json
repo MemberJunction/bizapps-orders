@@ -271,6 +271,20 @@
         {
           "fields": {
             "ActionID": "@parent:ID",
+            "Name": "Refused",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Payments Orders.CapturePayment refused — a split-company order, an ambiguous payer, a configuration fault. Nothing captured; a person decides. Counts as attention."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B1E"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
             "Name": "ReversalNeeded",
             "Type": "Output",
             "ValueType": "Scalar",

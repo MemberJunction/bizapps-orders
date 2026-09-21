@@ -515,6 +515,11 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
+        // A RAIL THAT ALREADY MOVED THE MONEY HAS NOTHING TO CAPTURE. Bill.com payments are polled
+        // after they clear and RECORDED here with the provider kept for attribution; asking that
+        // driver for an intent would refuse every one of them (golive #148).
+        const driver = await ResolvePaymentProvider(providerID, provider, user);
+        if (!driver.CollectsAtCapture) return;
 
         // THE GATEWAY'S INTENT STRING LIVES ON `PaymentIntent`, NOT HERE. `PaymentHeader.PaymentIntentID`
         // is a foreign key to our row; `PaymentIntent.ProviderIntentID` is what Stripe calls it. Reading
@@ -529,8 +534,6 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                     `PaymentProviderID for a payment that is being recorded rather than collected.`,
             );
         }
-
-        const driver = await ResolvePaymentProvider(providerID, provider, user);
 
         const capture = await driver.Capture({
             ProviderIntentID: intent,

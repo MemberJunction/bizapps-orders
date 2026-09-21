@@ -121,6 +121,16 @@ export class BaseInvoiceRail {
     public Provider?: IMetadataProvider;
     public User?: UserInfo;
 
+    /**
+     * Is this rail configured well enough to be called at all? Resolves the integration row and the
+     * credential's environment; makes NO network call. A refusal here is a CONFIGURATION fault the
+     * operations raise as an error (no row written, nothing marked Failed), so a bad provider row
+     * cannot poison every unit in a sweep — and a preview run surfaces it before go-live.
+     */
+    public async CheckConfiguration(): Promise<RailResult<true>> {
+        return { Success: true, Value: true };
+    }
+
     public async EnsureCustomer(_facts: RailCustomerFacts): Promise<RailResult<{ ExternalCustomerRef: string }>> {
         return this.notImplemented('ensuring a customer');
     }

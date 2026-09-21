@@ -41,6 +41,8 @@ describe('DecideExternalPayment', () => {
     it('held then cleared captures on the later pass', () => expect(DecideExternalPayment(seen('PAID', 'Held')).Action).toBe('Capture'));
     it('unmatched then cleared tries again — the invoice may have been mapped since', () => expect(DecideExternalPayment(seen('PAID', 'Unmatched')).Action).toBe('Capture'));
     it('a reversal already flagged stays flagged', () => expect(DecideExternalPayment(seen('VOID', 'ReversalNeeded')).Action).toBe('Ignore'));
+    it('a row a person set aside stays Ignored even when the rail says cleared', () => expect(DecideExternalPayment(seen('PAID', 'Ignored')).Action).toBe('Ignore'));
+    it('a refused capture is tried again next pass — the configuration may have been fixed', () => expect(DecideExternalPayment(seen('PAID', 'Refused')).Action).toBe('Capture'));
 });
 
 describe('AllocateInvoicePayments', () => {
@@ -70,6 +72,15 @@ describe('AllocateInvoicePayments', () => {
     });
 
     it('no invoices at all is Unmatched', () => expect(AllocateInvoicePayments([], lookup).OK).toBe(false));
+
+    it('an order with both an organisation and a person bill-to pays as the organisation', () => {
+        const both: UnitRef = { ...unit('o9'), BillToOrganizationID: 'org', BillToPersonID: 'person' };
+        const r = AllocateInvoicePayments([{ ExternalInvoiceRef: '00e9', Amount: 5 }], () => both);
+        expect(r.OK && r.Payer).toEqual({ BillToOrganizationID: 'org', BillToPersonID: null });
+        const personOnly: UnitRef = { ...unit('o9'), BillToOrganizationID: null, BillToPersonID: 'person' };
+        const r2 = AllocateInvoicePayments([{ ExternalInvoiceRef: '00e9', Amount: 5 }], () => personOnly);
+        expect(r2.OK && r2.Payer).toEqual({ BillToOrganizationID: null, BillToPersonID: 'person' });
+    });
 
     it('invoices for two receiving companies cannot be one payment', () => {
         const r = AllocateInvoicePayments([{ ExternalInvoiceRef: '00e1', Amount: 1 }, { ExternalInvoiceRef: '00eB', Amount: 1 }], lookup);

@@ -25,6 +25,7 @@ const driver = (): BillComPaymentProvider => {
 describe('BillComPaymentProvider', () => {
     it('settles synchronously — the poller only captures cleared money', () => {
         expect(driver().SettlesAsynchronously).toBe(false);
+        expect(driver().CollectsAtCapture).toBe(false);
         expect(driver().HandledEventKinds).toEqual([]);
     });
 

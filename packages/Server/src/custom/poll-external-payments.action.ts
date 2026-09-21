@@ -19,7 +19,7 @@ import { boolParam, numParam, param, setOutput, strParam, supplied, UUID } from 
 
 /**
  * Inputs: `PaymentProviderID`, `Preview`, `MaxCount`, `SinceWatermark` — all optional.
- * Outputs: `Captured`, `Held`, `Unmatched`, `ReversalNeeded`, `Ignored`, `Outcomes`, `NewWatermarks`, `PreviewedOnly`.
+ * Outputs: `Captured`, `Held`, `Unmatched`, `Refused`, `ReversalNeeded`, `Ignored`, `Outcomes`, `NewWatermarks`, `PreviewedOnly`.
  */
 @RegisterClass(BaseAction, 'Orders.PollExternalPayments')
 export class PollExternalPaymentsAction extends BaseAction {
@@ -73,6 +73,7 @@ export class PollExternalPaymentsAction extends BaseAction {
         setOutput(params, 'Captured', out.Captured);
         setOutput(params, 'Held', out.Held);
         setOutput(params, 'Unmatched', out.Unmatched);
+        setOutput(params, 'Refused', out.Refused);
         setOutput(params, 'ReversalNeeded', out.ReversalNeeded);
         setOutput(params, 'Ignored', out.Ignored);
         setOutput(params, 'Outcomes', out.Outcomes);

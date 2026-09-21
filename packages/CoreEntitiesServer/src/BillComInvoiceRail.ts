@@ -40,6 +40,13 @@ export const BILLCOM_TRANSIENT = /timeout|timed out|ECONN|ETIMEDOUT|EAI_AGAIN|so
 
 const num = (v: unknown): number => (v == null || v === '' ? 0 : Number(v));
 
+/** A rail timestamp → canonical ISO-8601 UTC (`…Z`), or null when it cannot be read. Never compare rail strings raw. */
+export function CanonicalInstant(v: unknown): string | null {
+    if (v == null || v === '') return null;
+    const ms = typeof v === 'number' ? v : Date.parse(String(v));
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
 /** BILL returns several fields as objects; flatten to the string a decision table can read. */
 const str = (v: unknown): string | null => {
     if (v == null) return null;
@@ -79,6 +86,15 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
             }
         }
         return { gw, ci };
+    }
+
+    public override async CheckConfiguration(): Promise<RailResult<true>> {
+        try {
+            await this.session();
+            return { Success: true, Value: true };
+        } catch (e) {
+            return { Success: false, Transient: false, Reason: e instanceof Error ? e.message : String(e) };
+        }
     }
 
     public override async EnsureCustomer(f: RailCustomerFacts): Promise<RailResult<{ ExternalCustomerRef: string }>> {
@@ -185,14 +201,19 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
         try {
             const { gw, ci } = await this.session();
             const batch = await gw.fetchChanges(ci, 'receivable-payments', watermark, this.User!);
+            // Compare INSTANTS, never strings: BILL may write `+0000` where we wrote `Z`, and a
+            // non-UTC offset compares wrong by hours lexically. UpdatedAt is canonical ISO-Z after
+            // NormalizeReceivablePayment, so ISO-Z strings do order lexically — but the watermark the
+            // caller hands us may be anything, so it is parsed here too.
+            const sinceMs = watermark ? Date.parse(watermark) : NaN;
             const payments = batch.Records.map((r) => NormalizeReceivablePayment(r.ExternalID, r.Fields)).filter(
-                // Local narrowing until the connector applies the filter (U2). A record with no
+                // Local narrowing until the connector applies the filter (U2). A record with no readable
                 // updatedTime is kept — dropping it would hide a payment.
-                (p) => !watermark || !p.UpdatedAt || p.UpdatedAt >= watermark,
+                (p) => !Number.isFinite(sinceMs) || !p.UpdatedAt || Date.parse(p.UpdatedAt) >= sinceMs,
             );
             const newWatermark = payments.reduce<string | null>(
                 (max, p) => (p.UpdatedAt && (!max || p.UpdatedAt > max) ? p.UpdatedAt : max),
-                batch.NewWatermarkValue ?? null,
+                CanonicalInstant(batch.NewWatermarkValue),
             );
             return { Success: true, Value: { Payments: payments, NewWatermark: newWatermark } };
         } catch (e) {
@@ -209,11 +230,11 @@ export function NormalizeReceivablePayment(externalID: string, x: Record<string,
         ExternalCustomerRef: str(x.customerId),
         Amount: num(x.amount),
         UnappliedAmount: num(x.unappliedAmount),
-        PaymentDate: str(x.paymentDate),
+        PaymentDate: str(x.paymentDate)?.slice(0, 10) ?? null,
         Status: str(x.status),
         OnlinePayment: typeof x.onlinePayment === 'boolean' ? x.onlinePayment : null,
         ReceivablesType: str(x.receivablesType),
-        UpdatedAt: str(x.updatedTime),
+        UpdatedAt: CanonicalInstant(x.updatedTime),
         InvoicePayments: ip.map((p) => ({ ExternalInvoiceRef: String(p.invoiceId ?? ''), Amount: num(p.amount), PaymentDate: str(p.paymentDate) })),
         Raw: x,
     };

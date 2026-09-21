@@ -84,6 +84,12 @@ describe('BuildExternalInvoicePayload', () => {
         expect(!r.OK && r.Reason).toMatch(/does not tie/);
     });
 
+    it('a partly paid order billed as a whole is refused — the gross would bill the customer twice', () => {
+        const r = BuildExternalInvoicePayload(doc({ AmountPaid: 250, AmountDue: 15.25 }), whole(), '2026-09-22');
+        expect(r.OK).toBe(false);
+        expect(!r.OK && r.Reason).toMatch(/already has 250\.00 applied/);
+    });
+
     it('a credit memo is not an invoice and is refused', () => {
         const r = BuildExternalInvoicePayload(doc({ Kind: 'Credit Memo' }), whole(), '2026-09-22');
         expect(r.OK).toBe(false);

@@ -216,6 +216,10 @@ export async function IssueOneUnit(
     if (!rail) {
         return refuse('NO_RAIL', `${companyNameOr(order, companyID)} has no external invoice rail configured; this order is invoiced natively.`);
     }
+    // A mis-configured rail is an ERROR for the operation, not a Failed row for the unit: one bad
+    // provider row must not poison every unit in a sweep, and a preview must surface it (finding 7).
+    const ready = await rail.CheckConfiguration();
+    if (ready.Success === false) throw new Error(`Rail '${rail.Config.Name}' is not configured: ${ready.Reason}`);
 
     // 4. History and the decision.
     const unitKey: BillingUnitKey = { OrderHeaderID: order.ID, CompanyID: companyID, OrderHeaderPaymentScheduleID: row ? String(row.ID) : null };
@@ -265,7 +269,20 @@ export async function IssueOneUnit(
           };
     const invoiceDate = isoDate(row?.InvoicedAt ?? order.ConfirmedAt) ?? Today();
     const payload = BuildExternalInvoicePayload(doc, unitFacts, invoiceDate);
-    if (payload.OK === false) return refuse('TIE_FAILED', payload.Reason);
+    if (payload.OK === false) {
+        // A permanent fact about the unit (does not tie, already part-paid): record it once so the
+        // sweep skips it and the queue shows it, rather than retrying every half hour.
+        const code: OrdersIssueExternalInvoiceResultCode = /already has .* applied/.test(payload.Reason) ? 'PART_PAID' : 'TIE_FAILED';
+        const failedID = opts.Preview
+            ? null
+            : await writeExternalInvoice(
+                  provider,
+                  user,
+                  { ...unitKey, PaymentProviderID: rail.Config.PaymentProviderID, DocumentNumber: unitFacts.DocumentNumber ?? doc.DocumentNumber, Amount: Math.max(0.01, money(unitFacts.Amount)), DueDate: unitFacts.DueDate ?? doc.DueDate },
+                  { Status: 'Failed', LastError: payload.Reason },
+              );
+        return refuse(code, payload.Reason, { ExternalInvoiceID: failedID, DocumentNumber: unitFacts.DocumentNumber ?? doc.DocumentNumber, Amount: money(unitFacts.Amount) });
+    }
 
     if (opts.Preview) {
         return {
@@ -302,7 +319,7 @@ export async function IssueOneUnit(
         );
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (/UQ_ExternalInvoice_LiveUnit/i.test(message)) {
+        if (/UQ_ExternalInvoice_LiveUnit|duplicate key/i.test(message)) {
             return refuse('IN_FLIGHT', `Another send for ${payload.Payload.DocumentNumber} is already in flight.`);
         }
         throw err;
@@ -316,8 +333,12 @@ export async function IssueOneUnit(
     }
     const ref = issued.Value.ExternalInvoiceRef;
 
-    const back = await rail.GetInvoice(ref);
-    const snapshot = back.Success ? back.Value : null;
+    // Read back to prove the total. One retry: a transient read failure must not leave a Sent row
+    // whose amount was never verified (finding 8); if it still fails the row says so in LastError.
+    let back = await rail.GetInvoice(ref);
+    if (back.Success === false && back.Transient) back = await rail.GetInvoice(ref);
+    const snapshot = back.Success === true ? back.Value : null;
+    const readBackError = back.Success === false ? `Total not verified after send: ${back.Reason}` : snapshot ? null : 'Total not verified after send: the rail returned no invoice for the id it issued.';
     if (snapshot && Math.abs(money(snapshot.Total) - payload.Payload.Amount) > 0.005) {
         // A document for the wrong figure must not reach a customer: withdraw it and fail loudly.
         const undo = await rail.CancelInvoice(ref);
@@ -337,7 +358,7 @@ export async function IssueOneUnit(
         ExternalDueAmount: snapshot ? money(snapshot.DueAmount) : null,
         ExternalStatus: snapshot?.Status ?? null,
         LastSyncedAt: snapshot ? sentAt : null,
-        LastError: null,
+        LastError: readBackError,
     });
 
     // 9. Denormalise onto the instalment row (the #239/#242 contract) and, best effort, the header.
@@ -551,8 +572,24 @@ async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: 
         true,
     );
     if (!(await entity.Save())) {
-        // The rail has the customer; losing the mapping only costs a duplicate next time. Log, do not fail the invoice.
-        LogError(`ExternalCustomer for ${created.Value.ExternalCustomerRef} could not be saved: ${entity.LatestResult?.CompleteMessage ?? 'unknown'}`);
+        // Two sends for the same party raced: the other one's mapping row won (UQ_ExternalCustomer_*).
+        // Use ITS rail customer so both invoices sit under one Bill.com customer; the duplicate we just
+        // created stays unused on the rail and is named in the log for a person to archive.
+        const winner = await rv.RunView<{ ExternalCustomerRef: string }>(
+            {
+                EntityName: EXTERNAL_CUSTOMER_ENTITY,
+                ExtraFilter: `PaymentProviderID = '${rail.Config.PaymentProviderID}' AND ${orgID ? `BillToOrganizationID = '${orgID}'` : `BillToPersonID = '${personID}'`}`,
+                Fields: ['ExternalCustomerRef'],
+                ResultType: 'simple',
+            },
+            user,
+        );
+        const adopted = winner.Results?.[0]?.ExternalCustomerRef;
+        LogError(
+            `ExternalCustomer for ${created.Value.ExternalCustomerRef} could not be saved (${entity.LatestResult?.CompleteMessage ?? 'unknown'}); ` +
+                (adopted ? `using the existing mapping ${adopted}. The duplicate rail customer ${created.Value.ExternalCustomerRef} should be archived on the rail.` : 'no existing mapping found either.'),
+        );
+        if (adopted) return { OK: true, ExternalCustomerRef: adopted };
     }
     return { OK: true, ExternalCustomerRef: created.Value.ExternalCustomerRef };
 }

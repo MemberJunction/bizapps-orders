@@ -110,6 +110,15 @@ export function BuildExternalInvoicePayload(
         };
     }
 
+    // An order billed as a whole is sent for its GROSS, so money already applied to it would be
+    // billed twice — a checkout deposit, an early check. Bill.com has no "payment received" line we
+    // can trust to net it, so this unit is refused and a person decides (design §5.1, review finding 6).
+    if (money(doc.AmountPaid) > TIE_TOLERANCE) {
+        return {
+            OK: false,
+            Reason: `${doc.DocumentNumber} already has ${money(doc.AmountPaid).toFixed(2)} applied; sending the full ${amount.toFixed(2)} to the rail would bill the customer twice. Record the balance by hand or issue a schedule.`,
+        };
+    }
     const lines: ExternalInvoiceLine[] = [];
     for (const row of doc.Rows) lines.push(...rowLines(row));
     if (money(doc.ChargeTotal) !== 0) lines.push({ Description: 'Charges', Quantity: 1, UnitPrice: money(doc.ChargeTotal) });

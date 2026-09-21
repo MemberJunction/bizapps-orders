@@ -45,6 +45,11 @@ export class BillComPaymentProvider extends BasePaymentProvider {
         return false;
     }
 
+    /** Bill.com moved the money already; the poller RECORDS it. There is no intent and nothing to capture. */
+    public override get CollectsAtCapture(): boolean {
+        return false;
+    }
+
     public override async CreateIntent(_request: CreateIntentRequest): Promise<CreateIntentResult> {
         return { Success: false, Reason: NOT_A_CHECKOUT_RAIL };
     }

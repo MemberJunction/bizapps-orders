@@ -605,3 +605,53 @@ the spikes S1–S5 (they need sandbox credentials; the harness is ready).
   CodeGen's emitted shape; the next CodeGen run reproduces them.
 - TypeScript here compiles without `strictNullChecks`, so union narrowing uses `=== false` / `=== true`
   rather than truthiness, and `BaseEntity` rows load through `InnerLoad(CompositeKey.FromID(id))`.
+
+### 13.5 Adversarial review (2026-09-20, independent reviewer over the whole branch)
+
+Seventeen findings; fourteen fixed on the branch, three deferred with reasons.
+
+**Fixed**
+1. *Blocker.* Every polled capture would have been refused: a `PaymentHeader` with a `PaymentProviderID`
+   and no intent is a gateway capture to `PaymentHeaderEntityServer.settleWithProvider`. Added
+   `BasePaymentProvider.CollectsAtCapture` (true for a till, false for a rail that already moved the
+   money); the settlement step returns early for a non-collecting provider, so a Bill.com payment is
+   RECORDED like a check while keeping its provider for attribution. Stripe's path is unchanged (PV7).
+2. *Cap starvation.* The poll now sorts oldest-first, drops payments already in a final state with an
+   unchanged `updatedTime` before applying `MaxCount`, and advances the watermark to the last processed
+   instant on a capped pass — so a first run against an org with more history than `MaxCount` moves.
+3. *Timestamps.* Rail timestamps are canonicalised to ISO-Z in `NormalizeReceivablePayment`; comparisons
+   are on parsed instants; an unreadable stored watermark reads as "none" and is logged instead of
+   faulting every pass; unreadable dates are never written.
+4. *Refusals were invisible.* A `CapturePayment` refusal is now the disposition `Refused` (new CK value),
+   counted as ATTENTION so the job notifies; it is retried next pass in case the cause was fixed.
+5. *Ambiguous payer.* An order with both a bill-to organisation and person pays as the organisation.
+6. *Part-paid orders.* An order billed as a whole with money already applied is refused (`PART_PAID`),
+   recorded once as `Failed` so the sweep does not retry it every half hour; same for `TIE_FAILED`.
+7. *Configuration faults.* `BaseInvoiceRail.CheckConfiguration()` runs before any write in the issue
+   operation and before any fetch in the poll; a bad provider row is an operation ERROR / provider
+   fault, never a `Failed` row per unit — and a preview run now surfaces it.
+8. *Unverified totals.* The post-send read-back retries once on a transient failure; if it still fails the
+   row is `Sent` with `LastError` saying the total is unverified.
+9. *Set-aside.* `Ignored` is terminal: a person sets an `Unmatched`/`Refused` row to `Ignored` and the
+   decision table never re-opens it, so pre-cutover AR stops raising ATTENTION.
+10. *Customer race.* When two concurrent sends both create a Bill.com customer, the loser adopts the
+    winner's mapping and logs the duplicate rail customer for archiving.
+11. *In-flight detection* also matches `duplicate key`, as `CapturePaymentOperation` does.
+15. Delivery-exclusion unit tests added (the plan's claim was wrong before).
+Also: `Refused` output on the poll Action and its metadata param.
+
+**Deferred**
+- 12 *Webhook replay.* A captured, signed notification can be replayed to force polls. The endpoint only
+  ever triggers a poll, which is idempotent and rate-limited by the connector; an `EventID` LRU is a
+  cheap follow-up once the sandbox shows what BILL actually sends.
+- 13 *Hard-coded schema* in `paidOnUnit`'s subquery (`[__mj_BizAppsOrders].[PaymentHeader]`): the same
+  precedent as `nextPaymentNumber`; the app schema is not parameterised at runtime.
+- 14 *Schedule stamp is best-effort.* If stamping `SentAt` on the instalment fails after the
+  `ExternalInvoice` row is `Sent`, the worklist is still right (it reads `ExternalInvoice`) but Jeremy's
+  `SentAt IS NULL` query is not; the failure is logged. Making the two writes one transaction is a
+  follow-up once the operation's transaction boundary is settled with the rail call outside it.
+- 16 *Re-issue numbering* after a cancel still sends the same `DocumentNumber`; whether BILL accepts a
+  duplicate is spike S4.
+- 17 A filtered unique index on a persisted computed column needs `QUOTED_IDENTIFIER`/`ANSI_*`/
+  `ARITHABORT` ON for inserts — tedious defaults satisfy this; note for the fresh-database replay.
+

@@ -226,6 +226,17 @@ export class BasePaymentProvider {
         return false;
     }
 
+    /**
+     * Whether capturing a payment against this provider means asking the gateway to MOVE money.
+     * True for a till (Stripe): capture calls the gateway and needs an intent. False for a rail that
+     * collected the money on its own (Bill.com): the payment is RECORDED, not collected, so there is no
+     * intent and nothing to capture — `PaymentHeaderEntityServer` books it like a check, but keeps
+     * `PaymentProviderID` so the money stays attributed to the rail it arrived on.
+     */
+    public get CollectsAtCapture(): boolean {
+        return true;
+    }
+
     public async CreateIntent(_request: CreateIntentRequest): Promise<CreateIntentResult> {
         return { Success: false, Reason: this.notImplemented('creating a payment intent') };
     }

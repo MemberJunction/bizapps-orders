@@ -20,6 +20,7 @@ export type OrdersIssueExternalInvoiceResultCode =
     | 'INSTALMENT_NOT_INVOICED'
     | 'NO_CUSTOMER_EMAIL'
     | 'TIE_FAILED'
+    | 'PART_PAID'
     | 'RAIL_REFUSED'
     | 'ERROR';
 

@@ -20,7 +20,7 @@
  * @module @mj-biz-apps/orders-entities
  */
 
-export type ExternalPaymentDisposition = 'Captured' | 'Held' | 'Unmatched' | 'Ignored' | 'ReversalNeeded';
+export type ExternalPaymentDisposition = 'Captured' | 'Held' | 'Unmatched' | 'Refused' | 'Ignored' | 'ReversalNeeded';
 
 export type RailPaymentClass = 'Cleared' | 'Pending' | 'Reversed';
 
@@ -72,6 +72,12 @@ export function DecideExternalPayment(p: PaymentSeen): { Action: ExternalPayment
     }
     if (p.PriorDisposition === 'ReversalNeeded') {
         return { Action: 'Ignore', Reason: `${ref} is already flagged for reversal.` };
+    }
+    if (p.PriorDisposition === 'Ignored') {
+        // Terminal by a person's hand (an Unmatched or Refused row set to Ignored), or a reversal that
+        // was never captured. Either way, nothing here re-opens it — a status flip on the rail cannot
+        // make pre-cutover AR ours.
+        return { Action: 'Ignore', Reason: `${ref} was set aside (Ignored); nothing is captured for it.` };
     }
     switch (cls) {
         case 'Cleared':
@@ -136,7 +142,11 @@ export function AllocateInvoicePayments(
         }
         allocations.push({ OrderHeaderID: unit.OrderHeaderID, Amount: amount, OrderHeaderPaymentScheduleID: unit.OrderHeaderPaymentScheduleID });
         companies.add(unit.CompanyID.toLowerCase());
-        payer ??= { BillToOrganizationID: unit.BillToOrganizationID, BillToPersonID: unit.BillToPersonID };
+        // Orders may carry BOTH a bill-to organisation and a person (no XOR on OrderHeader); the
+        // capture needs exactly one payer, and the organisation is the customer (D65).
+        payer ??= unit.BillToOrganizationID
+            ? { BillToOrganizationID: unit.BillToOrganizationID, BillToPersonID: null }
+            : { BillToOrganizationID: null, BillToPersonID: unit.BillToPersonID };
     }
     if (unmatched.length) {
         return {

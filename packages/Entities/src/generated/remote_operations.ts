@@ -2824,6 +2824,7 @@ export type OrdersIssueExternalInvoiceResultCode =
     | 'INSTALMENT_NOT_INVOICED'
     | 'NO_CUSTOMER_EMAIL'
     | 'TIE_FAILED'
+    | 'PART_PAID'
     | 'RAIL_REFUSED'
     | 'ERROR';
 
@@ -3017,7 +3018,7 @@ export interface ExternalPaymentOutcome {
     ExternalPaymentRef: string;
     Amount: number;
     ExternalStatus: string | null;
-    Disposition: 'Captured' | 'Held' | 'Unmatched' | 'Ignored' | 'ReversalNeeded';
+    Disposition: 'Captured' | 'Held' | 'Unmatched' | 'Refused' | 'Ignored' | 'ReversalNeeded';
     Reason: string;
     PaymentNumber?: string | null;
     PaymentHeaderID?: string | null;
@@ -3030,6 +3031,8 @@ export interface OrdersPollExternalPaymentsOutput {
     Captured: number;
     Held: number;
     Unmatched: number;
+    /** Orders.CapturePayment refused the capture (split-company order, ambiguous payer, configuration). Counts as attention. */
+    Refused: number;
     ReversalNeeded: number;
     Ignored: number;
     Outcomes: ExternalPaymentOutcome[];

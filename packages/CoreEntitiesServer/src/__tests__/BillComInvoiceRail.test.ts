@@ -170,4 +170,17 @@ describe('BillComInvoiceRail.FetchPaymentsSince', () => {
         const p = NormalizeReceivablePayment('0rpX', { amount: '12.50', status: { name: 'SCHEDULED' }, invoicePayments: 'not-an-array' });
         expect(p).toMatchObject({ ExternalPaymentRef: '0rpX', Amount: 12.5, Status: 'SCHEDULED', UpdatedAt: null, InvoicePayments: [], OnlinePayment: null });
     });
+
+    it('normalises BILL timestamps to ISO-Z, so an offset spelling of the same instant is not dropped by the watermark', async () => {
+        const p = NormalizeReceivablePayment('0rpO', { amount: 1, status: 'PAID', updatedTime: '2026-09-20T10:00:00.000+0000', invoicePayments: [] });
+        expect(p.UpdatedAt).toBe('2026-09-20T10:00:00.000Z');
+        expect(NormalizeReceivablePayment('0rpB', { updatedTime: 'not a time' }).UpdatedAt).toBeNull();
+        UseBillComGatewaySeams({
+            ...seams(),
+            fetchChanges: async () => ({ Records: [{ ExternalID: '0rpO', ObjectType: 'receivable-payments', Fields: { amount: 1, status: 'PAID', updatedTime: '2026-09-20T10:00:00.000+0000', invoicePayments: [] } }], HasMore: false }),
+        });
+        const r = await rail().FetchPaymentsSince('2026-09-20T10:00:00.000Z');
+        expect(r.Success && r.Value.Payments).toHaveLength(1);
+        expect(r.Success && r.Value.NewWatermark).toBe('2026-09-20T10:00:00.000Z');
+    });
 });

@@ -59,7 +59,15 @@ interface ExternalPaymentRow extends Record<string, unknown> {
     ExternalPaymentRef: string;
     Disposition: ExternalPaymentDisposition;
     PaymentHeaderID: string | null;
+    ExternalUpdatedAt: string | Date | null;
 }
+
+/** Canonical ISO-Z, or null when the value cannot be read — an unreadable watermark must never throw. */
+const instant = (v: unknown): string | null => {
+    if (v == null || v === '') return null;
+    const ms = v instanceof Date ? v.getTime() : Date.parse(String(v));
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+};
 
 interface SyncStateRow extends Record<string, unknown> {
     ID: string;
@@ -83,6 +91,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             Captured: 0,
             Held: 0,
             Unmatched: 0,
+            Refused: 0,
             ReversalNeeded: 0,
             Ignored: 0,
             Outcomes: [],
@@ -107,18 +116,19 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 if (o.Disposition === 'Captured') out.Captured++;
                 else if (o.Disposition === 'Held') out.Held++;
                 else if (o.Disposition === 'Unmatched') out.Unmatched++;
+                else if (o.Disposition === 'Refused') out.Refused++;
                 else if (o.Disposition === 'ReversalNeeded') out.ReversalNeeded++;
                 else out.Ignored++;
             }
             if (faults.length) {
                 return { ...out, Success: false, ResultCode: 'ERROR', Message: `The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
             }
-            if (!preview && out.Unmatched + out.ReversalNeeded > 0) {
+            if (!preview && out.Unmatched + out.Refused + out.ReversalNeeded > 0) {
                 return {
                     ...out,
                     Success: false,
                     ResultCode: 'ATTENTION',
-                    Message: `${out.Captured} payment(s) captured; ${out.Unmatched} unmatched and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).`,
+                    Message: `${out.Captured} payment(s) captured; ${out.Unmatched} unmatched, ${out.Refused} refused and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).`,
                 };
             }
             out.Message = preview
@@ -139,19 +149,38 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
     ): Promise<{ Outcomes: ExternalPaymentOutcome[]; NewWatermark: string | null; Fault: string | null }> {
         const outcomes: ExternalPaymentOutcome[] = [];
         const rail = await ResolveInvoiceRail(paymentProviderID, provider, user);
+        // A configuration fault (no Company Integration, live/sandbox mismatch, connector not loaded)
+        // is the provider's problem, not any payment's: report it as a fault, write nothing.
+        const ready = await rail.CheckConfiguration();
+        if (ready.Success === false) return { Outcomes: [], NewWatermark: null, Fault: `${rail.Config.Name}: ${ready.Reason}` };
+
         let state = await loadSyncState(paymentProviderID, provider, user);
-        const storedWatermark = state?.Watermark ?? null;
+        // An unreadable stored watermark reads as "none" rather than faulting every pass forever.
+        const storedWatermark = instant(state?.Watermark);
+        if (state?.Watermark && !storedWatermark) LogError(`PaymentProviderSyncState for ${paymentProviderID} holds an unreadable watermark '${state.Watermark}'; reading from the start.`);
         if (!opts.preview) state = await touchSyncState(provider, user, paymentProviderID, state, { LastPolledAt: new Date() });
 
-        const since = opts.since ?? (storedWatermark ? new Date(new Date(storedWatermark).getTime() - OVERLAP_MS).toISOString() : null);
+        const since = instant(opts.since) ?? (storedWatermark ? new Date(Date.parse(storedWatermark) - OVERLAP_MS).toISOString() : null);
         const fetched = await rail.FetchPaymentsSince(since);
         if (fetched.Success === false) {
             if (!opts.preview) await touchSyncState(provider, user, paymentProviderID, state, { LastError: fetched.Reason });
             return { Outcomes: [], NewWatermark: storedWatermark, Fault: `${rail.Config.Name}: ${fetched.Reason}` };
         }
 
-        const payments = fetched.Value.Payments.slice(0, opts.maxCount);
-        const seen = await loadSeen(paymentProviderID, payments.map((p) => p.ExternalPaymentRef), provider, user);
+        // OLDEST FIRST, and payments this table already holds an unchanged, final answer for are not
+        // counted against the cap — otherwise a first run against an org with more history than
+        // MaxCount re-reads the same first hundred every pass and the watermark never moves. A record
+        // with no readable time sorts first so it is always considered.
+        const all = [...fetched.Value.Payments].sort((a, b) => (a.UpdatedAt ?? '').localeCompare(b.UpdatedAt ?? ''));
+        const seen = await loadSeen(paymentProviderID, all.map((p) => p.ExternalPaymentRef), provider, user);
+        const FINAL: ReadonlySet<ExternalPaymentDisposition> = new Set(['Captured', 'Ignored']);
+        const pending = all.filter((p) => {
+            const prior = seen.get(p.ExternalPaymentRef);
+            if (!prior) return true;
+            const unchanged = instant(prior.ExternalUpdatedAt) === p.UpdatedAt;
+            return !(unchanged && FINAL.has(prior.Disposition));
+        });
+        const payments = pending.slice(0, opts.maxCount);
         let fault: string | null = null;
 
         for (const p of payments) {
@@ -167,12 +196,24 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             }
         }
 
-        // Advance only on a clean pass over EVERYTHING the rail returned; a capped pass keeps the old
-        // watermark so the remainder is read next time.
-        const clean = !fault && payments.length === fetched.Value.Payments.length;
-        const newWatermark = clean ? (fetched.Value.NewWatermark ?? storedWatermark) : storedWatermark;
+        // THE WATERMARK: on a clean, uncapped pass, the newest instant the rail returned. On a capped
+        // pass, the newest instant among the payments actually processed — everything older is done
+        // (the list is sorted), and the one-day overlap re-reads the boundary next time. A fault keeps
+        // the old watermark so nothing is skipped.
+        const capped = payments.length < pending.length;
+        const processedMax = payments.reduce<string | null>((m, p) => (p.UpdatedAt && (!m || p.UpdatedAt > m) ? p.UpdatedAt : m), null);
+        let newWatermark = storedWatermark;
+        if (!fault) newWatermark = capped ? (processedMax ?? storedWatermark) : (fetched.Value.NewWatermark ?? processedMax ?? storedWatermark);
         if (!opts.preview) {
-            await touchSyncState(provider, user, paymentProviderID, state, clean ? { Watermark: newWatermark, LastSucceededAt: new Date(), LastError: null } : { LastError: fault ?? `Capped at ${opts.maxCount}; remainder next pass.` });
+            await touchSyncState(
+                provider,
+                user,
+                paymentProviderID,
+                state,
+                fault
+                    ? { LastError: fault }
+                    : { Watermark: newWatermark, LastSucceededAt: new Date(), LastError: capped ? `Capped at ${opts.maxCount}; ${pending.length - payments.length} more next pass.` : null },
+            );
         }
         return { Outcomes: outcomes, NewWatermark: newWatermark, Fault: fault ? `${rail.Config.Name}: ${fault}` : null };
     }
@@ -220,7 +261,8 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 CompanyID: String(inv.CompanyID),
                 OrderHeaderPaymentScheduleID: inv.OrderHeaderPaymentScheduleID ? String(inv.OrderHeaderPaymentScheduleID) : null,
                 BillToOrganizationID: order.BillToOrganizationID,
-                BillToPersonID: order.BillToPersonID,
+                // Exactly one payer: the organisation when there is one (D65).
+                BillToPersonID: order.BillToOrganizationID ? null : order.BillToPersonID,
             });
         }
         const allocation = AllocateInvoicePayments(p.InvoicePayments, (ref) => units.get(ref));
@@ -254,9 +296,11 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         );
         const cap = capture.Output;
         if (!capture.Success || !cap?.Success) {
+            // A refusal from the capture path is a fact about OUR data (a split-company order, an
+            // ambiguous payer) or our configuration — a person has to look, so it counts as attention.
             const reason = `Orders.CapturePayment refused: ${cap?.Message ?? capture.ErrorMessage ?? 'no reason'}${cap?.Blockers?.length ? ` (${cap.Blockers.map((b) => b.Code ?? b.Message).join(', ')})` : ''}`;
-            await record('Held', reason);
-            return { ...base, Disposition: 'Held', Reason: reason };
+            await record('Refused', reason);
+            return { ...base, Disposition: 'Refused', Reason: reason };
         }
         if (cap.WasRetry) {
             // The unique key found an earlier capture this table did not know about.
@@ -341,7 +385,7 @@ async function upsertExternalPayment(
             ExternalCustomerRef: p.ExternalCustomerRef,
             Amount: money(p.Amount),
             UnappliedAmount: money(p.UnappliedAmount),
-            PaymentDate: p.PaymentDate ? new Date(p.PaymentDate) : null,
+            PaymentDate: p.PaymentDate && Number.isFinite(Date.parse(p.PaymentDate)) ? new Date(p.PaymentDate) : null,
             ExternalStatus: p.Status,
             ExternalUpdatedAt: p.UpdatedAt ? new Date(p.UpdatedAt) : null,
             Disposition: disposition,
