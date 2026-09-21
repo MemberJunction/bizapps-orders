@@ -1,3 +1,11 @@
+/**
+ * scripts/score-ltv-models.mjs — Developer bench tooling for demo data generation.
+ *
+ * Simulates batch scoring of Person and Organization Customer LTV models against local
+ * demo database records, generating Process Run Details and prediction history artifacts.
+ * This script is developer/demo bench tooling and does not execute in production runtime.
+ */
+
 import sql from 'mssql';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
