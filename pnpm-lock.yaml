@@ -255,6 +255,9 @@ importers:
       '@mj-biz-apps/accounting-engine-base':
         specifier: '>=0.5.0'
         version: 0.5.0(@memberjunction/core@6.1.0-edge.5)(@memberjunction/global@6.1.0-edge.5)(@mj-biz-apps/common-entities@5.44.0(@memberjunction/core@6.1.0-edge.5)(@memberjunction/global@6.1.0-edge.5))
+      '@mj-biz-apps/common-entities':
+        specifier: '>=5.44.0'
+        version: 5.44.0(@memberjunction/core@6.1.0-edge.5)(@memberjunction/global@6.1.0-edge.5)
       '@mj-biz-apps/orders-entities':
         specifier: 5.13.0
         version: link:../Entities
@@ -278,8 +281,8 @@ importers:
   packages/Entities:
     dependencies:
       '@mj-biz-apps/common-entities':
-        specifier: '>=5.37.0'
-        version: 5.37.0(@memberjunction/core@6.1.0-edge.5)(@memberjunction/global@6.1.0-edge.5)
+        specifier: '>=5.43.0'
+        version: 5.44.0(@memberjunction/core@6.1.0-edge.5)(@memberjunction/global@6.1.0-edge.5)
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2

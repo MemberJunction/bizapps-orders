@@ -1,7 +1,7 @@
 /**
  * Unit tests for CheckoutSessionService
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { UserInfo } from '@memberjunction/core';
 
 const mocks = vi.hoisted(() => {
@@ -328,27 +328,37 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
     };
 });
 
-vi.mock('@mj-biz-apps/orders-entities', () => ({
-    OrderHeaderEntity: mocks.MockOrderHeader,
-    OrderLineEntity: mocks.MockOrderLine,
-    OrderPricingService: mocks.MockOrderPricingService,
-    mjBizAppsOrdersOrderLineEntity: mocks.MockOrderLine,
-    mjBizAppsOrdersCheckoutSessionEntity: mocks.MockCheckoutSession,
-    mjBizAppsOrdersCheckoutWidgetDistributionEntity: class {},
-    mjBizAppsOrdersCheckoutWidgetEntity: mocks.MockCheckoutWidget,
-    mjBizAppsOrdersPaymentIntentEntity: mocks.MockPaymentIntent,
-    mjBizAppsOrdersProductEntity: mocks.MockProduct,
-    mjBizAppsOrdersProductTypeEntity: mocks.MockProductType,
-    LoadOrdersEngine: mocks.mockLoadOrdersEngine,
-    OrdersEngine: {
-        Instance: {
-            ProductBySKU: mocks.mockProductBySKU,
+// `...actual` keeps the REAL `TodayAsDateValue`/`Today`/`ToISODate` (plain functions in
+// `date-cell.ts`, backed by the real `BusinessTimeZoneEngine` singleton) live for these tests,
+// exactly as the `@memberjunction/core` mock below does for `BaseEngine`/`LogStatus`. Only the
+// entity/service classes the fixtures below construct are swapped for mocks.
+vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@mj-biz-apps/orders-entities')>();
+    return {
+        ...actual,
+        OrderHeaderEntity: mocks.MockOrderHeader,
+        OrderLineEntity: mocks.MockOrderLine,
+        OrderPricingService: mocks.MockOrderPricingService,
+        mjBizAppsOrdersOrderLineEntity: mocks.MockOrderLine,
+        mjBizAppsOrdersCheckoutSessionEntity: mocks.MockCheckoutSession,
+        mjBizAppsOrdersCheckoutWidgetDistributionEntity: class {},
+        mjBizAppsOrdersCheckoutWidgetEntity: mocks.MockCheckoutWidget,
+        mjBizAppsOrdersPaymentIntentEntity: mocks.MockPaymentIntent,
+        mjBizAppsOrdersProductEntity: mocks.MockProduct,
+        mjBizAppsOrdersProductTypeEntity: mocks.MockProductType,
+        LoadOrdersEngine: mocks.mockLoadOrdersEngine,
+        OrdersEngine: {
+            Instance: {
+                ProductBySKU: mocks.mockProductBySKU,
+            },
         },
-    },
-}));
+    };
+});
 
 import { CheckoutSessionService } from '../CheckoutSessionService.js';
 import { Metadata } from '@memberjunction/core';
+import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
+import { ToISODate } from '@mj-biz-apps/orders-entities';
 
 const KEY = 'client-xyz';
 const testUser = { ID: 'test-user-1', Email: 'service@example.com' } as unknown as UserInfo;
@@ -1188,6 +1198,153 @@ describe('CheckoutSessionService', () => {
             const n = await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 2);
             expect(mocks.lastRunViewParams?.MaxRows).toBe(2);
             expect(n).toBe(2);
+        });
+    });
+
+    /**
+     * bc-aidp-next-golive#168: `order.OrderDate = new Date()` at both call sites stamped an INSTANT,
+     * which serialises in UTC — an order entered at 9 PM Eastern on the 27th was dated the 28th.
+     * Unlike the source-text check in `order-header-default-date.test.ts` (Entities package), these
+     * two tests drive the REAL, unmocked `CheckoutSessionService.UpdateDraft` / `CompleteCheckout`
+     * code (only the entity/service CLASSES are mocked — see the `...actual` spread on the
+     * `@mj-biz-apps/orders-entities` mock above) and assert on the VALUE the mock order instance
+     * actually receives, so a regression back to `new Date()` fails them, not just the text check.
+     */
+    describe('OrderDate defaults come from the business day (bc-aidp-next-golive#168)', () => {
+        const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
+        const originalEngine = { rows: engine._configurations, loaded: engine._loaded };
+
+        const pinEastern = (): void => {
+            engine._configurations = [
+                {
+                    FeatureKey: 'BizApps.BusinessTimeZone',
+                    Value: '{"iana":"America/New_York","sql":"Eastern Standard Time"}',
+                    DefaultValue: '{"iana":"UTC","sql":"UTC"}'
+                }
+            ];
+            engine._loaded = true;
+        };
+
+        /**
+         * 9 PM EDT on 2026-08-27 — the bug report's own scenario. UTC and Kolkata (+5:30) both
+         * already read the 28th here, which is exactly why `new Date()` — an instant with no
+         * business-zone awareness — got the day wrong: whatever reads it back later (a DATE column
+         * via UTC parts) disagrees with the business day by one, regardless of the host's zone.
+         */
+        const BUG_INSTANT = '2026-08-28T01:00:00.000Z';
+
+        afterEach(() => {
+            engine._configurations = originalEngine.rows;
+            engine._loaded = originalEngine.loaded;
+            vi.useRealTimers();
+        });
+
+        it('UpdateDraft stamps a new draft order with the business day, not the instant new Date() would', async () => {
+            pinEastern();
+            const originalTZ = process.env.TZ;
+            process.env.TZ = 'Asia/Kolkata'; // disagrees with Eastern; see BUG_INSTANT comment
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date(BUG_INSTANT));
+            try {
+                const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'guest@example.com', [
+                    { ProductID: 'prod-1', Quantity: 1 }
+                ]);
+                expect(res.Success).toBe(true);
+                // The regression this guards: `order.OrderDate = new Date()` at BUG_INSTANT, read
+                // back the way a DATE column is (UTC parts), would name 2026-08-28 — tomorrow, from
+                // the guest's perspective at 9 PM the evening before.
+                expect(ToISODate(mocks.mockOrderInstance.OrderDate)).toBe('2026-08-27');
+            } finally {
+                vi.useRealTimers();
+                if (originalTZ === undefined) {
+                    delete process.env.TZ;
+                } else {
+                    process.env.TZ = originalTZ;
+                }
+            }
+        });
+
+        it('CompleteCheckout stamps the booked order with the business day, not the instant new Date() would', async () => {
+            pinEastern();
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            const originalTZ = process.env.TZ;
+            process.env.TZ = 'Asia/Kolkata';
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date(BUG_INSTANT));
+            try {
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+                expect(res.Success).toBe(true);
+                expect(ToISODate(mocks.mockOrderInstance.OrderDate)).toBe('2026-08-27');
+            } finally {
+                vi.useRealTimers();
+                if (originalTZ === undefined) {
+                    delete process.env.TZ;
+                } else {
+                    process.env.TZ = originalTZ;
+                }
+            }
+        });
+    });
+
+    /**
+     * bc-aidp-next-golive#168 whole-branch fix round: defence-in-depth against a module-evaluation-
+     * ordering question that cannot be proven from this checkout (see the code comment at both call
+     * sites). The server DOES pre-warm `BusinessTimeZoneEngine` via `@RegisterForStartup()` +
+     * `StartupManager.Instance.Startup()` — that premise is settled, not what this guards. What these
+     * two tests prove is narrower and still real: the PRODUCTION PATH ITSELF calls
+     * `BusinessTimeZoneEngine.Instance.Config()` before it reads `TodayAsDateValue()`, so a cold or
+     * not-yet-loaded engine still gets configured on this call rather than silently reading whatever
+     * state (possibly UTC-fallback, possibly stale) the engine happened to be in already.
+     *
+     * This spies on `Config()` directly rather than reaching into `_configurations`/`_loaded` — the
+     * two private fields the existing `OrderDate defaults` tests above poke by reflection to PIN the
+     * zone. Doing the same here would assume the very call this test exists to prove happened. A
+     * spy on the real, unmocked `BusinessTimeZoneEngine.Instance.Config` fails honestly if the
+     * `await BusinessTimeZoneEngine.Instance.Config(...)` line at either call site is reverted: the
+     * spy is simply never invoked.
+     */
+    describe('BusinessTimeZoneEngine defence-in-depth (bc-aidp-next-golive#168)', () => {
+        it('UpdateDraft configures the engine, with the caller and the metadata provider, before deriving OrderDate from it', async () => {
+            const provider = Metadata.Provider;
+            const configSpy = vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined);
+            try {
+                const res = await CheckoutSessionService.UpdateDraft(
+                    'sess-123',
+                    KEY,
+                    'guest@example.com',
+                    [{ ProductID: 'prod-1', Quantity: 1 }],
+                    testUser
+                );
+                expect(res.Success).toBe(true);
+                expect(configSpy).toHaveBeenCalledWith(false, testUser, provider);
+                // Config() must run before TodayAsDateValue() is read — the spy resolved to
+                // `undefined` on purpose, so if the call order were reversed there would be
+                // nothing to distinguish; what matters here is that it was called at all, which
+                // a reverted production line makes impossible.
+                expect(configSpy).toHaveBeenCalledTimes(1);
+            } finally {
+                configSpy.mockRestore();
+            }
+        });
+
+        it('CompleteCheckout configures the engine, with the caller and the metadata provider, before deriving OrderDate from it', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            const provider = Metadata.Provider;
+            const configSpy = vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined);
+            try {
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(configSpy).toHaveBeenCalledWith(false, testUser, provider);
+                expect(configSpy).toHaveBeenCalledTimes(1);
+            } finally {
+                configSpy.mockRestore();
+            }
         });
     });
 });
