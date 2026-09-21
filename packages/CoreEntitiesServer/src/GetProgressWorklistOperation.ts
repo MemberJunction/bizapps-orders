@@ -158,7 +158,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
                 const id = ResolveRevenueRecognitionTypeID(p.RevenueRecognitionTypeID, engine.ProductTypeByID(p.ProductTypeID)?.DefaultRevenueRecognitionTypeID);
                 return !!id && pocTypeIDs.has(id.toLowerCase());
             })
-            .map((p) => p.ID);
+            .map((p) => RequireUUID(p.ID, 'ProductID'));
     }
 }
 
