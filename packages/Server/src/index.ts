@@ -17,6 +17,7 @@ import '@mj-biz-apps/orders-actions';
 import { LoadGenerateInvoiceAction } from './custom/generate-invoice.action.js';
 import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action.js';
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
+import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -34,6 +35,9 @@ import {
     LoadPreviewPriceOperation,
     LoadPriceOrderOperation,
     LoadGetOverdueWorklistOperation,
+    LoadGetBillingWorklistOperation,
+    LoadIssueInstalmentInvoiceOperation,
+    LoadOrderHeaderPaymentScheduleEntityServer,
     LoadGetFulfillmentQueueOperation,
     LoadFulfillOrderLinesOperation,
     LoadCapturePaymentOperation,
@@ -104,6 +108,9 @@ export function LoadBizAppsOrdersServer(): void {
     LoadPreviewPriceOperation();       // the 'Orders.PreviewPrice' dry run (D69)
     LoadPriceOrderOperation();         // 'Orders.PriceOrder' — what a whole order comes to, persisting nothing
     LoadGetOverdueWorklistOperation(); // 'Orders.GetOverdueWorklist' — overdue is computed, not stored
+    LoadGetBillingWorklistOperation(); // 'Orders.GetBillingWorklist' — instalments due with no invoice behind them (AIDP-24)
+    LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
+    LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
     LoadCapturePaymentOperation(); // 'Orders.CapturePayment' — header + allocations in ONE transaction
@@ -133,6 +140,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGenerateInvoiceAction();       // 'Orders.GenerateInvoice' — an order, rendered (D-INV)
     LoadSendDocumentAction();          // 'Orders.SendDocument' — an order, rendered AND sent (§4.4)
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
+    LoadSpawnRenewalsAction();         // 'Orders.SpawnRenewals' — the scheduler's way in to the renewal operation
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class

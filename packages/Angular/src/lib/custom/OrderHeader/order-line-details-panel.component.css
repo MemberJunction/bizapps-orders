@@ -1,0 +1,226 @@
+:host { display: contents; }
+
+/* Covers the form, not the viewport: the panel belongs to the order being edited, and dimming the
+   application chrome around it would claim more than it owns. */
+.mjo-ldp__scrim {
+    position: fixed;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: var(--mj-bg-overlay);
+    cursor: default;
+    z-index: 900;
+}
+
+.mjo-ldp {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 440px;
+    max-width: 100vw;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    background: var(--mj-bg-surface);
+    border-left: 1px solid var(--mj-border-default);
+    box-shadow: -8px 0 24px color-mix(in srgb, var(--mj-text-primary) 12%, transparent);
+    z-index: 901;
+    animation: mjo-ldp-in 180ms ease;
+}
+
+@keyframes mjo-ldp-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+/* Honour a reduced-motion preference: the slide is decoration, the panel is the content. */
+@media (prefers-reduced-motion: reduce) {
+    .mjo-ldp { animation: none; }
+}
+
+.mjo-ldp__head {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mj-space-3);
+    padding: var(--mj-space-4) var(--mj-space-5);
+    border-bottom: 1px solid var(--mj-border-default);
+}
+
+.mjo-ldp__id { flex: 1; min-width: 0; }
+
+.mjo-ldp__name {
+    font-size: var(--mj-text-base);
+    font-weight: var(--mj-font-semibold);
+    color: var(--mj-text-primary);
+}
+
+.mjo-ldp__meta {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+    margin-top: 2px;
+}
+
+.mjo-ldp__close {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    border-radius: var(--mj-radius-sm);
+    color: var(--mj-text-muted);
+    cursor: pointer;
+}
+
+.mjo-ldp__close:hover {
+    background: var(--mj-bg-surface-hover);
+    color: var(--mj-text-primary);
+}
+
+.mjo-ldp__close:focus-visible,
+.mjo-ldp__done:focus-visible,
+.mjo-ldp__select:focus-visible {
+    outline: 2px solid var(--mj-border-focus);
+    outline-offset: 2px;
+}
+
+.mjo-ldp__body {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--mj-space-5);
+}
+
+.mjo-ldp__error {
+    margin: 0 0 var(--mj-space-4);
+    padding: var(--mj-space-2) var(--mj-space-3);
+    border: 1px solid var(--mj-status-warning-border);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-status-warning-bg);
+    color: var(--mj-status-warning-text);
+    font-size: var(--mj-text-xs);
+    line-height: 1.5;
+}
+
+.mjo-ldp__section-title {
+    margin: 0;
+    font-size: var(--mj-text-xs);
+    font-weight: var(--mj-font-semibold);
+    color: var(--mj-text-secondary);
+    letter-spacing: 0.01em;
+}
+
+.mjo-ldp__section-hint,
+.mjo-ldp__locked,
+.mjo-ldp__note {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+    line-height: 1.5;
+}
+
+.mjo-ldp__section-hint { margin: var(--mj-space-1) 0 var(--mj-space-4); }
+
+.mjo-ldp__locked {
+    margin: 0 0 var(--mj-space-4);
+    padding: var(--mj-space-2) var(--mj-space-3);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface-sunken);
+}
+
+.mjo-ldp__note { margin: var(--mj-space-1) 0 0; }
+
+.mjo-ldp__field { margin-bottom: var(--mj-space-3); }
+
+.mjo-ldp__label {
+    display: block;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-secondary);
+    margin-bottom: var(--mj-space-1);
+}
+
+.mjo-ldp__select {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    height: 30px;
+    padding: 0 6px;
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: inherit;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+}
+
+/* An axis chosen with no point on it. CK_OrderLine_DimensionPair refuses the row, so the field is
+   marked before the save rather than after it comes back. */
+.mjo-ldp__select.is-required { border-color: var(--mj-border-error); }
+
+.mjo-ldp__required {
+    display: block;
+    margin-top: var(--mj-space-1);
+    font-size: var(--mj-text-xs);
+    line-height: 1.5;
+    color: var(--mj-status-error-text);
+}
+
+.mjo-ldp__clear {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-link);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.mjo-ldp__clear:hover { color: var(--mj-text-link-hover); }
+
+.mjo-ldp__clear:focus-visible {
+    outline: 2px solid var(--mj-border-focus);
+    outline-offset: 2px;
+}
+
+.mjo-ldp__value {
+    display: block;
+    font-size: var(--mj-text-sm);
+    color: var(--mj-text-primary);
+}
+
+.mjo-ldp__value.is-empty { color: var(--mj-text-muted); }
+
+.mjo-ldp__foot {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    padding: var(--mj-space-3) var(--mj-space-5);
+    border-top: 1px solid var(--mj-border-default);
+}
+
+.mjo-ldp__foot-hint {
+    flex: 1;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+}
+
+.mjo-ldp__done {
+    height: 30px;
+    padding: 0 14px;
+    border: 1px solid var(--mj-border-strong);
+    background: var(--mj-bg-surface);
+    border-radius: var(--mj-radius-sm);
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-primary);
+    cursor: pointer;
+}
+
+.mjo-ldp__done:hover { background: var(--mj-bg-surface-hover); }
+
+/* On a phone the panel is the screen — a 440px drawer beside nothing is just a narrow page. */
+@media (max-width: 560px) {
+    .mjo-ldp { width: 100vw; border-left: 0; }
+}

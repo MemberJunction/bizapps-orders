@@ -39,6 +39,7 @@ import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
 import { anyFieldIsDirty } from './field-dirty';
+import { TodayAsDateValue } from './date-cell';
 import {
     BookedMoneyEditMessage,
     ORDER_HEADER_MONEY_FIELDS,
@@ -200,7 +201,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         const created = super.NewRecord(newValues);
         if (created) {
             if (this.OrderDate == null) {
-                this.OrderDate = new Date();
+                this.OrderDate = TodayAsDateValue();
             }
             if (!this.Status) {
                 this.Status = 'Draft';

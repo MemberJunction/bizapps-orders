@@ -35,6 +35,7 @@ import { MJOPartyAddressPickerComponent } from './OrderHeader/party-address-pick
 import { BizAppsSubscriptionFormComponent, LoadSubscriptionFormComponent } from './Subscription/subscription-form.component';
 import { BizAppsSubscriptionTermFormComponent, LoadSubscriptionTermFormComponent } from './SubscriptionTerm/subscription-term-form.component';
 import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } from './PaymentHeader/payment-header-form.component';
+import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } from './EventOrderLine/event-order-line-form.component';
 
 @NgModule({
     declarations: [
@@ -52,6 +53,7 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
         BizAppsSubscriptionFormComponent,
         BizAppsSubscriptionTermFormComponent,
         BizAppsPaymentHeaderFormComponent,
+        BizAppsEventOrderLineFormComponent,
     ],
     imports: [
         CommonModule,
@@ -82,6 +84,7 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
         BizAppsSubscriptionFormComponent,
         BizAppsSubscriptionTermFormComponent,
         BizAppsPaymentHeaderFormComponent,
+        BizAppsEventOrderLineFormComponent,
     ],
 })
 export class CustomFormsModule {}
@@ -96,4 +99,5 @@ export function LoadCustomForms(): void {
     LoadSubscriptionFormComponent();
     LoadSubscriptionTermFormComponent();
     LoadPaymentHeaderFormComponent();
+    LoadEventOrderLineFormComponent();
 }

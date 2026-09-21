@@ -80,8 +80,9 @@ function setOutput(params: RunActionParams, name: string, value: unknown): void 
 /**
  * Render an order as an invoice, quote or credit memo.
  *
- * Inputs: `OrderID` (required), `CompanyID`, `AsOfDate`, `TemplateName`, `Locale`, `CurrencyCode`,
- * `Format`, `ShowDiagnostics`. Outputs: `Invoices`, `HTML`, `DocumentCount`, `Notes`.
+ * Inputs: `OrderID` (required), `CompanyID`, `PaymentScheduleID` (one instalment's document),
+ * `AsOfDate`, `TemplateName`, `Locale`, `CurrencyCode`, `Format`, `ShowDiagnostics`.
+ * Outputs: `Invoices`, `HTML`, `DocumentCount`, `Notes`.
  */
 @RegisterClass(BaseAction, 'Orders.GenerateInvoice')
 export class GenerateInvoiceAction extends BaseAction {
@@ -166,8 +167,18 @@ export class GenerateInvoiceAction extends BaseAction {
             };
         }
 
+        const paymentScheduleID = strParam(params, 'PaymentScheduleID');
+        if (paymentScheduleID && !UUID.test(paymentScheduleID)) {
+            return {
+                Success: false,
+                ResultCode: 'INVALID_PAYMENT_SCHEDULE_ID',
+                Message: `'${paymentScheduleID}' is not a payment schedule row ID.`,
+            };
+        }
+
         const rendered = await RenderInvoiceDocuments(orderID, provider, user, {
             CompanyID: companyID,
+            PaymentScheduleID: paymentScheduleID,
             AsOfDate: strParam(params, 'AsOfDate'),
             TemplateName: strParam(params, 'TemplateName') ?? DEFAULT_INVOICE_TEMPLATE,
             Locale: strParam(params, 'Locale') ?? 'en-US',

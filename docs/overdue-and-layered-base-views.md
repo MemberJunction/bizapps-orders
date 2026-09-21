@@ -22,8 +22,9 @@ multiple-surfaces-disagreeing shape D83 solved for `DueDate`, one layer up.
 ## What is built here
 
 **`packages/Entities/src/overdue.ts` — the rule, stated once.** `IsOverdue()` for code,
-`OverdueSQL(alias)` for the view, `OverdueFilter(asOfDay)` for a `RunView`, and one
-`NON_OWING_STATUSES` list all three read. Three languages cannot literally share code; they can share
+`OverdueSQL(alias)` for the predicate, `OverdueViewSQL()` for the whole `vwOrderHeaders` statement a
+migration copies verbatim, `OverdueFilter(asOfDay)` for a `RunView`, and one
+`NON_OWING_STATUSES` list they all read. Three languages cannot literally share code; they can share
 a module, so a change lands in one file and both halves appear in one diff. `overdue.test.ts` asserts
 every clause survives in each half, so dropping one fails a test rather than a customer.
 
@@ -44,19 +45,22 @@ above stands on its own and removes the disagreement today; the column is what l
 on it and Explorer show it.
 
 ```sql
-CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders] AS
-SELECT g.*,
-       CASE WHEN g.Balance > 0
-             AND g.DueDate IS NOT NULL
-             AND g.DueDate < CAST(GETUTCDATE() AS date)
-             AND g.Status NOT IN ('Draft','Quoted','Voided')
-            THEN 1 ELSE 0 END AS IsOverdue
-FROM   [${flyway:defaultSchema}].[vwOrderHeadersGenerated] g;
+CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]
+AS
+SELECT
+    g.*,
+    CASE WHEN g.Balance > 0 AND g.DueDate IS NOT NULL AND g.DueDate < bt.Today AND g.Status NOT IN ('Draft','Quoted','Voided')
+         THEN 1 ELSE 0 END AS IsOverdue
+FROM [${flyway:defaultSchema}].[vwOrderHeadersGenerated] g
+CROSS JOIN [__mj_BizAppsCommon].[fnBusinessToday]() AS bt;
 ```
 
 `${flyway:defaultSchema}` rather than a literal schema, per `migrations/_README.md`. The `Status`
 clause is the one every hand-rolled copy of this rule forgot: without it a voided order with a stale
 balance reports as overdue, and a customer lands on a collections list for money they do not owe.
+`bt.Today` — not `CAST(GETUTCDATE() AS date)` — is the calendar day in the zone the business books
+in, from bizapps-common's `fnBusinessToday()`, CROSS JOINed once per query: `GETUTCDATE()` is already
+tomorrow for the whole American evening, so an order due today read as overdue from 7 PM Central.
 
 ### Where the generated SQL actually goes in THIS repo
 
@@ -87,8 +91,9 @@ a known behaviour here, and `OrderLine` joins `OrderHeader`'s base view, so it i
 **Check after step 3:** the baseline should now contain `vwOrderHeadersGenerated`. If it does not,
 step 2 did not do what it appeared to.
 
-Step 4's migration must take its predicate from `OverdueSQL('g')` in `packages/Entities/src/overdue.ts`
-rather than retyping it — that sharing is the entire point of the extraction.
+Step 4's migration is `OverdueViewSQL()` from `packages/Entities/src/overdue.ts`, pasted verbatim;
+`overdue.test.ts` fails if the newest migration that defines the view drifts from it. "Today" in the
+view is `bt.Today` from bizapps-common's `fnBusinessToday()`, the business calendar day.
 
 ### Verifying it, because none of these fail loudly
 
@@ -127,3 +132,14 @@ already-layered one — both put the entity in the modified list on their own.
 Layering is SQL Server only; MJ refuses `GeneratedBaseViewName` on PG rather than shipping a
 documented footgun. The PG side keeps deriving `IsOverdue` in code — from `overdue.ts`, which is the
 point of extracting it.
+
+## Instalments: the day that is due is `NextDueDate` (AIDP-24, 2026-09-19)
+
+An order billed in instalments (`OrderHeaderPaymentSchedule`) is overdue when **any** unpaid
+instalment is past due — which is the same as saying its **earliest** unpaid instalment is. So the
+outer view now computes `NextDueDate` in a `CROSS APPLY`: the earliest `DueDate` among live, unpaid
+schedule rows, or the header's own `DueDate` when the order has none. `IsOverdue` reads it through
+`OverdueSQL('g', 'nd.NextDueDate')`, `OverdueFilter()` reads the `NextDueDate` column, and
+`GetOverdueWorklist` ages from it. An order with no schedule is unchanged: for it `NextDueDate`
+**is** `DueDate`. The migration is `V202609211200__v5.13.0__OrderHeaderPaymentSchedule.sql`, and
+`overdue.test.ts` asserts the newest view migration carries exactly the predicate the module emits.

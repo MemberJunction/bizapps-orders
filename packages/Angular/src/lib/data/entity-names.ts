@@ -22,6 +22,7 @@ export const MJO_ENTITIES = {
     PaymentHeader: 'MJ_BizApps_Orders: Payment Headers',
     PaymentDetail: 'MJ_BizApps_Orders: Payment Details',
     PaymentLine: 'MJ_BizApps_Orders: Payment Lines',
+    OrderHeaderPaymentSchedule: 'MJ_BizApps_Orders: Order Header Payment Schedules',
     Product: 'MJ_BizApps_Orders: Products',
     ProductType: 'MJ_BizApps_Orders: Product Types',
     ProductCategory: 'MJ_BizApps_Orders: Product Categories',
@@ -88,4 +89,12 @@ export const MJO_ACCOUNTING_ENTITIES = {
     JournalEntryLine: 'MJ_BizApps_Accounting: Journal Entry Lines',
     JournalEntryLineDimension: 'MJ_BizApps_Accounting: Journal Entry Line Dimensions',
     GLAccount: 'MJ_BizApps_Accounting: GL Accounts',
+    /**
+     * The analysis axes a journal entry line can be filed under — Venture, Product, ARR-Type and
+     * the rest. READ-ONLY here: the rows arrive from Business Central through accounting's ERP sync,
+     * and an order line only ever points at one.
+     */
+    Dimension: 'MJ_BizApps_Accounting: Dimensions',
+    /** The permitted values of a Dimension. Effective-dated, and read-only here for the same reason. */
+    DimensionValue: 'MJ_BizApps_Accounting: Dimension Values',
 } as const;

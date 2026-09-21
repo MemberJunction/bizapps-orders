@@ -1,5 +1,5 @@
 /**
- * intercompany.checks.ts — the `intercompany` bundle (IC1–IC12).
+ * intercompany.checks.ts — the `intercompany` bundle (IC1–IC14).
  *
  * WHY THIS BUNDLE EXISTS
  * The `payment-ledger` bundle proved the cash leg thoroughly — and every single check in it used a
@@ -24,6 +24,8 @@
  *   IC10  a refund mirrors every leg, on every company
  *   IC11  the allocation is idempotent — re-saving does not double the Due To
  *   IC12  split payments across two orders keep each order's companies separate
+ *   IC13  both intercompany legs carry the COUNTERPARTY naming the other company (#238)
+ *   IC14  an order line's own dimension tags reach the cash and AR lines that settle it (#238)
  *
  * Deterministic. Every check runs inside a rolled-back transaction. The intercompany fixture
  * (Due To/Due From accounts + the ordered pairs) is built in bundle Setup, because it is
@@ -43,8 +45,11 @@ import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
   createViaEntity,
+  COUNTERPARTY_DIMENSION_CODE,
   DUE_FROM_CODE,
   DUE_TO_CODE,
+  EnsureDimension,
+  EnsureDimensionValue,
   EnsureIntercompanyAccounts,
   Fx,
   InRolledBackTransaction,
@@ -54,6 +59,7 @@ import {
   TxQuery,
 } from "../fixture.js";
 import {
+  ORDER_LINE_DIMENSION_ENTITY,
   PAYMENT_LINE_ENTITY,
 } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
@@ -63,6 +69,15 @@ import type { PaymentHeaderEntityServer } from "@mj-biz-apps/orders-core-entitie
 
 const CASH_CODE = "10100";
 const AR_CODE = "11201";
+
+/**
+ * An ordinary analytical dimension for IC14, provisioned alongside the intercompany reference data.
+ *
+ * Committed rather than created inside the check: accounting validates every JE line's dimensions
+ * against its in-process cache, so a value that exists only inside a rolled-back transaction makes
+ * the booking fail with DIMENSION_VALUE_UNKNOWN rather than proving anything.
+ */
+const FUND_DIMENSION_CODE = "IT-FUND";
 
 interface RefundOutput {
   Success: boolean;
@@ -104,6 +119,69 @@ function netFor(lines: EntryLine[], companyID: string, code: string): number {
 
 /** How many distinct journal entries a payment produced. */
 const entryCount = (lines: EntryLine[]) => new Set(lines.map((l) => l.EntryID)).size;
+
+interface TaggedLine {
+  Code: string;
+  CompanyID: string;
+  DebitAmount: number;
+  CreditAmount: number;
+  DimensionCode: string;
+  ValueCode: string;
+}
+
+/**
+ * Every ledger line a payment produced that carries a dimension, with the tag spelled out.
+ *
+ * An INNER join on purpose: an untagged line is not a row with a null tag, it is the absence the
+ * checks below are asserting against.
+ */
+const taggedLines = (ctx: IntegrationCheckContext, paymentID: string) =>
+  TxQuery<TaggedLine>(
+    ctx,
+    `SELECT gl.Code, gl.CompanyID, jel.DebitAmount, jel.CreditAmount,
+            d.Code AS DimensionCode, dv.Code AS ValueCode
+         FROM ${ORDERS_SCHEMA}.PaymentLine pl
+         JOIN ${ACCT_SCHEMA}.JournalEntry je
+           ON LOWER(je.LinkedRecordID) = LOWER(CAST(pl.ID AS NVARCHAR(400)))
+         JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+         JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+         JOIN ${ACCT_SCHEMA}.JournalEntryLineDimension jeld ON jeld.JournalEntryLineID = jel.ID
+         JOIN ${ACCT_SCHEMA}.Dimension d ON d.ID = jeld.DimensionID
+         JOIN ${ACCT_SCHEMA}.DimensionValue dv ON dv.ID = jeld.DimensionValueID
+         WHERE pl.PaymentHeaderID = '${paymentID}'`,
+  );
+
+/** The values of one dimension on one company's lines for a given account code. */
+function valuesOn(
+  lines: TaggedLine[],
+  companyID: string,
+  accountCode: string,
+  dimensionCode: string,
+): string[] {
+  return lines
+    .filter(
+      (l) =>
+        l.CompanyID.toLowerCase() === companyID.toLowerCase() &&
+        l.Code === accountCode &&
+        l.DimensionCode === dimensionCode,
+    )
+    .map((l) => l.ValueCode)
+    .sort();
+}
+
+/** Tag an order line with a dimension value, as the order pipeline would have (D31). */
+async function tagOrderLine(
+  ctx: IntegrationCheckContext,
+  orderLineID: string,
+  dimensionID: string,
+  dimensionValueID: string,
+): Promise<void> {
+  await createViaEntity(ctx, ORDER_LINE_DIMENSION_ENTITY, {
+    OrderLineID: orderLineID,
+    DimensionID: dimensionID,
+    DimensionValueID: dimensionValueID,
+  });
+}
 
 /**
  * Confirm an order whose lines span the given companies.
@@ -184,6 +262,15 @@ export async function CreateIntercompanyFixture(ctx: IntegrationCheckContext): P
     [f.CoA.ID, f.CoB.ID],
     [f.CoB.ID, f.CoA.ID],
   ]);
+
+  // An ordinary analytical dimension for IC14, so the order-line half of #238 is exercised by
+  // something other than the counterparty the matches pin.
+  const fund = await EnsureDimension(ctx, FUND_DIMENSION_CODE, "Fund (integration test)");
+  await EnsureDimensionValue(ctx, fund, `${f.Run}-FUND-1`, "Fund One");
+  await EnsureDimensionValue(ctx, fund, `${f.Run}-FUND-2`, "Fund Two");
+
+  // ONE refresh, after everything: the engine validates every JE line's dimensions against this
+  // cache, so a check booking against a value the cache has not seen fails as DIMENSION_VALUE_UNKNOWN.
   await reloadEngine(ctx);
 }
 
@@ -192,9 +279,22 @@ export async function TeardownIntercompanyFixture(ctx: IntegrationCheckContext):
   const f = Fx();
   const ids = [f.CoA.ID, f.CoB.ID, f.CoC.ID].map((c) => `'${c}'`).join(",");
   try {
+    // The pinned counterparty rows are children of the match; the FK holds unless they go first.
+    await TxQuery(ctx,
+      `DELETE iamd FROM ${ACCT_SCHEMA}.IntercompanyAccountMatchDimension iamd
+         JOIN ${ACCT_SCHEMA}.IntercompanyAccountMatch iam ON iam.ID = iamd.IntercompanyAccountMatchID
+        WHERE iam.SourceCompanyID IN (${ids}) OR iam.TargetCompanyID IN (${ids});`,
+    );
     await TxQuery(ctx,
       `DELETE FROM ${ACCT_SCHEMA}.IntercompanyAccountMatch
          WHERE SourceCompanyID IN (${ids}) OR TargetCompanyID IN (${ids});`,
+    );
+    // The dimension rows themselves are reference data and are left in place; only this run's
+    // values go, the same way the tax geography is swept by run prefix.
+    await TxQuery(ctx,
+      `DELETE FROM ${ACCT_SCHEMA}.DimensionValue
+        WHERE DimensionID IN (SELECT ID FROM ${ACCT_SCHEMA}.Dimension WHERE Code = '${FUND_DIMENSION_CODE}')
+          AND Code LIKE '${f.Run}-%';`,
     );
   } catch {
     // Best-effort: the shared fixture teardown removes the companies and their accounts anyway.
@@ -573,6 +673,90 @@ export const IntercompanyChecks: NamedCheck[] = [
         // Co B is owed 200 from order 1 plus 200 (half of 400) from order 2.
         AssertEqual(netFor(lines, f.CoA.ID, DUE_TO_CODE), -400, "Co A owes Co B across both orders");
         AssertEqual(netFor(lines, f.CoB.ID, AR_CODE), -400, "and Co B's receivables clear by the same");
+      }),
+  },
+  {
+    Id: "intercompany.IC13",
+    Name: "IC13: both intercompany legs name the OTHER company through the Counterparty dimension",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const order = await confirmMultiCompanyOrder(ctx, [
+          ["WidgetA", 100],
+          ["WidgetB", 200],
+        ]);
+        const { Payment } = await payToCoA(ctx, order.Order.ID as string, 300);
+        const tagged = await taggedLines(ctx, Payment.ID as string);
+
+        // The per-entity accounts still separate these two legs today. Under a chart of accounts
+        // with one shared receivable and one shared payable they would not, and accounting merges
+        // same-side lines on (account, dimension set) — so this tag is what keeps a two-company
+        // balance from collapsing into one number nobody can split, match or eliminate.
+        AssertEqual(
+          valuesOn(tagged, f.CoA.ID, DUE_TO_CODE, COUNTERPARTY_DIMENSION_CODE).join(","),
+          `CO-${f.CoB.ID}`,
+          `Co A's Due To names Co B: ${JSON.stringify(tagged)}`,
+        );
+        // The orientation that matters, and the one a single shared value would get wrong: Co B's
+        // books name Co A, not themselves.
+        AssertEqual(
+          valuesOn(tagged, f.CoB.ID, DUE_FROM_CODE, COUNTERPARTY_DIMENSION_CODE).join(","),
+          `CO-${f.CoA.ID}`,
+          `Co B's Due From names Co A: ${JSON.stringify(tagged)}`,
+        );
+      }),
+  },
+  {
+    Id: "intercompany.IC14",
+    Name: "IC14: an order line's own dimension tags reach the cash and AR lines that settle it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const fundID = await EnsureDimension(ctx, FUND_DIMENSION_CODE, "Fund (integration test)");
+        const fundOne = await EnsureDimensionValue(ctx, fundID, `${f.Run}-FUND-1`, "Fund One");
+        const fundTwo = await EnsureDimensionValue(ctx, fundID, `${f.Run}-FUND-2`, "Fund Two");
+
+        const order = await confirmMultiCompanyOrder(ctx, [
+          ["WidgetA", 100],
+          ["WidgetB", 200],
+        ]);
+        const orderLines = await TxQuery<{ ID: string; CompanyID: string }>(
+          ctx,
+          `SELECT ID, CompanyID FROM ${ORDERS_SCHEMA}.OrderLine
+            WHERE OrderHeaderID='${order.Order.ID}' ORDER BY LineNumber`,
+        );
+        AssertEqual(orderLines.length, 2, "the fixture order should have two lines");
+
+        // Different funds per line, so a tag that is merely present cannot pass for a tag that is
+        // right: a single shared value would satisfy "AR is tagged" while being wrong on one line.
+        await tagOrderLine(ctx, orderLines[0].ID, fundID, fundOne);
+        await tagOrderLine(ctx, orderLines[1].ID, fundID, fundTwo);
+
+        const { Payment } = await payToCoA(ctx, order.Order.ID as string, 300);
+        const tagged = await taggedLines(ctx, Payment.ID as string);
+
+        // Booking DEBITED each receivable under its line's fund. Clearing it untagged would leave
+        // both funds permanently out of balance on an account that nets to zero in total — the
+        // failure is invisible unless you filter, which is exactly what the tags are for.
+        AssertEqual(
+          valuesOn(tagged, f.CoA.ID, AR_CODE, FUND_DIMENSION_CODE).join(","),
+          `${f.Run}-FUND-1`,
+          `Co A's AR credit carries its own line's fund: ${JSON.stringify(tagged)}`,
+        );
+        AssertEqual(
+          valuesOn(tagged, f.CoB.ID, AR_CODE, FUND_DIMENSION_CODE).join(","),
+          `${f.Run}-FUND-2`,
+          `Co B's AR credit carries ITS line's fund, not Co A's: ${JSON.stringify(tagged)}`,
+        );
+        // Cash stands for every settled line, so it splits across both funds rather than picking
+        // one — a single undimensioned cash debit would unbalance every fund-filtered trial balance.
+        AssertEqual(
+          valuesOn(tagged, f.CoA.ID, CASH_CODE, FUND_DIMENSION_CODE).join(","),
+          `${f.Run}-FUND-1,${f.Run}-FUND-2`,
+          `Co A's cash splits across both funds: ${JSON.stringify(tagged)}`,
+        );
       }),
   },
 ];

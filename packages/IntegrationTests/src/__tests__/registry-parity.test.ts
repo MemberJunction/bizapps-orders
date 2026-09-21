@@ -62,6 +62,7 @@ import '../checks/entitlement-read.checks.js';
 import '../checks/payment-providers.checks.js';
 import '../checks/ach-settlement.checks.js';
 import '../checks/embedded-payment-detail.checks.js';
+import '../checks/payment-schedule.checks.js';
 import '../checks/party-roster.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -81,10 +82,10 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'revenue-recognition': 7,
     subscriptions: 15,
     'subscription-cancellation': 10,
-    'subscription-renewal': 11,
+    'subscription-renewal': 14,
     'payments-rollups': 9,
     'payment-ledger': 12,
-    intercompany: 12,
+    intercompany: 14,
     events: 10,
     'line-subscriber': 12,
     'account-credit': 11,
@@ -110,6 +111,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'payment-providers': 12,
     'ach-settlement': 17,
     'embedded-payment-detail': 14,
+    'payment-schedule': 13,
     'party-roster': 2,
 };
 

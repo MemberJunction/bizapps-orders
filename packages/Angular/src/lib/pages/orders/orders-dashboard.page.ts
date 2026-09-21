@@ -1,6 +1,7 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.component';
+import { BuildDayBars } from '../../panels/day-bars';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 
 import { DaysSince, FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
@@ -9,7 +10,7 @@ import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-e
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { GetOrders } from '../../data/orders-queries';
-import { LocalDay, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OverdueFilter, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
@@ -553,7 +554,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return {
             EntityID: this.OrderEntityInfo.ID,
             Entity: this.OrderEntityInfo.Name,
-            WhereClause: `Balance > 0 AND DueDate IS NOT NULL AND DueDate < '${today}' AND Status NOT IN ('Draft','Quoted','Voided')`,
+            WhereClause: OverdueFilter(today),
             ID: 'preset-aging-overdue',
             Name: 'Overdue Collections'
         } as unknown as MJUserViewEntityExtended;
@@ -594,7 +595,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         let presetName = 'All Orders';
         switch (preset) {
             case 'overdue':
-                whereClause = `Balance > 0 AND DueDate IS NOT NULL AND DueDate < '${today}' AND Status NOT IN ('Draft','Quoted','Voided')`;
+                whereClause = OverdueFilter(today);
                 presetName = 'Overdue Orders';
                 break;
             case 'unpaid':
@@ -644,19 +645,9 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get OrdersPerDay(): MJODayBar[] {
-        const days: MJODayBar[] = [];
-        const today = new Date();
-        for (let back = 6; back >= 0; back--) {
-            const day = new Date(today);
-            day.setDate(day.getDate() - back);
-            const iso = LocalDay(day);
-            days.push({
-                Label: day.toLocaleDateString('en-US', { weekday: 'short' }),
-                Value: this.orders.filter((o) => ToISODate(o.OrderDate) === iso).length,
-                Current: back === 0,
-            });
-        }
-        return days;
+        // BUSINESS calendar days throughout — see BuildDayBars — so the bar's label always names
+        // the same day as the orders counted into it, whatever zone the viewer sits in.
+        return BuildDayBars((iso) => this.orders.filter((o) => ToISODate(o.OrderDate) === iso).length);
     }
 
     public get LatestOrders(): mjBizAppsOrdersOrderHeaderEntity[] {

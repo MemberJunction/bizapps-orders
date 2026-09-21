@@ -11,6 +11,7 @@ export interface OverdueWorklistRow {
     OrderHeaderID: string;
     OrderNumber: string;
     OrderDate: string;
+    /** The day being aged: the next unpaid instalment's due date, or the header's when there is no schedule. */
     DueDate: string;
     DaysOverdue: number;
     CompanyID: string;
