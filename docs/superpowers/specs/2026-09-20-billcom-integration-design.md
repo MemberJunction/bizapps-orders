@@ -570,7 +570,7 @@ the spikes S1–S5 (they need sandbox credentials; the harness is ready).
 
 ### 13.3 PR #208 and PR #220, as of 2026-09-20 evening
 
-- **#220 was rebased onto `next`** the same day: migrations renumbered `V202609201200` / `V202609201300`,
+- **#220 was rebased onto `next`** the same day: migrations renumbered `V202609211200` / `V202609211300`,
   CodeGen `Sequence` literals replaced with `MAX+1`, and Andrew's review (changes requested) asked for
   (1) plain DDL above the CodeGen banner — done in `44b554e7`; (2) **merge #208 first and rebase onto
   Robert's `OverdueViewSQL()` emitter** — pending; (3) a fresh-database replay — pending. Andrew is out
@@ -668,4 +668,19 @@ the fixes introduced; all four are fixed:
 - unchanged non-final rows (Held / Unmatched / Refused) counted against the poll's `MaxCount`, so a
   pre-cutover backlog wider than the cap pinned the watermark — they are re-decided every pass but no
   longer count, and a person's `Ignored` reason is no longer overwritten.
+
+### 13.6 2026-09-21 — #208 merged; #220 rebased onto it
+
+- **PR #208 merged to `next`** (`660cc823`) after its view migration was renumbered `V202609211100` past the
+  append-only gate's new floor (`V202609201435`, #219's event attributes). CI green.
+- **Craig's rebase of #220 is prepared** on the local branch `aidp-24-rebase-208` (worktree `wt-220`,
+  commit `94c2ef48`): `next` merged into `aidp-24`, `overdue.ts` and its test reconciled, migrations renumbered
+  `V202609211200` / `V202609211300`, the view block byte-identical to `OverdueViewSQL()`, the generated GraphQL
+  schema a union of both CodeGen outputs. Builds; 1,729 unit tests pass (the two checkout-element failures
+  are the local Angular-build ones). Not pushed — Robert decides whether it goes to Craig as a PR against
+  `aidp-24` or as a pointer.
+- **This branch** now carries `next` (with #208 and the predictive/event-attribute PRs) plus that rebase;
+  the Bill.com migrations still sort after #220's (`V2026092210xx` > `V202609211300`).
+- **Deploy prerequisites carried forward:** bizapps-common ≥ 5.43 on the host (`fnBusinessToday`) and the
+  `BizApps.BusinessTimeZone` configuration row set to Central — `aidp-next` pins common 5.42.0 today.
 

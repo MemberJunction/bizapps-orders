@@ -10,10 +10,10 @@
 -- and the filtered unique index UQ_ExternalInvoice_LiveUnit is what makes a second send of the same
 -- unit fail here instead of at Bill.com (design §5.1 step 7, §7).
 --
--- The schedule row's ExternalSystem / ExternalInvoiceRef / SentAt (V202609201200, PR #220) are ALSO
+-- The schedule row's ExternalSystem / ExternalInvoiceRef / SentAt (V202609211200, PR #220) are ALSO
 -- written, as the #239/#242 contract promises; this table is the authoritative home because a
 -- schedule-less order has no row there, and because a cancelled invoice must survive as history
--- (design D-B2). This file sorts after V202609201200, so the FK to OrderHeaderPaymentSchedule is plain.
+-- (design D-B2). This file sorts after V202609211200, so the FK to OrderHeaderPaymentSchedule is plain.
 --
 -- Plain DDL, GO-separated, one sp_addextendedproperty per description — the shape of #219/#220 as
 -- Amith asked; migrations run once in order, and a cursor would break the PostgreSQL conversion.
