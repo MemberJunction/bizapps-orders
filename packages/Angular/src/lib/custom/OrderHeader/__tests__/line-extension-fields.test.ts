@@ -110,8 +110,8 @@ describe('ExtensionToggleLabel', () => {
 });
 
 describe('ExtensionCollapsedHint', () => {
-    it('names the event organizer fields on event lines', () => {
-        expect(ExtensionCollapsedHint('MJ_BizApps_Orders: Event Order Lines')).toBe('Person · dietary · notes');
+    it('uses the domain hint for event lines and generic for unknown', () => {
+        expect(ExtensionCollapsedHint('MJ_BizApps_Orders: Event Order Lines')).toBe('Attendee · status · tier');
         expect(ExtensionCollapsedHint('Something Else')).toBe('More');
     });
 });

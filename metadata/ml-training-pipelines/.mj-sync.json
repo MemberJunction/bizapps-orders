@@ -1,0 +1,13 @@
+{
+  "entity": "MJ: ML Training Pipelines",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "filter": "TargetEntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'",
+    "createNewFileIfNotFound": true,
+    "newFileName": ".ml-training-pipelines.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true
+  }
+}

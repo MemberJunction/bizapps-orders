@@ -106,7 +106,7 @@ export function ExtensionToggleLabel(entityName: string): string {
 /** One-line hint shown on a collapsed extension toggle. */
 export function ExtensionCollapsedHint(entityName: string): string {
     const label = ExtensionEntityLabel(entityName).toLowerCase();
-    if (label.includes('event')) return 'Person · dietary · notes';
+    if (label.includes('event')) return 'Attendee · status · tier';
     return 'More';
 }
 

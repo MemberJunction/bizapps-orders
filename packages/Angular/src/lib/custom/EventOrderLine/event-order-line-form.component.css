@@ -1,0 +1,119 @@
+:host {
+    display: block;
+    width: 100%;
+}
+
+.mjo-eol-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 4px 0;
+}
+
+.mjo-eol-primary-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+}
+
+@media (max-width: 768px) {
+    .mjo-eol-primary-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.mjo-eol-disclosure-bar {
+    display: flex;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.mjo-eol-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--mj-color-text-secondary, #64748b);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mjo-eol-toggle-btn:hover {
+    background: var(--mj-color-surface-hover, #f1f5f9);
+    color: var(--mj-color-text-primary, #0f172a);
+}
+
+.mjo-eol-has-data-chip {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    background-color: var(--mj-color-primary-subtle, #eff6ff);
+    color: var(--mj-color-primary, #2563eb);
+    border: 1px solid var(--mj-color-primary-border, #bfdbfe);
+}
+
+.mjo-eol-details-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 14px;
+    background: var(--mj-color-surface-subtle, #f8fafc);
+    border: 1px solid var(--mj-color-border-subtle, #e2e8f0);
+    border-radius: 8px;
+    animation: mjoFadeDown 0.2s ease-out;
+}
+
+@keyframes mjoFadeDown {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.mjo-eol-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mjo-eol-group__header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--mj-color-text-muted, #475569);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.mjo-eol-group__header i {
+    font-size: 11px;
+    color: var(--mj-color-primary, #3b82f6);
+}
+
+.mjo-eol-group__grid {
+    display: grid;
+    gap: 12px;
+    align-items: start;
+}
+
+.mjo-eol-group__grid--4 {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.mjo-eol-group__grid--3 {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
