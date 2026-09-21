@@ -2843,6 +2843,803 @@ export class mjBizAppsOrdersEventProductResolver extends ResolverBase {
 }
 
 //****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: External Customers
+//****************************************************************************
+@ObjectType({ description: `A bill-to party\'s customer record on an external AR rail, per provider row (a Bill.com organisation is per company). Exactly one of BillToOrganizationID / BillToPersonID.` })
+export class mjBizAppsOrdersExternalCustomer_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({description: `The provider row (rail + company) this customer record belongs to.`}) 
+    @MaxLength(36)
+    PaymentProviderID: string;
+        
+    @Field({nullable: true, description: `The organisation this rail customer represents, when the bill-to is an organisation.`}) 
+    @MaxLength(36)
+    BillToOrganizationID?: string;
+        
+    @Field({nullable: true, description: `The person this rail customer represents, when the bill-to is a person.`}) 
+    @MaxLength(36)
+    BillToPersonID?: string;
+        
+    @Field({description: `The rail's customer id (Bill.com 0cu…). Our party id is also sent as the rail's account number so the link is recoverable from that side.`}) 
+    @MaxLength(100)
+    ExternalCustomerRef: string;
+        
+    @Field({nullable: true, description: `When the rail customer was last created or refreshed from here.`}) 
+    LastSyncedAt?: Date;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field() 
+    @MaxLength(200)
+    PaymentProvider: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(255)
+    BillToOrganization?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(201)
+    BillToPerson?: string;
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: External Customers
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersExternalCustomerInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    PaymentProviderID?: string;
+
+    @Field({ nullable: true })
+    BillToOrganizationID: string | null;
+
+    @Field({ nullable: true })
+    BillToPersonID: string | null;
+
+    @Field({ nullable: true })
+    ExternalCustomerRef?: string;
+
+    @Field({ nullable: true })
+    LastSyncedAt: Date | null;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: External Customers
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersExternalCustomerInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    PaymentProviderID?: string;
+
+    @Field({ nullable: true })
+    BillToOrganizationID?: string | null;
+
+    @Field({ nullable: true })
+    BillToPersonID?: string | null;
+
+    @Field({ nullable: true })
+    ExternalCustomerRef?: string;
+
+    @Field({ nullable: true })
+    LastSyncedAt?: Date | null;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: External Customers
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersExternalCustomerViewResult {
+    @Field(() => [mjBizAppsOrdersExternalCustomer_])
+    Results: mjBizAppsOrdersExternalCustomer_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersExternalCustomer_)
+export class mjBizAppsOrdersExternalCustomerResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersExternalCustomerViewResult)
+    async RunmjBizAppsOrdersExternalCustomerViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersExternalCustomerViewResult)
+    async RunmjBizAppsOrdersExternalCustomerViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersExternalCustomerViewResult)
+    async RunmjBizAppsOrdersExternalCustomerDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: External Customers';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersExternalCustomer_, { nullable: true })
+    async mjBizAppsOrdersExternalCustomer(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersExternalCustomer_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: External Customers', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwExternalCustomers')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: External Customers', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: External Customers', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersExternalCustomer_)
+    async CreatemjBizAppsOrdersExternalCustomer(
+        @Arg('input', () => CreatemjBizAppsOrdersExternalCustomerInput) input: CreatemjBizAppsOrdersExternalCustomerInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: External Customers', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersExternalCustomer_)
+    async UpdatemjBizAppsOrdersExternalCustomer(
+        @Arg('input', () => UpdatemjBizAppsOrdersExternalCustomerInput) input: UpdatemjBizAppsOrdersExternalCustomerInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: External Customers', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersExternalCustomer_)
+    async DeletemjBizAppsOrdersExternalCustomer(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: External Customers', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: External Invoices
+//****************************************************************************
+@ObjectType({ description: `One attempt to place a billing unit — (order, selling company, instalment or none) — on an external AR rail such as Bill.com. Written as Sending before the rail is called, then Sent with the rail\'s invoice id, or Failed with the reason, or Canceled. The authoritative invoice-to-order mapping the payment poller matches on; never matched by ExternalDocumentNumber.` })
+export class mjBizAppsOrdersExternalInvoice_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({description: `The provider row that names the rail and the company whose Bill.com organisation this invoice lives in.`}) 
+    @MaxLength(36)
+    PaymentProviderID: string;
+        
+    @Field({description: `The order this unit bills.`}) 
+    @MaxLength(36)
+    OrderHeaderID: string;
+        
+    @Field({description: `The selling company of the DOCUMENT (one per company on a split order), not necessarily the order header's company.`}) 
+    @MaxLength(36)
+    CompanyID: string;
+        
+    @Field({nullable: true, description: `The instalment this unit is, when the order is billed on a schedule. NULL for an order billed as a whole.`}) 
+    @MaxLength(36)
+    OrderHeaderPaymentScheduleID?: string;
+        
+    @Field({description: `Our frozen document number, sent as the rail's invoice number: ORD-1234, ORD-1234-2, ORD-1234-B2.`}) 
+    @MaxLength(40)
+    DocumentNumber: string;
+        
+    @Field(() => Float, {description: `What the unit bills, which the rail's lines must total to the cent.`}) 
+    Amount: number;
+        
+    @Field({nullable: true, description: `Due date sent to the rail; NULL means on receipt.`}) 
+    DueDate?: Date;
+        
+    @Field({description: `Sending (claim written, rail not yet confirmed), Sent (rail holds it), Canceled (archived on the rail), Failed (rail refused or the total did not tie).`}) 
+    @MaxLength(20)
+    Status: string;
+        
+    @Field({nullable: true, description: `The rail's customer id the invoice was issued to (Bill.com 0cu…).`}) 
+    @MaxLength(100)
+    ExternalCustomerRef?: string;
+        
+    @Field({nullable: true, description: `The rail's invoice id (Bill.com 00e…). NULL while Sending or Failed.`}) 
+    @MaxLength(100)
+    ExternalInvoiceRef?: string;
+        
+    @Field(() => Float, {nullable: true, description: `The rail's total on read-back after create; must equal Amount or the send is failed and the rail invoice archived.`}) 
+    ExternalTotal?: number;
+        
+    @Field(() => Float, {nullable: true, description: `The rail's last-seen amount still due, net of applied and scheduled payments.`}) 
+    ExternalDueAmount?: number;
+        
+    @Field({nullable: true, description: `The rail's last-seen invoice status, verbatim.`}) 
+    @MaxLength(40)
+    ExternalStatus?: string;
+        
+    @Field({nullable: true, description: `When the rail confirmed the invoice. The audit fact: unsent is SentAt IS NULL.`}) 
+    SentAt?: Date;
+        
+    @Field({nullable: true, description: `When the rail invoice was archived from here.`}) 
+    CanceledAt?: Date;
+        
+    @Field({nullable: true, description: `Why it was cancelled, as typed by the person who did it.`}) 
+    @MaxLength(500)
+    CancelReason?: string;
+        
+    @Field({nullable: true, description: `When ExternalTotal/ExternalDueAmount/ExternalStatus were last refreshed from the rail.`}) 
+    LastSyncedAt?: Date;
+        
+    @Field({nullable: true, description: `The rail's or our last refusal, for a Failed or stuck Sending row.`}) 
+    LastError?: string;
+        
+    @Field({nullable: true, description: `Who asked for the send (a person, or the scheduler's context user).`}) 
+    @MaxLength(36)
+    IssuedByUserID?: string;
+        
+    @Field({description: `Persisted computed: OrderHeaderPaymentScheduleID or the zero GUID, so the live-unit unique index can include a nullable key.`}) 
+    @MaxLength(36)
+    UnitScheduleKey: string;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field() 
+    @MaxLength(200)
+    PaymentProvider: string;
+        
+    @Field() 
+    @MaxLength(40)
+    OrderHeader: string;
+        
+    @Field() 
+    @MaxLength(50)
+    Company: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    IssuedByUser?: string;
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: External Invoices
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersExternalInvoiceInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    PaymentProviderID?: string;
+
+    @Field({ nullable: true })
+    OrderHeaderID?: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string;
+
+    @Field({ nullable: true })
+    OrderHeaderPaymentScheduleID: string | null;
+
+    @Field({ nullable: true })
+    DocumentNumber?: string;
+
+    @Field(() => Float, { nullable: true })
+    Amount?: number;
+
+    @Field({ nullable: true })
+    DueDate: Date | null;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field({ nullable: true })
+    ExternalCustomerRef: string | null;
+
+    @Field({ nullable: true })
+    ExternalInvoiceRef: string | null;
+
+    @Field(() => Float, { nullable: true })
+    ExternalTotal: number | null;
+
+    @Field(() => Float, { nullable: true })
+    ExternalDueAmount: number | null;
+
+    @Field({ nullable: true })
+    ExternalStatus: string | null;
+
+    @Field({ nullable: true })
+    SentAt: Date | null;
+
+    @Field({ nullable: true })
+    CanceledAt: Date | null;
+
+    @Field({ nullable: true })
+    CancelReason: string | null;
+
+    @Field({ nullable: true })
+    LastSyncedAt: Date | null;
+
+    @Field({ nullable: true })
+    LastError: string | null;
+
+    @Field({ nullable: true })
+    IssuedByUserID: string | null;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: External Invoices
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersExternalInvoiceInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    PaymentProviderID?: string;
+
+    @Field({ nullable: true })
+    OrderHeaderID?: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string;
+
+    @Field({ nullable: true })
+    OrderHeaderPaymentScheduleID?: string | null;
+
+    @Field({ nullable: true })
+    DocumentNumber?: string;
+
+    @Field(() => Float, { nullable: true })
+    Amount?: number;
+
+    @Field({ nullable: true })
+    DueDate?: Date | null;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field({ nullable: true })
+    ExternalCustomerRef?: string | null;
+
+    @Field({ nullable: true })
+    ExternalInvoiceRef?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    ExternalTotal?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    ExternalDueAmount?: number | null;
+
+    @Field({ nullable: true })
+    ExternalStatus?: string | null;
+
+    @Field({ nullable: true })
+    SentAt?: Date | null;
+
+    @Field({ nullable: true })
+    CanceledAt?: Date | null;
+
+    @Field({ nullable: true })
+    CancelReason?: string | null;
+
+    @Field({ nullable: true })
+    LastSyncedAt?: Date | null;
+
+    @Field({ nullable: true })
+    LastError?: string | null;
+
+    @Field({ nullable: true })
+    IssuedByUserID?: string | null;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: External Invoices
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersExternalInvoiceViewResult {
+    @Field(() => [mjBizAppsOrdersExternalInvoice_])
+    Results: mjBizAppsOrdersExternalInvoice_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersExternalInvoice_)
+export class mjBizAppsOrdersExternalInvoiceResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersExternalInvoiceViewResult)
+    async RunmjBizAppsOrdersExternalInvoiceViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersExternalInvoiceViewResult)
+    async RunmjBizAppsOrdersExternalInvoiceViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersExternalInvoiceViewResult)
+    async RunmjBizAppsOrdersExternalInvoiceDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: External Invoices';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersExternalInvoice_, { nullable: true })
+    async mjBizAppsOrdersExternalInvoice(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersExternalInvoice_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: External Invoices', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwExternalInvoices')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: External Invoices', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: External Invoices', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersExternalInvoice_)
+    async CreatemjBizAppsOrdersExternalInvoice(
+        @Arg('input', () => CreatemjBizAppsOrdersExternalInvoiceInput) input: CreatemjBizAppsOrdersExternalInvoiceInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: External Invoices', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersExternalInvoice_)
+    async UpdatemjBizAppsOrdersExternalInvoice(
+        @Arg('input', () => UpdatemjBizAppsOrdersExternalInvoiceInput) input: UpdatemjBizAppsOrdersExternalInvoiceInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: External Invoices', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersExternalInvoice_)
+    async DeletemjBizAppsOrdersExternalInvoice(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: External Invoices', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: External Payments
+//****************************************************************************
+@ObjectType({ description: `Every receivable payment the poller has seen on an external AR rail (Bill.com), and what it did with it. Captured rows name the PaymentHeader they created; Held, Unmatched and ReversalNeeded rows are the exceptions worklist. The idempotency guarantee itself is PaymentHeader.IdempotencyKey; this is the lookup in front of it and the audit trail.` })
+export class mjBizAppsOrdersExternalPayment_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({description: `The provider row (rail + company) the payment was read from.`}) 
+    @MaxLength(36)
+    PaymentProviderID: string;
+        
+    @Field({description: `The rail's payment id (Bill.com 0rp…). Unique per provider.`}) 
+    @MaxLength(100)
+    ExternalPaymentRef: string;
+        
+    @Field({nullable: true, description: `The rail's customer id the payment came from.`}) 
+    @MaxLength(100)
+    ExternalCustomerRef?: string;
+        
+    @Field(() => Float, {description: `The payment's gross amount as the rail reports it.`}) 
+    Amount: number;
+        
+    @Field(() => Float, {description: `The part the rail has not applied to any invoice (over-payment or unlinked). Stays on the rail as the customer's credit.`}) 
+    UnappliedAmount: number;
+        
+    @Field({nullable: true, description: `When the rail says funds moved.`}) 
+    PaymentDate?: Date;
+        
+    @Field({nullable: true, description: `The rail's status string, verbatim, as last seen.`}) 
+    @MaxLength(40)
+    ExternalStatus?: string;
+        
+    @Field({nullable: true, description: `The rail's updatedTime as last seen — the watermark candidate.`}) 
+    ExternalUpdatedAt?: Date;
+        
+    @Field({description: `Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), ReversalNeeded (captured, and the rail now reports it reversed).`}) 
+    @MaxLength(20)
+    Disposition: string;
+        
+    @Field({nullable: true, description: `Why, in words a person can act on.`}) 
+    @MaxLength(500)
+    DispositionReason?: string;
+        
+    @Field({nullable: true, description: `The Orders payment created for a Captured row.`}) 
+    @MaxLength(36)
+    PaymentHeaderID?: string;
+        
+    @Field({nullable: true, description: `The rail's record as received, JSON, for the audit trail.`}) 
+    Payload?: string;
+        
+    @Field({description: `First poll that saw this payment.`}) 
+    FirstSeenAt: Date;
+        
+    @Field({description: `Most recent poll that saw this payment.`}) 
+    LastSeenAt: Date;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field() 
+    @MaxLength(200)
+    PaymentProvider: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    PaymentHeader?: string;
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: External Payments
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersExternalPaymentInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    PaymentProviderID?: string;
+
+    @Field({ nullable: true })
+    ExternalPaymentRef?: string;
+
+    @Field({ nullable: true })
+    ExternalCustomerRef: string | null;
+
+    @Field(() => Float, { nullable: true })
+    Amount?: number;
+
+    @Field(() => Float, { nullable: true })
+    UnappliedAmount?: number;
+
+    @Field({ nullable: true })
+    PaymentDate: Date | null;
+
+    @Field({ nullable: true })
+    ExternalStatus: string | null;
+
+    @Field({ nullable: true })
+    ExternalUpdatedAt: Date | null;
+
+    @Field({ nullable: true })
+    Disposition?: string;
+
+    @Field({ nullable: true })
+    DispositionReason: string | null;
+
+    @Field({ nullable: true })
+    PaymentHeaderID: string | null;
+
+    @Field({ nullable: true })
+    Payload: string | null;
+
+    @Field({ nullable: true })
+    FirstSeenAt?: Date;
+
+    @Field({ nullable: true })
+    LastSeenAt?: Date;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: External Payments
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersExternalPaymentInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    PaymentProviderID?: string;
+
+    @Field({ nullable: true })
+    ExternalPaymentRef?: string;
+
+    @Field({ nullable: true })
+    ExternalCustomerRef?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    Amount?: number;
+
+    @Field(() => Float, { nullable: true })
+    UnappliedAmount?: number;
+
+    @Field({ nullable: true })
+    PaymentDate?: Date | null;
+
+    @Field({ nullable: true })
+    ExternalStatus?: string | null;
+
+    @Field({ nullable: true })
+    ExternalUpdatedAt?: Date | null;
+
+    @Field({ nullable: true })
+    Disposition?: string;
+
+    @Field({ nullable: true })
+    DispositionReason?: string | null;
+
+    @Field({ nullable: true })
+    PaymentHeaderID?: string | null;
+
+    @Field({ nullable: true })
+    Payload?: string | null;
+
+    @Field({ nullable: true })
+    FirstSeenAt?: Date;
+
+    @Field({ nullable: true })
+    LastSeenAt?: Date;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: External Payments
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersExternalPaymentViewResult {
+    @Field(() => [mjBizAppsOrdersExternalPayment_])
+    Results: mjBizAppsOrdersExternalPayment_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersExternalPayment_)
+export class mjBizAppsOrdersExternalPaymentResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersExternalPaymentViewResult)
+    async RunmjBizAppsOrdersExternalPaymentViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersExternalPaymentViewResult)
+    async RunmjBizAppsOrdersExternalPaymentViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersExternalPaymentViewResult)
+    async RunmjBizAppsOrdersExternalPaymentDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: External Payments';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersExternalPayment_, { nullable: true })
+    async mjBizAppsOrdersExternalPayment(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersExternalPayment_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: External Payments', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwExternalPayments')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: External Payments', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: External Payments', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersExternalPayment_)
+    async CreatemjBizAppsOrdersExternalPayment(
+        @Arg('input', () => CreatemjBizAppsOrdersExternalPaymentInput) input: CreatemjBizAppsOrdersExternalPaymentInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: External Payments', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersExternalPayment_)
+    async UpdatemjBizAppsOrdersExternalPayment(
+        @Arg('input', () => UpdatemjBizAppsOrdersExternalPaymentInput) input: UpdatemjBizAppsOrdersExternalPaymentInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: External Payments', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersExternalPayment_)
+    async DeletemjBizAppsOrdersExternalPayment(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: External Payments', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
 // ENTITY CLASS for MJ_BizApps_Orders: Order Adjustment Allocations
 //****************************************************************************
 @ObjectType({ description: `Which lines an adjustment reduces, and by how much. Mandatory rather than optional: tax and GL are per line, and on a multi-company order this split decides WHOSE revenue is reduced. A line-level adjustment gets one row; an order-level one gets several, pro-rata by line value with the largest line absorbing the rounding remainder.` })
@@ -6947,6 +7744,198 @@ export class mjBizAppsOrdersPaymentLineResolver extends ResolverBase {
 }
 
 //****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Payment Provider Sync States
+//****************************************************************************
+@ObjectType({ description: `Poll watermark and last-run outcome per provider row per rail object (e.g. receivable-payments). Advanced only after a pass completes without a fault.` })
+export class mjBizAppsOrdersPaymentProviderSyncState_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({description: `The provider row (rail + company) this watermark belongs to.`}) 
+    @MaxLength(36)
+    PaymentProviderID: string;
+        
+    @Field({description: `The rail object polled, e.g. receivable-payments.`}) 
+    @MaxLength(100)
+    ObjectName: string;
+        
+    @Field({nullable: true, description: `The rail's max updatedTime seen on the last clean pass (ISO). The next pass reads from one day before it; dedupe is by payment id.`}) 
+    @MaxLength(100)
+    Watermark?: string;
+        
+    @Field({nullable: true, description: `When the last pass started.`}) 
+    LastPolledAt?: Date;
+        
+    @Field({nullable: true, description: `When the last pass completed without a fault.`}) 
+    LastSucceededAt?: Date;
+        
+    @Field({nullable: true, description: `The fault that stopped the last pass, if any.`}) 
+    LastError?: string;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field() 
+    @MaxLength(200)
+    PaymentProvider: string;
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Payment Provider Sync States
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersPaymentProviderSyncStateInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    PaymentProviderID?: string;
+
+    @Field({ nullable: true })
+    ObjectName?: string;
+
+    @Field({ nullable: true })
+    Watermark: string | null;
+
+    @Field({ nullable: true })
+    LastPolledAt: Date | null;
+
+    @Field({ nullable: true })
+    LastSucceededAt: Date | null;
+
+    @Field({ nullable: true })
+    LastError: string | null;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Payment Provider Sync States
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersPaymentProviderSyncStateInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    PaymentProviderID?: string;
+
+    @Field({ nullable: true })
+    ObjectName?: string;
+
+    @Field({ nullable: true })
+    Watermark?: string | null;
+
+    @Field({ nullable: true })
+    LastPolledAt?: Date | null;
+
+    @Field({ nullable: true })
+    LastSucceededAt?: Date | null;
+
+    @Field({ nullable: true })
+    LastError?: string | null;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Payment Provider Sync States
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersPaymentProviderSyncStateViewResult {
+    @Field(() => [mjBizAppsOrdersPaymentProviderSyncState_])
+    Results: mjBizAppsOrdersPaymentProviderSyncState_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersPaymentProviderSyncState_)
+export class mjBizAppsOrdersPaymentProviderSyncStateResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersPaymentProviderSyncStateViewResult)
+    async RunmjBizAppsOrdersPaymentProviderSyncStateViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersPaymentProviderSyncStateViewResult)
+    async RunmjBizAppsOrdersPaymentProviderSyncStateViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersPaymentProviderSyncStateViewResult)
+    async RunmjBizAppsOrdersPaymentProviderSyncStateDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Payment Provider Sync States';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersPaymentProviderSyncState_, { nullable: true })
+    async mjBizAppsOrdersPaymentProviderSyncState(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersPaymentProviderSyncState_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Payment Provider Sync States', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwPaymentProviderSyncStates')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Payment Provider Sync States', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Payment Provider Sync States', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersPaymentProviderSyncState_)
+    async CreatemjBizAppsOrdersPaymentProviderSyncState(
+        @Arg('input', () => CreatemjBizAppsOrdersPaymentProviderSyncStateInput) input: CreatemjBizAppsOrdersPaymentProviderSyncStateInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Payment Provider Sync States', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersPaymentProviderSyncState_)
+    async UpdatemjBizAppsOrdersPaymentProviderSyncState(
+        @Arg('input', () => UpdatemjBizAppsOrdersPaymentProviderSyncStateInput) input: UpdatemjBizAppsOrdersPaymentProviderSyncStateInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Payment Provider Sync States', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersPaymentProviderSyncState_)
+    async DeletemjBizAppsOrdersPaymentProviderSyncState(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Payment Provider Sync States', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
 // ENTITY CLASS for MJ_BizApps_Orders: Payment Provider Types
 //****************************************************************************
 @ObjectType()
@@ -7195,6 +8184,10 @@ export class mjBizAppsOrdersPaymentProvider_ {
     @Field(() => Boolean, {nullable: true, description: `Whether this provider account is active.`}) 
     IsActive?: boolean;
         
+    @Field({nullable: true, description: `The MJ Company Integration whose connector and credential this provider uses (Bill.com). NULL for providers that resolve credentials through CredentialsRef. A pointer, never a secret.`}) 
+    @MaxLength(36)
+    CompanyIntegrationID?: string;
+        
     @Field() 
     _mj__CreatedAt: Date;
         
@@ -7208,6 +8201,10 @@ export class mjBizAppsOrdersPaymentProvider_ {
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(255)
+    CompanyIntegration?: string;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
@@ -7240,6 +8237,9 @@ export class CreatemjBizAppsOrdersPaymentProviderInput {
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
 
+    @Field({ nullable: true })
+    CompanyIntegrationID?: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -7270,6 +8270,9 @@ export class UpdatemjBizAppsOrdersPaymentProviderInput {
 
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
+
+    @Field({ nullable: true })
+    CompanyIntegrationID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

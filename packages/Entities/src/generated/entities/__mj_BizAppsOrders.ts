@@ -1037,6 +1037,334 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: External Customers
+ */
+export const mjBizAppsOrdersExternalCustomerSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentProviderID: z.string().describe(`
+        * * Field Name: PaymentProviderID
+        * * Display Name: Payment Provider ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+        * * Description: The provider row (rail + company) this customer record belongs to.`),
+    BillToOrganizationID: z.string().nullable().describe(`
+        * * Field Name: BillToOrganizationID
+        * * Display Name: Bill To Organization ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Common: Organizations (vwOrganizations.ID)
+        * * Description: The organisation this rail customer represents, when the bill-to is an organisation.`),
+    BillToPersonID: z.string().nullable().describe(`
+        * * Field Name: BillToPersonID
+        * * Display Name: Bill To Person ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Common: People (vwPeople.ID)
+        * * Description: The person this rail customer represents, when the bill-to is a person.`),
+    ExternalCustomerRef: z.string().describe(`
+        * * Field Name: ExternalCustomerRef
+        * * Display Name: External Customer Ref
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The rail's customer id (Bill.com 0cu…). Our party id is also sent as the rail's account number so the link is recoverable from that side.`),
+    LastSyncedAt: z.date().nullable().describe(`
+        * * Field Name: LastSyncedAt
+        * * Display Name: Last Synced At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the rail customer was last created or refreshed from here.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    PaymentProvider: z.string().describe(`
+        * * Field Name: PaymentProvider
+        * * Display Name: Payment Provider
+        * * SQL Data Type: nvarchar(200)`),
+    BillToOrganization: z.string().nullable().describe(`
+        * * Field Name: BillToOrganization
+        * * Display Name: Bill To Organization
+        * * SQL Data Type: nvarchar(255)`),
+    BillToPerson: z.string().nullable().describe(`
+        * * Field Name: BillToPerson
+        * * Display Name: Bill To Person
+        * * SQL Data Type: nvarchar(201)`),
+});
+
+export type mjBizAppsOrdersExternalCustomerEntityType = z.infer<typeof mjBizAppsOrdersExternalCustomerSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: External Invoices
+ */
+export const mjBizAppsOrdersExternalInvoiceSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentProviderID: z.string().describe(`
+        * * Field Name: PaymentProviderID
+        * * Display Name: Payment Provider ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+        * * Description: The provider row that names the rail and the company whose Bill.com organisation this invoice lives in.`),
+    OrderHeaderID: z.string().describe(`
+        * * Field Name: OrderHeaderID
+        * * Display Name: Order Header ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+        * * Description: The order this unit bills.`),
+    CompanyID: z.string().describe(`
+        * * Field Name: CompanyID
+        * * Display Name: Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+        * * Description: The selling company of the DOCUMENT (one per company on a split order), not necessarily the order header's company.`),
+    OrderHeaderPaymentScheduleID: z.string().nullable().describe(`
+        * * Field Name: OrderHeaderPaymentScheduleID
+        * * Display Name: Order Header Payment Schedule ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Header Payment Schedules (vwOrderHeaderPaymentSchedules.ID)
+        * * Description: The instalment this unit is, when the order is billed on a schedule. NULL for an order billed as a whole.`),
+    DocumentNumber: z.string().describe(`
+        * * Field Name: DocumentNumber
+        * * Display Name: Document Number
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Our frozen document number, sent as the rail's invoice number: ORD-1234, ORD-1234-2, ORD-1234-B2.`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: What the unit bills, which the rail's lines must total to the cent.`),
+    DueDate: z.date().nullable().describe(`
+        * * Field Name: DueDate
+        * * Display Name: Due Date
+        * * SQL Data Type: date
+        * * Description: Due date sent to the rail; NULL means on receipt.`),
+    Status: z.union([z.literal('Canceled'), z.literal('Failed'), z.literal('Sending'), z.literal('Sent')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Sending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Canceled
+    *   * Failed
+    *   * Sending
+    *   * Sent
+        * * Description: Sending (claim written, rail not yet confirmed), Sent (rail holds it), Canceled (archived on the rail), Failed (rail refused or the total did not tie).`),
+    ExternalCustomerRef: z.string().nullable().describe(`
+        * * Field Name: ExternalCustomerRef
+        * * Display Name: External Customer Ref
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The rail's customer id the invoice was issued to (Bill.com 0cu…).`),
+    ExternalInvoiceRef: z.string().nullable().describe(`
+        * * Field Name: ExternalInvoiceRef
+        * * Display Name: External Invoice Ref
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The rail's invoice id (Bill.com 00e…). NULL while Sending or Failed.`),
+    ExternalTotal: z.number().nullable().describe(`
+        * * Field Name: ExternalTotal
+        * * Display Name: External Total
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The rail's total on read-back after create; must equal Amount or the send is failed and the rail invoice archived.`),
+    ExternalDueAmount: z.number().nullable().describe(`
+        * * Field Name: ExternalDueAmount
+        * * Display Name: External Due Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The rail's last-seen amount still due, net of applied and scheduled payments.`),
+    ExternalStatus: z.string().nullable().describe(`
+        * * Field Name: ExternalStatus
+        * * Display Name: External Status
+        * * SQL Data Type: nvarchar(40)
+        * * Description: The rail's last-seen invoice status, verbatim.`),
+    SentAt: z.date().nullable().describe(`
+        * * Field Name: SentAt
+        * * Display Name: Sent At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the rail confirmed the invoice. The audit fact: unsent is SentAt IS NULL.`),
+    CanceledAt: z.date().nullable().describe(`
+        * * Field Name: CanceledAt
+        * * Display Name: Canceled At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the rail invoice was archived from here.`),
+    CancelReason: z.string().nullable().describe(`
+        * * Field Name: CancelReason
+        * * Display Name: Cancel Reason
+        * * SQL Data Type: nvarchar(500)
+        * * Description: Why it was cancelled, as typed by the person who did it.`),
+    LastSyncedAt: z.date().nullable().describe(`
+        * * Field Name: LastSyncedAt
+        * * Display Name: Last Synced At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When ExternalTotal/ExternalDueAmount/ExternalStatus were last refreshed from the rail.`),
+    LastError: z.string().nullable().describe(`
+        * * Field Name: LastError
+        * * Display Name: Last Error
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The rail's or our last refusal, for a Failed or stuck Sending row.`),
+    IssuedByUserID: z.string().nullable().describe(`
+        * * Field Name: IssuedByUserID
+        * * Display Name: Issued By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: Who asked for the send (a person, or the scheduler's context user).`),
+    UnitScheduleKey: z.string().describe(`
+        * * Field Name: UnitScheduleKey
+        * * Display Name: Unit Schedule Key
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Persisted computed: OrderHeaderPaymentScheduleID or the zero GUID, so the live-unit unique index can include a nullable key.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    PaymentProvider: z.string().describe(`
+        * * Field Name: PaymentProvider
+        * * Display Name: Payment Provider
+        * * SQL Data Type: nvarchar(200)`),
+    OrderHeader: z.string().describe(`
+        * * Field Name: OrderHeader
+        * * Display Name: Order Header
+        * * SQL Data Type: nvarchar(40)`),
+    Company: z.string().describe(`
+        * * Field Name: Company
+        * * Display Name: Company
+        * * SQL Data Type: nvarchar(50)`),
+    IssuedByUser: z.string().nullable().describe(`
+        * * Field Name: IssuedByUser
+        * * Display Name: Issued By User
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersExternalInvoiceEntityType = z.infer<typeof mjBizAppsOrdersExternalInvoiceSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: External Payments
+ */
+export const mjBizAppsOrdersExternalPaymentSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentProviderID: z.string().describe(`
+        * * Field Name: PaymentProviderID
+        * * Display Name: Payment Provider ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+        * * Description: The provider row (rail + company) the payment was read from.`),
+    ExternalPaymentRef: z.string().describe(`
+        * * Field Name: ExternalPaymentRef
+        * * Display Name: External Payment Ref
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The rail's payment id (Bill.com 0rp…). Unique per provider.`),
+    ExternalCustomerRef: z.string().nullable().describe(`
+        * * Field Name: ExternalCustomerRef
+        * * Display Name: External Customer Ref
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The rail's customer id the payment came from.`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The payment's gross amount as the rail reports it.`),
+    UnappliedAmount: z.number().describe(`
+        * * Field Name: UnappliedAmount
+        * * Display Name: Unapplied Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Default Value: 0
+        * * Description: The part the rail has not applied to any invoice (over-payment or unlinked). Stays on the rail as the customer's credit.`),
+    PaymentDate: z.date().nullable().describe(`
+        * * Field Name: PaymentDate
+        * * Display Name: Payment Date
+        * * SQL Data Type: date
+        * * Description: When the rail says funds moved.`),
+    ExternalStatus: z.string().nullable().describe(`
+        * * Field Name: ExternalStatus
+        * * Display Name: External Status
+        * * SQL Data Type: nvarchar(40)
+        * * Description: The rail's status string, verbatim, as last seen.`),
+    ExternalUpdatedAt: z.date().nullable().describe(`
+        * * Field Name: ExternalUpdatedAt
+        * * Display Name: External Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Description: The rail's updatedTime as last seen — the watermark candidate.`),
+    Disposition: z.union([z.literal('Captured'), z.literal('Held'), z.literal('Ignored'), z.literal('Refused'), z.literal('ReversalNeeded'), z.literal('Unmatched')]).describe(`
+        * * Field Name: Disposition
+        * * Display Name: Disposition
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Captured
+    *   * Held
+    *   * Ignored
+    *   * Refused
+    *   * ReversalNeeded
+    *   * Unmatched
+        * * Description: Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), ReversalNeeded (captured, and the rail now reports it reversed).`),
+    DispositionReason: z.string().nullable().describe(`
+        * * Field Name: DispositionReason
+        * * Display Name: Disposition Reason
+        * * SQL Data Type: nvarchar(500)
+        * * Description: Why, in words a person can act on.`),
+    PaymentHeaderID: z.string().nullable().describe(`
+        * * Field Name: PaymentHeaderID
+        * * Display Name: Payment Header ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Headers (vwPaymentHeaders.ID)
+        * * Description: The Orders payment created for a Captured row.`),
+    Payload: z.string().nullable().describe(`
+        * * Field Name: Payload
+        * * Display Name: Payload
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The rail's record as received, JSON, for the audit trail.`),
+    FirstSeenAt: z.date().describe(`
+        * * Field Name: FirstSeenAt
+        * * Display Name: First Seen At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: First poll that saw this payment.`),
+    LastSeenAt: z.date().describe(`
+        * * Field Name: LastSeenAt
+        * * Display Name: Last Seen At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: Most recent poll that saw this payment.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    PaymentProvider: z.string().describe(`
+        * * Field Name: PaymentProvider
+        * * Display Name: Payment Provider
+        * * SQL Data Type: nvarchar(200)`),
+    PaymentHeader: z.string().nullable().describe(`
+        * * Field Name: PaymentHeader
+        * * Display Name: Payment Header
+        * * SQL Data Type: nvarchar(40)`),
+});
+
+export type mjBizAppsOrdersExternalPaymentEntityType = z.infer<typeof mjBizAppsOrdersExternalPaymentSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Adjustment Allocations
  */
 export const mjBizAppsOrdersOrderAdjustmentAllocationSchema = z.object({
@@ -2690,6 +3018,64 @@ export const mjBizAppsOrdersPaymentLineSchema = z.object({
 export type mjBizAppsOrdersPaymentLineEntityType = z.infer<typeof mjBizAppsOrdersPaymentLineSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Payment Provider Sync States
+ */
+export const mjBizAppsOrdersPaymentProviderSyncStateSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentProviderID: z.string().describe(`
+        * * Field Name: PaymentProviderID
+        * * Display Name: Payment Provider ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+        * * Description: The provider row (rail + company) this watermark belongs to.`),
+    ObjectName: z.string().describe(`
+        * * Field Name: ObjectName
+        * * Display Name: Object Name
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The rail object polled, e.g. receivable-payments.`),
+    Watermark: z.string().nullable().describe(`
+        * * Field Name: Watermark
+        * * Display Name: Watermark
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The rail's max updatedTime seen on the last clean pass (ISO). The next pass reads from one day before it; dedupe is by payment id.`),
+    LastPolledAt: z.date().nullable().describe(`
+        * * Field Name: LastPolledAt
+        * * Display Name: Last Polled At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the last pass started.`),
+    LastSucceededAt: z.date().nullable().describe(`
+        * * Field Name: LastSucceededAt
+        * * Display Name: Last Succeeded At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the last pass completed without a fault.`),
+    LastError: z.string().nullable().describe(`
+        * * Field Name: LastError
+        * * Display Name: Last Error
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The fault that stopped the last pass, if any.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    PaymentProvider: z.string().describe(`
+        * * Field Name: PaymentProvider
+        * * Display Name: Payment Provider
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersPaymentProviderSyncStateEntityType = z.infer<typeof mjBizAppsOrdersPaymentProviderSyncStateSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Payment Provider Types
  */
 export const mjBizAppsOrdersPaymentProviderTypeSchema = z.object({
@@ -2804,6 +3190,12 @@ export const mjBizAppsOrdersPaymentProviderSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    CompanyIntegrationID: z.string().nullable().describe(`
+        * * Field Name: CompanyIntegrationID
+        * * Display Name: Company Integration ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Company Integrations (vwCompanyIntegrations.ID)
+        * * Description: The MJ Company Integration whose connector and credential this provider uses (Bill.com). NULL for providers that resolve credentials through CredentialsRef. A pointer, never a secret.`),
     PaymentProviderType: z.string().describe(`
         * * Field Name: PaymentProviderType
         * * Display Name: Provider Type
@@ -2812,6 +3204,10 @@ export const mjBizAppsOrdersPaymentProviderSchema = z.object({
         * * Field Name: Company
         * * Display Name: Company
         * * SQL Data Type: nvarchar(50)`),
+    CompanyIntegration: z.string().nullable().describe(`
+        * * Field Name: CompanyIntegration
+        * * Display Name: Company Integration
+        * * SQL Data Type: nvarchar(255)`),
 });
 
 export type mjBizAppsOrdersPaymentProviderEntityType = z.infer<typeof mjBizAppsOrdersPaymentProviderSchema>;
@@ -8206,6 +8602,814 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
 
 
 /**
+ * MJ_BizApps_Orders: External Customers - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ExternalCustomer
+ * * Base View: vwExternalCustomers
+ * * @description A bill-to party's customer record on an external AR rail, per provider row (a Bill.com organisation is per company). Exactly one of BillToOrganizationID / BillToPersonID.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: External Customers')
+export class mjBizAppsOrdersExternalCustomerEntity extends BaseEntity<mjBizAppsOrdersExternalCustomerEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: External Customers record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: External Customers record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersExternalCustomerEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentProviderID
+    * * Display Name: Payment Provider ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    * * Description: The provider row (rail + company) this customer record belongs to.
+    */
+    get PaymentProviderID(): string {
+        return this.Get('PaymentProviderID');
+    }
+    set PaymentProviderID(value: string) {
+        this.Set('PaymentProviderID', value);
+    }
+
+    /**
+    * * Field Name: BillToOrganizationID
+    * * Display Name: Bill To Organization ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Common: Organizations (vwOrganizations.ID)
+    * * Description: The organisation this rail customer represents, when the bill-to is an organisation.
+    */
+    get BillToOrganizationID(): string | null {
+        return this.Get('BillToOrganizationID');
+    }
+    set BillToOrganizationID(value: string | null) {
+        this.Set('BillToOrganizationID', value);
+    }
+
+    /**
+    * * Field Name: BillToPersonID
+    * * Display Name: Bill To Person ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Common: People (vwPeople.ID)
+    * * Description: The person this rail customer represents, when the bill-to is a person.
+    */
+    get BillToPersonID(): string | null {
+        return this.Get('BillToPersonID');
+    }
+    set BillToPersonID(value: string | null) {
+        this.Set('BillToPersonID', value);
+    }
+
+    /**
+    * * Field Name: ExternalCustomerRef
+    * * Display Name: External Customer Ref
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The rail's customer id (Bill.com 0cu…). Our party id is also sent as the rail's account number so the link is recoverable from that side.
+    */
+    get ExternalCustomerRef(): string {
+        return this.Get('ExternalCustomerRef');
+    }
+    set ExternalCustomerRef(value: string) {
+        this.Set('ExternalCustomerRef', value);
+    }
+
+    /**
+    * * Field Name: LastSyncedAt
+    * * Display Name: Last Synced At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the rail customer was last created or refreshed from here.
+    */
+    get LastSyncedAt(): Date | null {
+        return this.Get('LastSyncedAt');
+    }
+    set LastSyncedAt(value: Date | null) {
+        this.Set('LastSyncedAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: PaymentProvider
+    * * Display Name: Payment Provider
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PaymentProvider(): string {
+        return this.Get('PaymentProvider');
+    }
+
+    /**
+    * * Field Name: BillToOrganization
+    * * Display Name: Bill To Organization
+    * * SQL Data Type: nvarchar(255)
+    */
+    get BillToOrganization(): string | null {
+        return this.Get('BillToOrganization');
+    }
+
+    /**
+    * * Field Name: BillToPerson
+    * * Display Name: Bill To Person
+    * * SQL Data Type: nvarchar(201)
+    */
+    get BillToPerson(): string | null {
+        return this.Get('BillToPerson');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: External Invoices - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ExternalInvoice
+ * * Base View: vwExternalInvoices
+ * * @description One attempt to place a billing unit — (order, selling company, instalment or none) — on an external AR rail such as Bill.com. Written as Sending before the rail is called, then Sent with the rail's invoice id, or Failed with the reason, or Canceled. The authoritative invoice-to-order mapping the payment poller matches on; never matched by ExternalDocumentNumber.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: External Invoices')
+export class mjBizAppsOrdersExternalInvoiceEntity extends BaseEntity<mjBizAppsOrdersExternalInvoiceEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: External Invoices record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: External Invoices record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersExternalInvoiceEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentProviderID
+    * * Display Name: Payment Provider ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    * * Description: The provider row that names the rail and the company whose Bill.com organisation this invoice lives in.
+    */
+    get PaymentProviderID(): string {
+        return this.Get('PaymentProviderID');
+    }
+    set PaymentProviderID(value: string) {
+        this.Set('PaymentProviderID', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderID
+    * * Display Name: Order Header ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+    * * Description: The order this unit bills.
+    */
+    get OrderHeaderID(): string {
+        return this.Get('OrderHeaderID');
+    }
+    set OrderHeaderID(value: string) {
+        this.Set('OrderHeaderID', value);
+    }
+
+    /**
+    * * Field Name: CompanyID
+    * * Display Name: Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    * * Description: The selling company of the DOCUMENT (one per company on a split order), not necessarily the order header's company.
+    */
+    get CompanyID(): string {
+        return this.Get('CompanyID');
+    }
+    set CompanyID(value: string) {
+        this.Set('CompanyID', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderPaymentScheduleID
+    * * Display Name: Order Header Payment Schedule ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Header Payment Schedules (vwOrderHeaderPaymentSchedules.ID)
+    * * Description: The instalment this unit is, when the order is billed on a schedule. NULL for an order billed as a whole.
+    */
+    get OrderHeaderPaymentScheduleID(): string | null {
+        return this.Get('OrderHeaderPaymentScheduleID');
+    }
+    set OrderHeaderPaymentScheduleID(value: string | null) {
+        this.Set('OrderHeaderPaymentScheduleID', value);
+    }
+
+    /**
+    * * Field Name: DocumentNumber
+    * * Display Name: Document Number
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Our frozen document number, sent as the rail's invoice number: ORD-1234, ORD-1234-2, ORD-1234-B2.
+    */
+    get DocumentNumber(): string {
+        return this.Get('DocumentNumber');
+    }
+    set DocumentNumber(value: string) {
+        this.Set('DocumentNumber', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: What the unit bills, which the rail's lines must total to the cent.
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: DueDate
+    * * Display Name: Due Date
+    * * SQL Data Type: date
+    * * Description: Due date sent to the rail; NULL means on receipt.
+    */
+    get DueDate(): Date | null {
+        return this.Get('DueDate');
+    }
+    set DueDate(value: Date | null) {
+        this.Set('DueDate', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Sending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Canceled
+    *   * Failed
+    *   * Sending
+    *   * Sent
+    * * Description: Sending (claim written, rail not yet confirmed), Sent (rail holds it), Canceled (archived on the rail), Failed (rail refused or the total did not tie).
+    */
+    get Status(): 'Canceled' | 'Failed' | 'Sending' | 'Sent' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Canceled' | 'Failed' | 'Sending' | 'Sent') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: ExternalCustomerRef
+    * * Display Name: External Customer Ref
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The rail's customer id the invoice was issued to (Bill.com 0cu…).
+    */
+    get ExternalCustomerRef(): string | null {
+        return this.Get('ExternalCustomerRef');
+    }
+    set ExternalCustomerRef(value: string | null) {
+        this.Set('ExternalCustomerRef', value);
+    }
+
+    /**
+    * * Field Name: ExternalInvoiceRef
+    * * Display Name: External Invoice Ref
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The rail's invoice id (Bill.com 00e…). NULL while Sending or Failed.
+    */
+    get ExternalInvoiceRef(): string | null {
+        return this.Get('ExternalInvoiceRef');
+    }
+    set ExternalInvoiceRef(value: string | null) {
+        this.Set('ExternalInvoiceRef', value);
+    }
+
+    /**
+    * * Field Name: ExternalTotal
+    * * Display Name: External Total
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The rail's total on read-back after create; must equal Amount or the send is failed and the rail invoice archived.
+    */
+    get ExternalTotal(): number | null {
+        return this.Get('ExternalTotal');
+    }
+    set ExternalTotal(value: number | null) {
+        this.Set('ExternalTotal', value);
+    }
+
+    /**
+    * * Field Name: ExternalDueAmount
+    * * Display Name: External Due Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The rail's last-seen amount still due, net of applied and scheduled payments.
+    */
+    get ExternalDueAmount(): number | null {
+        return this.Get('ExternalDueAmount');
+    }
+    set ExternalDueAmount(value: number | null) {
+        this.Set('ExternalDueAmount', value);
+    }
+
+    /**
+    * * Field Name: ExternalStatus
+    * * Display Name: External Status
+    * * SQL Data Type: nvarchar(40)
+    * * Description: The rail's last-seen invoice status, verbatim.
+    */
+    get ExternalStatus(): string | null {
+        return this.Get('ExternalStatus');
+    }
+    set ExternalStatus(value: string | null) {
+        this.Set('ExternalStatus', value);
+    }
+
+    /**
+    * * Field Name: SentAt
+    * * Display Name: Sent At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the rail confirmed the invoice. The audit fact: unsent is SentAt IS NULL.
+    */
+    get SentAt(): Date | null {
+        return this.Get('SentAt');
+    }
+    set SentAt(value: Date | null) {
+        this.Set('SentAt', value);
+    }
+
+    /**
+    * * Field Name: CanceledAt
+    * * Display Name: Canceled At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the rail invoice was archived from here.
+    */
+    get CanceledAt(): Date | null {
+        return this.Get('CanceledAt');
+    }
+    set CanceledAt(value: Date | null) {
+        this.Set('CanceledAt', value);
+    }
+
+    /**
+    * * Field Name: CancelReason
+    * * Display Name: Cancel Reason
+    * * SQL Data Type: nvarchar(500)
+    * * Description: Why it was cancelled, as typed by the person who did it.
+    */
+    get CancelReason(): string | null {
+        return this.Get('CancelReason');
+    }
+    set CancelReason(value: string | null) {
+        this.Set('CancelReason', value);
+    }
+
+    /**
+    * * Field Name: LastSyncedAt
+    * * Display Name: Last Synced At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When ExternalTotal/ExternalDueAmount/ExternalStatus were last refreshed from the rail.
+    */
+    get LastSyncedAt(): Date | null {
+        return this.Get('LastSyncedAt');
+    }
+    set LastSyncedAt(value: Date | null) {
+        this.Set('LastSyncedAt', value);
+    }
+
+    /**
+    * * Field Name: LastError
+    * * Display Name: Last Error
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The rail's or our last refusal, for a Failed or stuck Sending row.
+    */
+    get LastError(): string | null {
+        return this.Get('LastError');
+    }
+    set LastError(value: string | null) {
+        this.Set('LastError', value);
+    }
+
+    /**
+    * * Field Name: IssuedByUserID
+    * * Display Name: Issued By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: Who asked for the send (a person, or the scheduler's context user).
+    */
+    get IssuedByUserID(): string | null {
+        return this.Get('IssuedByUserID');
+    }
+    set IssuedByUserID(value: string | null) {
+        this.Set('IssuedByUserID', value);
+    }
+
+    /**
+    * * Field Name: UnitScheduleKey
+    * * Display Name: Unit Schedule Key
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Persisted computed: OrderHeaderPaymentScheduleID or the zero GUID, so the live-unit unique index can include a nullable key.
+    */
+    get UnitScheduleKey(): string {
+        return this.Get('UnitScheduleKey');
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: PaymentProvider
+    * * Display Name: Payment Provider
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PaymentProvider(): string {
+        return this.Get('PaymentProvider');
+    }
+
+    /**
+    * * Field Name: OrderHeader
+    * * Display Name: Order Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get OrderHeader(): string {
+        return this.Get('OrderHeader');
+    }
+
+    /**
+    * * Field Name: Company
+    * * Display Name: Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get Company(): string {
+        return this.Get('Company');
+    }
+
+    /**
+    * * Field Name: IssuedByUser
+    * * Display Name: Issued By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get IssuedByUser(): string | null {
+        return this.Get('IssuedByUser');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: External Payments - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ExternalPayment
+ * * Base View: vwExternalPayments
+ * * @description Every receivable payment the poller has seen on an external AR rail (Bill.com), and what it did with it. Captured rows name the PaymentHeader they created; Held, Unmatched and ReversalNeeded rows are the exceptions worklist. The idempotency guarantee itself is PaymentHeader.IdempotencyKey; this is the lookup in front of it and the audit trail.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: External Payments')
+export class mjBizAppsOrdersExternalPaymentEntity extends BaseEntity<mjBizAppsOrdersExternalPaymentEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: External Payments record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: External Payments record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersExternalPaymentEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentProviderID
+    * * Display Name: Payment Provider ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    * * Description: The provider row (rail + company) the payment was read from.
+    */
+    get PaymentProviderID(): string {
+        return this.Get('PaymentProviderID');
+    }
+    set PaymentProviderID(value: string) {
+        this.Set('PaymentProviderID', value);
+    }
+
+    /**
+    * * Field Name: ExternalPaymentRef
+    * * Display Name: External Payment Ref
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The rail's payment id (Bill.com 0rp…). Unique per provider.
+    */
+    get ExternalPaymentRef(): string {
+        return this.Get('ExternalPaymentRef');
+    }
+    set ExternalPaymentRef(value: string) {
+        this.Set('ExternalPaymentRef', value);
+    }
+
+    /**
+    * * Field Name: ExternalCustomerRef
+    * * Display Name: External Customer Ref
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The rail's customer id the payment came from.
+    */
+    get ExternalCustomerRef(): string | null {
+        return this.Get('ExternalCustomerRef');
+    }
+    set ExternalCustomerRef(value: string | null) {
+        this.Set('ExternalCustomerRef', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The payment's gross amount as the rail reports it.
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: UnappliedAmount
+    * * Display Name: Unapplied Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Default Value: 0
+    * * Description: The part the rail has not applied to any invoice (over-payment or unlinked). Stays on the rail as the customer's credit.
+    */
+    get UnappliedAmount(): number {
+        return this.Get('UnappliedAmount');
+    }
+    set UnappliedAmount(value: number) {
+        this.Set('UnappliedAmount', value);
+    }
+
+    /**
+    * * Field Name: PaymentDate
+    * * Display Name: Payment Date
+    * * SQL Data Type: date
+    * * Description: When the rail says funds moved.
+    */
+    get PaymentDate(): Date | null {
+        return this.Get('PaymentDate');
+    }
+    set PaymentDate(value: Date | null) {
+        this.Set('PaymentDate', value);
+    }
+
+    /**
+    * * Field Name: ExternalStatus
+    * * Display Name: External Status
+    * * SQL Data Type: nvarchar(40)
+    * * Description: The rail's status string, verbatim, as last seen.
+    */
+    get ExternalStatus(): string | null {
+        return this.Get('ExternalStatus');
+    }
+    set ExternalStatus(value: string | null) {
+        this.Set('ExternalStatus', value);
+    }
+
+    /**
+    * * Field Name: ExternalUpdatedAt
+    * * Display Name: External Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Description: The rail's updatedTime as last seen — the watermark candidate.
+    */
+    get ExternalUpdatedAt(): Date | null {
+        return this.Get('ExternalUpdatedAt');
+    }
+    set ExternalUpdatedAt(value: Date | null) {
+        this.Set('ExternalUpdatedAt', value);
+    }
+
+    /**
+    * * Field Name: Disposition
+    * * Display Name: Disposition
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Captured
+    *   * Held
+    *   * Ignored
+    *   * Refused
+    *   * ReversalNeeded
+    *   * Unmatched
+    * * Description: Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), ReversalNeeded (captured, and the rail now reports it reversed).
+    */
+    get Disposition(): 'Captured' | 'Held' | 'Ignored' | 'Refused' | 'ReversalNeeded' | 'Unmatched' {
+        return this.Get('Disposition');
+    }
+    set Disposition(value: 'Captured' | 'Held' | 'Ignored' | 'Refused' | 'ReversalNeeded' | 'Unmatched') {
+        this.Set('Disposition', value);
+    }
+
+    /**
+    * * Field Name: DispositionReason
+    * * Display Name: Disposition Reason
+    * * SQL Data Type: nvarchar(500)
+    * * Description: Why, in words a person can act on.
+    */
+    get DispositionReason(): string | null {
+        return this.Get('DispositionReason');
+    }
+    set DispositionReason(value: string | null) {
+        this.Set('DispositionReason', value);
+    }
+
+    /**
+    * * Field Name: PaymentHeaderID
+    * * Display Name: Payment Header ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Headers (vwPaymentHeaders.ID)
+    * * Description: The Orders payment created for a Captured row.
+    */
+    get PaymentHeaderID(): string | null {
+        return this.Get('PaymentHeaderID');
+    }
+    set PaymentHeaderID(value: string | null) {
+        this.Set('PaymentHeaderID', value);
+    }
+
+    /**
+    * * Field Name: Payload
+    * * Display Name: Payload
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The rail's record as received, JSON, for the audit trail.
+    */
+    get Payload(): string | null {
+        return this.Get('Payload');
+    }
+    set Payload(value: string | null) {
+        this.Set('Payload', value);
+    }
+
+    /**
+    * * Field Name: FirstSeenAt
+    * * Display Name: First Seen At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: First poll that saw this payment.
+    */
+    get FirstSeenAt(): Date {
+        return this.Get('FirstSeenAt');
+    }
+    set FirstSeenAt(value: Date) {
+        this.Set('FirstSeenAt', value);
+    }
+
+    /**
+    * * Field Name: LastSeenAt
+    * * Display Name: Last Seen At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: Most recent poll that saw this payment.
+    */
+    get LastSeenAt(): Date {
+        return this.Get('LastSeenAt');
+    }
+    set LastSeenAt(value: Date) {
+        this.Set('LastSeenAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: PaymentProvider
+    * * Display Name: Payment Provider
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PaymentProvider(): string {
+        return this.Get('PaymentProvider');
+    }
+
+    /**
+    * * Field Name: PaymentHeader
+    * * Display Name: Payment Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get PaymentHeader(): string | null {
+        return this.Get('PaymentHeader');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Order Adjustment Allocations - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: OrderAdjustmentAllocation
@@ -12996,6 +14200,159 @@ export class mjBizAppsOrdersPaymentLineEntity extends BaseEntity<mjBizAppsOrders
 
 
 /**
+ * MJ_BizApps_Orders: Payment Provider Sync States - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: PaymentProviderSyncState
+ * * Base View: vwPaymentProviderSyncStates
+ * * @description Poll watermark and last-run outcome per provider row per rail object (e.g. receivable-payments). Advanced only after a pass completes without a fault.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Payment Provider Sync States')
+export class mjBizAppsOrdersPaymentProviderSyncStateEntity extends BaseEntity<mjBizAppsOrdersPaymentProviderSyncStateEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Payment Provider Sync States record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Payment Provider Sync States record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPaymentProviderSyncStateEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentProviderID
+    * * Display Name: Payment Provider ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    * * Description: The provider row (rail + company) this watermark belongs to.
+    */
+    get PaymentProviderID(): string {
+        return this.Get('PaymentProviderID');
+    }
+    set PaymentProviderID(value: string) {
+        this.Set('PaymentProviderID', value);
+    }
+
+    /**
+    * * Field Name: ObjectName
+    * * Display Name: Object Name
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The rail object polled, e.g. receivable-payments.
+    */
+    get ObjectName(): string {
+        return this.Get('ObjectName');
+    }
+    set ObjectName(value: string) {
+        this.Set('ObjectName', value);
+    }
+
+    /**
+    * * Field Name: Watermark
+    * * Display Name: Watermark
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The rail's max updatedTime seen on the last clean pass (ISO). The next pass reads from one day before it; dedupe is by payment id.
+    */
+    get Watermark(): string | null {
+        return this.Get('Watermark');
+    }
+    set Watermark(value: string | null) {
+        this.Set('Watermark', value);
+    }
+
+    /**
+    * * Field Name: LastPolledAt
+    * * Display Name: Last Polled At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the last pass started.
+    */
+    get LastPolledAt(): Date | null {
+        return this.Get('LastPolledAt');
+    }
+    set LastPolledAt(value: Date | null) {
+        this.Set('LastPolledAt', value);
+    }
+
+    /**
+    * * Field Name: LastSucceededAt
+    * * Display Name: Last Succeeded At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the last pass completed without a fault.
+    */
+    get LastSucceededAt(): Date | null {
+        return this.Get('LastSucceededAt');
+    }
+    set LastSucceededAt(value: Date | null) {
+        this.Set('LastSucceededAt', value);
+    }
+
+    /**
+    * * Field Name: LastError
+    * * Display Name: Last Error
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The fault that stopped the last pass, if any.
+    */
+    get LastError(): string | null {
+        return this.Get('LastError');
+    }
+    set LastError(value: string | null) {
+        this.Set('LastError', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: PaymentProvider
+    * * Display Name: Payment Provider
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PaymentProvider(): string {
+        return this.Get('PaymentProvider');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Payment Provider Types - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: PaymentProviderType
@@ -13316,6 +14673,20 @@ export class mjBizAppsOrdersPaymentProviderEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: CompanyIntegrationID
+    * * Display Name: Company Integration ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Company Integrations (vwCompanyIntegrations.ID)
+    * * Description: The MJ Company Integration whose connector and credential this provider uses (Bill.com). NULL for providers that resolve credentials through CredentialsRef. A pointer, never a secret.
+    */
+    get CompanyIntegrationID(): string | null {
+        return this.Get('CompanyIntegrationID');
+    }
+    set CompanyIntegrationID(value: string | null) {
+        this.Set('CompanyIntegrationID', value);
+    }
+
+    /**
     * * Field Name: PaymentProviderType
     * * Display Name: Provider Type
     * * SQL Data Type: nvarchar(200)
@@ -13331,6 +14702,15 @@ export class mjBizAppsOrdersPaymentProviderEntity extends BaseEntity<mjBizAppsOr
     */
     get Company(): string {
         return this.Get('Company');
+    }
+
+    /**
+    * * Field Name: CompanyIntegration
+    * * Display Name: Company Integration
+    * * SQL Data Type: nvarchar(255)
+    */
+    get CompanyIntegration(): string | null {
+        return this.Get('CompanyIntegration');
     }
 }
 

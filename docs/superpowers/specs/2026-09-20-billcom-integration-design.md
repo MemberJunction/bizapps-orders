@@ -205,7 +205,7 @@ CREATE TABLE ExternalCustomer (
     ExternalCustomerRef NVARCHAR(100)    NOT NULL,
     LastSyncedAt        DATETIMEOFFSET   NULL,
     CONSTRAINT PK_ExternalCustomer PRIMARY KEY (ID),
-    CONSTRAINT CK_ExternalCustomer_OneParty CHECK ((BillToOrganizationID IS NULL) <> (BillToPersonID IS NULL)),
+    CONSTRAINT CK_ExternalCustomer_OneParty CHECK ((BillToOrganizationID IS NULL AND BillToPersonID IS NOT NULL) OR (BillToOrganizationID IS NOT NULL AND BillToPersonID IS NULL)),
     CONSTRAINT UQ_ExternalCustomer_Ref UNIQUE (PaymentProviderID, ExternalCustomerRef)
 );
 CREATE UNIQUE INDEX UQ_ExternalCustomer_Org    ON ExternalCustomer (PaymentProviderID, BillToOrganizationID) WHERE BillToOrganizationID IS NOT NULL;

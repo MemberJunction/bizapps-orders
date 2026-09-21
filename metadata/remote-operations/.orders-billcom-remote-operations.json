@@ -26,7 +26,11 @@
       "Own dot-json rather than an append to .orders-remote-operations.json: filePattern is **/.*.json, so",
       "MetadataSync reads every dot-json here, and two sessions each adding a file conflict on nothing.",
       "IDs are fixed here so the release Metadata_Sync migration can guard on ID or OperationKey."
-    ]
+    ],
+    "sync": {
+      "lastModified": "2026-09-21T18:40:46.035Z",
+      "checksum": "368b0c26415427455ab0477ba74e464f0ca3af4e0484985c919d2145f46bcf2a"
+    }
   },
   {
     "fields": {
@@ -49,6 +53,10 @@
     },
     "primaryKey": {
       "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A02"
+    },
+    "sync": {
+      "lastModified": "2026-09-21T18:40:46.059Z",
+      "checksum": "5c87e6b2fc9e06ad23832e90c0d0d4ea6d7ac2fd37ce29479ab91d355f4c39ea"
     }
   },
   {
@@ -72,6 +80,10 @@
     },
     "primaryKey": {
       "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A03"
+    },
+    "sync": {
+      "lastModified": "2026-09-21T18:40:46.082Z",
+      "checksum": "20973ed04101ca3958133e50144e2e3f1e22a1f034ff5ed4f32543f9c8a9eb68"
     }
   },
   {
@@ -95,6 +107,10 @@
     },
     "primaryKey": {
       "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A04"
+    },
+    "sync": {
+      "lastModified": "2026-09-21T18:40:46.105Z",
+      "checksum": "ecf9e6cb6a32b47e52630096fe2755fb7d8248677357fc089b497eac0ca01928"
     }
   },
   {
@@ -118,6 +134,10 @@
     },
     "primaryKey": {
       "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A05"
+    },
+    "sync": {
+      "lastModified": "2026-09-21T18:40:46.126Z",
+      "checksum": "2ddfb792cac4d61cad9bb97401225692bf6cdf14a65f7ea92d66a43d6bc57f5c"
     }
   }
 ]
