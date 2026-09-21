@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609211000 — Percentage-of-completion revenue recognition (W10)
+-- V202609202000 — Percentage-of-completion revenue recognition (W10)
 -- (bc-aidp-next-golive#241 · orders PR #201 plan Part F · D90)
 -- =============================================================================
 -- The three shipped revenue-recognition types answer "given what we know at
@@ -29,127 +29,202 @@
 -- is one, and the guard keeps the migration's own transaction out of trouble
 -- (copied from trg_OrderHeaderPaymentSchedule_RollupTotals).
 --
+-- Hand-written DDL here is PLAIN (orders PR #220 review): no existence guards,
+-- no cursors, no table variables. Migrations run once, in order; the guards
+-- buy nothing and the cursor shape breaks the PostgreSQL conversion.
+--
 -- CodeGen output for this app is folded below the banner at the end of this file.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
 -- 1. RevenueRecognitionType.ScheduleBasis
 -- -----------------------------------------------------------------------------
-IF COL_LENGTH('[${flyway:defaultSchema}].[RevenueRecognitionType]', 'ScheduleBasis') IS NULL
-BEGIN
-    ALTER TABLE [${flyway:defaultSchema}].[RevenueRecognitionType]
-        ADD [ScheduleBasis] NVARCHAR(20) NOT NULL
-            CONSTRAINT [DF_RevenueRecognitionType_ScheduleBasis] DEFAULT (N'AtBooking'),
-        CONSTRAINT [CK_RevenueRecognitionType_ScheduleBasis]
-            CHECK ([ScheduleBasis] IN (N'AtBooking', N'OnMeasurement'));
-END
+ALTER TABLE [${flyway:defaultSchema}].[RevenueRecognitionType]
+    ADD [ScheduleBasis] NVARCHAR(20) NOT NULL
+        CONSTRAINT [DF_RevenueRecognitionType_ScheduleBasis] DEFAULT (N'AtBooking'),
+    CONSTRAINT [CK_RevenueRecognitionType_ScheduleBasis]
+        CHECK ([ScheduleBasis] IN (N'AtBooking', N'OnMeasurement'));
 GO
 
-IF NOT EXISTS (
-    SELECT 1 FROM sys.extended_properties
-    WHERE major_id = OBJECT_ID('[${flyway:defaultSchema}].[RevenueRecognitionType]')
-      AND minor_id = COLUMNPROPERTY(OBJECT_ID('[${flyway:defaultSchema}].[RevenueRecognitionType]'), 'ScheduleBasis', 'ColumnId')
-      AND name = 'MS_Description'
-)
-    EXEC sp_addextendedproperty @name = N'MS_Description',
-        @value = N'AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.',
-        @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-        @level1type = N'TABLE',  @level1name = N'RevenueRecognitionType',
-        @level2type = N'COLUMN', @level2name = N'ScheduleBasis';
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'RevenueRecognitionType',
+    @level2type = N'COLUMN', @level2name = N'ScheduleBasis';
 GO
 
 -- -----------------------------------------------------------------------------
 -- 2. OrderLineProgressMeasurement
 -- -----------------------------------------------------------------------------
-IF OBJECT_ID('[${flyway:defaultSchema}].[OrderLineProgressMeasurement]', 'U') IS NULL
-BEGIN
-    CREATE TABLE [${flyway:defaultSchema}].[OrderLineProgressMeasurement] (
-        [ID]                     UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_OrderLineProgressMeasurement_ID] DEFAULT (newsequentialid()),
-        [OrderLineID]            UNIQUEIDENTIFIER NOT NULL,
-        -- The period this observation governs. One observation per line per day.
-        [MeasurementDate]        DATE             NOT NULL,
-        -- CUMULATIVE, 0..1. The entry is the difference from what is already recognised.
-        [PercentComplete]        DECIMAL(7,4)     NOT NULL,
-        -- The ProgressRecognitionDriver key that produced the percent (ManualAttestation, ...).
-        [MethodCode]             NVARCHAR(40)     NOT NULL,
+CREATE TABLE [${flyway:defaultSchema}].[OrderLineProgressMeasurement] (
+    [ID]                     UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_OrderLineProgressMeasurement_ID] DEFAULT (newsequentialid()),
+    [OrderLineID]            UNIQUEIDENTIFIER NOT NULL,
+    -- The period this observation governs. One observation per line per day.
+    [MeasurementDate]        DATE             NOT NULL,
+    -- CUMULATIVE, 0..1. The entry is the difference from what is already recognised.
+    [PercentComplete]        DECIMAL(7,4)     NOT NULL,
+    -- The ProgressRecognitionDriver key that produced the percent (ManualAttestation, ...).
+    [MethodCode]             NVARCHAR(40)     NOT NULL,
 
-        -- Quantitative inputs, kept for audit even though PercentComplete drives the entry.
-        [MeasureNumerator]       DECIMAL(18,4)    NULL,
-        [MeasureDenominator]     DECIMAL(18,4)    NULL,
+    -- Quantitative inputs, kept for audit even though PercentComplete drives the entry.
+    [MeasureNumerator]       DECIMAL(18,4)    NULL,
+    [MeasureDenominator]     DECIMAL(18,4)    NULL,
 
-        -- Provenance: who signed, and where a derived number came from.
-        [AttestedByUserID]       UNIQUEIDENTIFIER NULL,
-        [SourceEntityID]         UNIQUEIDENTIFIER NULL,
-        [SourceRecordID]         NVARCHAR(400)    NULL,
-        [Notes]                  NVARCHAR(MAX)    NULL,
+    -- Provenance: who signed, and where a derived number came from.
+    [AttestedByUserID]       UNIQUEIDENTIFIER NULL,
+    [SourceEntityID]         UNIQUEIDENTIFIER NULL,
+    [SourceRecordID]         NVARCHAR(400)    NULL,
+    [Notes]                  NVARCHAR(MAX)    NULL,
 
-        -- Result, stamped when the entry is written.
-        [RecognizedToDateBefore] DECIMAL(18,2)    NULL,
-        [RecognizedToDateAfter]  DECIMAL(18,2)    NULL,
-        -- The delta. NEGATIVE on a backward slide; zero when the observation moved nothing.
-        [RecognitionAmount]      DECIMAL(18,2)    NULL,
-        -- Soft reference into accounting, like OrderLine.JournalEntryID. NULL when the delta was zero.
-        [JournalEntryID]         UNIQUEIDENTIFIER NULL,
-        [Status]                 NVARCHAR(20)     NOT NULL CONSTRAINT [DF_OrderLineProgressMeasurement_Status] DEFAULT (N'Draft'),
+    -- Result, stamped when the entry is written.
+    [RecognizedToDateBefore] DECIMAL(18,2)    NULL,
+    [RecognizedToDateAfter]  DECIMAL(18,2)    NULL,
+    -- The delta. NEGATIVE on a backward slide; zero when the observation moved nothing.
+    [RecognitionAmount]      DECIMAL(18,2)    NULL,
+    -- Soft reference into accounting, like OrderLine.JournalEntryID. NULL when the delta was zero.
+    [JournalEntryID]         UNIQUEIDENTIFIER NULL,
+    [Status]                 NVARCHAR(20)     NOT NULL CONSTRAINT [DF_OrderLineProgressMeasurement_Status] DEFAULT (N'Draft'),
 
-        CONSTRAINT [PK_OrderLineProgressMeasurement] PRIMARY KEY CLUSTERED ([ID]),
-        CONSTRAINT [FK_OrderLineProgressMeasurement_OrderLine] FOREIGN KEY ([OrderLineID])
-            REFERENCES [${flyway:defaultSchema}].[OrderLine]([ID]),
-        CONSTRAINT [FK_OrderLineProgressMeasurement_AttestedByUser] FOREIGN KEY ([AttestedByUserID])
-            REFERENCES [__mj].[User]([ID]),
-        CONSTRAINT [FK_OrderLineProgressMeasurement_SourceEntity] FOREIGN KEY ([SourceEntityID])
-            REFERENCES [__mj].[Entity]([ID]),
-        CONSTRAINT [UQ_OLPM_Period] UNIQUE ([OrderLineID], [MeasurementDate]),
-        CONSTRAINT [CK_OLPM_Percent] CHECK ([PercentComplete] >= 0 AND [PercentComplete] <= 1),
-        CONSTRAINT [CK_OLPM_Status] CHECK ([Status] IN (N'Draft', N'Posted'))
-    );
-END
+    CONSTRAINT [PK_OrderLineProgressMeasurement] PRIMARY KEY CLUSTERED ([ID]),
+    CONSTRAINT [FK_OrderLineProgressMeasurement_OrderLine] FOREIGN KEY ([OrderLineID])
+        REFERENCES [${flyway:defaultSchema}].[OrderLine]([ID]),
+    CONSTRAINT [FK_OrderLineProgressMeasurement_AttestedByUser] FOREIGN KEY ([AttestedByUserID])
+        REFERENCES [__mj].[User]([ID]),
+    CONSTRAINT [FK_OrderLineProgressMeasurement_SourceEntity] FOREIGN KEY ([SourceEntityID])
+        REFERENCES [__mj].[Entity]([ID]),
+    CONSTRAINT [UQ_OLPM_Period] UNIQUE ([OrderLineID], [MeasurementDate]),
+    CONSTRAINT [CK_OLPM_Percent] CHECK ([PercentComplete] >= 0 AND [PercentComplete] <= 1),
+    CONSTRAINT [CK_OLPM_Status] CHECK ([Status] IN (N'Draft', N'Posted'))
+);
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sys.extended_properties WHERE major_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLineProgressMeasurement]') AND minor_id = 0 AND name = 'MS_Description')
-    EXEC sp_addextendedproperty @name = N'MS_Description',
-        @value = N'One attested progress observation on a percentage-of-completion order line (D90). PercentComplete is CUMULATIVE; Orders.RecordProgress posts the difference between the target it implies and what is already recognised, so a backward slide reverses through the same subtraction. A Posted row is immutable — corrections happen forward, in the next observation.',
-        @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-        @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement';
+-- Descriptions: MS_Description is what CodeGen carries into EntityField.Description.
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'One attested progress observation on a percentage-of-completion order line (D90). PercentComplete is CUMULATIVE; Orders.RecordProgress posts the difference between the target it implies and what is already recognised, so a backward slide reverses through the same subtraction. A Posted row is immutable — corrections happen forward, in the next observation.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement';
 GO
 
-DECLARE @descriptions TABLE (Col SYSNAME, Txt NVARCHAR(1000));
-INSERT INTO @descriptions (Col, Txt) VALUES
-    ('OrderLineID',            N'The percentage-of-completion order line this observation is about.'),
-    ('MeasurementDate',        N'The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry''s EffectiveDate.'),
-    ('PercentComplete',        N'CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.'),
-    ('MethodCode',             N'The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.'),
-    ('MeasureNumerator',       N'Optional quantitative input behind the percent (cost incurred, units delivered), kept for audit. PercentComplete drives the entry regardless.'),
-    ('MeasureDenominator',     N'Optional quantitative denominator behind the percent (estimated total cost, total units), kept for audit.'),
-    ('AttestedByUserID',       N'Who signed this observation. Every recognition entry names the observation and the person who signed it.'),
-    ('SourceEntityID',         N'Where a derived number came from, when it was derived (entity). NULL for a plain attestation.'),
-    ('SourceRecordID',         N'Where a derived number came from, when it was derived (record). NULL for a plain attestation.'),
-    ('Notes',                  N'Free text from the signer.'),
-    ('RecognizedToDateBefore', N'Revenue recognised on the line before this observation posted. Materialised for the audit chain; agrees with the sum of posted recognition entries for the line.'),
-    ('RecognizedToDateAfter',  N'Revenue recognised on the line after this observation posted: LineTotalNet × PercentComplete, rounded to the cent. At 100% it is the line amount exactly.'),
-    ('RecognitionAmount',      N'The delta this observation posted: After − Before. NEGATIVE on a backward slide (the entry is mirrored, Dr Sales / Cr Deferred Revenue). Zero when the observation moved nothing, in which case no entry was written.'),
-    ('JournalEntryID',         N'The RevenueRecognition journal entry this observation produced. Soft reference into accounting. NULL when the delta was zero.'),
-    ('Status',                 N'Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.');
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The percentage-of-completion order line this observation is about.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'OrderLineID';
+GO
 
-DECLARE @col SYSNAME, @txt NVARCHAR(1000);
-DECLARE cur CURSOR LOCAL FAST_FORWARD FOR SELECT Col, Txt FROM @descriptions;
-OPEN cur;
-FETCH NEXT FROM cur INTO @col, @txt;
-WHILE @@FETCH_STATUS = 0
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM sys.extended_properties
-        WHERE major_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderLineProgressMeasurement]')
-          AND minor_id = COLUMNPROPERTY(OBJECT_ID('[${flyway:defaultSchema}].[OrderLineProgressMeasurement]'), @col, 'ColumnId')
-          AND name = 'MS_Description'
-    )
-        EXEC sp_addextendedproperty @name = N'MS_Description', @value = @txt,
-            @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-            @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
-            @level2type = N'COLUMN', @level2name = @col;
-    FETCH NEXT FROM cur INTO @col, @txt;
-END
-CLOSE cur; DEALLOCATE cur;
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry''s EffectiveDate.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'MeasurementDate';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'PercentComplete';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'MethodCode';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Optional quantitative input behind the percent (cost incurred, units delivered), kept for audit. PercentComplete drives the entry regardless.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'MeasureNumerator';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Optional quantitative denominator behind the percent (estimated total cost, total units), kept for audit.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'MeasureDenominator';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Who signed this observation. Every recognition entry names the observation and the person who signed it.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'AttestedByUserID';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Where a derived number came from, when it was derived (entity). NULL for a plain attestation.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'SourceEntityID';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Where a derived number came from, when it was derived (record). NULL for a plain attestation.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'SourceRecordID';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Free text from the signer.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'Notes';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Revenue recognised on the line before this observation posted. Materialised for the audit chain; agrees with the sum of posted recognition entries for the line.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'RecognizedToDateBefore';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Revenue recognised on the line after this observation posted: LineTotalNet × PercentComplete, rounded to the cent. At 100% it is the line amount exactly.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'RecognizedToDateAfter';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The delta this observation posted: After − Before. NEGATIVE on a backward slide (the entry is mirrored, Dr Sales / Cr Deferred Revenue). Zero when the observation moved nothing, in which case no entry was written.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'RecognitionAmount';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The RevenueRecognition journal entry this observation produced. Soft reference into accounting. NULL when the delta was zero.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'JournalEntryID';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'Status';
 GO
 
 -- -----------------------------------------------------------------------------
