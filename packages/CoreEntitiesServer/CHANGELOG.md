@@ -1,5 +1,177 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.14.0
+
+### Minor Changes
+
+- bc6588e: Order Date defaults to today in the business time zone, "overdue" is judged against it, and the
+  Orders/Payments dashboards' day bars no longer disagree with themselves (bc-aidp-next-golive#168).
+
+  An order entered at 9 PM Eastern on the 27th was dated the 28th: `new Date()` is an instant and an
+  instant serialises in UTC. `OrderDate` now defaults to `TodayAsDateValue()`, the business calendar
+  day pinned to UTC midnight, on the entity, in checkout and in the overdue worklist's "as of" default.
+  `Today()` and `LocalDay()` in `date-cell.ts` read the zone from bizapps-common's
+  `BusinessTimeZoneEngine` instead of the browser. `vwOrderHeaders.IsOverdue` compares `DueDate`
+  against `bt.Today` from `fnBusinessToday()` rather than `CAST(GETUTCDATE() AS date)`, and the view
+  text is now emitted by `OverdueViewSQL()` with a test that the committed migration matches it.
+
+  That same `LocalDay()` switch from the browser's zone to the business zone exposed a latent bug in
+  the Orders and Payments dashboards: each "last 7 days" bar chart keyed its bars by business day but
+  labelled them with the viewer's own local weekday, so a viewer sitting in a different zone than the
+  business one saw a bar labelled with one day counting another day's rows. Both dashboards now build
+  their bars with a shared `BuildDayBars` helper that derives the label from the same calendar-day key
+  used to filter, so the two cannot diverge.
+
+  Requires `@mj-biz-apps/common-entities` 5.43.0.
+
+- 2ce84d1: Expands EventProduct with EventFormat and VirtualMeetingUrl, and expands EventOrderLine with AttendanceStatus, Badge tracking/overrides, TicketTier, TableAssignment, SpecialRequests, and CheckInNotes.
+- e1f4e15: Let an order line state a GL dimension, and carry it down to the journal entry.
+
+  `OrderJournalEntryFactory` has ridden dimension tags onto every journal entry line an order line
+  produces since the baseline — the AR debit, the revenue or deferred credit, the discount debit, each
+  charge and tax credit, and both legs of every recognition release. But nothing ever tagged an order
+  line, so every order-originated entry reached the ledger carrying none, silently and permanently:
+  the line freezes once `JournalEntryID` is stamped (MemberJunction/bc-aidp-next-golive#236).
+
+  `OrderLine` gains nullable `DimensionID` and `DimensionValueID`, both foreign-keyed into
+  `__mj_BizAppsAccounting`. Both, not one: a dimension names the axis and the value names the point on
+  it, and a journal entry line's tag is the pair — so a dimension id alone could not be passed down.
+  `CK_OrderLine_DimensionPair` makes "both or neither" a database rule, and
+  `OrderLineEntityServer.ValidateAsync` reports it in words before the constraint has to.
+
+  A details button on each line card opens a slide-in panel holding the two pickers, with values read
+  from accounting as they stand on the order's own date — `DimensionValue` is effective-dated, and a
+  back-dated order has to offer the values that were live when it was placed. Changing the dimension
+  clears the value, because a value belongs to exactly one axis. A booked line shows its tag
+  read-only.
+
+  The factory now merges the line's column tag with any `OrderLineDimension` child rows, with the
+  column winning on its own axis: accounting refuses a journal entry line tagged twice on one
+  dimension, so a conflict would otherwise fail the whole booking rather than show itself.
+
+  Three migrations, and none is optional: the columns, then the CodeGen output for them (EntityField
+  registrations, the rebuilt `vwOrderLines`, `spCreateOrderLine` and `spUpdateOrderLine`, and the
+  rebuilt `vwEventOrderLines` for the IS-A child). A host's `mj.config.cjs` carries this app's schema
+  in `excludeSchemas`, so `mj codegen` on a host will register the fields in metadata but will not
+  rebuild the view or the procedures — leaving an entity that declares fields its base view cannot
+  produce, which reads as "no data" rather than an error.
+
+  Note the shape this fixes and the shape it does not: one tag per line means a revenue line can be
+  filed under Venture **or** Product **or** ARR-Type, not all of them. The chart-of-accounts design
+  asks for five axes on a revenue line.
+
+- 49217aa: Give the renewal operation a scheduler, and a schedule that ships disabled.
+
+  `Orders.SpawnRenewals` has been correct and uncalled since it was written. It is a remote operation,
+  which is the API a browser calls, and renewals have no browser — a term expires whether or not
+  anyone opens the app that week. UAT found the symptom while ordering a subscription product: every
+  subscription sat at term 1 and nothing ever generated the next one
+  (MemberJunction/bc-aidp-next-golive#243).
+
+  MJ's scheduler dispatches Actions and Agents, and no driver takes an operation key, so the missing
+  piece is an adapter. `Orders: Spawn Renewals` is that Action and holds no renewal logic of its own:
+  it reads parameters, routes through the provider — which runs the operation's `Authorize` hook — and
+  reports what came back. Selection, the booking path and both idempotency guards stay in the
+  operation, where the check suite already holds them.
+
+  The trap the adapter exists to survive: a `ScheduledJob` stores every parameter as text, so a job
+  configured for preview hands the Action the string `"false"`, and `"false"` is truthy. Read as a
+  plain boolean, a job set to preview bills real customers on the one run nobody expected to write
+  anything. Both spellings are read explicitly and anything else is refused rather than guessed.
+
+  The daily job ships `Disabled` **and** set to `Preview`, which guard different mistakes: the status
+  keeps a lower environment from scheduling live billing the moment this metadata lands in it, and the
+  preview flag means even an enabled job reports its list and stops. Going live is therefore two named
+  acts — enable, read the candidates, confirm, then turn preview off — and only the second one bills
+  anybody. `MaxCount` caps a single pass at 25 so a mis-set lead time invoices a handful of customers
+  and gets noticed rather than invoicing the book; the remainder is not lost, since those
+  subscriptions are still due tomorrow.
+
+  Three checks cover the wiring (SR12–SR14): the Action reaches the operation, preview survives the
+  scheduler's string encoding in both directions, and the schedule's configuration names an ActionID
+  that exists while shipping disabled and set to preview. That last one catches the expensive failure
+  — a job whose configuration points at nothing runs every night, fails every night, and renews
+  nobody, which looks exactly like the subscriptions not being due yet.
+
+  `MaxCount` now bounds a preview as well as a live pass. It was keyed on orders PLACED, which stays
+  zero on a preview, so the cap never bound there: the list a person confirmed at the gate was every
+  subscription in the window, and the pass that followed stopped at 25. The gate is only a gate if the
+  two are the same list.
+
+  A pass that leaves a due subscription unrenewed now reports `PARTIAL` and `Success: false`. The
+  operation catches each booking failure so one bad row cannot stop the batch, and it reports success
+  regardless — which meant a night on which every renewal threw wrote a green run, and a job that
+  notifies only on failure told nobody. That is indistinguishable from nothing having been due, which
+  is the symptom this whole change exists to end.
+
+### Patch Changes
+
+- 56eb169: Fold the dimension CodeGen output into the migration that caused it, per the repo convention.
+
+  `V202609191200` added `OrderLine.DimensionID` / `DimensionValueID` and its CodeGen output shipped as
+  a second file, `V202609191205__..._Metadata.sql`. The convention everywhere in this repo is that
+  CodeGen output is appended to the migration that caused it, below a run of blank lines and a
+  do-not-hand-edit banner — the shape the baseline migration carries and `scripts/append-codegen.sh`
+  produces. The separate file is removed and its contents now sit below that banner.
+
+  The appended block also gains the two foreign-key indexes,
+  `IDX_AUTO_MJ_FKEY_OrderLine_DimensionID` and `IDX_AUTO_MJ_FKEY_OrderLine_DimensionValueID`. CodeGen
+  creates these on a dev loop, but a host never runs it for this schema — `mj.config.cjs` carries the
+  app's schema in `excludeSchemas` — so like the view and the procedures they have to ship in the
+  migration.
+
+  Adds unit coverage for the both-or-neither rule on `OrderLineEntityServer.ValidateAsync`. The data
+  was never at risk, since `CK_OrderLine_DimensionPair` refuses a half-set row; what the check buys is
+  a refusal that names the missing half on the line that is missing it, rather than a CHECK-constraint
+  violation raised from inside the order's transaction after every other line has been written.
+
+  Note for anyone who has already applied `V202609191200`: editing it changes its Flyway checksum, so
+  that database needs a repair before its next `mj migrate`.
+
+- f652c6f: Carry dimensions onto payment journal entry lines.
+
+  No journal entry line produced by a payment carried a dimension — not the intercompany legs, not
+  cash, not AR. Accounting had accepted them since its contract was written: `JournalEntryLineDraft`
+  declares `Dimensions?`, the pipeline validates them and the engine writes
+  `JournalEntryLineDimension` rows. The orders side simply had nowhere to put them —
+  `PaymentJELine` had no field — so the values were resolved and then dropped
+  (MemberJunction/bc-aidp-next-golive#238).
+
+  Two sources now reach the ledger.
+
+  The **counterparty** pinned per leg on the `IntercompanyAccountMatch`: the collector's Due To names
+  the owning company, the owner's Due From names the collector. `ResolveIntercompanyAccounts` had
+  always returned these; both callers kept the two GL account IDs and discarded the rest. Today the
+  per-entity Due To / Due From accounts are what tell the two legs apart, so the omission reads as a
+  reporting gap. Under a chart of accounts with one shared receivable and one shared payable it stops
+  being one: accounting merges same-side lines on (account, dimension set), so two owners' credits
+  would collapse into a single netted line that cannot be split, matched or eliminated.
+
+  The **settled order line's own tags**, onto the cash, AR and intercompany lines alike. Booking
+  debits AR under those tags; clearing the receivable untagged leaves every dimension permanently out
+  of balance on an account that nets to zero in total. A company's share is split by distinct tag set
+  and pro-rated by line amount, with the largest slice absorbing the residue — the rule
+  `AllocateByCompany` already used, rather than a second one that could drift from it.
+
+  A pin with no value is skipped rather than defaulted or refused. `IntercompanyAccountMatchDimension`
+  makes `DimensionValueID` nullable to mean "take it from context", and its own definition says an
+  intercompany leg has no context to take one from. Refusing to book would turn a legal configuration
+  into an outage.
+
+  An order whose lines carry no dimensions produces exactly the entries it produced before, line for
+  line.
+
+  Also shared what the two booking paths had been duplicating — the intercompany lookup and the
+  order-line loader — since keeping one copy each is how this came to need the same fix in two files.
+
+  The pipeline is only half of it: the counterparty values and the per-pair pins are configuration. A
+  match with nothing pinned books exactly as it does today.
+
+- Updated dependencies [bc6588e]
+- Updated dependencies [2ce84d1]
+- Updated dependencies [e1f4e15]
+  - @mj-biz-apps/orders-entities@5.14.0
+
 ## 5.13.0
 
 ### Minor Changes
