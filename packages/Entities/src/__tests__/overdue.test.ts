@@ -1,5 +1,8 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, it, expect } from 'vitest';
-import { IsOverdue, OverdueFilter, OverdueSQL, NON_OWING_STATUSES, type OverdueFacts } from '../overdue';
+import { IsOverdue, OverdueFilter, OverdueSQL, OverdueViewSQL, NON_OWING_STATUSES, type OverdueFacts } from '../overdue';
 
 /**
  * Tier 1 for the overdue rule.
@@ -62,12 +65,31 @@ describe('IsOverdue', () => {
 describe('the SQL and the filter say what the function says', () => {
     // Not a proof — two languages cannot share code — but every clause of the rule is asserted to
     // appear in both, so dropping one from either half fails here rather than in production.
-    it('the view fragment carries all four clauses, qualified by the alias', () => {
+    it('the view fragment carries all four clauses, qualified by the alias, against the business day', () => {
         const sql = OverdueSQL('g');
         expect(sql).toContain('g.Balance > 0');
         expect(sql).toContain('g.DueDate IS NOT NULL');
-        expect(sql).toContain('CAST(GETUTCDATE() AS date)');
+        expect(sql).toContain('g.DueDate < bt.Today');
+        expect(sql).not.toContain('GETUTCDATE');
         expect(sql).toContain("g.Status NOT IN ('Draft','Quoted','Voided')");
+    });
+
+    it('the whole outer view is emitted from here, joining the common function once', () => {
+        const view = OverdueViewSQL();
+        expect(view).toContain('CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]');
+        expect(view).toContain('CROSS JOIN [__mj_BizAppsCommon].[fnBusinessToday]() AS bt');
+        expect(view).toContain(OverdueSQL('g'));
+        expect(view).toContain('FROM [${flyway:defaultSchema}].[vwOrderHeadersGenerated] g');
+    });
+
+    it('the committed migration is byte-for-byte what OverdueViewSQL emits', () => {
+        // The docs said "take the predicate from OverdueSQL, never retype it" and every migration
+        // retyped it anyway. This makes the emitter the source and the migration a copy.
+        const dir = fileURLToPath(new URL('../../../../migrations/', import.meta.url));
+        const newest = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
+            .filter((f) => readFileSync(dir + f, 'utf8').includes('CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]')).pop();
+        expect(newest, 'a migration defines vwOrderHeaders').toBeDefined();
+        expect(readFileSync(dir + newest, 'utf8')).toContain(OverdueViewSQL());
     });
 
     it('the RunView filter carries all four clauses, with the caller-supplied day', () => {

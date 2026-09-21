@@ -33,6 +33,8 @@
  * @module @mj-biz-apps/orders-entities
  */
 
+import { BusinessTimeZoneEngine, CalendarDayIn, FromCalendarDay } from '@mj-biz-apps/common-entities';
+
 /**
  * A date as it may actually arrive: an ISO-ish string, a `Date`, or absent.
  *
@@ -60,7 +62,7 @@ export type DateCell = string | Date | null | undefined;
  *
  * Note this is the opposite choice from formatting a date the USER just picked, which is a local
  * midnight and must be read with local parts. The difference is where the `Date` came from, not
- * preference: {@link Today} reads local for exactly that reason.
+ * preference: {@link Today} reads the business zone for exactly that reason.
  *
  * An unparseable value is `null` rather than `'Invalid Date'` — which would print literally and
  * destroy the evidence of what the database actually held.
@@ -118,45 +120,35 @@ export function IsBefore(value: unknown, day: string): boolean {
 }
 
 /**
- * Today on the LOCAL calendar as `YYYY-MM-DD`.
+ * Today on the BUSINESS calendar as `YYYY-MM-DD`.
  *
- * Not `new Date().toISOString().slice(0, 10)`, which is already tomorrow for part of every evening
- * east of Greenwich and still yesterday for part of every morning west of it — so an order placed at
- * 8pm in New York would be measured against a "today" that has not started.
- *
- * Local parts here and UTC parts in {@link ToISODate} is not an inconsistency: this `Date` is an
- * instant that the user is living in, and that one is a calendar day the driver pinned to midnight.
+ * Not the UTC day (`toISOString().slice(0, 10)` is already tomorrow for the whole American evening)
+ * and not the browser's local day (the operator may sit in Pune while the business books in Chicago).
+ * The zone comes from `BusinessTimeZoneEngine`; before it loads, or where the instance has not set
+ * it, this is the UTC day.
  */
 export function Today(): string {
-    return LocalDay(new Date());
+    return BusinessTimeZoneEngine.Instance.Today();
 }
 
 /**
- * The LOCAL calendar day of a `Date` the code constructed itself, as `YYYY-MM-DD`.
+ * The BUSINESS calendar day of an instant the code constructed itself, as `YYYY-MM-DD`.
  *
  * For bucketing by day: a loop that walks back seven days from `new Date()` carries the current
- * time of day with it, so `toISOString().slice(0, 10)` names TOMORROW for anyone east of the
- * meridian in the evening — putting a bar's label ("Mon", from `toLocaleDateString`) and its key
- * ("2026-08-11") on different days, and quietly reporting a day's takings as zero.
- *
- * Use this for dates the program built; use {@link ToISODate} for cells that came from the database.
+ * time of day with it, so `toISOString().slice(0, 10)` names TOMORROW for the evening. Use this
+ * for instants the program built; use {@link ToISODate} for cells that came from the database.
  */
 export function LocalDay(date: Date): string {
     if (Number.isNaN(date.getTime())) return '';
-    return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    return CalendarDayIn(date, BusinessTimeZoneEngine.Instance.Zone);
 }
 
 /**
- * Today's LOCAL calendar day as a `Date` safe to ASSIGN to a `date`-typed entity field.
- *
- * The assignment-side counterpart of {@link Today}. `new Date()` is an instant, and an instant
- * serialises in UTC — so a price rule created at 8pm Central lands in the column dated TOMORROW
- * and refuses to apply for the rest of the user's working day. A SQL `date` column round-trips as
- * midnight UTC on its calendar day, so that is the shape this constructs: the local day, pinned to
- * midnight UTC, which {@link ToISODate} and every UTC-parts reader then give back unchanged.
+ * Today's BUSINESS calendar day as a `Date` safe to ASSIGN to a `date`-typed entity field: the day,
+ * pinned to midnight UTC, which every UTC-parts reader then gives back unchanged.
  */
 export function TodayAsDateValue(): Date {
-    return new Date(`${Today()}T00:00:00Z`);
+    return FromCalendarDay(Today());
 }
 
 /** The UTC calendar fields, zero-padded. */
