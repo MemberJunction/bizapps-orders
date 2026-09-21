@@ -139,9 +139,9 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
     ): Promise<{ Outcomes: ExternalPaymentOutcome[]; NewWatermark: string | null; Fault: string | null }> {
         const outcomes: ExternalPaymentOutcome[] = [];
         const rail = await ResolveInvoiceRail(paymentProviderID, provider, user);
-        const state = await loadSyncState(paymentProviderID, provider, user);
+        let state = await loadSyncState(paymentProviderID, provider, user);
         const storedWatermark = state?.Watermark ?? null;
-        if (!opts.preview) await touchSyncState(provider, user, paymentProviderID, state, { LastPolledAt: new Date() });
+        if (!opts.preview) state = await touchSyncState(provider, user, paymentProviderID, state, { LastPolledAt: new Date() });
 
         const since = opts.since ?? (storedWatermark ? new Date(new Date(storedWatermark).getTime() - OVERLAP_MS).toISOString() : null);
         const fetched = await rail.FetchPaymentsSince(since);
@@ -286,17 +286,21 @@ async function loadSyncState(paymentProviderID: string, provider: IMetadataProvi
     return r.Results?.[0] ?? null;
 }
 
-async function touchSyncState(provider: IMetadataProvider, user: UserInfo, paymentProviderID: string, state: SyncStateRow | null, fields: Record<string, unknown>): Promise<void> {
+/** Create or update the watermark row. Returns the row so a first pass does not insert it twice. */
+async function touchSyncState(provider: IMetadataProvider, user: UserInfo, paymentProviderID: string, state: SyncStateRow | null, fields: Record<string, unknown>): Promise<SyncStateRow | null> {
     const entity = await provider.GetEntityObject<BaseEntity>(PAYMENT_PROVIDER_SYNC_STATE_ENTITY, user);
     if (state) {
-        if (!(await entity.InnerLoad(CompositeKey.FromID(state.ID)))) return;
+        if (!(await entity.InnerLoad(CompositeKey.FromID(state.ID)))) return state;
     } else {
         entity.NewRecord();
         entity.SetMany({ PaymentProviderID: paymentProviderID, ObjectName: RAIL_OBJECT }, true);
     }
     entity.SetMany(fields, true);
-    if (!(await entity.Save())) LogError(`PaymentProviderSyncState for ${paymentProviderID} could not be saved: ${entity.LatestResult?.CompleteMessage ?? 'unknown'}`);
-    else if (!state) state = { ID: String(entity.Get('ID')), Watermark: null };
+    if (!(await entity.Save())) {
+        LogError(`PaymentProviderSyncState for ${paymentProviderID} could not be saved: ${entity.LatestResult?.CompleteMessage ?? 'unknown'}`);
+        return state;
+    }
+    return { ID: String(entity.Get('ID')), Watermark: (fields.Watermark as string | null | undefined) ?? state?.Watermark ?? null };
 }
 
 async function loadSeen(paymentProviderID: string, refs: readonly string[], provider: IMetadataProvider, user: UserInfo): Promise<Map<string, ExternalPaymentRow>> {

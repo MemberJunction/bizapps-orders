@@ -568,13 +568,39 @@ depends on generated getters), `mj sync push`, the Angular panel and queue page 
 integration check bundles (they need the applied schema), the release Metadata_Sync migration, and
 the spikes S1–S5 (they need sandbox credentials; the harness is ready).
 
-### 13.3 Deviations from the plan worth knowing
+### 13.3 PR #208 and PR #220, as of 2026-09-20 evening
+
+- **#220 was rebased onto `next`** the same day: migrations renumbered `V202609201200` / `V202609201300`,
+  CodeGen `Sequence` literals replaced with `MAX+1`, and Andrew's review (changes requested) asked for
+  (1) plain DDL above the CodeGen banner — done in `44b554e7`; (2) **merge #208 first and rebase onto
+  Robert's `OverdueViewSQL()` emitter** — pending; (3) a fresh-database replay — pending. Andrew is out
+  and told Craig to coordinate the #208 order with Robert and merge without him.
+- **#208 conflicted with `next` only on package versions and the lockfile** (`next` had released 5.13.0
+  and raised the bizapps-common floor to `>=5.44.0`). Resolved in the `bizapps-orders-tz` worktree:
+  `next`'s versions win, #208's `@mj-biz-apps/common-entities` dependency stays at the new floor,
+  lockfile regenerated. Build green, 1,704 unit tests pass (the two checkout-element failures are the
+  local Angular-build ones). **Not pushed** — Robert's PR, Robert's call.
+- **The #208 × #220 reconciliation** is the one Craig's item (2) needs, and it is done on this branch:
+  `OverdueSQL(alias, dueDateExpression = alias.DueDate, todayExpression = 'bt.Today')`; the filter reads
+  `NextDueDate`; `OverdueViewSQL()` emits the view with `nd` (CROSS APPLY over live unpaid instalments,
+  falling back to the header) and `bt` (CROSS JOIN `fnBusinessToday()`); #220's migration carries that
+  text byte for byte so both branches' drift tests hold. Craig can lift `packages/Entities/src/overdue.ts`,
+  its test, and the view block from this branch.
+- **This design is unchanged by #220's updates.** The trigger contract (schedule row → invoiceable when
+  `Invoiced`; whole order → invoiceable at `Confirmed`) is what #220 ships. Two code-level uses were
+  added: `BuildInvoiceDocuments({ PaymentScheduleID })` renders the instalment's own document for the
+  rail payload, and `Orders.CapturePayment` allocations gained `OrderHeaderPaymentScheduleID` so a
+  polled instalment payment lands on the instalment it paid rather than cascading oldest-first.
+
+### 13.4 Deviations from the plan worth knowing
 
 - `ExternalInvoiceBehavior` lives in `packages/CoreEntitiesServer`, not `packages/Entities`, because
   `InvoiceDocument` lives there on `next`; `ExternalPaymentBehavior` is in `packages/Entities` as planned.
-- Schedule (PR #220) support is **conditional**: every operation checks `provider.EntityByName` for the
-  schedule entity and treats a database without it as "all orders billed as a whole". The
-  `ExternalInvoice → OrderHeaderPaymentSchedule` FK is added only where the table exists.
+- Schedule (PR #220) support is still checked at runtime (`provider.EntityByName`) so a database that
+  has not run #220's migration reads every order as billed as a whole; the `ExternalInvoice →
+  OrderHeaderPaymentSchedule` FK is plain, because this branch's migrations sort after #220's.
+- Migrations are plain DDL (Amith's direction on #220), not the idempotent guards `CLAUDE.md` asks for —
+  flagged for Robert in the plan's Global Constraints.
 - The generated remote-operation base classes were added to `remote_operations.ts` by hand in exactly
   CodeGen's emitted shape; the next CodeGen run reproduces them.
 - TypeScript here compiles without `strictNullChecks`, so union narrowing uses `=== false` / `=== true`

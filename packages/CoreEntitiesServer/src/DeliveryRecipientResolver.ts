@@ -25,6 +25,9 @@
  */
 import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import type { DeliveryContact } from './DeliveryBehavior.js';
+import { EXTERNAL_INVOICE_ENTITY } from './entity-names.js';
+import { FindInvoiceRailProviderID } from './InvoiceRailResolver.js';
+import { RequireUUID } from './sql-guards.js';
 
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';
@@ -139,9 +142,6 @@ export async function LoadExternallyInvoiced(
 ): Promise<boolean> {
     if (!companyID) return false;
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const { FindInvoiceRailProviderID } = await import('./InvoiceRailResolver.js');
-    const { EXTERNAL_INVOICE_ENTITY } = await import('./entity-names.js');
-    const { RequireUUID } = await import('./sql-guards.js');
     if (await FindInvoiceRailProviderID(companyID, provider, user)) return true;
     if (!provider.EntityByName(EXTERNAL_INVOICE_ENTITY)) return false;
     const live = await rv.RunView<{ ID: string }>(

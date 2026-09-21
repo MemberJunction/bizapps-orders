@@ -22,9 +22,32 @@
 - `metadata/` is dev-time only (`mj sync push`). Rows reach a host only via a `*__Metadata_Sync.sql` migration at release (phase 4).
 - Spelling in code follows PR #220: `Instalment`.
 - Build/test commands: `pnpm run build:packages`, `pnpm run test:unit` (vitest), `pnpm run test:integration` (needs a live dev DB), `pnpm run verify`.
-- **Phase 2 onward requires PR #220 (`aidp-24`) merged into `next`** — it supplies `OrderHeaderPaymentSchedule`, `Orders.IssueInstalmentInvoice`, `BuildInvoiceDocuments({PaymentScheduleID})`, `InvoiceInstalmentFacts`. Phase 1 has no such dependency.
+- **PR #208 (`feat/168-business-today`) and PR #220 (`aidp-24`) are merged INTO this branch** (2026-09-20) in that order, with the two reconciled: `OverdueSQL(alias, dueDateExpression, todayExpression)`, `OverdueViewSQL()` emitting `vwOrderHeaders` with both the `nd` CROSS APPLY (next unpaid instalment) and the `bt` CROSS JOIN (business day), and PR #220's `V202609201200` carrying that exact view text. When #208 and #220 land on `next` with the same resolution this branch merges cleanly; if Craig resolves differently, re-merge here.
+- **Migration order is fixed:** `V202609201200`/`V202609201300` (#220) → `V202609221000`, `V202609241000`, `V202609261000` (this branch). `ExternalInvoice`'s FK to `OrderHeaderPaymentSchedule` is therefore plain, not conditional.
+- **Deploy order (from #208):** the bizapps-common migration that creates `[__mj_BizAppsCommon].[fnBusinessToday]()` must be applied before any migration that creates `vwOrderHeaders` (#208's `V202609161000` and #220's `V202609201200`), and the `BizApps.BusinessTimeZone` configuration row must be set or everything silently falls back to UTC.
+- **DDL style (Amith, via Andrew's review of #220):** plain `CREATE TABLE` / `ALTER TABLE` / `CREATE INDEX` / `sp_addextendedproperty`, GO-separated, no existence checks, no cursor or table variable — a cursor breaks the PostgreSQL conversion. This branch's three migrations follow it. **Robert:** this departs from `CLAUDE.md`'s "write migrations idempotently"; say which rule wins and the guards go back in if it is the CLAUDE.md one.
 
 ---
+
+## Status (2026-09-20, end of day)
+
+| Task | State |
+|---|---|
+| 1 spikes + harness | harness written (`test-harnesses/billcom-live.mjs`); spikes **not run** — need sandbox credentials |
+| 2 provider type + column | done (metadata row, migration); **not applied**, CodeGen **not run** |
+| 3–6 driver, rail seam, resolver, gateway + rail | done, unit-tested |
+| 7 ExternalInvoice/ExternalCustomer | migration written (plain DDL, FK to schedule plain); **not applied** |
+| 8 ExternalInvoiceBehavior | done (in `packages/CoreEntitiesServer`, where `InvoiceDocument` lives), 20 tests |
+| 9 ExternalPaymentBehavior | done, 17 tests |
+| 10 operation contracts | done; generated bases hand-emitted, `mj sync push` **not run** |
+| 11–14 operations | done; **integration check bundles not written** (need the applied schema) |
+| 13 delivery exclusion | done, unit-tested |
+| 15, 18 Actions + jobs | done; metadata **not pushed** |
+| 16 ExternalPayment/SyncState | migration written; **not applied** |
+| 17 poller | done; `CapturePayment` allocations now accept `OrderHeaderPaymentScheduleID` (PR #220's column) |
+| webhook receiver (not in the original plan) | `BillComWebhookExtension` + `BillComWebhook.ts`, unit-tested, registered in manifest/package.json/mj.config |
+| 19 Angular | **not started** |
+| 20 release plumbing | **not started** |
 
 ## File structure
 
