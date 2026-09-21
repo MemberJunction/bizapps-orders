@@ -56,7 +56,7 @@
 |---|---|
 | `test-harnesses/billcom-live.mjs` | Env-gated probes against the BILL sandbox (spikes S1–S5, then end-to-end). Not CI. |
 | `metadata/payment-provider-types/.payment-provider-types.json` | Add the `BillCom` type row. |
-| `migrations/V202609221000__v5.14.0__PaymentProvider_CompanyIntegration.sql` | `PaymentProvider.CompanyIntegrationID`. |
+| `migrations/V202609221000__v5.15.0__PaymentProvider_CompanyIntegration.sql` | `PaymentProvider.CompanyIntegrationID`. |
 | `packages/CoreEntitiesServer/src/BillComPaymentProvider.ts` | Minimal `BasePaymentProvider` for type `BillCom`. |
 | `packages/CoreEntitiesServer/src/BaseInvoiceRail.ts` | The rail contract + `LoadBaseInvoiceRail`. |
 | `packages/CoreEntitiesServer/src/InvoiceRailResolver.ts` | `ResolveInvoiceRail`, `FindInvoiceRailForCompany`. |
@@ -64,8 +64,8 @@
 | `packages/CoreEntitiesServer/src/BillComInvoiceRail.ts` | Wire-shape mapping over the gateway. |
 | `packages/Entities/src/ExternalInvoiceBehavior.ts` | Pure: payload, invoiceable, cancel, failure class. |
 | `packages/Entities/src/ExternalPaymentBehavior.ts` | Pure: status table, decision, fan-out, tender, idempotency key. |
-| `migrations/V202609241000__v5.14.0__ExternalInvoice.sql` | `ExternalInvoice`, `ExternalCustomer`. |
-| `migrations/V202609261000__v5.14.0__ExternalPayment.sql` | `ExternalPayment`, `PaymentProviderSyncState`. |
+| `migrations/V202609241000__v5.15.0__ExternalInvoice.sql` | `ExternalInvoice`, `ExternalCustomer`. |
+| `migrations/V202609261000__v5.15.0__ExternalPayment.sql` | `ExternalPayment`, `PaymentProviderSyncState`. |
 | `packages/CoreEntitiesServer/src/IssueExternalInvoiceOperation.ts` | §5.1. |
 | `packages/CoreEntitiesServer/src/CancelExternalInvoiceOperation.ts` | §5.2. |
 | `packages/CoreEntitiesServer/src/GetExternalInvoicingWorklistOperation.ts` | Unsent + failed units. |
@@ -179,7 +179,7 @@ git commit -m "chore(orders): Bill.com sandbox harness and spike results (golive
 
 **Files:**
 - Modify: `metadata/payment-provider-types/.payment-provider-types.json` (append one row)
-- Create: `migrations/V202609221000__v5.14.0__PaymentProvider_CompanyIntegration.sql`
+- Create: `migrations/V202609221000__v5.15.0__PaymentProvider_CompanyIntegration.sql`
 - Create: `.changeset/billcom-provider-type.md`
 
 **Interfaces:**
@@ -251,7 +251,7 @@ GO
 
 ```bash
 npx changeset   # minor: entities, core-entities-server, server
-git add metadata/payment-provider-types migrations/V202609221000__v5.14.0__PaymentProvider_CompanyIntegration.sql packages/Entities/src/generated .changeset
+git add metadata/payment-provider-types migrations/V202609221000__v5.15.0__PaymentProvider_CompanyIntegration.sql packages/Entities/src/generated .changeset
 git commit -m "feat(orders): BillCom payment provider type and PaymentProvider.CompanyIntegrationID"
 ```
 
@@ -734,7 +734,7 @@ Adjust the `billingAddress` sub-field names to what spike S4 showed BILL accepts
 ### Task 7: `ExternalInvoice` and `ExternalCustomer` tables
 
 **Files:**
-- Create: `migrations/V202609241000__v5.14.0__ExternalInvoice.sql`
+- Create: `migrations/V202609241000__v5.15.0__ExternalInvoice.sql`
 - Modify: `packages/CoreEntitiesServer/src/entity-names.ts`, `packages/IntegrationTests/src/entity-names.ts`, `packages/Angular/src/lib/data/entity-names.ts` (add `EXTERNAL_INVOICE_ENTITY = 'MJ_BizApps_Orders: External Invoices'`, `EXTERNAL_CUSTOMER_ENTITY = 'MJ_BizApps_Orders: External Customers'`)
 - Create: `.changeset/external-invoice.md`
 
@@ -1065,7 +1065,7 @@ export class IssueExternalInvoiceOperation extends OrdersIssueExternalInvoiceOpe
 
 ### Task 16: `ExternalPayment` and `PaymentProviderSyncState` tables
 
-**Files:** `migrations/V202609261000__v5.14.0__ExternalPayment.sql`; entity-name constants (`EXTERNAL_PAYMENT_ENTITY = 'MJ_BizApps_Orders: External Payments'`, `PAYMENT_PROVIDER_SYNC_STATE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Sync States'`); changeset.
+**Files:** `migrations/V202609261000__v5.15.0__ExternalPayment.sql`; entity-name constants (`EXTERNAL_PAYMENT_ENTITY = 'MJ_BizApps_Orders: External Payments'`, `PAYMENT_PROVIDER_SYNC_STATE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Sync States'`); changeset.
 
 - [ ] Write the DDL from spec §4.3 (idempotent guards, FKs `PaymentProviderID → PaymentProvider`, `PaymentHeaderID → PaymentHeader`, descriptions), apply, CodeGen, fold, build, changeset, commit `feat(orders): ExternalPayment and PaymentProviderSyncState — the poller's ledger and watermark`.
 
