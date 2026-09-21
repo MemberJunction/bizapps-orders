@@ -36,7 +36,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 const LIB = join(import.meta.dirname, '..', '..');
 
@@ -130,7 +130,11 @@ const componentNames = new Set<string>();
 for (const file of sourceFiles()) {
     const source = readFileSync(file, 'utf8');
     if (!source.includes('@Component(')) continue;
-    const rel = file.slice(LIB.length + 1);
+    // POSIX separators, because the assertions compare against 'sections/' and 'pages/'. On Windows
+    // this slice yields `sections\file.ts`, so `startsWith('sections/')` was false for every file
+    // under sections/ — the scan reached them and the check that it had reached them failed. Green on
+    // Linux CI, red on a Windows checkout, which is the worst way for a coverage guard to be wrong.
+    const rel = file.slice(LIB.length + 1).split(sep).join('/');
     for (const part of source.split(/(?=@Component\()/)) {
         // NEVER skip a part for want of a class name. Splitting on `@Component(` puts a file's
         // FIRST class body in the leading part, which may carry no `export class` match at all —

@@ -32,6 +32,8 @@ export type { OrderRollupField, OrderRollups, ResolvedOrderRollups } from './Ord
 
 export { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 export type { JEDraft, JELineDraft, OrderLineDraft } from './OrderJournalEntryFactory.js';
+export { MergeLineDimensions } from './LineDimensionMerge.js';
+export type { LineDimensionColumns, LineDimensionTag } from './LineDimensionMerge.js';
 
 export {
     RevenueRecognitionDriver,
@@ -84,16 +86,19 @@ export type {
 export {
     PaymentAllocationFactory,
     AllocateByCompany,
+    SliceByDimensions,
     IntercompanyPairMissingError,
 } from './PaymentAllocationFactory.js';
 export type {
     OrderLineShare,
     CompanyShare,
+    DimensionSlice,
     IntercompanyPair,
     IntercompanyLookup,
     PaymentLineAllocationContext,
     PaymentAllocationResult,
 } from './PaymentAllocationFactory.js';
+export { LoadOrderLineShares } from './PaymentAllocationInputs.js';
 
 export { PaymentHeaderEntityServer, LoadPaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentLineEntityServer.js';

@@ -36,6 +36,7 @@ import {
     type BundleComponent,
     type BundleLineFacts,
 } from './BundleBehavior.js';
+import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
 const PRODUCT_BUNDLE_ITEM_ENTITY = 'MJ_BizApps_Orders: Product Bundle Items';
 
@@ -259,6 +260,9 @@ export async function RippleBundleQuantity(
         if (target === Number(child.Quantity)) continue;
 
         const entity = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+        // Orders writing its own line. An app that froze this line freezes what a PERSON
+        // may change, not Orders closing its own books (#206 item 1).
+        MarkAsOrdersOwnWrite(entity);
         if (!(await entity.Load(child.ID))) continue;
         entity.Quantity = target;
         if (!(await entity.Save())) {

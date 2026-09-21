@@ -1,0 +1,200 @@
+[
+  {
+    "_comments": [
+      "THE RENEWAL ACTION (issue #243). Its own dot-json rather than an append to `.orders-actions.json`:",
+      "`filePattern` is `**/.*.json`, so MetadataSync reads every dot-json in this directory, and two",
+      "sessions each adding a file conflict on nothing while two appending to one file always conflict.",
+      "",
+      "WHY AN ACTION AT ALL, when `Orders.SpawnRenewals` is already a remote operation. The operation is",
+      "the API a browser calls, and renewals have no browser — the term expires whether or not anyone",
+      "opens the app. The caller this needs is a scheduled job, and MJ's scheduler dispatches Actions and",
+      "Agents; no driver takes an operation key. This row is that adapter, and the class behind it holds",
+      "no renewal logic — see the header of `spawn-renewals.action.ts`.",
+      "",
+      "SAFE TO SHIP `Active`, because Active describes the Action and not a schedule. Nothing invokes it",
+      "until the ScheduledJob in `metadata/scheduled-jobs/` is enabled, and that job ships Disabled and",
+      "configured for Preview. Running the Action by hand with no params is also safe: it places only",
+      "what is already due, and the operation's two idempotency guards mean a second run is a no-op."
+    ],
+    "fields": {
+      "Name": "Spawn Renewals",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Place the renewal orders that are due: subscriptions whose latest term expires inside their own lead window and whose holder consented via AutoRenew. Runs the Orders.SpawnRenewals operation, which carries the selection, the booking path and both idempotency guards — this Action only reads parameters and reports the result. Preview returns the list without placing anything.",
+      "Type": "Custom",
+      "DriverClass": "Orders.SpawnRenewals",
+      "IconClass": "fa-solid fa-rotate",
+      "UserPrompt": "Place the subscription renewal orders that are due, or preview what would be placed.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B201"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AsOfDate",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Treat this date as \"today\" when deciding what is due (YYYY-MM-DD). Omit for the actual today, which is what the schedule uses. A value that cannot be parsed is refused rather than replaced with today: today is the wrong answer most likely to look right, and on a live run it bills the wrong quarter."
+          },
+          "primaryKey": {
+            "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B202"
+          },
+          "sync": {
+            "lastModified": "2026-09-19T16:14:41.366Z",
+            "checksum": "3831de76091055a5d96dba369000205ee668af0852f70a4bb0d4cc0ccaaaface"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Preview",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True reports what WOULD be placed and writes nothing; false (the default) places the orders. A value that is neither is refused rather than guessed — the wrong guess bills customers. Note that a scheduler stores params as text, so \"false\" arrives as a string and is read as false, not as a truthy value."
+          },
+          "primaryKey": {
+            "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B203"
+          },
+          "sync": {
+            "lastModified": "2026-09-19T16:14:41.399Z",
+            "checksum": "f472de213c2272840ced598fcdfc25fd97f5fcfc6672f8051884ba5fa875af3e"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxCount",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Cap on orders placed in one pass, and on the candidates a preview reports, so the list confirmed at the go-live gate is the pass that follows it. The safety valve for the first live run, where a mis-set lead time would otherwise invoice an entire book of business at once. Capped runs are not lost work — the subscriptions left over are still due on the next pass. A value that is not a whole number of at least 1 is refused, never dropped: a dropped cap is no cap."
+          },
+          "primaryKey": {
+            "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B204"
+          },
+          "sync": {
+            "lastModified": "2026-09-19T16:14:41.430Z",
+            "checksum": "445623198740c43d87ce3b408254d28f5fa650147eca7bc2e915687cadd2a2ac"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SubscriptionID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Restrict the pass to one subscription, for a targeted retry after a failure. Takes the Subscription row's ID, not its SubscriptionNumber. Omitted by the schedule, which considers every subscription."
+          },
+          "primaryKey": {
+            "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B205"
+          },
+          "sync": {
+            "lastModified": "2026-09-19T16:14:41.460Z",
+            "checksum": "449061e4726a890ba02c6a6fb0044464adeec393719b4bbb07fe08786e21bce0"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Placed",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many renewal orders this pass actually placed. Always 0 on a preview."
+          },
+          "primaryKey": {
+            "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B206"
+          },
+          "sync": {
+            "lastModified": "2026-09-19T16:14:41.490Z",
+            "checksum": "cb7ea69ad7598d2118daeee28d4d8c9849854570812cc391161d226d55514b98"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Skipped",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many due subscriptions were passed over — already renewed, previewed, or failed. Each one's reason is on its entry in Candidates."
+          },
+          "primaryKey": {
+            "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B207"
+          },
+          "sync": {
+            "lastModified": "2026-09-19T16:14:41.520Z",
+            "checksum": "6ac89a923e4630770718d129349d61a105abea5a47427b7f0b6c5d6498706c11"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CandidateCount",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many subscriptions were due as of the run date, placed or not. Zero on a healthy day with nothing expiring; zero every day means something is wrong with the lead-day configuration rather than with the customers."
+          },
+          "primaryKey": {
+            "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B208"
+          },
+          "sync": {
+            "lastModified": "2026-09-19T16:14:41.549Z",
+            "checksum": "6ab9daa5cc1ae1fdb85856e82d52b53e58f7fb9f38961b00f8ea85e5ac74e31e"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Candidates",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every subscription considered due, with the lead days applied, the expiring term's end date, and either the order placed or the reason it was skipped. This list is the deliverable of a preview run — it is what a person confirms before the job is allowed to place anything."
+          },
+          "primaryKey": {
+            "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B209"
+          },
+          "sync": {
+            "lastModified": "2026-09-19T16:14:41.579Z",
+            "checksum": "5ed6db81f390bfca700601ecb270ece60d081c78e06f9b0ef980c4770d2e1efa"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewedOnly",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when this pass reported its list and wrote nothing. Deliberately NOT named Preview: an output is written back onto the param row of the same name, so reusing the input's name would overwrite the value the job was called with — and whether a run was a rehearsal or the real thing is the one fact the run record has to keep."
+          },
+          "primaryKey": {
+            "ID": "4E7A21B5-3C60-4F18-9D42-0A15C7E9B20A"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-09-19T16:14:41.314Z",
+      "checksum": "3387e5f5a5893e02384d4aaeb0a6df9297b80f30b5159486c40dbd7740992b29"
+    }
+  }
+]

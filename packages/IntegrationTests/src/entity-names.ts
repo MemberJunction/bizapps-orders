@@ -61,12 +61,15 @@ export const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 export const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
 export const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
 export const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
+export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
 
 // ── Accounting (peer app; we resolve THROUGH these, so we build them properly) ────────────────────
 export const GL_ACCOUNT_ENTITY = 'MJ_BizApps_Accounting: GL Accounts';
 export const GL_ACCOUNT_ROLE_ENTITY = 'MJ_BizApps_Accounting: GL Account Roles';
 export const GL_ACCOUNT_LINK_ENTITY = 'MJ_BizApps_Accounting: GL Account Links';
 export const INTERCOMPANY_ACCOUNT_MATCH_ENTITY = 'MJ_BizApps_Accounting: Intercompany Account Matches';
+export const INTERCOMPANY_ACCOUNT_MATCH_DIMENSION_ENTITY =
+    'MJ_BizApps_Accounting: Intercompany Account Match Dimensions';
 export const COMPANY_TAX_NEXUS_ENTITY = 'MJ_BizApps_Accounting: Company Tax Nexus';
 export const COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Company Profiles';
 export const TAX_AUTHORITY_ENTITY = 'MJ_BizApps_Accounting: Tax Authorities';
@@ -122,10 +125,12 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PAYMENT_PROVIDER_ENTITY,
     PAYMENT_PROVIDER_TYPE_ENTITY,
     PAYMENT_INTENT_ENTITY,
+    ORDER_LINE_DIMENSION_ENTITY,
     GL_ACCOUNT_ENTITY,
     GL_ACCOUNT_ROLE_ENTITY,
     GL_ACCOUNT_LINK_ENTITY,
     INTERCOMPANY_ACCOUNT_MATCH_ENTITY,
+    INTERCOMPANY_ACCOUNT_MATCH_DIMENSION_ENTITY,
     COMPANY_TAX_NEXUS_ENTITY,
     COMPANY_PROFILE_ENTITY,
     TAX_AUTHORITY_ENTITY,

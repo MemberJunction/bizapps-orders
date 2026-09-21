@@ -51,6 +51,7 @@ import {
     type FulfillableLine,
 } from './FulfillmentBehavior.js';
 import { RequireUUID } from './sql-guards.js';
+import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
@@ -158,6 +159,9 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
         const flipped = new Set<string>();
         for (const decision of decisions.filter((d) => d.Fulfilled)) {
             const entity = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+            // Orders writing its own line. An app that froze this line freezes what a PERSON
+            // may change, not Orders closing its own books (#206 item 1).
+            MarkAsOrdersOwnWrite(entity);
             const loaded = await entity.Load(
                 decision.OrderLineID,
             );

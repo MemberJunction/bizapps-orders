@@ -1,5 +1,41 @@
 # @mj-biz-apps/orders-ng
 
+## 5.13.0
+
+### Patch Changes
+
+- 2f2895b: Format Balance as currency on every Orders grid the app hosts.
+
+  The grid renders a money column as currency only when the column declares
+  `format: { type: 'currency' }` or its field name matches the core name heuristic
+  (`amount`/`price`/`cost`/`total`). `TotalGross` matches that heuristic and `Balance` does not, so
+  grids with no column state of their own — All Orders, and the dashboard's Active Orders, Orders
+  Explorer and Overdue Collections panes — showed Total with a dollar sign and Balance as a raw
+  number, as did Overdue one-time orders, the customer A/R open-items list and the account-credit
+  picker. All seven now share `MJO_ORDER_HEADER_GRID_STATE`, which declares the currency format for
+  both columns, so the formatting no longer depends on the field's name.
+
+  Binding that state also changes the column set on those grids, deliberately. They previously rendered the entity's
+  `DefaultInView` fields; they now render the eight columns of the "Orders: Working" saved view, so
+  Payment Status and Bill To Person no longer appear and a positive balance is highlighted amber.
+
+- 1d66218: Let the Product form edit Name, SKU and Description again.
+
+  The Product hero header registers `replacesSectionKey: 'productIdentification'`, which tells MJ's
+  form chrome to hide the generated section outright — no rail item, no entry in Manage Sections, no
+  way back through the section search or the layout toggles. That section is the only place Name, SKU
+  and Description render, and the hero showed them read-only: Name as an `<h1>`, SKU as a chip,
+  Description nowhere at all. Name is required, so no product could be created and none could be
+  renamed; the rail's error badge counted errors in a panel nobody could open.
+
+  The hero now renders those three fields as real inputs when the form is in edit mode, and shows the
+  description when it is not — the same contract the Common People and Organizations identity headers
+  already honor. Claiming a generated section means owning its fields, so a test now asserts that the
+  header renders every field of the section it claims.
+
+- Updated dependencies [92f7e68]
+  - @mj-biz-apps/orders-entities@5.13.0
+
 ## 5.12.2
 
 ### Patch Changes
