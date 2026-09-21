@@ -507,6 +507,17 @@
           "primaryKey": {
             "ID": "D9F5A3B2-7E8C-4D2A-AF64-9B1F2C3D4E55"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-34 - Payment Schedule",
+            "Sequence": 34,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C441"
+          }
         }
       ]
     },

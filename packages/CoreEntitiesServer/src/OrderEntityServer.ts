@@ -75,6 +75,8 @@ import {
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
+import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
+import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import { AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
@@ -579,6 +581,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
             if (booking) {
                 const lines = await this.loadLinesForBooking();
+
+                // THE SCHEDULE MUST TIE (plan §4.3). Per company, the instalments must sum to exactly
+                // what the lines just landed as — checked here, inside the transaction, because the
+                // per-company gross does not exist until the lines are written. Throwing rolls the
+                // whole confirm back: no journal entries, no subscription, no sequence number spent.
+                // An order with no schedule rows has nothing to check and books exactly as before.
+                await this.verifyScheduleTies(lines);
+
                 // Subscriptions before booking: a term must exist so recognition entries can anchor
                 // to it (D46) and use its anchored/prorated window rather than raw line dates.
                 const subs = await this.materializeSubscriptions(lines, decisions, options);
@@ -2828,6 +2838,37 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
     private entityIDFor(entityName: string): string {
         return EntityIDFor(entityName);
+    }
+
+    /**
+     * Refuse a confirm whose payment schedule does not tie to its lines, naming the shortfall.
+     *
+     * Treating an unscheduled remainder as "due on the header date" would silently under-bill —
+     * the failure `InvoiceBehavior` already names. The check itself is `ScheduleShortfalls`, shared
+     * with `Orders.IssueInstalmentInvoice` so both refuse for the same reason in the same words.
+     */
+    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const rows = await rv.RunView<{ CompanyID: string; Company?: string; Amount: number; Status: string }>(
+            {
+                EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+                ExtraFilter: `OrderHeaderID='${RequireUUID(this.ID, 'ID')}'`,
+                Fields: ['CompanyID', 'Company', 'Amount', 'Status'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        if (!rows.Success) {
+            throw new Error(`Could not read the payment schedule for order ${this.OrderNumber}: ${rows.ErrorMessage ?? 'unknown error'}`);
+        }
+        const shortfalls = ScheduleShortfalls(
+            rows.Results ?? [],
+            lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
+        );
+        if (!shortfalls.length) return;
+        const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
+        throw new Error(ExplainShortfalls(this.OrderNumber ?? '', shortfalls, (id) => String(names.get(id) ?? id)));
     }
 
     private async loadLinesForBooking(): Promise<mjBizAppsOrdersOrderLineEntity[]> {

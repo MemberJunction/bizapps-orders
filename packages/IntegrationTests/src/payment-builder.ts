@@ -34,6 +34,8 @@ export interface AllocationSpec {
     Amount: number;
     /** Optional line-level targeting — supported by the schema, used by the split-payment checks. */
     OrderLineID?: string | null;
+    /** Aim the allocation at one instalment of the order's payment schedule (AIDP-24). */
+    OrderHeaderPaymentScheduleID?: string | null;
 }
 
 export interface PaymentSpec {
@@ -101,6 +103,7 @@ export async function CreatePayment(user: UserInfo, spec: PaymentSpec): Promise<
         line.OrderHeaderID = alloc.OrderHeaderID;
         line.Amount = alloc.Amount;
         if (alloc.OrderLineID) line.OrderLineID = alloc.OrderLineID;
+        if (alloc.OrderHeaderPaymentScheduleID) line.OrderHeaderPaymentScheduleID = alloc.OrderHeaderPaymentScheduleID;
         line.AllocatedAt = new Date();
         line.AllocatedByUserID = user?.ID ?? null;
         lines.push(line);
