@@ -27,10 +27,11 @@
  * AR/Deferred entry plus twelve dated release entries, all inside the same booking transaction.
  * An UpFront line skips the deferral round-trip entirely and credits Sales directly.
  *
- * Plan D31 — DIMENSIONS. Each line's `OrderLineDimension` tags ride onto every JE line the line
- * produces, so departmental/segment reporting survives into the ledger and through batch
- * summarization. Where a resolved GL account link REQUIRES a dimension the line hasn't tagged, we
- * fail loudly rather than book an entry that can't be reported on.
+ * Plan D31 — DIMENSIONS. Each line's tags ride onto every JE line the line produces, so
+ * departmental/segment reporting survives into the ledger and through batch summarization. Two
+ * sources feed them: the `OrderLineDimension` child rows, and the single tag stated on the line
+ * itself (`OrderLine.DimensionID` / `.DimensionValueID`, golive #236) — see `MergeLineDimensions`
+ * for which wins where they name the same axis.
  *
  * NEGATIVE QUANTITIES are the reversal mechanism (plan D16) — they flow through the same
  * arithmetic and mirror every entry, so returns and credit memos need no special path.
@@ -52,6 +53,7 @@ import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 import { GL_ROLE, GLAccountResolver, GLAccountResolutionError } from './GLAccountResolver.js';
 import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
+import { MergeLineDimensions } from './LineDimensionMerge.js';
 
 /** Mirrors accounting's `JournalEntryLineDraft`. */
 export interface JELineDraft {
@@ -210,7 +212,10 @@ export class OrderJournalEntryFactory {
 
         // The line's company is the denormalized stamp of the product's company (plan D6).
         const companyID = line.CompanyID ?? product.CompanyID;
-        const lineDims = dimensions.get(line.ID) ?? [];
+        const lineDims = MergeLineDimensions(
+            { DimensionID: line.DimensionID, DimensionValueID: line.DimensionValueID },
+            dimensions.get(line.ID) ?? [],
+        );
 
         // REVERSALS ARE MIRRORED, NOT NEGATED (D16). A negative quantity means "unwind this much of
         // that purchase" — and the correct double-entry for unwinding is the SAME accounts with the

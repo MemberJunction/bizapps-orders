@@ -2,13 +2,14 @@ import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } fr
 import { CommonModule } from '@angular/common';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.component';
+import { BuildDayBars } from '../../panels/day-bars';
 
 import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { GetPayments } from '../../data/orders-queries';
-import { LocalDay, ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../../data/entity-names';
 
 /**
@@ -272,25 +273,15 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
      * for a panel about cash.
      */
     public get CashPerDay(): MJODayBar[] {
-        const days: MJODayBar[] = [];
-        const today = new Date();
-        for (let back = 6; back >= 0; back--) {
-            const day = new Date(today);
-            day.setDate(day.getDate() - back);
-            // LOCAL day for the key, matching the LOCAL day the label is built from — see the same
-            // note on the orders dashboard.
-            const iso = LocalDay(day);
-            days.push({
-                Label: day.toLocaleDateString('en-US', { weekday: 'short' }),
-                Value: Math.round(
-                    this.payments
-                        .filter((p) => ToISODate(p.PaymentDate) === iso)
-                        .reduce((sum, p) => sum + Number(p.Amount ?? 0), 0),
-                ),
-                Current: back === 0,
-            });
-        }
-        return days;
+        // BUSINESS calendar days throughout — see BuildDayBars — so the bar's label always names
+        // the same day as the payments summed into it, whatever zone the viewer sits in.
+        return BuildDayBars((iso) =>
+            Math.round(
+                this.payments
+                    .filter((p) => ToISODate(p.PaymentDate) === iso)
+                    .reduce((sum, p) => sum + Number(p.Amount ?? 0), 0),
+            ),
+        );
     }
 
     /** Newest first. */

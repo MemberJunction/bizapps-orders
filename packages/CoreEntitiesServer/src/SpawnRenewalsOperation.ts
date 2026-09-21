@@ -137,9 +137,19 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
 
         const out: SpawnRenewalsOutput = { Success: true, Candidates: [], Placed: 0, Skipped: 0 };
         const limit = input.MaxCount ?? Number.MAX_SAFE_INTEGER;
+        /**
+         * Orders this pass has committed to: PLACED on a live pass, WOULD-place on a preview.
+         *
+         * Counted separately from `Placed` because the cap has to bind identically in both modes.
+         * Keyed on `Placed`, it never binds on a preview — `Placed` stays 0 — so the preview
+         * enumerates every due subscription while the live pass stops at the cap, and the list a
+         * person confirms at the go-live gate is not the list the first live pass produces. A
+         * candidate the idempotency guard rejects does not consume the cap: nothing was placed.
+         */
+        let committed = 0;
 
         for (const due of candidates) {
-            if (out.Placed >= limit) break;
+            if (committed >= limit) break;
 
             const candidate: RenewalCandidate = {
                 SubscriptionID: due.SubscriptionID,
@@ -160,6 +170,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
 
             if (input.Preview) {
                 out.Skipped++;
+                committed++;
                 continue;
             }
 
@@ -168,6 +179,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
                 candidate.OrderID = order.ID;
                 candidate.OrderNumber = order.Number;
                 out.Placed++;
+                committed++;
             } catch (err) {
                 // One subscription's failure must not stop the batch — an unattended job that
                 // aborts on the first bad row silently stops renewing everyone behind it.

@@ -1,5 +1,65 @@
 # @mj-biz-apps/orders-entities
 
+## 5.14.0
+
+### Minor Changes
+
+- bc6588e: Order Date defaults to today in the business time zone, "overdue" is judged against it, and the
+  Orders/Payments dashboards' day bars no longer disagree with themselves (bc-aidp-next-golive#168).
+
+  An order entered at 9 PM Eastern on the 27th was dated the 28th: `new Date()` is an instant and an
+  instant serialises in UTC. `OrderDate` now defaults to `TodayAsDateValue()`, the business calendar
+  day pinned to UTC midnight, on the entity, in checkout and in the overdue worklist's "as of" default.
+  `Today()` and `LocalDay()` in `date-cell.ts` read the zone from bizapps-common's
+  `BusinessTimeZoneEngine` instead of the browser. `vwOrderHeaders.IsOverdue` compares `DueDate`
+  against `bt.Today` from `fnBusinessToday()` rather than `CAST(GETUTCDATE() AS date)`, and the view
+  text is now emitted by `OverdueViewSQL()` with a test that the committed migration matches it.
+
+  That same `LocalDay()` switch from the browser's zone to the business zone exposed a latent bug in
+  the Orders and Payments dashboards: each "last 7 days" bar chart keyed its bars by business day but
+  labelled them with the viewer's own local weekday, so a viewer sitting in a different zone than the
+  business one saw a bar labelled with one day counting another day's rows. Both dashboards now build
+  their bars with a shared `BuildDayBars` helper that derives the label from the same calendar-day key
+  used to filter, so the two cannot diverge.
+
+  Requires `@mj-biz-apps/common-entities` 5.43.0.
+
+- 2ce84d1: Expands EventProduct with EventFormat and VirtualMeetingUrl, and expands EventOrderLine with AttendanceStatus, Badge tracking/overrides, TicketTier, TableAssignment, SpecialRequests, and CheckInNotes.
+- e1f4e15: Let an order line state a GL dimension, and carry it down to the journal entry.
+
+  `OrderJournalEntryFactory` has ridden dimension tags onto every journal entry line an order line
+  produces since the baseline — the AR debit, the revenue or deferred credit, the discount debit, each
+  charge and tax credit, and both legs of every recognition release. But nothing ever tagged an order
+  line, so every order-originated entry reached the ledger carrying none, silently and permanently:
+  the line freezes once `JournalEntryID` is stamped (MemberJunction/bc-aidp-next-golive#236).
+
+  `OrderLine` gains nullable `DimensionID` and `DimensionValueID`, both foreign-keyed into
+  `__mj_BizAppsAccounting`. Both, not one: a dimension names the axis and the value names the point on
+  it, and a journal entry line's tag is the pair — so a dimension id alone could not be passed down.
+  `CK_OrderLine_DimensionPair` makes "both or neither" a database rule, and
+  `OrderLineEntityServer.ValidateAsync` reports it in words before the constraint has to.
+
+  A details button on each line card opens a slide-in panel holding the two pickers, with values read
+  from accounting as they stand on the order's own date — `DimensionValue` is effective-dated, and a
+  back-dated order has to offer the values that were live when it was placed. Changing the dimension
+  clears the value, because a value belongs to exactly one axis. A booked line shows its tag
+  read-only.
+
+  The factory now merges the line's column tag with any `OrderLineDimension` child rows, with the
+  column winning on its own axis: accounting refuses a journal entry line tagged twice on one
+  dimension, so a conflict would otherwise fail the whole booking rather than show itself.
+
+  Three migrations, and none is optional: the columns, then the CodeGen output for them (EntityField
+  registrations, the rebuilt `vwOrderLines`, `spCreateOrderLine` and `spUpdateOrderLine`, and the
+  rebuilt `vwEventOrderLines` for the IS-A child). A host's `mj.config.cjs` carries this app's schema
+  in `excludeSchemas`, so `mj codegen` on a host will register the fields in metadata but will not
+  rebuild the view or the procedures — leaving an entity that declares fields its base view cannot
+  produce, which reads as "no data" rather than an error.
+
+  Note the shape this fixes and the shape it does not: one tag per line means a revenue line can be
+  filed under Venture **or** Product **or** ARR-Type, not all of them. The chart-of-accounts design
+  asks for five axes on a revenue line.
+
 ## 5.13.0
 
 ### Minor Changes

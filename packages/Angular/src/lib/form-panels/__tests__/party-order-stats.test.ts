@@ -39,3 +39,4 @@ describe('FiguresFromLifetimeRow', () => {
         expect(figures.find((f) => f.Label === 'Orders')?.Value).toBe('12');
     });
 });
+

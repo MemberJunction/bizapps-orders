@@ -29,39 +29,42 @@ export class mjBizAppsOrdersChargeType_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    Code: string;
+    Code?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     Description?: string;
         
-    @Field({description: `Shipping | Handling | Tax | Surcharge | Fee.`}) 
+    @Field({nullable: true, description: `Shipping | Handling | Tax | Surcharge | Fee.`}) 
     @MaxLength(20)
-    Category: string;
+    Category?: string;
         
-    @Field({description: `What the charge computes on: LineNet (the discounted line), LineNetPlusCharges (after earlier charges in sequence), OrderNet, or Flat. This is the field that makes tax-on-shipping work, which is jurisdiction-dependent and therefore configuration rather than code.`}) 
+    @Field({nullable: true, description: `What the charge computes on: LineNet (the discounted line), LineNetPlusCharges (after earlier charges in sequence), OrderNet, or Flat. This is the field that makes tax-on-shipping work, which is jurisdiction-dependent and therefore configuration rather than code.`}) 
     @MaxLength(30)
-    Basis: string;
+    Basis?: string;
         
-    @Field(() => Int, {description: `Application order. Charges compute in this order and later ones may build on earlier ones via Basis.`}) 
-    Sequence: number;
+    @Field(() => Int, {nullable: true, description: `Application order. Charges compute in this order and later ones may build on earlier ones via Basis.`}) 
+    Sequence?: number;
         
-    @Field(() => Boolean, {description: `Whether a human may override a computed charge of this type.`}) 
-    AllowsOverride: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether a human may override a computed charge of this type.`}) 
+    AllowsOverride?: boolean;
         
-    @Field(() => Boolean) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -236,17 +239,17 @@ export class mjBizAppsOrdersCheckoutSession_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    CheckoutWidgetID: string;
+    CheckoutWidgetID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
     DistributionID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    ClientSessionKey: string;
+    ClientSessionKey?: string;
         
     @Field({nullable: true}) 
     @MaxLength(255)
@@ -264,12 +267,12 @@ export class mjBizAppsOrdersCheckoutSession_ {
     @MaxLength(36)
     PaymentIntentID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
-    @Field() 
-    ExpiresAt: Date;
+    @Field({nullable: true}) 
+    ExpiresAt?: Date;
         
     @Field({nullable: true}) 
     MetadataJSON?: string;
@@ -280,9 +283,9 @@ export class mjBizAppsOrdersCheckoutSession_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    CheckoutWidget: string;
+    CheckoutWidget?: string;
         
     @Field({nullable: true}) 
     @MaxLength(255)
@@ -299,6 +302,9 @@ export class mjBizAppsOrdersCheckoutSession_ {
     @Field({nullable: true}) 
     @MaxLength(100)
     PaymentIntent?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -485,21 +491,21 @@ export class mjBizAppsOrdersCheckoutWidgetDistribution_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    CheckoutWidgetID: string;
+    CheckoutWidgetID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(255)
-    Slug: string;
+    Slug?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
     MagicLinkInviteID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true}) 
     RevokedAt?: Date;
@@ -517,9 +523,12 @@ export class mjBizAppsOrdersCheckoutWidgetDistribution_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    CheckoutWidget: string;
+    CheckoutWidget?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -688,20 +697,20 @@ export class mjBizAppsOrdersCheckoutWidget_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     Description?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true}) 
     Configuration?: string;
@@ -718,9 +727,12 @@ export class mjBizAppsOrdersCheckoutWidget_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -897,19 +909,19 @@ export class mjBizAppsOrdersCustomerPaymentMethod_ {
     @MaxLength(36)
     OwnerOrganizationID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PaymentDetailID: string;
+    PaymentDetailID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
     Nickname?: string;
         
-    @Field(() => Boolean, {description: `Whether this is the customer's default method for charge-on-file.`}) 
-    IsDefault: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether this is the customer's default method for charge-on-file.`}) 
+    IsDefault?: boolean;
         
-    @Field(() => Boolean, {description: `Whether this method is active/usable.`}) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether this method is active/usable.`}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -928,6 +940,9 @@ export class mjBizAppsOrdersCustomerPaymentMethod_ {
     @Field({nullable: true}) 
     @MaxLength(4)
     PaymentDetail?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -1098,9 +1113,9 @@ export class mjBizAppsOrdersCustomerPaymentTerms_ {
     @MaxLength(36)
     PersonID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PaymentTermsTypeID: string;
+    PaymentTermsTypeID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -1112,9 +1127,9 @@ export class mjBizAppsOrdersCustomerPaymentTerms_ {
     @Field({nullable: true}) 
     EndedAt?: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(10)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true}) 
     Comments?: string;
@@ -1125,9 +1140,12 @@ export class mjBizAppsOrdersCustomerPaymentTerms_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentTermsType: string;
+    PaymentTermsType?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -1318,9 +1336,9 @@ export class mjBizAppsOrdersCustomerTaxExemption_ {
     @MaxLength(50)
     TaxCategory?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(30)
-    ExemptionType: string;
+    ExemptionType?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
@@ -1338,9 +1356,9 @@ export class mjBizAppsOrdersCustomerTaxExemption_ {
     @Field({nullable: true}) 
     EndedAt?: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(10)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true}) 
     Comments?: string;
@@ -1358,6 +1376,9 @@ export class mjBizAppsOrdersCustomerTaxExemption_ {
     @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -1556,9 +1577,9 @@ export class mjBizAppsOrdersEntitlementGrant_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ProductEntitlementID: string;
+    ProductEntitlementID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -1585,9 +1606,9 @@ export class mjBizAppsOrdersEntitlementGrant_ {
     @Field({nullable: true, description: `Grant validity end.`}) 
     ValidTo?: Date;
         
-    @Field({description: `Active | Suspended | Revoked | Expired.`}) 
+    @Field({nullable: true, description: `Active | Suspended | Revoked | Expired.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true, description: `UTC timestamp downstream provisioning completed (NULL until provisioned).`}) 
     ProvisionedAt?: Date;
@@ -1628,6 +1649,9 @@ export class mjBizAppsOrdersEntitlementGrant_ {
     @Field({nullable: true}) 
     @MaxLength(255)
     BeneficiaryOrganization?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -1847,9 +1871,9 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field({description: `FK to __mj_BizAppsCommon.Person — the attendee. Required for a new event line; check-in is separate and optional.`}) 
+    @Field({nullable: true, description: `FK to __mj_BizAppsCommon.Person — the attendee. Required for a new event line; check-in is separate and optional.`}) 
     @MaxLength(36)
-    PersonID: string;
+    PersonID?: string;
         
     @Field({nullable: true, description: `Dietary preferences for the attendee (vegetarian, kosher, etc.). Shown to conference organizers.`}) 
     @MaxLength(500)
@@ -1863,45 +1887,80 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(2000)
     Comments?: string;
         
-    @Field() 
+    @Field({nullable: true, description: `Attendee operational lifecycle status: Registered, Attended, No Show, or Cancelled.`}) 
+    @MaxLength(20)
+    AttendanceStatus?: string;
+        
+    @Field({nullable: true, description: `Timestamp when the attendee credential badge was printed at registration desk or kiosk.`}) 
+    BadgePrintedAt?: Date;
+        
+    @Field({nullable: true, description: `Preferred attendee name override for badge printing (e.g. nickname or chosen name).`}) 
+    @MaxLength(200)
+    BadgeName?: string;
+        
+    @Field({nullable: true, description: `Organization or company name to display on the badge if different from primary organization.`}) 
+    @MaxLength(200)
+    BadgeCompany?: string;
+        
+    @Field({nullable: true, description: `Job title to display on attendee credential badge.`}) 
+    @MaxLength(200)
+    BadgeTitle?: string;
+        
+    @Field({nullable: true, description: `Ticket or registration tier: General, VIP, Speaker, Sponsor, Exhibitor, Staff, Student.`}) 
+    @MaxLength(50)
+    TicketTier?: string;
+        
+    @Field({nullable: true, description: `Table or seating assignment for seated meals, banquets, or breakout tracks.`}) 
+    @MaxLength(100)
+    TableAssignment?: string;
+        
+    @Field({nullable: true, description: `Accessibility and accommodation requests (wheelchair seating, ASL interpretation, etc.).`}) 
+    @MaxLength(2000)
+    SpecialRequests?: string;
+        
+    @Field({nullable: true, description: `Staff notes taken during check-in or on-site event operations.`}) 
+    @MaxLength(2000)
+    CheckInNotes?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ProductID: string;
+    ProductID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
-    @Field(() => Int) 
-    LineNumber: number;
+    @Field(() => Int, {nullable: true}) 
+    LineNumber?: number;
         
-    @Field(() => Float) 
-    Quantity: number;
+    @Field(() => Float, {nullable: true}) 
+    Quantity?: number;
         
-    @Field(() => Float) 
-    UnitPrice: number;
+    @Field(() => Float, {nullable: true}) 
+    UnitPrice?: number;
         
     @Field({nullable: true}) 
     @MaxLength(36)
     ProductPriceID?: string;
         
-    @Field(() => Float) 
-    DiscountPct: number;
+    @Field(() => Float, {nullable: true}) 
+    DiscountPct?: number;
         
-    @Field(() => Float) 
-    DiscountAmount: number;
+    @Field(() => Float, {nullable: true}) 
+    DiscountAmount?: number;
         
     @Field(() => Float, {nullable: true}) 
     LineTotalNet?: number;
         
-    @Field(() => Float) 
-    ChargeAmount: number;
+    @Field(() => Float, {nullable: true}) 
+    ChargeAmount?: number;
         
-    @Field(() => Float) 
-    LineTax: number;
+    @Field(() => Float, {nullable: true}) 
+    LineTax?: number;
         
     @Field(() => Float, {nullable: true}) 
     LineTotalGross?: number;
@@ -1944,11 +2003,11 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(36)
     ParentOrderLineID?: string;
         
-    @Field(() => Boolean) 
-    IsRollupParent: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsRollupParent?: boolean;
         
-    @Field(() => Boolean) 
-    IsQuantityOverridden: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsQuantityOverridden?: boolean;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -1962,15 +2021,26 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(36)
     JournalEntryID?: string;
         
-    @Field(() => Boolean) 
-    PriceOverridden: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    PriceOverridden?: boolean;
         
     @Field({nullable: true}) 
     PriceOverrideReason?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    DimensionID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    DimensionValueID?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(201)
-    Person: string;
+    Person?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -1996,6 +2066,33 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     Comments: string | null;
+
+    @Field({ nullable: true })
+    AttendanceStatus?: string;
+
+    @Field({ nullable: true })
+    BadgePrintedAt: Date | null;
+
+    @Field({ nullable: true })
+    BadgeName: string | null;
+
+    @Field({ nullable: true })
+    BadgeCompany: string | null;
+
+    @Field({ nullable: true })
+    BadgeTitle: string | null;
+
+    @Field({ nullable: true })
+    TicketTier: string | null;
+
+    @Field({ nullable: true })
+    TableAssignment: string | null;
+
+    @Field({ nullable: true })
+    SpecialRequests: string | null;
+
+    @Field({ nullable: true })
+    CheckInNotes: string | null;
 
     @Field({ nullable: true })
     OrderHeaderID?: string;
@@ -2087,6 +2184,12 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     @Field({ nullable: true })
     PriceOverrideReason: string | null;
 
+    @Field({ nullable: true })
+    DimensionID: string | null;
+
+    @Field({ nullable: true })
+    DimensionValueID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -2114,6 +2217,33 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     Comments?: string | null;
+
+    @Field({ nullable: true })
+    AttendanceStatus?: string;
+
+    @Field({ nullable: true })
+    BadgePrintedAt?: Date | null;
+
+    @Field({ nullable: true })
+    BadgeName?: string | null;
+
+    @Field({ nullable: true })
+    BadgeCompany?: string | null;
+
+    @Field({ nullable: true })
+    BadgeTitle?: string | null;
+
+    @Field({ nullable: true })
+    TicketTier?: string | null;
+
+    @Field({ nullable: true })
+    TableAssignment?: string | null;
+
+    @Field({ nullable: true })
+    SpecialRequests?: string | null;
+
+    @Field({ nullable: true })
+    CheckInNotes?: string | null;
 
     @Field({ nullable: true })
     OrderHeaderID?: string;
@@ -2204,6 +2334,12 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     PriceOverrideReason?: string | null;
+
+    @Field({ nullable: true })
+    DimensionID?: string | null;
+
+    @Field({ nullable: true })
+    DimensionValueID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -2307,8 +2443,8 @@ export class mjBizAppsOrdersEventProduct_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `UTC start of the event (also the SingleDate recognition date for Deferred event products).`}) 
-    EventStartsAt: Date;
+    @Field({nullable: true, description: `UTC start of the event (also the SingleDate recognition date for Deferred event products).`}) 
+    EventStartsAt?: Date;
         
     @Field({nullable: true, description: `UTC end of the event.`}) 
     EventEndsAt?: Date;
@@ -2324,8 +2460,8 @@ export class mjBizAppsOrdersEventProduct_ {
     @Field(() => Int, {nullable: true, description: `Maximum attendee count. NULL = uncapped.`}) 
     Capacity?: number;
         
-    @Field(() => Boolean, {description: `Whether order lines for this event require attendee info (EventOrderLine).`}) 
-    RequiresAttendeeInfo: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether order lines for this event require attendee info (EventOrderLine).`}) 
+    RequiresAttendeeInfo?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -2333,29 +2469,37 @@ export class mjBizAppsOrdersEventProduct_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true, description: `Event delivery format: In-Person, Virtual, or Hybrid.`}) 
+    @MaxLength(20)
+    EventFormat?: string;
+        
+    @Field({nullable: true, description: `Meeting/broadcast URL for virtual or hybrid event sessions (Zoom, Teams, etc.).`}) 
+    @MaxLength(1000)
+    VirtualMeetingUrl?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     @MaxLength(80)
     SKU?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ProductTypeID: string;
+    ProductTypeID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ProductCategoryID: string;
+    ProductCategoryID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -2367,9 +2511,9 @@ export class mjBizAppsOrdersEventProduct_ {
     @Field({nullable: true}) 
     AvailableTo?: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    RevenueRecognitionTypeID: string;
+    RevenueRecognitionTypeID?: string;
         
     @Field(() => Float, {nullable: true}) 
     StandaloneSellingPrice?: number;
@@ -2411,11 +2555,8 @@ export class mjBizAppsOrdersEventProduct_ {
     @MaxLength(255)
     VenueAddress?: string;
         
-    @Field(() => Float, {nullable: true}) 
-    _mj__Latitude?: number;
-        
-    @Field(() => Float, {nullable: true}) 
-    _mj__Longitude?: number;
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -2444,6 +2585,12 @@ export class CreatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Boolean, { nullable: true })
     RequiresAttendeeInfo?: boolean;
+
+    @Field({ nullable: true })
+    EventFormat?: string;
+
+    @Field({ nullable: true })
+    VirtualMeetingUrl: string | null;
 
     @Field({ nullable: true })
     Name?: string;
@@ -2535,6 +2682,12 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Boolean, { nullable: true })
     RequiresAttendeeInfo?: boolean;
+
+    @Field({ nullable: true })
+    EventFormat?: string;
+
+    @Field({ nullable: true })
+    VirtualMeetingUrl?: string | null;
 
     @Field({ nullable: true })
     Name?: string;
@@ -2698,22 +2851,25 @@ export class mjBizAppsOrdersOrderAdjustmentAllocation_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderAdjustmentID: string;
+    OrderAdjustmentID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderLineID: string;
+    OrderLineID?: string;
         
-    @Field(() => Float) 
-    Amount: number;
+    @Field(() => Float, {nullable: true}) 
+    Amount?: number;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -2858,9 +3014,9 @@ export class mjBizAppsOrdersOrderAdjustment_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
     @Field({nullable: true, description: `The line reduced. NULL means order-level, in which case OrderAdjustmentAllocation distributes it across lines.`}) 
     @MaxLength(36)
@@ -2874,11 +3030,11 @@ export class mjBizAppsOrdersOrderAdjustment_ {
     @MaxLength(36)
     PromotionCodeID?: string;
         
-    @Field(() => Float, {description: `Always POSITIVE - it is a reduction, and the direction is carried by what the pipeline does with it rather than by the stored sign.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `Always POSITIVE - it is a reduction, and the direction is carried by what the pipeline does with it rather than by the stored sign.`}) 
+    Amount?: number;
         
-    @Field(() => Int) 
-    Sequence: number;
+    @Field(() => Int, {nullable: true}) 
+    Sequence?: number;
         
     @Field({nullable: true, description: `Why this discount was given. Required when no promotion is named.`}) 
     Reason?: string;
@@ -2887,8 +3043,8 @@ export class mjBizAppsOrdersOrderAdjustment_ {
     @MaxLength(36)
     AppliedByUserID?: string;
         
-    @Field() 
-    AppliedAt: Date;
+    @Field({nullable: true}) 
+    AppliedAt?: Date;
         
     @Field({nullable: true, description: `Which SalesAuthority permitted a manual discount. Stamped so that lowering a rep's limit later does not retroactively make past discounts look unauthorized.`}) 
     @MaxLength(36)
@@ -2907,9 +3063,9 @@ export class mjBizAppsOrdersOrderAdjustment_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
@@ -2918,6 +3074,9 @@ export class mjBizAppsOrdersOrderAdjustment_ {
     @Field({nullable: true}) 
     @MaxLength(60)
     PromotionCode?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -3116,22 +3275,25 @@ export class mjBizAppsOrdersOrderChargeAllocation_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderChargeID: string;
+    OrderChargeID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderLineID: string;
+    OrderLineID?: string;
         
-    @Field(() => Float) 
-    Amount: number;
+    @Field(() => Float, {nullable: true}) 
+    Amount?: number;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -3276,16 +3438,16 @@ export class mjBizAppsOrdersOrderCharge_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ChargeTypeID: string;
+    ChargeTypeID?: string;
         
-    @Field(() => Float) 
-    Amount: number;
+    @Field(() => Float, {nullable: true}) 
+    Amount?: number;
         
     @Field(() => Float, {nullable: true, description: `What the charge was computed on, kept so the arithmetic can be reproduced.`}) 
     BasisAmount?: number;
@@ -3293,8 +3455,8 @@ export class mjBizAppsOrdersOrderCharge_ {
     @Field(() => Float, {nullable: true, description: `The rate applied, for rate-driven charges such as tax.`}) 
     Rate?: number;
         
-    @Field(() => Int) 
-    Sequence: number;
+    @Field(() => Int, {nullable: true}) 
+    Sequence?: number;
         
     @Field({nullable: true, description: `For tax charges, the accounting TaxJurisdiction this layer came from. A soft reference across schemas.`}) 
     @MaxLength(36)
@@ -3304,12 +3466,12 @@ export class mjBizAppsOrdersOrderCharge_ {
     @MaxLength(36)
     TaxRateID?: string;
         
-    @Field({description: `Internal, or the name of the external provider that returned this amount.`}) 
+    @Field({nullable: true, description: `Internal, or the name of the external provider that returned this amount.`}) 
     @MaxLength(50)
-    CalculationSource: string;
+    CalculationSource?: string;
         
-    @Field(() => Boolean, {description: `Whether a human replaced the computed amount. Requires a reason and preserves the computed value.`}) 
-    IsOverridden: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether a human replaced the computed amount. Requires a reason and preserves the computed value.`}) 
+    IsOverridden?: boolean;
         
     @Field(() => Float, {nullable: true, description: `What the charge would have been before the override.`}) 
     ComputedAmount?: number;
@@ -3330,13 +3492,16 @@ export class mjBizAppsOrdersOrderCharge_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    ChargeType: string;
+    ChargeType?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -3547,15 +3712,15 @@ export class mjBizAppsOrdersOrderCompanyPolicy_ {
     @MaxLength(36)
     ID: string;
         
-    @Field(() => Boolean, {description: `Company-level flip permitting promotions to combine at all. A promotion must ALSO opt in via its own AllowsStacking.`}) 
-    AllowPromotionStacking: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Company-level flip permitting promotions to combine at all. A promotion must ALSO opt in via its own AllowsStacking.`}) 
+    AllowPromotionStacking?: boolean;
         
-    @Field({description: `Sequential (each promotion applies to the running total: ten percent then ten percent is nineteen) or Additive (percentages sum: twenty). Per company rather than per promotion, because the mode describes how a SET combines and two promotions disagreeing has no coherent answer. Sequential is the default because it discounts less, so a misconfiguration costs nothing.`}) 
+    @Field({nullable: true, description: `Sequential (each promotion applies to the running total: ten percent then ten percent is nineteen) or Additive (percentages sum: twenty). Per company rather than per promotion, because the mode describes how a SET combines and two promotions disagreeing has no coherent answer. Sequential is the default because it discounts less, so a misconfiguration costs nothing.`}) 
     @MaxLength(20)
-    StackingMode: string;
+    StackingMode?: string;
         
-    @Field(() => Boolean, {description: `When nothing prices a line and no UnitPrice was supplied, refuse it rather than booking zero. A silently-zero price is an invoice for nothing that looks deliberate.`}) 
-    RefuseUnpricedLines: boolean;
+    @Field(() => Boolean, {nullable: true, description: `When nothing prices a line and no UnitPrice was supplied, refuse it rather than booking zero. A silently-zero price is an invoice for nothing that looks deliberate.`}) 
+    RefuseUnpricedLines?: boolean;
         
     @Field({nullable: true, description: `Fallback list for customers with no assignment of their own.`}) 
     @MaxLength(36)
@@ -3578,6 +3743,9 @@ export class mjBizAppsOrdersOrderCompanyPolicy_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultPriceList?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -3740,24 +3908,24 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `Human-readable order identifier. Unique.`}) 
+    @Field({nullable: true, description: `Human-readable order identifier. Unique.`}) 
     @MaxLength(40)
-    OrderNumber: string;
+    OrderNumber?: string;
         
-    @Field({description: `Sale | Return | Cancellation | Amendment | AccountCredit. Non-Sale types are the correction/reversal document family (BO-D9/D15). AccountCredit is a DELIBERATELY ISSUED credit document; an ordinary Sale order can also carry a credit balance simply by being over-paid, and both are spendable through the Account Credit payment type (D68).`}) 
+    @Field({nullable: true, description: `Sale | Return | Cancellation | Amendment | AccountCredit. Non-Sale types are the correction/reversal document family (BO-D9/D15). AccountCredit is a DELIBERATELY ISSUED credit document; an ordinary Sale order can also carry a credit balance simply by being over-paid, and both are spendable through the Account Credit payment type (D68).`}) 
     @MaxLength(20)
-    OrderType: string;
+    OrderType?: string;
         
-    @Field({description: `Effective date of the order; used as the journal entry EffectiveDate and the as-of date for GL-account link resolution.`}) 
-    OrderDate: Date;
+    @Field({nullable: true, description: `Effective date of the order; used as the journal entry EffectiveDate and the as-of date for GL-account link resolution.`}) 
+    OrderDate?: Date;
         
-    @Field({description: `Draft | Quoted | Confirmed | Posted | Fulfilled | Voided. Voided is reachable only from Draft/Quoted; the JE fires once on the first Confirmed.`}) 
+    @Field({nullable: true, description: `Draft | Quoted | Confirmed | Posted | Fulfilled | Voided. Voided is reachable only from Draft/Quoted; the JE fires once on the first Confirmed.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
-    @Field({description: `The ORIGINATING/owning company (D6): document, visibility, and sales-attribution anchor (pairs with SalesRepUserID). NEVER used for GL resolution — revenue company is per line via the product's company. FK to __mj.Company.`}) 
+    @Field({nullable: true, description: `The ORIGINATING/owning company (D6): document, visibility, and sales-attribution anchor (pairs with SalesRepUserID). NEVER used for GL resolution — revenue company is per line via the product's company. FK to __mj.Company.`}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -3794,8 +3962,8 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field(() => Float, {nullable: true, description: `Engine-materialized order total = SUM(OrderLine.LineTotalGross). Never user-entered; frozen after Confirm.`}) 
     TotalGross?: number;
         
-    @Field(() => Float, {description: `Engine-materialized total cash applied to this order = SUM(posted PaymentLine.Amount). Never user-entered.`}) 
-    AmountPaid: number;
+    @Field(() => Float, {nullable: true, description: `Engine-materialized total cash applied to this order = SUM(posted PaymentLine.Amount). Never user-entered.`}) 
+    AmountPaid?: number;
         
     @Field(() => Float, {nullable: true, description: `Engine-materialized open balance = TotalGross - AmountPaid. Negative means a credit memo owed to the customer.`}) 
     Balance?: number;
@@ -3811,8 +3979,8 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(36)
     InitialPaymentTypeID?: string;
         
-    @Field(() => Float) 
-    InitialPaymentAmount: number;
+    @Field(() => Float, {nullable: true}) 
+    InitialPaymentAmount?: number;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -3854,21 +4022,21 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Origin: string;
+    Origin?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
     SourceCheckoutWidgetID?: string;
         
-    @Field({description: `Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`}) 
+    @Field({nullable: true, description: `Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`}) 
     @MaxLength(20)
-    FulfillmentStatus: string;
+    FulfillmentStatus?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
         
     @Field({nullable: true}) 
     @MaxLength(201)
@@ -3923,12 +4091,6 @@ export class mjBizAppsOrdersOrderHeader_ {
     SourceCheckoutWidget?: string;
         
     @Field(() => Float, {nullable: true}) 
-    _mj__Latitude?: number;
-        
-    @Field(() => Float, {nullable: true}) 
-    _mj__Longitude?: number;
-
-    @Field(() => Float, {nullable: true}) 
     _mj__Latitude_BillToAddressID?: number;
         
     @Field(() => Float, {nullable: true}) 
@@ -3940,8 +4102,11 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field(() => Float, {nullable: true}) 
     _mj__Longitude_ShipToAddressID?: number;
         
-    @Field(() => Int) 
-    IsOverdue: number;
+    @Field(() => Int, {nullable: true}) 
+    IsOverdue?: number;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -4266,17 +4431,17 @@ export class mjBizAppsOrdersOrderLineDimension_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderLineID: string;
+    OrderLineID?: string;
         
-    @Field({description: `FK to __mj_BizAppsAccounting.Dimension.`}) 
+    @Field({nullable: true, description: `FK to __mj_BizAppsAccounting.Dimension.`}) 
     @MaxLength(36)
-    DimensionID: string;
+    DimensionID?: string;
         
-    @Field({description: `FK to __mj_BizAppsAccounting.DimensionValue.`}) 
+    @Field({nullable: true, description: `FK to __mj_BizAppsAccounting.DimensionValue.`}) 
     @MaxLength(36)
-    DimensionValueID: string;
+    DimensionValueID?: string;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -4284,13 +4449,16 @@ export class mjBizAppsOrdersOrderLineDimension_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    Dimension: string;
+    Dimension?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    DimensionValue: string;
+    DimensionValue?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -4435,26 +4603,26 @@ export class mjBizAppsOrdersOrderLinePriceComponent_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderLineID: string;
+    OrderLineID?: string;
         
-    @Field(() => Int) 
-    Sequence: number;
+    @Field(() => Int, {nullable: true}) 
+    Sequence?: number;
         
-    @Field({description: `Base | Rule | Adjustment | Charge | Tax - which pipeline stage produced this component.`}) 
+    @Field({nullable: true, description: `Base | Rule | Adjustment | Charge | Tax - which pipeline stage produced this component.`}) 
     @MaxLength(20)
-    ComponentType: string;
+    ComponentType?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Label: string;
+    Label?: string;
         
-    @Field(() => Float, {description: `SIGNED: negative for a discount, positive for a charge.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `SIGNED: negative for a discount, positive for a charge.`}) 
+    Amount?: number;
         
-    @Field(() => Float, {description: `The line total after this component, so the decomposition reads top to bottom.`}) 
-    RunningTotal: number;
+    @Field(() => Float, {nullable: true, description: `The line total after this component, so the decomposition reads top to bottom.`}) 
+    RunningTotal?: number;
         
     @Field({nullable: true, description: `The MJ Entity of whatever produced this component. Set together with SourceRecordID, or neither.`}) 
     @MaxLength(36)
@@ -4473,6 +4641,9 @@ export class mjBizAppsOrdersOrderLinePriceComponent_ {
     @Field({nullable: true}) 
     @MaxLength(255)
     SourceEntity?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -4647,45 +4818,45 @@ export class mjBizAppsOrdersOrderLine_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ProductID: string;
+    ProductID?: string;
         
-    @Field({description: `Denormalized stamp of the product's company at line save (D6): perf/reporting + temporal integrity — records who owned the product at transaction time. Derived from Product.CompanyID, never authored. FK to __mj.Company.`}) 
+    @Field({nullable: true, description: `Denormalized stamp of the product's company at line save (D6): perf/reporting + temporal integrity — records who owned the product at transaction time. Derived from Product.CompanyID, never authored. FK to __mj.Company.`}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
-    @Field(() => Int, {description: `Order-scoped line sequence (1..n), unique within the order.`}) 
-    LineNumber: number;
+    @Field(() => Int, {nullable: true, description: `Order-scoped line sequence (1..n), unique within the order.`}) 
+    LineNumber?: number;
         
-    @Field(() => Float, {description: `Quantity ordered (> 0).`}) 
-    Quantity: number;
+    @Field(() => Float, {nullable: true, description: `Quantity ordered (> 0).`}) 
+    Quantity?: number;
         
-    @Field(() => Float, {description: `Unit price (>= 0). Multiplied by Quantity to get the line amount booked to revenue.`}) 
-    UnitPrice: number;
+    @Field(() => Float, {nullable: true, description: `Unit price (>= 0). Multiplied by Quantity to get the line amount booked to revenue.`}) 
+    UnitPrice?: number;
         
     @Field({nullable: true, description: `Which price RULE produced UnitPrice. UnitPrice still stamps; this records why, so a disputed invoice can be traced back to the rule that priced it. NULL when the caller supplied the price directly, which remains valid.`}) 
     @MaxLength(36)
     ProductPriceID?: string;
         
-    @Field(() => Float, {description: `Line discount as a fraction (0 to 1; e.g. 0.10 = ten percent off). Applied in LineTotalNet = Quantity * UnitPrice * (1 - DiscountPct).`}) 
-    DiscountPct: number;
+    @Field(() => Float, {nullable: true, description: `Line discount as a fraction (0 to 1; e.g. 0.10 = ten percent off). Applied in LineTotalNet = Quantity * UnitPrice * (1 - DiscountPct).`}) 
+    DiscountPct?: number;
         
-    @Field(() => Float, {description: `Absolute discount on this line, in currency. Separate from DiscountPct because a percentage cannot express an ALLOCATED share exactly - a 50.00 order-level promotion split across a 333.33 line is 0.15000015 as a fraction, and DiscountPct's 4dp scale would round it into a total that no longer sums to the promotion. Promotions and manual discounts land here; DiscountPct stays for a negotiated percentage concession, and a line may carry both.`}) 
-    DiscountAmount: number;
+    @Field(() => Float, {nullable: true, description: `Absolute discount on this line, in currency. Separate from DiscountPct because a percentage cannot express an ALLOCATED share exactly - a 50.00 order-level promotion split across a 333.33 line is 0.15000015 as a fraction, and DiscountPct's 4dp scale would round it into a total that no longer sums to the promotion. Promotions and manual discounts land here; DiscountPct stays for a negotiated percentage concession, and a line may carry both.`}) 
+    DiscountAmount?: number;
         
     @Field(() => Float, {nullable: true, description: `Engine-computed stored net line total = (Quantity * UnitPrice * (1 - DiscountPct)) - DiscountAmount, floored at zero. Frozen after Confirm.`}) 
     LineTotalNet?: number;
         
-    @Field(() => Float, {description: `Non-tax charges allocated to this line - shipping, handling, surcharges (D71). Tax keeps its own LineTax column because tax is reported, remitted and audited separately everywhere, even though both are charges to the engine that computes them.`}) 
-    ChargeAmount: number;
+    @Field(() => Float, {nullable: true, description: `Non-tax charges allocated to this line - shipping, handling, surcharges (D71). Tax keeps its own LineTax column because tax is reported, remitted and audited separately everywhere, even though both are charges to the engine that computes them.`}) 
+    ChargeAmount?: number;
         
-    @Field(() => Float, {description: `Tax amount for this line. 0 until the tax subsystem lands (O4).`}) 
-    LineTax: number;
+    @Field(() => Float, {nullable: true, description: `Tax amount for this line. 0 until the tax subsystem lands (O4).`}) 
+    LineTax?: number;
         
     @Field(() => Float, {nullable: true, description: `Engine-computed stored gross line total = LineTotalNet + LineTax + ChargeAmount. Frozen after Confirm.`}) 
     LineTotalGross?: number;
@@ -4728,11 +4899,11 @@ export class mjBizAppsOrdersOrderLine_ {
     @MaxLength(36)
     ParentOrderLineID?: string;
         
-    @Field(() => Boolean, {description: `TRUE on an expanded bundle's parent line. The parent is customer-facing and contributes ZERO to every rollup - subtotal, tax base, charge base, discount base, GL - because the bundle price is allocated down to its children. Set by the expansion path, never authored.`}) 
-    IsRollupParent: boolean;
+    @Field(() => Boolean, {nullable: true, description: `TRUE on an expanded bundle's parent line. The parent is customer-facing and contributes ZERO to every rollup - subtotal, tax base, charge base, discount base, GL - because the bundle price is allocated down to its children. Set by the expansion path, never authored.`}) 
+    IsRollupParent?: boolean;
         
-    @Field(() => Boolean, {description: `TRUE when a child's quantity was hand-edited, detaching it from the parent quantity ripple. Without it, bumping the bundle quantity would silently overwrite a deliberate correction.`}) 
-    IsQuantityOverridden: boolean;
+    @Field(() => Boolean, {nullable: true, description: `TRUE when a child's quantity was hand-edited, detaching it from the parent quantity ripple. Without it, bumping the bundle quantity would silently overwrite a deliberate correction.`}) 
+    IsQuantityOverridden?: boolean;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -4752,23 +4923,31 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field(() => Boolean, {description: `1 when UnitPrice was set by a staff override (named list pick or typed amount) rather than the pricing engine. 0 is the engine price.`}) 
-    PriceOverridden: boolean;
+    @Field(() => Boolean, {nullable: true, description: `1 when UnitPrice was set by a staff override (named list pick or typed amount) rather than the pricing engine. 0 is the engine price.`}) 
+    PriceOverridden?: boolean;
         
     @Field({nullable: true, description: `Optional staff note for why the engine price was overridden. NULL when PriceOverridden = 0 or when no reason was given.`}) 
     PriceOverrideReason?: string;
         
-    @Field() 
+    @Field({nullable: true, description: `The GL dimension this line is tagged on — the analysis axis, from __mj_BizAppsAccounting.Dimension. NULL leaves the line untagged, which books a valid entry that simply cannot be reported on by dimension. Set together with DimensionValueID (CK_OrderLine_DimensionPair).`}) 
+    @MaxLength(36)
+    DimensionID?: string;
+        
+    @Field({nullable: true, description: `The value of DimensionID this line is tagged with, from __mj_BizAppsAccounting.DimensionValue. Carried with DimensionID onto every journal entry line the order line produces. Set together with DimensionID (CK_OrderLine_DimensionPair).`}) 
+    @MaxLength(36)
+    DimensionValueID?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Product: string;
+    Product?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
@@ -4795,6 +4974,14 @@ export class mjBizAppsOrdersOrderLine_ {
     JournalEntry?: string;
         
     @Field({nullable: true}) 
+    @MaxLength(100)
+    Dimension?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    DimensionValue?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(36)
     RootParentOrderLineID?: string;
         
@@ -4809,6 +4996,9 @@ export class mjBizAppsOrdersOrderLine_ {
         
     @Field(() => Int, {nullable: true}) 
     ParentOrderLineIDChildCount?: number;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -4909,6 +5099,12 @@ export class CreatemjBizAppsOrdersOrderLineInput {
 
     @Field({ nullable: true })
     PriceOverrideReason: string | null;
+
+    @Field({ nullable: true })
+    DimensionID: string | null;
+
+    @Field({ nullable: true })
+    DimensionValueID: string | null;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -5013,6 +5209,12 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
     @Field({ nullable: true })
     PriceOverrideReason?: string | null;
 
+    @Field({ nullable: true })
+    DimensionID?: string | null;
+
+    @Field({ nullable: true })
+    DimensionValueID?: string | null;
+
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
 
@@ -5114,14 +5316,17 @@ export class mjBizAppsOrdersOrderSequence_ {
     @Field(() => Int) 
     ID: number;
         
-    @Field(() => Int, {description: `The next order sequence number to assign.`}) 
-    NextSequenceNumber: number;
+    @Field(() => Int, {nullable: true, description: `The next order sequence number to assign.`}) 
+    NextSequenceNumber?: number;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -5254,13 +5459,13 @@ export class mjBizAppsOrdersPaymentDetail_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PaymentTypeID: string;
+    PaymentTypeID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -5336,13 +5541,13 @@ export class mjBizAppsOrdersPaymentDetail_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentType: string;
+    PaymentType?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
@@ -5359,6 +5564,9 @@ export class mjBizAppsOrdersPaymentDetail_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     SourceOrderHeader?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -5605,13 +5813,13 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `Human-readable payment identifier (PAY-{seq}). Unique.`}) 
+    @Field({nullable: true, description: `Human-readable payment identifier (PAY-{seq}). Unique.`}) 
     @MaxLength(40)
-    PaymentNumber: string;
+    PaymentNumber?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ReceivingCompanyID: string;
+    ReceivingCompanyID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -5621,18 +5829,18 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @MaxLength(36)
     BillToOrganizationID?: string;
         
-    @Field({description: `Date the money moved (bank date, not entry date).`}) 
-    PaymentDate: Date;
+    @Field({nullable: true, description: `Date the money moved (bank date, not entry date).`}) 
+    PaymentDate?: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PaymentTypeID: string;
+    PaymentTypeID?: string;
         
-    @Field(() => Float, {description: `Gross amount received (negative for reversal methods).`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `Gross amount received (negative for reversal methods).`}) 
+    Amount?: number;
         
-    @Field(() => Float, {description: `Processor fee withheld from this payment.`}) 
-    ProcessingFeeAmount: number;
+    @Field(() => Float, {nullable: true, description: `Processor fee withheld from this payment.`}) 
+    ProcessingFeeAmount?: number;
         
     @Field(() => Float, {nullable: true, description: `Net cash = Amount - ProcessingFeeAmount (engine-computed, BO-D47).`}) 
     NetAmount?: number;
@@ -5664,9 +5872,9 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @Field({nullable: true, description: `Reason this payment reverses another (required by validation when ReversesPaymentHeaderID is set).`}) 
     ReversalReason?: string;
         
-    @Field({description: `Pending | Captured | Failed | Refunded | Disputed. Financial fields freeze at Captured (DB trigger); corrections via reversal payments.`}) 
+    @Field({nullable: true, description: `Pending | Captured | Failed | Refunded | Disputed. Financial fields freeze at Captured (DB trigger); corrections via reversal payments.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true, description: `FK to the __mj_BizAppsAccounting.JournalEntry booked at capture. Never cleared or replaced once set (trigger).`}) 
     @MaxLength(36)
@@ -5688,9 +5896,9 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    ReceivingCompany: string;
+    ReceivingCompany?: string;
         
     @Field({nullable: true}) 
     @MaxLength(201)
@@ -5700,9 +5908,9 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @MaxLength(255)
     BillToOrganization?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentType: string;
+    PaymentType?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
@@ -5723,6 +5931,9 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     JournalEntry?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -5975,20 +6186,20 @@ export class mjBizAppsOrdersPaymentIntent_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PaymentProviderID: string;
+    PaymentProviderID?: string;
         
-    @Field({description: `Provider-side intent identifier (e.g. Stripe pi_...). Unique.`}) 
+    @Field({nullable: true, description: `Provider-side intent identifier (e.g. Stripe pi_...). Unique.`}) 
     @MaxLength(100)
-    ProviderIntentID: string;
+    ProviderIntentID?: string;
         
-    @Field({description: `RequiresPayment | Processing | Succeeded | Canceled | Failed. Mirrors the provider lifecycle.`}) 
+    @Field({nullable: true, description: `RequiresPayment | Processing | Succeeded | Canceled | Failed. Mirrors the provider lifecycle.`}) 
     @MaxLength(30)
-    Status: string;
+    Status?: string;
         
-    @Field(() => Float, {description: `Amount being collected.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `Amount being collected.`}) 
+    Amount?: number;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -6015,9 +6226,9 @@ export class mjBizAppsOrdersPaymentIntent_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentProvider: string;
+    PaymentProvider?: string;
         
     @Field({nullable: true}) 
     @MaxLength(40)
@@ -6030,6 +6241,9 @@ export class mjBizAppsOrdersPaymentIntent_ {
     @Field({nullable: true}) 
     @MaxLength(255)
     BillToOrganization?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -6210,23 +6424,23 @@ export class mjBizAppsOrdersPaymentLine_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PaymentHeaderID: string;
+    PaymentHeaderID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
     OrderLineID?: string;
         
-    @Field(() => Float, {description: `Amount of the payment applied to this order (<> 0; negative when applying a credit memo).`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `Amount of the payment applied to this order (<> 0; negative when applying a credit memo).`}) 
+    Amount?: number;
         
-    @Field({description: `UTC timestamp when this application was made.`}) 
-    AllocatedAt: Date;
+    @Field({nullable: true, description: `UTC timestamp when this application was made.`}) 
+    AllocatedAt?: Date;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -6241,17 +6455,20 @@ export class mjBizAppsOrdersPaymentLine_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    PaymentHeader: string;
+    PaymentHeader?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
     AllocatedByUser?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -6420,13 +6637,13 @@ export class mjBizAppsOrdersPaymentProviderType_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    Code: string;
+    Code?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     Description?: string;
@@ -6435,26 +6652,29 @@ export class mjBizAppsOrdersPaymentProviderType_ {
     @MaxLength(200)
     DriverClass?: string;
         
-    @Field(() => Boolean) 
-    SupportsTokenization: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    SupportsTokenization?: boolean;
         
-    @Field(() => Boolean) 
-    SupportsRefund: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    SupportsRefund?: boolean;
         
-    @Field(() => Boolean) 
-    SupportsWebhooks: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    SupportsWebhooks?: boolean;
         
-    @Field(() => Int) 
-    Sequence: number;
+    @Field(() => Int, {nullable: true}) 
+    Sequence?: number;
         
-    @Field(() => Boolean) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -6635,27 +6855,27 @@ export class mjBizAppsOrdersPaymentProvider_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PaymentProviderTypeID: string;
+    PaymentProviderTypeID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
-    @Field({description: `Display name of this provider account.`}) 
+    @Field({nullable: true, description: `Display name of this provider account.`}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true, description: `MJ Credentials engine key referencing the provider credentials. NEVER a secret value at rest.`}) 
     @MaxLength(200)
     CredentialsRef?: string;
         
-    @Field(() => Boolean, {description: `Whether this account points at the provider's live environment (vs test/sandbox).`}) 
-    IsLiveMode: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether this account points at the provider's live environment (vs test/sandbox).`}) 
+    IsLiveMode?: boolean;
         
-    @Field(() => Boolean, {description: `Whether this provider account is active.`}) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether this provider account is active.`}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -6663,13 +6883,16 @@ export class mjBizAppsOrdersPaymentProvider_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentProviderType: string;
+    PaymentProviderType?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -6831,14 +7054,17 @@ export class mjBizAppsOrdersPaymentSequence_ {
     @Field(() => Int) 
     ID: number;
         
-    @Field(() => Int, {description: `The next payment sequence number to assign.`}) 
-    NextSequenceNumber: number;
+    @Field(() => Int, {nullable: true, description: `The next payment sequence number to assign.`}) 
+    NextSequenceNumber?: number;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -6971,28 +7197,31 @@ export class mjBizAppsOrdersPaymentTermsType_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `Stable machine code (Net30, DueOnReceipt, Prepaid, ...). Unique.`}) 
+    @Field({nullable: true, description: `Stable machine code (Net30, DueOnReceipt, Prepaid, ...). Unique.`}) 
     @MaxLength(40)
-    Code: string;
+    Code?: string;
         
-    @Field({description: `Display name of the payment terms.`}) 
+    @Field({nullable: true, description: `Display name of the payment terms.`}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
-    @Field(() => Int, {description: `Days from the posting date to DueDate (0 = due on receipt).`}) 
-    NetDays: number;
+    @Field(() => Int, {nullable: true, description: `Days from the posting date to DueDate (0 = due on receipt).`}) 
+    NetDays?: number;
         
     @Field({nullable: true, description: `Optional description of the terms.`}) 
     Description?: string;
         
-    @Field(() => Boolean, {description: `Whether these terms are active and selectable.`}) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether these terms are active and selectable.`}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -7149,47 +7378,50 @@ export class mjBizAppsOrdersPaymentType_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    Code: string;
+    Code?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     Description?: string;
         
-    @Field(() => Boolean) 
-    IsReversal: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsReversal?: boolean;
         
-    @Field(() => Boolean) 
-    RequiresProvider: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    RequiresProvider?: boolean;
         
-    @Field(() => Boolean) 
-    RequiresInstrument: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    RequiresInstrument?: boolean;
         
-    @Field(() => Boolean) 
-    RequiresReference: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    RequiresReference?: boolean;
         
     @Field({nullable: true}) 
     @MaxLength(255)
     DetailExtensionEntity?: string;
         
-    @Field(() => Boolean, {description: `When 1, a capture with a processor fee books it as its own journal entry (Dr Processing Fee / Cr Cash). DEFAULT 0: a per-payment fee leg cannot reconcile to a bank statement, because the processor batches into payouts and deducts costs that never attach to any payment - a failed-debit charge, a dispute fee, a monthly platform charge - so the whole processor cost is accrued in the accounting system at month end instead (D82). The fee is still READ from the gateway and still stored on PaymentHeader.ProcessingFeeAmount and NetAmount regardless; this flag decides only whether it becomes a ledger entry. Turn it on only for a tender whose per-payment fee attribution is genuinely needed, and expect to reconcile the difference.`}) 
-    BookProcessingFeeInline: boolean;
+    @Field(() => Boolean, {nullable: true, description: `When 1, a capture with a processor fee books it as its own journal entry (Dr Processing Fee / Cr Cash). DEFAULT 0: a per-payment fee leg cannot reconcile to a bank statement, because the processor batches into payouts and deducts costs that never attach to any payment - a failed-debit charge, a dispute fee, a monthly platform charge - so the whole processor cost is accrued in the accounting system at month end instead (D82). The fee is still READ from the gateway and still stored on PaymentHeader.ProcessingFeeAmount and NetAmount regardless; this flag decides only whether it becomes a ledger entry. Turn it on only for a tender whose per-payment fee attribution is genuinely needed, and expect to reconcile the difference.`}) 
+    BookProcessingFeeInline?: boolean;
         
-    @Field(() => Int) 
-    Sequence: number;
+    @Field(() => Int, {nullable: true}) 
+    Sequence?: number;
         
-    @Field(() => Boolean) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -7382,9 +7614,9 @@ export class mjBizAppsOrdersPriceListAssignment_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PriceListID: string;
+    PriceListID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -7394,8 +7626,8 @@ export class mjBizAppsOrdersPriceListAssignment_ {
     @MaxLength(36)
     PersonID?: string;
         
-    @Field(() => Int, {description: `Breaks the tie when a person's own assignment and their organization's both apply. Higher wins.`}) 
-    Priority: number;
+    @Field(() => Int, {nullable: true, description: `Breaks the tie when a person's own assignment and their organization's both apply. Higher wins.`}) 
+    Priority?: number;
         
     @Field({nullable: true}) 
     StartedAt?: Date;
@@ -7403,9 +7635,9 @@ export class mjBizAppsOrdersPriceListAssignment_ {
     @Field({nullable: true}) 
     EndedAt?: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(10)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true}) 
     Comments?: string;
@@ -7416,9 +7648,9 @@ export class mjBizAppsOrdersPriceListAssignment_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PriceList: string;
+    PriceList?: string;
         
     @Field({nullable: true}) 
     @MaxLength(255)
@@ -7427,6 +7659,9 @@ export class mjBizAppsOrdersPriceListAssignment_ {
     @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -7601,13 +7836,13 @@ export class mjBizAppsOrdersPriceList_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `Stable machine code. Unique.`}) 
+    @Field({nullable: true, description: `Stable machine code. Unique.`}) 
     @MaxLength(40)
-    Code: string;
+    Code?: string;
         
-    @Field({description: `Display name.`}) 
+    @Field({nullable: true, description: `Display name.`}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     Description?: string;
@@ -7618,15 +7853,18 @@ export class mjBizAppsOrdersPriceList_ {
     @Field({nullable: true, description: `List validity end.`}) 
     EffectiveTo?: Date;
         
-    @Field({description: `Active | Inactive. Deliberately NO CompanyID on this table: every price in a list points at a Product that already carries its company, so a column here would only be an administrative guardrail - and it would force a group-wide member rate to be duplicated per company.`}) 
+    @Field({nullable: true, description: `Active | Inactive. Deliberately NO CompanyID on this table: every price in a list points at a Product that already carries its company, so a column here would only be an administrative guardrail - and it would force a group-wide member rate to be duplicated per company.`}) 
     @MaxLength(10)
-    Status: string;
+    Status?: string;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -7789,21 +8027,21 @@ export class mjBizAppsOrdersPriceTier_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ProductPriceID: string;
+    ProductPriceID?: string;
         
-    @Field(() => Float, {description: `Tier lower bound (inclusive).`}) 
-    MinQuantity: number;
+    @Field(() => Float, {nullable: true, description: `Tier lower bound (inclusive).`}) 
+    MinQuantity?: number;
         
     @Field(() => Float, {nullable: true, description: `Tier upper bound. NULL = unbounded top tier.`}) 
     MaxQuantity?: number;
         
-    @Field(() => Float, {description: `Per-unit (or flat) price within this tier.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `Per-unit (or flat) price within this tier.`}) 
+    Amount?: number;
         
-    @Field(() => Int, {description: `Display order of tiers.`}) 
-    SortOrder: number;
+    @Field(() => Int, {nullable: true, description: `Display order of tiers.`}) 
+    SortOrder?: number;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -7811,9 +8049,12 @@ export class mjBizAppsOrdersPriceTier_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    ProductPrice: string;
+    ProductPrice?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -7970,23 +8211,23 @@ export class mjBizAppsOrdersProductBundleItem_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    BundleProductID: string;
+    BundleProductID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ComponentProductID: string;
+    ComponentProductID?: string;
         
-    @Field(() => Float, {description: `Quantity of the component per one bundle.`}) 
-    Quantity: number;
+    @Field(() => Float, {nullable: true, description: `Quantity of the component per one bundle.`}) 
+    Quantity?: number;
         
-    @Field({description: `Bundled (fixed bundle price, SSP-allocated) | SumOfParts (components price individually).`}) 
+    @Field({nullable: true, description: `Bundled (fixed bundle price, SSP-allocated) | SumOfParts (components price individually).`}) 
     @MaxLength(20)
-    PricingMode: string;
+    PricingMode?: string;
         
-    @Field(() => Int, {description: `Display order of components within the bundle.`}) 
-    SortOrder: number;
+    @Field(() => Int, {nullable: true, description: `Display order of components within the bundle.`}) 
+    SortOrder?: number;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -7994,13 +8235,16 @@ export class mjBizAppsOrdersProductBundleItem_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    BundleProduct: string;
+    BundleProduct?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    ComponentProduct: string;
+    ComponentProduct?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -8157,17 +8401,17 @@ export class mjBizAppsOrdersProductCategory_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The company that owns this category tree (D7). No shared/global categories. FK to __mj.Company.`}) 
+    @Field({nullable: true, description: `The company that owns this category tree (D7). No shared/global categories. FK to __mj.Company.`}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
     @Field({nullable: true, description: `Stable machine code for the category. Unique when present.`}) 
     @MaxLength(40)
     Code?: string;
         
-    @Field({description: `Display name of the category.`}) 
+    @Field({nullable: true, description: `Display name of the category.`}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -8176,8 +8420,8 @@ export class mjBizAppsOrdersProductCategory_ {
     @Field({nullable: true, description: `Optional description of the category.`}) 
     Description?: string;
         
-    @Field(() => Boolean, {description: `Whether this category is active and selectable.`}) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether this category is active and selectable.`}) 
+    IsActive?: boolean;
         
     @Field(() => Boolean, {nullable: true, description: `Default taxability for products in this category (D73). NULL means the walk continues to this category's PARENT, then upward to the root, and only then to the product type. Taxability resolves product -> category -> ancestors -> type, most specific wins - the same walk GL accounts use.`}) 
     DefaultIsTaxable?: boolean;
@@ -8208,9 +8452,9 @@ export class mjBizAppsOrdersProductCategory_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
@@ -8231,6 +8475,9 @@ export class mjBizAppsOrdersProductCategory_ {
         
     @Field(() => Int, {nullable: true}) 
     ParentProductCategoryIDChildCount?: number;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -8429,17 +8676,17 @@ export class mjBizAppsOrdersProductEntitlement_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ProductID: string;
+    ProductID?: string;
         
-    @Field({description: `Feature | AccessLevel | ResourceQuantity | Custom.`}) 
+    @Field({nullable: true, description: `Feature | AccessLevel | ResourceQuantity | Custom.`}) 
     @MaxLength(40)
-    EntitlementType: string;
+    EntitlementType?: string;
         
-    @Field({description: `Machine key consumed by downstream apps (unique per product).`}) 
+    @Field({nullable: true, description: `Machine key consumed by downstream apps (unique per product).`}) 
     @MaxLength(80)
-    Code: string;
+    Code?: string;
         
     @Field({nullable: true, description: `Display name of the entitlement.`}) 
     @MaxLength(200)
@@ -8452,8 +8699,8 @@ export class mjBizAppsOrdersProductEntitlement_ {
     @MaxLength(40)
     UnitOfMeasure?: string;
         
-    @Field(() => Boolean, {description: `Whether this entitlement is currently granted by new purchases.`}) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether this entitlement is currently granted by new purchases.`}) 
+    IsActive?: boolean;
         
     @Field({nullable: true}) 
     @MaxLength(20)
@@ -8474,9 +8721,12 @@ export class mjBizAppsOrdersProductEntitlement_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Product: string;
+    Product?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -8677,16 +8927,16 @@ export class mjBizAppsOrdersProductPrice_ {
     @MaxLength(36)
     PriceListID?: string;
         
-    @Field({description: `Flat | PerUnit | Tiered | Volume | Package | Usage.`}) 
+    @Field({nullable: true, description: `Flat | PerUnit | Tiered | Volume | Package | Usage.`}) 
     @MaxLength(20)
-    PricingModel: string;
+    PricingModel?: string;
         
-    @Field({description: `Standard | Setup | Recurring | Overage.`}) 
+    @Field({nullable: true, description: `Standard | Setup | Recurring | Overage.`}) 
     @MaxLength(20)
-    FeeType: string;
+    FeeType?: string;
         
-    @Field(() => Float, {description: `Base/flat amount; tier detail lives in PriceTier.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `Base/flat amount; tier detail lives in PriceTier.`}) 
+    Amount?: number;
         
     @Field({nullable: true, description: `Pricing unit (each, month, hour, GB, seat, ...).`}) 
     @MaxLength(40)
@@ -8701,8 +8951,8 @@ export class mjBizAppsOrdersProductPrice_ {
     @Field(() => Float, {nullable: true, description: `Maximum quantity this price applies to.`}) 
     MaxQuantity?: number;
         
-    @Field({description: `Price validity start.`}) 
-    EffectiveFrom: Date;
+    @Field({nullable: true, description: `Price validity start.`}) 
+    EffectiveFrom?: Date;
         
     @Field({nullable: true, description: `Price validity end.`}) 
     EffectiveTo?: Date;
@@ -8727,12 +8977,12 @@ export class mjBizAppsOrdersProductPrice_ {
     @Field({nullable: true, description: `End of the daily window, in the owning company's timezone.`}) 
     TimeOfDayEnd?: Date;
         
-    @Field(() => Int, {description: `Disambiguates overlapping rules; highest wins. Two applicable rules sharing a priority are refused at write time.`}) 
-    Priority: number;
+    @Field(() => Int, {nullable: true, description: `Disambiguates overlapping rules; highest wins. Two applicable rules sharing a priority are refused at write time.`}) 
+    Priority?: number;
         
-    @Field({description: `Active | Inactive. Only Active rules resolve.`}) 
+    @Field({nullable: true, description: `Active | Inactive. Only Active rules resolve.`}) 
     @MaxLength(10)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true, description: `Why this rule exists, in words - the thing nobody can reconstruct from the predicates a year later.`}) 
     Description?: string;
@@ -8743,9 +8993,9 @@ export class mjBizAppsOrdersProductPrice_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field({description: `Staff-facing name of this price (Member, Non-member, Early bird). Unique per product or per category.`}) 
+    @Field({nullable: true, description: `Staff-facing name of this price (Member, Non-member, Early bird). Unique per product or per category.`}) 
     @MaxLength(100)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true, description: `When set, this price hangs on a Product Category and is inherited by products in that tree unless a same-Name row exists on the product. Exactly one of ProductID or ProductCategoryID.`}) 
     @MaxLength(36)
@@ -8765,6 +9015,9 @@ export class mjBizAppsOrdersProductPrice_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     ProductCategory?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -9033,22 +9286,22 @@ export class mjBizAppsOrdersProductType_ {
     @MaxLength(40)
     Code?: string;
         
-    @Field({description: `Display name of the product type. Unique.`}) 
+    @Field({nullable: true, description: `Display name of the product type. Unique.`}) 
     @MaxLength(100)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true, description: `Optional description of the product type.`}) 
     Description?: string;
         
-    @Field(() => Boolean, {description: `When 1, orders containing products of this type hold at Posted until a fulfiller marks every such line Fulfilled; when no line requires fulfillment the order auto-advances to Fulfilled.`}) 
-    RequiresFulfillment: boolean;
+    @Field(() => Boolean, {nullable: true, description: `When 1, orders containing products of this type hold at Posted until a fulfiller marks every such line Fulfilled; when no line requires fulfillment the order auto-advances to Fulfilled.`}) 
+    RequiresFulfillment?: boolean;
         
     @Field({nullable: true}) 
     @MaxLength(36)
     DefaultRevenueRecognitionTypeID?: string;
         
-    @Field(() => Boolean, {description: `Default taxability stamped onto new products of this type.`}) 
-    DefaultIsTaxable: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Default taxability stamped onto new products of this type.`}) 
+    DefaultIsTaxable?: boolean;
         
     @Field({nullable: true, description: `Default taxability key for products of this type - the backstop of the taxability walk, used when neither the product nor its category names one.`}) 
     @MaxLength(50)
@@ -9066,20 +9319,20 @@ export class mjBizAppsOrdersProductType_ {
     @MaxLength(255)
     OrderLineExtensionEntity?: string;
         
-    @Field(() => Boolean, {description: `Whether this type is active and selectable.`}) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether this type is active and selectable.`}) 
+    IsActive?: boolean;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    DefaultEntitlementGrantTiming: string;
+    DefaultEntitlementGrantTiming?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    DefaultEntitlementQuantityMode: string;
+    DefaultEntitlementQuantityMode?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    DefaultEntitlementValidityMode: string;
+    DefaultEntitlementValidityMode?: string;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -9101,6 +9354,9 @@ export class mjBizAppsOrdersProductType_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultSubscriptionType?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -9323,29 +9579,29 @@ export class mjBizAppsOrdersProduct_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `Display name of the product.`}) 
+    @Field({nullable: true, description: `Display name of the product.`}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true, description: `Stock-keeping unit / product code. Unique when present.`}) 
     @MaxLength(80)
     SKU?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ProductTypeID: string;
+    ProductTypeID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ProductCategoryID: string;
+    ProductCategoryID?: string;
         
-    @Field({description: `The company whose revenue this product accrues to — the SOURCE OF TRUTH for order-line ownership (D6). Stamped onto OrderLine.CompanyID at line save. GL routing is via accounting's GLAccountLink, anchored at this company (D5).`}) 
+    @Field({nullable: true, description: `The company whose revenue this product accrues to — the SOURCE OF TRUTH for order-line ownership (D6). Stamped onto OrderLine.CompanyID at line save. GL routing is via accounting's GLAccountLink, anchored at this company (D5).`}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
-    @Field({description: `Draft | Active | Discontinued | EOL — catalog lifecycle. Data-only until the catalog engine gates ordering on it.`}) 
+    @Field({nullable: true, description: `Draft | Active | Discontinued | EOL — catalog lifecycle. Data-only until the catalog engine gates ordering on it.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -9357,9 +9613,9 @@ export class mjBizAppsOrdersProduct_ {
     @Field({nullable: true, description: `Last date the product may be sold.`}) 
     AvailableTo?: Date;
         
-    @Field({description: `HOW revenue for this product is earned (plan D43). Resolves to a pluggable driver via RevenueRecognitionType.DriverClass; the driver returns a schedule and the order entity turns it into forward-dated journal entries.`}) 
+    @Field({nullable: true, description: `HOW revenue for this product is earned (plan D43). Resolves to a pluggable driver via RevenueRecognitionType.DriverClass; the driver returns a schedule and the order entity turns it into forward-dated journal entries.`}) 
     @MaxLength(36)
-    RevenueRecognitionTypeID: string;
+    RevenueRecognitionTypeID?: string;
         
     @Field(() => Float, {nullable: true, description: `Standalone selling price for ASC 606 bundle revenue allocation (BO-D35; fields now, allocation engine later).`}) 
     StandaloneSellingPrice?: number;
@@ -9403,29 +9659,32 @@ export class mjBizAppsOrdersProduct_ {
     @Field(() => Float, {nullable: true, description: `Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`}) 
     MaxQuantityPerLine?: number;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    ProductType: string;
+    ProductType?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    ProductCategory: string;
+    ProductCategory?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
     SuccessorProduct?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    RevenueRecognitionType: string;
+    RevenueRecognitionType?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
     SubscriptionType?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -9672,13 +9931,13 @@ export class mjBizAppsOrdersPromotionCode_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PromotionID: string;
+    PromotionID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(60)
-    Code: string;
+    Code?: string;
         
     @Field(() => Int, {nullable: true, description: `Cap for THIS code, distinct from the promotion's overall cap.`}) 
     MaxRedemptions?: number;
@@ -9697,9 +9956,9 @@ export class mjBizAppsOrdersPromotionCode_ {
     @Field({nullable: true}) 
     EffectiveTo?: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(10)
-    Status: string;
+    Status?: string;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -9707,9 +9966,9 @@ export class mjBizAppsOrdersPromotionCode_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Promotion: string;
+    Promotion?: string;
         
     @Field({nullable: true}) 
     @MaxLength(255)
@@ -9718,6 +9977,9 @@ export class mjBizAppsOrdersPromotionCode_ {
     @Field({nullable: true}) 
     @MaxLength(201)
     AssignedPerson?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -9892,9 +10154,9 @@ export class mjBizAppsOrdersPromotionTarget_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PromotionID: string;
+    PromotionID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -9904,8 +10166,8 @@ export class mjBizAppsOrdersPromotionTarget_ {
     @MaxLength(36)
     ProductCategoryID?: string;
         
-    @Field(() => Boolean, {description: `For a category target, whether child categories are included.`}) 
-    IncludeDescendants: boolean;
+    @Field(() => Boolean, {nullable: true, description: `For a category target, whether child categories are included.`}) 
+    IncludeDescendants?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -9913,9 +10175,9 @@ export class mjBizAppsOrdersPromotionTarget_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Promotion: string;
+    Promotion?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
@@ -9924,6 +10186,9 @@ export class mjBizAppsOrdersPromotionTarget_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     ProductCategory?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -10074,28 +10339,31 @@ export class mjBizAppsOrdersPromotionType_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    Code: string;
+    Code?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     Description?: string;
         
-    @Field(() => Int) 
-    Sequence: number;
+    @Field(() => Int, {nullable: true}) 
+    Sequence?: number;
         
-    @Field(() => Boolean) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -10252,37 +10520,37 @@ export class mjBizAppsOrdersPromotion_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `Internal handle for this offer. NOT the redeemable code - those live on PromotionCode.`}) 
+    @Field({nullable: true, description: `Internal handle for this offer. NOT the redeemable code - those live on PromotionCode.`}) 
     @MaxLength(40)
-    Code: string;
+    Code?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     Description?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    PromotionTypeID: string;
+    PromotionTypeID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
     CompanyID?: string;
         
-    @Field(() => Float, {description: `Magnitude, interpreted by the type: 0.10 for ten percent off, or a currency amount.`}) 
-    Value: number;
+    @Field(() => Float, {nullable: true, description: `Magnitude, interpreted by the type: 0.10 for ten percent off, or a currency amount.`}) 
+    Value?: number;
         
-    @Field({description: `Line | Order | Either. An order-level promotion is always allocated down to lines, because tax and GL are per line.`}) 
+    @Field({nullable: true, description: `Line | Order | Either. An order-level promotion is always allocated down to lines, because tax and GL are per line.`}) 
     @MaxLength(10)
-    AppliesAt: string;
+    AppliesAt?: string;
         
-    @Field(() => Boolean, {description: `Whether this may combine with others. Defaults OFF - a promotion must opt in. When two non-stacking promotions collide the HIGHER VALUE wins, and the loser is recorded as offered-not-applied so 'why didn''t my code work?' has an answer.`}) 
-    AllowsStacking: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether this may combine with others. Defaults OFF - a promotion must opt in. When two non-stacking promotions collide the HIGHER VALUE wins, and the loser is recorded as offered-not-applied so 'why didn''t my code work?' has an answer.`}) 
+    AllowsStacking?: boolean;
         
-    @Field(() => Int, {description: `Order of application when several stack.`}) 
-    StackSequence: number;
+    @Field(() => Int, {nullable: true, description: `Order of application when several stack.`}) 
+    StackSequence?: number;
         
     @Field(() => Int, {nullable: true, description: `Total redemptions across all customers. NULL is unlimited. Counted from OrderAdjustment rather than a stored counter, which would drift the first time anything was voided.`}) 
     MaxRedemptions?: number;
@@ -10320,9 +10588,9 @@ export class mjBizAppsOrdersPromotion_ {
     @MaxLength(100)
     QualifierKey?: string;
         
-    @Field({description: `Draft | Active | Paused | Expired. Only Active promotions resolve.`}) 
+    @Field({nullable: true, description: `Draft | Active | Paused | Expired. Only Active promotions resolve.`}) 
     @MaxLength(10)
-    Status: string;
+    Status?: string;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -10330,13 +10598,16 @@ export class mjBizAppsOrdersPromotion_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PromotionType: string;
+    PromotionType?: string;
         
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -10589,38 +10860,41 @@ export class mjBizAppsOrdersRevenueRecognitionType_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    Code: string;
+    Code?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     Description?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    DriverClass: string;
+    DriverClass?: string;
         
-    @Field(() => Boolean) 
-    IsDeferred: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsDeferred?: boolean;
         
-    @Field(() => Boolean) 
-    RequiresServicePeriod: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    RequiresServicePeriod?: boolean;
         
-    @Field(() => Int) 
-    Sequence: number;
+    @Field(() => Int, {nullable: true}) 
+    Sequence?: number;
         
-    @Field(() => Boolean) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -10795,9 +11069,9 @@ export class mjBizAppsOrdersSalesAuthority_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    SalesRepUserID: string;
+    SalesRepUserID?: string;
         
     @Field(() => Float, {nullable: true, description: `Maximum discount fraction (0-1) this rep may grant unaided.`}) 
     MaxDiscountPct?: number;
@@ -10811,8 +11085,8 @@ export class mjBizAppsOrdersSalesAuthority_ {
     @Field({nullable: true, description: `JSON array of ProductCategory IDs this rep may sell. NULL = all.`}) 
     AllowedProductCategoryIDs?: string;
         
-    @Field(() => Boolean, {description: `Whether this authority row is in force.`}) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether this authority row is in force.`}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -10820,9 +11094,12 @@ export class mjBizAppsOrdersSalesAuthority_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    SalesRepUser: string;
+    SalesRepUser?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -10985,17 +11262,17 @@ export class mjBizAppsOrdersSalesRule_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `Display name of the rule.`}) 
+    @Field({nullable: true, description: `Display name of the rule.`}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
-    @Field({description: `DiscountLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom.`}) 
+    @Field({nullable: true, description: `DiscountLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom.`}) 
     @MaxLength(40)
-    RuleType: string;
+    RuleType?: string;
         
-    @Field({description: `Global | PerProduct | PerCustomer | PerSalesRep — what ScopeReferenceID points at.`}) 
+    @Field({nullable: true, description: `Global | PerProduct | PerCustomer | PerSalesRep — what ScopeReferenceID points at.`}) 
     @MaxLength(40)
-    Scope: string;
+    Scope?: string;
         
     @Field({nullable: true, description: `Soft reference (no FK) to the scoped Product / Customer Organization / Sales Rep User when Scope is not Global.`}) 
     @MaxLength(36)
@@ -11008,8 +11285,8 @@ export class mjBizAppsOrdersSalesRule_ {
     @MaxLength(36)
     ApprovalRequiredRoleID?: string;
         
-    @Field(() => Boolean, {description: `Whether this rule participates in Confirm evaluation.`}) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether this rule participates in Confirm evaluation.`}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -11020,6 +11297,9 @@ export class mjBizAppsOrdersSalesRule_ {
     @Field({nullable: true}) 
     @MaxLength(50)
     ApprovalRequiredRole?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -11188,23 +11468,23 @@ export class mjBizAppsOrdersStoredValueAccount_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The gift-card number / instrument code. Unique.`}) 
+    @Field({nullable: true, description: `The gift-card number / instrument code. Unique.`}) 
     @MaxLength(60)
-    Code: string;
+    Code?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    IssuingCompanyID: string;
+    IssuingCompanyID?: string;
         
-    @Field(() => Float, {description: `Face value at issuance.`}) 
-    InitialAmount: number;
+    @Field(() => Float, {nullable: true, description: `Face value at issuance.`}) 
+    InitialAmount?: number;
         
-    @Field(() => Float, {description: `Current remaining balance (ledger-maintained via StoredValueTransaction).`}) 
-    CurrentBalance: number;
+    @Field(() => Float, {nullable: true, description: `Current remaining balance (ledger-maintained via StoredValueTransaction).`}) 
+    CurrentBalance?: number;
         
-    @Field({description: `Active | Depleted | Expired | Suspended | Voided.`}) 
+    @Field({nullable: true, description: `Active | Depleted | Expired | Suspended | Voided.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -11227,9 +11507,9 @@ export class mjBizAppsOrdersStoredValueAccount_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    IssuingCompany: string;
+    IssuingCompany?: string;
         
     @Field({nullable: true}) 
     @MaxLength(201)
@@ -11238,6 +11518,9 @@ export class mjBizAppsOrdersStoredValueAccount_ {
     @Field({nullable: true}) 
     @MaxLength(255)
     BeneficiaryOrganization?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -11418,19 +11701,19 @@ export class mjBizAppsOrdersStoredValueTransaction_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    StoredValueAccountID: string;
+    StoredValueAccountID?: string;
         
-    @Field({description: `Issue | Redeem | Refund | Adjust | Expire.`}) 
+    @Field({nullable: true, description: `Issue | Redeem | Refund | Adjust | Expire.`}) 
     @MaxLength(20)
-    TransactionType: string;
+    TransactionType?: string;
         
-    @Field(() => Float, {description: `Signed amount (+issue/refund, -redeem/expire).`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `Signed amount (+issue/refund, -redeem/expire).`}) 
+    Amount?: number;
         
-    @Field(() => Float, {description: `Account balance after applying this transaction.`}) 
-    BalanceAfter: number;
+    @Field(() => Float, {nullable: true, description: `Account balance after applying this transaction.`}) 
+    BalanceAfter?: number;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -11440,8 +11723,8 @@ export class mjBizAppsOrdersStoredValueTransaction_ {
     @MaxLength(36)
     RelatedOrderHeaderID?: string;
         
-    @Field({description: `UTC timestamp of the transaction.`}) 
-    OccurredAt: Date;
+    @Field({nullable: true, description: `UTC timestamp of the transaction.`}) 
+    OccurredAt?: Date;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -11449,9 +11732,9 @@ export class mjBizAppsOrdersStoredValueTransaction_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(60)
-    StoredValueAccount: string;
+    StoredValueAccount?: string;
         
     @Field({nullable: true}) 
     @MaxLength(40)
@@ -11460,6 +11743,9 @@ export class mjBizAppsOrdersStoredValueTransaction_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     RelatedOrderHeader?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -11628,16 +11914,16 @@ export class mjBizAppsOrdersSubscriptionEvent_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    SubscriptionID: string;
+    SubscriptionID?: string;
         
-    @Field({description: `The lifecycle event kind (Created ... RenewalOrderSpawned).`}) 
+    @Field({nullable: true, description: `The lifecycle event kind (Created ... RenewalOrderSpawned).`}) 
     @MaxLength(40)
-    EventType: string;
+    EventType?: string;
         
-    @Field({description: `UTC timestamp the event occurred.`}) 
-    OccurredAt: Date;
+    @Field({nullable: true, description: `UTC timestamp the event occurred.`}) 
+    OccurredAt?: Date;
         
     @Field({nullable: true, description: `JSON event payload (provider webhook body or internal context).`}) 
     EventData?: string;
@@ -11660,9 +11946,9 @@ export class mjBizAppsOrdersSubscriptionEvent_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    Subscription: string;
+    Subscription?: string;
         
     @Field({nullable: true}) 
     @MaxLength(40)
@@ -11671,6 +11957,9 @@ export class mjBizAppsOrdersSubscriptionEvent_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     RelatedOrderHeader?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -11838,14 +12127,17 @@ export class mjBizAppsOrdersSubscriptionSequence_ {
     @Field(() => Int) 
     ID: number;
         
-    @Field(() => Int, {description: `The next subscription sequence number to assign.`}) 
-    NextSequenceNumber: number;
+    @Field(() => Int, {nullable: true, description: `The next subscription sequence number to assign.`}) 
+    NextSequenceNumber?: number;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -11978,39 +12270,39 @@ export class mjBizAppsOrdersSubscriptionTerm_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    SubscriptionID: string;
+    SubscriptionID?: string;
         
-    @Field(() => Int) 
-    TermNumber: number;
+    @Field(() => Int, {nullable: true}) 
+    TermNumber?: number;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderLineID: string;
+    OrderLineID?: string;
         
-    @Field() 
-    StartDate: Date;
+    @Field({nullable: true}) 
+    StartDate?: Date;
         
-    @Field() 
-    EndDate: Date;
+    @Field({nullable: true}) 
+    EndDate?: Date;
         
-    @Field(() => Float) 
-    Amount: number;
+    @Field(() => Float, {nullable: true}) 
+    Amount?: number;
         
-    @Field(() => Boolean) 
-    IsProrated: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsProrated?: boolean;
         
     @Field(() => Float, {nullable: true}) 
     ProrationFactor?: number;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    RevenueRecognitionTypeID: string;
+    RevenueRecognitionTypeID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true}) 
     CanceledAt?: Date;
@@ -12024,13 +12316,16 @@ export class mjBizAppsOrdersSubscriptionTerm_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    Subscription: string;
+    Subscription?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    RevenueRecognitionType: string;
+    RevenueRecognitionType?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -12229,13 +12524,13 @@ export class mjBizAppsOrdersSubscriptionType_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    Code: string;
+    Code?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Name: string;
+    Name?: string;
         
     @Field({nullable: true}) 
     Description?: string;
@@ -12244,17 +12539,17 @@ export class mjBizAppsOrdersSubscriptionType_ {
     @MaxLength(200)
     DriverClass?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    SubscriberScope: string;
+    SubscriberScope?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(30)
-    BenefitModel: string;
+    BenefitModel?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    StartMode: string;
+    StartMode?: string;
         
     @Field(() => Int, {nullable: true}) 
     DeferredStartDays?: number;
@@ -12272,62 +12567,65 @@ export class mjBizAppsOrdersSubscriptionType_ {
     @Field(() => Int, {nullable: true}) 
     DefaultTermMonths?: number;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    BillingCadence: string;
+    BillingCadence?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    RecognitionCadence: string;
+    RecognitionCadence?: string;
         
     @Field(() => Int, {nullable: true}) 
     CustomCycleDays?: number;
         
-    @Field(() => Int) 
-    TrialDays: number;
+    @Field(() => Int, {nullable: true}) 
+    TrialDays?: number;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    ConcurrencyMode: string;
+    ConcurrencyMode?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(30)
-    ReactivationMode: string;
+    ReactivationMode?: string;
         
     @Field(() => Int, {nullable: true}) 
     ReactivationWindowDays?: number;
         
-    @Field(() => Boolean) 
-    AutoRenewDefault: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    AutoRenewDefault?: boolean;
         
     @Field(() => Int, {nullable: true}) 
     RenewalLeadDays?: number;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(20)
-    CancellationMode: string;
+    CancellationMode?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(30)
-    CancellationRefundMode: string;
+    CancellationRefundMode?: string;
         
     @Field(() => Int, {nullable: true}) 
     CancellationWindowDays?: number;
         
-    @Field(() => Int) 
-    GracePeriodDays: number;
+    @Field(() => Int, {nullable: true}) 
+    GracePeriodDays?: number;
         
-    @Field(() => Int) 
-    Sequence: number;
+    @Field(() => Int, {nullable: true}) 
+    Sequence?: number;
         
-    @Field(() => Boolean) 
-    IsActive: boolean;
+    @Field(() => Boolean, {nullable: true}) 
+    IsActive?: boolean;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -12616,25 +12914,25 @@ export class mjBizAppsOrdersSubscription_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `Human-readable subscription identifier. Unique.`}) 
+    @Field({nullable: true, description: `Human-readable subscription identifier. Unique.`}) 
     @MaxLength(40)
-    SubscriptionNumber: string;
+    SubscriptionNumber?: string;
         
-    @Field({description: `The company whose product this subscription continues — stamped from Product.CompanyID at creation (D6). FK to __mj.Company.`}) 
+    @Field({nullable: true, description: `The company whose product this subscription continues — stamped from Product.CompanyID at creation (D6). FK to __mj.Company.`}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderLineID: string;
+    OrderLineID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    SubscriptionTypeID: string;
+    SubscriptionTypeID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    ProductID: string;
+    ProductID?: string;
         
     @Field({nullable: true, description: `FK to __mj_BizAppsCommon.Organization — the organization HOLDING this subscription (D65), fed from the order line's ship-to and possibly different from whoever paid.`}) 
     @MaxLength(36)
@@ -12644,12 +12942,12 @@ export class mjBizAppsOrdersSubscription_ {
     @MaxLength(36)
     BeneficiaryPersonID?: string;
         
-    @Field({description: `Active | Paused | Canceled | Migrated | Trialing.`}) 
+    @Field({nullable: true, description: `Active | Paused | Canceled | Migrated | Trialing.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
-    @Field({description: `Date the subscription began.`}) 
-    StartDate: Date;
+    @Field({nullable: true, description: `Date the subscription began.`}) 
+    StartDate?: Date;
         
     @Field({nullable: true, description: `When the trial ends (Trialing status).`}) 
     TrialEndDate?: Date;
@@ -12660,8 +12958,8 @@ export class mjBizAppsOrdersSubscription_ {
     @Field({nullable: true, description: `Final service date after cancellation/migration.`}) 
     EndDate?: Date;
         
-    @Field(() => Boolean, {description: `Whether renewal orders spawn automatically (Jeremy: auto-renew flag).`}) 
-    AutoRenew: boolean;
+    @Field(() => Boolean, {nullable: true, description: `Whether renewal orders spawn automatically (Jeremy: auto-renew flag).`}) 
+    AutoRenew?: boolean;
         
     @Field(() => Int, {nullable: true, description: `How many days before CurrentPeriodEnd the renewal order is raised (Jeremy: invoice about three months ahead).`}) 
     RenewalLeadDays?: number;
@@ -12688,17 +12986,17 @@ export class mjBizAppsOrdersSubscription_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    SubscriptionType: string;
+    SubscriptionType?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    Product: string;
+    Product?: string;
         
     @Field({nullable: true}) 
     @MaxLength(255)
@@ -12719,6 +13017,9 @@ export class mjBizAppsOrdersSubscription_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     MigratesToSubscription?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 

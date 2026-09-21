@@ -577,6 +577,8 @@ erDiagram
         uuid SubscriptionID FK
         nvarchar_500 Description
         uuid JournalEntryID FK
+        uuid DimensionID FK "set with DimensionValueID"
+        uuid DimensionValueID FK "set with DimensionID"
     }
     OrderLineDimension {
         uuid ID PK "required"
@@ -1044,6 +1046,8 @@ erDiagram
     acct_JournalEntry ||--o{ PaymentHeader : "JournalEntryID"
     acct_Dimension ||--o{ OrderLineDimension : "DimensionID"
     acct_DimensionValue ||--o{ OrderLineDimension : "DimensionValueID"
+    acct_Dimension ||--o{ OrderLine : "DimensionID"
+    acct_DimensionValue ||--o{ OrderLine : "DimensionValueID"
     MJ_Entity ||--o{ OrderLinePriceComponent : "SourceEntityID"
     MJ_Role ||--o{ SalesRule : "ApprovalRequiredRoleID"
 ```

@@ -20,6 +20,8 @@
 import { IMetadataProvider, Metadata, UserInfo } from '@memberjunction/core';
 import { AccountingEngineBase, pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
 import { GLAccountResolver, type ResolverEntityIDs } from './GLAccountResolver.js';
+import type { IntercompanyLookup } from './PaymentAllocationFactory.js';
+import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
@@ -55,6 +57,18 @@ export interface AccountingEngineSurface {
         EndedAt: Date | null;
     }>;
     GLAccountRoles: Array<{ ID: string; Name: string }>;
+    /**
+     * The Due To / Due From pair for an ORDERED company pair (BA-D26), each leg carrying the
+     * dimensions pinned on the match. `DimensionValueID` is nullable there by design.
+     */
+    ResolveIntercompanyAccounts(
+        sourceCompanyId: string,
+        targetCompanyId: string,
+        asOfDate: Date,
+    ): {
+        DueTo: { GLAccountID: string; Dimensions: Array<{ DimensionID: string; DimensionValueID: string | null }> };
+        DueFrom: { GLAccountID: string; Dimensions: Array<{ DimensionID: string; DimensionValueID: string | null }> };
+    } | null;
 }
 
 /** MJ entity ID for a name, with an error that says which name failed rather than `undefined`. */
@@ -138,4 +152,45 @@ export async function BuildGLAccountResolver(
         const account = engine.GLAccountByID(glAccountID);
         return { GLAccountID: glAccountID, CompanyID: account?.CompanyID ?? '' };
     });
+}
+
+/**
+ * The intercompany lookup both payment booking paths hand to `PaymentAllocationFactory`.
+ *
+ * It lived as a copy-pasted closure in `PaymentHeaderEntityServer` and `PaymentLineEntityServer`,
+ * and that is precisely how issue #238 happened: both copies kept the two GL account IDs and threw
+ * away the `Dimensions` the engine had already resolved, so the counterparty never reached the
+ * ledger and the fix had to be made in two places that nothing keeps in step.
+ *
+ * A PIN WITH NO VALUE IS SKIPPED, not defaulted and not an error. `IntercompanyAccountMatchDimension`
+ * makes `DimensionValueID` nullable to mean "take the value from context", and the table's own
+ * definition says an intercompany leg has no context to take one from: it is raised to balance
+ * somebody else's revenue, so there is no originating record carrying a department or a cost centre.
+ * A null is therefore a Dimension named without an answer, and the only thing that can be done with
+ * it here is to leave it off. Refusing to book instead would turn a legal configuration into an
+ * outage.
+ */
+export async function BuildIntercompanyLookup(
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<IntercompanyLookup> {
+    const engine = await LoadAccountingEngine(provider, user);
+
+    const pinned = (
+        requirements: Array<{ DimensionID: string; DimensionValueID: string | null }>,
+    ): PaymentJELineDimension[] =>
+        requirements
+            .filter((d): d is { DimensionID: string; DimensionValueID: string } => !!d.DimensionValueID)
+            .map((d) => ({ DimensionID: d.DimensionID, DimensionValueID: d.DimensionValueID }));
+
+    return (source, target, asOf) => {
+        const hit = engine.ResolveIntercompanyAccounts(source, target, asOf);
+        if (!hit) return null;
+        return {
+            DueToGLAccountID: hit.DueTo.GLAccountID,
+            DueFromGLAccountID: hit.DueFrom.GLAccountID,
+            DueToDimensions: pinned(hit.DueTo.Dimensions),
+            DueFromDimensions: pinned(hit.DueFrom.Dimensions),
+        };
+    };
 }

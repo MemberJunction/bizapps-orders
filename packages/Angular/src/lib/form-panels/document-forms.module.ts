@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
 import { MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
+import { RelatedChipsComponent } from '@mj-biz-apps/common-ng';
 import { CustomFormsModule } from '../custom/custom-forms.module';
 import { PaymentHeaderPanel } from './payment-header.panel';
 import { PaymentJournalsPanel } from './payment-journals.panel';
@@ -112,6 +113,7 @@ const PANELS = [
         CommonModule,
         BaseFormsModule,
         MJButtonDirective,
+        RelatedChipsComponent,
         DeferredRevenueWaterfallModule,
         CustomFormsModule,
     ],

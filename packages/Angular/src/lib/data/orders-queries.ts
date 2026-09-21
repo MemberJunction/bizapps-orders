@@ -66,7 +66,11 @@ import type {
     mjBizAppsOrdersSubscriptionEventEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
 } from '@mj-biz-apps/orders-entities';
-import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
+import type {
+    mjBizAppsAccountingDimensionEntity,
+    mjBizAppsAccountingDimensionValueEntity,
+    mjBizAppsAccountingJournalEntryEntity,
+} from '@mj-biz-apps/accounting-entities';
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from './entity-names';
 
 /** Ids reach filter strings as SQL text, so they are shape-checked first. */
@@ -1314,6 +1318,88 @@ export function SubscriptionViewParams(orderLineIDs: string[]): RunViewParams | 
         OrderBy: 'StartDate DESC',
         ResultType: 'entity_object',
     };
+}
+
+/** One analysis axis a line can be filed under, with the values it permits today. */
+export interface MJODimensionOption {
+    ID: string;
+    Code: string;
+    Name: string;
+    DisplayOrder: number;
+    Values: Array<{ ID: string; Code: string; Name: string }>;
+}
+
+/**
+ * The dimensions an order line can be tagged with, each carrying its selectable values.
+ *
+ * Accounting owns these rows and orders only reads them (D44) — they arrive from Business Central
+ * through accounting's ERP sync, so this list is whatever BC currently defines and is never seeded
+ * here.
+ *
+ * `EffectiveFrom`/`EffectiveTo` are filtered in MEMORY rather than in the WHERE clause. The window
+ * is judged against the date the tag will be booked under, which is the order's date and not
+ * today's — a back-dated order must offer the values that were live when it was placed, and a
+ * database-side `GETDATE()` comparison cannot see that date. A dimension whose values have all
+ * lapsed still comes back, with an empty `Values`, because a picker that silently omits an axis the
+ * GL account requires is how a line ends up untagged with nothing on screen to explain it.
+ */
+/**
+ * Whether a dimension value is in effect on a given date.
+ *
+ * Both bounds are INCLUSIVE and either may be absent, meaning open-ended in that direction — which
+ * matches `CK_DimensionValue_EffectiveRange`, the only rule the database itself enforces
+ * (`EffectiveTo >= EffectiveFrom`). Exported so the boundary days are testable: a value whose window
+ * opens on the order's own date belongs in the picker, and getting that wrong drops a legitimate
+ * value on exactly the day someone is most likely to use it.
+ */
+export function DimensionValueCoversDate(
+    value: { EffectiveFrom?: Date | string | null; EffectiveTo?: Date | string | null },
+    asOf: Date,
+): boolean {
+    const from = value.EffectiveFrom ? new Date(value.EffectiveFrom) : null;
+    const to = value.EffectiveTo ? new Date(value.EffectiveTo) : null;
+    if (from && asOf < from) return false;
+    if (to && asOf > to) return false;
+    return true;
+}
+
+export async function GetDimensionOptions(
+    asOf: Date,
+    user?: UserInfo,
+): Promise<MJODimensionOption[]> {
+    const [dimensions, values] = await Promise.all([
+        run<mjBizAppsAccountingDimensionEntity>(
+            MJO_ACCOUNTING_ENTITIES.Dimension,
+            ['IsActive = 1'],
+            'DisplayOrder ASC, Name ASC',
+            undefined,
+            user,
+        ),
+        run<mjBizAppsAccountingDimensionValueEntity>(
+            MJO_ACCOUNTING_ENTITIES.DimensionValue,
+            ['IsActive = 1'],
+            'Code ASC',
+            2000,
+            user,
+        ),
+    ]);
+
+    const byDimension = new Map<string, Array<{ ID: string; Code: string; Name: string }>>();
+    for (const value of values) {
+        if (!DimensionValueCoversDate(value, asOf)) continue;
+        const key = value.DimensionID.toLowerCase();
+        const list = byDimension.get(key) ?? [];
+        list.push({ ID: value.ID, Code: value.Code, Name: value.Name });
+        byDimension.set(key, list);
+    }
+
+    return dimensions.map((dimension) => ({
+        ID: dimension.ID,
+        Code: dimension.Code,
+        Name: dimension.Name,
+        DisplayOrder: dimension.DisplayOrder,
+        Values: byDimension.get(dimension.ID.toLowerCase()) ?? [],
+    }));
 }
 
 /** Dimension tags on an order's lines — the analysis axes a line was filed under. */

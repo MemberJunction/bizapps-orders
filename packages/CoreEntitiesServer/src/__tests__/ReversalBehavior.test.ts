@@ -229,4 +229,13 @@ describe('InheritedTerms — a return refunds what was PAID', () => {
     it('a zero-quantity origin allocates nothing rather than dividing by zero', () => {
         expect(InheritedTerms(origin({ Quantity: 0, DiscountAmount: 50 }), -1).DiscountAmount).toBe(0);
     });
+
+    it('carries the service period on the origin through unchanged', () => {
+        const start = new Date('2026-01-01');
+        const end = new Date('2026-12-31');
+        const timed = origin({ ServicePeriodStart: start, ServicePeriodEnd: end });
+        const terms = InheritedTerms(timed, -1);
+        expect(terms.ServicePeriodStart).toEqual(start);
+        expect(terms.ServicePeriodEnd).toEqual(end);
+    });
 });

@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
 import { ToISODate, ISOYear, IsBefore, Today, LocalDay, TodayAsDateValue, type DateCell } from '../date-cell';
 
 /**
@@ -94,33 +95,87 @@ describe('IsBefore', () => {
     });
 });
 
-describe('Today and LocalDay', () => {
-    it('Today is the LOCAL calendar day', () => {
-        const now = new Date();
-        const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        expect(Today()).toBe(expected);
+describe('Today and LocalDay answer in the BUSINESS zone, not the browser or the server', () => {
+    // The engine is a singleton; before it is configured it resolves UTC. These tests set the
+    // instance up the way a loaded engine would look, then restore it.
+    const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
+    const original = { rows: engine._configurations, loaded: engine._loaded };
+    const central = (): void => {
+        engine._configurations = [{ FeatureKey: 'BizApps.BusinessTimeZone', Value: '{"iana":"America/Chicago","sql":"Central Standard Time"}', DefaultValue: '{"iana":"UTC","sql":"UTC"}' }];
+        engine._loaded = true;
+    };
+    afterEach(() => {
+        engine._configurations = original.rows;
+        engine._loaded = original.loaded;
     });
 
-    it('LocalDay keeps a bucket key on the same day as its label', () => {
-        // The dashboards build a Date, label it with toLocaleDateString (LOCAL) and used to key it
-        // with toISOString (UTC). Wherever those disagree — evenings in the Americas, mornings in
-        // Asia — the bar said 'Mon' and counted Tuesday.
-        const evening = new Date(2026, 6, 30, 21, 30);
-        expect(LocalDay(evening)).toBe('2026-07-30');
-
-        // Asserted only where the two genuinely differ, so this passes in a UTC CI container too.
-        const offsetMinutes = evening.getTimezoneOffset();
-        if (offsetMinutes > 0) {
-            expect(evening.toISOString().slice(0, 10)).toBe('2026-07-31'); // what it used to key on
+    /**
+     * Pin the MACHINE's zone to one that disagrees with the business zone at the instant under
+     * test — otherwise these tests cannot fail. Measured: on a machine in America/New_York the
+     * chosen instants land on the same day in New York and Chicago, so a `Today()` that wrongly
+     * read local parts passed all of them. Asia/Kolkata is +5:30 against Chicago's -5:00, so the
+     * two disagree across the evening and the assertion has something to catch.
+     *
+     * Note this is a different rule from the one in `business-day.test.ts` upstream, which needs a
+     * WEST-of-Greenwich pin: there the question is UTC parts versus local parts of a UTC-midnight
+     * value; here it is business zone versus machine zone of an arbitrary instant. Any zone that
+     * disagrees with Central at the instant works — do not "simplify" this to Chicago.
+     */
+    const AT = (tz: string, fn: () => void) => {
+        const original = process.env.TZ;
+        process.env.TZ = tz;
+        try {
+            fn();
+        } finally {
+            // `process.env.TZ = undefined` coerces to the literal string `'undefined'` — Node env
+            // vars are always strings — which this ICU build then resolves as UTC, leaking a false
+            // "ambient zone" into every test that runs after this one in the same worker. Delete
+            // the key outright when there was nothing to restore.
+            if (original === undefined) {
+                delete process.env.TZ;
+            } else {
+                process.env.TZ = original;
+            }
         }
-        // The invariant that holds in every zone: the key agrees with the label's own day.
-        expect(LocalDay(evening)).toBe(
-            `${evening.getFullYear()}-${String(evening.getMonth() + 1).padStart(2, '0')}-${String(evening.getDate()).padStart(2, '0')}`,
-        );
+    };
+
+    it('Today is the Central calendar day even when the runner sits east of UTC', () => {
+        central();
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-28T02:00:00.000Z')); // 9 PM CDT on the 27th
+        try {
+            AT('Asia/Kolkata', () => {
+                expect(Today()).toBe('2026-08-27');
+            });
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
-    it('LocalDay zero-pads single-digit months and days', () => {
-        expect(LocalDay(new Date(2026, 0, 5))).toBe('2026-01-05');
+    it('LocalDay buckets an instant on its Central day', () => {
+        central();
+        AT('Asia/Kolkata', () => {
+            expect(LocalDay(new Date('2026-07-31T03:30:00.000Z'))).toBe('2026-07-30');
+        });
+        expect(LocalDay(new Date('nonsense'))).toBe('');
+    });
+
+    it('answers UTC before the engine is loaded, so nothing throws on a cold start', () => {
+        engine._loaded = false;
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-28T02:00:00.000Z'));
+        try {
+            // Pinned WEST of Greenwich (America/Chicago), per the plan's global constraint for a
+            // UTC-parts-vs-local-parts comparison: on a UTC CI runner the two agree for this
+            // instant regardless of which reading the code does, so an unpinned machine zone lets
+            // this pass whether or not the bug is present. Chicago disagrees with UTC here (21:00
+            // on the 27th vs. 02:00 on the 28th), so the assertion has something to catch.
+            AT('America/Chicago', () => {
+                expect(Today()).toBe('2026-08-28');
+            });
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 
