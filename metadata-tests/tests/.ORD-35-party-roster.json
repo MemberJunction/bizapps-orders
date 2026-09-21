@@ -1,7 +1,7 @@
 {
   "fields": {
     "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
-    "Name": "ORD-34 - Party Roster",
+    "Name": "ORD-35 - Party Roster",
     "Description": "Orders' contribution to the shared Party Signals category. CR1-CR2 prove the Party Customer Roster query is discoverable by the shared party pickers and that the rows it returns honour the four-column contract, so a picker can offer customers before the rest of the directory instead of searching the whole organization file.",
     "InputDefinition": {},
     "ExpectedOutcomes": {
