@@ -262,5 +262,11 @@ export function DecideCancel(i: {
 
 /** Whether the sweep should try a failed send again. Same vocabulary as the rail's `Transient`. */
 export function ClassifyIssueFailure(reason: string | null | undefined): 'Transient' | 'Permanent' {
-    return reason && BILLCOM_TRANSIENT.test(reason) ? 'Transient' : 'Permanent';
+    if (!reason) return 'Permanent';
+    // A refusal this module wrote is a fact about the unit, whatever numbers it happens to contain.
+    if (PERMANENT_REFUSAL.test(reason)) return 'Permanent';
+    return BILLCOM_TRANSIENT.test(reason) ? 'Transient' : 'Permanent';
 }
+
+/** The reasons `BuildExternalInvoicePayload` and the rail emit for facts about the unit itself. */
+const PERMANENT_REFUSAL = /does not tie|already has .* applied|has nothing owed|not an invoice|no frozen document number|requires a customer email|no bill-to party/i;

@@ -136,4 +136,10 @@ describe('ClassifyIssueFailure', () => {
         expect(ClassifyIssueFailure('Bill.com requires a customer email')).toBe('Permanent');
         expect(ClassifyIssueFailure(null)).toBe('Permanent');
     });
+    it('money and document numbers are not HTTP status codes', () => {
+        expect(ClassifyIssueFailure('ORD-1 already has 500.00 applied; sending the full 1250.00 to the rail would bill the customer twice.')).toBe('Permanent');
+        expect(ClassifyIssueFailure('INV-500 lines total 499.99, which does not tie to the unit amount 500.00.')).toBe('Permanent');
+        expect(ClassifyIssueFailure('Bill.com refused the invoice (HTTP 503).')).toBe('Transient');
+        expect(ClassifyIssueFailure('Request failed with status 429')).toBe('Transient');
+    });
 });

@@ -107,6 +107,9 @@ describe('BillComInvoiceRail.IssueInvoice', () => {
         const slow = await rail().IssueInvoice(facts());
         expect(slow.Success).toBe(false);
         if (!slow.Success) expect(slow.Transient).toBe(true);
+        UseBillComGatewaySeams({ ...seams(), createRecord: async () => ({ Success: false, StatusCode: 400, ErrorMessage: 'invoiceNumber INV-500 already exists; amount 500.00 rejected' }) });
+        const moneyNotStatus = await rail().IssueInvoice(facts());
+        if (!moneyNotStatus.Success) expect(moneyNotStatus.Transient).toBe(false);
     });
 });
 

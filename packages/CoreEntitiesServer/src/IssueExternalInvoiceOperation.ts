@@ -270,17 +270,22 @@ export async function IssueOneUnit(
     const invoiceDate = isoDate(row?.InvoicedAt ?? order.ConfirmedAt) ?? Today();
     const payload = BuildExternalInvoicePayload(doc, unitFacts, invoiceDate);
     if (payload.OK === false) {
-        // A permanent fact about the unit (does not tie, already part-paid): record it once so the
-        // sweep skips it and the queue shows it, rather than retrying every half hour.
-        const code: OrdersIssueExternalInvoiceResultCode = /already has .* applied/.test(payload.Reason) ? 'PART_PAID' : 'TIE_FAILED';
-        const failedID = opts.Preview
-            ? null
-            : await writeExternalInvoice(
-                  provider,
-                  user,
-                  { ...unitKey, PaymentProviderID: rail.Config.PaymentProviderID, DocumentNumber: unitFacts.DocumentNumber ?? doc.DocumentNumber, Amount: Math.max(0.01, money(unitFacts.Amount)), DueDate: unitFacts.DueDate ?? doc.DueDate },
-                  { Status: 'Failed', LastError: payload.Reason },
-              );
+        // Two refusals are permanent facts about the unit's MONEY (part-paid, does not tie): record
+        // them once as Failed so the sweep skips them and the queue shows them. The others (nothing
+        // owed, a credit memo, an instalment not yet issued) are states that resolve on their own and
+        // are simply refused.
+        const partPaid = /already has .* applied/.test(payload.Reason);
+        const tie = /does not tie/.test(payload.Reason);
+        const code: OrdersIssueExternalInvoiceResultCode = partPaid ? 'PART_PAID' : tie ? 'TIE_FAILED' : 'NOT_INVOICEABLE';
+        const failedID =
+            opts.Preview || !(partPaid || tie)
+                ? null
+                : await writeExternalInvoice(
+                      provider,
+                      user,
+                      { ...unitKey, PaymentProviderID: rail.Config.PaymentProviderID, DocumentNumber: unitFacts.DocumentNumber ?? doc.DocumentNumber, Amount: money(unitFacts.Amount), DueDate: unitFacts.DueDate ?? doc.DueDate },
+                      { Status: 'Failed', LastError: payload.Reason },
+                  );
         return refuse(code, payload.Reason, { ExternalInvoiceID: failedID, DocumentNumber: unitFacts.DocumentNumber ?? doc.DocumentNumber, Amount: money(unitFacts.Amount) });
     }
 

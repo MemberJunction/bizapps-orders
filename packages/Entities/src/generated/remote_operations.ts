@@ -2825,6 +2825,7 @@ export type OrdersIssueExternalInvoiceResultCode =
     | 'NO_CUSTOMER_EMAIL'
     | 'TIE_FAILED'
     | 'PART_PAID'
+    | 'NOT_INVOICEABLE'
     | 'RAIL_REFUSED'
     | 'ERROR';
 

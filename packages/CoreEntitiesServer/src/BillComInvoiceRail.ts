@@ -36,7 +36,9 @@ import { BillComGateway, type BillComGatewaySeams } from './BillComGateway.js';
 import type { MJCompanyIntegrationEntity } from '@memberjunction/core-entities';
 
 /** What a retry could plausibly change. Anything else is a fact about the data, and retrying it is noise. */
-export const BILLCOM_TRANSIENT = /timeout|timed out|ECONN|ETIMEDOUT|EAI_AGAIN|socket|HTTP 5\d\d|\b5\d\d\b|rate limit|too many|session|\b401\b|\b429\b|\b502\b|\b503\b|\b504\b/i;
+// HTTP status codes count only when they stand alone: `500.00` (money) and `INV-500` (a document
+// number) must not read as a server error, or a permanent refusal is retried forever.
+export const BILLCOM_TRANSIENT = /timeout|timed out|ECONN|ETIMEDOUT|EAI_AGAIN|socket|rate limit|too many|session|(?<![\d.\-])(?:5\d\d|401|429)(?![\d.])/i;
 
 const num = (v: unknown): number => (v == null || v === '' ? 0 : Number(v));
 

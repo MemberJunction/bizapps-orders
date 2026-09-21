@@ -55,13 +55,28 @@ export class SendExternalInvoicesOperation extends OrdersSendExternalInvoicesOpe
             const batch = eligible.slice(0, maxCount);
             skipped += eligible.length - batch.length;
 
+            // One company's mis-configured rail must not stop the other companies' sends: the first
+            // configuration error for a company skips the rest of that company's units and moves on.
+            const brokenCompanies = new Set<string>();
             for (const row of batch) {
-                const r = await IssueOneUnit(
-                    { OrderHeaderID: row.OrderHeaderID, CompanyID: row.CompanyID, OrderHeaderPaymentScheduleID: row.OrderHeaderPaymentScheduleID },
-                    { Preview: preview, AllowReissue: row.State === 'Failed' },
-                    provider,
-                    user,
-                );
+                const companyKey = row.CompanyID.toLowerCase();
+                if (brokenCompanies.has(companyKey)) {
+                    skipped++;
+                    continue;
+                }
+                let r: Awaited<ReturnType<typeof IssueOneUnit>>;
+                try {
+                    r = await IssueOneUnit(
+                        { OrderHeaderID: row.OrderHeaderID, CompanyID: row.CompanyID, OrderHeaderPaymentScheduleID: row.OrderHeaderPaymentScheduleID },
+                        { Preview: preview, AllowReissue: row.State === 'Failed' },
+                        provider,
+                        user,
+                    );
+                } catch (err) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    if (/is not configured/.test(message)) brokenCompanies.add(companyKey);
+                    r = { Success: false, ResultCode: 'ERROR', Message: message };
+                }
                 results.push({
                     OrderNumber: row.OrderNumber,
                     DocumentNumber: r.DocumentNumber ?? row.DocumentNumber,

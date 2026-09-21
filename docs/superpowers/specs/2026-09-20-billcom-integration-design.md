@@ -655,3 +655,17 @@ Also: `Refused` output on the poll Action and its metadata param.
 - 17 A filtered unique index on a persisted computed column needs `QUOTED_IDENTIFIER`/`ANSI_*`/
   `ARITHABORT` ON for inserts — tedious defaults satisfy this; note for the fresh-database replay.
 
+**Verification round (same day).** A second reviewer confirmed the fourteen fixes and found four defects
+the fixes introduced; all four are fixed:
+- the transient-failure pattern matched money (`500.00`) and document numbers (`INV-500`) as HTTP 5xx, so a
+  part-paid refusal would have been retried and re-recorded every half hour — status codes now match only
+  when they stand alone, and every refusal this module writes is classified permanent by name;
+- a mis-configured rail threw out of `IssueOneUnit` and aborted the whole sweep — each unit is now caught,
+  and a configuration error skips the rest of that company's units and moves on to the next company;
+- "nothing owed", "credit memo" and "instalment not yet issued" were written as `Failed` rows (one with a
+  fabricated amount) — only the two money facts (`PART_PAID`, `TIE_FAILED`) write a row; the rest return
+  `NOT_INVOICEABLE` and leave no history;
+- unchanged non-final rows (Held / Unmatched / Refused) counted against the poll's `MaxCount`, so a
+  pre-cutover backlog wider than the cap pinned the watermark — they are re-decided every pass but no
+  longer count, and a person's `Ignored` reason is no longer overwritten.
+

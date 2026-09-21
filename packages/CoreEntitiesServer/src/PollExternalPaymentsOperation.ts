@@ -58,6 +58,7 @@ interface ExternalPaymentRow extends Record<string, unknown> {
     ID: string;
     ExternalPaymentRef: string;
     Disposition: ExternalPaymentDisposition;
+    DispositionReason: string | null;
     PaymentHeaderID: string | null;
     ExternalUpdatedAt: string | Date | null;
 }
@@ -174,13 +175,20 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         const all = [...fetched.Value.Payments].sort((a, b) => (a.UpdatedAt ?? '').localeCompare(b.UpdatedAt ?? ''));
         const seen = await loadSeen(paymentProviderID, all.map((p) => p.ExternalPaymentRef), provider, user);
         const FINAL: ReadonlySet<ExternalPaymentDisposition> = new Set(['Captured', 'Ignored']);
-        const pending = all.filter((p) => {
+        const isUnchanged = (p: RailPaymentRecord): boolean => {
             const prior = seen.get(p.ExternalPaymentRef);
-            if (!prior) return true;
-            const unchanged = instant(prior.ExternalUpdatedAt) === p.UpdatedAt;
-            return !(unchanged && FINAL.has(prior.Disposition));
-        });
-        const payments = pending.slice(0, opts.maxCount);
+            return !!prior && instant(prior.ExternalUpdatedAt) === p.UpdatedAt;
+        };
+        // Three kinds of record. FINAL and unchanged: done, dropped. Non-final and unchanged (Held,
+        // Unmatched, Refused): re-decided every pass because OUR side may have changed (an invoice
+        // mapped, a configuration fixed), but they never count against the cap — otherwise a backlog
+        // of pre-cutover AR wider than MaxCount would pin the watermark for ever. New or changed:
+        // the work the cap is for, oldest first.
+        const pending = all.filter((p) => !(isUnchanged(p) && FINAL.has(seen.get(p.ExternalPaymentRef)!.Disposition)));
+        const stale = pending.filter((p) => isUnchanged(p));
+        const fresh = pending.filter((p) => !isUnchanged(p));
+        const freshBatch = fresh.slice(0, opts.maxCount);
+        const payments = [...stale, ...freshBatch];
         let fault: string | null = null;
 
         for (const p of payments) {
@@ -200,8 +208,8 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         // pass, the newest instant among the payments actually processed — everything older is done
         // (the list is sorted), and the one-day overlap re-reads the boundary next time. A fault keeps
         // the old watermark so nothing is skipped.
-        const capped = payments.length < pending.length;
-        const processedMax = payments.reduce<string | null>((m, p) => (p.UpdatedAt && (!m || p.UpdatedAt > m) ? p.UpdatedAt : m), null);
+        const capped = freshBatch.length < fresh.length;
+        const processedMax = freshBatch.reduce<string | null>((m, p) => (p.UpdatedAt && (!m || p.UpdatedAt > m) ? p.UpdatedAt : m), null);
         let newWatermark = storedWatermark;
         if (!fault) newWatermark = capped ? (processedMax ?? storedWatermark) : (fetched.Value.NewWatermark ?? processedMax ?? storedWatermark);
         if (!opts.preview) {
@@ -212,7 +220,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 state,
                 fault
                     ? { LastError: fault }
-                    : { Watermark: newWatermark, LastSucceededAt: new Date(), LastError: capped ? `Capped at ${opts.maxCount}; ${pending.length - payments.length} more next pass.` : null },
+                    : { Watermark: newWatermark, LastSucceededAt: new Date(), LastError: capped ? `Capped at ${opts.maxCount}; ${fresh.length - freshBatch.length} more next pass.` : null },
             );
         }
         return { Outcomes: outcomes, NewWatermark: newWatermark, Fault: fault ? `${rail.Config.Name}: ${fault}` : null };
@@ -235,8 +243,10 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         };
 
         if (decision.Action === 'Ignore') {
-            await record(prior?.Disposition ?? 'Ignored', decision.Reason);
-            return { ...base, Disposition: 'Ignored', Reason: decision.Reason, PaymentHeaderID: prior?.PaymentHeaderID ?? null };
+            // A person's reason for setting a row aside outlives our automatic one.
+            const reason = prior?.Disposition === 'Ignored' && prior.DispositionReason ? prior.DispositionReason : decision.Reason;
+            await record(prior?.Disposition ?? 'Ignored', reason);
+            return { ...base, Disposition: 'Ignored', Reason: reason, PaymentHeaderID: prior?.PaymentHeaderID ?? null };
         }
         if (decision.Action === 'Hold') {
             await record('Held', decision.Reason);
