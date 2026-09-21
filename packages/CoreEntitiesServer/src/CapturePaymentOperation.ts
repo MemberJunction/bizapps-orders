@@ -360,6 +360,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             line.OrderHeaderID = a.OrderHeaderID;
             line.Amount = money(Number(a.Amount));
             if (a.OrderLineID) line.OrderLineID = a.OrderLineID;
+            if (a.OrderHeaderPaymentScheduleID) line.OrderHeaderPaymentScheduleID = RequireUUID(a.OrderHeaderPaymentScheduleID, 'OrderHeaderPaymentScheduleID');
             line.AllocatedAt = new Date();
             if (user?.ID) line.AllocatedByUserID = user.ID;
             lines.push(line);

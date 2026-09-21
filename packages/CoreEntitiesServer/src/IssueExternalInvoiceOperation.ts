@@ -28,6 +28,7 @@ import {
     type OrdersIssueExternalInvoiceInput,
     type OrdersIssueExternalInvoiceOutput,
     type OrdersIssueExternalInvoiceResultCode,
+    Today,
 } from '@mj-biz-apps/orders-entities';
 
 import type { BaseInvoiceRail, RailCustomerFacts } from './BaseInvoiceRail.js';
@@ -240,7 +241,7 @@ export async function IssueOneUnit(
     }
 
     // 5. The document and the payload.
-    const built = await BuildInvoiceDocuments(order.ID, provider, user, { OnlyCompanyID: companyID });
+    const built = await BuildInvoiceDocuments(order.ID, provider, user, { OnlyCompanyID: companyID, PaymentScheduleID: row ? String(row.ID) : null });
     if (!built.Success || !built.Documents.length) {
         return refuse('ERROR', built.Message ?? `Order ${order.OrderNumber} produced no document for company ${companyID}.`);
     }
@@ -262,7 +263,7 @@ export async function IssueOneUnit(
               Amount: doc.Gross,
               DocumentNumber: CompanyDocumentNumber(order.OrderNumber, Math.max(0, [...lineCompanies].sort().indexOf(companyID.toLowerCase())), Math.max(1, lineCompanies.length)),
           };
-    const invoiceDate = isoDate(row?.InvoicedAt ?? order.ConfirmedAt) ?? new Date().toISOString().slice(0, 10);
+    const invoiceDate = isoDate(row?.InvoicedAt ?? order.ConfirmedAt) ?? Today();
     const payload = BuildExternalInvoicePayload(doc, unitFacts, invoiceDate);
     if (payload.OK === false) return refuse('TIE_FAILED', payload.Reason);
 

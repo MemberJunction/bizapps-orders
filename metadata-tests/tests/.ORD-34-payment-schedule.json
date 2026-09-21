@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-34 - Payment Schedule",
+    "Description": "Instalments on the order header (AIDP-24, golive #239, plan D85-D88). Proves the tie invariant refuses a confirm and an issue that do not add up, names the shortfall, and that an order with NO schedule books, ages and prints exactly as before. Issuing freezes the document number and is idempotent; an Invoiced row is frozen by trigger while a Scheduled sibling stays editable; a payment aimed at one instalment rolls up to that row alone while an unnamed one cascades oldest-due-first; ageing reads the next unpaid instalment; the billing worklist surfaces due-with-no-invoice rows and drops them once issued; the per-instalment document demands the instalment against the full order value.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A short schedule refuses the confirm with the shortfall named; a schedule-less order books AR for the whole value, ages on its header date and prints the order number; CompanyID is stamped from the lines; issue freezes ORD-x-N and stamps InvoicedAt, a second issue reports AlreadyInvoiced; a frozen number survives sibling edits; the DB refuses re-amounting an Invoiced row; a payment aimed at instalment 2 leaves 1 unpaid with header rollups correct; an unnamed payment cascades oldest first; overdue follows NextDueDate; the billing worklist lists then drops the issued row; issue refuses a Draft order and an untied schedule; a cross-order instalment payment is refused; the per-instalment document shows full value, instalment due."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "payment-schedule"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C440"
+  }
+}

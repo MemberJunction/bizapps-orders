@@ -41,6 +41,7 @@ import {
     type OrdersPollExternalPaymentsInput,
     type OrdersPollExternalPaymentsOutput,
     type UnitRef,
+    Today,
 } from '@mj-biz-apps/orders-entities';
 
 import type { BaseInvoiceRail, RailPaymentRecord } from './BaseInvoiceRail.js';
@@ -241,10 +242,10 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 BillToOrganizationID: allocation.Payer.BillToOrganizationID,
                 BillToPersonID: allocation.Payer.BillToPersonID,
                 TenderCode: TenderFor(p),
-                PaymentDate: p.PaymentDate?.slice(0, 10),
+                PaymentDate: p.PaymentDate?.slice(0, 10) ?? Today(),
                 Reference: p.ExternalPaymentRef,
                 Notes: notes.join(' '),
-                Allocations: allocation.Allocations.map((a) => ({ OrderHeaderID: a.OrderHeaderID, Amount: a.Amount })),
+                Allocations: allocation.Allocations.map((a) => ({ OrderHeaderID: a.OrderHeaderID, Amount: a.Amount, OrderHeaderPaymentScheduleID: a.OrderHeaderPaymentScheduleID })),
                 PaymentDetail: { PaymentProviderID: providerID, ReferenceNumber: (p.Raw.referenceNumber as string | undefined) ?? p.ExternalPaymentRef },
                 IdempotencyKey: ExternalPaymentIdempotencyKey(rail.Config.TypeCode, p.ExternalPaymentRef),
                 Preview: preview,

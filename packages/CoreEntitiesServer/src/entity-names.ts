@@ -40,10 +40,9 @@ export const PAYMENT_PROVIDER_SYNC_STATE_ENTITY = 'MJ_BizApps_Orders: Payment Pr
 export const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 export const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 
-/** Instalment rows (PR #220). Absent on a database that predates it — check `provider.EntityByName` before reading. */
-export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
-
 /** bizapps-common parties, as the recipient resolver already names them. */
 export const ORGANIZATION_ENTITY = 'MJ_BizApps_Common: Organizations';
 export const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 export const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
+/** One instalment of an order's billing schedule (AIDP-24). */
+export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';

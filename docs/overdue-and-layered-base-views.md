@@ -132,3 +132,14 @@ already-layered one — both put the entity in the modified list on their own.
 Layering is SQL Server only; MJ refuses `GeneratedBaseViewName` on PG rather than shipping a
 documented footgun. The PG side keeps deriving `IsOverdue` in code — from `overdue.ts`, which is the
 point of extracting it.
+
+## Instalments: the day that is due is `NextDueDate` (AIDP-24, 2026-09-19)
+
+An order billed in instalments (`OrderHeaderPaymentSchedule`) is overdue when **any** unpaid
+instalment is past due — which is the same as saying its **earliest** unpaid instalment is. So the
+outer view now computes `NextDueDate` in a `CROSS APPLY`: the earliest `DueDate` among live, unpaid
+schedule rows, or the header's own `DueDate` when the order has none. `IsOverdue` reads it through
+`OverdueSQL('g', 'nd.NextDueDate')`, `OverdueFilter()` reads the `NextDueDate` column, and
+`GetOverdueWorklist` ages from it. An order with no schedule is unchanged: for it `NextDueDate`
+**is** `DueDate`. The migration is `V202609201200__v5.13.0__OrderHeaderPaymentSchedule.sql`, and
+`overdue.test.ts` asserts the newest view migration carries exactly the predicate the module emits.

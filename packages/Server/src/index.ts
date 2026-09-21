@@ -37,6 +37,9 @@ import {
     LoadPreviewPriceOperation,
     LoadPriceOrderOperation,
     LoadGetOverdueWorklistOperation,
+    LoadGetBillingWorklistOperation,
+    LoadIssueInstalmentInvoiceOperation,
+    LoadOrderHeaderPaymentScheduleEntityServer,
     LoadGetFulfillmentQueueOperation,
     LoadFulfillOrderLinesOperation,
     LoadCapturePaymentOperation,
@@ -116,6 +119,9 @@ export function LoadBizAppsOrdersServer(): void {
     LoadPreviewPriceOperation();       // the 'Orders.PreviewPrice' dry run (D69)
     LoadPriceOrderOperation();         // 'Orders.PriceOrder' — what a whole order comes to, persisting nothing
     LoadGetOverdueWorklistOperation(); // 'Orders.GetOverdueWorklist' — overdue is computed, not stored
+    LoadGetBillingWorklistOperation(); // 'Orders.GetBillingWorklist' — instalments due with no invoice behind them (AIDP-24)
+    LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
+    LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
     LoadCapturePaymentOperation(); // 'Orders.CapturePayment' — header + allocations in ONE transaction
