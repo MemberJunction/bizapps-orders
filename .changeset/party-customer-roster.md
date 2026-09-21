@@ -18,8 +18,7 @@ definition (D65). SQL Server and PostgreSQL twins, as with the existing party ro
 
 Adds a `party-roster` integration bundle asserting the query is registered in the category, carries
 the marker, and returns rows that satisfy the contract. Raises the `mj-bizapps-common` floor to
-`>=5.46.0`, the release that introduces the category — without it the category lookup does not
-resolve on install. Note 5.45.0 shipped while that work was in review and does NOT carry the
-category, so the floor has to clear it.
+`>=5.45.0`, the release that introduces the category — without it the category lookup does not
+resolve on install.
 
 The header-form wiring that consumes this is a separate change.
