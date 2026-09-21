@@ -37,9 +37,11 @@ import {
     type IRunViewProvider,
     type UserInfo,
 } from '@memberjunction/core';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersPaymentLineEntity,
+    TodayAsDateValue,
 } from '@mj-biz-apps/orders-entities';
 import type { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 
@@ -228,7 +230,19 @@ export async function CreateReversingPayment(
     reversal.ReceivingCompanyID = original.ReceivingCompanyID;
     reversal.BillToOrganizationID = original.BillToOrganizationID;
     reversal.BillToPersonID = original.BillToPersonID;
-    reversal.PaymentDate = new Date();
+    // The business calendar day, not the instant (#209). `PaymentDate` is a SQL `DATE`, and
+    // `new Date()` is an instant that serialises in UTC — a refund issued at 9 PM Eastern was
+    // dated tomorrow, which files the reversal in the wrong period from the one it reverses.
+    //
+    // The warm-up lives HERE, next to the read, rather than in the two callers. Both of them
+    // (`RefundPaymentOperation`, `PaymentSettlement`) have already opened a transaction by the
+    // time they call this, so on a cold engine this one metadata SELECT is enlisted in it — a cost
+    // worth paying over the alternative, which is a requirement spread across callers where the
+    // third one to arrive forgets it and silently gets the UTC day back. `Config(false, …)` is a
+    // no-op once loaded, and the server pre-warms the engine at startup, so the cold case is the
+    // exception rather than the path.
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+    reversal.PaymentDate = TodayAsDateValue();
     reversal.PaymentTypeID = original.PaymentTypeID;
     reversal.Amount = request.Amount;
     reversal.ProcessingFeeAmount = 0;

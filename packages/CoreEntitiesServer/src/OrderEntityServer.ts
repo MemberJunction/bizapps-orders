@@ -45,6 +45,7 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
     OrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
@@ -55,6 +56,7 @@ import {
     mjBizAppsOrdersSubscriptionEntity,
     mjBizAppsOrdersSubscriptionEventEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
+    TodayAsDateValue,
 } from '@mj-biz-apps/orders-entities';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
@@ -2737,7 +2739,20 @@ export class OrderEntityServer extends OrderHeaderEntity {
         payment.ReceivingCompanyID = this.CompanyID;
         payment.BillToOrganizationID = this.BillToOrganizationID;
         payment.BillToPersonID = this.BillToPersonID;
-        payment.PaymentDate = this.OrderDate ?? new Date();
+        // The fallback is the business calendar day, not the instant (#209). `OrderDate` is itself
+        // defaulted at `NewRecord()` since #168, so this branch is very likely unreachable — but a
+        // `DATE` column fed `new Date()` is dated tomorrow for the whole American evening, and the
+        // next caller to reach this method with no order date should not discover that.
+        //
+        // Branched rather than `?? TodayAsDateValue()` so the engine is only warmed when its answer
+        // is actually used: an unconditional `Config()` would read instance configuration on every
+        // order confirm to compute a day the line below then discards.
+        if (this.OrderDate) {
+            payment.PaymentDate = this.OrderDate;
+        } else {
+            await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+            payment.PaymentDate = TodayAsDateValue();
+        }
         payment.PaymentTypeID = this.InitialPaymentTypeID;
         payment.Amount = amount;
         payment.PaymentDetailID = paymentDetailID;
