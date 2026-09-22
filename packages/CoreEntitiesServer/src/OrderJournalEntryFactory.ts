@@ -67,6 +67,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { SplitContraLegs } from './ContractBalance.js';
 import { GL_ROLE, GLAccountResolver, GLAccountResolutionError } from './GLAccountResolver.js';
 import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
@@ -271,6 +272,34 @@ export function BuildValueEntryLines(
 }
 
 export class OrderJournalEntryFactory {
+    /**
+     * What each line recognised during this build, signed — the caller advances
+     * `RecognizedToDate` with it inside the booking transaction (D92).
+     *
+     * An accumulator rather than a return value because `BuildDrafts` already returns the drafts
+     * and the two are read at different moments: the drafts go to accounting, these go to the
+     * lines, and both must land in the same transaction.
+     *
+     * DRAINING IT IS NOT OPTIONAL. A caller that takes the drafts and forgets these would book the
+     * revenue and leave `RecognizedToDate` frozen, so the next entry against the line would read a
+     * stale balance and put the contra on the wrong account — silently, because every entry still
+     * balances. {@link DrainRecognized} is therefore the only way to read it, it empties the map,
+     * and {@link BuildDrafts} refuses to run a second time against an undrained one.
+     */
+    private readonly _recognizedByLine = new Map<string, number>();
+
+    /**
+     * Take what this build recognised, per line, and clear it.
+     *
+     * Call inside the same transaction that submitted the drafts. Returns an empty map when the
+     * build recognised nothing, which is every order with no scheduled company.
+     */
+    public DrainRecognized(): Map<string, number> {
+        const out = new Map(this._recognizedByLine);
+        this._recognizedByLine.clear();
+        return out;
+    }
+
     constructor(
         private readonly _resolver: GLAccountResolver,
         private readonly _orderLineEntityID: string,
@@ -308,6 +337,17 @@ export class OrderJournalEntryFactory {
     ): Promise<OrderLineDraft[]> {
         if (lines.length === 0) {
             throw new Error(`Order ${order.OrderNumber} has no lines to book.`);
+        }
+        // A previous build's recognitions are still here, which means whoever ran it took the
+        // drafts and never drained them — so those lines' RecognizedToDate was never advanced and
+        // every later entry against them will read a stale balance and choose the wrong contra
+        // account. Fail here, where the cause is visible, rather than in a month's close.
+        if (this._recognizedByLine.size > 0) {
+            throw new Error(
+                `OrderJournalEntryFactory was reused without draining what the last build recognised ` +
+                    `(${this._recognizedByLine.size} line(s)). Call DrainRecognized() inside the booking ` +
+                    `transaction and advance RecognizedToDate with it, or those lines' totals are wrong.`,
+            );
         }
 
         const products = await this.loadProducts(lines.map((l) => l.ProductID));
@@ -565,21 +605,61 @@ export class OrderJournalEntryFactory {
         // A deferred driver needs nothing here: its staged releases below already debit Deferred
         // and credit Sales on their own dates, and they are untouched by the schedule.
         if (isScheduled && !revRec.IsDeferred) {
-            const deferredAccount = await resolve(GL_ROLE.DeferredRevenue);
-            bookingLines.push(
-                {
-                    GLAccountID: deferredAccount,
-                    DebitAmount: net,
-                    Description: `Deferred revenue (earned, not yet billable) — ${product.Name}`,
+            // ── RULE 2 (D92), Andrew's Scenario 3: an up-front line on a scheduled company ──
+            //
+            // The product is delivered at booking, so its revenue is EARNED now whatever the
+            // billing schedule says — `Cr Sales` for the whole of it. The debit is what changes:
+            // rule 2 relieves the line's Deferred balance first (what confirm has just billed for
+            // it, from the instalments already due) and opens Unbilled Receivable for the rest.
+            // That remainder is earned money we are not yet allowed to invoice, which is the one
+            // case where confirmation legitimately debits a contract asset — Andrew's design and
+            // #225's earlier D89 behaviour agree here, for once.
+            //
+            // BilledToDate is read AFTER issueDueInstalments has run for this order, so `billed`
+            // is what was actually invoiced at confirm and not what the schedule merely promises.
+            const billed = Math.abs(Number(line.BilledToDate ?? 0));
+            const recognized = Math.abs(Number(line.RecognizedToDate ?? 0));
+            const legs = SplitContraLegs(billed, recognized, net, 'Recognize');
+
+            bookingLines.push({
+                GLAccountID: salesAccount,
+                CreditAmount: discountAccount ? gross : net,
+                Description: `Sales — ${product.Name}`,
+                Dimensions: lineDims,
+            });
+            if (legs.Deferred !== 0) {
+                bookingLines.push({
+                    GLAccountID: await resolve(GL_ROLE.DeferredRevenue),
+                    DebitAmount: legs.Deferred,
+                    Description: `Deferred revenue — ${product.Name}`,
                     Dimensions: lineDims,
-                },
-                {
-                    GLAccountID: salesAccount,
-                    CreditAmount: discountAccount ? gross : net,
-                    Description: `Sales — ${product.Name}`,
+                });
+            }
+            if (legs.Unbilled !== 0) {
+                // Same tolerance the role has always had: no account linked means the whole debit
+                // goes to Deferred, coarser but correct and balanced, and the warning says so.
+                let unbilledAccount: string | null = null;
+                try {
+                    unbilledAccount = await resolve(GL_ROLE.UnbilledReceivable);
+                } catch {
+                    console.warn(
+                        `Order ${order.OrderNumber} line ${line.LineNumber}: no '${GL_ROLE.UnbilledReceivable}' ` +
+                            `GL account is linked for company ${companyID}, so ${legs.Unbilled.toFixed(2)} of ` +
+                            `revenue earned ahead of billing was debited to Deferred Revenue instead. The entry ` +
+                            `balances and no revenue is misstated, but the contract asset is indistinguishable ` +
+                            `from unearned billing on the balance sheet. Link an ` +
+                            `'${GL_ROLE.UnbilledReceivable}' account to the company.`,
+                    );
+                }
+                bookingLines.push({
+                    GLAccountID: unbilledAccount ?? (await resolve(GL_ROLE.DeferredRevenue)),
+                    DebitAmount: legs.Unbilled,
+                    Description: unbilledAccount
+                        ? `Unbilled receivable — ${product.Name}`
+                        : `Deferred revenue (unbilled, no contract-asset account) — ${product.Name}`,
                     Dimensions: lineDims,
-                },
-            );
+                });
+            }
             if (discountAccount) {
                 bookingLines.push({
                     GLAccountID: discountAccount,
@@ -588,6 +668,9 @@ export class OrderJournalEntryFactory {
                     Dimensions: lineDims,
                 });
             }
+            // What this entry recognised, for the caller to advance RecognizedToDate with. Signed
+            // by the line, like every other total.
+            this._recognizedByLine.set(line.ID, isReversal ? money(-net) : net);
         }
 
         // Drop zero-amount lines. A fully-discounted line — a comped ticket, a 100%-off promotion —

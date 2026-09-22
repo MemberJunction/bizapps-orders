@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609221400 — OrderLine.BilledToDate / RecognizedToDate
+-- V202609221700 — OrderLine.BilledToDate / RecognizedToDate
 -- (bc-aidp-next-golive#240 · orders #227 thread · D92, Andrew's booking model)
 -- =============================================================================
 -- Every order line carries two running totals, and the gap between them IS the
@@ -161,7 +161,7 @@ GO
 
 
 /* ---------------------------------------------------------------------------
-   CARVED CodeGen output for V202609221400 (OrderLine.BilledToDate / RecognizedToDate).
+   CARVED CodeGen output for V202609221700 (OrderLine.BilledToDate / RecognizedToDate).
 
    Generated against MJ_replay2 — a scratch database built from migrations alone, so this
    output describes only what this migration changed. What was dropped, and why, is in

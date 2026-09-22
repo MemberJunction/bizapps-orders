@@ -165,6 +165,9 @@ export function ScheduleShortfalls(rows: ScheduleRowFacts[], lines: ScheduleLine
 export interface ScheduleTimingFacts extends ScheduleRowFacts {
     /** `YYYY-MM-DD`, or anything `Date` parses. Carried for callers; the scope test ignores it. */
     DueDate: string | Date;
+    /** The row itself, so confirm can issue the instalments already due (D92). */
+    ID?: string;
+    InstallmentNumber?: number;
 }
 
 /**
