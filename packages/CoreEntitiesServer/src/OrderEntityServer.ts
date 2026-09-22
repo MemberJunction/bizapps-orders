@@ -1636,6 +1636,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (!(amountField?.Dirty === true || (line.DiscountAmount ?? 0) > 0)) {
             line.DiscountAmount = terms.DiscountAmount;
         }
+
+        // THE COVERAGE WINDOW, for the same reason as the price: only the origin knows it.
+        //
+        // A reversal buys no subscription, so `materializeSubscriptions` deliberately skips it and no
+        // term is created — which leaves a deferred line with no window at all, and `EvenOverTime`
+        // refuses to build a schedule without one. Every Subscription and Membership product defaults
+        // to `EvenOverTime`, so before this a subscription order simply could not be returned
+        // (golive #235). The window is not derivable from anywhere else: today's product rules would
+        // compute the term this purchase WOULD get if bought now, which is not the one being unwound.
+        //
+        // PER FIELD, so a caller that states only a start gets the origin's end and a coherent window
+        // rather than a refusal. A stated date always wins, which is what `CancelSubscriptionOperation`
+        // relies on: a mid-term cancellation states the UNEARNED window (effective date → term end)
+        // rather than the whole term, and inheriting over it would reverse coverage the customer
+        // actually consumed.
         if (!line.ServicePeriodStart && terms.ServicePeriodStart) {
             line.ServicePeriodStart = new Date(terms.ServicePeriodStart);
         }
@@ -1760,6 +1775,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async applyEventServicePeriod(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
         if (!line.ProductID) return;
+
+        // A REVERSAL takes its window from the line it unwinds, never from the event row. This runs
+        // before `applyReversalOrigin`, so without this the event's CURRENT dates would be stamped
+        // first and inheritance would then find the line already filled and leave it — silently
+        // reversing a rescheduled event over the new dates rather than the ones that were sold.
+        if (line.ReversesOrderLineID) return;
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const res = await rv.RunView<{ EventStartsAt: string; EventEndsAt: string | null }>(
@@ -1992,6 +2013,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser;
         const out: SubscriptionMaterialization = { TermsByLine: new Map(), RecognitionMonthsByLine: new Map() };
+
+        // REVERSALS FIRST, and OUTSIDE the early return below: a return order buys nothing, so it has
+        // no decisions at all and every line of the loop that follows is skipped for it — but its
+        // schedule still has to mirror the one it unwinds, and that needs a cadence.
+        await this.inheritReversalCadence(lines, out);
 
         if (decisions.size === 0) return out;
 
@@ -2395,6 +2421,88 @@ export class OrderEntityServer extends OrderHeaderEntity {
             );
         }
         return driver;
+    }
+
+    /**
+     * Give each reversal line the recognition CADENCE of the line it unwinds (golive #235).
+     *
+     * WHY THE WINDOW IS NOT ENOUGH. `applyReversalOrigin` inherits the origin's service period, which
+     * says WHICH months the reversal covers. It does not say how those months are cut, and that is a
+     * separate input: `EvenOverTime` slices the window by `PeriodMonths`, which reaches the factory
+     * through `RecognitionMonthsByLine` and is built only where terms are created — a path a reversal
+     * deliberately never takes. So it arrived undefined and fell to the driver's default of ONE MONTH.
+     *
+     * An annual membership shows what that costs. The sale recognizes in a single 12-month slice:
+     * one release of the whole amount, dated at the start. The reversal, cut monthly, produces
+     * twelve. The year nets to zero — which is exactly why nothing downstream reports it — while
+     * January reads 1,100 short and every other month 100 long. The defect is invisible on Monthly
+     * subscriptions, whose cadence is already 1, and shows on Quarterly, Annual and Custom.
+     *
+     * THE CADENCE COMES FROM THE ORIGIN'S SUBSCRIPTION, not from its product. The product's current
+     * `SubscriptionTypeID` answers "what would this purchase get if it were made today", which is the
+     * wrong question for an unwind — re-point a product at a different subscription type and every
+     * outstanding return starts mirroring a cadence its sale never used. The subscription stamped its
+     * type when it was created, so it still holds the one that was actually applied.
+     *
+     * What this CANNOT freeze is the type's own columns: `SubscriptionType.RecognitionCadence` is read
+     * live, so editing it in place still moves the cadence under a booked term. Freezing that properly
+     * means a `RecognitionMonths` column on `SubscriptionTerm` alongside the `RevenueRecognitionTypeID`
+     * it already freezes — a schema change, and a wider one than this defect.
+     *
+     * Silent where it cannot answer: a line with no subscription bought no term, and the factory's
+     * existing default is correct for it.
+     */
+    private async inheritReversalCadence(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        out: SubscriptionMaterialization,
+    ): Promise<void> {
+        const reversals = lines.filter((l) => l.ReversesOrderLineID);
+        if (!reversals.length) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        // Reuse the ONE loader. The already-reversed total it also computes is redundant here, but a
+        // second query shaped just for this would be a second place for the origin lookup to drift.
+        const subscriptionIDByLine = new Map<string, string>();
+        for (const line of reversals) {
+            const context = await LoadReversalContext(line.ReversesOrderLineID!, provider, user, [line.ID]);
+            const subscriptionID = context?.Origin.SubscriptionID;
+            // Unresolvable origins are not this method's to refuse — `applyReversalOrigin` already
+            // threw on them long before booking, so anything reaching here has an origin.
+            if (subscriptionID) subscriptionIDByLine.set(uuidKey(line.ID), subscriptionID);
+        }
+        if (!subscriptionIDByLine.size) return;
+
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const ids = [...new Set([...subscriptionIDByLine.values()])]
+            .map((id) => `'${RequireUUID(id, 'SubscriptionID')}'`)
+            .join(',');
+        const subs = await rv.RunView<{ ID: string; SubscriptionTypeID: string }>(
+            {
+                EntityName: SUBSCRIPTION_ENTITY,
+                ExtraFilter: `ID IN (${ids})`,
+                ResultType: 'simple',
+            },
+            user,
+        );
+        const typeBySubscription = new Map<string, string>();
+        for (const row of subs?.Results ?? []) {
+            if (row.SubscriptionTypeID) typeBySubscription.set(uuidKey(row.ID), row.SubscriptionTypeID);
+        }
+
+        for (const line of reversals) {
+            const subscriptionID = subscriptionIDByLine.get(uuidKey(line.ID));
+            if (!subscriptionID) continue;
+            const typeID = typeBySubscription.get(uuidKey(subscriptionID));
+            if (!typeID) continue;
+            const cached = OrdersEngine.Instance.SubscriptionTypeByID(typeID);
+            if (!cached) continue;
+            // Through `behaviorFor`, so a type whose driver OVERRIDES `RecognitionMonths` reverses on
+            // the cadence it actually sold rather than on the base class's reading of the columns.
+            const rules = SubscriptionTypeRulesFrom(cached);
+            out.RecognitionMonthsByLine.set(line.ID, this.behaviorFor(rules).RecognitionMonths(rules));
+        }
     }
 
     /**
