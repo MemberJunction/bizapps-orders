@@ -3,7 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
-import { OrderHeaderEntity, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import {
+    OrderHeaderEntity,
+    OrdersGetPriorReturnsOperation,
+    type mjBizAppsOrdersOrderHeaderEntity,
+} from '@mj-biz-apps/orders-entities';
 import { Metadata } from '@memberjunction/core';
 
 import { MJOPricingScheduler } from '../../services/pricing-scheduler.service';
@@ -282,6 +286,13 @@ export class MJOReturnPageComponent implements OnInit {
         if (!this.Origin) return;
 
         const lines = await GetOrderLines(this.Origin.ID);
+        // WHAT HAS ALREADY GONE BACK, from the server. The cap counts reversals across every order
+        // and ignores Draft and Voided ones — the rule `ReversalResolver` refuses with at confirm
+        // time. Computing it here from a view would be a second copy of that rule, and the copy on
+        // the screen is the one nobody tests. This page used to hard-code the figure to zero, so the
+        // maximum it offered ignored earlier returns entirely; the server still refused the
+        // over-return, which made the screen wrong rather than dangerous.
+        const alreadyReturned = await this.LoadPriorReturns(lines.map((l) => String(l['ID'])));
         this.Lines = lines.map((line) => {
             const net = Number(line['LineTotalNet'] ?? 0);
             const tax = Number(line['LineTax'] ?? 0);
@@ -294,7 +305,7 @@ export class MJOReturnPageComponent implements OnInit {
                 // refund last year's purchase at today's rate.
                 UnitPrice: Number(line['UnitPrice'] ?? 0),
                 Bought: Number(line['Quantity'] ?? 0),
-                AlreadyReturned: 0,
+                AlreadyReturned: alreadyReturned.get(String(line['ID'])) ?? 0,
                 Returning: 0,
                 // The effective rate the original charged, so tax comes back at what
                 // was actually taken rather than at whatever the rate is now.
@@ -302,6 +313,33 @@ export class MJOReturnPageComponent implements OnInit {
             };
         });
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Ask the server how much of each line has already been returned.
+     *
+     * SAYS SO WHEN IT CANNOT ANSWER. A failed lookup and a line with no prior returns both come back
+     * as zero, and zero is the permissive direction — it offers the full quantity. The server still
+     * refuses an over-return, so nothing wrong can be booked either way, but a screen that quietly
+     * offers a quantity it will then reject is worse than one that admits it does not know.
+     */
+    private async LoadPriorReturns(lineIDs: string[]): Promise<Map<string, number>> {
+        const out = new Map<string, number>();
+        if (!lineIDs.length) return out;
+        const op = new OrdersGetPriorReturnsOperation();
+        const result = await op.Execute({ OrderLineIDs: lineIDs });
+        if (!result.Success || !result.Output) {
+            this.Error =
+                result.ErrorMessage?.trim() ||
+                'How much of this order has already been returned could not be loaded, so the ' +
+                    'maximum shown for each line may be too high.';
+            // The caller ticks once it has built its rows, but the warning is assigned after an
+            // await in THIS body and a tick elsewhere does not repaint it.
+            this.cdr.detectChanges();
+            return out;
+        }
+        for (const row of result.Output.Lines) out.set(row.OrderLineID, row.AlreadyReturned);
+        return out;
     }
 
     /** What may still come back — prior returns count against it. */
@@ -346,9 +384,16 @@ export class MJOReturnPageComponent implements OnInit {
             for (const line of this.Lines.filter((l) => l.Returning > 0)) {
                 const reversal = await draft.Lines.Create();
                 reversal.ProductID = line.ProductID;
-                reversal.Quantity = line.Returning;
+                // NEGATIVE. The sign is not cosmetic and it is not the accounting convention — it is
+                // the switch. `OrderJournalEntryFactory` decides whether to mirror an entry by
+                // reading `Quantity < 0`, so a positive reversal line books the SALE's entry: it
+                // debits the customer again for goods coming back, while the invoice layer labels
+                // the document a Credit Memo and the entitlements are revoked. Every other caller
+                // writes it negative — `CancelSubscriptionOperation`, the returns checks, D16.
+                reversal.Quantity = -Math.abs(line.Returning);
                 // The origin line is the sole authority on price, so the reversal states nothing
-                // and lets the engine mirror it — UnitPrice is deliberately left unset.
+                // and lets the engine mirror it — UnitPrice is deliberately left unset. Its SERVICE
+                // PERIOD is inherited the same way, which is what lets a subscription be returned.
                 reversal.ReversesOrderLineID = line.LineID;
             }
 

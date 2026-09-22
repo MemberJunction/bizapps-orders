@@ -7,7 +7,7 @@
  * answers the harder question the pointer makes possible: given the origin, is THIS reversal
  * legitimate, and what should it cost?
  *
- * Three facts the origin line is the only authority on:
+ * Four facts the origin line is the only authority on:
  *
  *   1. **HOW MUCH is left to give back.** Nothing else in the system knows. Over-returning produces
  *      a perfectly balanced journal entry that refunds money never collected, so the ledger cannot
@@ -20,6 +20,12 @@
  *
  *   3. **WHICH PRODUCT.** An ID copied from the wrong row books a credit against another company's
  *      revenue and still balances.
+ *
+ *   4. **WHAT PERIOD IT COVERED.** A deferred line earns across a service period, so unwinding one
+ *      means unwinding that same window. A reversal that states no period has nothing for
+ *      `EvenOverTime` to spread across and cannot book at all — and one that states a DIFFERENT
+ *      window reverses the right total in the wrong months, which every year-end total still
+ *      agrees with.
  *
  * THE SHAPE THIS SHARES WITH THE REST OF THE PACKAGE: every one of these produces a wrong answer
  * that looks exactly like a right one. Hence refusal rather than a best guess.
@@ -38,10 +44,21 @@ export interface ReversalOrigin {
     DiscountPct: number;
     /** The origin's ALLOCATED discount — an order-level promotion's share of this line (D70). */
     DiscountAmount?: number;
-    /** For the refusal message — an ID alone tells the reader nothing about what they mispointed at. */
-    OrderNumber?: string | null;
+    /**
+     * The coverage window this line sold, as `materializeSubscriptions` settled it. Absent on a line
+     * that earns at booking — an UpFront product has no window and needs none.
+     */
     ServicePeriodStart?: Date | string | null;
     ServicePeriodEnd?: Date | string | null;
+    /**
+     * The subscription this line bought into, read from the term it bought. Not something the
+     * reversal inherits — it is how the caller reaches the RECOGNITION CADENCE, which lives on the
+     * subscription's type and is not a column on the line. The window says WHICH months; the cadence
+     * says how the window is cut, and a schedule needs both to mirror its origin.
+     */
+    SubscriptionID?: string | null;
+    /** For the refusal message — an ID alone tells the reader nothing about what they mispointed at. */
+    OrderNumber?: string | null;
 }
 
 /** The reversal being attempted. Quantity is negative, as the caller wrote it. */
@@ -120,6 +137,15 @@ export function ValidateReversal(
  *
  * RT7 tested exactly this concern and passed, because it used `DiscountPct`. The two fields express
  * the same idea and only one of them was carried through. Surfaced by Marcelo on PR #17.
+ *
+ * THE COVERAGE WINDOW DOES NOT SCALE, and it is the one thing here that does not. Money is
+ * proportional — returning half the units gives back half the cash — but a period is not divisible
+ * the same way: sending back one of four annual seats unwinds one seat for the WHOLE year, not four
+ * seats for a quarter. Prorating the window instead would refund the right total across the wrong
+ * months, and the year still foots.
+ *
+ * The cadence that cuts this window into slices is NOT returned here, because it is not a column on
+ * the line — see `ReversalOrigin.SubscriptionID`.
  *
  * `reversalQuantity` is what the caller intends to send back, in either sign.
  */

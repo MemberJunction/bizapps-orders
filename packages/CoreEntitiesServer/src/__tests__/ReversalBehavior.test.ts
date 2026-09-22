@@ -239,3 +239,33 @@ describe('InheritedTerms — a return refunds what was PAID', () => {
         expect(terms.ServicePeriodEnd).toEqual(end);
     });
 });
+
+describe('InheritedTerms — the coverage window, which is what let a subscription be returned', () => {
+    // golive #235. A reversal buys no subscription, so no term is created for it and the line's
+    // service period stayed empty — and EvenOverTime, which every Subscription and Membership
+    // product defaults to, refuses to build a schedule without a window. The order simply could
+    // not be confirmed.
+    const jan = new Date('2026-01-01T00:00:00Z');
+    const dec = new Date('2026-12-31T00:00:00Z');
+    const covered = origin({ Quantity: 4, UnitPrice: 100, ServicePeriodStart: jan, ServicePeriodEnd: dec });
+
+    it('does NOT prorate the window by the quantity returned', () => {
+        // The one thing here that does not scale with the money. Sending back one of four annual
+        // seats unwinds one seat for the WHOLE year — not four seats for a quarter. A prorated
+        // window would reverse the right total across the wrong months, and the year still foots,
+        // so nothing downstream could report it.
+        const partial = InheritedTerms(covered, -1);
+        expect(partial.ServicePeriodStart).toEqual(jan);
+        expect(partial.ServicePeriodEnd).toEqual(dec);
+        // The money, by contrast, does scale.
+        expect(partial.UnitPrice).toBe(100);
+    });
+
+    it('a line that sold no window offers none', () => {
+        // An UpFront product earns at booking and needs no coverage period; inventing one here
+        // would push it down the deferral path it deliberately skips.
+        const terms = InheritedTerms(origin({ UnitPrice: 100 }), -1);
+        expect(terms.ServicePeriodStart).toBeFalsy();
+        expect(terms.ServicePeriodEnd).toBeFalsy();
+    });
+});

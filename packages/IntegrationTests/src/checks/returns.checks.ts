@@ -124,6 +124,47 @@ const entryLines = (ctx: IntegrationCheckContext, orderID: string) =>
       WHERE ol.OrderHeaderID = '${orderID}'`,
   );
 
+/**
+ * The RevenueRecognition releases an order produced, one row per date, signed so a sale and the
+ * return that unwinds it cancel.
+ *
+ * TWO LINKAGES, because a release anchors to whichever of them exists (D46): a SALE's releases hang
+ * off the SubscriptionTerm the line bought, and a REVERSAL buys no term, so its releases hang off
+ * the reversal line itself. Reading only one of the two makes a reversal look like it recognized
+ * nothing at all, which reads as a pass.
+ *
+ * The SIGN comes from the order's own quantity rather than from which account was debited: the entry
+ * is mirrored, not negated, so both sides are positive amounts and nothing in the entry itself says
+ * which direction it went.
+ */
+async function recognitionByDate(
+  ctx: IntegrationCheckContext,
+  orderID: string,
+): Promise<{ On: string; Net: number }[]> {
+  const qty = await TxOne<{ Q: number }>(
+    ctx,
+    `SELECT ISNULL(SUM(Quantity),0) AS Q FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}'`,
+  );
+  const sign = Number(qty.Q) < 0 ? -1 : 1;
+  const rows = await TxQuery<{ On: string; Amount: number }>(
+    ctx,
+    `SELECT CONVERT(varchar(10), je.EffectiveDate, 23) AS [On], SUM(jel.DebitAmount) AS Amount
+       FROM ${ACCT_SCHEMA}.vwJournalEntries je
+       JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+      WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'RevenueRecognition'
+        AND (
+              je.LinkedRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}')
+           OR je.LinkedRecordID IN (
+                SELECT t.ID FROM ${ORDERS_SCHEMA}.SubscriptionTerm t
+                  JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = t.OrderLineID
+                 WHERE ol.OrderHeaderID='${orderID}')
+        )
+      GROUP BY je.EffectiveDate
+      ORDER BY je.EffectiveDate`,
+  );
+  return rows.map((r) => ({ On: String(r.On), Net: sign * Math.round(Number(r.Amount) * 100) / 100 }));
+}
+
 const lineTotals = (ctx: IntegrationCheckContext, orderID: string) =>
   TxOne<{ Net: number; Tax: number; Gross: number; Discount: number; Qty: number }>(
     ctx,
@@ -360,13 +401,16 @@ export const ReturnsChecks: NamedCheck[] = [
             WHERE ol.OrderHeaderID='${sale.Order.ID}'`);
         AssertEqual(Number(after.N), 1, "the sale created exactly one subscription");
 
-        // The reversal carries its own coverage window, exactly as `emitReversalOrder` sets one:
-        // an EvenOverTime line has to say what period it is unwinding.
+        // NO SERVICE PERIOD STATED, and that is the point of this line. It used to pass one —
+        // "an EvenOverTime line has to say what period it is unwinding" — which was true of the
+        // ENGINE and false of every caller: the Return page states only product, quantity and the
+        // pointer, so a subscription order could not be returned from the UI at all (golive #235).
+        // The window now comes from the origin, the same way the price does, so a reversal that
+        // states nothing books.
         const ret = await returnAgainst(ctx, sale.Lines[0].ID as string, {
           productID: f.Products.SubRolling,
           quantity: 1,
           unitPrice: 120,
-          servicePeriod: { Start: "2026-01-01", End: "2026-12-31" },
         });
         Assert(ret.Saved, `the reversal must book: ${ret.Message}`);
 
@@ -490,6 +534,124 @@ export const ReturnsChecks: NamedCheck[] = [
         Assert(
           /different product/i.test(ret.Message),
           `the refusal must be about the PRODUCT, not about something incidental — got: ${ret.Message}`,
+        );
+      }),
+  },
+  {
+    Id: "returns.RT13",
+    Name: "RT13: a membership return inherits the window it unwinds and mirrors its schedule",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // golive #235. RT8 proves a reversal that states no window BOOKS. This proves it books the
+        // RIGHT one — the schedules have to line up entry for entry, not merely sum to zero. A
+        // reversal spread over the wrong months leaves every month of the year misstated while the
+        // year itself foots, which is the failure shape nothing downstream reports.
+        const f = Fx();
+        const sale = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [
+            {
+              ProductID: f.Products.SubRolling,
+              Quantity: 1,
+              UnitPrice: 1200,
+              ServicePeriodStart: "2026-01-01",
+              ServicePeriodEnd: "2026-12-31",
+            },
+          ],
+        });
+        Assert(sale.Saved, `the membership sale must confirm: ${sale.Message}`);
+
+        const ret = await returnAgainst(ctx, sale.Lines[0].ID as string, {
+          productID: f.Products.SubRolling,
+          quantity: 1,
+        });
+        Assert(ret.Saved, `a membership must be returnable without stating a period: ${ret.Message}`);
+
+        // THE WINDOW LANDED ON THE LINE, which is what the recognition schedule is built from.
+        // FORMATTED IN SQL, not in JS. A DATE column comes back as a `Date` pinned to UTC midnight,
+        // and rendering it locally west of Greenwich moves it to the previous day — so a JS-side
+        // comparison reports an off-by-one that the stored value does not have. CONVERT reads the
+        // stored date itself, with no timezone in the path.
+        const window = await TxOne<{ Start: string; End: string }>(
+          ctx,
+          `SELECT CONVERT(varchar(10), ServicePeriodStart, 23) AS Start,
+                  CONVERT(varchar(10), ServicePeriodEnd, 23) AS [End]
+             FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${ret.Order.ID}'`,
+        );
+        AssertEqual(
+          String(window.Start),
+          "2026-01-01",
+          "the reversal covers the period the sale covered, not today",
+        );
+        AssertEqual(String(window.End), "2026-12-31", "…through the same end date");
+
+        // ENTRY FOR ENTRY. The sale's releases hang off its TERM; the reversal buys no term, so its
+        // releases hang off the reversal line. Same dates, same count, opposite side.
+        const sold = await recognitionByDate(ctx, sale.Order.ID as string);
+        const back = await recognitionByDate(ctx, ret.Order.ID as string);
+        AssertEqual(back.length, sold.length, "the reversal produces one release per release it unwinds");
+        AssertEqual(
+          back.map((r) => r.On).join(","),
+          sold.map((r) => r.On).join(","),
+          "and lands them on the same dates",
+        );
+        for (let i = 0; i < sold.length; i++) {
+          AssertEqual(
+            Math.round((sold[i].Net + back[i].Net) * 100) / 100,
+            0,
+            `month ${sold[i].On} nets to zero`,
+          );
+        }
+      }),
+  },
+  {
+    Id: "returns.RT14",
+    Name: "RT14: a reversal recognizes on the CADENCE its origin sold, not one month",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // The window says WHICH months; the cadence says how they are cut, and it reaches the
+        // factory by a different route — a map built only where terms are created, which a reversal
+        // never enters. So it arrived empty and fell to the driver's default of one month. This type
+        // recognizes QUARTERLY, so an unfixed reversal produces twelve releases against the sale's
+        // four: the year nets to zero and not one month inside it does.
+        const f = Fx();
+        const sale = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [
+            {
+              ProductID: f.Products.SubFiscal,
+              Quantity: 1,
+              UnitPrice: 1200,
+              ServicePeriodStart: "2026-07-01",
+              ServicePeriodEnd: "2027-06-30",
+            },
+          ],
+        });
+        Assert(sale.Saved, `the fiscal-year membership sale must confirm: ${sale.Message}`);
+
+        const sold = await recognitionByDate(ctx, sale.Order.ID as string);
+        Assert(
+          sold.length === 4,
+          `a quarterly cadence over a year is four releases — got ${sold.length}. If this fails the ` +
+            `fixture's recognition cadence changed and the rest of this check is measuring nothing.`,
+        );
+
+        const ret = await returnAgainst(ctx, sale.Lines[0].ID as string, {
+          productID: f.Products.SubFiscal,
+          quantity: 1,
+        });
+        Assert(ret.Saved, `the reversal must book: ${ret.Message}`);
+
+        const back = await recognitionByDate(ctx, ret.Order.ID as string);
+        AssertEqual(back.length, sold.length, "the reversal is cut into the same number of slices");
+        AssertEqual(
+          back.map((r) => r.On).join(","),
+          sold.map((r) => r.On).join(","),
+          "on the same dates — a monthly cut would put twelve entries here, on dates the sale never used",
         );
       }),
   },

@@ -422,5 +422,32 @@
       "lastModified": "2026-09-19T16:09:46.642Z",
       "checksum": "431be293cadf96362e25921bfadbd81df14e5f1af5981322ff2fb3b2702f423a"
     }
+  },
+  {
+    "fields": {
+      "Name": "Get Prior Returns",
+      "OperationKey": "Orders.GetPriorReturns",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Lifecycle",
+      "Description": "How much of each order line has already been returned, and how much may still come back. Read-only. The cap counts reversals across every order and excludes Draft and Voided returns, which is why it is an operation rather than a view the caller filters for itself — a second copy of that rule on the client is a second place for it to drift. Powers the Return page's per-line maximum.",
+      "InputTypeName": "GetPriorReturnsInput",
+      "InputTypeDefinition": "@file:types/orders-get-prior-returns.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "GetPriorReturnsOutput",
+      "OutputTypeDefinition": "@file:types/orders-get-prior-returns.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "3F8C1A47-9B52-4E06-A1D8-5C7420E9B3F1"
+    },
+    "sync": {
+      "lastModified": "2026-09-21T15:45:38.527Z",
+      "checksum": "3433b673df672c542494fd6f7c295d5053513b32a0dae6fa835df6214360332c"
+    }
   }
 ]
