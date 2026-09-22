@@ -19,8 +19,11 @@ import '../public-api';
  * Both fixes are structural, so these tests read the structures:
  *  - `replacesSectionKey` on the registration is what removes the duplicate generated section.
  *  - Where an `mj-form-field` is DECLARED is what decides whether mj-collapsible-panel's
- *    `@ContentChildren` hide-when-empty check can see it. A field declared inside the widget's
- *    own template sits behind a component view boundary and is invisible to the query.
+ *    `@ContentChildren` query can see it. A field declared inside the widget's own template sits
+ *    behind a component view boundary and is invisible to the query. That query drives both
+ *    hide-when-empty (golive#184) and the rail badge: a section that sees no fields reports no
+ *    required-and-empty count before a save and claims none of the field-named errors after a
+ *    failed one (golive#255).
  */
 
 /** Inline `template:` of a panel component, from the decorator metadata Angular keeps on the class. */
@@ -100,12 +103,17 @@ describe('Product widget panels replace their duplicate generated sections', () 
     });
 });
 
-describe('Contributed sections hide when every field is empty', () => {
+describe('Contributed sections declare their fields where mj-collapsible-panel can see them', () => {
     it.each([
         {
             name: 'subscriptions',
             panel: ProductSubscriptionsPanel,
             fields: ['SubscriptionTypeID', 'EntitlementValidityMode'],
+        },
+        {
+            name: 'accounting',
+            panel: ProductAccountingPanel,
+            fields: ['CompanyID', 'RevenueRecognitionTypeID', 'IsTaxable', 'TaxCategory'],
         },
         {
             name: 'fulfillment',
@@ -129,18 +137,31 @@ describe('Contributed sections hide when every field is empty', () => {
     it.each([
         { name: 'subscription', html: SUBSCRIPTION_WIDGET_HTML },
         { name: 'fulfillment', html: FULFILLMENT_WIDGET_HTML },
+        { name: 'accounting', html: ACCOUNTING_WIDGET_HTML },
     ])('the $name widget projects the fields instead of declaring them', ({ html }) => {
         expect(FieldNames(html)).toEqual([]);
         expect(html).toContain('<ng-content>');
     });
 
-    it('leaves the accounting widget owning its fields, because its GL links are not fields', () => {
-        // The accounting panel also renders bizapps-product-gl-links, which is real content even
-        // when all three product columns are empty. Hoisting its fields would let MJ hide the
-        // panel — and the GL links with it — so this section deliberately stays always-visible.
-        expect(FieldNames(PanelTemplate(ProductAccountingPanel))).toEqual([]);
-        expect(FieldNames(ACCOUNTING_WIDGET_HTML).length).toBeGreaterThan(0);
+    /**
+     * golive#255 — Accounting kept its fields inside the widget so the panel could never
+     * hide-when-empty and take the GL links with it. The cost was that the section saw no
+     * fields at all, so the rail never badged it: not before a save, while CompanyID and
+     * RevenueRecognitionTypeID sat required-and-empty, and not after the failed save either,
+     * when both carried inline errors. The fields now live in the panel template; the GL links
+     * stay in the widget and are still rendered.
+     */
+    it('the accounting widget still renders the GL links beside the projected fields', () => {
         expect(ACCOUNTING_WIDGET_HTML).toContain('bizapps-product-gl-links');
+    });
+
+    it('the accounting panel can never be hidden as empty on a saved record', () => {
+        // hide-when-empty triggers only when EVERY projected field is hidden. The panel projects
+        // the two NOT NULL lookups, which a saved record always has a value for, so the GL links
+        // cannot be hidden along with an all-blank section.
+        const declared = FieldNames(PanelTemplate(ProductAccountingPanel));
+        expect(declared).toContain('CompanyID');
+        expect(declared).toContain('RevenueRecognitionTypeID');
     });
 });
 
