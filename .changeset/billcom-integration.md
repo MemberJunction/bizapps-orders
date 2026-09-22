@@ -31,9 +31,21 @@ run now.
 
 **Schema.** New tables `ExternalInvoice`, `ExternalCustomer`, `ExternalPayment`,
 `PaymentProviderSyncState`; new nullable `PaymentProvider.CompanyIntegrationID`. Three new `V`
-migrations, idempotent; the FK to `OrderHeaderPaymentSchedule` is added only where that table exists.
-CodeGen output is not yet folded — the migrations have not been applied to a development database
-from this branch, and the server addresses the new entities by name through `RunView`/`GetEntityObject`.
+migrations targeting v5.15.0, plain DDL per the convention set on PR #220; the FK to
+`OrderHeaderPaymentSchedule` is added only where that table exists. Applied to a development database,
+with the CodeGen output folded under each migration's banner.
+
+**Verified live against the BILL sandbox**, not only in unit tests: customer and invoice create,
+archive, duplicate-number refusal, payment polling, and the full capture chain — a confirmed order
+issued to Bill.com, a payment recorded there, and the poll capturing it, with the order balance going
+to zero and accounting booking DR Cash / CR Accounts Receivable against the confirm entry's DR AR /
+CR Sales. Re-polling from an earlier watermark captured nothing further.
+
+Two defects in `@memberjunction/connector-bill-com` 0.3.1 surfaced and are filed upstream
+(MemberJunction/Integrations #390 and #391, both fixed in PR #392): every generic request repeats the
+API version and 404s, and invoice archive has no connector verb. Until that release, a fresh database
+needs the version prefix stripped from the three seeded Bill.com `IntegrationObject` rows, and the
+gateway reaches the archive endpoint through the connector's own session.
 
 **Scheduling.** Two Actions and two `MJ: Scheduled Jobs` rows (half-hourly send in business hours,
 hourly poll), both shipped **Disabled and set to Preview**, like the renewal job. The metadata rows
