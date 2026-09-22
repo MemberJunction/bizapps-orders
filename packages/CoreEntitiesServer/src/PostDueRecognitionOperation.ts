@@ -30,6 +30,13 @@
  * reports `Success: false` at the end, so an unattended job that renewed nobody does not write a
  * green run record. Only genuine faults throw.
  *
+ * IT DOES NOT DRAIN THE FACTORY'S ACCUMULATORS, and that is not an oversight. `DrainRecognized` and
+ * `DrainBilled` exist because `BuildDrafts` records what a BOOKING recognised and billed so the
+ * caller can advance the totals inside the same transaction. This pass never calls `BuildDrafts` —
+ * only `BuildProgressDraft`, which touches neither map — and it constructs a fresh factory per line,
+ * so the reuse assertion cannot fire and there is nothing to drain. Adding drains here would be dead
+ * code that reads like a safeguard.
+ *
  * CONNECTS TO:
  *   DRIVERS:  RevenueRecognitionDriver.EarnedThrough (./RevenueRecognition.ts)
  *   DRAFT:    OrderJournalEntryFactory.BuildProgressDraft (./OrderJournalEntryFactory.ts) — rule 2
