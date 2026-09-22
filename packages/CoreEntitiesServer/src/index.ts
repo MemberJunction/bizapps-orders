@@ -19,6 +19,8 @@ export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
 // Percentage-of-completion (AIDP-26, plan D90): the attestation, the catch-up entry, the worklist.
 export { RecordProgressOperation, LoadRecordProgressOperation } from './RecordProgressOperation.js';
+// Recognition built at post time rather than staged at booking (D92 §8).
+export { PostDueRecognitionOperation, LoadPostDueRecognitionOperation } from './PostDueRecognitionOperation.js';
 export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from './GetProgressWorklistOperation.js';
 export {
     AddMonths,

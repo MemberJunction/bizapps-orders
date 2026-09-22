@@ -1,0 +1,153 @@
+[
+  {
+    "_comments": [
+      "THE MONTHLY RECOGNITION ACTION (D92 §8). Its own dot-json rather than an append to an existing",
+      "one: `filePattern` is `**/.*.json`, so MetadataSync reads every dot-json in this directory, and",
+      "two sessions each adding a file conflict on nothing while two appending to one file always do.",
+      "",
+      "WHY AN ACTION AT ALL, when `Orders.PostDueRecognition` is already a remote operation. The",
+      "operation is the API a browser calls, and a month end has no browser. Until now it did not need",
+      "one: booking wrote the whole release schedule forward-dated, so the ledger already held every",
+      "future month. Building recognition at post time is what creates the need for a caller on the 1st,",
+      "and MJ's scheduler dispatches Actions and Agents — no driver takes an operation key. This row is",
+      "that adapter, and the class behind it holds no recognition logic.",
+      "",
+      "SHIPS `Active`, and so does the ScheduledJob beside it — unlike the renewal pair, where the job",
+      "ships disabled. The failure guarded there is doing something wrong; the failure here is doing",
+      "NOTHING, because the PR that adds this removes the staging that used to recognise this revenue.",
+      "Rehearse by calling the operation with `Preview: true` for the prior month end rather than by",
+      "leaving the schedule off. Running this Action by hand is safe either way: the pass is cumulative,",
+      "so a second run for the same date finds a zero delta on every line and posts nothing."
+    ],
+    "fields": {
+      "Name": "Post Due Recognition",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Recognise revenue earned through a date on every confirmed line whose revenue recognition type is deferred and time-driven. Runs the Orders.PostDueRecognition operation, which carries the selection, the cumulative arithmetic and the per-line transaction — this Action only reads parameters and reports the result. Preview returns the list without posting anything.",
+      "Type": "Custom",
+      "DriverClass": "Orders.PostDueRecognition",
+      "IconClass": "fa-solid fa-calendar-check",
+      "UserPrompt": "Recognise the revenue earned through the end of a period, or preview what would be recognised.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F40"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AsOf",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Recognise everything earned on or before this date (YYYY-MM-DD). Becomes each entry's EffectiveDate, so it is the period being closed rather than the day the job runs. Omitted by the schedule, which uses the last day of the prior month — a run on the 1st that recognised through the 1st would push a month's revenue into the wrong period, every month."
+          },
+          "primaryKey": {
+            "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F41"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Preview",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True reports what WOULD post and writes nothing; false (the default) posts the entries and advances each line's RecognizedToDate. A value that is neither is refused rather than guessed — the wrong guess writes to the ledger. Note that a scheduler stores params as text, so \"false\" arrives as a string and is read as false, not as a truthy value."
+          },
+          "primaryKey": {
+            "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F42"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "OrderHeaderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Restrict the pass to one order, for a targeted retry after a failure. Takes the Order Header row's ID, not its OrderNumber. Omitted by the schedule, which considers every confirmed order."
+          },
+          "primaryKey": {
+            "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F43"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Considered",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many confirmed lines on a deferred, time-driven type were examined. Lines with nothing to post are counted here and omitted from Lines."
+          },
+          "primaryKey": {
+            "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F44"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Posted",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many lines actually recognised revenue this pass. Always 0 on a preview. Zero on a live run means every line was already recognised through that date, which is what a second run for the same period looks like."
+          },
+          "primaryKey": {
+            "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F45"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Failed",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many lines had revenue to recognise and could not post it. Each one's reason is on its entry in Lines. Non-zero fails the run: an unattended close that recognised nobody must not write a green record."
+          },
+          "primaryKey": {
+            "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F46"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Lines",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every line with a non-zero movement: what the driver says is earned through the date, what the line had already recognised, the difference, and either the journal entry written or the reason it was not. This list is the deliverable of a preview run — it is what a person reads before letting the job post a close."
+          },
+          "primaryKey": {
+            "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F47"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewedOnly",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when this pass reported its list and wrote nothing. Deliberately NOT named Preview: an output is written back onto the param row of the same name, so reusing the input's name would overwrite the value the job was called with — and whether a run was a rehearsal or the real close is the one fact the run record has to keep."
+          },
+          "primaryKey": {
+            "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F48"
+          }
+        }
+      ]
+    }
+  }
+]

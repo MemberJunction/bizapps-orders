@@ -17,6 +17,7 @@ import '@mj-biz-apps/orders-actions';
 import { LoadGenerateInvoiceAction } from './custom/generate-invoice.action.js';
 import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action.js';
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
+import { LoadPostDueRecognitionAction } from './custom/post-due-recognition.action.js';
 import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
@@ -37,6 +38,7 @@ import {
     LoadGetOverdueWorklistOperation,
     LoadGetBillingWorklistOperation,
     LoadIssueInstalmentInvoiceOperation,
+    LoadPostDueRecognitionOperation,
     LoadRecordProgressOperation,
     LoadGetProgressWorklistOperation,
     LoadOrderHeaderPaymentScheduleEntityServer,
@@ -114,6 +116,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGetBillingWorklistOperation(); // 'Orders.GetBillingWorklist' — instalments due with no invoice behind them (AIDP-24)
     LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
     LoadRecordProgressOperation(); // 'Orders.RecordProgress' — one attested POC observation and its catch-up entry (AIDP-26)
+    LoadPostDueRecognitionOperation(); // 'Orders.PostDueRecognition' — the monthly recognition pass (D92 §8)
     LoadGetProgressWorklistOperation(); // 'Orders.GetProgressWorklist' — open POC lines with their last observation
     LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
@@ -147,6 +150,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSendDocumentAction();          // 'Orders.SendDocument' — an order, rendered AND sent (§4.4)
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
     LoadSpawnRenewalsAction();         // 'Orders.SpawnRenewals' — the scheduler's way in to the renewal operation
+    LoadPostDueRecognitionAction();    // 'Orders.PostDueRecognition' — the scheduler's way in to the monthly recognition pass
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class

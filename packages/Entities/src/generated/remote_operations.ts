@@ -1197,6 +1197,71 @@ export interface PriceOrderOutput {
 }
 
 /**
+ * Input for `Orders.PostDueRecognition`.
+ *
+ * The monthly recognition pass (D92 §8). Every confirmed line on a time-driven deferred type is
+ * asked what its driver says is earned through `AsOf`, and the difference from what the line has
+ * already recognised is posted. CUMULATIVE by construction, so a back-dated term, a missed month
+ * and a first run against existing data all catch up in one pass rather than needing one run per
+ * period.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersPostDueRecognitionInput {
+    /**
+     * Recognise everything earned on or before this date, `YYYY-MM-DD`. Becomes each entry's
+     * EffectiveDate, so it is normally the last day of the period being closed rather than the day
+     * the pass runs.
+     */
+    AsOf: string;
+    /** Report what WOULD post and write nothing. */
+    Preview?: boolean;
+    /** Restrict the pass to one order, for a targeted retry. Considers every order when omitted. */
+    OrderHeaderID?: string;
+}
+
+/**
+ * Output for `Orders.PostDueRecognition`.
+ *
+ * What the pass did, line by line. The per-line list is the deliverable of a preview run — it is
+ * what a person reads before letting the job write anything — and on a live run it is the record of
+ * which lines moved and by how much.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersPostDueRecognitionLine {
+    OrderLineID: string;
+    OrderNumber?: string;
+    LineNumber?: number;
+    /** What the driver says is earned through AsOf, as a magnitude. */
+    EarnedThrough: number;
+    /** What the line had already recognised, as a magnitude. */
+    RecognizedBefore: number;
+    /** EarnedThrough − RecognizedBefore. Never zero: a line with nothing to post is not listed. */
+    Amount: number;
+    /** The RevenueRecognition entry. Null on a preview, and on a line whose posting failed. */
+    JournalEntryID?: string | null;
+    /** Why this line posted nothing, when it was selected but did not. */
+    FailedReason?: string;
+}
+
+export interface OrdersPostDueRecognitionOutput {
+    Success: boolean;
+    Message?: string;
+    /** True when `Preview` was set: the lines below are what WOULD post; nothing was written. */
+    Preview: boolean;
+    AsOf?: string;
+    /** How many confirmed lines on a time-driven deferred type were examined. */
+    Considered?: number;
+    /** How many had a non-zero delta and were posted. Always 0 on a preview. */
+    Posted?: number;
+    /** How many had a delta but could not be posted. Every one carries its reason. */
+    Failed?: number;
+    /** Every line with a non-zero delta, posted or not. */
+    Lines?: OrdersPostDueRecognitionLine[];
+}
+
+/**
  * Input for `Orders.RecordProgress`.
  *
  * One attested progress observation on a percentage-of-completion order line (plan D90). The
@@ -1599,6 +1664,22 @@ export class OrdersPriceOrderOperation extends BaseRemotableOperation<PriceOrder
     public readonly OperationKey = "Orders.PriceOrder";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:read";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.PostDueRecognition — Post Due Recognition
+// ============================================================
+/**
+ * Post Due Recognition
+ * Recognise revenue earned through a date on every confirmed line whose revenue recognition type is deferred and time-driven (D92 §8). Each driver is asked what is earned through AsOf and the difference from the line's RecognizedToDate is posted as a RevenueRecognition entry under rule 2 — crediting Sales, debiting Deferred Revenue up to the line's deferred balance and Unbilled Receivable beyond it. Cumulative, so a back-dated term or a missed month catches up in one pass and a second run for the same date posts nothing. One transaction per line: a line that fails is reported with its reason and the pass continues. Preview reports what would post and writes nothing.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.PostDueRecognition'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersPostDueRecognitionOperation extends BaseRemotableOperation<OrdersPostDueRecognitionInput, OrdersPostDueRecognitionOutput> {
+    public readonly OperationKey = "Orders.PostDueRecognition";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 
