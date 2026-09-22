@@ -62,6 +62,7 @@ import type {
     mjBizAppsOrdersProductPriceEntity,
     mjBizAppsOrdersProductTypeEntity,
     mjBizAppsOrdersPromotionEntity,
+    mjBizAppsOrdersSalesAuthorityEntity,
     mjBizAppsOrdersSubscriptionEntity,
     mjBizAppsOrdersSubscriptionEventEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
@@ -2082,4 +2083,39 @@ export async function GetSellingCompanies(user?: UserInfo): Promise<MJOCompanyOp
         if (!byID.has(id)) byID.set(id, String(p.Company ?? ''));
     }
     return [...byID].map(([ID, Name]) => ({ ID, Name })).sort((a, b) => a.Name.localeCompare(b.Name));
+}
+
+/**
+ * What the signed-in user may give away, as their `SalesAuthority` states it.
+ *
+ * `MaxDiscountPct` null means the authority sets no cap, which is NOT the same as having no
+ * authority — `AuthorizeManualDiscount` refuses a discount from a user with no row at all, on the
+ * rule that absence is not permission. So the two cases are told apart by the return value here:
+ * null is "no authority", a row with a null cap is "no ceiling".
+ */
+export interface MJODiscountAuthority {
+    ID: string;
+    MaxDiscountPct: number | null;
+}
+
+/**
+ * The active sales authority held by a user, or null when they hold none.
+ *
+ * Read on the client so the discount editor can say up front what this user may do, rather than
+ * letting them compose a concession the server will refuse at save. The server check is still the
+ * one that decides — this only stops the screen from offering what cannot happen.
+ */
+export async function GetDiscountAuthority(user?: UserInfo): Promise<MJODiscountAuthority | null> {
+    const userID = String((user ?? currentUser())?.ID ?? '');
+    if (!UUID_PATTERN.test(userID)) return null;
+    const rows = await run<mjBizAppsOrdersSalesAuthorityEntity>(
+        MJO_ENTITIES.SalesAuthority,
+        [`SalesRepUserID = '${userID}'`, 'IsActive = 1'],
+        'ID ASC',
+        1,
+        user,
+    );
+    const hit = rows[0];
+    if (!hit) return null;
+    return { ID: hit.ID, MaxDiscountPct: hit.MaxDiscountPct == null ? null : Number(hit.MaxDiscountPct) };
 }

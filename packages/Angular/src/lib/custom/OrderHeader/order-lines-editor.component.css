@@ -666,3 +666,166 @@
     .mjo-ol-card__top { flex-wrap: wrap; }
     .mjo-ol-card__price, .mjo-ol-card__tot { width: auto; }
 }
+
+/* ── DISCOUNT ──────────────────────────────────────────────────────────────────
+   Its own bordered block inside the price editor, because a discount and a price
+   override are different economics and the report that produced this control said
+   so: presenting them as one thing is what made the discount concept unreachable.
+   The rule above the block is the separator — the two never read as one form. */
+.mjo-ol-discount {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-2);
+    padding-top: var(--mj-space-2);
+    border-top: 1px solid var(--mj-border-default);
+}
+
+.mjo-ol-discount__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--mj-space-2);
+    flex-wrap: wrap;
+}
+
+.mjo-ol-discount__title {
+    font-size: var(--mj-text-xs);
+    font-weight: var(--mj-font-semibold);
+    color: var(--mj-text-default);
+}
+
+.mjo-ol-discount__cap {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+}
+
+.mjo-ol-discount__row {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    flex-wrap: wrap;
+}
+
+/* Two buttons that behave as one control, so they are drawn as one. */
+.mjo-ol-discount__mode {
+    display: inline-flex;
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-sm);
+    overflow: hidden;
+}
+
+.mjo-ol-discount__mode button {
+    border: 0;
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-muted);
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    padding: 0 10px;
+    height: 28px;
+    cursor: pointer;
+}
+
+.mjo-ol-discount__mode button + button {
+    border-left: 1px solid var(--mj-border-strong);
+}
+
+.mjo-ol-discount__mode button.is-on {
+    background: var(--mj-bg-surface-hover);
+    color: var(--mj-text-default);
+    font-weight: var(--mj-font-semibold);
+}
+
+.mjo-ol-discount__val {
+    width: 96px;
+    height: 28px;
+    box-sizing: border-box;
+    padding: 0 8px;
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: inherit;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.mjo-ol-discount__calc {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.mjo-ol-discount__reason span {
+    display: block;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+    margin-bottom: 4px;
+}
+
+.mjo-ol-discount__reason textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 48px;
+    padding: 6px 8px;
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: inherit;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+}
+
+.mjo-ol-discount__reason.is-required textarea {
+    border-color: var(--mj-status-danger-text, #b42318);
+}
+
+.mjo-ol-discount__err {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-status-error-text);
+}
+
+.mjo-ol-discount__note {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+}
+
+.mjo-ol-discount__staged {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mj-space-2);
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+}
+
+.mjo-ol-discount__clear {
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: inherit;
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    height: 24px;
+    padding: 0 10px;
+    cursor: pointer;
+}
+
+/* The discount's own badge on the line card. Deliberately NOT the override pill's
+   warning colour: giving away value on purpose is not a caution. */
+.mjo-ol-discpill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--mj-status-success-text);
+    background: color-mix(in srgb, var(--mj-status-success-text) 16%, transparent);
+}

@@ -53,6 +53,7 @@ import {
 } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
+import type { mjBizAppsOrdersOrderLineEntity } from "@mj-biz-apps/orders-entities";
 
 const q = (x: unknown) => (x == null ? "NULL" : typeof x === "string" ? `'${String(x).replace(/'/g, "''")}'` : String(x));
 
@@ -140,7 +141,7 @@ async function setPolicy(
 }
 
 /** Grant the current user a discount authority. */
-async function grantAuthority(ctx: IntegrationCheckContext, maxPct: number): Promise<string> {
+async function grantAuthority(ctx: IntegrationCheckContext, maxPct: number | null): Promise<string> {
   return createViaEntity(ctx, SALES_AUTHORITY_ENTITY, {
     SalesRepUserID: ctx.User.ID,
     MaxDiscountPct: maxPct,
@@ -183,8 +184,10 @@ async function confirmWith(
     lines: Array<{ ProductID: string; Quantity: number; UnitPrice?: number }>;
     codes?: string[];
     manual?: Array<{ OrderLineID?: string | null; Amount: number; Reason: string }>;
+    /** Discounts aimed at one line, named by its position in `lines`. */
+    onLine?: Array<{ LineIndex: number; Amount?: number | null; Percent?: number | null; Reason: string }>;
   },
-): Promise<{ Saved: boolean; Message: string; Order: OrderEntityServer }> {
+): Promise<{ Saved: boolean; Message: string; Order: OrderEntityServer; Lines: mjBizAppsOrdersOrderLineEntity[] }> {
   const f = Fx();
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
@@ -192,8 +195,9 @@ async function confirmWith(
     Lines: opts.lines,
     PromotionCodes: opts.codes,
     ManualDiscounts: opts.manual,
+    ManualDiscountsByLineIndex: opts.onLine,
   });
-  return { Saved: result.Saved, Message: result.Message, Order: result.Order };
+  return { Saved: result.Saved, Message: result.Message, Order: result.Order, Lines: result.Lines };
 }
 
 const totals = (ctx: IntegrationCheckContext, orderID: string) =>
@@ -650,6 +654,129 @@ export const PromotionChecks: NamedCheck[] = [
         Assert(
           adj.ApprovedByUserID == null,
           "a discount inside the cap needed no approval, so none should be recorded",
+        );
+      }),
+  },
+
+  // ── LINE-LEVEL MANUAL DISCOUNTS (golive #252) ─────────────────────────────
+  //
+  // Every check above discounts the ORDER. The line-level path had never been exercised, and it
+  // did not work: the walk keys lines positionally, a caller naming a real `OrderLine.ID` matched
+  // nothing, and an unmatched target fell through to the order-level branch — so a discount aimed
+  // at one line was silently spread pro-rata across all of them. Nothing failed; the money simply
+  // landed somewhere else.
+  {
+    Id: "promotions.PR22",
+    Name: "PR22: a discount aimed at ONE line lands on that line and nowhere else",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await addPrice(ctx, f.Products.WidgetB, 100);
+        await grantAuthority(ctx, 0.5);
+
+        const order = await confirmWith(ctx, {
+          lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 1 },
+            { ProductID: f.Products.WidgetB, Quantity: 1 },
+          ],
+          onLine: [{ LineIndex: 0, Amount: 20, Reason: "damaged in transit last time" }],
+        });
+        Assert(order.Saved, `confirm failed: ${order.Message}`);
+
+        const rows = await TxQuery<{ ID: string; DiscountAmount: number; LineTotalNet: number }>(
+          ctx,
+          `SELECT ID, DiscountAmount, LineTotalNet FROM ${ORDERS_SCHEMA}.OrderLine
+             WHERE OrderHeaderID='${order.Order.ID}' ORDER BY LineNumber`,
+        );
+        AssertEqual(rows.length, 2, "both lines saved");
+        AssertEqual(Number(rows[0].DiscountAmount), 20, "the named line carries the whole discount");
+        AssertEqual(Number(rows[1].DiscountAmount), 0, "the line nobody discounted carries none");
+        AssertEqual(Number(rows[0].LineTotalNet), 80, "the named line's net is reduced");
+        AssertEqual(Number(rows[1].LineTotalNet), 100, "the other line's net is untouched");
+
+        const adj = await TxOne<{ OrderLineID: string | null }>(
+          ctx,
+          `SELECT TOP 1 OrderLineID FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${order.Order.ID}'`,
+        );
+        AssertEqual(
+          String(adj.OrderLineID ?? "").toLowerCase(),
+          String(rows[0].ID).toLowerCase(),
+          "the adjustment row names the line it reduced, which is what makes the concession traceable",
+        );
+      }),
+  },
+  {
+    Id: "promotions.PR23",
+    Name: "PR23: a line discount stated as a PERCENTAGE is the same concession as the amount",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, 0.5);
+
+        const order = await confirmWith(ctx, {
+          lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          onLine: [{ LineIndex: 0, Percent: 0.2, Reason: "renewal concession" }],
+        });
+        Assert(order.Saved, `confirm failed: ${order.Message}`);
+
+        const row = await TxOne<{ DiscountAmount: number; LineTotalNet: number }>(
+          ctx,
+          `SELECT TOP 1 DiscountAmount, LineTotalNet FROM ${ORDERS_SCHEMA}.OrderLine
+             WHERE OrderHeaderID='${order.Order.ID}'`,
+        );
+        AssertEqual(Number(row.DiscountAmount), 200, "twenty percent of a 1,000 line is 200");
+        AssertEqual(Number(row.LineTotalNet), 800, "and the net is what is left");
+      }),
+  },
+  {
+    Id: "promotions.PR24",
+    Name: "PR24: a line discount larger than the line is REFUSED, not floored at zero",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, null);
+
+        const order = await confirmWith(ctx, {
+          lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }],
+          onLine: [{ LineIndex: 0, Amount: 500, Reason: "typed the order total by mistake" }],
+        });
+        Assert(!order.Saved, "a discount bigger than the line must be refused");
+        Assert(
+          /more than/i.test(order.Message),
+          `the refusal should say the discount exceeds the line, got: ${order.Message}`,
+        );
+      }),
+  },
+  {
+    Id: "promotions.PR25",
+    Name: "PR25: a discount naming a line this order does not have is refused, not widened",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, 0.5);
+
+        const order = await confirmWith(ctx, {
+          lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }],
+          manual: [
+            {
+              OrderLineID: "bbbbbbbb-0000-4000-8000-00000000dead",
+              Amount: 10,
+              Reason: "aimed at a line that is not here",
+            },
+          ],
+        });
+        Assert(!order.Saved, "a discount naming an unknown line must be refused");
+        Assert(
+          /not a line on this order/i.test(order.Message),
+          `the refusal should name the problem, got: ${order.Message}`,
         );
       }),
   },

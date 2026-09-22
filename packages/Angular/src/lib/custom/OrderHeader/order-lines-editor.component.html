@@ -30,13 +30,16 @@
                 <div class="mjo-ol-card__price">
                     <div class="mjo-ol-card__price-row">
                         <div class="mjo-ol-card__amt">{{ DisplayUnit(line) | mjoMoney }}</div>
-                        @if (CanOverride) {
+                        <!-- The pencil opens the PRICE editor, the DISCOUNT editor, or both — a user
+                             may hold one authority without the other, and an order that can be
+                             discounted but not re-priced still needs a way in. -->
+                        @if (CanOverride || CanDiscount) {
                             <button
                                 type="button"
                                 class="mjo-ol-iconbtn mjo-ol-price__pencil"
                                 (click)="ToggleOverrideEditor(line)"
                                 [attr.aria-expanded]="IsOverrideEditorOpen(line)"
-                                [attr.aria-label]="IsOverridden(line) ? 'Edit price override' : 'Override price'">
+                                [attr.aria-label]="CanOverride ? (IsOverridden(line) ? 'Edit price override' : 'Override price or discount line') : 'Discount line'">
                                 <i class="fa-solid fa-pencil" aria-hidden="true"></i>
                             </button>
                         }
@@ -48,6 +51,11 @@
                             [Source]="PricedLine(line)?.PriceSource ?? null"
                             [Settled]="!Pricing.Loading"
                             [Overridden]="false" />
+                    }
+                    <!-- A DISCOUNT IS NOT AN OVERRIDE, and the badge says so in its own words: the
+                         list price held and this much was given away. -->
+                    @if (HasDiscount(line)) {
+                        <span class="mjo-ol-discpill" title="Discount on this line">−{{ AppliedDiscount(line) | mjoMoney }}</span>
                     }
                     @if (PricedLine(line)?.Error; as why) {
                         <div class="mjo-ol-card__err">{{ why }}</div>
@@ -79,57 +87,136 @@
             </div>
 
             @if (IsOverrideEditorOpen(line)) {
-                <div class="mjo-ol-override" role="region" [attr.aria-label]="'Override price for ' + (ProductFor(line)?.Name ?? 'line')">
-                    <div class="mjo-ol-override__row">
-                        <!--
-                            Selection is bound PER OPTION, not as [value] on the select: the select's
-                            value is applied before its @if/@for options exist, so a value naming one
-                            of them fell through to the first row — Default — while the component
-                            still thought the line was on a custom amount. Choosing Default then
-                            changed nothing, because it was already the DOM's choice (golive #253).
-                        -->
-                        <select
-                            class="mjo-ol-price__pick"
-                            (change)="PickNamedPrice(line, $event)"
-                            aria-label="Named price">
-                            <option value="__default__" [selected]="IsPicked(line, '__default__')" [disabled]="!CanRestoreDefault(line)">{{ DefaultLabel(line) }}</option>
-                            @if (OverrideKind === 'any') {
-                                <option value="__custom__" [selected]="IsPicked(line, '__custom__')">Custom amount</option>
+                <div class="mjo-ol-override" role="region" [attr.aria-label]="'Price and discount for ' + (ProductFor(line)?.Name ?? 'line')">
+                    @if (CanOverride) {
+                        <div class="mjo-ol-override__row">
+                            <!--
+                                Selection is bound PER OPTION, not as [value] on the select: the select's
+                                value is applied before its @if/@for options exist, so a value naming one
+                                of them fell through to the first row — Default — while the component
+                                still thought the line was on a custom amount. Choosing Default then
+                                changed nothing, because it was already the DOM's choice (golive #253).
+                            -->
+                            <select
+                                class="mjo-ol-price__pick"
+                                (change)="PickNamedPrice(line, $event)"
+                                aria-label="Named price">
+                                <option value="__default__" [selected]="IsPicked(line, '__default__')" [disabled]="!CanRestoreDefault(line)">{{ DefaultLabel(line) }}</option>
+                                @if (OverrideKind === 'any') {
+                                    <option value="__custom__" [selected]="IsPicked(line, '__custom__')">Custom amount</option>
+                                }
+                                @for (price of NamedPricesFor(line); track price.ID) {
+                                    <option [value]="price.ID" [selected]="IsPicked(line, price.ID)">{{ price.Name }} · {{ price.UnitPrice | mjoMoney }}</option>
+                                }
+                            </select>
+                            @if (ShowCustomAmount(line)) {
+                                <input
+                                    class="mjo-ol-price__amt"
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    [value]="DisplayUnit(line)"
+                                    (change)="TypeAmount(line, $event)"
+                                    aria-label="Custom unit price">
                             }
-                            @for (price of NamedPricesFor(line); track price.ID) {
-                                <option [value]="price.ID" [selected]="IsPicked(line, price.ID)">{{ price.Name }} · {{ price.UnitPrice | mjoMoney }}</option>
+                        </div>
+                        <label class="mjo-ol-override__reason" [class.is-off]="!CanExplainOverride(line)" [class.is-required]="NeedsOverrideReason(line)">
+                            <span>Override Explanation @if (CanExplainOverride(line)) {<em class="mjo-ol-override__req" aria-hidden="true">*</em>}</span>
+                            <textarea
+                                rows="2"
+                                [disabled]="!CanExplainOverride(line)"
+                                [required]="CanExplainOverride(line)"
+                                [attr.aria-required]="CanExplainOverride(line)"
+                                [value]="OverrideReasonText(line)"
+                                (input)="SetOverrideReason(line, $event)"
+                                placeholder="Required — why this price differs from the default"></textarea>
+                        </label>
+                    }
+
+                    <!--
+                        DISCOUNT — deliberately its own block, below the price picker and labelled
+                        apart from it (golive #252). An override restates the price; a discount says
+                        the list price held and value was given away, and only the second reaches the
+                        Sales Discounts leg of the booking entry. Presenting them as one control is
+                        what left the whole discount concept unreachable from the product.
+                    -->
+                    @if (CanDiscount) {
+                        <div class="mjo-ol-discount" role="group" [attr.aria-label]="'Discount for ' + (ProductFor(line)?.Name ?? 'line')">
+                            <div class="mjo-ol-discount__head">
+                                <span class="mjo-ol-discount__title">Discount</span>
+                                <span class="mjo-ol-discount__cap">your authority: {{ DiscountCapLabel }}</span>
+                            </div>
+                            @if (CanDiscountLine(line)) {
+                                <div class="mjo-ol-discount__row">
+                                    <div class="mjo-ol-discount__mode" role="radiogroup" aria-label="Discount expressed as">
+                                        <button
+                                            type="button"
+                                            role="radio"
+                                            [attr.aria-checked]="DiscountDraft(line).Mode === 'percent'"
+                                            [class.is-on]="DiscountDraft(line).Mode === 'percent'"
+                                            (click)="SetDiscountMode(line, 'percent')">%</button>
+                                        <button
+                                            type="button"
+                                            role="radio"
+                                            [attr.aria-checked]="DiscountDraft(line).Mode === 'amount'"
+                                            [class.is-on]="DiscountDraft(line).Mode === 'amount'"
+                                            (click)="SetDiscountMode(line, 'amount')">Amount</button>
+                                    </div>
+                                    <input
+                                        class="mjo-ol-discount__val"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        [value]="DiscountDraft(line).Value"
+                                        (input)="SetDiscountValue(line, $event)"
+                                        [attr.placeholder]="DiscountDraft(line).Mode === 'percent' ? '0' : '0.00'"
+                                        [attr.aria-label]="DiscountDraft(line).Mode === 'percent' ? 'Discount percent' : 'Discount amount'">
+                                    <span class="mjo-ol-discount__calc">
+                                        @if (DraftDiscountAmount(line); as amount) {
+                                            −{{ amount | mjoMoney }} of {{ DiscountBase(line) | mjoMoney }}
+                                        } @else {
+                                            {{ DiscountBase(line) | mjoMoney }} left to discount
+                                        }
+                                    </span>
+                                </div>
+                                <label class="mjo-ol-discount__reason" [class.is-required]="NeedsDiscountReason(line)">
+                                    <span>Discount Reason @if (DraftDiscountAmount(line)) {<em class="mjo-ol-override__req" aria-hidden="true">*</em>}</span>
+                                    <textarea
+                                        rows="2"
+                                        [value]="DiscountDraft(line).Reason"
+                                        (input)="SetDiscountReason(line, $event)"
+                                        placeholder="Required — why value was given away on this line"></textarea>
+                                </label>
+                                @if (DiscountError(line); as problem) {
+                                    <div class="mjo-ol-discount__err" role="alert">{{ problem }}</div>
+                                }
+                                @if (HasStagedDiscount(line)) {
+                                    <div class="mjo-ol-discount__staged">
+                                        <span>Applies when this order is saved.</span>
+                                        <button type="button" class="mjo-ol-discount__clear" (click)="ClearDiscount(line)">Remove</button>
+                                    </div>
+                                }
+                            } @else {
+                                <div class="mjo-ol-discount__note">
+                                    This line is booked, so its money is frozen. Reverse the line to re-sell it at a
+                                    discounted price.
+                                </div>
                             }
-                        </select>
-                        @if (ShowCustomAmount(line)) {
-                            <input
-                                class="mjo-ol-price__amt"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                [value]="DisplayUnit(line)"
-                                (change)="TypeAmount(line, $event)"
-                                aria-label="Custom unit price">
-                        }
-                    </div>
-                    <label class="mjo-ol-override__reason" [class.is-off]="!CanExplainOverride(line)" [class.is-required]="NeedsOverrideReason(line)">
-                        <span>Override Explanation @if (CanExplainOverride(line)) {<em class="mjo-ol-override__req" aria-hidden="true">*</em>}</span>
-                        <textarea
-                            rows="2"
-                            [disabled]="!CanExplainOverride(line)"
-                            [required]="CanExplainOverride(line)"
-                            [attr.aria-required]="CanExplainOverride(line)"
-                            [value]="OverrideReasonText(line)"
-                            (input)="SetOverrideReason(line, $event)"
-                            placeholder="Required — why this price differs from the default"></textarea>
-                    </label>
+                        </div>
+                    } @else if (DiscountUnavailableReason; as why) {
+                        <div class="mjo-ol-discount__note">{{ why }}</div>
+                    }
+
                     <div class="mjo-ol-override__actions">
                         <button
                             type="button"
                             class="mjo-ol-override__done"
-                            [disabled]="NeedsOverrideReason(line)"
-                            [attr.title]="NeedsOverrideReason(line) ? 'Enter a reason for the price override' : null"
+                            [disabled]="NeedsOverrideReason(line) || NeedsDiscountReason(line)"
+                            [attr.title]="NeedsOverrideReason(line) ? 'Enter a reason for the price override' : (NeedsDiscountReason(line) ? 'Enter a reason for the discount' : null)"
                             (click)="DoneOverrideEditor(line)">Done</button>
-                        <button type="button" class="mjo-ol-override__reset" [disabled]="!CanRestoreDefault(line)" (click)="ResetOverride(line)">Use Default Price</button>
+                        @if (CanOverride) {
+                            <button type="button" class="mjo-ol-override__reset" [disabled]="!CanRestoreDefault(line)" (click)="ResetOverride(line)">Use Default Price</button>
+                        }
                     </div>
                 </div>
             }
