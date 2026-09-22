@@ -5483,10 +5483,10 @@ export class mjBizAppsOrdersOrderLine_ {
     DimensionValueID?: string;
         
     @Field({nullable: true}) 
-    @Field(() => Float, {description: `Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm.`}) 
+    @Field(() => Float, {description: `Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
     BilledToDate: number;
         
-    @Field(() => Float, {description: `Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account.`}) 
+    @Field(() => Float, {description: `Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
     RecognizedToDate: number;
     @MaxLength(40)
     OrderHeader?: string;

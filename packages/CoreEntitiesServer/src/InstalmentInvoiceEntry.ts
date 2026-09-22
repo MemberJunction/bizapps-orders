@@ -287,8 +287,18 @@ export async function EmitInstalmentInvoiceEntry(
         //
         // An order billed in advance — the Blue Cypress norm — has no unbilled balance, so this is
         // a no-op and the entry stays Dr AR / Cr Deferred.
+        //
+        // THE TOTALS ARE SIGNED — negative on a reversal line, so an origin and its reversals net
+        // to zero — but the RULE is about magnitudes: a reversal relieves the same balances in the
+        // same order, just in the opposite direction. So the split is computed on absolute values
+        // and the whole entry is mirrored once at the end, exactly as the factory handles amounts.
         const contraTotal = money(built.reduce((t, l) => (l.GLAccountID === deferredAccount ? t + (l.CreditAmount ?? 0) : t), 0));
-        const legs = SplitContraLegs(line.BilledToDate, line.RecognizedToDate, contraTotal, 'Invoice');
+        const legs = SplitContraLegs(
+            Math.abs(line.BilledToDate),
+            Math.abs(line.RecognizedToDate),
+            Math.abs(contraTotal),
+            'Invoice',
+        );
         if (legs.Unbilled !== 0) {
             const unbilledAccount = await resolveUnbilled(resolver, context, line, asOf);
             if (unbilledAccount) {
@@ -307,7 +317,10 @@ export async function EmitInstalmentInvoiceEntry(
 
         // What this instalment bills for this line — the AR debit, which is what BilledToDate
         // means. Recorded per line so the caller advances the totals in the same transaction.
-        billedByLine.set(line.ID, money(built.reduce((t, l) => (l.GLAccountID === arAccount ? t + (l.DebitAmount ?? 0) : t), 0)));
+        // Advanced by ±piece according to the line's own sign, for the same reason the totals are
+        // signed at all: a reversal must subtract what its origin added.
+        const arDebit = money(built.reduce((t, l) => (l.GLAccountID === arAccount ? t + (l.DebitAmount ?? 0) : t), 0));
+        billedByLine.set(line.ID, line.Quantity < 0 ? money(-arDebit) : arDebit);
 
         // A reversal line mirrors, exactly as booking mirrors it (D16): the same accounts with the
         // sides swapped at a positive amount, never a negative debit.

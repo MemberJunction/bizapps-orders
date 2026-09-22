@@ -34,14 +34,14 @@ ALTER TABLE [${flyway:defaultSchema}].[OrderLine]
 GO
 
 EXEC sp_addextendedproperty @name = N'MS_Description',
-    @value = N'Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line''s balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm.',
+    @value = N'Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line''s balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'OrderLine',
     @level2type = N'COLUMN', @level2name = N'BilledToDate';
 GO
 
 EXEC sp_addextendedproperty @name = N'MS_Description',
-    @value = N'Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account.',
+    @value = N'Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'OrderLine',
     @level2type = N'COLUMN', @level2name = N'RecognizedToDate';
@@ -211,7 +211,7 @@ GO
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'),
             'BilledToDate',
             'Billed To Date',
-            'Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line''s balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm.',
+            'Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line''s balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
             'decimal',
             9,
             18,
@@ -274,7 +274,7 @@ GO
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'),
             'RecognizedToDate',
             'Recognized To Date',
-            'Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account.',
+            'Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
             'decimal',
             9,
             18,
