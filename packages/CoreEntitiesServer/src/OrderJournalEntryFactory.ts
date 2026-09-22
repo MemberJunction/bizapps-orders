@@ -845,14 +845,34 @@ export class OrderJournalEntryFactory {
 
     /**
      * The catch-up entry for one progress observation on a percentage-of-completion line (D90):
+     * The catch-up entry for one progress observation on a percentage-of-completion line (D90),
+     * under RULE 2 (D92):
      *
-     *     Dr  Deferred Revenue     |delta|
-     *         Cr  Sales            |delta|        (EffectiveDate = the measurement date)
+     *     Cr  Sales                |delta|        (EffectiveDate = the measurement date)
+     *         Dr  Deferred Revenue     the line's deferred balance, max(0, B − R), up to |delta|
+     *         Dr  Unbilled Receivable  whatever is left — revenue earned ahead of billing
      *
-     * mirrored when `delta` is negative — a backward slide is the SAME entry with the sides swapped,
-     * through the idiom every other reversal here uses (D16), never a negative amount. Same accounts,
-     * same dimensions and same balance check as the forward-dated releases, so the two paths cannot
-     * drift apart. The caller owns the transaction and the arithmetic; this only shapes the draft.
+     * WHICH CONTRA ACCOUNT IS NOT THIS LINE'S CHOICE. It follows from the gap between what the line
+     * has been billed and what it has earned, which is the same question `SplitContraLegs` answers
+     * for invoicing and for an up-front line at confirm. A project billed quarterly in advance
+     * relieves Deferred and never touches Unbilled; one attested ahead of its instalments opens the
+     * contract asset, and the next invoice closes it again under rule 1.
+     *
+     * THE TOTALS ARE STORED SIGNED, the rule reads magnitudes. `BilledToDate` and `RecognizedToDate`
+     * are negative on a reversal line so an origin and its reversals net to zero for reporting, so
+     * both are read here as absolutes — exactly as confirm's rule-2 site reads them.
+     *
+     * TWO SIGNS, TWO MECHANISMS, AND THEY ARE NOT INTERCHANGEABLE. The EVENT's sign — this catch-up's
+     * direction — belongs INSIDE the rule, as a movement of the line's (Deferred, Unbilled) position,
+     * so the delta is passed through signed and never abs'd before the split. The LINE's sign
+     * (`Quantity < 0`, a reversal) is the one handled by mirroring the finished entry once (D16).
+     * Flattening the first into the second looks harmless and is not: with billing and recognition
+     * exactly level, abs-then-mirror would book a backward slide against Unbilled Receivable when it
+     * must come back out of Deferred. Month 7 of Andrew's Scenario 4 is that case — 45% back to 40%
+     * against a line billed 75,000 and earning 45,000 — and `SplitContraLegs` gets it right only
+     * because it is given the negative amount. Same accounts, same dimensions and
+     * same balance check as every other entry here, so the paths cannot drift apart. The caller owns
+     * the transaction and the arithmetic; this only shapes the draft.
      */
     public async BuildProgressDraft(
         order: mjBizAppsOrdersOrderHeaderEntity,
@@ -878,8 +898,37 @@ export class OrderJournalEntryFactory {
         );
 
         const amount = money(Math.abs(delta));
+        const legs = SplitContraLegs(
+            Math.abs(Number(line.BilledToDate ?? 0)),
+            Math.abs(Number(line.RecognizedToDate ?? 0)),
+            delta,
+            'Recognize',
+        );
+        const debits: JELineDraft[] = [];
+        if (legs.Deferred !== 0) {
+            debits.push({
+                GLAccountID: await resolve(GL_ROLE.DeferredRevenue),
+                DebitAmount: Math.abs(legs.Deferred),
+                Description: `Release deferred — ${product.Name}`,
+                Dimensions: lineDims,
+            });
+        }
+        if (legs.Unbilled !== 0) {
+            const contra = await this.unbilledOrDeferred(resolve, legs.Unbilled, {
+                OrderNumber: order.OrderNumber ?? '',
+                LineNumber: line.LineNumber,
+                CompanyID: companyID,
+                ProductName: product.Name,
+            });
+            debits.push({
+                GLAccountID: contra.GLAccountID,
+                DebitAmount: Math.abs(legs.Unbilled),
+                Description: contra.Description,
+                Dimensions: lineDims,
+            });
+        }
         const lines = mirrorIf(delta < 0, [
-            { GLAccountID: await resolve(GL_ROLE.DeferredRevenue), DebitAmount: amount, Description: `Release deferred — ${product.Name}`, Dimensions: lineDims },
+            ...debits,
             { GLAccountID: await resolve(GL_ROLE.Sales), CreditAmount: amount, Description: `Revenue — ${product.Name}`, Dimensions: lineDims },
         ]);
         this.assertBalanced(lines, order, line, 'progress recognition');
