@@ -7,7 +7,7 @@
  * answers the harder question the pointer makes possible: given the origin, is THIS reversal
  * legitimate, and what should it cost?
  *
- * Four facts the origin line is the only authority on:
+ * Five facts the origin line is the only authority on:
  *
  *   1. **HOW MUCH is left to give back.** Nothing else in the system knows. Over-returning produces
  *      a perfectly balanced journal entry that refunds money never collected, so the ledger cannot
@@ -59,6 +59,18 @@ export interface ReversalOrigin {
     SubscriptionID?: string | null;
     /** For the refusal message — an ID alone tells the reader nothing about what they mispointed at. */
     OrderNumber?: string | null;
+    /** The order the origin line belongs to — where its schedule and its siblings live (D92 §6). */
+    OrderHeaderID?: string | null;
+    /** For the refusal message: a line number is what a person can find on the order. */
+    LineNumber?: number | null;
+    /**
+     * The origin line's contract position, which is the fifth fact a reversal cannot get anywhere
+     * else. `BilledToDate − RecognizedToDate` is what the credit memo gives back; the other way
+     * round is a contract asset the reversal must refuse to strand. Both default to zero, so a line
+     * from before D92 reverses exactly as it did.
+     */
+    BilledToDate?: number | null;
+    RecognizedToDate?: number | null;
 }
 
 /** The reversal being attempted. Quantity is negative, as the caller wrote it. */
