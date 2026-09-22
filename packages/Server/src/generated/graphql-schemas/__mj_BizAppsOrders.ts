@@ -2261,9 +2261,13 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
+    @Field(() => Float) 
+    BilledToDate: number;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
+    @Field(() => Float) 
+    RecognizedToDate: number;
         
 }
 
@@ -2413,6 +2417,11 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     @Field({ nullable: true })
     DimensionValueID: string | null;
 
+    @Field(() => Float, { nullable: true })
+    BilledToDate?: number;
+
+    @Field(() => Float, { nullable: true })
+    RecognizedToDate?: number;
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -2564,6 +2573,11 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
     @Field({ nullable: true })
     DimensionValueID?: string | null;
 
+    @Field(() => Float, { nullable: true })
+    BilledToDate?: number;
+
+    @Field(() => Float, { nullable: true })
+    RecognizedToDate?: number;
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
 
@@ -5469,6 +5483,11 @@ export class mjBizAppsOrdersOrderLine_ {
     DimensionValueID?: string;
         
     @Field({nullable: true}) 
+    @Field(() => Float, {description: `Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm.`}) 
+    BilledToDate: number;
+        
+    @Field(() => Float, {description: `Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account.`}) 
+    RecognizedToDate: number;
     @MaxLength(40)
     OrderHeader?: string;
         
@@ -5637,6 +5656,11 @@ export class CreatemjBizAppsOrdersOrderLineInput {
     @Field({ nullable: true })
     DimensionValueID: string | null;
 
+    @Field(() => Float, { nullable: true })
+    BilledToDate?: number;
+
+    @Field(() => Float, { nullable: true })
+    RecognizedToDate?: number;
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -5746,6 +5770,11 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
     @Field({ nullable: true })
     DimensionValueID?: string | null;
 
+    @Field(() => Float, { nullable: true })
+    BilledToDate?: number;
+
+    @Field(() => Float, { nullable: true })
+    RecognizedToDate?: number;
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
 

@@ -957,6 +957,14 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: DimensionValueID
         * * Display Name: Dimension Value ID
         * * SQL Data Type: uniqueidentifier`),
+    BilledToDate: z.number().describe(`
+        * * Field Name: BilledToDate
+        * * Display Name: Billed To Date
+        * * SQL Data Type: decimal(18, 2)`),
+    RecognizedToDate: z.number().describe(`
+        * * Field Name: RecognizedToDate
+        * * Display Name: Recognized To Date
+        * * SQL Data Type: decimal(18, 2)`),
     Person: z.string().describe(`
         * * Field Name: Person
         * * Display Name: Person
@@ -2196,6 +2204,18 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimension Values (vwDimensionValues.ID)
         * * Description: The value of DimensionID this line is tagged with, from __mj_BizAppsAccounting.DimensionValue. Carried with DimensionID onto every journal entry line the order line produces. Set together with DimensionID (CK_OrderLine_DimensionPair).`),
+    BilledToDate: z.number().describe(`
+        * * Field Name: BilledToDate
+        * * Display Name: Billed To Date
+        * * SQL Data Type: decimal(18, 2)
+        * * Default Value: 0
+        * * Description: Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm.`),
+    RecognizedToDate: z.number().describe(`
+        * * Field Name: RecognizedToDate
+        * * Display Name: Recognized To Date
+        * * SQL Data Type: decimal(18, 2)
+        * * Default Value: 0
+        * * Description: Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header Display
@@ -7983,6 +8003,32 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
+    * * Field Name: BilledToDate
+    * * Display Name: Billed To Date
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get BilledToDate(): number {
+        return this.Get('BilledToDate');
+    }
+    set BilledToDate(value: number) {
+        this.Set('BilledToDate', value);
+    }
+
+    /**
+    * * Field Name: RecognizedToDate
+    * * Display Name: Recognized To Date
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get RecognizedToDate(): number {
+        return this.Get('RecognizedToDate');
+    }
+    set RecognizedToDate(value: number) {
+        this.Set('RecognizedToDate', value);
+    }
+
+    /**
     * * Field Name: Person
     * * Display Name: Person
     * * SQL Data Type: nvarchar(201)
@@ -11680,6 +11726,34 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set DimensionValueID(value: string | null) {
         this.Set('DimensionValueID', value);
+    }
+
+    /**
+    * * Field Name: BilledToDate
+    * * Display Name: Billed To Date
+    * * SQL Data Type: decimal(18, 2)
+    * * Default Value: 0
+    * * Description: Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm.
+    */
+    get BilledToDate(): number {
+        return this.Get('BilledToDate');
+    }
+    set BilledToDate(value: number) {
+        this.Set('BilledToDate', value);
+    }
+
+    /**
+    * * Field Name: RecognizedToDate
+    * * Display Name: Recognized To Date
+    * * SQL Data Type: decimal(18, 2)
+    * * Default Value: 0
+    * * Description: Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account.
+    */
+    get RecognizedToDate(): number {
+        return this.Get('RecognizedToDate');
+    }
+    set RecognizedToDate(value: number) {
+        this.Set('RecognizedToDate', value);
     }
 
     /**
