@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609202000 — Percentage-of-completion revenue recognition (W10)
+-- V202609221900 — Percentage-of-completion revenue recognition (W10)
 -- (bc-aidp-next-golive#241 · orders PR #201 plan Part F · D90)
 -- =============================================================================
 -- The three shipped revenue-recognition types answer "given what we know at

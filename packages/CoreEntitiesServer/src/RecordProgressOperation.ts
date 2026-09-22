@@ -8,14 +8,25 @@
  * already is (plan §9.2):
  *
  *     target = LineTotalNet × PercentComplete
- *     delta  = target − recognisedToDate
+ *     delta  = target − the line's RecognizedToDate
  *
- *     delta > 0   Dr Deferred Revenue / Cr Sales            (|delta|)
- *     delta < 0   Dr Sales / Cr Deferred Revenue            (|delta|)   ← mirrored, never negated
+ *     delta > 0   Cr Sales |delta|, debiting Deferred Revenue then Unbilled Receivable (rule 2)
+ *     delta < 0   the same entry mirrored — never negated
  *     delta = 0   no entry — a legitimate outcome, not a failure
  *
  * A backward slide is not a feature; it is what the subtraction does. At 100% the target IS the line
  * amount, so the last catch-up lands the remaining cent whatever the rounding history.
+ *
+ * WHICH CONTRA ACCOUNT IS NOT THIS OPERATION'S CHOICE (D92). It follows from the gap between what
+ * the line has been billed and what it has earned: `SplitContraLegs` relieves the deferred balance
+ * first and opens Unbilled Receivable — a contract asset — for anything beyond it. A project billed
+ * quarterly in advance never opens Unbilled; one attested ahead of its instalments does, and the
+ * next invoice closes it again under rule 1. See `OrderJournalEntryFactory.BuildProgressDraft`.
+ *
+ * THE LINE'S `RecognizedToDate` IS THE AUTHORITY on what is already recognised, and this operation
+ * advances it in the same transaction as the entry. Summing the observation rows would have given
+ * the same answer while progress was the only thing that recognised revenue on a POC line; it stops
+ * being true the moment any other path posts recognition against the same line.
  *
  * THE OBSERVATION IS AN ATTESTATION, NOT A MEASUREMENT. The number may come from anywhere, but a named
  * person signs it, and the entry names the observation and the signer. A posted observation is
@@ -66,9 +77,9 @@ const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
+/** A posted observation, read only for the ordering guard — the amounts live on the line now. */
 interface PostedMeasurement {
     MeasurementDate: string;
-    RecognitionAmount: number | null;
 }
 
 interface CreateJournalEntriesResult {
@@ -99,8 +110,13 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         if (revRec.ScheduleBasis !== 'OnMeasurement') {
             return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} recognises revenue ${revRec.Code} at booking, not by progress. Only a percentage-of-completion line takes an observation.`, echo);
         }
-        if (!line.JournalEntryID) {
-            return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} is not booked yet; there is no deferred revenue to release.`, echo);
+        // BOOKED, NOT "HAS AN ENTRY" (D92). A POC line on a company with a payment schedule books no
+        // value entry at confirm at all — the instalment's entry is stamped on the schedule row, not
+        // on the line — so `JournalEntryID` is null on exactly the orders this operation exists for.
+        // `ConfirmedAt` is the booking fact, and the one the double-book trigger keys on; `Status`
+        // can move on afterwards.
+        if (!order.ConfirmedAt) {
+            return this.refuse(preview, `Order ${order.OrderNumber} is not confirmed; progress can only be attested on a booked order.`, echo);
         }
 
         const methodCode = (input.MethodCode ?? revRec.DriverClass).trim();
@@ -113,14 +129,18 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             return this.refuse(preview, err instanceof Error ? err.message : String(err), echo);
         }
 
-        const posted = await this.postedObservations(line.ID, provider, user);
-        const last = posted.at(-1)?.MeasurementDate ?? null;
+        const last = (await this.postedObservations(line.ID, provider, user)).at(-1)?.MeasurementDate ?? null;
         if (last && measurementDate <= last) {
             return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} already has an observation posted for ${last}. Corrections happen forward: record the current period instead.`, echo);
         }
 
         const lineAmount = money(Math.abs(Number(line.LineTotalNet ?? 0)));
-        const recognizedToDate = money(posted.reduce((s, m) => s + Number(m.RecognitionAmount ?? 0), 0));
+        // THE LINE'S OWN TOTAL IS THE AUTHORITY (D92), not the sum of these observations. Under D90
+        // progress was the only thing that ever recognised revenue on a POC line, so the two agreed
+        // by construction; once every recognition path advances `RecognizedToDate` they can differ,
+        // and the running total is the one the contra-account rule reads. The observation rows keep
+        // `RecognizedToDateBefore/After` as the audit trail of what each attestation saw.
+        const recognizedToDate = money(Math.abs(Number(line.RecognizedToDate ?? 0)));
         const catchUp = ComputeCatchUp(lineAmount, percent, recognizedToDate);
         const numbers = {
             ...echo,
@@ -142,6 +162,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         try {
             const journalEntryID = draft ? await this.createJournalEntry(draft, provider, user) : null;
             const measurementID = await this.writeObservation(line.ID, measurementDate, percent, methodCode, input, user, numbers, journalEntryID, provider);
+            await this.advanceRecognizedToDate(line, catchUp.Delta);
             await dbProvider.CommitTransaction();
             return { Success: true, Preview: false, ...numbers, OrderLineProgressMeasurementID: measurementID, JournalEntryID: journalEntryID, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, false) };
         } catch (err) {
@@ -167,13 +188,18 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         return id ? engine.RevenueRecognitionTypes.find((t) => t.ID.toLowerCase() === id.toLowerCase()) ?? null : null;
     }
 
-    /** Every posted observation on the line, oldest first. Their deltas sum to what is recognised. */
+    /**
+     * Every posted observation on the line, oldest first — for the ORDERING GUARD only.
+     *
+     * What is recognised to date is the line's own `RecognizedToDate` (D92), not a sum of these.
+     * The rows remain the audit trail of what each attestation saw and what it posted.
+     */
     private async postedObservations(lineID: string, provider: IMetadataProvider, user: UserInfo): Promise<PostedMeasurement[]> {
-        const result = await RunView.FromMetadataProvider(provider).RunView<{ MeasurementDate: unknown; RecognitionAmount: number | null }>(
+        const result = await RunView.FromMetadataProvider(provider).RunView<{ MeasurementDate: unknown }>(
             {
                 EntityName: ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY,
                 ExtraFilter: `OrderLineID = '${lineID}' AND Status = 'Posted'`,
-                Fields: ['MeasurementDate', 'RecognitionAmount'],
+                Fields: ['MeasurementDate'],
                 OrderBy: 'MeasurementDate',
                 ResultType: 'simple',
                 BypassCache: true,
@@ -181,7 +207,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             user,
         );
         if (!result.Success) throw new Error(`Could not read the line's progress observations: ${result.ErrorMessage ?? 'unknown error'}`);
-        return (result.Results ?? []).map((r) => ({ MeasurementDate: ToISODate(r.MeasurementDate) ?? '', RecognitionAmount: r.RecognitionAmount }));
+        return (result.Results ?? []).map((r) => ({ MeasurementDate: ToISODate(r.MeasurementDate) ?? '' }));
     }
 
     private async buildDraft(
@@ -225,6 +251,29 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         const id = payload.Results?.[0]?.JournalEntryID;
         if (!id) throw new Error('Accounting reported success but returned no journal entry.');
         return id;
+    }
+
+    /**
+     * Advance the line's `RecognizedToDate` by what this observation just posted (D92).
+     *
+     * IN THE SAME TRANSACTION AS THE ENTRY, for the reason confirm advances it in the confirm
+     * transaction and invoicing advances `BilledToDate` in the invoicing one: the totals are the
+     * ledger's summary of itself, and a separate writer is exactly how a summary drifts from what it
+     * summarises. A line whose entry posted and whose total did not would pick the wrong contra
+     * account for every later attestation, silently and for good.
+     *
+     * SIGNED, deliberately: a reversal line's delta is negative, so an origin and its reversals net
+     * to zero across a contract. The rules read magnitudes; only storage carries the sign.
+     */
+    private async advanceRecognizedToDate(line: mjBizAppsOrdersOrderLineEntity, delta: number): Promise<void> {
+        if (money(delta) === 0) return;
+        line.RecognizedToDate = money(Number(line.RecognizedToDate ?? 0) + delta);
+        if (!(await line.Save())) {
+            throw new Error(
+                line.LatestResult?.CompleteMessage ??
+                    `RecognizedToDate could not be advanced on order line ${line.ID}.`,
+            );
+        }
     }
 
     private async writeObservation(
