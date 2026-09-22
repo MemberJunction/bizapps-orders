@@ -42,6 +42,7 @@ import {
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { EmitInstalmentInvoiceEntry, type InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
+import { BeginInstalmentIssue, EndInstalmentIssue } from './instalmentIssueGuard.js';
 import { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 import { InstalmentDocumentNumber } from './InvoiceBehavior.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
@@ -235,7 +236,11 @@ export async function IssueInstalment(
             return refuse(`Order ${order.OrderNumber} has no lines for the company this instalment bills, so there is nothing to invoice.`, echo);
         }
 
-        {
+        // The entity refuses an issue it did not send (D91). Held across EVERY save below, since the
+        // later ones stamp a row that is by then already Invoiced, and released in the `finally`
+        // whichever way this ends. The caller owns the transaction; this owns only the signal.
+        BeginInstalmentIssue(row.ID);
+        try {
             const entity = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, user);
             if (!(await entity.Load(row.ID))) throw new Error(`Instalment ${row.ID} could not be loaded for update.`);
             entity.DocumentNumber = documentNumber;
@@ -310,6 +315,8 @@ export async function IssueInstalment(
                 JournalEntryID: journalEntryID,
                 ...echo,
             };
+        } finally {
+            EndInstalmentIssue(row.ID);
         }
     }
 }
