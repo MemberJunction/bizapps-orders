@@ -1,5 +1,5 @@
 /**
- * payment-deposit.checks.ts — the `payment-deposit` bundle (PM1–PM5).
+ * payment-deposit.checks.ts — the `payment-deposit` bundle (PM1–PM6).
  *
  * CASH AHEAD OF BILLING IS NOT A PAYMENT ON ACCOUNT (D91). A scheduled company books no value at
  * confirm, so until an instalment is invoiced there is no receivable for cash to clear. Crediting
@@ -15,6 +15,8 @@
  *   PM4  advancing an instalment to Invoiced by hand is refused — only the operation issues
  *   PM5  an order with no schedule books exactly the entry it always did (the regression fence,
  *        the same shape check order-booking.OB18 is for booking)
+ *   PM6  an INVOICED instalment sitting inside the billing worklist's window still does not appear
+ *        on it — the list filters on having an invoice, not merely on dates
  *
  * PM1 is the cascade half and PM2/PM3 the ledger half of one rule; they are in one bundle because
  * a change that satisfies either alone is wrong.
@@ -45,11 +47,23 @@ import {
     ORDERS_SCHEMA,
     TeardownOrdersFixture,
     TxMaybeOne,
+    TxOne,
     TxQuery,
 } from '../fixture.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from '../entity-names.js';
 import { BuildOrder } from '../order-builder.js';
 import { CreatePayment } from '../payment-builder.js';
+
+interface WorklistRow {
+    OrderNumber: string;
+    InstallmentNumber: number;
+}
+
+interface WorklistOutput {
+    Success: boolean;
+    Message?: string;
+    Rows: WorklistRow[];
+}
 
 interface IssueOutput {
     Success: boolean;
@@ -153,6 +167,16 @@ async function issue(ctx: IntegrationCheckContext, scheduleID: string): Promise<
     );
     Assert(result.Success && result.Output?.Success === true, `issue failed: ${result.Output?.Message ?? result.ErrorMessage ?? ''}`);
     return result.Output!;
+}
+
+/** Every instalment the billing worklist offers for a window starting at `asOf`. */
+async function billingWorklist(ctx: IntegrationCheckContext, asOf: string, windowDays: number): Promise<WorklistRow[]> {
+    const result = await operation<{ AsOfDate: string; WindowDays: number }, WorklistOutput>('Orders.GetBillingWorklist').Execute(
+        { AsOfDate: asOf, WindowDays: windowDays },
+        { provider: ctx.Provider, user: ctx.User },
+    );
+    Assert(result.Success && result.Output?.Success === true, `GetBillingWorklist failed: ${result.Output?.Message ?? result.ErrorMessage ?? ''}`);
+    return result.Output!.Rows;
 }
 
 /** Capture `amount` against the order, optionally naming one instalment. Returns the payment id. */
@@ -309,6 +333,36 @@ export const PaymentDepositChecks: NamedCheck[] = [
                     1,
                     'exactly one credit line, as before the deposit rule existed',
                 );
+            }),
+    },
+    {
+        Id: 'payment-deposit.PM6',
+        Name: 'PM6: an invoiced instalment inside the window still does not appear on the billing worklist',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // THE LIST FILTERS ON HAVING AN INVOICE, NOT ON DATES, and only a row that is
+                // invoiced AND inside the window can tell the two apart. payment-schedule.PS10
+                // proves the include-then-drop cycle, but since D92 made confirm issue what is
+                // already due, its issued row is also outside its window — so a regression that
+                // started listing invoiced rows would pass it. This is that assertion, placed here
+                // because this bundle is the one being run.
+                const orderID = await orderWith(ctx, [
+                    { InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 100 }, // the order date: confirm issues it
+                    { InstallmentNumber: 2, DueDate: '2027-07-01', Amount: 200 },
+                ]);
+                const rows = await schedule(ctx, orderID);
+                AssertEqual(rows[0].Status, 'Invoiced', 'confirm issued the instalment due on the order date');
+                Assert(rows[0].DocumentNumber != null, 'and froze its number');
+
+                // 2026-06-20 + 30 days reaches 2026-07-20, so instalment 1 is eleven days out and
+                // squarely inside the window. Nothing but the invoice keeps it off the list.
+                const mine = await TxOne<{ OrderNumber: string }>(
+                    ctx,
+                    `SELECT OrderNumber FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
+                );
+                const offered = (await billingWorklist(ctx, '2026-06-20', 30)).filter((r) => r.OrderNumber === mine.OrderNumber);
+                AssertEqual(offered.length, 0, 'an invoiced instalment is not offered for billing, however near its due date');
             }),
     },
 ];
