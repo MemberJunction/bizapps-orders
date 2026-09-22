@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609221300 — heal: register OrderLine's dimension name fields and relationships
+-- V202609221600 — heal: register OrderLine's dimension name fields and relationships
 -- (bc-aidp-next-golive#236, the gap left by V202609191200)
 -- =============================================================================
 -- V202609191200 added OrderLine.DimensionID / DimensionValueID and regenerated vwOrderLines to
