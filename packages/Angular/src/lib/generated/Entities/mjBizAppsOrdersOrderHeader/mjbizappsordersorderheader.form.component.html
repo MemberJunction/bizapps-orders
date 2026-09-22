@@ -662,6 +662,12 @@
                 [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersCheckoutSessions', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <!-- Order Header Payment Schedules Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderHeaderPaymentSchedules"
@@ -706,12 +712,6 @@
                 [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalInvoices', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
                 >
             </mj-explorer-entity-data-grid>
         </div>
