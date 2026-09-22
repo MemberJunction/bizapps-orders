@@ -807,7 +807,6 @@ export class OrderJournalEntryFactory {
     }
 
     /**
-    /**
      * Where a contract-asset leg posts: Unbilled Receivable, or Deferred Revenue when nobody has
      * linked one (D92).
      *
