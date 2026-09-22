@@ -68,7 +68,7 @@ import {
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { SplitContraLegs } from './ContractBalance.js';
-import { GL_ROLE, GLAccountResolver, GLAccountResolutionError } from './GLAccountResolver.js';
+import { GL_ROLE, GLAccountResolver, GLAccountResolutionError, type GLRole } from './GLAccountResolver.js';
 import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
 import { MergeLineDimensions } from './LineDimensionMerge.js';
@@ -636,27 +636,16 @@ export class OrderJournalEntryFactory {
                 });
             }
             if (legs.Unbilled !== 0) {
-                // Same tolerance the role has always had: no account linked means the whole debit
-                // goes to Deferred, coarser but correct and balanced, and the warning says so.
-                let unbilledAccount: string | null = null;
-                try {
-                    unbilledAccount = await resolve(GL_ROLE.UnbilledReceivable);
-                } catch {
-                    console.warn(
-                        `Order ${order.OrderNumber} line ${line.LineNumber}: no '${GL_ROLE.UnbilledReceivable}' ` +
-                            `GL account is linked for company ${companyID}, so ${legs.Unbilled.toFixed(2)} of ` +
-                            `revenue earned ahead of billing was debited to Deferred Revenue instead. The entry ` +
-                            `balances and no revenue is misstated, but the contract asset is indistinguishable ` +
-                            `from unearned billing on the balance sheet. Link an ` +
-                            `'${GL_ROLE.UnbilledReceivable}' account to the company.`,
-                    );
-                }
+                const contra = await this.unbilledOrDeferred(resolve, legs.Unbilled, {
+                    OrderNumber: order.OrderNumber ?? '',
+                    LineNumber: line.LineNumber,
+                    CompanyID: companyID,
+                    ProductName: product.Name,
+                });
                 bookingLines.push({
-                    GLAccountID: unbilledAccount ?? (await resolve(GL_ROLE.DeferredRevenue)),
+                    GLAccountID: contra.GLAccountID,
                     DebitAmount: legs.Unbilled,
-                    Description: unbilledAccount
-                        ? `Unbilled receivable — ${product.Name}`
-                        : `Deferred revenue (unbilled, no contract-asset account) — ${product.Name}`,
+                    Description: contra.Description,
                     Dimensions: lineDims,
                 });
             }
@@ -764,6 +753,42 @@ export class OrderJournalEntryFactory {
         }
 
         return out;
+    }
+
+    /**
+     * Where a contract-asset leg posts: Unbilled Receivable, or Deferred Revenue when nobody has
+     * linked one (D92).
+     *
+     * NOT LINKED IS NOT FATAL, and never has been for this role. The entry stays correct and
+     * balanced with the whole leg on Deferred — just coarser, because a reader then cannot tell
+     * revenue earned ahead of billing from billing ahead of performance. Reported rather than
+     * swallowed, since nothing else would ever say so.
+     *
+     * Shared with #227's progress catch-up, which raises the same leg from the same rule.
+     */
+    private async unbilledOrDeferred(
+        resolve: (role: GLRole) => Promise<string>,
+        amount: number,
+        where: { OrderNumber: string; LineNumber: number; CompanyID: string; ProductName: string },
+    ): Promise<{ GLAccountID: string; Description: string }> {
+        try {
+            return {
+                GLAccountID: await resolve(GL_ROLE.UnbilledReceivable),
+                Description: `Unbilled receivable — ${where.ProductName}`,
+            };
+        } catch {
+            console.warn(
+                `Order ${where.OrderNumber} line ${where.LineNumber}: no '${GL_ROLE.UnbilledReceivable}' GL ` +
+                    `account is linked for company ${where.CompanyID}, so ${Math.abs(amount).toFixed(2)} of ` +
+                    `revenue earned ahead of billing went to Deferred Revenue instead. The entry balances and ` +
+                    `no revenue is misstated, but the contract asset is now indistinguishable from unearned ` +
+                    `billing on the balance sheet. Link an '${GL_ROLE.UnbilledReceivable}' account to the company.`,
+            );
+            return {
+                GLAccountID: await resolve(GL_ROLE.DeferredRevenue),
+                Description: `Deferred revenue (unbilled, no contract-asset account) — ${where.ProductName}`,
+            };
+        }
     }
 
     /** Resolve the driver through MJ's ClassFactory so subclasses registered on the same key win. */
