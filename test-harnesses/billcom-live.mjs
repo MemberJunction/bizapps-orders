@@ -8,7 +8,8 @@
  *   BILLCOM_COMPANY_INTEGRATION_ID   the MJ: Company Integrations row whose credential is the SANDBOX Bill.com Session
  *   BILLCOM_PROBE                    login | customer | invoice | archive-put | payments | send-default | rail-issue | rail-poll
  *   BILLCOM_CUSTOMER_ID              (invoice probe) a 0cu… id from the customer probe
- *   BILLCOM_INVOICE_ID               (archive-put / send-default) a 00e… id from the invoice probe
+ *   BILLCOM_INVOICE_ID               (archive-put / send-default / record-payment) a 00e… id
+ *   BILLCOM_AMOUNT                   (record-payment) the amount to record; BILLCOM_PAYMENT_TYPE defaults to CHECK
  *   BILLCOM_DUP_NUMBER               (invoice probe, S4) an invoiceNumber already used, to test uniqueness
  *   BILLCOM_PAYMENT_PROVIDER_ID      (rail-*) the Orders PaymentProvider row of type BillCom (IsLiveMode 0)
  *   BILLCOM_ORDER_ID                 (rail-issue) a Confirmed order for that provider's company
@@ -52,6 +53,14 @@ async function main() {
     await import('@memberjunction/connector-bill-com').catch((e) => {
         throw new Error(`@memberjunction/connector-bill-com is not installed here (${e.message}). pnpm add it to the package that runs this, or run from the host.`);
     });
+    // Register the generated entity classes of EVERY app whose rows this touches. Without them MJ
+    // falls back to plain BaseEntity, every typed field reads undefined, and the accounting engine
+    // silently resolves no GL account links — which looks exactly like a missing configuration.
+    (await import('@mj-biz-apps/accounting-entities')).LoadGeneratedEntities?.();
+    (await import('@mj-biz-apps/common-entities')).LoadGeneratedEntities?.();
+    // …and accounting's SERVER classes, which register Accounting.CreateJournalEntries. Confirming an
+    // order books through it, so without this the confirm fails inside the accounting call.
+    (await import('@mj-biz-apps/accounting-server')).LoadBizAppsAccountingServer?.();
     const ordersServer = await import('@mj-biz-apps/orders-server');
     ordersServer.LoadBizAppsOrdersServer?.();
 
@@ -144,6 +153,26 @@ async function main() {
             log('raw POST /invoices/{id}/archive again — idempotent?', { Status: again.Status, Body: typeof again.Body === 'object' && again.Body ? { archived: again.Body.archived, status: again.Body.status, message: again.Body.message } : again.Body });
             const back = await connector.GetRecord({ ...base, ObjectName: 'invoices', ExternalID: id });
             log('invoices.get after', { archived: back?.Fields?.archived, status: back?.Fields?.status, recordStatus: back?.Fields?.recordStatus });
+            break;
+        }
+        case 'record-payment': { // Proves the capture leg: money against an invoice Orders issued.
+            const invoiceID = need('BILLCOM_INVOICE_ID');
+            const amount = Number(need('BILLCOM_AMOUNT'));
+            const auth = await connector.Authenticate(ci, user);
+            const baseURL = connector.GetBaseURL(ci, auth);
+            const body = {
+                amount,
+                paymentDate: new Date().toISOString().slice(0, 10),
+                paymentType: process.env.BILLCOM_PAYMENT_TYPE ?? 'CHECK',
+                description: process.env.BILLCOM_PAYMENT_MEMO ?? 'Capture-leg proof',
+                invoices: [{ id: invoiceID, amount }],
+            };
+            if (process.env.BILLCOM_CUSTOMER_ID) body.customerId = process.env.BILLCOM_CUSTOMER_ID;
+            // Version-agnostic: connector 0.3.1 returns a base ending in /connect/v3, the fixed build
+            // returns /connect. Normalise, then add the version once (Integrations #390).
+            const root = `${baseURL.replace(/\/+$/, '').replace(/\/v3$/, '')}/v3`;
+            const r = await connector.MakeHTTPRequest(auth, `${root}/invoices/record-payment`, 'POST', connector.BuildHeaders(auth), body);
+            log('POST /v3/invoices/record-payment', { Status: r.Status, Body: r.Body });
             break;
         }
         case 'payments': { // S2 / S3

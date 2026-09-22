@@ -31,6 +31,8 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 
+import { UUIDsEqual } from '@memberjunction/global';
+
 import { SplitExactly } from './BundleBehavior.js';
 
 const Money = (n: number): number => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -878,5 +880,8 @@ export function BuildDocuments(input: {
         });
     });
 
-    return input.OnlyCompanyID ? documents.filter((d) => d.CompanyID === input.OnlyCompanyID) : documents;
+    // UUIDsEqual, not ===: SQL Server returns uppercase ids while callers routinely carry lower-cased
+    // copies, and a case-sensitive match here drops every document and reports the order as having no
+    // lines for the company — a wrong answer that looks like a data problem.
+    return input.OnlyCompanyID ? documents.filter((d) => UUIDsEqual(d.CompanyID, input.OnlyCompanyID!)) : documents;
 }

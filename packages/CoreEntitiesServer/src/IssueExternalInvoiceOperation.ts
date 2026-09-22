@@ -178,7 +178,13 @@ export async function IssueOneUnit(
         { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID = '${unit.OrderHeaderID}'`, Fields: ['CompanyID'], ResultType: 'simple' },
         user,
     );
-    const lineCompanies = [...new Set((lines.Results ?? []).map((l) => String(l.CompanyID).toLowerCase()))];
+    // Deduplicate case-insensitively, but keep the DATABASE's casing: this value becomes the unit's
+    // CompanyID and is compared against the order lines' own ids downstream. Handing on a lower-cased
+    // copy made `BuildInvoiceDocuments` match nothing and report "has no lines sold by company",
+    // which reads like missing data rather than the case fold it was.
+    const lineCompanies = [
+        ...new Map((lines.Results ?? []).map((l) => [String(l.CompanyID).toLowerCase(), String(l.CompanyID)])).values(),
+    ];
 
     const scheduleSupported = ScheduleSupported(provider);
     let scheduleRows: ScheduleRow[] = [];
