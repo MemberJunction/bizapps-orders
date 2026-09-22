@@ -24,6 +24,8 @@
  *   PM9  a POC project billed by INSTALMENT appears on the attestation screen — it books no entry
  *        of its own at confirm, so a worklist keyed on one hid the case the screen exists for
  *   PM10 a REVERSAL line stores its recognition NEGATIVE, so an origin and its reversal net to zero
+ *   PM11 a DISCOUNTED project credits Sales the gross share and debits Sales Discounts its share on
+ *        every attestation, closing at exactly the discount once the line reaches 100%
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -58,6 +60,8 @@ const DEFERRED = '21301';
 const AR = '11201';
 /** The contract asset: revenue earned ahead of billing (D92 rule 2). */
 const UNBILLED = '11300';
+/** Contra-revenue. Under #225 the discount is booked once, at recognition — never on the invoice. */
+const DISCOUNTS = '41000';
 /** Sales tax payable — the account that separates the net basis from the AR debit. */
 const TAX = '21500';
 
@@ -531,6 +535,62 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 const entries = await recognitionEntries(ctx, reversalLineID);
                 AssertEqual(entries.length, 1, 'one catch-up entry on the reversal line');
                 AssertEqual(cents(Number(entries[0].Signed)), -1000.01, 'and it takes revenue back OUT of Sales');
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM11',
+        Name: 'PM11: a DISCOUNTED project credits Sales the gross share and debits the discount its share, every attestation',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Sold for 1,000.00 at 10% off: earns 900.00, and the 100.00 difference is
+                // contra-revenue that #225 books ONCE, at recognition. So every catch-up has to
+                // carry its slice of it — otherwise the discount sits in Deferred Revenue after the
+                // project reaches 100%, and every entry still balances on the way there.
+                const f = Fx();
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [{ ProductID: f.Products.PocA, Quantity: 1, UnitPrice: 1000, DiscountPct: 0.1, ServicePeriodStart: '2026-07-01', ServicePeriodEnd: '2026-12-31' }],
+                } as Parameters<typeof ConfirmOrder>[1]);
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+                const lineID = result.Lines[0].ID as string;
+
+                // A third of the way: Sales takes the GROSS third, the discount its third, and the
+                // contra legs only the net third — the percent applies to what the line EARNS.
+                const first = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 1 / 3 });
+                Assert(first.Success, `first attestation: ${first.Message}`);
+                const legs1 = await entryLegs(ctx, first.JournalEntryID!);
+                AssertEqual(netOn(legs1, SALES), -333.33, 'Sales is credited the gross share');
+                AssertEqual(netOn(legs1, DISCOUNTS), 33.33, 'and Sales Discounts is debited its share of the same third');
+                AssertEqual(netOn(legs1, DEFERRED), 300, 'while the contra leg moves by the NET third — what the line earns');
+                AssertEqual(cents(legs1.reduce((sum, l) => sum + Number(l.Net), 0)), 0, 'the entry balances');
+
+                await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 1 });
+
+                // AT 100% THE SLICES HAVE TO CLOSE EXACTLY, which is why the discount share is taken
+                // as the difference between two rounded running totals rather than as a proportion
+                // of each delta: a third of 100.00 does not divide, and a per-delta rounding would
+                // strand the cent with nothing left to correct it.
+                const all = await TxQuery<{ Code: string; Net: number }>(
+                    ctx,
+                    `SELECT gl.Code, SUM(ISNULL(jel.DebitAmount,0)) - SUM(ISNULL(jel.CreditAmount,0)) AS Net
+                       FROM ${ACCT_SCHEMA}.vwJournalEntries je
+                       JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+                       JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                      WHERE je.LinkedRecordID = '${lineID}'
+                        AND (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'RevenueRecognition'
+                      GROUP BY gl.Code`,
+                );
+                AssertEqual(netOn(all, SALES), -1000, 'gross revenue over the project is what it was sold for');
+                AssertEqual(netOn(all, DISCOUNTS), 100, 'the discount is booked exactly once, in full, to the cent');
+                AssertEqual(netOn(all, DEFERRED), 900, 'and Deferred Revenue is relieved of exactly what the line earns');
+                AssertEqual(
+                    cents(Number((await TxOne<{ R: number }>(ctx, `SELECT RecognizedToDate AS R FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID}'`)).R)),
+                    900,
+                    'the running total tracks NET, not gross — it is what has been earned',
+                );
             }),
     },
 ];
