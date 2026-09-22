@@ -106,6 +106,40 @@ const UTC_DAY = '2026-08-28';
 const SRC = fileURLToPath(new URL('..', import.meta.url));
 const source = (relative: string): string => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
 
+/** Every `date` column the migrations declare — the guard's column list, read rather than remembered. */
+const DATE_COLUMNS: string[] = (() => {
+    const dir = fileURLToPath(new URL('../../../../migrations/', import.meta.url));
+    const names = new Set<string>();
+    for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql'))) {
+        // `\bDATE\b` excludes DATETIME/DATETIME2/DATETIMEOFFSET on its own: the word boundary
+        // cannot fall between `DATE` and `TIME`.
+        for (const m of readFileSync(`${dir}${file}`, 'utf8').matchAll(/^\s*\[?([A-Za-z0-9_]+)\]?\s+DATE\b/gim)) {
+            names.add(m[1]);
+        }
+    }
+    return [...names].sort();
+})();
+
+/** Matching lines that are actually code — comment bodies naming the defect are not the defect. */
+const codeLines = (text: string, pattern: RegExp): string[] =>
+    [...text.matchAll(pattern)].map((m) => m[0].trim()).filter((l) => !l.startsWith('*') && !l.startsWith('//'));
+
+/**
+ * The "day in hand, else the clock" sites this PR deliberately leaves alone: `asOf` values compared
+ * against `EffectiveFrom`/`EffectiveTo`, not written to a `date` column. Named one by one, because
+ * a deferral that the guard simply cannot see is indistinguishable from an oversight — which is
+ * how the two sites above it were missed. The staleness check below makes fixing one force its
+ * removal from this list.
+ */
+const DEFERRED_ASOF: ReadonlyArray<readonly [string, string]> = [
+    ['OrderEntityServer.ts', 'const asOf = this.OrderDate'],
+    ['PreviewPriceOperation.ts', 'const asOf = input.AsOf'],
+    ['SpawnRenewalsOperation.ts', 'const asOf = input.AsOfDate'],
+];
+
+const deferred = (file: string, line: string): boolean =>
+    DEFERRED_ASOF.some(([f, prefix]) => f === file && line.startsWith(prefix));
+
 const engine = BusinessTimeZoneEngine.Instance as unknown as {
     _configurations: InstanceConfigurationRow[];
     _loaded: boolean;
@@ -367,6 +401,13 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             ['PaymentHeaderEntityServer.ts', /PaymentDate: await CalendarDayOrToday\(this\.PaymentDate, provider, user\)/, 'the allocation and fee journal entries'],
             ['PaymentLineEntityServer.ts', /CalendarDayOrToday\(\s*row\.PaymentDate,/, "the allocation entry's effective date"],
             ['OrderJournalEntryFactory.ts', /isoDate\(await CalendarDayOrToday\(order\.OrderDate,/, "the order entry's effective date"],
+            // Both nets in the package-wide guard below are NEGATIVE — they catch a column name
+            // stamped from the clock, and the ternary fallback. Neither can see
+            // `const requestDate = new Date();`: no column name at the assignment, no ternary.
+            // These two sites launder the day through exactly such a binding, so each is pinned
+            // positively to the expression it must use.
+            ['CancelSubscriptionOperation.ts', /const requestDate = await CalendarDayOrToday\(input\.RequestDate, provider, user\)/, "the cancellation's request day"],
+            ['OrderEntityServer.ts', /const purchaseDay = await CalendarDayOrToday\(\s*this\.OrderDate,/, "the booking day behind every subscription term"],
         ])('%s derives %s through CalendarDayOrToday', (file, pattern) => {
             expect(source(file)).toMatch(pattern);
         });
@@ -383,26 +424,67 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
 
     /**
      * The guard the partial fix could not have: with every site converted, NO production file in
-     * this package may stamp a date column from the clock. A new one added tomorrow fails here
+     * this package may stamp a calendar day from the clock. A new one added tomorrow fails here
      * rather than in an accounting period three weeks later.
+     *
+     * ## Two nets, because the first one has a hole
+     *
+     * Keying on the COLUMN name catches `x.PaymentDate = new Date()`, and it is kept — widened
+     * from the two names this issue happened to start with to every `date` column the migrations
+     * declare, so a column added next month is covered without anyone remembering to come here.
+     *
+     * That net cannot see a clock that reaches a date column through a differently-named binding,
+     * and twice it did not: `const requestDate = … : new Date()` in `CancelSubscriptionOperation`,
+     * feeding `OrderDate`, `ServicePeriodStart` and `CancellationEffectiveDate` two hundred lines
+     * downstream, and `PurchaseDate:` sourced from `this.OrderDate` in this very file's sibling
+     * method. Both sat in files the first version of this guard already scanned, and both passed
+     * it — which is the argument for the second net rather than a wider column list.
+     *
+     * So the second net keys on the SHAPE: `X ? new Date(X) : new Date()`, "a day in hand, else
+     * the clock". That idiom is the entire reason `CalendarDayOrToday` exists, and it is wrong for
+     * a calendar day wherever it appears, whatever the binding is called.
      */
-    describe('no server path stamps a date column from the clock', () => {
+    describe('no server path stamps a calendar day from the clock', () => {
         const production = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
 
         it('finds the production files at all', () => {
-            // Guards the guard: an empty list makes the check below vacuous.
+            // Guards the guard: an empty list makes the checks below vacuous.
             expect(production.length).toBeGreaterThan(20);
         });
 
-        it.each(production)('%s', (file) => {
-            const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-            // `PaymentDate`/`OrderDate` are the two `date` columns this package assigns. The
-            // pattern deliberately allows `new Date(x)` — parsing a day already in hand is fine —
-            // and catches only the zero-argument form, which is an instant with no day in it.
-            const offenders = [...text.matchAll(/^.*\b(?:PaymentDate|OrderDate)\b\s*[:=][^;\n]*new Date\(\s*\).*$/gm)]
-                .map((m) => m[0].trim())
-                .filter((line) => !line.startsWith('*') && !line.startsWith('//'));
+        it('reads the date columns from the migrations rather than from memory', () => {
+            // Guards the guard again: a broken path would yield an empty list and guard nothing,
+            // silently. The two names this issue began with must be among what it finds.
+            expect(DATE_COLUMNS).toEqual(expect.arrayContaining(['OrderDate', 'PaymentDate']));
+            expect(DATE_COLUMNS.length).toBeGreaterThan(10);
+        });
+
+        it.each(production)('%s stamps no date column from the clock', (file) => {
+            // Deliberately allows `new Date(x)` — parsing a day already in hand is fine — and
+            // catches only the zero-argument form, which is an instant with no day in it.
+            const pattern = new RegExp(
+                String.raw`^.*\b(?:${DATE_COLUMNS.join('|')})\b\s*[:=][^;\n]*new Date\(\s*\).*$`,
+                'gm',
+            );
+            const offenders = codeLines(source(file), pattern);
             expect(offenders, `${file} stamps a date column from the clock`).toEqual([]);
+        });
+
+        it.each(production)('%s falls back to no clock for a day it already asked for', (file) => {
+            const offenders = codeLines(
+                source(file),
+                /^.*\?\s*new Date\([^)]*\)\s*:\s*new Date\(\s*\).*$/gm,
+            ).filter((line) => !deferred(file, line));
+            expect(offenders, `${file}: use CalendarDayOrToday, not a clock fallback`).toEqual([]);
+        });
+
+        it('every deferred asOf site still exists, so fixing one forces it off the list', () => {
+            // A stale allowlist is a guard with a hole in it that nobody can see. When the follow-up
+            // against #209 converts one of these, this fails until the entry is removed.
+            for (const [file, prefix] of DEFERRED_ASOF) {
+                const shapes = codeLines(source(file), /^.*\?\s*new Date\([^)]*\)\s*:\s*new Date\(\s*\).*$/gm);
+                expect(shapes.some((l) => l.startsWith(prefix)), `${file}: '${prefix}' is no longer there`).toBe(true);
+            }
         });
 
         it('covers the Angular payment form too, which stamps the same column', () => {

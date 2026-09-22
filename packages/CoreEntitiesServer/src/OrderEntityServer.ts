@@ -2142,6 +2142,22 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // "create" — see PENDING_SIBLING_ID.
         const pendingSiblings = new Map<string, ExistingSubscription>();
 
+        // The order's booking day, as a calendar day (#209). `Decide` reduces it with `utcDay` and
+        // the settled term reaches `SubscriptionTerm.StartDate`/`EndDate`, both `DATE NOT NULL`, so
+        // an instant taken at 9 PM Eastern would start coverage tomorrow.
+        //
+        // Resolved ONCE for the whole confirm rather than per line: it cannot vary by line, and
+        // this method runs inside the transaction `confirm` opens, where the fallback's metadata
+        // read is least welcome. That read stays unlikely for the reason the initial-payment site
+        // gives — `OrderDate` is defaulted at `NewRecord()` since #168 — and `CalendarDayOrToday`
+        // skips it entirely whenever the day is stated, which is the normal case. Hoisting it out
+        // of the transaction would mean restructuring `confirm`, which is not this issue's job.
+        const purchaseDay = await CalendarDayOrToday(
+            this.OrderDate,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
             let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
@@ -2179,7 +2195,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
             const decision = behavior.Decide({
                 Rules: rules,
-                PurchaseDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                PurchaseDate: purchaseDay,
                 // The line is not saved yet, so `LineTotalNet` is not computed — derive the same
                 // figure OrderLineEntityServer will: quantity × price, less the discount.
                 Amount: this.pendingLineNet(line),

@@ -55,6 +55,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import type { OrderEntityServer } from './OrderEntityServer.js';
 import { RequireUUID } from './sql-guards.js';
+import { CalendarDayOrToday } from './calendar-day.js';
 import { RevokeGrantsForCanceledSubscription } from './EntitlementEngine.js';
 import {
     SubscriptionBehavior,
@@ -141,7 +142,14 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         // at the boundary, so every frame below this one can trust them.
         RequireUUID(input.SubscriptionID, 'SubscriptionID');
 
-        const requestDate = input.RequestDate ? new Date(input.RequestDate) : new Date();
+        // The day the cancellation is REQUESTED for, as a calendar day (#209). `DecideCancellation`
+        // reduces this with `utcDay`, and its `EffectiveDate` is written to three `date` columns —
+        // `OrderHeader.OrderDate` on the reversal, `OrderLine.ServicePeriodStart`, and
+        // `SubscriptionTerm.CancellationEffectiveDate` — as well as driving the refund proration.
+        // An instant taken at 9 PM Eastern reduces to tomorrow, so an evening cancellation refunded
+        // a day the customer had not reached yet. Computed before `BeginTransaction` below, so the
+        // fallback's metadata read never lands inside the write transaction.
+        const requestDate = await CalendarDayOrToday(input.RequestDate, provider, user);
 
         const subscription = await this.loadSubscription(provider, user, input.SubscriptionID);
         if (!subscription) {
