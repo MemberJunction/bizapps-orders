@@ -57,6 +57,10 @@ function lineWith(dimensionID: string | null, dimensionValueID: string | null) {
         LineNumber: 1,
         DimensionID: dimensionID,
         DimensionValueID: dimensionValueID,
+        // Read by the override-reason check that runs in the same ValidateAsync; a line on its
+        // default price, which is what this test is about.
+        PriceOverridden: false,
+        PriceOverrideReason: null,
     })) {
         Object.defineProperty(line, k, { value: v, writable: true });
     }

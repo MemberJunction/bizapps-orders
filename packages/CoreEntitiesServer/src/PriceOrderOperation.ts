@@ -27,7 +27,7 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
-import { OrderPricingService } from '@mj-biz-apps/orders-entities';
+import { OrderPricingService, type ResolvedPrice } from '@mj-biz-apps/orders-entities';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
@@ -63,6 +63,8 @@ interface PricedLine {
     LineTotalGross: number;
     Components?: Array<{ Kind: string; Label: string; Amount: number }>;
     TaxExemptReason?: string | null;
+    ProductPriceID?: string | null;
+    Default?: { UnitPrice: number; ProductPriceID: string | null; PriceName: string | null } | null;
 }
 
 interface PriceOrderOutput {
@@ -132,6 +134,9 @@ export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput,
                 PromotionCodes: input.PromotionCodes ?? [],
                 ManualDiscounts: (input.ManualDiscounts ?? []) as never,
                 Charges: (input.Charges ?? []) as never,
+                // The editor asks this on every edit and needs the rules' answer for a pinned line
+                // too — it is what tells an override apart from a restatement of the default.
+                IncludeDefaultsForStatedLines: true,
             });
 
             const priced: PricedLine[] = lines.map((line, i) => {
@@ -155,6 +160,8 @@ export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput,
                         Amount: Number((c as { Amount?: number }).Amount ?? 0),
                     })),
                     TaxExemptReason: result.TaxReasons.get(i) ?? null,
+                    ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
+                    Default: engineDefault(result.EngineDefaults.get(line)),
                 };
             });
 
@@ -183,6 +190,22 @@ export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput,
             };
         }
     }
+}
+
+/**
+ * The engine default as the wire carries it: absent when the walk was not asked, null when it was
+ * asked and no rule priced the product.
+ */
+function engineDefault(
+    resolved: ResolvedPrice | null | undefined,
+): PricedLine['Default'] {
+    if (resolved === undefined) return undefined;
+    if (resolved === null) return null;
+    return {
+        UnitPrice: resolved.UnitPrice,
+        ProductPriceID: resolved.ProductPriceID,
+        PriceName: resolved.PriceName ?? null,
+    };
 }
 
 /**

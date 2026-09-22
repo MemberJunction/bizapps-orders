@@ -70,6 +70,9 @@ function realLine(calls: { asked: number }) {
         // because Object.create leaves the generated accessors unusable on a bare prototype.
         DimensionID: null,
         DimensionValueID: null,
+        // Read by the override-reason check in the same ValidateAsync, for the same reason.
+        PriceOverridden: false,
+        PriceOverrideReason: null,
         LineNumber: 1,
     })) {
         Object.defineProperty(line, k, { value: v, writable: true });

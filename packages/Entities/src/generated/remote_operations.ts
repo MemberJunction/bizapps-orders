@@ -1115,6 +1115,22 @@ export interface PriceOrderOutput {
         Components?: Array<{ Kind: string; Label: string; Amount: number }>;
         /** Present when the line owes no tax, saying why (exempt, non-taxable, no nexus). */
         TaxExemptReason?: string | null;
+        /**
+         * The rule that produced `UnitPrice`, or null when the caller pinned the price or no rule
+         * applied. This is what `OrderLine.ProductPriceID` would be stamped with.
+         */
+        ProductPriceID?: string | null;
+        /**
+         * What the rules say for this line REGARDLESS of any pinned price — the engine's default.
+         *
+         * A pinned line is priced at what the caller stated, so `UnitPrice` above cannot say what
+         * the line would have cost on its own. The editor needs that answer while a line is
+         * overridden: it is how the Default row of the picker knows what it restores, how the
+         * "overridden" badge knows whether the stated price is actually a deviation, and how a
+         * named rule that merely restates the default is told apart from one that changes it.
+         * Null when no rule prices the product. Absent when the operation was not asked for it.
+         */
+        Default?: { UnitPrice: number; ProductPriceID: string | null; PriceName: string | null } | null;
     }>;
 
     Totals: {
