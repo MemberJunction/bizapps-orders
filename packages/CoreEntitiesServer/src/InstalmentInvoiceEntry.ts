@@ -33,6 +33,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
+import type { mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
 
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, SubmitJournalEntryDrafts } from './AccountingBridge.js';
 import { SplitExactly } from './BundleBehavior.js';
@@ -74,13 +75,18 @@ async function resolveEntryType(provider: IMetadataProvider, user: UserInfo): Pr
 
 const money = (n: number): number => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
-/** One of the company's live schedule rows, in `InstallmentNumber` order. */
-export interface InstalmentSibling {
-    ID: string;
-    InstallmentNumber: number;
-    Amount: number;
-    Status: string;
-}
+/**
+ * One of the company's live schedule rows, in `InstallmentNumber` order.
+ *
+ * `Pick`ed from the generated entity rather than hand-declared: a hand-written interface mirroring
+ * entity columns drifts from the schema silently, and picking also inherits `Status`'s real domain
+ * (`'Canceled' | 'Invoiced' | ...`) instead of a bare `string`, so a typo in a status is a compile
+ * error rather than a row that quietly never matches.
+ */
+export type InstalmentSibling = Pick<
+    mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
+    'ID' | 'InstallmentNumber' | 'Amount' | 'Status'
+>;
 
 /** One order line of the invoiced company, as the slice arithmetic reads it. */
 export interface InstalmentLineFacts {

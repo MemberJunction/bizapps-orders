@@ -161,7 +161,16 @@ export function ScheduleShortfalls(rows: ScheduleRowFacts[], lines: ScheduleLine
     return out;
 }
 
-/** A schedule row as the booking-scope test reads it. */
+/**
+ * A schedule row as the booking-scope test reads it.
+ *
+ * DELIBERATELY NOT `Pick`ed from the generated entity, unlike {@link InstalmentSibling}. These rows
+ * arrive from `RunView` with `ResultType: 'simple'`, which hands back the driver's raw values — so
+ * `DueDate` is a STRING at runtime, while the entity declares it `Date`. Picking would assert a
+ * type the data does not honour, make the `ToISODate` call that handles both look redundant, and
+ * hide the string path behind a green compile. A hand-written shape that tells the truth beats a
+ * generated one that does not.
+ */
 export interface ScheduleTimingFacts extends ScheduleRowFacts {
     /** `YYYY-MM-DD`, or anything `Date` parses. Carried for callers; the scope test ignores it. */
     DueDate: string | Date;

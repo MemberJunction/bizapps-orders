@@ -35,6 +35,7 @@ import {
     type OrdersIssueInstalmentInvoiceOutput,
     ToISODate,
     type mjBizAppsOrdersOrderLineEntity,
+    type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
 } from '@mj-biz-apps/orders-entities';
 
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
@@ -61,7 +62,8 @@ interface ScheduleRow extends Record<string, unknown> {
     InstallmentNumber: number;
     DueDate: string;
     Amount: number;
-    Status: string;
+    /** The entity's own domain, not a bare string — so a mistyped status cannot compile. */
+    Status: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity['Status'];
     AmountPaid: number;
     DocumentNumber: string | null;
     InvoicedAt: string | null;
