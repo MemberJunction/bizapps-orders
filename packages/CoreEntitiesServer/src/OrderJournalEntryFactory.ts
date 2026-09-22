@@ -850,9 +850,10 @@ export class OrderJournalEntryFactory {
      * The catch-up entry for one progress observation on a percentage-of-completion line (D90),
      * under RULE 2 (D92):
      *
-     *     Cr  Sales                |delta|        (EffectiveDate = the measurement date)
+     *     Cr  Sales                |delta| + this catch-up's share of the discount   (gross share)
      *         Dr  Deferred Revenue     the line's deferred balance, max(0, B − R), up to |delta|
      *         Dr  Unbilled Receivable  whatever is left — revenue earned ahead of billing
+     *         Dr  Sales Discounts      this catch-up's share of the discount, when an account links
      *
      * WHICH CONTRA ACCOUNT IS NOT THIS LINE'S CHOICE. It follows from the gap between what the line
      * has been billed and what it has earned, which is the same question `SplitContraLegs` answers
@@ -900,12 +901,32 @@ export class OrderJournalEntryFactory {
         );
 
         const amount = money(Math.abs(delta));
+        const recognizedBefore = Math.abs(Number(line.RecognizedToDate ?? 0));
         const legs = SplitContraLegs(
             Math.abs(Number(line.BilledToDate ?? 0)),
-            Math.abs(Number(line.RecognizedToDate ?? 0)),
+            recognizedBefore,
             delta,
             'Recognize',
         );
+
+        // ── THE DISCOUNT'S SHARE OF THIS CATCH-UP (D11, Andrew on #227) ──
+        //
+        // A discounted line is sold for `gross` and earns `net`; the difference is a contra-revenue
+        // debit, and under #225 it is booked ONCE, at recognition, never on the invoice. So every
+        // recognition entry has to carry its own slice of it: credit Sales the GROSS share, debit
+        // Sales Discounts the discount share, and leave the contra legs on net. Omitting it would
+        // leave the whole discount sitting in Deferred Revenue after the project reached 100%.
+        //
+        // SLICED CUMULATIVELY, not proportionally, for the reason the catch-up itself is cumulative:
+        // attestations arrive in any order and any size, and independently rounding `discount ×
+        // delta / net` each time would strand a cent that nothing later corrects. Taking the
+        // difference between two rounded running totals makes the last attestation land whatever is
+        // left, so the discount debits sum to exactly `discount` at 100% however the percents moved.
+        const { Discount: discount, Net: lineNet } = LineAmounts(line);
+        const discountThrough = (recognized: number) =>
+            lineNet === 0 ? 0 : money((discount * recognized) / lineNet);
+        const discountShare = money(discountThrough(money(recognizedBefore + delta)) - discountThrough(recognizedBefore));
+
         const debits: JELineDraft[] = [];
         if (legs.Deferred !== 0) {
             debits.push({
@@ -929,9 +950,30 @@ export class OrderJournalEntryFactory {
                 Dimensions: lineDims,
             });
         }
+        // Same tolerance the booking entry has (D11): with no contra account linked, the discount
+        // nets into the sales credit instead of standing as its own line. The entry balances either
+        // way; what changes is whether a reader can see gross revenue and the discount separately.
+        let discountAccount: string | null = null;
+        if (discountShare !== 0) {
+            try {
+                discountAccount = await resolve(GL_ROLE.SalesDiscounts);
+            } catch {
+                discountAccount = null;
+            }
+        }
+        if (discountAccount) {
+            debits.push({
+                GLAccountID: discountAccount,
+                DebitAmount: Math.abs(discountShare),
+                Description: `Discount — ${product.Name}`,
+                Dimensions: lineDims,
+            });
+        }
+        const salesCredit = discountAccount ? money(amount + Math.abs(discountShare)) : amount;
+
         const lines = mirrorIf(RecognitionMirrors(line.Quantity, delta), [
             ...debits,
-            { GLAccountID: await resolve(GL_ROLE.Sales), CreditAmount: amount, Description: `Revenue — ${product.Name}`, Dimensions: lineDims },
+            { GLAccountID: await resolve(GL_ROLE.Sales), CreditAmount: salesCredit, Description: `Revenue — ${product.Name}`, Dimensions: lineDims },
         ]);
         this.assertBalanced(lines, order, line, 'progress recognition');
 
