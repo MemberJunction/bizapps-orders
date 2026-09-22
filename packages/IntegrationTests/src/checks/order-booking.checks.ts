@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB18).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB20).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -23,6 +23,8 @@
  *   OB16 a Draft with no lines saves (lines are required only at confirm)
  *   OB17 a draft line can be removed and replaced — the removed row actually leaves the database
  *   OB18 an order with NO payment schedule debits AR alone — no contract-asset line exists (D89)
+ *   OB19 confirming a non-scheduled line sets BilledToDate to its NET, not net + charges (D92)
+ *   OB20 recognition on such a line relieves Deferred, never opening a contract asset (D92)
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -727,6 +729,90 @@ export const OrderBookingChecks: NamedCheck[] = [
                 AssertEqual(debits.length, 1, `ONE debit line, not a split: ${JSON.stringify(lines)}`);
                 AssertEqual(debits[0].Code, '11201', 'and it is Accounts Receivable');
                 AssertEqual(Number(debits[0].DebitAmount), 300, 'for the whole order value');
+            }),
+    },
+    {
+        Id: 'order-booking.OB19',
+        Name: 'OB19: confirming a non-scheduled line sets BilledToDate to its NET, not net + charges',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // BOOKING IS THE INVOICE for an order with no schedule, so confirm has to advance
+                // BilledToDate itself — nothing else ever will. Left at zero, rule 2 would read "no
+                // deferred balance" and every monthly release on an ordinary subscription would
+                // debit Unbilled Receivable instead of relieving the Deferred booking created.
+                //
+                // THE CHARGE IS WHAT MAKES THIS CHECK ABLE TO SEE ANYTHING. Without it net and the
+                // AR debit are the same number and the assertion passes on either basis. With a 10%
+                // charge they separate, and BilledToDate must follow NET — the same basis as
+                // RecognizedToDate, because tax and charges credit their own accounts and never
+                // touch Deferred.
+                const f = Fx();
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [{ ProductID: f.Products.DeferredA, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: '2026-07-01', ServicePeriodEnd: '2027-06-30' }],
+                    Charges: [{ Code: 'SalesTax', Rate: 0.1 }],
+                } as Parameters<typeof ConfirmOrder>[1]);
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const line = await TxOne<{ LineTotalNet: number; LineTax: number; ChargeAmount: number; BilledToDate: number; RecognizedToDate: number }>(
+                    ctx,
+                    `SELECT LineTotalNet, LineTax, ChargeAmount, BilledToDate, RecognizedToDate
+                       FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${result.Order.ID}'`,
+                );
+                const charged = Number(line.LineTax ?? 0) + Number(line.ChargeAmount ?? 0);
+                Assert(charged > 0, `the fixture must actually charge something, or this proves nothing: ${JSON.stringify(line)}`);
+                AssertEqual(Number(line.BilledToDate), Number(line.LineTotalNet), 'BilledToDate is the line NET');
+                Assert(
+                    Number(line.BilledToDate) !== Number(line.LineTotalNet) + charged,
+                    'and is NOT net + tax + charges — those credit their own accounts, never Deferred',
+                );
+            }),
+    },
+    {
+        Id: 'order-booking.OB20',
+        Name: 'OB20: recognition on a non-scheduled line relieves Deferred and opens no contract asset',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The consequence of OB19, stated on the ledger. A deferred product books
+                // Dr AR / Cr Deferred at confirm and stages its releases; each release must debit
+                // the Deferred that booking created. If BilledToDate were zero the rule would read
+                // recognition as running ahead of billing and debit Unbilled instead — a contract
+                // asset invented on the commonest order in the system, with the entry balancing.
+                const f = Fx();
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [{ ProductID: f.Products.DeferredA, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: '2026-07-01', ServicePeriodEnd: '2027-06-30' }],
+                });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const lines = await TxQuery<{ Code: string; DebitAmount: number; CreditAmount: number }>(
+                    ctx,
+                    `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
+                       FROM ${ORDERS_SCHEMA}.OrderLine ol
+                       JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ol.JournalEntryID
+                       JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                      WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+                );
+                AssertEqual(
+                    lines.filter((l) => l.Code === UNBILLED_CODE).length,
+                    0,
+                    `no contract-asset line on an ordinary order: ${JSON.stringify(lines)}`,
+                );
+
+                const totals = await TxOne<{ BilledToDate: number }>(
+                    ctx,
+                    `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${result.Order.ID}'`,
+                );
+                Assert(
+                    Number(totals.BilledToDate) > 0,
+                    'BilledToDate is non-zero, which is what makes the releases relieve Deferred rather than open Unbilled',
+                );
             }),
     },
 ];

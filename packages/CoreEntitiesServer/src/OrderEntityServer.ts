@@ -2102,21 +2102,31 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         await this.stampJournalEntryIDs(drafts, result, options);
 
-        // ADVANCE RecognizedToDate IN THIS TRANSACTION (D92), for the same reason BilledToDate is
-        // advanced inside the invoicing transaction: the totals are the ledger's summary of itself,
-        // and a separate writer is how they drift from the journal lines they summarise.
-        for (const [orderLineID, recognized] of factory.DrainRecognized()) {
-            if (recognized === 0) continue;
+        // ADVANCE BOTH TOTALS IN THIS TRANSACTION (D92) — the totals are the ledger's summary of
+        // itself, and a separate writer is how they drift from the journal lines they summarise.
+        //
+        // BilledToDate matters here for the ORDINARY order, the one with no schedule: booking IS
+        // its invoice, so nothing else will ever advance it. Left at zero, rule 2 would read "no
+        // deferred balance" and every monthly subscription release would debit Unbilled Receivable
+        // instead of relieving the Deferred that booking created — a contract asset invented on the
+        // commonest order in the system, with the entry balancing either way.
+        const billedAtBooking = factory.DrainBilled();
+        const recognizedAtBooking = factory.DrainRecognized();
+        for (const orderLineID of new Set([...billedAtBooking.keys(), ...recognizedAtBooking.keys()])) {
+            const billed = billedAtBooking.get(orderLineID) ?? 0;
+            const recognized = recognizedAtBooking.get(orderLineID) ?? 0;
+            if (billed === 0 && recognized === 0) continue;
             const line = this.Lines.Items.find((l) => UUIDsEqual(l.ID, orderLineID));
             const target = line ?? (await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user));
             if (!line && !(await target.Load(orderLineID))) {
                 throw new Error(`Order line ${orderLineID} could not be loaded to advance its RecognizedToDate.`);
             }
+            target.BilledToDate = Number(target.BilledToDate ?? 0) + billed;
             target.RecognizedToDate = Number(target.RecognizedToDate ?? 0) + recognized;
             if (!(await target.Save(options))) {
                 throw new Error(
                     target.LatestResult?.CompleteMessage ??
-                        `RecognizedToDate could not be advanced on order line ${orderLineID}.`,
+                        `The running totals could not be advanced on order line ${orderLineID}.`,
                 );
             }
         }

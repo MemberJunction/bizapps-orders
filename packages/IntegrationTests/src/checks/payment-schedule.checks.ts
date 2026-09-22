@@ -72,6 +72,7 @@ import {
 } from '../fixture.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from '../entity-names.js';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
+import type { RequestedCharge } from '@mj-biz-apps/orders-core-entities-server';
 import { CreatePayment } from '../payment-builder.js';
 
 /** One instalment as a check authors it. */
@@ -141,7 +142,20 @@ async function addInstalments(ctx: IntegrationCheckContext, orderID: string, row
 export async function scheduledOrder(
     ctx: IntegrationCheckContext,
     rows: Instalment[],
-    over: { gross?: number; productID?: string } = {},
+    over: {
+        gross?: number;
+        productID?: string;
+        /**
+         * Charges to put on the order before confirm, in `confirmWithCharges`' shape — e.g.
+         * `[{ Code: 'SalesTax', Rate: 0.1 }]`.
+         *
+         * WITHOUT ONE, NET AND THE AR DEBIT ARE THE SAME NUMBER, and no check can tell which basis
+         * `BilledToDate` is measured on. With a charge they separate: AR moves by net + charges,
+         * the charge account moves by the charge, and both running totals move by net alone. Any
+         * check about the totals' basis needs this; the schedule must then tie to the CHARGED gross.
+         */
+        charges?: RequestedCharge[];
+    } = {},
 ) {
     const f = Fx();
     const gross = over.gross ?? 300;
@@ -152,6 +166,7 @@ export async function scheduledOrder(
         // The LINE's product decides the company the schedule and the ledger book against, whatever
         // the header says — which is how a check reaches a second company's ledger.
         Lines: [{ ProductID: over.productID ?? f.Products.WidgetA, Quantity: 1, UnitPrice: gross }],
+        ...(over.charges ? { Charges: over.charges } : {}),
     });
     Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
     const orderID = draft.Order.ID as string;

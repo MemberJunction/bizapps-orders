@@ -34,7 +34,7 @@ ALTER TABLE [${flyway:defaultSchema}].[OrderLine]
 GO
 
 EXEC sp_addextendedproperty @name = N'MS_Description',
-    @value = N'Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line''s balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
+    @value = N'Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line''s balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'OrderLine',
     @level2type = N'COLUMN', @level2name = N'BilledToDate';
@@ -57,7 +57,11 @@ GO
 -- at confirm. That would invent a contract asset out of a pre-existing order.
 --
 -- Under the old model a line with no payment schedule was invoiced in full at
--- confirm, so its BilledToDate is its whole value. One UPDATE, no cursor.
+-- confirm, so its BilledToDate is its whole REVENUE value — LineTotalNet, what
+-- Deferred or Sales was credited. NOT gross + tax + charges: RecognizedToDate
+-- counts revenue, tax and charges credit their own accounts and never touch
+-- Deferred, so a B on a different basis from R makes the gap between them
+-- overstate Deferred by the tax on every backfilled line. One UPDATE, no cursor.
 --
 -- CORRELATED ON COMPANY AS WELL AS ORDER, because "scheduled" is a property of a
 -- (order, company) pair and not of the order — a multi-company order can have one
@@ -69,7 +73,7 @@ GO
 -- exact fabrication this backfill exists to prevent. OrderLine.CompanyID is NOT
 -- NULL, so the correlation is total.
 UPDATE ol
-   SET ol.[BilledToDate] = ISNULL(ol.[LineTotalGross], 0) + ISNULL(ol.[LineTax], 0) + ISNULL(ol.[ChargeAmount], 0)
+   SET ol.[BilledToDate] = ISNULL(ol.[LineTotalNet], 0)
   FROM [${flyway:defaultSchema}].[OrderLine] ol
   JOIN [${flyway:defaultSchema}].[OrderHeader] oh ON oh.[ID] = ol.[OrderHeaderID]
  WHERE oh.[Status] IN ('Confirmed', 'Posted', 'Fulfilled')
@@ -211,7 +215,7 @@ GO
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'),
             'BilledToDate',
             'Billed To Date',
-            'Cumulative amount of this line invoiced to the customer, advanced by each instalment invoice inside the same transaction that books the entry (D92). With RecognizedToDate it gives the line''s balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
+            'Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line''s balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
             'decimal',
             9,
             18,

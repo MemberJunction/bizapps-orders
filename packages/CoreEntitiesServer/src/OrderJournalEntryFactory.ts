@@ -289,6 +289,22 @@ export class OrderJournalEntryFactory {
     private readonly _recognizedByLine = new Map<string, number>();
 
     /**
+     * What each line BILLED during this build, signed — for a company with no payment schedule,
+     * where booking IS the invoice (D92).
+     *
+     * A non-scheduled line is invoiced in full at confirm: it debits AR and credits Deferred or
+     * Sales there and never passes through the instalment path, so nothing else would ever advance
+     * its `BilledToDate`. Left at zero, rule 2 would read "no deferred balance" for every ordinary
+     * subscription and debit Unbilled Receivable for its monthly recognition instead of relieving
+     * the Deferred that booking actually created — inventing a contract asset on the most common
+     * order in the system, with every entry still balancing.
+     *
+     * NET, not net + tax + charges: `RecognizedToDate` counts revenue, so this must too, or the
+     * gap between them overstates Deferred by the tax.
+     */
+    private readonly _billedByLine = new Map<string, number>();
+
+    /**
      * Take what this build recognised, per line, and clear it.
      *
      * Call inside the same transaction that submitted the drafts. Returns an empty map when the
@@ -297,6 +313,13 @@ export class OrderJournalEntryFactory {
     public DrainRecognized(): Map<string, number> {
         const out = new Map(this._recognizedByLine);
         this._recognizedByLine.clear();
+        return out;
+    }
+
+    /** Take what this build billed, per line, and clear it. Same contract as {@link DrainRecognized}. */
+    public DrainBilled(): Map<string, number> {
+        const out = new Map(this._billedByLine);
+        this._billedByLine.clear();
         return out;
     }
 
@@ -342,11 +365,12 @@ export class OrderJournalEntryFactory {
         // drafts and never drained them — so those lines' RecognizedToDate was never advanced and
         // every later entry against them will read a stale balance and choose the wrong contra
         // account. Fail here, where the cause is visible, rather than in a month's close.
-        if (this._recognizedByLine.size > 0) {
+        if (this._recognizedByLine.size > 0 || this._billedByLine.size > 0) {
             throw new Error(
                 `OrderJournalEntryFactory was reused without draining what the last build recognised ` +
-                    `(${this._recognizedByLine.size} line(s)). Call DrainRecognized() inside the booking ` +
-                    `transaction and advance RecognizedToDate with it, or those lines' totals are wrong.`,
+                    `(${this._recognizedByLine.size} recognised, ${this._billedByLine.size} billed). Call ` +
+                    `DrainRecognized() and DrainBilled() inside the booking transaction and advance the ` +
+                    `totals with them, or those lines' balances are wrong.`,
             );
         }
 
@@ -594,6 +618,13 @@ export class OrderJournalEntryFactory {
                   product.Name,
                   lineDims,
               );
+
+        // BOOKING IS THE INVOICE for a company with no schedule, so its whole net is billed here
+        // and nothing downstream will ever say so. Recorded on the revenue basis (net), matching
+        // RecognizedToDate.
+        if (!isScheduled) {
+            this._billedByLine.set(line.ID, isReversal ? money(-net) : net);
+        }
 
         // AN UP-FRONT LINE ON A SCHEDULED COMPANY STILL EARNS AT BOOKING. Its revenue is recognised
         // when the sale happens — that is what "not deferred" means — so it needs a credit to Sales
