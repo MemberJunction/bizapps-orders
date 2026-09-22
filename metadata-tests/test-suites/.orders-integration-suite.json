@@ -529,6 +529,17 @@
           "primaryKey": {
             "ID": "A674F471-E717-4DFF-A301-1C606EF37250"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-36 - Payment Deposit",
+            "Sequence": 36,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "A674F471-E717-4DFF-A301-1C606EF37260"
+          }
         }
       ]
     },

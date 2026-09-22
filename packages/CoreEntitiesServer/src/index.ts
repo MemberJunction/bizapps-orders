@@ -17,6 +17,7 @@ export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } 
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
+export { BeginInstalmentIssue, EndInstalmentIssue, IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
 export {
     AddMonths,
     BuildPaymentSchedule,

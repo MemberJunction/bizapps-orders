@@ -60,7 +60,8 @@ import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
-import { LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import type { InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { RequireUUID } from './sql-guards.js';
 
@@ -128,12 +129,20 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
+            // BEFORE the row lands, not after: saving it fires the rollup that moves AmountPaid on
+            // these very instalments, and a split read afterwards would treat this payment's own
+            // money as already-settled billing (D91).
+            const scheduleFacts = await LoadInstalmentCashFacts(
+                this.ProviderToUse as unknown as IRunViewProvider,
+                this.ContextCurrentUser as UserInfo,
+                this.OrderHeaderID,
+            );
             if (!(await super.Save(options))) {
                 throw new Error(
                     `Failed to save the payment allocation: ${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
-            await this.bookAllocation(payment, options);
+            await this.bookAllocation(payment, scheduleFacts, options);
             await dbProvider.CommitTransaction();
             return true;
         } catch (err) {
@@ -156,7 +165,11 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
      * Single-company orders produce exactly one entry — the shape the ledger had before — so this
      * is a generalisation of the old behaviour rather than a parallel path.
      */
-    private async bookAllocation(payment: PaymentContext, options?: EntitySaveOptions): Promise<void> {
+    private async bookAllocation(
+        payment: PaymentContext,
+        scheduleFacts: InstalmentCashFacts[],
+        options?: EntitySaveOptions,
+    ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
@@ -190,6 +203,8 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             ReceivingCompanyID: payment.ReceivingCompanyID,
             OrderLines: orderLines,
             TargetOrderLineID: this.OrderLineID ?? null,
+            ScheduleRows: scheduleFacts,
+            TargetPaymentScheduleID: this.OrderHeaderPaymentScheduleID ?? null,
             PaymentDate: payment.PaymentDate,
             // A negative allocation un-applies cash, and a refunded payment reverses: both mirror.
             IsReversal: payment.Status === 'Refunded' || (this.Amount ?? 0) < 0,

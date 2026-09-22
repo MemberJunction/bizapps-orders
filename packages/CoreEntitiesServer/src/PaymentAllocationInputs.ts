@@ -17,7 +17,9 @@
 import { IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import type { OrderLineShare } from './PaymentAllocationFactory.js';
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
-import { ORDER_LINE_DIMENSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import type { InstalmentCashFacts } from './PaymentScheduleBehavior.js';
+import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_DIMENSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { RequireUUID } from './sql-guards.js';
 
 interface OrderLineRow {
     ID: string;
@@ -119,4 +121,67 @@ async function loadLineDimensions(
         map.set(k, list);
     }
     return map;
+}
+
+/**
+ * Every live instalment on an order, for deciding how much of a payment settles a receivable (D91).
+ *
+ * READ THIS BEFORE THE PAYMENT LINE IS SAVED. `AmountPaid` on these rows is maintained by
+ * `spRecalcOrderHeaderPaymentSchedule`, which `spRecalcOrderHeaderTotals` calls from the PaymentLine
+ * trigger — so the moment the allocation row lands, these numbers already include it, and a split
+ * computed from them would credit AR for money it had itself just counted as paid. Both booking
+ * paths therefore read here first and carry the facts into the factory.
+ *
+ * Canceled rows are dropped: they bill nothing and absorb nothing.
+ */
+export async function LoadInstalmentCashFacts(
+    provider: IRunViewProvider,
+    user: UserInfo,
+    orderHeaderID: string,
+): Promise<InstalmentCashFacts[]> {
+    const rv = new RunView(provider);
+    const res = await rv.RunView<InstalmentCashFacts>(
+        {
+            EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+            ExtraFilter: `OrderHeaderID='${RequireUUID(orderHeaderID, 'OrderHeaderID')}' AND Status <> 'Canceled'`,
+            Fields: ['ID', 'CompanyID', 'Status', 'Amount', 'AmountPaid', 'DocumentNumber'],
+            OrderBy: 'DueDate, InstallmentNumber',
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    return (res?.Results ?? []).map((r) => ({
+        ID: String(r.ID),
+        CompanyID: String(r.CompanyID),
+        Status: String(r.Status),
+        Amount: Number(r.Amount ?? 0),
+        AmountPaid: Number(r.AmountPaid ?? 0),
+        DocumentNumber: r.DocumentNumber ? String(r.DocumentNumber) : null,
+    }));
+}
+
+/**
+ * Charge a receivable amount against the facts, so the next line of the same payment sees what the
+ * previous one used.
+ *
+ * A payment can carry several allocations against one order, and they book in a loop before any of
+ * them is in the database. Without this, two lines would each see the same unpaid invoice and each
+ * credit AR for it. Applied billed-rows-first in the order the rows came back, which is the order
+ * the database's own cascade uses.
+ */
+export function ConsumeReceivable(
+    facts: InstalmentCashFacts[],
+    companyID: string,
+    amount: number,
+): InstalmentCashFacts[] {
+    let left = amount;
+    const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
+    return facts.map((row) => {
+        if (left <= 0 || !row.DocumentNumber || key(row.CompanyID) !== key(companyID)) return row;
+        const capacity = Math.max(0, row.Amount - row.AmountPaid);
+        const used = Math.min(left, capacity);
+        left -= used;
+        return used > 0 ? { ...row, AmountPaid: row.AmountPaid + used } : row;
+    });
 }

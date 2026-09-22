@@ -72,7 +72,8 @@ import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
 import { PaymentAllocationFactory } from './PaymentAllocationFactory.js';
-import { LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { ConsumeReceivable, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { SplitCashForCompany, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
@@ -184,6 +185,11 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             // The lines go down BEFORE the invariant is checked, because the check reads what is
             // actually persisted rather than what this object happens to be holding — a line that
             // silently failed to save would otherwise still count toward the total.
+            // BEFORE the lines land: saving one fires the rollup that moves AmountPaid on the very
+            // instalments the split is computed from, so read the pre-payment picture now and carry
+            // it into bookAllocations (D91). Keyed by order, because a payment may settle several.
+            const scheduleFactsByOrder = capturing ? await this.loadScheduleFacts() : new Map<string, InstalmentCashFacts[]>();
+
             for (const line of this.Lines.Items) {
                 const lineSaveOptions = new EntitySaveOptions();
                 if (options) Object.assign(lineSaveOptions, options);
@@ -198,7 +204,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
 
             if (capturing) {
                 // Book journal entries for all unbooked allocations of this payment in one atomic batch.
-                await this.bookAllocations(options);
+                await this.bookAllocations(scheduleFactsByOrder, options);
                 await this.assertAllocationInvariant();
                 // Only reach the fee builder when there IS a fee AND this tender books one inline.
                 // OFF BY DEFAULT (D82).
@@ -354,7 +360,28 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      * submitted to Accounting.CreateJournalEntries in one batch inside the payment transaction, and
      * stamped with BookedAt.
      */
-    private async bookAllocations(options?: EntitySaveOptions): Promise<void> {
+    /**
+     * The pre-payment instalment picture for every order this payment's unbooked lines settle.
+     *
+     * Read before any line is written; see LoadInstalmentCashFacts for why after is too late.
+     */
+    private async loadScheduleFacts(): Promise<Map<string, InstalmentCashFacts[]>> {
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const byOrder = new Map<string, InstalmentCashFacts[]>();
+        for (const line of this.Lines.Items) {
+            if (line.BookedAt || !line.OrderHeaderID) continue;
+            const key = String(line.OrderHeaderID).toLowerCase();
+            if (byOrder.has(key)) continue;
+            byOrder.set(key, await LoadInstalmentCashFacts(provider, user, line.OrderHeaderID));
+        }
+        return byOrder;
+    }
+
+    private async bookAllocations(
+        scheduleFactsByOrder: Map<string, InstalmentCashFacts[]>,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
@@ -414,7 +441,10 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             }
             const orderNumber = await this.loadOrderNumber(line.OrderHeaderID);
 
-            const { Drafts } = await factory.BuildAllocationDrafts({
+            const orderKey = String(line.OrderHeaderID).toLowerCase();
+            const scheduleRows = scheduleFactsByOrder.get(orderKey) ?? [];
+
+            const { Drafts, Shares } = await factory.BuildAllocationDrafts({
                 PaymentLineID: line.ID,
                 PaymentNumber: this.PaymentNumber,
                 OrderNumber: orderNumber,
@@ -424,9 +454,22 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 TargetOrderLineID: line.OrderLineID ?? null,
                 // The allocation entry's `EffectiveDate` comes from this (#209): a day, so the
                 // fallback has to be a day too, not the instant the booking happened to run at.
+                ScheduleRows: scheduleRows,
+                TargetPaymentScheduleID: line.OrderHeaderPaymentScheduleID ?? null,
                 PaymentDate: await CalendarDayOrToday(this.PaymentDate, provider, user),
                 IsReversal: this.Status === 'Refunded' || (line.Amount ?? 0) < 0,
             });
+
+            // Charge what this line just settled against the working copy, so a second allocation on
+            // the same payment and order does not credit AR for the same invoice twice.
+            if (scheduleRows.length) {
+                let working = scheduleRows;
+                for (const share of Shares) {
+                    const split = SplitCashForCompany(share.Amount, share.CompanyID, working, line.OrderHeaderPaymentScheduleID ?? null);
+                    working = ConsumeReceivable(working, share.CompanyID, split.Receivable);
+                }
+                scheduleFactsByOrder.set(orderKey, working);
+            }
 
             allDrafts.push(...Drafts);
         }

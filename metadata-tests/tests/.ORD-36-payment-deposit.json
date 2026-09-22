@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-36 - Payment Deposit",
+    "Description": "Cash against a scheduled order (AIDP-24 follow-up, golive #240, D91). A scheduled company books no value at confirm, so until an instalment is invoiced there is no receivable for cash to clear: money held for something not yet billed is a customer deposit and belongs in Deferred Revenue. Proves the cascade settles an invoiced instalment before a merely scheduled one whatever the due dates say, that the payment entry credits Accounts Receivable only up to what has been invoiced and Deferred Revenue beyond it, that naming a Scheduled instalment is a deposit in full, that an instalment cannot be advanced to Invoiced except through Orders.IssueInstalmentInvoice, and that an order with no schedule books exactly the payment entry it always did.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Unnamed cash lands on the invoiced instalment rather than the older scheduled one and credits AR alone; cash beyond the invoiced amount splits AR for the invoiced part and Deferred Revenue for the excess, still balancing; a payment naming a Scheduled instalment credits Deferred Revenue in full and leaves the open invoice unpaid; hand-setting Status to Invoiced with a typed DocumentNumber is refused with a message naming Orders.IssueInstalmentInvoice and the row stays Scheduled with no number; an order with no schedule rows produces one cash debit and exactly one AR credit, with nothing deferred."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "payment-deposit"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C460"
+  }
+}

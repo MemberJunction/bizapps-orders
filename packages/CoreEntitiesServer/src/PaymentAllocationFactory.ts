@@ -55,6 +55,8 @@
  *   DOC:      plans/archive/intercompany-balancing.md
  */
 import { GL_ROLE, type GLAccountResolver } from './GLAccountResolver.js';
+import { SplitExactly } from './BundleBehavior.js';
+import { SplitCashForCompany, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import type { PaymentJEDraft, PaymentJELine, PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 
 /** One order line's contribution, as far as allocation is concerned. */
@@ -128,6 +130,14 @@ export interface PaymentLineAllocationContext {
     PaymentDate: Date;
     /** True when un-applying (a refund or a negative allocation) — every entry mirrors. */
     IsReversal: boolean;
+    /**
+     * Every live instalment on the order, as it stood BEFORE this payment (D91). Absent or empty
+     * for the orders that have no schedule, which is nearly all of them, and then every credit is
+     * the single AR credit it has always been.
+     */
+    ScheduleRows?: InstalmentCashFacts[];
+    /** `PaymentLine.OrderHeaderPaymentScheduleID` — the payer said which instalment this is for. */
+    TargetPaymentScheduleID?: string | null;
 }
 
 export interface PaymentAllocationResult {
@@ -384,6 +394,54 @@ export class PaymentAllocationFactory {
         const slicesFor = (share: CompanyShare): DimensionSlice[] =>
             SliceByDimensions(share, ctx.OrderLines, ctx.TargetOrderLineID);
 
+        /**
+         * The customer's credit, per dimension slice, divided between the receivable it settles and
+         * the deposit it leaves (D91). A company with no live instalments gets its whole share on
+         * AR and no deposit line at all, so an unscheduled order's entry is unchanged.
+         *
+         * The division is done once for the company and then spread across its slices with
+         * `SplitExactly`, not decided slice by slice: the receivable is a fact about the company's
+         * billing, and dimensions are a fact about which lines the cash touched. Deciding per slice
+         * would let rounding move a penny between AR and Deferred.
+         */
+        const customerCreditLines = async (share: CompanyShare, sliceList: DimensionSlice[]): Promise<PaymentJELine[]> => {
+            const split = SplitCashForCompany(
+                share.Amount,
+                share.CompanyID,
+                ctx.ScheduleRows ?? [],
+                ctx.TargetPaymentScheduleID,
+            );
+            const arAccount = await this._resolver.Resolve(GL_ROLE.AccountsReceivable, null, null, share.CompanyID, asOf);
+            const arPieces = SplitExactly(split.Receivable, sliceList.map((sl) => sl.Amount));
+            const lines: PaymentJELine[] = [];
+
+            sliceList.forEach((slice, i) => {
+                if (arPieces[i] > 0) {
+                    lines.push({
+                        GLAccountID: arAccount,
+                        CreditAmount: arPieces[i],
+                        Description: `${label} ${ctx.PaymentNumber} — clear receivable on order ${ctx.OrderNumber}`,
+                        ...dims(slice.Dimensions),
+                    });
+                }
+            });
+            if (split.Deposit <= 0) return lines;
+
+            const deferredAccount = await this._resolver.Resolve(GL_ROLE.DeferredRevenue, null, null, share.CompanyID, asOf);
+            sliceList.forEach((slice, i) => {
+                const deposit = money(slice.Amount - arPieces[i]);
+                if (deposit > 0) {
+                    lines.push({
+                        GLAccountID: deferredAccount,
+                        CreditAmount: deposit,
+                        Description: `${label} ${ctx.PaymentNumber} — customer deposit on order ${ctx.OrderNumber}`,
+                        ...dims(slice.Dimensions),
+                    });
+                }
+            });
+            return lines;
+        };
+
         // Cash is ONE debit for the whole payment line, but it stands for every settled line —
         // including the other companies' — so it splits across all of their tag sets. Leaving it
         // bare while the credits are tagged would unbalance every dimension-filtered trial balance
@@ -396,15 +454,7 @@ export class PaymentAllocationFactory {
         }));
 
         if (ownShare) {
-            const arAccount = await this._resolver.Resolve(GL_ROLE.AccountsReceivable, null, null, receiving, asOf);
-            for (const slice of slicesFor(ownShare)) {
-                receivingLines.push({
-                    GLAccountID: arAccount,
-                    CreditAmount: slice.Amount,
-                    Description: `${label} ${ctx.PaymentNumber} — clear receivable on order ${ctx.OrderNumber}`,
-                    ...dims(slice.Dimensions),
-                });
-            }
+            receivingLines.push(...(await customerCreditLines(ownShare, slicesFor(ownShare))));
         }
         // No `else` and no error: a shared-services entity collecting purely on others' behalf owns
         // no line, so it has no receivable to clear. Its entry is Dr Cash / Cr Due To …, which is
@@ -443,14 +493,8 @@ export class PaymentAllocationFactory {
                 });
             }
 
-            // …and the owner's customer receivable becomes a receivable from the collector.
-            const otherAR = await this._resolver.Resolve(
-                GL_ROLE.AccountsReceivable,
-                null,
-                null,
-                share.CompanyID,
-                asOf,
-            );
+            // …and the owner's customer receivable becomes a receivable from the collector — or, when
+            // the owner is a scheduled company that has not billed this much yet, a deposit it holds.
             const lines: PaymentJELine[] = [];
             for (const slice of shareSlices) {
                 lines.push({
@@ -460,14 +504,7 @@ export class PaymentAllocationFactory {
                     ...dims(mergeDimensions(pair.DueFromDimensions, slice.Dimensions)),
                 });
             }
-            for (const slice of shareSlices) {
-                lines.push({
-                    GLAccountID: otherAR,
-                    CreditAmount: slice.Amount,
-                    Description: `${label} ${ctx.PaymentNumber} — clear receivable on order ${ctx.OrderNumber}`,
-                    ...dims(slice.Dimensions),
-                });
-            }
+            lines.push(...(await customerCreditLines(share, shareSlices)));
             otherDrafts.push(this.toDraft(ctx, mirrorIf(ctx.IsReversal, lines), share.CompanyID));
         }
 
