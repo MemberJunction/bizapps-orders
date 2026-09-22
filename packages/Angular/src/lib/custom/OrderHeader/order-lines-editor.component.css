@@ -691,7 +691,7 @@
 .mjo-ol-discount__title {
     font-size: var(--mj-text-xs);
     font-weight: var(--mj-font-semibold);
-    color: var(--mj-text-default);
+    color: var(--mj-text-primary);
 }
 
 .mjo-ol-discount__cap {
@@ -731,7 +731,7 @@
 
 .mjo-ol-discount__mode button.is-on {
     background: var(--mj-bg-surface-hover);
-    color: var(--mj-text-default);
+    color: var(--mj-text-primary);
     font-weight: var(--mj-font-semibold);
 }
 
