@@ -142,19 +142,46 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
         }
 
         // Position is stable: companies in ID order (as the document builder sorts them), the row's
-        // own InstallmentNumber, and how many live instalments its company has.
+        // own InstallmentNumber, and how many instalments its company has.
         const companyIDs = [...new Set((lines.Results ?? []).map((l) => String(l.CompanyID).toLowerCase()))].sort();
         const companyIndex = Math.max(0, companyIDs.indexOf(String(row.CompanyID).toLowerCase()));
-        const live = (siblings.Results ?? []).filter(
-            (s) => s.Status !== 'Canceled' && String(s.CompanyID).toLowerCase() === String(row.CompanyID).toLowerCase(),
-        );
+        const mine = (s: ScheduleRow): boolean =>
+            String(s.CompanyID).toLowerCase() === String(row.CompanyID).toLowerCase();
+
+        // THE COUNT INCLUDES CANCELLED ROWS, DELIBERATELY (golive #242, Robert). The suffix exists
+        // to disambiguate, and a cancelled instalment does not give its number back: archiving an
+        // invoice in Bill.com keeps the number, and re-presenting it 422s as a duplicate. Counting
+        // only live rows meant that cancelling a company's single instalment and adding a
+        // replacement produced the bare ORD-1234 a second time — the same number on two documents,
+        // one of which the customer may already hold.
+        const companyRows = (siblings.Results ?? []).filter(mine);
+        // The billing slice, by contrast, is taken against LIVE rows only: a cancelled instalment
+        // bills nothing and must not take a share of any line.
+        const live = companyRows.filter((s) => s.Status !== 'Canceled');
         const documentNumber = InstalmentDocumentNumber(
             order.OrderNumber,
             companyIndex,
             Math.max(1, companyIDs.length),
             Number(row.InstallmentNumber),
-            live.length,
+            companyRows.length,
         );
+
+        // AND REFUSE IF THAT NUMBER IS ALREADY ON THE ORDER. The count rule above prevents the
+        // collision this ticket found; this catches every other route to one — a hand-stamped row,
+        // an imported schedule, a renumbering — before the number is frozen and sent, rather than
+        // after Bill.com rejects it.
+        const clash = (siblings.Results ?? []).find(
+            (s) => s.DocumentNumber === documentNumber && String(s.ID).toLowerCase() !== String(row.ID).toLowerCase(),
+        );
+        if (clash) {
+            return this.refuse(
+                `Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} would be numbered ` +
+                    `${documentNumber}, which instalment ${clash.InstallmentNumber} of the same order already ` +
+                    `holds. Two documents cannot share a number — the customer's AP system and Bill.com both ` +
+                    `match on it. Renumber the instalments so each is distinct, then issue again.`,
+                echo,
+            );
+        }
         const invoicedAt = new Date();
 
         // THE BILLING ENTRY'S FACTS, READ HERE (D91). The emitter queries nothing; every number it

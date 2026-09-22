@@ -67,6 +67,15 @@ export interface AccountingEngineSurface {
     Dimensions: Array<{ ID: string; Code: string; IsActive: boolean }>;
     DimensionValues: Array<{ ID: string; DimensionID: string; Code: string; IsActive: boolean }>;
     /**
+     * Journal entry types this database actually has, by Code.
+     *
+     * Read before naming an EntryType that orders has added only as metadata JSON: a JSON row
+     * reaches a host at the release's Metadata_Sync and not before, and accounting refuses an
+     * unseeded code outright (ENTRY_TYPE_UNKNOWN), so an entry naming one would fail everywhere the
+     * release has not reached.
+     */
+    JournalEntryTypeByCode(code: string): { ID: string; Code: string } | undefined;
+    /**
      * The Due To / Due From pair for an ORDERED company pair (BA-D26), each leg carrying the
      * dimensions pinned on the match. `DimensionValueID` is nullable there by design.
      */
