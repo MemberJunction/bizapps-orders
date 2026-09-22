@@ -224,6 +224,27 @@ export function ComputeCatchUp(lineNet: number, percentComplete: number, recogni
     return { Target: target, Delta: money(target - recognizedToDate) };
 }
 
+/**
+ * Does a recognition entry post mirrored — debit and credit swapped — for this line and this delta?
+ *
+ * TWO SIGNS, AND THEY ARE DIFFERENT THINGS. A line's own sign says which direction its revenue runs:
+ * a reversal line (`Quantity < 0`) unwinds revenue, so its ORDINARY forward progress posts as an
+ * unrecognition. The event's sign says which way this particular observation moved: a backward slide
+ * takes revenue back out. Each one alone flips the entry; both together flip it twice, which is not
+ * a flip at all — un-un-recognising is recognising.
+ *
+ * So the rule is exclusive-or, and every other combination gets one of the four cases wrong. Taking
+ * the delta alone — which is what this did before — makes a reversal line's forward catch-up post as
+ * a RECOGNITION of revenue on a line whose whole purpose is to remove it. It balances, and nothing
+ * downstream reports it.
+ *
+ * A pure function rather than an expression inside the factory because it is the one piece of that
+ * method with four cases and no I/O, which is exactly the part worth pinning in a test.
+ */
+export function RecognitionMirrors(lineQuantity: number, delta: number): boolean {
+    return Number(lineQuantity) < 0 !== delta < 0;
+}
+
 /** Tree-shaking anchor — the shipped drivers must be registered before booking runs. */
 export function LoadRevenueRecognitionDrivers(): void {
     void ManualAttestationDriver;
