@@ -369,6 +369,7 @@ export type {
 export {
     AuthorizeManualDiscount,
     BasePromotionQualifier,
+    ManualDiscountAmount,
     LoadPromotionEngine,
     PromotionError,
     RunPromotions,

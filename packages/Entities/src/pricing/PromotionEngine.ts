@@ -532,8 +532,35 @@ export async function RunPromotions(
 
 export interface ManualDiscountRequest {
     OrderLineID?: string | null;
-    Amount: number;
+    /**
+     * The concession as money.
+     *
+     * Either this or {@link Percent} states the discount. When both are present the amount wins:
+     * it is the figure that was actually agreed, and a rate re-derived from it can only round.
+     */
+    Amount?: number | null;
+    /**
+     * The concession as a fraction of the base it reduces — `0.2` is twenty percent off.
+     *
+     * Resolved against the base BEFORE authorization, so the cap on a `SalesAuthority` compares
+     * like with like however the concession was expressed.
+     */
+    Percent?: number | null;
     Reason: string;
+}
+
+/**
+ * What a request comes to against the base it reduces.
+ *
+ * A discount is agreed either as money ("take $200 off") or as a rate ("give them 20%"), and the
+ * two are the same concession — so they resolve to one number here, once, rather than each caller
+ * deciding what a percentage means. The base is the line's net for a line-level request and the
+ * order's net for an order-level one, which is what makes the percentage mean what a person reading
+ * it expects.
+ */
+export function ManualDiscountAmount(request: ManualDiscountRequest, baseAmount: number): number {
+    if (request.Amount != null) return Money(Number(request.Amount));
+    return Money(Math.max(0, baseAmount) * Number(request.Percent ?? 0));
 }
 
 /**
@@ -555,6 +582,7 @@ export async function AuthorizeManualDiscount(
     ApprovedByUserID?: string | null;
     Refusal?: string;
 }> {
+    const amount = ManualDiscountAmount(request, baseAmount);
     if (!request.Reason?.trim()) {
         return { AuthorityID: null, NeedsApproval: false, Refusal: 'A manual discount must state a reason.' };
     }
@@ -563,6 +591,29 @@ export async function AuthorizeManualDiscount(
             AuthorityID: null,
             NeedsApproval: false,
             Refusal: 'A manual discount must be attributable to a user, and no user was supplied.',
+        };
+    }
+
+    // A DISCOUNT IS A REDUCTION, AND IT CANNOT EXCEED WHAT THERE IS TO REDUCE.
+    //
+    // Both of these are refused here rather than at the database, where they surface as
+    // `CK_OrderAdjustment_Amount` and a line total floored at zero — a constraint name and a
+    // silently-free line, neither of which tells the person who typed the number what was wrong
+    // with it. Checked before the authority lookup because they are true whoever is asking.
+    if (!(amount > 0)) {
+        return {
+            AuthorityID: null,
+            NeedsApproval: false,
+            Refusal: `A manual discount must be a positive amount; ${amount} is not one.`,
+        };
+    }
+    if (baseAmount > 0 && amount > baseAmount + 1e-9) {
+        return {
+            AuthorityID: null,
+            NeedsApproval: false,
+            Refusal:
+                `A discount of ${amount} is more than the ${baseAmount} it would reduce. A line cannot ` +
+                `be worth less than nothing — lower the discount, or reverse the line if it should not be sold.`,
         };
     }
 
@@ -587,7 +638,7 @@ export async function AuthorizeManualDiscount(
         };
     }
 
-    const pct = baseAmount > 0 ? request.Amount / baseAmount : 1;
+    const pct = baseAmount > 0 ? amount / baseAmount : 1;
     if (authority.MaxDiscountPct == null || pct <= Number(authority.MaxDiscountPct) + 1e-9) {
         return { AuthorityID: authority.ID, NeedsApproval: false, ApprovedByUserID: null };
     }

@@ -33,6 +33,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
+import { UUIDsEqual } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderLineEntity } from '../generated/entity_subclasses';
 import type { ComputeChargesResult } from './ChargeBehavior.js';
 import type { RequestedCharge } from './ChargeEngine.js';
@@ -43,7 +44,7 @@ import { RunCharges, SplitChargesByLine } from './ChargeEngine.js';
 import { PriceResolutionError, ResolvePrice } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
-import { AllocateProRata, LineGross, NetAfterDiscount } from './PricingBehavior.js';
+import { AllocateProRata, LineGross, Money, NetAfterDiscount } from './PricingBehavior.js';
 /**
  * The one thing this walk needs from the SERVER line subclass: somewhere to record the extended
  * amount it resolved.
@@ -56,6 +57,7 @@ type CarriesResolvedExtendedAmount = { ResolvedExtendedAmount?: number | null };
 import type { StackingMode } from './PromotionBehavior.js';
 import {
     AuthorizeManualDiscount,
+    ManualDiscountAmount,
     RunPromotions,
     WriteAdjustments,
     type PromotableLine,
@@ -277,10 +279,40 @@ export class OrderPricingService {
         );
         this.out.UnusableCodes = run.Unusable;
 
+        // A LINE THAT ALREADY CARRIES A DISCOUNT KEEPS IT.
+        //
+        // The stamp at the bottom of this method ASSIGNS `DiscountAmount`, which is right for a run
+        // that decided every discount on the line — a promotion pass does exactly that. A manual
+        // discount added to an order that already has one does not: this run knows only about the
+        // new request, so assigning would erase the stored figure while the earlier adjustment rows
+        // survive describing money the line no longer shows. Seeding the running total with what the
+        // line already carries makes the new request ACCUMULATE, and leaves the promotion case
+        // untouched because a line a promotion re-decided already has an entry here.
+        //
+        // Keyed off the VALUE rather than off `IsSaved`, so the preview walks agree with the booking
+        // walk: they price copies that were never saved, and hand them the stored discount to start
+        // from. A genuinely new line carries zero and is unaffected either way.
+        for (const l of lines) {
+            if (run.PerLine.has(l.ID)) continue;
+            const stored = Money(Number(l.Entity.DiscountAmount ?? 0));
+            if (stored > 0) run.PerLine.set(l.ID, stored);
+        }
+
         // Manual discounts are authorized individually — the cap is per user, not per order.
         for (const md of this.ctx.ManualDiscounts) {
-            const target = md.OrderLineID ? lines.find((l) => l.ID === md.OrderLineID) : null;
-            const base = target ? target.Net : lines.reduce((sum, l) => sum + l.Net, 0);
+            const target = md.OrderLineID ? this.manualDiscountTarget(md.OrderLineID, lines) : null;
+            // WHAT IS LEFT TO GIVE AWAY, not what the line started at. A second concession on a line
+            // that already carries one is judged against the remainder, so concessions cannot be
+            // stacked past the cap one authorized slice at a time — and cannot take the line below
+            // zero, where the net silently floors and the discount stops being visible anywhere.
+            // `PerLine` holds both what is already stored and what this loop has granted so far, so
+            // the first discount on a fresh line sees exactly the base it always saw.
+            const base = target
+                ? Money(target.Net - (run.PerLine.get(target.ID) ?? 0))
+                : lines.reduce((sum, l) => sum + l.Net, 0);
+            // A rate becomes money against the SAME base the authorization judges it on, so "20%"
+            // and "$240 off a $1,200 line" are one request expressed two ways rather than two paths.
+            const amount = ManualDiscountAmount(md, base);
             const auth = await AuthorizeManualDiscount(md, base, user?.ID ?? null, provider, user);
             if (auth.Refusal) throw new Error(`Manual discount refused: ${auth.Refusal}`);
 
@@ -289,17 +321,17 @@ export class OrderPricingService {
                     PromotionID: null,
                     PromotionCodeID: null,
                     OrderLineID: target.ID,
-                    Amount: md.Amount,
+                    Amount: amount,
                     Label: 'manual discount',
                     Reason: md.Reason,
                     AuthorizedBySalesAuthorityID: auth.AuthorityID,
                     ApprovedByUserID: auth.ApprovedByUserID ?? null,
                 });
-                run.PerLine.set(target.ID, Math.round(((run.PerLine.get(target.ID) ?? 0) + md.Amount) * 100) / 100);
+                run.PerLine.set(target.ID, Math.round(((run.PerLine.get(target.ID) ?? 0) + amount) * 100) / 100);
             } else {
                 // An order-level manual discount allocates exactly like an order-level promotion —
                 // it must reach the lines or tax and GL see the wrong base.
-                const parts = AllocateProRata(md.Amount, lines.map((l) => l.Net));
+                const parts = AllocateProRata(amount, lines.map((l) => l.Net));
                 lines.forEach((l, i) => {
                     if (parts[i] <= 0) return;
                     run.Applications.push({
@@ -323,6 +355,46 @@ export class OrderPricingService {
             if (total) l.Entity.DiscountAmount = total;
         }
         return run;
+    }
+
+    /**
+     * The line a manual discount names, whether it named it by REAL KEY or by position.
+     *
+     * The walk keys lines positionally, because an unsaved line has no id yet and the writer maps
+     * the keys back by index after the inserts. A caller composing an order on screen has the
+     * opposite problem: the line it is discounting is one the user can point at, so it names the
+     * real `OrderLine.ID`. Matching only the positional key meant such a request found no target and
+     * fell through to the ORDER-LEVEL branch, where it was allocated pro-rata across every line on
+     * the order — a different discount from the one that was asked for, applied silently, and with
+     * the adjustment row losing its line as well. Both spellings resolve here.
+     *
+     * A named line that is not on this order is REFUSED rather than widened into an order-level
+     * discount. Silently discounting lines the caller did not name is the failure this replaces.
+     *
+     * A BOOKED LINE IS REFUSED TOO. Trigger 51003 freezes a Confirmed line's financial fields, and
+     * the journal entry its discount would change has already been written; without this the save
+     * fails from inside the CRUD proc with a message naming neither the line nor the discount.
+     */
+    private manualDiscountTarget(orderLineID: string, lines: PromotableLine[]): PromotableLine {
+        // The real key matches whether or not the line has been saved: `NewRecord()` generates the
+        // uniqueidentifier the INSERT will carry, so a line composed on screen already has the id
+        // the caller is naming. Positional keys are digits and can never collide with a UUID.
+        const target =
+            lines.find((l) => l.ID === orderLineID) ??
+            lines.find((l) => !!l.Entity.ID && UUIDsEqual(l.Entity.ID, orderLineID));
+        if (!target) {
+            throw new Error(
+                `A manual discount names order line ${orderLineID}, which is not a line on this order. ` +
+                    `Discount a line the order actually has, or leave the line unset for an order-level discount.`,
+            );
+        }
+        if (target.Entity.JournalEntryID) {
+            throw new Error(
+                `Order line ${orderLineID} has been booked, so its money is frozen and a discount can no ` +
+                    `longer be applied to it. Reverse the line and re-sell it at the discounted price.`,
+            );
+        }
+        return target;
     }
 
     /**
