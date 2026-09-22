@@ -165,15 +165,28 @@ GO
 
 
 /* ---------------------------------------------------------------------------
-   CARVED CodeGen output for V202609221700 (OrderLine.BilledToDate / RecognizedToDate).
+   CodeGen output for V202609221700 (OrderLine.BilledToDate / RecognizedToDate),
+   generated on a database built from migrations alone (MJ_replay2), so it contains only
+   what this migration changed.
 
-   Generated against MJ_replay2 — a scratch database built from migrations alone, so this
-   output describes only what this migration changed. What was dropped, and why, is in
-   carve-aidp25-codegen.NOTES.md beside this file.
+   EDITS TO THE GENERATED TEXT, all deliberate:
+     1. Four Sequence literals replaced with the apply-time MAX + 1 expression, and
+        CodeGen's +100000 renumber block removed with them, per the #220 review rule. A
+        literal is only ever free on the database CodeGen ran against, and
+        UQ_EntityField_EntityID_Sequence is unique.
+     2. IF NOT EXISTS guards added on the two Event Order Lines IS-A inserts, which
+        CodeGen emits unguarded. Without them the migration throws a primary-key
+        violation on any database where CodeGen has already registered those fields.
 
-   Two Sequence values were rewritten by hand from CodeGen's literals to the apply-time
-   MAX + 1 expression, and CodeGen's +100000 renumber block was removed with them. The
-   literals were only ever free on the database CodeGen ran against.
+   OMITTED FROM THE FOLD because they belong elsewhere:
+     * The two Dimension / DimensionValue EntityRelationship rows — orders #236.
+     * The Order Headers.FulfillmentStatus value-list churn — already seeded by
+       V202609061900.
+     * The Event Products view and CRUD regeneration — untouched by this migration.
+
+   Event Order Lines IS included, deliberately: vwEventOrderLines selects from OrderLine,
+   so the IS-A subtype's view gains both columns whether or not anyone registers them,
+   and unregistered metadata against a wider view is the golive #256 defect exactly.
    --------------------------------------------------------------------------- */
 
 
