@@ -40,7 +40,7 @@
  *   payment-schedule     PS1–PS13  instalments on the order: tie, issue, per-instalment rollup and ageing (D85–D88)
  *   payment-deposit      PM1–PM12  cash ahead of billing is a deposit, and only the operation issues (D91)
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
- *   progress-measurement PM1–PM6   percentage-of-completion by attested catch-up: ties at 100%, slides back, preview writes nothing (D90)
+ *   progress-measurement PM1–PM7   percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
  *
  * Note that `events` and `line-subscriber` are listed out of order above because that is the order
  * they were written in; the runner's order is presentational — each bundle owns its own fixture.
