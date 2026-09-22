@@ -75,7 +75,7 @@ import { BuildOrder, ConfirmOrder } from '../order-builder.js';
 import { CreatePayment } from '../payment-builder.js';
 
 /** One instalment as a check authors it. */
-interface Instalment {
+export interface Instalment {
     InstallmentNumber: number;
     DueDate: string;
     Amount: number;
