@@ -39,6 +39,6 @@ hand-crafted outside it except where the row says "raw".
 
 | # | Where | Ask |
 |---|---|---|
-| U1 | Integrations `Finance/BillCom` | `ArchiveInvoice`/`RestoreInvoice` verbs (the catalog already declares `archivePath`/`restorePath`; nothing calls them). |
-| U2 | Integrations / engine | Honour `WatermarkValue` in `FetchChanges`. Unchanged. |
-| U3 | Integrations `Finance/BillCom` | Fix the double `/v3`: either seed paths without the version prefix (base URL owns it) or override `BuildFullURL` to collapse `/v3/v3/`. Also read array-shaped error bodies in `ExtractErrorMessage`. |
+| U1 — [#391](https://github.com/MemberJunction/Integrations/issues/391), fixed in PR [#392](https://github.com/MemberJunction/Integrations/pull/392) | Integrations `Finance/BillCom` | `ArchiveInvoice`/`RestoreInvoice` verbs (the catalog already declares `archivePath`/`restorePath`; nothing calls them). |
+| U2 — not filed | Integrations / engine | Honour `WatermarkValue` in `FetchChanges`. Unchanged. |
+| U3 — [#390](https://github.com/MemberJunction/Integrations/issues/390), fixed in PR [#392](https://github.com/MemberJunction/Integrations/pull/392) | Integrations `Finance/BillCom` | Fix the double `/v3`: either seed paths without the version prefix (base URL owns it) or override `BuildFullURL` to collapse `/v3/v3/`. Also read array-shaped error bodies in `ExtractErrorMessage`. |

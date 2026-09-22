@@ -486,9 +486,9 @@ Go-live is the renewal job's two acts: enable, read the preview run's list with 
 
 | # | Repo | Ask | Fallback if slow |
 |---|---|---|---|
-| U1 | Integrations `Finance/BillCom` | Expose archive/restore as a connector verb (or a generic `InvokeObjectAction(object, id, 'archive')`). | ~~Spike S1: `UpdateRecord({archived:true})` via `PUT` if BILL honours it.~~ **It does not (400).** The last resort is what shipped: `BillComGateway.archiveInvoice` calls `POST /invoices/{id}/archive` through the connector's session helpers (§13.7). |
-| U2 | MJ `integration-engine` / connector | Honour `WatermarkValue` in `FetchChanges` (`filters=updatedTime:gte:…`) or add a filtered `ListRecords`. | Full scan + local filter (works, scales poorly). |
-| U3 | Integrations `Finance/BillCom` | Fix the double `/v3` (seed paths without the version prefix, or collapse it in `BuildFullURL`); read BILL's array-shaped error bodies in `ExtractErrorMessage`. | Per-database metadata patch stripping `/v3` from the three objects' paths (applied to QA). |
+| U1 ([#391](https://github.com/MemberJunction/Integrations/issues/391), PR [#392](https://github.com/MemberJunction/Integrations/pull/392)) | Integrations `Finance/BillCom` | Expose archive/restore as a connector verb (or a generic `InvokeObjectAction(object, id, 'archive')`). | ~~Spike S1: `UpdateRecord({archived:true})` via `PUT` if BILL honours it.~~ **It does not (400).** The last resort is what shipped: `BillComGateway.archiveInvoice` calls `POST /invoices/{id}/archive` through the connector's session helpers (§13.7). |
+| U2 (not filed) | MJ `integration-engine` / connector | Honour `WatermarkValue` in `FetchChanges` (`filters=updatedTime:gte:…`) or add a filtered `ListRecords`. | Full scan + local filter (works, scales poorly). |
+| U3 ([#390](https://github.com/MemberJunction/Integrations/issues/390), PR [#392](https://github.com/MemberJunction/Integrations/pull/392)) | Integrations `Finance/BillCom` | Fix the double `/v3` (seed paths without the version prefix, or collapse it in `BuildFullURL`); read BILL's array-shaped error bodies in `ExtractErrorMessage`. | Per-database metadata patch stripping `/v3` from the three objects' paths (applied to QA). |
 | U3 | `aidp-next` | Add `@memberjunction/connector-bill-com` to `apps/MJAPI/package.json`; create the `Bill.com` `MJ: Integrations`/`Company Integrations`/`Credentials` rows per company (sandbox first). | None — deployment prerequisite. |
 | U4 | Integrations | Optional: ship the `customers` Get/Create Actions so agents can use them too. Not needed by this design. | — |
 
@@ -707,6 +707,14 @@ Full table in `2026-09-20-billcom-spike-results.md`. What it changed in this des
   number, so a re-issue after cancel must carry a distinct number (`-R1` suffix, Task 12). Reuse is not
   an option BILL offers.
 - **D-B12 stands.** Creating an invoice shows no sent indicator; the human gate remains BILL's Send.
+- **Filed and fixed upstream (2026-09-21).** Issues
+  [#390](https://github.com/MemberJunction/Integrations/issues/390) (double `/v3`, array-shaped errors) and
+  [#391](https://github.com/MemberJunction/Integrations/issues/391) (archive verb) on
+  MemberJunction/Integrations, with PR [#392](https://github.com/MemberJunction/Integrations/pull/392) against
+  `next` carrying both fixes plus `ArchiveInvoice`/`RestoreInvoice`; CI green, awaiting review. The PR needs no
+  metadata migration — the connector normalises a base URL that ends in `/v3` — so **once it releases, the QA
+  database's `/v3` patch becomes harmless rather than required**, and `BillComGateway.archiveInvoice` can move
+  to the connector verb.
 - **Open until Robert records a sandbox payment:** S2's status vocabulary; `BILLCOM_PAYMENT_STATUS` stays
   provisional and `TenderFor`'s `receivablesType` mapping is unverified.
 
