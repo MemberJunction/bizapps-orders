@@ -34,21 +34,42 @@
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 
-import { BuildGLAccountResolver, EntityIDFor, SubmitJournalEntryDrafts } from './AccountingBridge.js';
+import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, SubmitJournalEntryDrafts } from './AccountingBridge.js';
 import { SplitExactly } from './BundleBehavior.js';
 import { GL_ROLE } from './GLAccountResolver.js';
 import { BuildValueEntryLines, type JELineDraft } from './OrderJournalEntryFactory.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 
 /**
- * The journal entry type this entry is classified as.
+ * The journal entry type this entry is classified as — `InstalmentInvoice` where the target
+ * database has it, `OrderBooking` where it does not.
  *
- * `OrderBooking` because it IS the booking entry — the same construction, moved in time. Orders
- * seeds four types (`metadata/journal-entry-types`) and accounting refuses an unseeded code
- * (`ENTRY_TYPE_UNKNOWN`), so a new type would reach no host until a release regenerated a
- * `*__Metadata_Sync.sql` and would fail everywhere until then.
+ * Billing an instalment is not the same event as confirming an order, and once confirmation stops
+ * booking the whole contract a report has no other way to tell them apart, so orders seeds a
+ * distinct type (`metadata/journal-entry-types`, D92).
+ *
+ * BUT A JSON ROW REACHES A HOST ONLY AT THE RELEASE'S `Metadata_Sync`, and accounting refuses an
+ * unseeded code outright (`ENTRY_TYPE_UNKNOWN`). Naming it unconditionally would make every
+ * instalment invoice fail on any database the release has not reached — including, today, every
+ * developer's. So the code is used only when the row is actually present, and `OrderBooking` (what
+ * this entry was classified as before the new type existed) stands in until then, with a warning
+ * that says which it used and why.
  */
-const INVOICE_ENTRY_TYPE = 'OrderBooking';
+const INVOICE_ENTRY_TYPE = 'InstalmentInvoice';
+const INVOICE_ENTRY_TYPE_FALLBACK = 'OrderBooking';
+
+/** The entry type to name on the draft, given what this database actually has seeded. */
+async function resolveEntryType(provider: IMetadataProvider, user: UserInfo): Promise<string> {
+    const engine = await LoadAccountingEngine(provider, user);
+    if (engine.JournalEntryTypeByCode(INVOICE_ENTRY_TYPE)) return INVOICE_ENTRY_TYPE;
+    console.warn(
+        `Journal entry type '${INVOICE_ENTRY_TYPE}' is not seeded on this database, so instalment ` +
+            `billing entries are being classified as '${INVOICE_ENTRY_TYPE_FALLBACK}'. The entries are ` +
+            `correct and balanced; a report simply cannot tell a bill from a booking until the release ` +
+            `that carries orders' journal-entry-types metadata has been applied.`,
+    );
+    return INVOICE_ENTRY_TYPE_FALLBACK;
+}
 
 const money = (n: number): number => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
@@ -220,7 +241,7 @@ export async function EmitInstalmentInvoiceEntry(
         [
             {
                 EffectiveDate: asOf.toISOString().slice(0, 10),
-                EntryType: INVOICE_ENTRY_TYPE,
+                EntryType: await resolveEntryType(provider, user),
                 Description:
                     `Order ${context.OrderNumber} instalment ${context.InstallmentNumber} invoiced as ` +
                     `${context.DocumentNumber} — billing entry`,
