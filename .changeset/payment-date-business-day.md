@@ -1,6 +1,6 @@
 ---
 "@mj-biz-apps/orders-entities": minor
-"@mj-biz-apps/orders-core-entities-server": patch
+"@mj-biz-apps/orders-core-entities-server": minor
 "@mj-biz-apps/orders-ng": patch
 ---
 
@@ -27,8 +27,16 @@ order confirm, the allocation and processing-fee journal entries on the payment 
 allocation entry on the payment line, the order journal entry's effective date, the checkout
 service's pricing as-of day, and the Angular payment form's date field when it is cleared.
 
-A package-wide source guard now fails if any file in core-entities-server — or the Angular payment
-form — stamps `PaymentDate` or `OrderDate` from a bare `new Date()` again.
+Caller-supplied days are validated rather than absorbed: `AsDateValue` answers `null` for a
+well-formed day that does not exist (`2026-02-30`) instead of throwing a `RangeError` its callers
+cannot defend against, `RequireDate` refuses such a day rather than letting `Date.parse` roll it
+forward to another one, and `Orders.CapturePayment` refuses it at its boundary with a
+`BadPaymentDate` blocker instead of silently dating the payment today.
+
+Two package-wide source guards now fail if any file in core-entities-server — or the Angular payment
+form — stamps a `date` column from a bare `new Date()`, or writes "a day in hand, else the clock"
+under any binding name. The `asOf` sites still deferred are named in an explicit list with a
+staleness check, so converting one forces its removal.
 
 No schema change: a `DATE` column is read from UTC parts and written as UTC midnight. The business
 time zone decides only what "today" is.

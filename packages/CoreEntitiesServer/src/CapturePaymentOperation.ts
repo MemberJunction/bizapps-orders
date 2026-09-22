@@ -41,7 +41,7 @@ import {
 
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
-import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { RequireDate, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 
@@ -84,6 +84,18 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             RequireOptionalUUID(input?.PaymentIntentID, 'PaymentIntentID');
         } catch (e) {
             return this.refuse([this.blocker('BadPaymentIntentID', String((e as Error).message))]);
+        }
+
+        // A DAY THE CALLER NAMED IS STILL CALLER INPUT. `CalendarDayOrToday` cannot refuse — it
+        // normalises, and an unreadable value simply becomes today. For a capture that is the wrong
+        // answer: a payment silently dated today instead of the day the caller meant reconciles
+        // against the wrong bank day and nobody is told. Refused here, where the caller can read why.
+        if (input?.PaymentDate !== undefined && input?.PaymentDate !== null && input.PaymentDate !== '') {
+            try {
+                RequireDate(input.PaymentDate, 'PaymentDate');
+            } catch (e) {
+                return this.refuse([this.blocker('BadPaymentDate', String((e as Error).message))]);
+            }
         }
 
         const allocations = input?.Allocations ?? [];

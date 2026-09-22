@@ -369,6 +369,33 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             expect(ToISODate(header.PaymentDate)).toBe('2026-03-15');
         });
 
+        it('refuses a day that does not exist rather than absorbing it into today', async () => {
+            // `CalendarDayOrToday` normalises and cannot refuse — an unreadable value simply becomes
+            // today. For caller input that is the wrong answer: the payment would be dated today
+            // instead of the day the caller meant, reconcile against the wrong bank day, and say
+            // nothing. So the operation validates at its boundary, before anything is written.
+            const op = new CapturePaymentOperation() as unknown as {
+                InternalExecute(
+                    input: OrdersCapturePaymentInput,
+                    provider: IMetadataProvider,
+                    user: UserInfo,
+                ): Promise<{ Blockers?: Array<{ Code?: string; Message?: string }> }>;
+            };
+            const out = await op.InternalExecute(
+                {
+                    ReceivingCompanyID: CTX.receivingCompanyID,
+                    // Well-formed and not a real day: `Date.parse` rolls it to 2 March.
+                    PaymentDate: '2026-02-30',
+                    Allocations: [{ OrderHeaderID: '3f2504e0-4f89-41d3-9a0c-0305e82c3324', Amount: 10 }],
+                } as unknown as OrdersCapturePaymentInput,
+                {} as unknown as IMetadataProvider,
+                { ID: 'user-1' } as unknown as UserInfo,
+            );
+            // Refused before it touched the provider — the empty provider above would have thrown.
+            expect(out.Blockers?.some((b) => b.Code === 'BadPaymentDate')).toBe(true);
+            expect(out.Blockers?.[0]?.Message).toMatch(/not a real calendar day/);
+        });
+
         it('reduces a caller-supplied instant to its day, which a date column cannot do for itself', async () => {
             // `new Date(input.PaymentDate)` kept the time; the column then truncates it in UTC, so
             // a 9 PM Eastern instant was filed on the following day.

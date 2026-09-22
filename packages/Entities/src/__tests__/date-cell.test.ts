@@ -223,6 +223,17 @@ describe('AsDateValue', () => {
         expect(AsDateValue(new Date('nope'))).toBeNull();
     });
 
+    it('is null — not a thrown RangeError — for a well-formed day that does not exist', () => {
+        // `ToISODate` reads the SHAPE, so these reach `FromCalendarDay`, which rejects them by
+        // throwing. A normaliser that answers `null` for four kinds of bad input and throws for the
+        // fifth cannot be defended against: the Angular setter has no try/catch, and a capture
+        // carrying a typo'd date would have taken an unhandled error at an HTTP boundary.
+        expect(AsDateValue('2026-02-30')).toBeNull();
+        expect(AsDateValue('2026-13-01')).toBeNull();
+        expect(AsDateValue('2026-00-10')).toBeNull();
+        expect(AsDateValue('2026-06-31')).toBeNull();
+    });
+
     it('is pinned to midnight UTC, like TodayAsDateValue', () => {
         const v = AsDateValue('2026-08-27T13:45:11.500Z') as Date;
         expect([v.getUTCHours(), v.getUTCMinutes(), v.getUTCSeconds(), v.getUTCMilliseconds()]).toEqual([0, 0, 0, 0]);

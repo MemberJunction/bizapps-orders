@@ -164,10 +164,22 @@ export function TodayAsDateValue(): Date {
  *
  * Returns `null` rather than today for an absent or unreadable cell, so the caller decides what
  * absence means — usually `?? TodayAsDateValue()`, occasionally a refusal.
+ *
+ * "Unreadable" includes a well-FORMED day that does not exist: `'2026-02-30'` survives `ToISODate`,
+ * which only reads the shape, and `FromCalendarDay` then rejects it by throwing. A reader whose
+ * whole job is to normalise whatever arrived must not throw on one class of bad input and answer
+ * `null` on the others — a caller cannot defend against both, and the one that reaches this from
+ * an HTTP boundary would have taken a 500 for a typo. Callers that need the typo REPORTED rather
+ * than absorbed validate before calling: `RequireDate` in the server package does exactly that.
  */
 export function AsDateValue(value: unknown): Date | null {
     const day = ToISODate(value);
-    return day === null ? null : FromCalendarDay(day);
+    if (day === null) return null;
+    try {
+        return FromCalendarDay(day);
+    } catch {
+        return null;
+    }
 }
 
 /** The UTC calendar fields, zero-padded. */
