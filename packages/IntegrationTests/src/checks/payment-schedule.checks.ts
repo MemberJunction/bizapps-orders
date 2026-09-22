@@ -292,9 +292,30 @@ const allLedger = async (ctx: IntegrationCheckContext, orderID: string): Promise
     ...(await instalmentLedger(ctx, orderID)),
 ];
 
+/**
+ * Three instalments, the first of which falls ON the order date.
+ *
+ * Under D92 confirm ISSUES that first row, so an order built from this lands with instalment 1
+ * already `Invoiced`. Checks that need a row still `Scheduled` use {@link FUTURE} instead.
+ */
 const THREE = [
     { InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 100 },
     { InstallmentNumber: 2, DueDate: '2027-07-01', Amount: 100 },
+    { InstallmentNumber: 3, DueDate: '2028-07-01', Amount: 100 },
+];
+
+/**
+ * Three instalments, none of them due at confirm — so confirm issues nothing and every row is
+ * still `Scheduled` when the check starts.
+ *
+ * This is what every check about the instalment LIFECYCLE wants: freezing a number, re-amending a
+ * row, aiming a payment, working the billing list. Before D92 `THREE` served that purpose because
+ * confirm never issued anything; now it does, so the two fixtures say different things and the
+ * choice between them is the check's own statement about when it wants billing to have happened.
+ */
+const FUTURE = [
+    { InstallmentNumber: 1, DueDate: '2027-07-01', Amount: 100 },
+    { InstallmentNumber: 2, DueDate: '2027-10-01', Amount: 100 },
     { InstallmentNumber: 3, DueDate: '2028-07-01', Amount: 100 },
 ];
 
@@ -379,7 +400,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
-                const { orderID, ids, order, saved, message } = await scheduledOrder(ctx, THREE);
+                const { orderID, ids, order, saved, message } = await scheduledOrder(ctx, FUTURE);
                 Assert(saved, `confirm: ${message}`);
 
                 const first = await issue(ctx, ids[1]);
@@ -462,7 +483,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
-                const { orderID, ids, saved, message } = await scheduledOrder(ctx, THREE);
+                const { orderID, ids, saved, message } = await scheduledOrder(ctx, FUTURE);
                 Assert(saved, `confirm: ${message}`);
                 Assert((await issue(ctx, ids[1])).Success, 'issue row 2');
 
@@ -538,15 +559,20 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 const { orderID, ids, order, saved, message } = await scheduledOrder(ctx, THREE);
                 Assert(saved, `confirm: ${message}`);
 
+                // D92 CHANGED WHAT THIS LIST CAN EVER CONTAIN, and that is the point of the check
+                // now. Instalment 1 falls on the order date, so confirm issued it — a past-due row
+                // with no invoice behind it is no longer reachable on a confirmed order, which is
+                // precisely the gap this worklist existed to catch. What remains is the forward
+                // window: row 2, sixteen days out. Before D92 this asserted '1,2'.
                 const inWindow = await billingWorklist(ctx, '2027-06-15', 30);
                 const mine = inWindow.filter((r) => r.OrderNumber === order.OrderNumber);
-                AssertEqual(mine.map((r) => r.InstallmentNumber).join(','), '1,2', 'instalments 1 (past due) and 2 (16 days out); not 3');
-                AssertEqual(mine[1].InstallmentCount, 3, 'and it knows the row is 2 of 3');
-                AssertEqual(mine[1].DaysUntilDue, 16, 'days until due, as a number');
+                AssertEqual(mine.map((r) => r.InstallmentNumber).join(','), '2', 'row 2 is 16 days out; 1 was issued at confirm and 3 is far off');
+                AssertEqual(mine[0].InstallmentCount, 3, 'and it knows the row is 2 of 3');
+                AssertEqual(mine[0].DaysUntilDue, 16, 'days until due, as a number');
 
                 Assert((await issue(ctx, ids[1])).Success, 'issue row 2');
                 const after = (await billingWorklist(ctx, '2027-06-15', 30)).filter((r) => r.OrderNumber === order.OrderNumber);
-                AssertEqual(after.map((r) => r.InstallmentNumber).join(','), '1', 'an issued instalment has an invoice behind it and leaves the list');
+                AssertEqual(after.length, 0, 'an issued instalment has an invoice behind it and leaves the list');
                 void orderID;
             }),
     },
@@ -563,7 +589,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                     Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 300 }],
                 });
                 Assert(await draft.Order.Save(), 'draft saves');
-                const [id] = await addInstalments(ctx, draft.Order.ID as string, [{ InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 300 }]);
+                const [id] = await addInstalments(ctx, draft.Order.ID as string, [{ InstallmentNumber: 1, DueDate: '2027-07-01', Amount: 300 }]);
 
                 const onDraft = await issue(ctx, id);
                 Assert(!onDraft.Success, 'a Draft order has no receivable to invoice');
