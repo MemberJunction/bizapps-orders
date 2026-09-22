@@ -24,9 +24,19 @@
  * and it is why this pair of rules belongs to every driver rather than to percentage-of-completion
  * alone (Andrew, #227).
  *
- * A NEGATIVE AMOUNT IS THE SAME SUBTRACTION. Attested progress can slide backwards — 70% down to
- * 55% — and that is not a special case: the pieces come back signed, off the same balances, and the
- * caller mirrors them into the opposite sides exactly as a reversal line does (D16).
+ * TWO SIGNS, TWO DIFFERENT MECHANISMS — do not conflate them.
+ *
+ *   THE EVENT'S SIGN is handled INSIDE this rule. `amount` is signed: attested progress can slide
+ *   backwards (70% down to 55%), and that is not a special case. A backward move relieves whatever
+ *   the forward move opened, so it comes off the same balance, and the pieces come back signed for
+ *   the caller to post on the opposite sides.
+ *
+ *   THE LINE'S SIGN is NOT handled here. A reversal line (`Quantity < 0`) is mirrored ONCE at the
+ *   end by the caller, exactly as the journal factory has always handled a negative quantity (D16)
+ *   — the same accounts with the debit and credit swapped at a positive amount, never a negative
+ *   debit. So callers pass MAGNITUDES for `billed`, `recognized` and `amount` when the line
+ *   reverses, and mirror the finished entry. The stored totals are themselves signed by the line,
+ *   which is why `Math.abs` appears at those call sites and not in here.
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */

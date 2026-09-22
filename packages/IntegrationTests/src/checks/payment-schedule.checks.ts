@@ -97,7 +97,7 @@ interface ScheduleRow {
 }
 
 /** The schedule as stored, oldest first. Dates come back `YYYY-MM-DD` so a check compares days. */
-const schedule = (ctx: IntegrationCheckContext, orderID: string) =>
+export const schedule = (ctx: IntegrationCheckContext, orderID: string) =>
     TxQuery<ScheduleRow>(
         ctx,
         `SELECT ID, InstallmentNumber, CompanyID, CONVERT(varchar(10), DueDate, 23) AS DueDate, Amount, AmountPaid, Balance, Status,
@@ -132,7 +132,13 @@ async function addInstalments(ctx: IntegrationCheckContext, orderID: string, row
 }
 
 /** A $300 draft order with a schedule, then confirmed. Returns the order and its rows. */
-async function scheduledOrder(
+/**
+ * A confirmed order with a payment schedule, for any check that needs one.
+ *
+ * EXPORTED so #227's Scenario 4 check builds its project from the same fixture rather than a
+ * lookalike: two fixtures that drift are two different claims about what a scheduled order is.
+ */
+export async function scheduledOrder(
     ctx: IntegrationCheckContext,
     rows: Instalment[],
     over: { gross?: number; productID?: string } = {},
@@ -165,7 +171,8 @@ async function confirm(ctx: IntegrationCheckContext, orderID: string) {
 }
 
 /** Pay `amount` against an order, optionally aimed at one instalment. */
-async function pay(ctx: IntegrationCheckContext, orderID: string, amount: number, scheduleID?: string) {
+/** Pay against an order, optionally naming one instalment. Exported for the same reason. */
+export async function pay(ctx: IntegrationCheckContext, orderID: string, amount: number, scheduleID?: string) {
     const f = Fx();
     const cash = f.PaymentTypeIDs.get('Cash');
     Assert(cash != null, "PaymentType 'Cash' missing — push the orders app metadata");
@@ -189,7 +196,8 @@ function operation<I, O>(key: string) {
     return op!;
 }
 
-async function issue(ctx: IntegrationCheckContext, scheduleID: string) {
+/** Issue one instalment through the real operation. Exported for the same reason. */
+export async function issue(ctx: IntegrationCheckContext, scheduleID: string) {
     const result = await operation<{ OrderHeaderPaymentScheduleID: string }, IssueOutput>('Orders.IssueInstalmentInvoice').Execute(
         { OrderHeaderPaymentScheduleID: scheduleID },
         { provider: ctx.Provider, user: ctx.User },
