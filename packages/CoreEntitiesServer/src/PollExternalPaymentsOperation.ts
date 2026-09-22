@@ -51,6 +51,19 @@ import { LoadExternalInvoicesByRef, updateExternalInvoice } from './IssueExterna
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
 const RAIL_OBJECT = 'receivable-payments';
+/**
+ * The currency the receiving company books in. Mirrors `PaymentHeaderEntityServer.functionalCurrency`,
+ * including its USD fallback when no accounting profile exists.
+ */
+async function functionalCurrencyFor(companyID: string, provider: IMetadataProvider, user: UserInfo): Promise<string> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<{ FunctionalCurrencyCode: string | null }>(
+        { EntityName: 'MJ_BizApps_Accounting: Accounting Company Profiles', ExtraFilter: `ID = '${RequireUUID(companyID, 'ReceivingCompanyID')}'`, ResultType: 'simple' },
+        user,
+    );
+    return (r?.Results?.[0]?.FunctionalCurrencyCode ?? 'USD').trim().toUpperCase();
+}
+
 const OVERLAP_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX = 100;
 
@@ -155,6 +168,9 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         const ready = await rail.CheckConfiguration();
         if (ready.Success === false) return { Outcomes: [], NewWatermark: null, Fault: `${rail.Config.Name}: ${ready.Reason}` };
 
+        // Resolved once per provider: every payment it captures books in this company's currency.
+        const bookingCurrency = await functionalCurrencyFor(rail.Config.CompanyID, provider, user);
+
         let state = await loadSyncState(paymentProviderID, provider, user);
         // An unreadable stored watermark reads as "none" rather than faulting every pass forever.
         const storedWatermark = instant(state?.Watermark);
@@ -194,7 +210,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         for (const p of payments) {
             try {
                 const prior = seen.get(p.ExternalPaymentRef) ?? null;
-                const outcome = await this.handlePayment(rail, p, prior, opts.preview, provider, user);
+                const outcome = await this.handlePayment(rail, p, prior, opts.preview, bookingCurrency, provider, user);
                 outcomes.push(outcome);
             } catch (err) {
                 // One bad payment must not stop the pass — but it must stop the watermark.
@@ -231,6 +247,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         p: RailPaymentRecord,
         prior: ExternalPaymentRow | null,
         preview: boolean,
+        bookingCurrency: string,
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<ExternalPaymentOutcome> {
@@ -282,6 +299,17 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 : allocation.Reason;
             await record('Unmatched', reason);
             return { ...base, Disposition: 'Unmatched', Reason: reason };
+        }
+
+        // ORDERS BOOKS AT PAR AND APPLIES NO RATE. `Orders.CapturePayment` takes no currency; the cash
+        // leg is booked in the receiving company's functional currency. So a payment the rail reports in
+        // anything else cannot be captured here — doing so booked 1,000 CAD as 1,000 USD, silently.
+        if (p.CurrencyCode && p.CurrencyCode !== bookingCurrency) {
+            const reason =
+                `${p.ExternalPaymentRef} is ${money(p.Amount).toFixed(2)} ${p.CurrencyCode}, but ${rail.Config.Name} books in ${bookingCurrency}. ` +
+                `Orders applies no exchange rate on capture, so recording it here would misstate the cash. Record it by hand at the rate you used.`;
+            await record('Refused', reason, null);
+            return { ...base, Disposition: 'Refused', Reason: reason };
         }
 
         const notes = [`Bill.com receivable payment ${p.ExternalPaymentRef}`];

@@ -23,7 +23,7 @@ import {
 import { EXTERNAL_INVOICE_ENTITY, ORDER_HEADER_ENTITY, PAYMENT_LINE_ENTITY } from './entity-names.js';
 import { DecideCancel, money } from './ExternalInvoiceBehavior.js';
 import { ResolveInvoiceRail } from './InvoiceRailResolver.js';
-import { stampScheduleRow, updateExternalInvoice, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
+import { PaidOnBillingUnit, stampScheduleRow, updateExternalInvoice, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
 @RegisterClass(BaseRemotableOperation, 'Orders.CancelExternalInvoice')
@@ -88,15 +88,7 @@ export function LoadCancelExternalInvoiceOperation(): void {
 
 /** Sum of captured allocations against the unit: the instalment when named, else the whole order. */
 export async function paidOnUnit(row: ExternalInvoiceRow, provider: IMetadataProvider, user: UserInfo): Promise<number> {
-    const rv = new RunView(provider as unknown as IRunViewProvider);
-    const filters = [`OrderHeaderID = '${RequireUUID(String(row.OrderHeaderID), 'OrderHeaderID')}'`];
-    if (row.OrderHeaderPaymentScheduleID) {
-        filters.push(`OrderHeaderPaymentScheduleID = '${RequireUUID(String(row.OrderHeaderPaymentScheduleID), 'OrderHeaderPaymentScheduleID')}'`);
-    }
-    // Only money that is actually captured counts; a Pending or Failed header is not cash.
-    filters.push(`PaymentHeaderID IN (SELECT ID FROM [__mj_BizAppsOrders].[PaymentHeader] WHERE Status IN ('Captured','Refunded','Disputed'))`);
-    const r = await rv.RunView<{ Amount: number }>({ EntityName: PAYMENT_LINE_ENTITY, ExtraFilter: filters.join(' AND '), Fields: ['Amount'], ResultType: 'simple' }, user);
-    return money((r.Results ?? []).reduce((s, l) => s + Number(l.Amount), 0));
+    return PaidOnBillingUnit(String(row.OrderHeaderID), row.OrderHeaderPaymentScheduleID ? String(row.OrderHeaderPaymentScheduleID) : null, provider, user);
 }
 
 async function clearHeaderDocumentNumber(provider: IMetadataProvider, user: UserInfo, orderID: string, documentNumber: string): Promise<void> {

@@ -81,6 +81,13 @@ export function BuildExternalInvoicePayload(
     doc: InvoiceDocument,
     unit: ExternalInvoiceUnitFacts,
     invoiceDate: string,
+    /**
+     * Money captured against THIS unit, from `PaidOnBillingUnit`. Pass it: `doc.AmountPaid` is a
+     * pro-rata spread across the order's selling companies, which on a split order credited one
+     * company's payment to another and refused that other company's invoice as part-paid forever.
+     * Omitted only by tests that construct a document directly.
+     */
+    paidOnUnit?: number,
 ): { OK: true; Payload: ExternalInvoicePayload } | { OK: false; Reason: string } {
     if (doc.Kind !== 'Invoice') {
         return { OK: false, Reason: `${doc.DocumentNumber} is a ${doc.Kind.toLowerCase()}, not an invoice, and cannot be sent to the rail.` };
@@ -113,10 +120,11 @@ export function BuildExternalInvoicePayload(
     // An order billed as a whole is sent for its GROSS, so money already applied to it would be
     // billed twice — a checkout deposit, an early check. Bill.com has no "payment received" line we
     // can trust to net it, so this unit is refused and a person decides (design §5.1, review finding 6).
-    if (money(doc.AmountPaid) > TIE_TOLERANCE) {
+    const applied = money(paidOnUnit ?? doc.AmountPaid);
+    if (applied > TIE_TOLERANCE) {
         return {
             OK: false,
-            Reason: `${doc.DocumentNumber} already has ${money(doc.AmountPaid).toFixed(2)} applied; sending the full ${amount.toFixed(2)} to the rail would bill the customer twice. Record the balance by hand or issue a schedule.`,
+            Reason: `${doc.DocumentNumber} already has ${applied.toFixed(2)} applied; sending the full ${amount.toFixed(2)} to the rail would bill the customer twice. Record the balance by hand or issue a schedule.`,
         };
     }
     const lines: ExternalInvoiceLine[] = [];
@@ -124,7 +132,13 @@ export function BuildExternalInvoicePayload(
     if (money(doc.ChargeTotal) !== 0) lines.push({ Description: 'Charges', Quantity: 1, UnitPrice: money(doc.ChargeTotal) });
     if (money(doc.TaxTotal) !== 0) lines.push({ Description: 'Tax', Quantity: 1, UnitPrice: money(doc.TaxTotal) });
 
-    const total = money(lines.reduce((s, l) => s + l.Quantity * l.UnitPrice, 0));
+    // ROUND EACH LINE, THEN SUM — the order every invoice system totals in, ours and the rail's.
+    // Summing raw products instead drifts: `rowLines` derives a unit price from an already-rounded
+    // line amount, so a fractional quantity leaves a sub-cent tail on every line. Three lines of
+    // 2.5 × 13.33 summed raw give 99.98 against a unit amount of 99.99, and since both sides are
+    // cent-quantised the 0.005 tolerance is exact equality — a correctly priced order was refused
+    // and parked as Failed for good.
+    const total = money(lines.reduce((s, l) => s + money(l.Quantity * l.UnitPrice), 0));
     if (Math.abs(total - amount) > TIE_TOLERANCE) {
         return {
             OK: false,
@@ -189,11 +203,20 @@ export function DecideInvoiceable(i: {
         case 'Sent':
             return { Verdict: 'AlreadySent', Code: 'ALREADY_SENT', Reason: 'This unit already has a live invoice on the rail.' };
         case 'Sending':
-            return {
-                Verdict: 'Refuse',
-                Code: 'IN_FLIGHT',
-                Reason: 'A send for this unit is in flight or was interrupted. Reconcile it (adopt the rail reference or mark it Failed) before sending again.',
-            };
+            // A claim is kept when a send could not be confirmed (a timeout, a dropped socket), so this
+            // state also means "the rail may or may not hold an invoice for this unit". Automatic retry
+            // must never resolve that — it is how the customer gets two invoices — but a person who has
+            // looked in Bill.com must be able to, and `AllowReissue` is how they say so.
+            if (!i.AllowReissue) {
+                return {
+                    Verdict: 'Refuse',
+                    Code: 'IN_FLIGHT',
+                    Reason:
+                        'A send for this unit is in flight, or was interrupted before the rail confirmed it. Check the rail: if the ' +
+                        'invoice is there, record its reference against this unit; if it is not, send again with AllowReissue.',
+                };
+            }
+            break;
         case 'Canceled':
         case 'Failed':
             if (!i.AllowReissue) {

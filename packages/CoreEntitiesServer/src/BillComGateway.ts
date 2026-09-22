@@ -29,8 +29,14 @@ import { IntegrationEngineBase } from '@memberjunction/integration-engine-base';
 
 export interface BillComGatewaySeams {
     loadCompanyIntegration(companyIntegrationID: string, provider: IMetadataProvider, user: UserInfo): Promise<MJCompanyIntegrationEntity>;
-    /** `'sandbox' | 'production'` from the credential's `environment`; null when unreadable. */
-    loadCredentialEnvironment(ci: MJCompanyIntegrationEntity, provider: IMetadataProvider, user: UserInfo): Promise<string | null>;
+    /**
+     * Which BILL gateway this connection actually talks to.
+     *
+     * `Known` carries `'sandbox'` or `'production'`; `Unknown` carries why it could not be read. It is a
+     * discriminated result rather than a nullable string because the caller must REFUSE on Unknown —
+     * an environment nobody can read is exactly the case where sandbox money gets recorded as cash.
+     */
+    loadCredentialEnvironment(ci: MJCompanyIntegrationEntity, provider: IMetadataProvider, user: UserInfo): Promise<RailEnvironment>;
     createRecord(ci: MJCompanyIntegrationEntity, object: string, attrs: Record<string, unknown>, user: UserInfo): Promise<CRUDResult>;
     updateRecord(ci: MJCompanyIntegrationEntity, object: string, externalID: string, attrs: Record<string, unknown>, user: UserInfo): Promise<CRUDResult>;
     getRecord(ci: MJCompanyIntegrationEntity, object: string, externalID: string, user: UserInfo): Promise<ExternalRecord | null>;
@@ -67,6 +73,39 @@ export function UseBillComGatewaySeams(s: BillComGatewaySeams | null): void {
 
 export function CurrentBillComGatewaySeams(): BillComGatewaySeams | null {
     return seams;
+}
+
+/** `sandbox` or `production`, or the reason it could not be determined. Never a silent default. */
+export type RailEnvironment = { Known: true; Environment: 'sandbox' | 'production' } | { Known: false; Reason: string };
+
+/**
+ * Read the effective environment out of a credential or Configuration blob.
+ *
+ * `apiUrl` OUTRANKS `environment`, because it outranks it in the connector: `ResolveBaseURL` uses an
+ * explicit apiUrl and only falls back to the environment string. Trusting `environment` alone let
+ * `{environment: 'production', apiUrl: '<stage>'}` pass a live provider's check and then talk to
+ * sandbox — and the reverse, which is the one that records play money as revenue.
+ */
+export function environmentFrom(blob: string | null | undefined, whereFrom: string): RailEnvironment {
+    if (!blob || !blob.trim()) return { Known: false, Reason: `${whereFrom} is empty` };
+    let parsed: Record<string, unknown>;
+    try {
+        parsed = JSON.parse(blob) as Record<string, unknown>;
+    } catch {
+        // An encrypted value that reached us still encrypted lands here. Refusing is the point.
+        return { Known: false, Reason: `${whereFrom} is not readable JSON (an encrypted value that was not decrypted reads this way)` };
+    }
+    const url = String(parsed.apiUrl ?? parsed.ApiUrl ?? parsed.ApiURL ?? parsed.baseUrl ?? parsed.BaseURL ?? '').trim().toLowerCase();
+    if (url) {
+        if (url.includes('gateway.prod.') || url.includes('//api.bill.com')) return { Known: true, Environment: 'production' };
+        if (url.includes('.stage.') || url.includes('sandbox') || url.includes('-test.')) return { Known: true, Environment: 'sandbox' };
+        return { Known: false, Reason: `${whereFrom} sets an apiUrl this app cannot classify as sandbox or production ('${url}')` };
+    }
+    const env = String(parsed.environment ?? parsed.Environment ?? '').trim().toLowerCase();
+    if (env === 'production') return { Known: true, Environment: 'production' };
+    if (env === 'sandbox') return { Known: true, Environment: 'sandbox' };
+    if (!env) return { Known: false, Reason: `${whereFrom} sets neither environment nor apiUrl` };
+    return { Known: false, Reason: `${whereFrom} sets environment '${env}', which is neither sandbox nor production` };
 }
 
 const MAX_PAGES = 200;
@@ -110,16 +149,19 @@ export function DefaultBillComGateway(provider: IMetadataProvider): BillComGatew
             return ci;
         },
         async loadCredentialEnvironment(ci, p, user) {
-            if (!ci.CredentialID) return null;
-            const cred = await p.GetEntityObject<MJCredentialEntity>('MJ: Credentials', user);
-            if (!(await cred.Load(ci.CredentialID))) return null;
-            try {
-                const values = JSON.parse(cred.Values ?? '{}') as Record<string, unknown>;
-                const env = values.environment ?? values.Environment;
-                return env == null ? 'sandbox' : String(env);
-            } catch {
-                return null;
+            // The connector resolves credentials from the credential row OR, when there is none, from
+            // CompanyIntegration.Configuration. Both are read here for the same reason: a connection
+            // configured the second way is fully functional, and reading only the first left it with no
+            // environment check at all.
+            if (ci.CredentialID) {
+                const cred = await p.GetEntityObject<MJCredentialEntity>('MJ: Credentials', user);
+                if (!(await cred.Load(ci.CredentialID))) {
+                    return { Known: false, Reason: `credential ${ci.CredentialID} could not be read` };
+                }
+                return environmentFrom(cred.Values, 'the credential');
             }
+            if (ci.Configuration) return environmentFrom(ci.Configuration, "the Company Integration's Configuration");
+            return { Known: false, Reason: 'the Company Integration names neither a credential nor a Configuration' };
         },
         async createRecord(ci, object, attrs, user) {
             const c = await connectorFor(ci, provider, user);

@@ -90,6 +90,14 @@ export interface RailPaymentRecord {
     Status: string | null;
     /** True when the rail moved the money itself; false when a person recorded money that arrived elsewhere. */
     OnlinePayment: boolean | null;
+    /**
+     * ISO-4217 as the rail reports it, or null when it reports none.
+     *
+     * Orders books a capture in the receiving company's functional currency and applies no rate, so a
+     * payment in anything else must be REFUSED rather than booked one-for-one. Null is treated as
+     * "the rail did not say", which the poller resolves against the company rather than assuming.
+     */
+    CurrencyCode: string | null;
     ReceivablesType: string | null;
     /** The rail's updated-time, ISO — the watermark candidate. */
     UpdatedAt: string | null;

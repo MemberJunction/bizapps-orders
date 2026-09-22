@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CRUDResult, ExternalRecord, FetchBatchResult } from '@memberjunction/integration-engine';
 import { BillComInvoiceRail, NormalizeReceivablePayment } from '../BillComInvoiceRail.js';
-import { UseBillComGatewaySeams, type BillComGatewaySeams } from '../BillComGateway.js';
+import { UseBillComGatewaySeams, environmentFrom, type BillComGatewaySeams, type RailEnvironment } from '../BillComGateway.js';
 
 interface Call { verb: string; object: string; attrs?: Record<string, unknown>; id?: string; watermark?: string | null }
 const calls: Call[] = [];
@@ -40,7 +40,7 @@ const paymentBatch = (): FetchBatchResult => ({
     HasMore: false,
 });
 
-let environment: string | null = 'sandbox';
+let environment: RailEnvironment = { Known: true, Environment: 'sandbox' };
 let archivedOnRead = false;
 
 const seams = (): BillComGatewaySeams => ({
@@ -67,7 +67,7 @@ const facts = (over: Partial<Parameters<BillComInvoiceRail['IssueInvoice']>[0]> 
     ...over,
 });
 
-beforeEach(() => { calls.length = 0; environment = 'sandbox'; archivedOnRead = false; UseBillComGatewaySeams(seams()); });
+beforeEach(() => { calls.length = 0; environment = { Known: true, Environment: 'sandbox' }; archivedOnRead = false; UseBillComGatewaySeams(seams()); });
 afterEach(() => UseBillComGatewaySeams(null));
 
 describe('BillComInvoiceRail.IssueInvoice', () => {
@@ -111,6 +111,59 @@ describe('BillComInvoiceRail.IssueInvoice', () => {
         UseBillComGatewaySeams({ ...seams(), createRecord: async () => ({ Success: false, StatusCode: 400, ErrorMessage: 'invoiceNumber INV-500 already exists; amount 500.00 rejected' }) });
         const moneyNotStatus = await rail().IssueInvoice(facts());
         if (!moneyNotStatus.Success) expect(moneyNotStatus.Transient).toBe(false);
+    });
+});
+
+/**
+ * The environment guard used to SKIP when it could not read the environment, which meant every
+ * connection configured in a way the reader did not expect ran unchecked. These pin the refusal.
+ */
+describe('NormalizeReceivablePayment — currency', () => {
+    it('carries the rail currency so the poller can refuse what it cannot book at par', () => {
+        const withCcy = NormalizeReceivablePayment('0rp9', { id: '0rp9', amount: 1000, currency: 'cad', invoicePayments: [] });
+        expect(withCcy.CurrencyCode).toBe('CAD');
+        const without = NormalizeReceivablePayment('0rp9', { id: '0rp9', amount: 1000, invoicePayments: [] });
+        expect(without.CurrencyCode).toBeNull();
+    });
+});
+
+describe('environment guard', () => {
+    it('refuses when the environment cannot be determined, rather than carrying on', async () => {
+        environment = { Known: false, Reason: 'the credential is not readable JSON' };
+        const r = await rail().IssueInvoice(facts());
+        expect(r.Success).toBe(false);
+        if (!r.Success) expect(r.Reason).toMatch(/cannot tell whether/i);
+        expect(calls.filter((c) => c.verb === 'create')).toHaveLength(0);
+    });
+
+    it('refuses a live row on a sandbox connection and a non-live row on production', async () => {
+        environment = { Known: true, Environment: 'sandbox' };
+        expect((await rail(true).IssueInvoice(facts())).Success).toBe(false);
+        environment = { Known: true, Environment: 'production' };
+        expect((await rail(false).IssueInvoice(facts())).Success).toBe(false);
+        expect((await rail(true).IssueInvoice(facts())).Success).toBe(true);
+    });
+});
+
+describe('environmentFrom', () => {
+    it('reads the plain environment key in either casing', () => {
+        expect(environmentFrom('{"environment":"production"}', 'x')).toEqual({ Known: true, Environment: 'production' });
+        expect(environmentFrom('{"Environment":"sandbox"}', 'x')).toEqual({ Known: true, Environment: 'sandbox' });
+    });
+
+    it('lets apiUrl outrank environment, because it outranks it in the connector', () => {
+        expect(environmentFrom('{"environment":"production","apiUrl":"https://gateway.stage.bill.com/connect/v3"}', 'x'))
+            .toEqual({ Known: true, Environment: 'sandbox' });
+        expect(environmentFrom('{"environment":"sandbox","apiUrl":"https://gateway.prod.bill.com/connect/v3"}', 'x'))
+            .toEqual({ Known: true, Environment: 'production' });
+    });
+
+    it('reports WHY it cannot tell, and never guesses', () => {
+        for (const blob of ['', '   ', 'not json', '{}', '{"environment":"staging"}', '{"apiUrl":"https://mock.local/x"}']) {
+            const r = environmentFrom(blob, 'the credential');
+            expect(r.Known).toBe(false);
+            if (!r.Known) expect(r.Reason.length).toBeGreaterThan(0);
+        }
     });
 });
 

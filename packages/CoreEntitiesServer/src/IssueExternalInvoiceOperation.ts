@@ -39,6 +39,7 @@ import {
     ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
     ORDER_LINE_ENTITY,
     ORGANIZATION_ENTITY,
+    PAYMENT_LINE_ENTITY,
     PERSON_ENTITY,
 } from './entity-names.js';
 import {
@@ -133,6 +134,32 @@ export class IssueExternalInvoiceOperation extends OrdersIssueExternalInvoiceOpe
             return { Success: false, ResultCode: 'ERROR', Message: err instanceof Error ? err.message : String(err) };
         }
     }
+}
+
+/**
+ * Money actually captured against one billing unit.
+ *
+ * WHY THE ISSUE PATH NEEDS THIS AND NOT `doc.AmountPaid`. On a multi-company order the document builder
+ * spreads an order-level payment across companies pro rata by gross — a reasonable way to PRINT a
+ * split document, and the wrong basis for deciding whether a unit may be invoiced. Company A's invoice
+ * being paid gave company B's document a non-zero `AmountPaid`, so B's unit was refused as part-paid
+ * and never billed at all. PaymentLine rows carry the unit, so this answers the question directly.
+ */
+export async function PaidOnBillingUnit(
+    orderHeaderID: string,
+    orderHeaderPaymentScheduleID: string | null,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<number> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const filters = [`OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`];
+    if (orderHeaderPaymentScheduleID) {
+        filters.push(`OrderHeaderPaymentScheduleID = '${RequireUUID(orderHeaderPaymentScheduleID, 'OrderHeaderPaymentScheduleID')}'`);
+    }
+    // Only money that is actually captured counts; a Pending or Failed header is not cash.
+    filters.push(`PaymentHeaderID IN (SELECT ID FROM [__mj_BizAppsOrders].[PaymentHeader] WHERE Status IN ('Captured','Refunded','Disputed'))`);
+    const r = await rv.RunView<{ Amount: number }>({ EntityName: PAYMENT_LINE_ENTITY, ExtraFilter: filters.join(' AND '), Fields: ['Amount'], ResultType: 'simple' }, user);
+    return money((r.Results ?? []).reduce((s, l) => s + Number(l.Amount), 0));
 }
 
 /** Registers {@link IssueExternalInvoiceOperation}. Called from the server bootstrap. */
@@ -274,7 +301,13 @@ export async function IssueOneUnit(
               DocumentNumber: CompanyDocumentNumber(order.OrderNumber, Math.max(0, [...lineCompanies].sort().indexOf(companyID.toLowerCase())), Math.max(1, lineCompanies.length)),
           };
     const invoiceDate = isoDate(row?.InvoicedAt ?? order.ConfirmedAt) ?? Today();
-    const payload = BuildExternalInvoicePayload(doc, unitFacts, invoiceDate);
+    const payload = BuildExternalInvoicePayload(
+        doc,
+        unitFacts,
+        invoiceDate,
+        // The money really applied to THIS unit, not the document's pro-rata share of the order's.
+        await PaidOnBillingUnit(order.ID, row ? String(row.ID) : null, provider, user),
+    );
     if (payload.OK === false) {
         // Two refusals are permanent facts about the unit's MONEY (part-paid, does not tie): record
         // them once as Failed so the sweep skips them and the queue shows them. The others (nothing
@@ -339,6 +372,27 @@ export async function IssueOneUnit(
     // 8. The rail.
     const issued = await rail.IssueInvoice({ ...payload.Payload, ExternalCustomerRef: customer.ExternalCustomerRef });
     if (issued.Success === false) {
+        // A TRANSIENT FAILURE MEANS WE DO NOT KNOW WHETHER THE INVOICE EXISTS. A timeout or a dropped
+        // socket is the ordinary case where Bill.com committed the invoice and we never saw the reply.
+        // Writing `Failed` here put the unit back outside `UQ_ExternalInvoice_LiveUnit` (which covers
+        // only Sending and Sent) AND classified the reason as retryable — so the half-hourly sweep sent
+        // the same invoice number again and the customer received two invoices for one billing unit.
+        //
+        // The claim therefore STAYS, and a person decides. `AllowReissue` is how they say "I checked
+        // Bill.com and there is no invoice"; re-issuing is already a deliberate act on this rail (D-B7).
+        if (issued.Transient) {
+            await updateExternalInvoice(provider, user, externalInvoiceID, {
+                LastError: `Uncertain: ${issued.Reason}. The invoice may or may not exist on the rail — check Bill.com for ${payload.Payload.DocumentNumber} before re-issuing.`,
+            });
+            return refuse(
+                'UNCERTAIN',
+                `${payload.Payload.DocumentNumber} could not be confirmed with ${rail.Config.Name}: ${issued.Reason}. ` +
+                    `The invoice may already exist there, so this unit is left claimed rather than sent again automatically. ` +
+                    `Check Bill.com: if the invoice is there, record it against this unit; if it is not, send again with AllowReissue.`,
+                { ExternalInvoiceID: externalInvoiceID, DocumentNumber: payload.Payload.DocumentNumber, Amount: payload.Payload.Amount },
+            );
+        }
+        // A refusal is a fact about the data: Bill.com answered, and it said no. Nothing was created.
         await updateExternalInvoice(provider, user, externalInvoiceID, { Status: 'Failed', LastError: issued.Reason });
         return refuse('RAIL_REFUSED', issued.Reason, { ExternalInvoiceID: externalInvoiceID, DocumentNumber: payload.Payload.DocumentNumber, Amount: payload.Payload.Amount });
     }

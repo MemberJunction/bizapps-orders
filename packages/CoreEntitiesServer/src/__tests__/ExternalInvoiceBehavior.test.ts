@@ -31,6 +31,66 @@ const whole = (over: Partial<ExternalInvoiceUnitFacts> = {}): ExternalInvoiceUni
     CompanyID: 'c', InstallmentNumber: 1, InstallmentCount: 1, DueDate: '2026-10-01', Amount: 265.25, DocumentNumber: null, ...over,
 });
 
+/**
+ * Two ways the payload builder used to refuse orders it should have sent. Both were found by review
+ * after the rail was already working end to end, and both park the unit as Failed for good.
+ */
+/**
+ * An unconfirmed send leaves the claim in place. Automatic retry of that state is how one billing unit
+ * became two invoices in a customer's inbox: the rail had committed the invoice and only the response
+ * was lost, so "retry the timeout" meant "send it again".
+ */
+describe('DecideInvoiceable — an interrupted send', () => {
+    const sending = (allowReissue: boolean) =>
+        DecideInvoiceable({ OrderStatus: 'Confirmed', HasSchedule: false, ScheduleRowStatus: null, ScheduleRowNamed: false, ExistingStatus: 'Sending', AllowReissue: allowReissue });
+
+    it('refuses an automatic retry and says how to check', () => {
+        const d = sending(false);
+        expect(d.Verdict).toBe('Refuse');
+        expect(d.Code).toBe('IN_FLIGHT');
+        expect(d.Reason).toMatch(/check the rail/i);
+    });
+
+    it('lets a person who has checked the rail re-issue deliberately', () => {
+        expect(sending(true).Verdict).toBe('Issue');
+    });
+});
+
+describe('BuildExternalInvoicePayload — refusals that should not happen', () => {
+    it('sends a fractional-quantity order instead of drifting a cent per line', () => {
+        // 2.5 × 13.332 stores as 33.33 a line. rowLines derives 13.33 back out, so summing the raw
+        // products gave 99.98 against a unit amount of 99.99 — and with both sides cent-quantised the
+        // half-cent tolerance is exact equality, so a correctly priced order was refused.
+        const rows = [row(1, 33.33, 2.5), row(2, 33.33, 2.5), row(3, 33.33, 2.5)];
+        const d = doc({ Rows: rows, ChargeTotal: 0, TaxTotal: 0, ListSubtotal: 99.99, NetTotal: 99.99, Gross: 99.99, AmountDue: 99.99 });
+        const r = BuildExternalInvoicePayload(d, whole({ Amount: 99.99 }), '2026-09-22');
+        expect(r.OK).toBe(true);
+        if (r.OK) {
+            expect(r.Payload.Amount).toBe(99.99);
+            // Every line carries real money; the rail totals them the same way we just did.
+            const total = r.Payload.Lines.reduce((s, l) => s + Math.round(l.Quantity * l.UnitPrice * 100) / 100, 0);
+            expect(Math.round(total * 100) / 100).toBe(99.99);
+        }
+    });
+
+    it('judges "already paid" on money applied to THIS unit, not the order-wide spread', () => {
+        // On a split order the document builder spreads an order-level payment across companies pro
+        // rata, so company A's payment showed up on company B's document and refused B's invoice.
+        const d = doc({ AmountPaid: 120 });
+        const spread = BuildExternalInvoicePayload(d, whole(), '2026-09-22');
+        expect(spread.OK).toBe(false); // without the unit figure, the spread still refuses
+
+        const unitTruth = BuildExternalInvoicePayload(d, whole(), '2026-09-22', 0);
+        expect(unitTruth.OK).toBe(true); // nothing was captured against this unit, so it may be sent
+    });
+
+    it('still refuses when the money really was applied to this unit', () => {
+        const r = BuildExternalInvoicePayload(doc({ AmountPaid: 0 }), whole(), '2026-09-22', 120);
+        expect(r.OK).toBe(false);
+        if (!r.OK) expect(r.Reason).toMatch(/120\.00 applied/);
+    });
+});
+
 describe('BuildExternalInvoicePayload', () => {
     it('schedule-less: one line per row, plus charges and tax, tying to the cent', () => {
         const r = BuildExternalInvoicePayload(doc(), whole(), '2026-09-22');

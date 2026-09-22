@@ -23,6 +23,8 @@ export type OrdersIssueExternalInvoiceResultCode =
     | 'PART_PAID'
     | 'NOT_INVOICEABLE'
     | 'RAIL_REFUSED'
+    /** The rail call did not complete; the invoice may or may not exist there. The claim is kept. */
+    | 'UNCERTAIN'
     | 'ERROR';
 
 export interface OrdersIssueExternalInvoiceOutput {

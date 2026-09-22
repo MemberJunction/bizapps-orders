@@ -1542,6 +1542,8 @@ export type OrdersIssueExternalInvoiceResultCode =
     | 'PART_PAID'
     | 'NOT_INVOICEABLE'
     | 'RAIL_REFUSED'
+    /** The rail call did not complete; the invoice may or may not exist there. The claim is kept. */
+    | 'UNCERTAIN'
     | 'ERROR';
 
 export interface OrdersIssueExternalInvoiceOutput {
@@ -1590,6 +1592,8 @@ export type OrdersCancelExternalInvoiceResultCode =
     | 'HAS_PAYMENT'
     | 'PAYMENT_PENDING_ON_RAIL'
     | 'RAIL_REFUSED'
+    /** The rail call did not complete; the invoice may or may not exist there. The claim is kept. */
+    | 'UNCERTAIN'
     | 'ERROR';
 
 export interface OrdersCancelExternalInvoiceOutput {

@@ -4,7 +4,7 @@
 -- golive #148: poll Bill.com for receivable payments and create exactly one Payment per cleared
 -- payment. ExternalPayment records EVERY rail payment the poller has seen and what it did with it —
 -- Captured (with the PaymentHeader it made), Held (not yet cleared, or an unknown status), Unmatched
--- (an invoice we did not issue), Ignored, or ReversalNeeded (captured, and the rail now says void).
+-- (an invoice we did not issue), Ignored, Refused, or ReversalNeeded (captured, and the rail now says void).
 -- The audit trail and the exceptions worklist are the same table. The D19 idempotency guarantee is
 -- PaymentHeader.IdempotencyKey ('billcom:0rp…') and its unique index; this row is the cheap lookup
 -- in front of it and the answer to "why was this payment not applied".

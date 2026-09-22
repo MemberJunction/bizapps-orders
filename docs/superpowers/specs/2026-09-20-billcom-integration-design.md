@@ -690,6 +690,55 @@ the fixes introduced; all four are fixed:
 - **Deploy prerequisites carried forward:** bizapps-common ≥ 5.43 on the host (`fnBusinessToday`) and the
   `BizApps.BusinessTimeZone` configuration row set to Central — `aidp-next` pins common 5.42.0 today.
 
+### 13.9 2026-09-22 — adversarial review, and the six defects it found
+
+A four-dimension review (money, concurrency, security, migrations) over the whole branch. Six defects
+were fixed; the rest are recorded here or in the plan.
+
+1. **Migration ordering, and it was the worst of them.** While this branch sat unpushed, `next` gained
+   `V202609221500`. The Bill.com migrations started at `V202609221000`, below it, so the CI append-only
+   gate fails and the runner refuses to migrate at all on a database holding the newer one. Renumbered
+   to `V2026092215{51,52,53}`. The QA database's history rows were rewritten to match; nothing re-ran.
+   **This is the second time these files have been renumbered, and the reason it is dangerous both
+   times is that they carry no `IF NOT EXISTS` guards** — a renumber makes them new versions, so they
+   re-execute, and plain `CREATE TABLE` then fails and rolls the whole run back. CLAUDE.md asks for
+   idempotent migrations; #220 asked for plain DDL. That conflict is still unruled and is now the
+   thing standing between this branch and a safe renumber. **Robert: this needs a decision.**
+2. **The tie check refused correctly priced orders.** `rowLines` derives a unit price from an
+   already-rounded line amount, and the check summed the raw products. Three lines of 2.5 × 13.33 gave
+   99.98 against a unit amount of 99.99, and with both sides cent-quantised the half-cent tolerance is
+   exact equality, so the order was parked as `Failed` for good. The check now rounds per line, which
+   is how every invoice system totals, ours and the rail's.
+3. **A timed-out send put a second invoice in front of the customer.** Bill.com commits the invoice,
+   the response is lost, the row was written `Failed` — outside the live-unit unique index — and the
+   timeout classified as transient, so the half-hourly sweep sent the same invoice number again. The
+   claim now STAYS on an unconfirmed send (`UNCERTAIN`), and only a person who has looked in Bill.com
+   can clear it with `AllowReissue`. That also makes `Sending` recoverable, which it was not.
+4. **The live/sandbox guard was fail-open.** It skipped whenever it could not read the environment: no
+   credential row, an unparseable credential, an encrypted value that arrived encrypted. It also read
+   only `environment` while the connector lets `apiUrl` outrank it. It now returns a discriminated
+   result, reads the Company Integration's `Configuration` as well, derives the environment from
+   `apiUrl` when present, and **refuses** when it cannot tell.
+5. **Currency did not exist anywhere in the rail.** A 1,000 CAD payment booked as 1,000 USD, silently,
+   because `Orders.CapturePayment` books in the receiving company's functional currency and applies no
+   rate. The rail now carries `CurrencyCode` and the poller refuses what it cannot book at par.
+6. **On a split-company order one company was never invoiced.** The part-paid guard read
+   `doc.AmountPaid`, which is a pro-rata spread across the order's selling companies — so company A's
+   payment credited company B's document and refused B's invoice forever. The guard now reads
+   `PaidOnBillingUnit`, the money actually captured against that unit.
+
+**Corrected during verification.** The security review reported that polling requires `orders:write`
+while capture requires `payments:write`, allowing a narrow key to record cash. Both declare
+`orders:write`; there is no escalation. Separately, the migration runner does NOT silently skip an
+out-of-order file as first reported — it refuses to migrate, loudly. Still a blocker, different shape.
+
+**Known and not fixed here** (recorded so they are not rediscovered): the transient/permanent
+classifier matches vendor prose rather than the status code it already has, and is wrong in both
+directions; `refreshInvoices` pairs invoice ids with rail references positionally over an unordered
+query; an amended Bill.com payment's delta is ignored once captured; the webhook has no replay
+protection and a batch of sends can trigger concurrent polls; native delivery refuses quotes and credit
+memos at any company with a rail; `ExternalInvoice.Amount > 0` makes a zero-value unit unrecordable.
+
 ### 13.8 2026-09-22 — where the provider abstraction leaks
 
 Robert asked whether Bill.com is hard-coded or swappable. The seam is real: `BaseInvoiceRail` is

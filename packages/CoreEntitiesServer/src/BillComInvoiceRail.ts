@@ -78,14 +78,22 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
         const gw = BillComGateway(this.Provider);
         const ci = await gw.loadCompanyIntegration(this.Config.CompanyIntegrationID, this.Provider, this.User);
         const env = await gw.loadCredentialEnvironment(ci, this.Provider, this.User);
-        if (env !== null) {
-            const credentialIsLive = env.toLowerCase() === 'production';
-            if (credentialIsLive !== this.Config.IsLiveMode) {
-                throw new Error(
-                    `Payment provider '${this.Config.Name}' is ${this.Config.IsLiveMode ? 'LIVE' : 'not live'} but its Bill.com credential is ` +
-                        `'${env}'. Refusing rather than sending a real customer a sandbox invoice, or recording sandbox money as cash.`,
-                );
-            }
+        if (env.Known === false) {
+            // REFUSING, NOT SKIPPING. This check previously treated "could not tell" as "carry on",
+            // which meant a connection configured any way the reader did not expect — no credential row,
+            // a credential that would not parse, an encrypted value that arrived encrypted — ran with no
+            // environment check at all. The whole point of the check is the case where we are unsure.
+            throw new Error(
+                `Payment provider '${this.Config.Name}' cannot be used: this app cannot tell whether its Bill.com ` +
+                    `connection points at sandbox or production, because ${env.Reason}. Refusing rather than risking a real ` +
+                    `customer receiving a sandbox invoice, or sandbox money being recorded as cash.`,
+            );
+        }
+        if ((env.Environment === 'production') !== this.Config.IsLiveMode) {
+            throw new Error(
+                `Payment provider '${this.Config.Name}' is ${this.Config.IsLiveMode ? 'LIVE' : 'not live'} but its Bill.com connection is ` +
+                    `'${env.Environment}'. Refusing rather than sending a real customer a sandbox invoice, or recording sandbox money as cash.`,
+            );
         }
         return { gw, ci };
     }
@@ -235,6 +243,7 @@ export function NormalizeReceivablePayment(externalID: string, x: Record<string,
         PaymentDate: str(x.paymentDate)?.slice(0, 10) ?? null,
         Status: str(x.status),
         OnlinePayment: typeof x.onlinePayment === 'boolean' ? x.onlinePayment : null,
+        CurrencyCode: str(x.currency ?? x.currencyCode ?? x.Currency)?.trim().toUpperCase() || null,
         ReceivablesType: str(x.receivablesType),
         UpdatedAt: CanonicalInstant(x.updatedTime),
         InvoicePayments: ip.map((p) => ({ ExternalInvoiceRef: String(p.invoiceId ?? ''), Amount: num(p.amount), PaymentDate: str(p.paymentDate) })),
