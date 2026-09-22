@@ -315,12 +315,19 @@ export async function EmitInstalmentInvoiceEntry(
             }
         }
 
-        // What this instalment bills for this line — the AR debit, which is what BilledToDate
-        // means. Recorded per line so the caller advances the totals in the same transaction.
-        // Advanced by ±piece according to the line's own sign, for the same reason the totals are
-        // signed at all: a reversal must subtract what its origin added.
-        const arDebit = money(built.reduce((t, l) => (l.GLAccountID === arAccount ? t + (l.DebitAmount ?? 0) : t), 0));
-        billedByLine.set(line.ID, line.Quantity < 0 ? money(-arDebit) : arDebit);
+        // What this instalment BILLED of this line's revenue — its NET piece, not the AR debit.
+        //
+        // BilledToDate and RecognizedToDate must be on the SAME basis or the gap between them is
+        // meaningless, and `RecognizedToDate` counts revenue: net, after discount, which is what
+        // Sales and Deferred are credited. The AR debit is net + tax + charges, and tax and charges
+        // credit their own accounts — they never touch Deferred. Advancing B by the AR debit would
+        // make `B − R` overstate the deferred balance by the tax and charges on every line, so
+        // rule 2 would relieve Deferred for money that was never deferred and open too little
+        // Unbilled. Invisible, of course: every entry still balances.
+        //
+        // Signed by the line, for the same reason the totals are signed at all — a reversal must
+        // subtract what its origin added.
+        billedByLine.set(line.ID, line.Quantity < 0 ? money(-netPiece) : netPiece);
 
         // A reversal line mirrors, exactly as booking mirrors it (D16): the same accounts with the
         // sides swapped at a positive amount, never a negative debit.
