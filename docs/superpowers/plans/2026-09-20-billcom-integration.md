@@ -1127,18 +1127,25 @@ export class IssueExternalInvoiceOperation extends OrdersIssueExternalInvoiceOpe
 
 # Phase 4 — UI and release
 
-### Task 19: Angular — order form panel, Bill.com queue page, Billing worklist column
+### Task 19: Angular — order form panel, external invoicing queue page, Billing worklist column
+
+> **Name the provider from data, never in the copy.** The backend seam is provider-neutral
+> (`BaseInvoiceRail` keyed by `PaymentProviderType.Code`), so the UI must be too: read
+> `PaymentProvider.Name` and show *that*. A button reading "Send to Bill.com" is a second place to edit
+> the day a company invoices through something else, and it is wrong on a screen showing two companies
+> on different rails. Label the section "External invoicing", the page "Invoicing queue", and let the
+> button read `Send to {{providerName}}`.
 
 **Files:**
 - Create: `packages/Angular/src/lib/panels/external-invoices-panel.component.ts` (standalone; used inside `custom/OrderHeader/order-header-form.component.html`)
-- Create: `packages/Angular/src/lib/pages/receivables/billcom-queue.page.ts`
-- Modify: `packages/Angular/src/lib/sections/section-nav.model.ts` + `orders-sections.component.ts` (`resolvePage` case) — rail entry "Bill.com queue" under Receivables; `packages/Angular/src/lib/pages/receivables/billing.page.ts` (add `Sent` column reading the schedule row's `SentAt`); `public-api.ts`
+- Create: `packages/Angular/src/lib/pages/receivables/external-invoicing-queue.page.ts`
+- Modify: `packages/Angular/src/lib/sections/section-nav.model.ts` + `orders-sections.component.ts` (`resolvePage` case) — rail entry "Invoicing queue" under Receivables; `packages/Angular/src/lib/pages/receivables/billing.page.ts` (add `Sent` column reading the schedule row's `SentAt`); `public-api.ts`
 - Test: `packages/Angular/src/lib/sections/__tests__/rail-coverage.test.ts` (auto-covers the new rail entry), `packages/Angular/src/lib/panels/__tests__/external-invoices-panel.test.ts` (render states)
 
-- [ ] **Step 1: Panel** — inputs `orderID`; loads `ExternalInvoice` rows via `RunView` (`EXTERNAL_INVOICE_ENTITY`, `ExtraFilter` on `OrderHeaderID`), shows `DocumentNumber`, `Status`, `ExternalInvoiceRef`, `SentAt`, `LastError`; buttons **Send to Bill.com** (`new OrdersIssueExternalInvoiceOperation().Execute({ OrderHeaderID, CompanyID, OrderHeaderPaymentScheduleID, AllowReissue })` — shown when the company has a rail and the unit is unsent/canceled/failed; confirm dialog via `MJConfirmService`) and **Cancel in Bill.com** (`OrdersCancelExternalInvoiceOperation`, prompts for `Reason`). Hidden entirely when the panel's first load finds no rail for any of the order's companies (call `Orders.GetExternalInvoicingWorklist`? No — expose rail presence cheaply: `RunView` on `PaymentProvider` with `IsActive=1` and the BillCom type, same subquery as `FindInvoiceRailForCompany`). Plain-English copy (golive #210 precedent).
+- [ ] **Step 1: Panel** — inputs `orderID`; loads `ExternalInvoice` rows via `RunView` (`EXTERNAL_INVOICE_ENTITY`, `ExtraFilter` on `OrderHeaderID`), shows `DocumentNumber`, `Status`, `ExternalInvoiceRef`, `SentAt`, `LastError`; buttons **Send to {{providerName}}** (`new OrdersIssueExternalInvoiceOperation().Execute({ OrderHeaderID, CompanyID, OrderHeaderPaymentScheduleID, AllowReissue })` — shown when the company has a rail and the unit is unsent/canceled/failed; confirm dialog via `MJConfirmService`) and **Cancel in {{providerName}}** (`OrdersCancelExternalInvoiceOperation`, prompts for `Reason`). Hidden entirely when the panel's first load finds no rail for any of the order's companies (call `Orders.GetExternalInvoicingWorklist`? No — expose rail presence cheaply: `RunView` on `PaymentProvider` with `IsActive=1` and the BillCom type, same subquery as `FindInvoiceRailForCompany`). Plain-English copy (golive #210 precedent).
 - [ ] **Step 2: Queue page** — two tabs: *Unsent invoices* (`OrdersGetExternalInvoicingWorklistOperation`, `IncludeFailed: true`, row action Send) and *Payment exceptions* (`RunView` on `EXTERNAL_PAYMENT_ENTITY` with `Disposition IN ('Held','Unmatched','ReversalNeeded')`, columns ref/amount/date/status/reason, link to the ScheduledJobRun is not needed). A **Run now** button per tab calls the sweep/poll operation with `Preview:false` behind a confirm.
 - [ ] **Step 3: Billing worklist** — add a `Sent` column (`SentAt` formatted, or "—").
-- [ ] **Step 4:** `pnpm run build` (Angular) and `pnpm run test:unit` green; screenshots of the panel and queue in the PR. Commit `feat(orders-ng): Bill.com panel on the order, and the Bill.com queue page`.
+- [ ] **Step 4:** `pnpm run build` (Angular) and `pnpm run test:unit` green; screenshots of the panel and queue in the PR. Commit `feat(orders-ng): external invoicing panel on the order, and the invoicing queue page`.
 
 ---
 

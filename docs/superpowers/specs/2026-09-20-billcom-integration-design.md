@@ -690,6 +690,28 @@ the fixes introduced; all four are fixed:
 - **Deploy prerequisites carried forward:** bizapps-common ≥ 5.43 on the host (`fnBusinessToday`) and the
   `BizApps.BusinessTimeZone` configuration row set to Central — `aidp-next` pins common 5.42.0 today.
 
+### 13.8 2026-09-22 — where the provider abstraction leaks
+
+Robert asked whether Bill.com is hard-coded or swappable. The seam is real: `BaseInvoiceRail` is
+class-factory keyed by `PaymentProviderType.Code`, `INVOICE_RAIL_TYPE_CODES` is a list, the four new
+tables and all five operations are named for the concept rather than the vendor, and every Bill.com
+specific is confined to four files. A second rail is a new `PaymentProviderType` row, a class, and one
+entry in that list.
+
+Three places leak the vendor into provider-neutral code, and should be closed before a second rail —
+not now, because a single-provider abstraction that has never met its second case is a guess:
+
+1. **`BILLCOM_PAYMENT_STATUS` and `TenderFor` live in `ExternalPaymentBehavior.ts`**, which is otherwise
+   generic. Both encode one vendor's vocabulary. They belong on the rail: `BaseInvoiceRail` should
+   expose `ClassifyStatus(status)` and `TenderFor(payment)` so each rail owns its own words. This is the
+   structural one.
+2. **User-facing strings name the vendor** in generic code: the capture note (`Bill.com receivable
+   payment …`) and the unmatched reason in `AllocateInvoicePayments`. Both should read the provider's
+   `Name` from its row.
+3. **The planned UI named it in the copy** — "Send to Bill.com", "Bill.com queue". Task 19 is corrected
+   to read `PaymentProvider.Name`, which is also the only correct behaviour on a screen showing two
+   companies on different rails.
+
 ### 13.7 2026-09-21 evening — first live sandbox run
 
 Full table in `2026-09-20-billcom-spike-results.md`. What it changed in this design:
