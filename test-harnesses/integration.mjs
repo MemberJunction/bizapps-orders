@@ -126,6 +126,7 @@ const ALL_BUNDLES = [
     'embedded-payment-detail',
     'payment-schedule',
     'payment-deposit',
+    'contract-reversal',
     'party-roster',
     'progress-measurement',
     'volume',

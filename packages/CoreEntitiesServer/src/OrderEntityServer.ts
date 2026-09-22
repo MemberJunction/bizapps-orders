@@ -66,6 +66,7 @@ import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { CreditMemoByLine, InstalmentsToCancel, RefuseEarnedNotBilled } from './ContractBalance.js';
+import { ScheduledCompanyIDs } from './PaymentScheduleBehavior.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
@@ -1733,6 +1734,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
         for (const line of reversals) {
             const context = await LoadReversalContext(line.ReversesOrderLineID, provider, user, [line.ID]);
             if (!context) continue; // applyReversalOrigin already refused anything unresolvable
+
+            // ONLY A SCHEDULED ORIGIN GETS A MEMO, and "scheduled" is a fact about the ORIGIN's
+            // company — not about this order, which is a reversal and has no schedule of its own.
+            // A line sold without instalments booked its value at confirm and is unwound by the
+            // mirrored entry that has always handled it; giving it a memo as well would credit the
+            // customer twice. On a multi-company origin only the company that actually has rows
+            // qualifies, which is why the origin's CompanyID is carried rather than inferred.
+            const scheduled = ScheduledCompanyIDs(
+                context.ScheduleRows.map((r) => ({ CompanyID: r.CompanyID, DueDate: r.DueDate, Amount: 0, Status: r.Status })),
+            );
+            if (!scheduled.has(String(context.Origin.CompanyID ?? '').toLowerCase())) continue;
+
             const byOrigin = CreditMemoByLine([
                 {
                     OrderLineID: context.Origin.ID,
