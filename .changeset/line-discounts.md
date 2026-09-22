@@ -50,6 +50,14 @@ A discount larger than the thing it discounts was accepted. It floored the net a
 zero or negative amount, failed at `CK_OrderAdjustment_Amount` — a constraint name, to someone who
 had typed a number. Both are refused with a sentence now.
 
+A fifth was the header-only shortcut in `OrderEntityServer.Save`, which asks whether the LINES are
+dirty. Staging a request touches no line, so the flow a person actually runs — open a saved draft,
+discount a line, save — skipped the drain, the authorization and the stamp, and handed the staged row
+to the graph as an ordinary related record: an adjustment with no authority, no allocation and no
+change to the line. The shortcut now also asks whether anything is staged. Staged CHARGES had the
+same hole and are covered by the same clause; nothing caught either, because every existing check
+composes an order and confirms it in one go, which always takes the full walk.
+
 Two things are deliberately not here. Removing a discount that has already been saved needs reversal
 semantics on the adjustment rows and is not in this change — the control removes a staged request
 only. An over-cap discount is blocked on screen rather than escalated, because the approval routing

@@ -184,6 +184,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public DiscountAuthorityLoaded = false;
     private readonly discountDrafts = new Map<string, MJODiscountDraft>();
     private readonly stagedDiscounts = new Map<string, mjBizAppsOrdersOrderAdjustmentEntity>();
+    /** One in-flight sync per line — see {@link syncStagedDiscount}. */
+    private readonly discountSyncQueue = new Map<string, Promise<void>>();
     private orderEvents: MJOReleasable | null = null;
 
     public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
@@ -869,7 +871,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // The number meant one thing as a rate and would mean another as money. Cleared rather than
         // converted, because a silently converted figure is one the user never typed.
         draft.Value = null;
-        void this.syncStagedDiscount(line);
+        this.syncStagedDiscount(line);
     }
 
     public SetDiscountValue(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -879,7 +881,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const draft = this.mutableDiscountDraft(line);
         const parsed = Number.parseFloat(target.value);
         draft.Value = Number.isFinite(parsed) ? parsed : null;
-        void this.syncStagedDiscount(line);
+        this.syncStagedDiscount(line);
     }
 
     public SetDiscountReason(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -887,14 +889,14 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const target = event.target;
         if (!(target instanceof HTMLTextAreaElement)) return;
         this.mutableDiscountDraft(line).Reason = target.value;
-        void this.syncStagedDiscount(line);
+        this.syncStagedDiscount(line);
     }
 
     /** Drop the request. Only a STAGED one — a discount already booked is reversed, not deleted. */
     public ClearDiscount(line: mjBizAppsOrdersOrderLineEntity): void {
         if (!this.CanDiscountLine(line)) return;
         this.discountDrafts.delete(line.ID);
-        void this.syncStagedDiscount(line);
+        this.syncStagedDiscount(line);
     }
 
     private mutableDiscountDraft(line: mjBizAppsOrdersOrderLineEntity): MJODiscountDraft {
@@ -906,14 +908,37 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     /**
+     * Queue a sync for this line, so two keystrokes cannot both stage a row.
+     *
+     * {@link applyStagedDiscount} awaits `Adjustments.Create()`, and every input event calls it. Two
+     * events arriving inside that await — realistic on the first one, which instantiates the
+     * adjustment entity class — would both find no staged row and both create one, and the server
+     * would then apply the concession twice. Serialising per line is the fix that does not depend on
+     * how long the create happens to take.
+     *
+     * A rejection is swallowed rather than propagated: it must not poison the chain for the next
+     * keystroke, and there is nothing here that can fail except the create itself.
+     */
+    private syncStagedDiscount(line: mjBizAppsOrdersOrderLineEntity): void {
+        const previous = this.discountSyncQueue.get(line.ID) ?? Promise.resolve();
+        const next = previous.then(
+            () => this.applyStagedDiscount(line),
+            () => this.applyStagedDiscount(line),
+        );
+        this.discountSyncQueue.set(line.ID, next.catch(() => undefined));
+    }
+
+    /**
      * Put the draft on the order, or take it off — one staged row per line, never a second.
      *
      * The row is only staged once it is COMPLETE. A request with no reason or an impossible amount
      * is refused by the engine, and the pricing pass runs on every keystroke, so staging a
      * half-typed one would replace the line prices with a refusal message while the user is still
      * typing the thing that would make it valid.
+     *
+     * Reached only through {@link syncStagedDiscount}, which is what guarantees one at a time.
      */
-    private async syncStagedDiscount(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+    private async applyStagedDiscount(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
         const order = this._order;
         if (!order) return;
 
@@ -951,11 +976,17 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * The server CONSUMES them — `drainStagedPricingRequests` reads each one into a discount request
      * and removes it — but it does that to its own copy. The browser's collection still holds them,
      * and a second save would hand the same concessions over again and discount the line twice.
+     *
+     * ONLY THIS COMPONENT'S BOOKKEEPING IS CLEARED, deliberately: the graph response rehydrates
+     * `Order.Adjustments` from the server's own drained copy, so removing the rows here as well
+     * would be fighting the reload for the same result. Do not "fix" this by calling
+     * `Adjustments.Remove` — the rows this map points at are already gone by the time it runs.
      */
     private onOrderSaved(): void {
         if (!this.stagedDiscounts.size) return;
         this.stagedDiscounts.clear();
         this.discountDrafts.clear();
+        this.discountSyncQueue.clear();
         this.schedulePricing();
         this.cdr.detectChanges();
     }
@@ -1129,6 +1160,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // that order's own collection, so dropping the bookkeeping here is enough.
         this.discountDrafts.clear();
         this.stagedDiscounts.clear();
+        this.discountSyncQueue.clear();
         this.DetailsLine = null;
         // Dropped rather than kept across orders, unlike the product catalog: dimension values are
         // effective-dated and this list was filtered against the PREVIOUS order's date, so reusing

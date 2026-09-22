@@ -51,7 +51,7 @@ import {
   SALES_AUTHORITY_ENTITY,
   SALES_RULE_ENTITY,
 } from "../entity-names.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
 import type { mjBizAppsOrdersOrderLineEntity } from "@mj-biz-apps/orders-entities";
 
@@ -777,6 +777,86 @@ export const PromotionChecks: NamedCheck[] = [
         Assert(
           /not a line on this order/i.test(order.Message),
           `the refusal should name the problem, got: ${order.Message}`,
+        );
+      }),
+  },
+  {
+    Id: "promotions.PR26",
+    Name: "PR26: a discount staged on an ALREADY-SAVED draft applies, though no line was touched",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        const authorityID = await grantAuthority(ctx, 0.5);
+
+        // THE FLOW A PERSON ACTUALLY RUNS: open a saved draft, discount a line, save. Every other
+        // check here composes an order and confirms it in one go, so they all take the full pricing
+        // walk and none of them could see what this one tests — `OrderEntityServer.Save` takes a
+        // header-only shortcut when the lines are clean, and staging a discount touches no line. The
+        // shortcut skipped the drain, the authorization and the stamp, and handed the staged row to
+        // the graph as an ordinary related record.
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+        });
+        Assert(
+          await built.Order.Save(),
+          `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`,
+        );
+        Assert(
+          !built.Order.Lines.Dirty,
+          "the lines must be CLEAN after the first save, or this check is not exercising the shortcut at all",
+        );
+
+        const staged = await built.Order.Adjustments.Create();
+        staged.OrderLineID = built.Lines[0].ID;
+        staged.Amount = 150;
+        staged.Reason = "retention concession";
+        Assert(
+          await built.Order.Save(),
+          `the discounted save failed: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`,
+        );
+
+        const row = await TxOne<{ DiscountAmount: number; LineTotalNet: number }>(
+          ctx,
+          `SELECT TOP 1 DiscountAmount, LineTotalNet FROM ${ORDERS_SCHEMA}.OrderLine
+             WHERE OrderHeaderID='${built.Order.ID}'`,
+        );
+        AssertEqual(Number(row.DiscountAmount), 150, "the concession reached the line");
+        AssertEqual(Number(row.LineTotalNet), 850, "and the stored net is what is left");
+
+        const adj = await TxOne<{
+          OrderLineID: string | null;
+          AuthorizedBySalesAuthorityID: string | null;
+          Reason: string;
+        }>(
+          ctx,
+          `SELECT TOP 1 OrderLineID, AuthorizedBySalesAuthorityID, Reason
+             FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${built.Order.ID}'`,
+        );
+        AssertEqual(
+          String(adj.AuthorizedBySalesAuthorityID ?? "").toLowerCase(),
+          authorityID.toLowerCase(),
+          "the row went through AuthorizeManualDiscount — an ungated insert would leave this null",
+        );
+        AssertEqual(
+          String(adj.OrderLineID ?? "").toLowerCase(),
+          String(built.Lines[0].ID).toLowerCase(),
+          "and it names the line it reduced",
+        );
+
+        const alloc = await TxOne<{ N: number }>(
+          ctx,
+          `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderAdjustmentAllocation a
+             JOIN ${ORDERS_SCHEMA}.OrderAdjustment j ON j.ID = a.OrderAdjustmentID
+            WHERE j.OrderHeaderID='${built.Order.ID}'`,
+        );
+        AssertEqual(
+          Number(alloc.N),
+          1,
+          "the allocation row is what tells tax and GL whose revenue was reduced; a bare insert has none",
         );
       }),
   },
