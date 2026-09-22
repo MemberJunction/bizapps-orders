@@ -18,16 +18,24 @@
  *   CALLER: OrderEntityServer.savePendingLines (before pricing — see there for why)
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import { ToISODate } from '@mj-biz-apps/orders-entities';
+import type { ReversalScheduleRow } from './ContractBalance.js';
 import type { ReversalOrigin } from './ReversalBehavior.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
 
 /** The origin line plus what prior reversals have already taken from it. */
 export interface ReversalContext {
     Origin: ReversalOrigin;
     AlreadyReversed: number;
+    /**
+     * The origin ORDER's live instalments (D92 §6). Empty for an order with no schedule, which is
+     * what the reversal rules expect, so callers need no "is this scheduled" branch.
+     */
+    ScheduleRows: ReversalScheduleRow[];
 }
 
 /**
@@ -68,6 +76,9 @@ export async function LoadReversalContext(
         ServicePeriodStart?: Date | string | null;
         ServicePeriodEnd?: Date | string | null;
         SubscriptionID?: string | null;
+        LineNumber?: number | null;
+        BilledToDate?: number | null;
+        RecognizedToDate?: number | null;
     };
 
     // The origin and every reversal already pointing at it, in ONE view. Splitting them costs a
@@ -149,7 +160,48 @@ export async function LoadReversalContext(
             ServicePeriodStart: origin.ServicePeriodStart ? new Date(origin.ServicePeriodStart) : null,
             ServicePeriodEnd: origin.ServicePeriodEnd ? new Date(origin.ServicePeriodEnd) : null,
             SubscriptionID: subscriptionID,
+            OrderHeaderID: origin.OrderHeaderID,
+            LineNumber: origin.LineNumber ?? null,
+            // The contract position the reversal has to respect (D92 §6): what this line has been
+            // billed and what it has earned. Read from the ORIGIN, never from the reversing line,
+            // which has neither yet.
+            BilledToDate: Number(origin.BilledToDate ?? 0),
+            RecognizedToDate: Number(origin.RecognizedToDate ?? 0),
         },
         AlreadyReversed: Math.round(alreadyReversed * 1e4) / 1e4,
+        ScheduleRows: await loadScheduleRows(rv, user, origin.OrderHeaderID),
     };
+}
+
+/**
+ * The origin order's live instalments, for the reversal rules in `ContractBalance`.
+ *
+ * Read for every reversal rather than only for scheduled orders: an order with no schedule returns
+ * an empty array, which is what `InstalmentsToCancel` and `RefuseEarnedNotBilled` both expect, so
+ * the caller has no "is this scheduled" branch to get wrong. One view, no join — the rules only
+ * need status, due date and whether a document number was ever frozen.
+ */
+async function loadScheduleRows(
+    rv: RunView,
+    user: UserInfo,
+    orderHeaderID: string,
+): Promise<ReversalScheduleRow[]> {
+    const res = await rv.RunView<ReversalScheduleRow & { DueDate: string }>(
+        {
+            EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND Status <> 'Canceled'`,
+            Fields: ['ID', 'CompanyID', 'InstallmentNumber', 'DueDate', 'Status', 'DocumentNumber'],
+            OrderBy: 'DueDate, InstallmentNumber',
+            ResultType: 'simple',
+        },
+        user,
+    );
+    return (res?.Results ?? []).map((r) => ({
+        ID: String(r.ID),
+        CompanyID: String(r.CompanyID),
+        InstallmentNumber: Number(r.InstallmentNumber ?? 0),
+        DueDate: ToISODate(r.DueDate) ?? String(r.DueDate).slice(0, 10),
+        Status: String(r.Status),
+        DocumentNumber: r.DocumentNumber ? String(r.DocumentNumber) : null,
+    }));
 }

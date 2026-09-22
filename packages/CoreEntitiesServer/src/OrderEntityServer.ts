@@ -65,6 +65,7 @@ import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
+import { InstalmentsToCancel, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
@@ -89,7 +90,8 @@ import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.
 import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
-import { AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
+import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
+import { Today, AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
 const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
@@ -650,6 +652,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
                 // And the mirror: a returned line takes its access with it.
                 await this.revokeEntitlementsForReversals(lines, options);
+
+                // A reversed order stops billing (D92 §6). Inside, for the same reason as the two
+                // above: an order that credits the customer back and keeps invoicing them every
+                // quarter has done half a reversal, and the half that is left is the half that
+                // takes money.
+                await this.cancelOriginInstalments(lines, options);
 
                 // GIFT CARDS, alongside entitlements and for the same reason. Selling a gift card
                 // that never mints an instrument has taken money for nothing, so a failure here
@@ -1704,6 +1712,56 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * origin's quantity is what the proportion is taken against, so it is read from the origin rather
      * than inferred from the reversal.
      */
+    /**
+     * Withdraw the instalments the reversed order will never bill (D92 §6).
+     *
+     * A future instalment is a promise to invoice, not money that has moved, so it is simply taken
+     * back and nothing posts. What HAS been billed is unwound by the reversing line's own credit
+     * memo, and an instalment the customer holds an invoice for is never touched here — see
+     * `InstalmentsToCancel`, which tests the frozen document number rather than the status.
+     *
+     * Reaches the ORIGIN order's schedule, not this one's: the reversal is a separate order and has
+     * no schedule of its own. Idempotent, because a row already `Canceled` is not selected, so
+     * re-saving a confirmed return is a no-op rather than an error.
+     */
+    private async cancelOriginInstalments(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const reversals = lines.filter((l) => l.ReversesOrderLineID);
+        if (!reversals.length) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        // One origin order may own several reversed lines; its schedule is cancelled once.
+        const seen = new Set<string>();
+        for (const line of reversals) {
+            const context = await LoadReversalContext(line.ReversesOrderLineID, provider, user, [line.ID]);
+            if (!context) continue; // applyReversalOrigin already refused anything unresolvable
+            const originOrder = uuidKey(context.Origin.OrderHeaderID ?? '');
+            if (!originOrder || seen.has(originOrder)) continue;
+            seen.add(originOrder);
+
+            for (const scheduleID of InstalmentsToCancel(context.ScheduleRows)) {
+                const row = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(
+                    ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+                    user,
+                );
+                if (!(await row.Load(scheduleID))) {
+                    throw new Error(`Instalment ${scheduleID} could not be loaded to cancel it for the reversal.`);
+                }
+                row.Status = 'Canceled';
+                if (!(await row.Save(options))) {
+                    throw new Error(
+                        row.LatestResult?.CompleteMessage ??
+                            `Instalment ${scheduleID} could not be cancelled for the reversal of order ${this.OrderNumber ?? this.ID}.`,
+                    );
+                }
+            }
+        }
+    }
+
     private async revokeEntitlementsForReversals(
         lines: mjBizAppsOrdersOrderLineEntity[],
         options?: EntitySaveOptions,
@@ -1801,6 +1859,29 @@ export class OrderEntityServer extends OrderHeaderEntity {
         );
         if (refusal) {
             throw new Error(`Order line ${line.LineNumber}: ${refusal}`);
+        }
+
+        // EARNED BUT NOT BILLED IS REFUSED, NOT REVERSED AROUND (D92 §6). The origin line's
+        // RecognizedToDate running ahead of its BilledToDate is a contract asset sitting in Unbilled
+        // Receivable; crediting the customer while it stands would leave that balance with no
+        // contract behind it and nothing downstream to notice. Refused here, with the rest of the
+        // line's validation, so the reversal never reaches booking rather than unwinding inside it.
+        // Zero for every line written before D92, and for advance-billed orders, which is nearly all
+        // of them — see ContractBalance.RefuseEarnedNotBilled.
+        const stranded = RefuseEarnedNotBilled(
+            [
+                {
+                    OrderLineID: context.Origin.ID,
+                    LineNumber: context.Origin.LineNumber ?? null,
+                    BilledToDate: Number(context.Origin.BilledToDate ?? 0),
+                    RecognizedToDate: Number(context.Origin.RecognizedToDate ?? 0),
+                },
+            ],
+            context.ScheduleRows,
+            Today(),
+        );
+        if (stranded) {
+            throw new Error(`Order line ${line.LineNumber}: ${stranded}`);
         }
 
         // Inherit the origin's terms, unless the caller stated their own. Same rule as pricing: a
