@@ -84,7 +84,10 @@ immutability trigger permits `ExternalSystem`/`ExternalInvoiceRef`/`SentAt` edit
   no connector verb, `DeleteRecord` throws; (2) `FetchChanges` never applies the watermark filter, so
   an incremental read is a full re-scan today; (3) only three Actions ship (Get/Create/Update
   Invoices) — none for customers or payments; (4) the scheduler-driven sync engine needs an MJ
-  landing entity plus entity maps, which Orders does not have.
+  landing entity plus entity maps, which Orders does not have. *Found live 2026-09-21 (§13.7):*
+  (5) every generic URL is built as base `…/connect/v3` + seeded path `/v3/…` → 404, so 0.3.1's
+  generic CRUD cannot reach BILL on a freshly seeded database; (6) nothing on the
+  `ConnectorFactory.Resolve` → `CreateRecord` path loads the engine's object cache.
 
 **In the host (`aidp-next`):** `mj.config.cjs` lists `@memberjunction/connector-bill-com` as an
 enabled dynamic package, but `apps/MJAPI/package.json` does not depend on it, and there is no
@@ -483,8 +486,9 @@ Go-live is the renewal job's two acts: enable, read the preview run's list with 
 
 | # | Repo | Ask | Fallback if slow |
 |---|---|---|---|
-| U1 | Integrations `Finance/BillCom` | Expose archive/restore as a connector verb (or a generic `InvokeObjectAction(object, id, 'archive')`). | Spike S1: `UpdateRecord({archived:true})` via `PUT` if BILL honours it. Last resort: the rail calls the gateway's raw request helper — not preferred. |
+| U1 | Integrations `Finance/BillCom` | Expose archive/restore as a connector verb (or a generic `InvokeObjectAction(object, id, 'archive')`). | ~~Spike S1: `UpdateRecord({archived:true})` via `PUT` if BILL honours it.~~ **It does not (400).** The last resort is what shipped: `BillComGateway.archiveInvoice` calls `POST /invoices/{id}/archive` through the connector's session helpers (§13.7). |
 | U2 | MJ `integration-engine` / connector | Honour `WatermarkValue` in `FetchChanges` (`filters=updatedTime:gte:…`) or add a filtered `ListRecords`. | Full scan + local filter (works, scales poorly). |
+| U3 | Integrations `Finance/BillCom` | Fix the double `/v3` (seed paths without the version prefix, or collapse it in `BuildFullURL`); read BILL's array-shaped error bodies in `ExtractErrorMessage`. | Per-database metadata patch stripping `/v3` from the three objects' paths (applied to QA). |
 | U3 | `aidp-next` | Add `@memberjunction/connector-bill-com` to `apps/MJAPI/package.json`; create the `Bill.com` `MJ: Integrations`/`Company Integrations`/`Credentials` rows per company (sandbox first). | None — deployment prerequisite. |
 | U4 | Integrations | Optional: ship the `customers` Get/Create Actions so agents can use them too. Not needed by this design. | — |
 
@@ -683,4 +687,26 @@ the fixes introduced; all four are fixed:
   the Bill.com migrations still sort after #220's (`V2026092210xx` > `V202609211300`).
 - **Deploy prerequisites carried forward:** bizapps-common ≥ 5.43 on the host (`fnBusinessToday`) and the
   `BizApps.BusinessTimeZone` configuration row set to Central — `aidp-next` pins common 5.42.0 today.
+
+### 13.7 2026-09-21 evening — first live sandbox run
+
+Full table in `2026-09-20-billcom-spike-results.md`. What it changed in this design:
+
+- **The credential path holds.** An `MJ: Credentials` row typed into Explorer, encrypted with the base
+  key, resolved through `ConnectorFactory` from a second process and logged in to the stage gateway.
+- **§2 gains two connector defects** (items 5 and 6): the double `/v3` in every generic URL, and the
+  unloaded engine object cache. The first is a per-database metadata patch until U3; the second is fixed
+  on our side in `BillComGateway.connectorFor`.
+- **U1 is settled the unpreferred way.** `PUT {archived:true}` is a 400 (PUT replaces the whole
+  invoice). `POST /invoices/{id}/archive` is 200 and idempotent, sets `archived: true` and
+  `recordStatus: INACTIVE`, and leaves `status` at `OPEN` — so a cancelled unit's read-back must key on
+  `Archived`, never on `Status`, which `GetInvoice` already does. The gateway gained an `archiveInvoice`
+  seam that borrows the connector's protected `Authenticate`/`GetBaseURL`/`BuildHeaders`/`MakeHTTPRequest`.
+  When the connector grows the verb, only that seam changes.
+- **D-B7 hardens.** A duplicate `invoiceNumber` is refused (422) and an archived invoice keeps its
+  number, so a re-issue after cancel must carry a distinct number (`-R1` suffix, Task 12). Reuse is not
+  an option BILL offers.
+- **D-B12 stands.** Creating an invoice shows no sent indicator; the human gate remains BILL's Send.
+- **Open until Robert records a sandbox payment:** S2's status vocabulary; `BILLCOM_PAYMENT_STATUS` stays
+  provisional and `TenderFor`'s `receivablesType` mapping is unverified.
 

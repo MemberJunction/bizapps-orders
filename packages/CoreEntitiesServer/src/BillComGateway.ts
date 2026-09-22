@@ -25,6 +25,7 @@
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import type { MJCompanyIntegrationEntity, MJCredentialEntity, MJIntegrationEntity } from '@memberjunction/core-entities';
 import { ConnectorFactory, type CRUDResult, type ExternalRecord, type FetchBatchResult } from '@memberjunction/integration-engine';
+import { IntegrationEngineBase } from '@memberjunction/integration-engine-base';
 
 export interface BillComGatewaySeams {
     loadCompanyIntegration(companyIntegrationID: string, provider: IMetadataProvider, user: UserInfo): Promise<MJCompanyIntegrationEntity>;
@@ -35,6 +36,26 @@ export interface BillComGatewaySeams {
     getRecord(ci: MJCompanyIntegrationEntity, object: string, externalID: string, user: UserInfo): Promise<ExternalRecord | null>;
     /** Every record changed since the watermark, all pages drained. */
     fetchChanges(ci: MJCompanyIntegrationEntity, object: string, watermark: string | null, user: UserInfo): Promise<FetchBatchResult>;
+    /**
+     * `POST /invoices/{id}/archive` — BILL's only way to archive an invoice. Verified live 2026-09-21
+     * (spike S1): `PUT {archived:true}` is refused with 400 because PUT is a full replace that demands
+     * `customer` and `invoiceLineItems`; the archive verb returns 200 with `archived: true`,
+     * `recordStatus: INACTIVE`, and is idempotent. The connector has no verb for it (Integrations ask
+     * U1), so the default gateway reaches the endpoint through the connector's own session.
+     */
+    archiveInvoice(ci: MJCompanyIntegrationEntity, externalID: string, user: UserInfo): Promise<CRUDResult>;
+}
+
+/**
+ * The protected surface of `BaseRESTIntegrationConnector` that `archiveInvoice` borrows until the
+ * connector grows an archive verb: the same session, base URL, headers and 401-retrying request the
+ * generic CRUD uses. Structural, so nothing here depends on the connector's class hierarchy.
+ */
+interface ConnectorSession {
+    Authenticate(ci: MJCompanyIntegrationEntity, user: UserInfo): Promise<unknown>;
+    GetBaseURL(ci: MJCompanyIntegrationEntity, auth: unknown): string;
+    BuildHeaders(auth: unknown): Record<string, string>;
+    MakeHTTPRequest(auth: unknown, url: string, method: string, headers: Record<string, string>, body?: unknown): Promise<{ Status: number; Body: unknown }>;
 }
 
 let seams: BillComGatewaySeams | null = null;
@@ -50,7 +71,30 @@ export function CurrentBillComGatewaySeams(): BillComGatewaySeams | null {
 
 const MAX_PAGES = 200;
 
+/**
+ * BILL reports validation failures as an ARRAY of `{severity, message}` (seen live: PUT without a
+ * customer → `[{message: "customer: must not be null"}, …]`), which the engine's `ExtractErrorMessage`
+ * does not read. Joins those; falls back to `message`/`error` on an object; null when there is no text.
+ */
+export function billComErrorText(body: unknown): string | null {
+    if (Array.isArray(body)) {
+        const msgs = body.map((e) => (e && typeof e === 'object' && typeof (e as { message?: unknown }).message === 'string' ? (e as { message: string }).message : null)).filter((m): m is string => !!m);
+        return msgs.length ? msgs.join('; ') : null;
+    }
+    if (body && typeof body === 'object') {
+        const b = body as { message?: unknown; error?: unknown };
+        if (typeof b.message === 'string') return b.message;
+        if (typeof b.error === 'string') return b.error;
+    }
+    return typeof body === 'string' && body.trim() ? body.trim().slice(0, 300) : null;
+}
+
 async function connectorFor(ci: MJCompanyIntegrationEntity, provider: IMetadataProvider, user: UserInfo) {
+    // The connector's generic CRUD reads IntegrationObject rows (API paths, body shapes) from the
+    // IntegrationEngineBase cache, and nothing on this path loads it — the live sandbox run failed with
+    // `IntegrationObject not found: "customers"` against a fully seeded database. Config() is a no-op
+    // once loaded, so this costs one metadata read per process.
+    await IntegrationEngineBase.Instance.Config(false, user, provider);
     const integration = await provider.GetEntityObject<MJIntegrationEntity>('MJ: Integrations', user);
     if (!(await integration.Load(ci.IntegrationID))) {
         throw new Error(`Integration ${ci.IntegrationID} behind Company Integration ${ci.ID} could not be loaded.`);
@@ -88,6 +132,14 @@ export function DefaultBillComGateway(provider: IMetadataProvider): BillComGatew
         async getRecord(ci, object, externalID, user) {
             const c = await connectorFor(ci, provider, user);
             return c.GetRecord({ CompanyIntegration: ci, ObjectName: object, ContextUser: user, ExternalID: externalID });
+        },
+        async archiveInvoice(ci, externalID, user) {
+            const c = (await connectorFor(ci, provider, user)) as unknown as ConnectorSession;
+            const auth = await c.Authenticate(ci, user);
+            const url = `${c.GetBaseURL(ci, auth).replace(/\/+$/, '')}/invoices/${encodeURIComponent(externalID)}/archive`;
+            const r = await c.MakeHTTPRequest(auth, url, 'POST', c.BuildHeaders(auth), undefined);
+            if (r.Status >= 200 && r.Status < 300) return { Success: true, StatusCode: r.Status, ExternalID: externalID };
+            return { Success: false, StatusCode: r.Status, ErrorMessage: billComErrorText(r.Body) ?? `HTTP ${r.Status} on archive` };
         },
         async fetchChanges(ci, object, watermark, user) {
             const c = await connectorFor(ci, provider, user);

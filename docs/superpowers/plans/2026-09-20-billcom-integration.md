@@ -59,8 +59,18 @@ migrations), the `connector-bill-com` seed migrations were applied (schema `mj_c
 (git-ignored) points at it as `sa`. CodeGen ran without AI credentials, so generated descriptions/layouts from
 the AI pass are absent; the carve kept only this branch's entities and fields and left `next`'s committed
 generated code for everything else. Flyway checksums for the three folded migrations were realigned in the
-history table. Still to do there: enter the Bill.com sandbox credential, the Company Integration and the
-`BillCom` PaymentProvider row, then run the harness spikes.
+history table.
+
+**Configured and probed (2026-09-21 evening).** MJAPI (`:4100`) and Explorer (`:4201`) run from the MJ core repo
+against the QA database (no open-app packages, so core entities only). Robert entered the `Bill.com Session`
+credential (`54B6C9C5-…`) and the Company Integration (`EAA2E453-FEA6-4DBD-B852-9148E482A162`) through
+Explorer; the `BillCom` PaymentProvider row (`B1C0FF5A-0001-4B11-9C0A-5E1F7B3C9A01`, IsLiveMode 0) went in by
+SQL. Spikes S1, S3, S4, S5 are answered in `docs/superpowers/specs/2026-09-20-billcom-spike-results.md`; S2 waits
+for a payment recorded in the sandbox UI. The live run found two connector defects (double `/v3` in every
+generic URL → 404; no archive verb, `PUT {archived:true}` is a 400) and one integration gap (engine object
+cache never loaded on the connector path). The QA database carries a metadata patch for the first; the gateway
+now loads the cache and archives through `POST /invoices/{id}/archive`. **Re-apply the `/v3` patch on any new
+database** until Integrations ships U3.
 
 ## File structure
 
@@ -169,10 +179,10 @@ switch (process.env.BILLCOM_PROBE ?? 'login') {
 }
 ```
 
-- [ ] **Step 2: Run the probes in order** — `login`, `customer`, `invoice` (record the id), `archive-put`, `payments`, `send-default`. Record a customer bank payment manually in the sandbox UI against the probe invoice, then re-run `payments` until it appears and again after it "clears" so both statuses are captured.
+- [x] **Step 2: Run the probes in order** — `login`, `customer`, `invoice` (record the id), `archive-put`, `payments`, `send-default`. Record a customer bank payment manually in the sandbox UI against the probe invoice, then re-run `payments` until it appears and again after it "clears" so both statuses are captured. *(2026-09-21: all run except the two `payments` re-runs, which wait on Robert recording a payment against `00e01DYPWKVDNSX9w76e`. A seventh probe, `archive-post`, was added when `archive-put` came back 400.)*
 
-- [ ] **Step 3: Write `docs/superpowers/specs/2026-09-20-billcom-spike-results.md`** with a table: spike, question, observed result, decision. Required entries:
-  - S1 archive via `PUT {archived:true}` — works / does not (→ upstream ask U1 becomes blocking for Task 6's cancel; interim `CancelInvoice` returns `Success:false, Reason:'archive not available'`).
+- [x] **Step 3: Write `docs/superpowers/specs/2026-09-20-billcom-spike-results.md`** with a table: spike, question, observed result, decision. Required entries:
+  - S1 archive via `PUT {archived:true}` — **does not** (400, PUT is a full replace). `POST /invoices/{id}/archive` does, idempotently. `CancelInvoice` now uses it through `BillComGateway.archiveInvoice` (connector's session helpers) until U1 lands.
   - S2 `receivable-payments.status` literal values seen for pending vs cleared vs voided, and `onlinePayment`/`receivablesType` values → the table in Task 9.
   - S3 fetch time and count with/without watermark; whether `NewWatermarkValue` is returned.
   - S4 duplicate `invoiceNumber` accepted or refused; `invoiceLineItems` field names BILL accepted; whether `totalAmount` equals Σ(quantity×price).

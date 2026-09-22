@@ -55,6 +55,11 @@ async function main() {
     const ordersServer = await import('@mj-biz-apps/orders-server');
     ordersServer.LoadBizAppsOrdersServer?.();
 
+    // The connector's generic CRUD reads IntegrationObject metadata from this cache; the rail's gateway
+    // loads it itself, but the raw connector probes below go around the gateway.
+    const { IntegrationEngineBase } = await import('@memberjunction/integration-engine-base');
+    await IntegrationEngineBase.Instance.Config(false, user);
+
     const { Metadata } = await import('@memberjunction/core');
     const { ConnectorFactory } = await import('@memberjunction/integration-engine');
     const provider = Metadata.Provider;
@@ -124,6 +129,21 @@ async function main() {
             log('invoices.update {archived:true} (S1)', await connector.UpdateRecord({ ...base, ObjectName: 'invoices', ExternalID: id, Attributes: { archived: true } }));
             const back = await connector.GetRecord({ ...base, ObjectName: 'invoices', ExternalID: id });
             log('invoices.get after — archived must read true or U1 is blocking', { archived: back?.Fields?.archived, status: back?.Fields?.status });
+            break;
+        }
+        case 'archive-post': { // U1 fallback — the v3 archive verb, through the connector's own session (protected helpers, JS-visible)
+            const id = need('BILLCOM_INVOICE_ID');
+            const auth = await connector.Authenticate(ci, user);
+            const baseURL = connector.GetBaseURL(ci, auth);
+            const headers = connector.BuildHeaders(auth);
+            const putRaw = await connector.MakeHTTPRequest(auth, `${baseURL}/invoices/${id}`, 'PUT', headers, { archived: true });
+            log('raw PUT /invoices/{id} {archived:true} — why the generic update is refused', { Status: putRaw.Status, Body: putRaw.Body });
+            const post = await connector.MakeHTTPRequest(auth, `${baseURL}/invoices/${id}/archive`, 'POST', headers, undefined);
+            log('raw POST /invoices/{id}/archive', { Status: post.Status, Body: post.Body });
+            const again = await connector.MakeHTTPRequest(auth, `${baseURL}/invoices/${id}/archive`, 'POST', headers, undefined);
+            log('raw POST /invoices/{id}/archive again — idempotent?', { Status: again.Status, Body: typeof again.Body === 'object' && again.Body ? { archived: again.Body.archived, status: again.Body.status, message: again.Body.message } : again.Body });
+            const back = await connector.GetRecord({ ...base, ObjectName: 'invoices', ExternalID: id });
+            log('invoices.get after', { archived: back?.Fields?.archived, status: back?.Fields?.status, recordStatus: back?.Fields?.recordStatus });
             break;
         }
         case 'payments': { // S2 / S3

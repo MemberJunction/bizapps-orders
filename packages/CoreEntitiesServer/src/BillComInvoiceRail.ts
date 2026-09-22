@@ -178,7 +178,9 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
     public override async CancelInvoice(ref: string): Promise<RailResult<{ Archived: true }>> {
         try {
             const { gw, ci } = await this.session();
-            const r = await gw.updateRecord(ci, 'invoices', ref, { archived: true }, this.User!);
+            // POST /invoices/{id}/archive — the only verb BILL honours (spike S1: PUT {archived:true} is a
+            // 400, "customer: must not be null"). Idempotent, so a retry after a lost response is safe.
+            const r = await gw.archiveInvoice(ci, ref, this.User!);
             if (!r.Success) return this.fail(r.ErrorMessage ?? `Bill.com refused the archive (HTTP ${r.StatusCode}).`);
             const back = await this.GetInvoice(ref);
             if (!back.Success) return back as RailResult<{ Archived: true }>;
@@ -186,9 +188,7 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
                 return {
                     Success: false,
                     Transient: false,
-                    Reason:
-                        `Bill.com accepted the update but ${ref} is not archived. The archive verb is not available through this ` +
-                        `connector version (Integrations ask U1); archive it in Bill.com and record the cancel here.`,
+                    Reason: `Bill.com answered the archive with HTTP ${r.StatusCode} but ${ref} still reads archived: false. Archive it in Bill.com and record the cancel here.`,
                 };
             }
             return { Success: true, Value: { Archived: true } };

@@ -47,8 +47,9 @@ const seams = (): BillComGatewaySeams => ({
     loadCompanyIntegration: async () => ({ ID: 'ci', IntegrationID: 'int', CredentialID: 'cred' }) as never,
     loadCredentialEnvironment: async () => environment,
     createRecord: async (_ci, object, attrs) => { calls.push({ verb: 'create', object, attrs }); return ok(object === 'customers' ? '0cu1' : '00e1'); },
-    updateRecord: async (_ci, object, id, attrs) => { calls.push({ verb: 'update', object, id, attrs }); archivedOnRead = attrs.archived === true; return ok(id, 200); },
+    updateRecord: async (_ci, object, id, attrs) => { calls.push({ verb: 'update', object, id, attrs }); return ok(id, 200); },
     getRecord: async (_ci, object, id) => { calls.push({ verb: 'get', object, id }); return invoiceRecord({ id, archived: archivedOnRead }); },
+    archiveInvoice: async (_ci, id) => { calls.push({ verb: 'archive', object: 'invoices', id }); archivedOnRead = true; return ok(id, 200); },
     fetchChanges: async (_ci, object, watermark) => { calls.push({ verb: 'fetch', object, watermark }); return paymentBatch(); },
 });
 
@@ -139,18 +140,25 @@ describe('BillComInvoiceRail.GetInvoice and CancelInvoice', () => {
         expect(await rail().GetInvoice('00e9')).toEqual({ Success: true, Value: null });
     });
 
-    it('cancel asks for archived:true and confirms by reading back', async () => {
+    it('cancel uses the archive verb (never a PUT of the flag) and confirms by reading back', async () => {
         const r = await rail().CancelInvoice('00e1');
         expect(r).toEqual({ Success: true, Value: { Archived: true } });
-        expect(calls.map((c) => c.verb)).toEqual(['update', 'get']);
-        expect(calls[0].attrs).toEqual({ archived: true });
+        expect(calls.map((c) => c.verb)).toEqual(['archive', 'get']);
+        expect(calls[0].id).toBe('00e1');
     });
 
-    it('cancel is refused, not reported done, when BILL ignores the flag', async () => {
+    it('cancel is refused, not reported done, when the read-back still says archived: false', async () => {
         UseBillComGatewaySeams({ ...seams(), getRecord: async () => invoiceRecord({ archived: false }) });
         const r = await rail().CancelInvoice('00e1');
         expect(r.Success).toBe(false);
-        if (!r.Success) { expect(r.Reason).toMatch(/not archived/); expect(r.Transient).toBe(false); }
+        if (!r.Success) { expect(r.Reason).toMatch(/archived: false/); expect(r.Transient).toBe(false); }
+    });
+
+    it('a refused archive surfaces BILL\'s message and is permanent', async () => {
+        UseBillComGatewaySeams({ ...seams(), archiveInvoice: async () => ({ Success: false, StatusCode: 400, ErrorMessage: 'customer: must not be null' }) });
+        const r = await rail().CancelInvoice('00e1');
+        expect(r.Success).toBe(false);
+        if (!r.Success) { expect(r.Reason).toBe('customer: must not be null'); expect(r.Transient).toBe(false); }
     });
 });
 
