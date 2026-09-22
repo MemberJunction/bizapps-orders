@@ -41,6 +41,7 @@ import {
     LoadIssueInstalmentInvoiceOperation,
     LoadOrderHeaderPaymentScheduleEntityServer,
     LoadGetFulfillmentQueueOperation,
+    LoadGetPriorReturnsOperation,
     LoadFulfillOrderLinesOperation,
     LoadCapturePaymentOperation,
     LoadAdvanceOrderStateOperation,
@@ -123,6 +124,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
     LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
+    LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
     LoadCapturePaymentOperation(); // 'Orders.CapturePayment' — header + allocations in ONE transaction
     LoadAdvanceOrderStateOperation(); // 'Orders.AdvanceOrderState' — climbs the ladder above Confirmed (D17)

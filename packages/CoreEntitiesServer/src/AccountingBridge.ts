@@ -58,6 +58,14 @@ export interface AccountingEngineSurface {
     }>;
     GLAccountRoles: Array<{ ID: string; Name: string }>;
     /**
+     * The analysis axes and their permitted values, as accounting caches them.
+     *
+     * Read by the order-line dimension derivation: the axes it can tag with are whatever the ERP
+     * sync has pulled in, and both are resolved BY CODE because the ids are minted per environment.
+     */
+    Dimensions: Array<{ ID: string; Code: string; IsActive: boolean }>;
+    DimensionValues: Array<{ ID: string; DimensionID: string; Code: string; IsActive: boolean }>;
+    /**
      * The Due To / Due From pair for an ORDERED company pair (BA-D26), each leg carrying the
      * dimensions pinned on the match. `DimensionValueID` is nullable there by design.
      */

@@ -40,6 +40,7 @@ export {
 } from './FulfillmentBehavior.js';
 export type { FulfillableLine, FulfillmentStatus, FlipRefusal, QueueGrouping } from './FulfillmentBehavior.js';
 export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from './GetFulfillmentQueueOperation.js';
+export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
 export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
@@ -49,7 +50,11 @@ export type { OrderRollupField, OrderRollups, ResolvedOrderRollups } from './Ord
 
 export { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 export type { JEDraft, JELineDraft, OrderLineDraft } from './OrderJournalEntryFactory.js';
-export { MergeLineDimensions } from './LineDimensionMerge.js';
+export { MergeLineDimensions, MergeDerivedTags } from './LineDimensionMerge.js';
+export { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
+export type { DimensionDefaultEntityIDs, ResolvedDefault } from './DimensionDefaultResolver.js';
+export { DeriveARRType, DeriveVintage, DeriveLineDimensions, DIMENSION_CODE, ARR_TYPE_VALUE_CODE } from './LineDimensionRules.js';
+export type { DimensionVocabulary, LineDimensionFacts } from './LineDimensionRules.js';
 export type { LineDimensionColumns, LineDimensionTag } from './LineDimensionMerge.js';
 
 export {

@@ -887,6 +887,43 @@ export interface OrdersIssueInstalmentInvoiceOutput {
 }
 
 /**
+ * Input for `Orders.GetPriorReturns`.
+ *
+ * How much of each line has ALREADY been sent back. The Return page asks this before it offers a
+ * quantity, because the cap it shows has to be the cap the server will enforce — and the rule
+ * behind that cap is not simple enough to restate on the client: reversals sum ACROSS orders, and
+ * Draft and Voided returns do not count toward the total (a draft that never confirms would
+ * otherwise hold the allowance hostage, and a voided one has already given it back).
+ *
+ * Read-only.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface GetPriorReturnsInput {
+    /** The ORIGIN lines being asked about — the lines a return would reverse, not reversal lines. */
+    OrderLineIDs: string[];
+}
+
+/**
+ * Output of `Orders.GetPriorReturns`.
+ *
+ * One row per line ASKED ABOUT, including lines nothing has been returned against — a caller
+ * showing a cap needs an answer for every line, and an absent row is indistinguishable from a
+ * lookup that quietly failed.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface GetPriorReturnsOutput {
+    Lines: {
+        OrderLineID: string;
+        /** Units already reversed against this line, as a positive magnitude. */
+        AlreadyReturned: number;
+        /** What may still come back: the line's quantity less what has already gone. */
+        RemainingReturnable: number;
+    }[];
+}
+
+/**
  * Input for `Orders.ListEntitlements`.
  *
  * The person's library. Same identity rules as CheckEntitlement. Heavier auth scope
@@ -1368,6 +1405,22 @@ export class OrdersIssueInstalmentInvoiceOperation extends BaseRemotableOperatio
     public readonly OperationKey = "Orders.IssueInstalmentInvoice";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.GetPriorReturns — Get Prior Returns
+// ============================================================
+/**
+ * Get Prior Returns
+ * How much of each order line has already been returned, and how much may still come back. Read-only. The cap counts reversals across every order and excludes Draft and Voided returns, which is why it is an operation rather than a view the caller filters for itself — a second copy of that rule on the client is a second place for it to drift. Powers the Return page's per-line maximum.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.GetPriorReturns'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersGetPriorReturnsOperation extends BaseRemotableOperation<GetPriorReturnsInput, GetPriorReturnsOutput> {
+    public readonly OperationKey = "Orders.GetPriorReturns";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
     public readonly RequiresSystemUser = false;
 }
 
