@@ -656,7 +656,10 @@ export class OrderJournalEntryFactory {
         // value entry — its value reaches the ledger one instalment at a time — so mirroring nothing
         // would give nothing back. What the customer is owed is what they were invoiced and have not
         // consumed: the origin line's Deferred balance, computed by the caller and handed in.
-        const memo = isScheduled && isReversal ? (creditMemo?.Amount ?? 0) : 0;
+        // NOT gated on `isScheduled`: that describes THIS order, and a reversal is a separate order
+        // with no schedule of its own. The caller decided, from the ORIGIN's company, whether a memo
+        // is owed — its presence here is that decision.
+        const memo = isReversal ? (creditMemo?.Amount ?? 0) : 0;
 
         const bookingLines: JELineDraft[] = memo > 0
             ? BuildCreditMemoLines(memo, { AR: arAccount, Deferred: await resolve(GL_ROLE.DeferredRevenue) }, product.Name, lineDims)
@@ -759,8 +762,12 @@ export class OrderJournalEntryFactory {
         // entry itself is still real and still balances: Dr Sales Discounts / Cr Sales for the
         // discount. Without this a free item cannot be ordered at all, which is a legitimate thing
         // to sell.
+        // THE CREDIT MEMO IS NOT MIRRORED. Everything else here is built in the direction the SALE
+        // posted and flipped for a reversal, but the memo has no sale to flip: it is constructed as
+        // the reversal's own entry, Dr Deferred / Cr AR, and mirroring it would credit the customer's
+        // obligation and debit their receivable — the exact opposite of giving money back.
         const bookingEntryLines = mirrorIf(
-            isReversal,
+            isReversal && memo <= 0,
             bookingLines.filter((l) => money(l.DebitAmount ?? 0) !== 0 || money(l.CreditAmount ?? 0) !== 0),
         );
         // NOTHING TO BOOK is a legitimate outcome, not a failure. A fully-comped line — 100% off, or

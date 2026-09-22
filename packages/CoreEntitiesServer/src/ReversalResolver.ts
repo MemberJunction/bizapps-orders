@@ -77,6 +77,7 @@ export async function LoadReversalContext(
         ServicePeriodEnd?: Date | string | null;
         SubscriptionID?: string | null;
         LineNumber?: number | null;
+        CompanyID?: string | null;
         BilledToDate?: number | null;
         RecognizedToDate?: number | null;
     };
@@ -167,6 +168,7 @@ export async function LoadReversalContext(
             SubscriptionID: subscriptionID,
             OrderHeaderID: origin.OrderHeaderID,
             LineNumber: origin.LineNumber ?? null,
+            CompanyID: origin.CompanyID ?? null,
             // The contract position the reversal has to respect (D92 §6): what this line has been
             // billed and what it has earned. Read from the ORIGIN, never from the reversing line,
             // which has neither yet.

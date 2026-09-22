@@ -63,6 +63,8 @@ export interface ReversalOrigin {
     OrderHeaderID?: string | null;
     /** For the refusal message: a line number is what a person can find on the order. */
     LineNumber?: number | null;
+    /** Whose books the origin line sold on — which company's schedule decides how it reverses. */
+    CompanyID?: string | null;
     /**
      * The origin line's contract position, which is the fifth fact a reversal cannot get anywhere
      * else. `BilledToDate − RecognizedToDate` is what the credit memo gives back; the other way
