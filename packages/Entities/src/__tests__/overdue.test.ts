@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { newestViewDefiner, sqlCode } from './helpers/view-definer';
 import { describe, it, expect } from 'vitest';
 import { IsOverdue, OverdueFilter, OverdueSQL, OverdueViewSQL, NON_OWING_STATUSES, type OverdueFacts } from '../overdue';
 
@@ -101,14 +101,16 @@ describe('the SQL and the filter say what the function says', () => {
     it('the committed migration is byte-for-byte what OverdueViewSQL emits', () => {
         // The docs said "take the predicate from OverdueSQL, never retype it" and every migration
         // retyped it anyway. This makes the emitter the source and the migration a copy.
-        const dir = fileURLToPath(new URL('../../../../migrations/', import.meta.url));
-        const newest = readdirSync(dir)
-            .filter((f) => f.endsWith('.sql'))
-            .sort()
-            .filter((f) => readFileSync(dir + f, 'utf8').includes('CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]'))
-            .pop();
-        expect(newest, 'a migration defines vwOrderHeaders').toBeDefined();
-        expect(readFileSync(dir + newest, 'utf8')).toContain(OverdueViewSQL());
+        //
+        // RESOLVED THROUGH newestViewDefiner, not by matching 'CREATE OR ALTER VIEW' here. That form
+        // filtered out a DROP VIEW + CREATE VIEW definer — and CodeGen's own output for THIS view uses
+        // exactly that form (V202607061432), so the idiom is live in this repo. The old selector would
+        // have fallen back to stale SQL and passed. bizapps-contracts PR #59 is that failure, realised:
+        // its guard went green while production ran a view missing the predicate the guard was about.
+        const dir = fileURLToPath(new URL('../../../../migrations', import.meta.url));
+        const { file, code } = newestViewDefiner(dir, 'vwOrderHeaders');
+        expect(file, 'a migration defines vwOrderHeaders').toBeTruthy();
+        expect(code).toContain(sqlCode(OverdueViewSQL()));
     });
 
     it('the RunView filter carries all four clauses, against NextDueDate, with the caller-supplied day', () => {
