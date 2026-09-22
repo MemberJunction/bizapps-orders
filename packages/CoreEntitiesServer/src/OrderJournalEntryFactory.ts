@@ -69,7 +69,7 @@ import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { SplitContraLegs } from './ContractBalance.js';
 import { GL_ROLE, GLAccountResolver, GLAccountResolutionError, type GLRole } from './GLAccountResolver.js';
-import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
+import { RecognitionMirrors, RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
 import { MergeLineDimensions } from './LineDimensionMerge.js';
 import type { InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
@@ -911,7 +911,7 @@ export class OrderJournalEntryFactory {
                 Dimensions: lineDims,
             });
         }
-        const lines = mirrorIf(delta < 0, [
+        const lines = mirrorIf(RecognitionMirrors(line.Quantity, delta), [
             ...debits,
             { GLAccountID: await resolve(GL_ROLE.Sales), CreditAmount: amount, Description: `Revenue — ${product.Name}`, Dimensions: lineDims },
         ]);
