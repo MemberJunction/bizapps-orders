@@ -25,6 +25,8 @@ export {
     LoadOrderLineProgressMeasurementEntityServer,
 } from './OrderLineProgressMeasurementEntityServer.js';
 export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from './GetProgressWorklistOperation.js';
+export { CreditMemoByLine, InstalmentsToCancel, RefuseEarnedNotBilled } from './ContractBalance.js';
+export type { ContractLineBalance, ReversalScheduleRow } from './ContractBalance.js';
 export {
     AddMonths,
     BuildPaymentSchedule,

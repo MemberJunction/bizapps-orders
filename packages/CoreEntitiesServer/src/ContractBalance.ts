@@ -93,3 +93,103 @@ export function SplitContraLegs(
         ? { Deferred: opened, Unbilled: relieved }
         : { Deferred: relieved, Unbilled: opened };
 }
+
+/* ── Reversing a scheduled order (D92 §6) ───────────────────────────────────────────────────── */
+
+/** One line's two running totals, as they stand before the reversal books anything. */
+export interface ContractLineBalance {
+    OrderLineID: string;
+    /** For the refusal message. A line number is what a person can find on the order. */
+    LineNumber?: number | null;
+    BilledToDate: number;
+    RecognizedToDate: number;
+}
+
+/** What a reversal needs to know about one instalment. */
+export interface ReversalScheduleRow {
+    ID: string;
+    CompanyID: string;
+    InstallmentNumber: number;
+    /** `YYYY-MM-DD`. */
+    DueDate: string;
+    Status: string;
+    /** Frozen at invoicing and never cleared, so it — not `Status` — says whether it was billed. */
+    DocumentNumber: string | null;
+}
+
+/**
+ * The instalments a reversal cancels: live, and never billed.
+ *
+ * A future instalment is a promise to invoice, not money that has moved, so unwinding the order
+ * simply withdraws it and posts nothing. `DocumentNumber IS NULL` rather than `Status = 'Scheduled'`
+ * is the test for the same reason it is in the cascade: the number is frozen once issued while the
+ * status keeps moving, and a row the customer holds an invoice for must never be quietly withdrawn.
+ * Already-Canceled rows are left alone so a second reversal is a no-op rather than an error.
+ */
+export function InstalmentsToCancel(rows: ReversalScheduleRow[]): string[] {
+    return rows.filter((r) => r.Status !== 'Canceled' && !r.DocumentNumber).map((r) => r.ID);
+}
+
+/**
+ * Per line, the billed-but-not-earned balance a reversal credits back.
+ *
+ * This is the credit memo: `Dr Deferred / Cr AR` for what the customer was invoiced and has not yet
+ * consumed. Revenue already recognised STAYS recognised (Andrew) — the service was delivered and
+ * unwinding the contract does not undeliver it — so the memo reaches only as far as the Deferred
+ * balance and no further. Lines with nothing billed, or billed less than earned, contribute zero
+ * and are omitted rather than returned as zeroes, so the caller's entry has no empty lines to filter.
+ */
+export function CreditMemoByLine(lines: ContractLineBalance[]): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const line of lines) {
+        const deferred = money(Number(line.BilledToDate ?? 0) - Number(line.RecognizedToDate ?? 0));
+        if (deferred > 0) out.set(line.OrderLineID, deferred);
+    }
+    return out;
+}
+
+/**
+ * Refuse a reversal that would strand an earned-but-unbilled balance, or `null` to proceed.
+ *
+ * `R − B > 0` means we delivered service the contract has not let us bill yet — a contract asset
+ * sitting in Unbilled Receivable. Reversing around it would leave that balance with no contract
+ * behind it and nothing downstream to notice, so the reversal stops and asks for the instalment to
+ * be issued first. Under advance billing, which is the norm here, this is rare: an order billed
+ * quarterly in advance is in Deferred all the way through, and only a due instalment nobody issued,
+ * or arrears billing, puts a line the other way round.
+ *
+ * The message names the instalment to issue when one is due, because "issue the final instalment
+ * first" is not actionable if the reader has to work out which. When no instalment is due, saying so
+ * is the point: the line is earned ahead of anything the schedule allows us to bill, which is a
+ * misconfigured schedule and wants a person rather than a retry.
+ *
+ * @param asOfDay `YYYY-MM-DD`; an instalment counts as due on or before this day.
+ */
+export function RefuseEarnedNotBilled(
+    lines: ContractLineBalance[],
+    rows: ReversalScheduleRow[],
+    asOfDay: string,
+): string | null {
+    const stranded = lines
+        .map((line) => ({ line, unbilled: money(Number(line.RecognizedToDate ?? 0) - Number(line.BilledToDate ?? 0)) }))
+        .filter((x) => x.unbilled > 0);
+    if (!stranded.length) return null;
+
+    const due = rows
+        .filter((r) => r.Status !== 'Canceled' && !r.DocumentNumber && r.DueDate <= asOfDay)
+        .sort((a, b) => (a.DueDate === b.DueDate ? a.InstallmentNumber - b.InstallmentNumber : a.DueDate < b.DueDate ? -1 : 1))[0];
+
+    const named = stranded
+        .map((x) => `line ${x.line.LineNumber ?? x.line.OrderLineID} (${x.unbilled.toFixed(2)})`)
+        .join(', ');
+
+    return due
+        ? `This order has revenue recognised that has not been billed yet — ${named}. Issue instalment ` +
+          `${due.InstallmentNumber}, which was due on ${due.DueDate}, and then reverse: crediting the ` +
+          `customer before that leaves the earned amount sitting in Unbilled Receivable with no contract ` +
+          `behind it.`
+        : `This order has revenue recognised that has not been billed yet — ${named} — and no instalment ` +
+          `is due to bill it with. The schedule cannot cover what has already been delivered, so the ` +
+          `reversal would strand that amount in Unbilled Receivable. Someone needs to correct the ` +
+          `schedule before this order can be reversed.`;
+}
