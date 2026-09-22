@@ -46,7 +46,13 @@
  * The cell then has to be wide enough for MJ's internal `200px 1fr` label/value grid, which is why
  * the columns above widened to 380px at the same time.
  */
-.mjo-card-body > mj-form-field {
+/*
+ * `::ng-deep` because the fields are projected from the panel template (see the .html), so
+ * they carry the panel's encapsulation attribute, not this widget's — a scoped
+ * `.mjo-card-body > mj-form-field` stops matching them. `.mjo-acct-fields` keeps the rule off
+ * the GL-links card body below.
+ */
+:host ::ng-deep .mjo-acct-fields > mj-form-field {
     display: block;
     min-width: 0;
 }
