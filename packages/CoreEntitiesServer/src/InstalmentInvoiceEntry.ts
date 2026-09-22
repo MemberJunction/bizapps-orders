@@ -36,7 +36,8 @@ import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, SubmitJournalEntryDrafts } from './AccountingBridge.js';
 import { SplitExactly } from './BundleBehavior.js';
-import { GL_ROLE } from './GLAccountResolver.js';
+import { GL_ROLE, type GLAccountResolver } from './GLAccountResolver.js';
+import { SplitContraLegs } from './ContractBalance.js';
 import { BuildValueEntryLines, type JELineDraft } from './OrderJournalEntryFactory.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 
@@ -93,12 +94,29 @@ export interface InstalmentLineFacts {
     Charges: number;
     Discount: number;
     Gross: number;
+    /** The line's `BilledToDate` BEFORE this instalment — rule 1 reads it (D92). */
+    BilledToDate: number;
+    /** The line's `RecognizedToDate`. Where it exceeds billed, the excess is the contract asset. */
+    RecognizedToDate: number;
     ProductID: string;
     ProductCategoryID: string | null;
     ProductTypeID: string;
     Dimensions: Array<{ DimensionID: string; DimensionValueID: string }>;
     /** Charge/tax credits for the WHOLE line; each is sliced the same way the amounts are. */
     ChargeCredits: Array<{ GLAccountID: string; Amount: number; Label: string }>;
+}
+
+/**
+ * What the billing entry did: the journal entry it posted, and what it billed per line.
+ *
+ * The per-line amounts come back because `BilledToDate` must be advanced by the SAME statements
+ * that book the entry, inside the SAME transaction — a total that can drift from the ledger it
+ * summarises is worse than no total at all. The caller owns the writes; this owns the arithmetic.
+ */
+export interface InstalmentInvoiceResult {
+    JournalEntryID: string | null;
+    /** OrderLineID → what this instalment billed for it (its share of the AR debit). */
+    BilledByLine: Map<string, number>;
 }
 
 /** Everything the billing entry needs, read once by the operation. */
@@ -131,6 +149,44 @@ const slice = (total: number, index: number, weights: number[]): number =>
     weights.length ? SplitExactly(Math.abs(total), weights)[index] : 0;
 
 /**
+ * The company's Unbilled Receivable account, or null when nobody has linked one.
+ *
+ * NOT LINKED IS NOT A FAILURE (D92, and the same tolerance booking has always had for this role).
+ * The entry credits Deferred for the whole amount instead: coarser, still balanced, and exactly
+ * what this invoice would have done before the contract asset existed. Reported rather than
+ * swallowed, because the difference is otherwise invisible — a contract asset simply never gets
+ * relieved and nothing says so.
+ */
+async function resolveUnbilled(
+    resolver: GLAccountResolver,
+    context: InstalmentInvoiceContext,
+    line: InstalmentLineFacts,
+    asOf: Date,
+): Promise<string | null> {
+    try {
+        return await resolver.Resolve(
+            GL_ROLE.UnbilledReceivable,
+            line.ProductID,
+            line.ProductCategoryID,
+            context.CompanyID,
+            asOf,
+            line.ProductTypeID,
+        );
+    } catch {
+        console.warn(
+            `Order ${context.OrderNumber} line ${line.LineNumber}: no '${GL_ROLE.UnbilledReceivable}' GL ` +
+                `account is linked for company ${context.CompanyID}, so instalment ` +
+                `${context.InstallmentNumber} credited Deferred Revenue for the whole amount instead of ` +
+                `relieving the contract asset this line carries. The entry balances and no revenue is ` +
+                `misstated, but the line's earned-ahead-of-billing balance stays in Deferred where a ` +
+                `reader cannot tell it apart from unearned billing. Link an ` +
+                `'${GL_ROLE.UnbilledReceivable}' account to the company.`,
+        );
+        return null;
+    }
+}
+
+/**
  * Book the billing entry for one instalment and return its JournalEntryID, or null when there is
  * nothing to bill (fully prepaid, or a zero instalment).
  *
@@ -141,7 +197,7 @@ export async function EmitInstalmentInvoiceEntry(
     context: InstalmentInvoiceContext,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<string | null> {
+): Promise<InstalmentInvoiceResult> {
     const amount = money(context.Amount);
     if (!(amount > 0)) {
         console.warn(
@@ -149,7 +205,7 @@ export async function EmitInstalmentInvoiceEntry(
                 `${context.Amount}; no billing entry was posted. An instalment with no positive amount ` +
                 `bills nothing.`,
         );
-        return null;
+        return { JournalEntryID: null, BilledByLine: new Map() };
     }
 
     const { index, weights } = sliceWeights(context);
@@ -163,6 +219,7 @@ export async function EmitInstalmentInvoiceEntry(
     const resolver = await BuildGLAccountResolver(provider, user);
     const asOf = new Date(context.InvoicedAt);
     const deferredByLine = new Map<string, string>();
+    const billedByLine = new Map<string, number>();
     const lines: JELineDraft[] = [];
 
     for (const line of context.Lines) {
@@ -203,6 +260,10 @@ export async function EmitInstalmentInvoiceEntry(
             },
             {
                 AR: arAccount,
+                // The revenue-side contra is split by RULE 1 below; this builds the entry with the
+                // whole of it on Deferred and then moves the Unbilled share across, so the AR
+                // debit, the discount contra and the charge credits stay exactly what booking
+                // would have produced for this slice.
                 Credit: deferredAccount,
                 CreditLabel: 'Deferred revenue',
                 Discount: discountAccount,
@@ -214,6 +275,39 @@ export async function EmitInstalmentInvoiceEntry(
             line.ProductName,
             line.Dimensions,
         );
+
+        // ── RULE 1 (D92): relieve the line's UNBILLED balance first, then defer the rest ──
+        //
+        // Where revenue has been recognised ahead of billing, the excess is already sitting in
+        // Unbilled Receivable as a contract asset — service delivered that the contract did not yet
+        // let us bill. Billing it now converts that asset into a receivable, so the invoice must
+        // credit Unbilled down to zero BEFORE it opens any new Deferred. Crediting Deferred for the
+        // whole amount would leave the contract asset standing while also deferring revenue that
+        // was already earned: both balances wrong, and the entry balancing either way.
+        //
+        // An order billed in advance — the Blue Cypress norm — has no unbilled balance, so this is
+        // a no-op and the entry stays Dr AR / Cr Deferred.
+        const contraTotal = money(built.reduce((t, l) => (l.GLAccountID === deferredAccount ? t + (l.CreditAmount ?? 0) : t), 0));
+        const legs = SplitContraLegs(line.BilledToDate, line.RecognizedToDate, contraTotal, 'Invoice');
+        if (legs.Unbilled !== 0) {
+            const unbilledAccount = await resolveUnbilled(resolver, context, line, asOf);
+            if (unbilledAccount) {
+                for (const l of built) {
+                    if (l.GLAccountID !== deferredAccount) continue;
+                    l.CreditAmount = legs.Deferred;
+                }
+                built.push({
+                    GLAccountID: unbilledAccount,
+                    CreditAmount: legs.Unbilled,
+                    Description: `Unbilled receivable — ${line.ProductName}`,
+                    Dimensions: line.Dimensions,
+                });
+            }
+        }
+
+        // What this instalment bills for this line — the AR debit, which is what BilledToDate
+        // means. Recorded per line so the caller advances the totals in the same transaction.
+        billedByLine.set(line.ID, money(built.reduce((t, l) => (l.GLAccountID === arAccount ? t + (l.DebitAmount ?? 0) : t), 0)));
 
         // A reversal line mirrors, exactly as booking mirrors it (D16): the same accounts with the
         // sides swapped at a positive amount, never a negative debit.
@@ -233,7 +327,7 @@ export async function EmitInstalmentInvoiceEntry(
                 `(${money(context.AmountPaid)} was already paid against it), so no journal entry was ` +
                 `posted. The document number and the Invoiced stamp still stand.`,
         );
-        return null;
+        return { JournalEntryID: null, BilledByLine: billedByLine };
     }
     assertBalanced(posted, context);
 
@@ -264,7 +358,7 @@ export async function EmitInstalmentInvoiceEntry(
                 `instalment ${context.InstallmentNumber} of order ${context.OrderNumber}.`,
         );
     }
-    return journalEntryID;
+    return { JournalEntryID: journalEntryID, BilledByLine: billedByLine };
 }
 
 /**

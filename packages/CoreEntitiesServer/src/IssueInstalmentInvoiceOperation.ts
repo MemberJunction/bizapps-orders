@@ -226,7 +226,7 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
                 throw new Error(entity.LatestResult?.CompleteMessage ?? 'The instalment could not be updated.');
             }
 
-            const journalEntryID = await EmitInstalmentInvoiceEntry(
+            const { JournalEntryID: journalEntryID, BilledByLine } = await EmitInstalmentInvoiceEntry(
                 {
                     OrderHeaderPaymentScheduleID: row.ID,
                     OrderHeaderID: order.ID,
@@ -256,7 +256,26 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             if (journalEntryID) {
                 entity.JournalEntryID = journalEntryID;
                 if (!(await entity.Save())) {
-                    throw new Error(entity.LatestResult?.CompleteMessage ?? 'The reclass entry could not be recorded on the instalment.');
+                    throw new Error(entity.LatestResult?.CompleteMessage ?? 'The billing entry could not be recorded on the instalment.');
+                }
+            }
+
+            // ADVANCE BilledToDate IN THIS TRANSACTION (D92). The totals are the ledger's own
+            // summary of itself, so they are written by the same act that books the entry and roll
+            // back with it. A separate writer — a trigger, a later sweep — is how a total and the
+            // journal lines it summarises drift apart, and nothing downstream would report it.
+            for (const [orderLineID, billed] of BilledByLine) {
+                if (!(billed > 0)) continue;
+                const lineEntity = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+                if (!(await lineEntity.Load(orderLineID))) {
+                    throw new Error(`Order line ${orderLineID} could not be loaded to advance its BilledToDate.`);
+                }
+                lineEntity.BilledToDate = Number(lineEntity.BilledToDate ?? 0) + billed;
+                if (!(await lineEntity.Save())) {
+                    throw new Error(
+                        lineEntity.LatestResult?.CompleteMessage ??
+                            `BilledToDate could not be advanced on order line ${orderLineID}.`,
+                    );
                 }
             }
 
