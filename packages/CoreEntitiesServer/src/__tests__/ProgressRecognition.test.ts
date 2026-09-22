@@ -5,7 +5,7 @@
  * amount once the line reaches 100%, and a backward slide is nothing but a negative delta.
  */
 import { describe, expect, it } from 'vitest';
-import { ComputeCatchUp, ManualAttestationDriver } from '../RevenueRecognition.js';
+import { ComputeCatchUp, ManualAttestationDriver, RecognitionMirrors } from '../RevenueRecognition.js';
 
 /** Replay a sequence of cumulative percents the way Orders.RecordProgress does, one at a time. */
 function replay(lineNet: number, percents: number[]): number[] {
@@ -50,5 +50,30 @@ describe('ManualAttestationDriver', () => {
         expect(() => driver.PercentComplete({ PercentComplete: -0.1 })).toThrow(/between 0 and 1/);
         expect(() => driver.PercentComplete({})).toThrow(/between 0 and 1/);
         expect(() => driver.PercentComplete({ PercentComplete: Number.NaN })).toThrow(/between 0 and 1/);
+    });
+});
+
+describe('RecognitionMirrors — which way a catch-up entry posts', () => {
+    // The four cases, as a table, because the bug this replaces was one of them being absent.
+    it('an ordinary line recognises forward and unrecognises backward', () => {
+        expect(RecognitionMirrors(1, 400)).toBe(false);
+        expect(RecognitionMirrors(1, -150)).toBe(true);
+    });
+
+    it('a REVERSAL line is the other way round: its forward progress removes revenue', () => {
+        // The defect this was extracted to fix. A reversal POC line attested from 40% to 70% has a
+        // POSITIVE delta — 30% more of the line is done — and that must post as an unrecognition,
+        // because the line exists to unwind a sale. Mirroring on the delta alone recognised revenue
+        // on it instead, and the entry balanced, so nothing downstream would ever have said so.
+        expect(RecognitionMirrors(-1, 400)).toBe(true);
+    });
+
+    it('and a backward slide on a reversal line posts forward again — two flips are no flip', () => {
+        expect(RecognitionMirrors(-1, -150)).toBe(false);
+    });
+
+    it('reads the quantity however it arrives from the row', () => {
+        expect(RecognitionMirrors(-2.5, 10)).toBe(true);
+        expect(RecognitionMirrors(0, 10)).toBe(false);
     });
 });
