@@ -73,7 +73,7 @@ import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
-import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
+import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
@@ -1722,8 +1722,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async creditMemosForReversals(
         lines: mjBizAppsOrdersOrderLineEntity[],
-    ): Promise<Map<string, number>> {
-        const memos = new Map<string, number>();
+    ): Promise<Map<string, CreditMemoForLine>> {
+        const memos = new Map<string, CreditMemoForLine>();
         const reversals = lines.filter((l) => l.ReversesOrderLineID);
         if (!reversals.length) return memos;
 
@@ -1742,7 +1742,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 },
             ]);
             const memo = byOrigin.get(context.Origin.ID);
-            if (memo) memos.set(String(line.ID), memo);
+            if (memo) {
+                memos.set(String(line.ID), {
+                    Amount: memo,
+                    OriginOrderNumber: context.Origin.OrderNumber ?? null,
+                    OriginLineNumber: context.Origin.LineNumber ?? null,
+                });
+            }
         }
         return memos;
     }

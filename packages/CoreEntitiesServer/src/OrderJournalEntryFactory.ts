@@ -73,6 +73,7 @@ import {
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { BuildCreditMemoLines, SplitContraLegs } from './ContractBalance.js';
+import { ResolveInstalmentEntryType } from './InstalmentInvoiceEntry.js';
 import {
     GL_ROLE,
     GLAccountResolver,
@@ -243,6 +244,19 @@ export interface ValueEntryAccounts {
  * Returns UNFILTERED lines including zeros; the caller drops zeros and mirrors reversals, because
  * those rules belong to the entry, not to its arithmetic.
  */
+/**
+ * What a reversing line gives back, and what to call it (D92 §6).
+ *
+ * The amount belongs to the ORIGIN line and the names belong to the origin ORDER, both of which sit
+ * outside the order being booked — so the caller reads them and hands them in, the same bargain
+ * `scheduleRows` strikes.
+ */
+export interface CreditMemoForLine {
+    Amount: number;
+    OriginOrderNumber?: string | null;
+    OriginLineNumber?: number | null;
+}
+
 export function BuildValueEntryLines(
     amounts: ValueEntryAmounts,
     accounts: ValueEntryAccounts,
@@ -379,7 +393,7 @@ export class OrderJournalEntryFactory {
          * and hands it in, the same bargain `scheduleRows` strikes. Absent for every order that
          * reverses nothing, which is nearly all of them.
          */
-        creditMemoByLine?: Map<string, number>,
+        creditMemoByLine?: Map<string, CreditMemoForLine>,
     ): Promise<OrderLineDraft[]> {
         if (lines.length === 0) {
             throw new Error(`Order ${order.OrderNumber} has no lines to book.`);
@@ -426,7 +440,7 @@ export class OrderJournalEntryFactory {
                     order, line, products, revRecTypes, dimensions, effectiveDate, asOf, giftCardTypeIDs,
                     scheduledCompanies,
                     termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
-                    creditMemoByLine?.get(String(line.ID)) ?? 0,
+                    creditMemoByLine?.get(String(line.ID)),
                 )),
             );
         }
@@ -497,7 +511,7 @@ export class OrderJournalEntryFactory {
         term?: { ID: string; StartDate: Date; EndDate: Date; Amount: number },
         recognitionMonths?: number,
         /** This reversing line's credit memo — the origin line's billed-and-unearned balance (D92 §6). */
-        creditMemo = 0,
+        creditMemo?: CreditMemoForLine,
     ): Promise<OrderLineDraft[]> {
         const product = products.get(line.ProductID.toLowerCase());
         if (!product) {
@@ -642,7 +656,7 @@ export class OrderJournalEntryFactory {
         // value entry — its value reaches the ledger one instalment at a time — so mirroring nothing
         // would give nothing back. What the customer is owed is what they were invoiced and have not
         // consumed: the origin line's Deferred balance, computed by the caller and handed in.
-        const memo = isScheduled && isReversal ? creditMemo : 0;
+        const memo = isScheduled && isReversal ? (creditMemo?.Amount ?? 0) : 0;
 
         const bookingLines: JELineDraft[] = memo > 0
             ? BuildCreditMemoLines(memo, { AR: arAccount, Deferred: await resolve(GL_ROLE.DeferredRevenue) }, product.Name, lineDims)
@@ -766,10 +780,19 @@ export class OrderJournalEntryFactory {
                       IsBooking: true,
                       Draft: {
                           EffectiveDate: effectiveDate,
-                          EntryType: 'OrderBooking',
+                          // A credit memo is the other half of an instalment's life, not a booking,
+                          // so it classifies itself the way the billing entry does — through the
+                          // SAME resolver, which falls back to 'OrderBooking' on a database where
+                          // the type is not seeded yet. Two copies of that lookup would be two
+                          // opinions about which databases have it.
+                          EntryType: memo > 0 ? await ResolveInstalmentEntryType(this._provider, this._contextUser) : 'OrderBooking',
                           Description:
-                              `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
-                              `${isReversal ? 'REVERSAL of ' : ''}${product.Name}`,
+                              memo > 0
+                                  ? `Order ${order.OrderNumber} line ${line.LineNumber} — credit memo ` +
+                                    `reversing order ${creditMemo?.OriginOrderNumber ?? 'unknown'} line ` +
+                                    `${creditMemo?.OriginLineNumber ?? '?'} — ${product.Name}`
+                                  : `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                                    `${isReversal ? 'REVERSAL of ' : ''}${product.Name}`,
                           LinkedEntityID: this._orderLineEntityID,
                           LinkedRecordID: line.ID,
                           Lines: bookingEntryLines,
