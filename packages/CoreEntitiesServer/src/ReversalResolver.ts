@@ -99,9 +99,13 @@ export async function LoadReversalContext(
 
     // The order-line view does not carry its header's Status, and the status is what decides
     // whether a prior reversal counts — so the headers have to be fetched. One view, not one per.
+    // The ORIGIN's header rides along: its number is what a refusal and a credit memo have to name,
+    // and fetching it separately would be a second round trip for one string.
     const statusByOrder = new Map<string, string>();
-    if (priors.length) {
-        const ids = [...new Set(priors.map((p) => `'${p.OrderHeaderID}'`))].join(',');
+    const numberByOrder = new Map<string, string | null>();
+    {
+        const wanted = [...new Set([origin.OrderHeaderID, ...priors.map((p) => p.OrderHeaderID)])];
+        const ids = wanted.map((id) => `'${id}'`).join(',');
         const headers = await rv.RunView<{ ID: string; Status: string; OrderNumber: string | null }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
@@ -112,6 +116,7 @@ export async function LoadReversalContext(
         );
         for (const h of headers?.Results ?? []) {
             statusByOrder.set(String(h.ID).toLowerCase(), String(h.Status ?? ''));
+            numberByOrder.set(String(h.ID).toLowerCase(), h.OrderNumber ?? null);
         }
     }
 
@@ -153,7 +158,7 @@ export async function LoadReversalContext(
             UnitPrice: Number(origin.UnitPrice ?? 0),
             DiscountPct: Number(origin.DiscountPct ?? 0),
             DiscountAmount: Number(origin.DiscountAmount ?? 0),
-            OrderNumber: null,
+            OrderNumber: numberByOrder.get(String(origin.OrderHeaderID).toLowerCase()) ?? null,
             // The coverage window the origin actually sold — for a subscription that is the SETTLED
             // term, which `materializeSubscriptions` stamped back onto the line, so the anchoring and
             // proration the type applied are already baked in here and need no re-deriving.
