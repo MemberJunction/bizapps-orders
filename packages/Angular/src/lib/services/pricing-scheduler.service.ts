@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Metadata, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { CanPriceOrderLocally, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { CanPriceOrderLocally, NetAfterDiscount, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { anyFieldIsDirty } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
@@ -18,6 +18,14 @@ export interface MJOLinePrice {
     ClientKey: string;
     /** Quantity × unit price, before this line's own discount. */
     ExtendedAmount: number | null;
+    /**
+     * What came OFF this line — the percentage concession and the allocated amount together.
+     *
+     * Reported so the card can say a discount was given rather than only showing a smaller total.
+     * A price that is simply lower and a price that was discounted are different facts, and only
+     * the second one is discounting (golive #252).
+     */
+    DiscountAmount: number;
     UnitPrice: number | null;
     /** After `DiscountPct`. The figure the line strip shows. */
     NetAmount: number | null;
@@ -241,6 +249,12 @@ export class MJOPricingScheduler {
                     DiscountPct: Number(l.DiscountPct ?? 0),
                 })),
                 PromotionCodes: order.PromotionCodes.Codes,
+                ManualDiscounts: StagedManualDiscounts(order),
+                // KNOWN ASYMMETRY: this operation's input has no field for a discount the line
+                // ALREADY carries, so a saved order re-priced on this path shows its staged requests
+                // but not its stored concessions. The local walk above is handed the stored figure
+                // and does show both. Escalation happens only when a promotion code or a pricing
+                // plugin is in play, and closing the gap means a wire change to `Orders.PriceOrder`.
             });
 
             // Discard anything overtaken by a newer request.
@@ -310,6 +324,10 @@ export class MJOPricingScheduler {
             // Assigning 0 would read as a deliberate free line.
             if (anyFieldIsDirty(source, ['UnitPrice'])) line.UnitPrice = Number(source.UnitPrice);
             line.DiscountPct = Number(source.DiscountPct ?? 0);
+            // The discount the line ALREADY carries comes across too. Without it a saved order
+            // reopened on screen priced as though its concessions had never been granted, and a new
+            // one staged on the same line would then read as the only discount there is.
+            line.DiscountAmount = Number(source.DiscountAmount ?? 0);
             lines.push(line);
         }
 
@@ -325,7 +343,12 @@ export class MJOPricingScheduler {
             ShipToAddressID: order.ShipToAddressID ?? null,
             Lines: lines,
             PromotionCodes: [],
-            ManualDiscounts: [],
+            ManualDiscounts: StagedManualDiscounts(order).map((d) => ({
+                // The walk keys lines positionally here, because these copies were never saved.
+                OrderLineID: d.LineIndex >= 0 ? String(d.LineIndex) : null,
+                Amount: d.Amount,
+                Reason: d.Reason,
+            })),
             Charges: [],
             // The editor needs the rules' answer for a pinned line too — see `MJOLinePrice.Default`.
             IncludeDefaultsForStatedLines: true,
@@ -336,19 +359,28 @@ export class MJOPricingScheduler {
 
         // Read back off the entities the walk just stamped — the same fields `Orders.PriceOrder`
         // reads before returning, so the two paths produce the same summary from the same numbers.
-        const priced = lines.map((line, i) => ({
-            UnitPrice: Number(line.UnitPrice ?? 0),
-            DiscountAmount: Number(line.DiscountAmount ?? 0),
-            LineTotalNet: Math.round((Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) - Number(line.DiscountAmount ?? 0)) * 100) / 100,
-            Components: result.PriceComponents.get(line)?.Components?.map((c) => ({
-                Kind: String((c as { ComponentType?: string }).ComponentType ?? ''),
-                Label: String((c as { Label?: string }).Label ?? ''),
-                Amount: Number((c as { Amount?: number }).Amount ?? 0),
-            })),
-            TaxExemptReason: result.TaxReasons.get(i) ?? null,
-            ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
-            Default: engineDefault(result.EngineDefaults.get(line)),
-        }));
+        const priced = lines.map((line, i) => {
+            const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
+            // Through `NetAfterDiscount`, exactly as `Orders.PriceOrder` now does — the whole point
+            // of this file is that the local walk and the remote one are the same walk, and this was
+            // the one place they had each written the subtraction out by hand. Both had dropped
+            // `DiscountPct`, so a line carrying a percentage concession quoted above what it books.
+            const pct = Math.round(Number(line.DiscountPct ?? 0) * 1e4) / 1e4;
+            const net = NetAfterDiscount(gross, pct, Number(line.DiscountAmount ?? 0));
+            return {
+                UnitPrice: Number(line.UnitPrice ?? 0),
+                DiscountAmount: Math.round((gross - net) * 100) / 100,
+                LineTotalNet: net,
+                Components: result.PriceComponents.get(line)?.Components?.map((c) => ({
+                    Kind: String((c as { ComponentType?: string }).ComponentType ?? ''),
+                    Label: String((c as { Label?: string }).Label ?? ''),
+                    Amount: Number((c as { Amount?: number }).Amount ?? 0),
+                })),
+                TaxExemptReason: result.TaxReasons.get(i) ?? null,
+                ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
+                Default: engineDefault(result.EngineDefaults.get(line)),
+            };
+        });
         const sum = (pick: (l: (typeof priced)[number]) => number) =>
             Math.round(priced.reduce((t, l) => t + pick(l), 0) * 100) / 100;
 
@@ -398,6 +430,7 @@ export class MJOPricingScheduler {
                 // Positional: an unsaved line has no id, and the engine answers by position.
                 ClientKey: line?.ID ?? String(i),
                 ExtendedAmount: extended,
+                DiscountAmount: Number(priced.DiscountAmount ?? 0),
                 UnitPrice: Number(priced.UnitPrice),
                 NetAmount: Number(priced.LineTotalNet),
                 PriceListName: null,
@@ -456,6 +489,43 @@ function engineDefault(resolved: ResolvedPrice | null | undefined): MJOEngineDef
     if (resolved === undefined) return undefined;
     if (resolved === null) return null;
     return { UnitPrice: resolved.UnitPrice, ProductPriceID: resolved.ProductPriceID, PriceName: resolved.PriceName ?? null };
+}
+
+/**
+ * The discounts staged on an order but not yet saved, keyed by LINE POSITION.
+ *
+ * A discount composed on screen lives as an unsaved row on `Order.Adjustments` — the same channel
+ * `OrderEntityServer` drains at save time, so the figure previewed here and the figure booked come
+ * from one request rather than two descriptions of it. Position rather than key because both
+ * pricing walks build their own throwaway line objects in this order and answer positionally; a
+ * negative index means the request names no line, which is an order-level discount.
+ *
+ * A row naming a line the order no longer has is dropped rather than sent: the engine refuses an
+ * unknown line, and a line removed after its discount was staged is a screen-state problem, not
+ * something to fail an order over.
+ */
+export function StagedManualDiscounts(
+    order: OrderHeaderEntity,
+): Array<{ LineIndex: number; Amount: number | null; Percent: number | null; Reason: string }> {
+    const staged = order.Adjustments.Items.filter((a) => !a.IsSaved);
+    if (!staged.length) return [];
+
+    const positionOf = new Map<string, number>();
+    order.Lines.Items.forEach((line, index) => {
+        if (line.ID) positionOf.set(String(line.ID).toLowerCase(), index);
+    });
+
+    const requests: Array<{ LineIndex: number; Amount: number | null; Percent: number | null; Reason: string }> = [];
+    for (const row of staged) {
+        if (!row.OrderLineID) {
+            requests.push({ LineIndex: -1, Amount: row.Amount ?? null, Percent: null, Reason: row.Reason ?? '' });
+            continue;
+        }
+        const index = positionOf.get(String(row.OrderLineID).toLowerCase());
+        if (index === undefined) continue;
+        requests.push({ LineIndex: index, Amount: row.Amount ?? null, Percent: null, Reason: row.Reason ?? '' });
+    }
+    return requests;
 }
 
 /** Round to cents the way the engine does, so client and server agree on the last penny. */

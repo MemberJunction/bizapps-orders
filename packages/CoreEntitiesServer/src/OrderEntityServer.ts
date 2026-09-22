@@ -410,7 +410,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // An UNSAVED header still has to mint `OrderNumber` (NOT NULL). That lives on the
         // full path below, inside the transaction, so a brand-new Draft with no lines must
         // not take this shortcut. Existing drafts with no line edits (Notes, payer, …) can.
-        if (!booking && !this.Lines.Dirty && this.IsSaved) {
+        //
+        // A STAGED CHARGE OR DISCOUNT IS LINE WORK THAT THE LINES DO NOT SHOW. It is requested on a
+        // collection, so it dirties no line, and without this clause the shortcut skipped the drain
+        // and the whole pricing walk with it — see `hasStagedPricingRequests`.
+        if (!booking && !this.Lines.Dirty && this.IsSaved && !this.hasStagedPricingRequests()) {
             // A HEADER-ONLY UPDATE MUST NOT CARRY THE CALLER'S IDEA OF THE ROLLUPS.
             //
             // This is the path a browser takes to change Notes or a payer, and it is where the
@@ -1260,6 +1264,28 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * On the way OUT the collections mean what they say — `Charges.Load()` on a saved order returns
      * what the engine decided. Request on the way in, record on the way out.
      */
+    /**
+     * Whether anything is waiting for the pricing walk that the LINES cannot reveal.
+     *
+     * The header-only shortcut asks whether the lines are dirty, which was the whole question while
+     * charges and discounts could only be requested by a server-side caller that was confirming an
+     * order anyway. A browser stages them on the collections instead, and staging one touches no
+     * line — so opening a saved Draft, discounting a line and saving took the shortcut, skipped this
+     * drain, and handed the staged row to `super.Save` as an ordinary related record: an
+     * `OrderAdjustment` inserted with no authority, no allocation and no change to the line's
+     * `DiscountAmount`, or refused outright by the table. The screen said the concession would apply
+     * on save, and it did not.
+     *
+     * UNSAVED ROWS, not `Dirty`. `Dirty` is also true when a row the ENGINE wrote is edited or
+     * removed, and those are not requests — the drain ignores them, and routing that save down the
+     * full walk would re-price every line nobody touched. What this asks is exactly what
+     * {@link drainStagedPricingRequests} consumes.
+     */
+    private hasStagedPricingRequests(): boolean {
+        if (this._manualDiscounts.length > 0 || this._charges.length > 0) return true;
+        return this.Adjustments.Items.some((a) => !a.IsSaved) || this.Charges.Items.some((c) => !c.IsSaved);
+    }
+
     private async drainStagedPricingRequests(): Promise<void> {
         const staged = this.Charges.Items.filter((c) => !c.IsSaved);
         if (staged.length) {
