@@ -265,7 +265,9 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             // back with it. A separate writer — a trigger, a later sweep — is how a total and the
             // journal lines it summarises drift apart, and nothing downstream would report it.
             for (const [orderLineID, billed] of BilledByLine) {
-                if (!(billed > 0)) continue;
+                // Signed: a reversal line's piece is negative and must still be applied, so the
+                // guard is "did this bill anything", not "is it positive".
+                if (billed === 0) continue;
                 const lineEntity = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
                 if (!(await lineEntity.Load(orderLineID))) {
                     throw new Error(`Order line ${orderLineID} could not be loaded to advance its BilledToDate.`);

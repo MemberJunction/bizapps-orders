@@ -44,6 +44,20 @@ describe('SplitContraLegs — the two ordering rules (D92)', () => {
         }
     });
 
+    it('a REVERSAL line: the rule reads magnitudes, the caller carries the sign', () => {
+        // BilledToDate and RecognizedToDate are stored signed — negative on a reversal line — so an
+        // origin and its reversals net to zero. The ordering rule itself is about magnitudes,
+        // though: a reversal relieves the same balances in the same order, in the other direction.
+        // So callers pass absolute values and mirror the finished entry once, exactly as the
+        // journal factory has always handled a negative quantity (D16).
+        const origin = SplitContraLegs(25_000, 40_000, 25_000, 'Invoice');
+        const reversal = SplitContraLegs(Math.abs(-25_000), Math.abs(-40_000), Math.abs(-25_000), 'Invoice');
+        expect(reversal).toEqual(origin);
+        // …and the two net to nothing once the reversal's sign is applied by the caller.
+        expect(money(origin.Deferred - reversal.Deferred)).toBe(0);
+        expect(money(origin.Unbilled - reversal.Unbilled)).toBe(0);
+    });
+
     it('a zero amount produces no legs at all', () => {
         expect(SplitContraLegs(10, 5, 0, 'Invoice')).toEqual({ Deferred: 0, Unbilled: 0 });
     });
