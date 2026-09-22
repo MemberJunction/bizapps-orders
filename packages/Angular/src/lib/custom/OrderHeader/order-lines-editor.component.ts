@@ -589,10 +589,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.customAmountLineIds.add(line.ID);
         const def = this.DefaultUnit(line);
         // Typing the default back in is a return to the rules, not an override of them (item 2).
+        // Through `restoreDefault`, NOT `clearOverride`: on a saved line the baseline is the
+        // stored override, so clearing would keep the old price while dropping its flag and reason.
         if (def != null && moneyEqual(amount, def)) {
-            this.clearOverride(line);
-            this.schedulePricing();
-            this.cdr.detectChanges();
+            this.restoreDefault(line);
             return;
         }
         this.stamp(line, 'ProductPriceID', null);
@@ -624,18 +624,35 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     /** The "Use Default Price" button: back to the rules, and the editor closes. */
     public ResetOverride(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (!this.CanRestoreDefault(line)) return;
         this.restoreDefault(line);
         this.overrideEditorLineIds.delete(line.ID);
+    }
+
+    /**
+     * Whether "back to the rules" is an answer this line can be given right now.
+     *
+     * An unsaved line always can: its baseline is "unpriced" and the engine fills it at save. A
+     * saved line's baseline is whatever was stored — possibly the override itself — so it can only
+     * be put back on the default once the pricing pass has said what that default IS. Until then
+     * the Default row and the reset button are offered disabled rather than acting on a guess.
+     */
+    public CanRestoreDefault(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !line.IsSaved || this.EngineDefault(line) != null;
     }
 
     /**
      * Back to whatever the rules say, with the editor left open — the Default row of the picker.
      * The override, its reason and any custom amount all go; the flag is cleared because the price
      * is no longer a deviation, not merely hidden.
+     *
+     * A saved line whose default is not known is left exactly as it is, flag included: clearing the
+     * flag on a price that did not change would keep the concession and erase its audit trail.
      */
     private restoreDefault(line: mjBizAppsOrdersOrderLineEntity): void {
         const engine = this.EngineDefault(line);
-        if (line.IsSaved && engine) {
+        if (line.IsSaved) {
+            if (!engine) return;
             // A saved line's baseline is whatever was stored, which may itself be the override; the
             // rules' answer is what Default promises, so that is what is written.
             this.stamp(line, 'UnitPrice', engine.UnitPrice);
