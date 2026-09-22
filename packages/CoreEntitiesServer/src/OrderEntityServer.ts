@@ -58,7 +58,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
-import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
@@ -67,7 +67,12 @@ import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
-import { RequireUUID } from './sql-guards.js';
+import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
+import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
+import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
+import type { mjBizAppsOrdersOrderLineDimensionEntity } from '@mj-biz-apps/orders-entities';
+import { ORDER_LINE_DIMENSION_ENTITY } from './entity-names.js';
 import {
     MergeOrderRollups,
     ORDER_ROLLUP_FIELDS,
@@ -1103,7 +1108,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
     private async savePendingLines(
         options?: EntitySaveOptions,
-        _decisions?: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+        decisions?: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
     ): Promise<void> {
         const pending = this._pendingPromotions;
         const charges = this._pendingCharges;
@@ -1139,6 +1144,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             persisted.push(line);
         }
         await this.saveTaxReasons(persisted);
+        await this.stampLineDimensions(persisted, decisions, options);
         // The lines are NOT emptied here any more. `this._lines = []` drained a staging buffer that
         // existed because the old wire format shipped a draft and discarded it. The collection is
         // declared `ClearAfterSave: false`, so it stays a live view of what was just persisted —
@@ -1730,6 +1736,200 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
         }
         this._priceComponents.clear();
+    }
+
+    /**
+     * Derive each draft line's GL dimension tags and write them as `OrderLineDimension` rows.
+     *
+     * WHY THIS EXISTS. Order lines were never tagged, so every order-originated journal entry
+     * reached the ledger carrying no dimensions (golive #236). A line can now state ONE tag by hand,
+     * but the chart-of-accounts design needs five axes on a revenue line and needs them with no
+     * human in the loop. This is that: the values are DERIVED, from the product's mapping and from
+     * what the line itself is.
+     *
+     * CHILD ROWS, NOT THE COLUMNS. `OrderLine.DimensionID` / `.DimensionValueID` hold one axis, so
+     * they cannot carry five. They stay the HUMAN OVERRIDE: `MergeLineDimensions` gives the column
+     * precedence over a child row naming the same axis when the factory builds the entry, so
+     * somebody who sets a tag by hand overrules what was derived for that one axis and nothing else.
+     *
+     * A RULE BEATS THE PRODUCT MAPPING. They normally address different axes — Venture, Product and
+     * Event come from the mapping; ARR-Type and Vintage are facts about this line — but where both
+     * name one axis the rule wins, because it was computed from this line rather than from a default
+     * somebody set on a category.
+     *
+     * DIFFED, NOT REWRITTEN. The obvious implementation deletes every row and re-inserts, which
+     * writes a delete and an insert into the change log on every save of an unchanged order. Rows
+     * that still derive the same way are left alone.
+     *
+     * BOOKED LINES ARE SKIPPED. Their tags are what the journal entry already carries, and trigger
+     * 51003 freezes the line once `JournalEntryID` is stamped.
+     *
+     * NOT A PLACE THAT REFUSES. An unmapped product yields no tags, which books untagged — the state
+     * every line was in before this existed. Where a GL account link REQUIRES a dimension, that is
+     * the place to refuse, and it is a separate check.
+     */
+    private async stampLineDimensions(
+        persisted: mjBizAppsOrdersOrderLineEntity[],
+        decisions?: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const lines = persisted.filter((line) => !line.JournalEntryID);
+        if (!lines.length) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const engine = await LoadAccountingEngine(provider, user);
+
+        // NOTHING TO TAG WITH, SO NOTHING TO DO. Dimensions arrive from Business Central through
+        // accounting's ERP sync; until that has run there are no axes, and every step below — the
+        // product cache, the mapping read, the event dates, the per-line reconcile — would be work
+        // that could only ever conclude "no tags". This is the state of an environment before the
+        // sync lands, which is most of them, so it is worth leaving early rather than absorbing.
+        if (!engine.Dimensions.length) return;
+
+        const resolver = new DimensionDefaultResolver(ResolverEntities(), provider, user);
+
+        await LoadOrdersEngine(provider, user);
+        const productByID = new Map(
+            OrdersEngine.Instance.Products.map((p) => [uuidKey(p.ID), p]),
+        );
+        const eventStarts = await this.loadEventStarts(lines.map((l) => l.ProductID));
+        const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();
+
+        const existing = await this.loadLineDimensionRows(lines.map((l) => l.ID));
+
+        for (const line of lines) {
+            const product = productByID.get(uuidKey(line.ProductID));
+            const derived = MergeDerivedTags(
+                await resolver.Resolve(
+                    line.ProductID,
+                    product?.ProductCategoryID ?? null,
+                    product?.ProductTypeID ?? null,
+                    line.CompanyID ?? product?.CompanyID ?? '',
+                    asOf,
+                ),
+                DeriveLineDimensions(
+                    {
+                        SubscriptionAction: decisions?.get(line)?.Decision.Action ?? null,
+                        EventStartsAt: eventStarts.get(uuidKey(line.ProductID)) ?? null,
+                    },
+                    engine as unknown as DimensionVocabulary,
+                ),
+            );
+
+            await this.reconcileLineDimensions(line, derived, existing.get(uuidKey(line.ID)) ?? [], options);
+        }
+    }
+
+    /** Event start dates for the given products, in one read. Non-event products simply have none. */
+    private async loadEventStarts(productIDs: string[]): Promise<Map<string, string>> {
+        const ids = RequireUUIDs([...new Set(productIDs.filter(Boolean))], 'ProductID');
+        const out = new Map<string, string>();
+        if (!ids.length) return out;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ ID: string; EventStartsAt: string }>(
+            {
+                EntityName: EVENT_PRODUCT_ENTITY,
+                ExtraFilter: `ID IN (${ids.map((id) => `'${id}'`).join(',')})`,
+                Fields: ['ID', 'EventStartsAt'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!res?.Success) {
+            throw new Error(
+                `Could not read event dates, so event lines cannot be tagged with a vintage: ` +
+                    `${res?.ErrorMessage ?? 'no error message supplied'}`,
+            );
+        }
+        for (const row of res.Results ?? []) {
+            if (row.EventStartsAt) out.set(uuidKey(row.ID), row.EventStartsAt);
+        }
+        return out;
+    }
+
+    /** The dimension rows these lines already carry, keyed by line. One read for the whole order. */
+    private async loadLineDimensionRows(
+        lineIDs: string[],
+    ): Promise<Map<string, mjBizAppsOrdersOrderLineDimensionEntity[]>> {
+        const ids = RequireUUIDs([...new Set(lineIDs.filter(Boolean))], 'OrderLineID');
+        const out = new Map<string, mjBizAppsOrdersOrderLineDimensionEntity[]>();
+        if (!ids.length) return out;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<mjBizAppsOrdersOrderLineDimensionEntity>(
+            {
+                EntityName: ORDER_LINE_DIMENSION_ENTITY,
+                ExtraFilter: `OrderLineID IN (${ids.map((id) => `'${id}'`).join(',')})`,
+                ResultType: 'entity_object',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!res?.Success) {
+            throw new Error(
+                `Could not read the existing dimension tags, so they cannot be reconciled: ` +
+                    `${res?.ErrorMessage ?? 'no error message supplied'}`,
+            );
+        }
+        for (const row of res.Results ?? []) {
+            const key = uuidKey(row.OrderLineID);
+            const list = out.get(key) ?? [];
+            list.push(row);
+            out.set(key, list);
+        }
+        return out;
+    }
+
+    /** Bring a line's stored tags in line with what was derived, touching only what differs. */
+    private async reconcileLineDimensions(
+        line: mjBizAppsOrdersOrderLineEntity,
+        derived: LineDimensionTag[],
+        existing: mjBizAppsOrdersOrderLineDimensionEntity[],
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const wanted = new Map(derived.map((tag) => [uuidKey(tag.DimensionID), tag]));
+
+        for (const row of existing) {
+            const key = uuidKey(row.DimensionID);
+            const want = wanted.get(key);
+            if (!want) {
+                if (!(await row.Delete())) {
+                    throw new Error(
+                        `Failed to remove a stale dimension tag from line ${line.LineNumber}: ` +
+                            `${ExtractEntityErrorMessage(row)}`,
+                    );
+                }
+                continue;
+            }
+            wanted.delete(key);
+            if (uuidKey(row.DimensionValueID) !== uuidKey(want.DimensionValueID)) {
+                row.DimensionValueID = want.DimensionValueID;
+                if (!(await row.Save(options))) {
+                    throw new Error(
+                        `Failed to update a dimension tag on line ${line.LineNumber}: ` +
+                            `${ExtractEntityErrorMessage(row)}`,
+                    );
+                }
+            }
+        }
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        for (const tag of wanted.values()) {
+            const row = await provider.GetEntityObject<mjBizAppsOrdersOrderLineDimensionEntity>(
+                ORDER_LINE_DIMENSION_ENTITY,
+                this.ContextCurrentUser as UserInfo,
+            );
+            row.NewRecord();
+            row.OrderLineID = line.ID;
+            row.DimensionID = tag.DimensionID;
+            row.DimensionValueID = tag.DimensionValueID;
+            if (!(await row.Save(options))) {
+                throw new Error(
+                    `Failed to tag line ${line.LineNumber} with a dimension: ${ExtractEntityErrorMessage(row)}`,
+                );
+            }
+        }
     }
 
 

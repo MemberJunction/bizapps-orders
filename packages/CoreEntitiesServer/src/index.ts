@@ -49,7 +49,11 @@ export type { OrderRollupField, OrderRollups, ResolvedOrderRollups } from './Ord
 
 export { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 export type { JEDraft, JELineDraft, OrderLineDraft } from './OrderJournalEntryFactory.js';
-export { MergeLineDimensions } from './LineDimensionMerge.js';
+export { MergeLineDimensions, MergeDerivedTags } from './LineDimensionMerge.js';
+export { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
+export type { DimensionDefaultEntityIDs, ResolvedDefault } from './DimensionDefaultResolver.js';
+export { DeriveARRType, DeriveVintage, DeriveLineDimensions, DIMENSION_CODE, ARR_TYPE_VALUE_CODE } from './LineDimensionRules.js';
+export type { DimensionVocabulary, LineDimensionFacts } from './LineDimensionRules.js';
 export type { LineDimensionColumns, LineDimensionTag } from './LineDimensionMerge.js';
 
 export {

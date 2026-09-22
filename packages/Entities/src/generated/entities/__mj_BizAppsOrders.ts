@@ -528,6 +528,90 @@ export const mjBizAppsOrdersCustomerTaxExemptionSchema = z.object({
 export type mjBizAppsOrdersCustomerTaxExemptionEntityType = z.infer<typeof mjBizAppsOrdersCustomerTaxExemptionSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Dimension Defaults
+ */
+export const mjBizAppsOrdersDimensionDefaultSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    EntityID: z.string().describe(`
+        * * Field Name: EntityID
+        * * Display Name: Entity ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Entities (vwEntities.ID)
+        * * Description: The kind of record this default hangs off — MJ Entity id for Products, Product Categories, Product Types or Companies.`),
+    RecordID: z.string().describe(`
+        * * Field Name: RecordID
+        * * Display Name: Record ID
+        * * SQL Data Type: nvarchar(400)
+        * * Description: The record this default hangs off, within EntityID.`),
+    DimensionID: z.string().describe(`
+        * * Field Name: DimensionID
+        * * Display Name: Dimension ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimensions (vwDimensions.ID)
+        * * Description: The analysis axis this default supplies, from __mj_BizAppsAccounting.Dimension.`),
+    DimensionValueID: z.string().describe(`
+        * * Field Name: DimensionValueID
+        * * Display Name: Dimension Value ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimension Values (vwDimensionValues.ID)
+        * * Description: The value supplied for that axis, from __mj_BizAppsAccounting.DimensionValue.`),
+    Status: z.union([z.literal('Active'), z.literal('Disabled'), z.literal('Pending')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(10)
+        * * Default Value: Active
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Disabled
+    *   * Pending
+        * * Description: Pending, Active or Disabled. Only Active rows are considered, matching how GL account links are resolved.`),
+    StartedAt: z.date().nullable().describe(`
+        * * Field Name: StartedAt
+        * * Display Name: Started At
+        * * SQL Data Type: datetimeoffset
+        * * Description: Start of the window this default applies to. NULL is open-ended. Judged against the order date, not today, so a back-dated order resolves what was live when it was placed.`),
+    EndedAt: z.date().nullable().describe(`
+        * * Field Name: EndedAt
+        * * Display Name: Ended At
+        * * SQL Data Type: datetimeoffset
+        * * Description: End of the window this default applies to. NULL is open-ended.`),
+    Comments: z.string().nullable().describe(`
+        * * Field Name: Comments
+        * * Display Name: Comments
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: Free-text note for why this default exists. Not read by anything.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Entity: z.string().describe(`
+        * * Field Name: Entity
+        * * Display Name: Entity
+        * * SQL Data Type: nvarchar(255)`),
+    Dimension: z.string().describe(`
+        * * Field Name: Dimension
+        * * Display Name: Dimension
+        * * SQL Data Type: nvarchar(100)`),
+    DimensionValue: z.string().describe(`
+        * * Field Name: DimensionValue
+        * * Display Name: Dimension Value
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersDimensionDefaultEntityType = z.infer<typeof mjBizAppsOrdersDimensionDefaultSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Entitlement Grants
  */
 export const mjBizAppsOrdersEntitlementGrantSchema = z.object({
@@ -6663,6 +6747,211 @@ export class mjBizAppsOrdersCustomerTaxExemptionEntity extends BaseEntity<mjBizA
     */
     get Person(): string | null {
         return this.Get('Person');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Dimension Defaults - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: DimensionDefault
+ * * Base View: vwDimensionDefaults
+ * * @description Default GL dimension values for order lines, resolved by the same precedence as GL account links: product, then its category and that category's ancestors, then its product type, then the line's company. Most specific wins, per dimension.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Dimension Defaults')
+export class mjBizAppsOrdersDimensionDefaultEntity extends BaseEntity<mjBizAppsOrdersDimensionDefaultEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Dimension Defaults record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Dimension Defaults record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersDimensionDefaultEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: EntityID
+    * * Display Name: Entity ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Entities (vwEntities.ID)
+    * * Description: The kind of record this default hangs off — MJ Entity id for Products, Product Categories, Product Types or Companies.
+    */
+    get EntityID(): string {
+        return this.Get('EntityID');
+    }
+    set EntityID(value: string) {
+        this.Set('EntityID', value);
+    }
+
+    /**
+    * * Field Name: RecordID
+    * * Display Name: Record ID
+    * * SQL Data Type: nvarchar(400)
+    * * Description: The record this default hangs off, within EntityID.
+    */
+    get RecordID(): string {
+        return this.Get('RecordID');
+    }
+    set RecordID(value: string) {
+        this.Set('RecordID', value);
+    }
+
+    /**
+    * * Field Name: DimensionID
+    * * Display Name: Dimension ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimensions (vwDimensions.ID)
+    * * Description: The analysis axis this default supplies, from __mj_BizAppsAccounting.Dimension.
+    */
+    get DimensionID(): string {
+        return this.Get('DimensionID');
+    }
+    set DimensionID(value: string) {
+        this.Set('DimensionID', value);
+    }
+
+    /**
+    * * Field Name: DimensionValueID
+    * * Display Name: Dimension Value ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimension Values (vwDimensionValues.ID)
+    * * Description: The value supplied for that axis, from __mj_BizAppsAccounting.DimensionValue.
+    */
+    get DimensionValueID(): string {
+        return this.Get('DimensionValueID');
+    }
+    set DimensionValueID(value: string) {
+        this.Set('DimensionValueID', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(10)
+    * * Default Value: Active
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Disabled
+    *   * Pending
+    * * Description: Pending, Active or Disabled. Only Active rows are considered, matching how GL account links are resolved.
+    */
+    get Status(): 'Active' | 'Disabled' | 'Pending' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Active' | 'Disabled' | 'Pending') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: StartedAt
+    * * Display Name: Started At
+    * * SQL Data Type: datetimeoffset
+    * * Description: Start of the window this default applies to. NULL is open-ended. Judged against the order date, not today, so a back-dated order resolves what was live when it was placed.
+    */
+    get StartedAt(): Date | null {
+        return this.Get('StartedAt');
+    }
+    set StartedAt(value: Date | null) {
+        this.Set('StartedAt', value);
+    }
+
+    /**
+    * * Field Name: EndedAt
+    * * Display Name: Ended At
+    * * SQL Data Type: datetimeoffset
+    * * Description: End of the window this default applies to. NULL is open-ended.
+    */
+    get EndedAt(): Date | null {
+        return this.Get('EndedAt');
+    }
+    set EndedAt(value: Date | null) {
+        this.Set('EndedAt', value);
+    }
+
+    /**
+    * * Field Name: Comments
+    * * Display Name: Comments
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: Free-text note for why this default exists. Not read by anything.
+    */
+    get Comments(): string | null {
+        return this.Get('Comments');
+    }
+    set Comments(value: string | null) {
+        this.Set('Comments', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Entity
+    * * Display Name: Entity
+    * * SQL Data Type: nvarchar(255)
+    */
+    get Entity(): string {
+        return this.Get('Entity');
+    }
+
+    /**
+    * * Field Name: Dimension
+    * * Display Name: Dimension
+    * * SQL Data Type: nvarchar(100)
+    */
+    get Dimension(): string {
+        return this.Get('Dimension');
+    }
+
+    /**
+    * * Field Name: DimensionValue
+    * * Display Name: Dimension Value
+    * * SQL Data Type: nvarchar(200)
+    */
+    get DimensionValue(): string {
+        return this.Get('DimensionValue');
     }
 }
 

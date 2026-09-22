@@ -113,7 +113,7 @@ function orderWith(line: unknown, booking: boolean) {
         Object.defineProperty(order, k, { value: v, writable: true });
     }
     // Everything after the line loop is someone else's subject.
-    for (const m of ['saveTaxReasons', 'writePromotionRecords', 'writeChargeRecords']) {
+    for (const m of ['saveTaxReasons', 'stampLineDimensions', 'writePromotionRecords', 'writeChargeRecords']) {
         Object.defineProperty(order, m, { value: async () => undefined, writable: true });
     }
     return order;
