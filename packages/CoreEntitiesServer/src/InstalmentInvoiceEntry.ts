@@ -1,19 +1,26 @@
 /**
  * @fileoverview The BILLING ENTRY for one instalment: the value entry a non-scheduled order raises
- * at confirm, raised here instead — once per instalment, for that instalment's slice (D91).
+ * at confirm, raised here instead — once per instalment, for that instalment's slice (D92).
  *
- *     Dr  Accounts Receivable      this instalment's share of net + tax + charges
- *     Dr  Sales Discounts          its share of the discount
- *         Cr  Deferred Revenue     its share of gross (or net, when the discount nets in)
- *         Cr  each charge and tax  its share of each
+ *     Dr  Accounts Receivable          this instalment's share of net + tax + charges
+ *         Cr  Unbilled Receivable      the part that relieves revenue already earned (rule 1)
+ *         Cr  Deferred Revenue         the rest — billing that runs ahead of performance
+ *         Cr  each charge and tax      its share of each
  *
- * WHY THE CREDIT IS ALWAYS DEFERRED REVENUE, even for an up-front line. Billing is not earning.
- * The revenue side is already settled elsewhere — an up-front line credited Sales at confirm, a
- * deferred driver's staged releases credit Sales on their own dates — so crediting Sales again
- * here would recognise the same money twice. Deferred Revenue is the account that nets billing
- * against recognition, and between the two events a contract's Deferred legitimately runs to a
- * DEBIT balance. That debit balance is the contract asset; it is presented as Unbilled Receivable
- * by a period-end reclass, not by a second running account in this code.
+ * THE DISCOUNT IS NOT HERE. It is booked once, with the revenue it reduces. See the long note at
+ * its removal site below; the short version is that an entry crediting Deferred gross while the
+ * recognition entry credits Sales gross double-debits Sales Discounts, and both entries balance.
+ *
+ * WHY THE REVENUE SIDE IS NEVER CREDITED HERE, even for an up-front line. Billing is not earning.
+ * The revenue side is settled elsewhere — an up-front line credited Sales at confirm, a deferred
+ * driver's staged releases credit Sales on their own dates — so crediting Sales again here would
+ * recognise the same money twice.
+ *
+ * WHICH contra account takes the credit is rule 1 of {@link SplitContraLegs}, and it is a real
+ * account, not a presentation layer: Unbilled Receivable first, up to the revenue this line has
+ * earned ahead of its billing (`max(0, R − B)`), then Deferred for the rest. An earlier revision
+ * let Deferred run to a debit balance and left a period-end reclass to present it; D92 keeps both
+ * running totals on the line instead, so the balance sheet is right without one.
  *
  * WHY AT INVOICING RATHER THAN ON THE DUE DATE. Forward-dating or a due-date job would make AR
  * appear whether or not anyone actually billed, and the due-with-no-invoice worklist — the control
@@ -236,43 +243,44 @@ export async function EmitInstalmentInvoiceEntry(
         const deferredAccount = await resolve(GL_ROLE.DeferredRevenue);
         deferredByLine.set(line.ID, deferredAccount);
 
-        // THE DISCOUNT RULE IS BOOKING'S, UNCHANGED: a contra account when one resolves, otherwise
-        // the discount nets into the revenue credit (plan D11).
-        let discountAccount: string | null = null;
-        if (money(line.Discount) !== 0) {
-            try {
-                discountAccount = await resolve(GL_ROLE.SalesDiscounts);
-            } catch {
-                discountAccount = null;
-            }
-        }
+        // THE DISCOUNT IS NOT BOOKED HERE — it is booked ONCE, when revenue is recognised.
+        //
+        // An earlier revision credited Deferred for GROSS and debited the discount slice, while the
+        // recognition entry credited Sales gross and debited the discount again. Sales Discounts
+        // ended at double the real discount and small credits were stranded in Unbilled and
+        // Deferred. Both entries balanced, so nothing caught it (Andrew, #225 review).
+        //
+        // Billing is not earning, and a discount is a fact about what was EARNED. So the invoice
+        // credits NET — what the customer actually owes for this instalment — and the recognition
+        // entry carries `Cr Sales gross / Dr Sales Discounts / Dr Deferred-or-Unbilled net`. Passing
+        // a null discount account is what makes BuildValueEntryLines credit net and emit no
+        // discount line; the shared builder is otherwise identical to booking's.
 
         // Every amount sliced against the SAME weights, so each line's pieces sum across all
-        // instalments to that line's full amount. GROSS IS DERIVED, NOT SLICED: `net + discount =
-        // gross` has to hold WITHIN a slice as well as in total, and three independently rounded
-        // splits do not preserve it — 1000.01 net and 111.11 discount over three instalments slices
-        // to 333.35 + 37.04 = 370.39 while gross slices to 370.38, and the entry is a penny out.
-        // Deriving it keeps both invariants: each slice balances, and the slices still sum to the
-        // line, because sum(net_i) + sum(discount_i) = net + discount = gross.
+        // instalments to that line's full amount. Slicing a discount would have needed care —
+        // `net + discount = gross` must hold WITHIN a slice, and three independently rounded splits
+        // do not preserve it (the counter-example is in ValueEntryLines.test.ts, and booking still
+        // relies on that invariant). Not booking the discount here sidesteps it entirely.
         const netPiece = slice(line.Net, index, weights);
-        const discountPiece = slice(line.Discount, index, weights);
         const built = BuildValueEntryLines(
             {
                 Net: netPiece,
                 Tax: slice(line.Tax, index, weights),
                 Charges: slice(line.Charges, index, weights),
-                Discount: discountPiece,
-                Gross: money(netPiece + discountPiece),
+                // Both zero, and Gross equals Net, because this entry books no discount: with a
+                // null discount account the builder credits Net and emits no contra line.
+                Discount: 0,
+                Gross: netPiece,
             },
             {
                 AR: arAccount,
                 // The revenue-side contra is split by RULE 1 below; this builds the entry with the
                 // whole of it on Deferred and then moves the Unbilled share across, so the AR
-                // debit, the discount contra and the charge credits stay exactly what booking
-                // would have produced for this slice.
+                // debit and the charge credits stay exactly what booking would have produced for
+                // this slice.
                 Credit: deferredAccount,
                 CreditLabel: 'Deferred revenue',
-                Discount: discountAccount,
+                Discount: null,
                 ChargeCredits: line.ChargeCredits.map((c) => ({
                     ...c,
                     Amount: slice(c.Amount, index, weights),

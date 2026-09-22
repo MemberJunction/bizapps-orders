@@ -128,7 +128,7 @@ describe('ScheduledCompanyIDs', () => {
         expect(ScheduledCompanyIDs([row({ Status: 'Canceled' }), row()]).has(CO_A)).toBe(true);
     });
 
-    it('does NOT depend on the due date — D91 asks whether a company is billed by instalment, not when', () => {
+    it('does NOT depend on the due date — D92 asks whether a company is billed by instalment, not when', () => {
         const past = ScheduledCompanyIDs([row({ DueDate: '2020-01-01' })]);
         const future = ScheduledCompanyIDs([row({ DueDate: '2099-01-01' })]);
         expect(past.has(CO_A)).toBe(true);

@@ -13,10 +13,11 @@
  * and the order's schedule must tie to its lines, because an instalment on a schedule that is a
  * cent short is a document for the wrong amount.
  *
- * THE LEDGER HALF IS WHERE THE VALUE ARRIVES (D91). A company billed by instalment books nothing
- * at confirm, so `EmitInstalmentInvoiceEntry` (`InstalmentInvoiceEntry.ts`) raises this
- * instalment's slice of the value entry — Dr AR / Cr Deferred Revenue, with its share of the
- * discount, tax and charges — inside this transaction, so the number, the stamp and the entry
+ * THE LEDGER HALF IS WHERE THE RECEIVABLE ARRIVES (D92). A company billed by instalment raises no
+ * billing entry at confirm, so `EmitInstalmentInvoiceEntry` (`InstalmentInvoiceEntry.ts`) raises
+ * this instalment's slice — Dr AR for net, tax and charges; Cr Unbilled Receivable then Deferred
+ * Revenue per rule 1; Cr each tax and charge account. The DISCOUNT is not here: it is booked once,
+ * with the revenue it reduces. All of it inside this transaction, so the number, the stamp and the entry
  * commit or roll back together. It reads nothing itself: the order's lines and the company's
  * sibling rows are read here and passed in.
  */
@@ -205,7 +206,7 @@ export async function IssueInstalment(
         }
         const invoicedAt = new Date();
 
-        // THE BILLING ENTRY'S FACTS, READ HERE (D91). The emitter queries nothing; every number it
+        // THE BILLING ENTRY'S FACTS, READ HERE (D92). The emitter queries nothing; every number it
         // posts is decided by the factory's own arithmetic, so it is built here and handed over.
         // Read before the transaction opens: these are pure reads and a failure should refuse the
         // invoice rather than roll one back.

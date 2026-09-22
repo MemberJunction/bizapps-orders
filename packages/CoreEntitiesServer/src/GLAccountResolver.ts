@@ -59,18 +59,22 @@ export const GL_ROLE = {
      */
     GiftCardLiability: 'Gift Card Liability',
     /**
-     * The contract asset, as a PRESENTATION account — and nothing in orders resolves it (D91).
+     * The contract asset: revenue EARNED AHEAD OF BILLING — service delivered that the contract does
+     * not yet let us invoice. A live account under D92, resolved by both of its ordering rules.
      *
-     * Accounting seeds the role (`V202609201200__v0.1.x__UnbilledReceivableRole.sql`) so a
-     * period-end reclass can present the contract asset under its own name. It is deliberately
-     * inert here: under D91 a contract's Deferred Revenue nets billing against recognition, and a
-     * debit balance on it IS the contract asset. Presenting that as Unbilled is a close-process
-     * entry (Dr Unbilled / Cr Deferred, auto-reversing), not a second running account maintained
-     * by the booking code — which is what D89 tried and what this supersedes.
+     * Recognising revenue debits Deferred down to what has been billed and then debits this account
+     * for the rest; invoicing an instalment credits this account down to zero before it opens any
+     * new Deferred. Both rules are {@link SplitContraLegs} in ContractBalance.ts.
      *
-     * The string stays here as the one place the cross-repo name is written down: orders resolves
-     * roles by accounting's exact `Name`, so if anything ever does resolve this one, it has to
-     * agree with the seeded row character for character.
+     * NOT seeded by accounting's starter roles — the role row travels with a release's
+     * Metadata_Sync — so callers must tolerate it failing to resolve, exactly as GiftCardLiability
+     * does. The fallback is Deferred Revenue: every entry still balances and no revenue is
+     * misstated, but the balance sheet then shows one number where there should be two. Orders logs
+     * the company by name rather than falling back silently.
+     *
+     * THE NAME IS A CROSS-REPO CONTRACT. Orders resolves roles by accounting's exact `Name` string,
+     * so this has to agree with bizapps-accounting's seeded row character for character; a
+     * one-character drift resolves nothing and every entry still balances.
      */
     UnbilledReceivable: 'Unbilled Receivable',
 } as const;

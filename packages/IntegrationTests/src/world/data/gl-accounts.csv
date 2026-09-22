@@ -6,6 +6,7 @@ BCP,Cash,10100,Cash — Operating,Asset
 BCP,Shipping,40200,Shipping Revenue,Revenue
 BCP,TaxPayable,21500,Sales Tax Payable,Liability
 BCP,Unbilled,11300,Unbilled Revenue (Contract Asset),Asset
+BCP,Discounts,41000,Sales Discounts,Revenue
 BCP,DueTo,21900,Due To Affiliates,Liability
 BCP,DueFrom,11900,Due From Affiliates,Asset
 HH,AR,11201,Accounts Receivable,Asset

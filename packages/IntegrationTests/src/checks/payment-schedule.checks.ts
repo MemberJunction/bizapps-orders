@@ -38,6 +38,7 @@
  *   PS-F  a row already paid in full posts nothing at invoice, and still takes its number
  *   PS-G  Scenario 3: an UpFront line earns in full at confirm, the unbilled part to the contract asset
  *   PS-H  a line carrying an Unbilled balance is invoiced against Unbilled FIRST, then Deferred
+ *   PS-I  a discount spanning a due AND a future instalment is booked ONCE, at recognition
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -155,6 +156,11 @@ export async function scheduledOrder(
          * check about the totals' basis needs this; the schedule must then tie to the CHARGED gross.
          */
         charges?: RequestedCharge[];
+        /**
+         * A line-level discount, as a fraction. `gross` is then the LIST price and the line's net —
+         * what the schedule must tie to — is `gross × (1 − discountPct)`.
+         */
+        discountPct?: number;
     } = {},
 ) {
     const f = Fx();
@@ -165,7 +171,14 @@ export async function scheduledOrder(
         OrderDate: new Date('2026-07-01T00:00:00Z'),
         // The LINE's product decides the company the schedule and the ledger book against, whatever
         // the header says — which is how a check reaches a second company's ledger.
-        Lines: [{ ProductID: over.productID ?? f.Products.WidgetA, Quantity: 1, UnitPrice: gross }],
+        Lines: [
+            {
+                ProductID: over.productID ?? f.Products.WidgetA,
+                Quantity: 1,
+                UnitPrice: gross,
+                ...(over.discountPct ? { DiscountPct: over.discountPct } : {}),
+            },
+        ],
         ...(over.charges ? { Charges: over.charges } : {}),
     });
     Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
@@ -245,8 +258,9 @@ const has = (rows: Array<{ OrderHeaderID: string }>, orderID: string) =>
 const AR_CODE = '11201';
 const DEFERRED_CODE = '21301';
 const SALES_CODE = '40100';
-/** Seeded by accounting for the period-end reclass; under D91 orders resolves it for nothing. */
 const UNBILLED_CODE = '11300';
+/** Linked on ONE product (WORKSHOP → `Products.DiscountedA`), so only PS-I books a discount contra. */
+const DISCOUNT_CODE = '41000';
 
 interface LedgerLine {
     Code: string;
@@ -842,6 +856,64 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 AssertEqual(netOn(all, UNBILLED_CODE), 100, 'the contract asset was relieved by the instalment');
                 AssertEqual(netOn(all, DEFERRED_CODE), 0, 'and no new Deferred was opened');
                 AssertEqual(netOn(all, AR_CODE), 200, 'two instalments billed');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-I',
+        Name: 'PS-I: a discount spanning a due AND a future instalment is booked ONCE, at recognition',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // ANDREW'S #225 COUNTER-EXAMPLE, at his numbers. List 1,000 less 10% is 900 net,
+                // billed as two instalments of 450 — the first due at confirm, the second a year
+                // out, so the SAME discount spans a due and a future instalment.
+                //
+                // The defect this check exists for: the instalment invoice used to credit Deferred
+                // for GROSS and debit the discount slice, while the recognition entry credited
+                // Sales gross and debited the discount again. Sales Discounts ended at 200 against
+                // a real discount of 100, and the surplus sat stranded in Unbilled and Deferred.
+                // Every entry balanced, so nothing else in this suite would have caught it.
+                //
+                // It needs a Sales Discounts LINK to be visible at all — without one the discount
+                // nets into the revenue credit (D11) and both the right and the wrong model post
+                // the same two lines. That link is seeded on this product alone.
+                const f = Fx();
+                const { orderID, ids, saved, message } = await scheduledOrder(
+                    ctx,
+                    [
+                        { InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 450 },
+                        { InstallmentNumber: 2, DueDate: '2027-07-01', Amount: 450 },
+                    ],
+                    { productID: f.Products.DiscountedA, gross: 1000, discountPct: 0.1 },
+                );
+                Assert(saved, `confirm: ${message}`);
+
+                // After confirm: the line is UpFront, so all 900 is earned and the discount is
+                // booked once, here. Only instalment 1 is billed, so 450 of the earned revenue is
+                // still a contract asset.
+                const afterConfirm = await allLedger(ctx, orderID);
+                assertBalanced(afterConfirm, 'the confirm entries');
+                AssertEqual(netOn(afterConfirm, SALES_CODE), -1000, 'Sales is credited GROSS');
+                AssertEqual(netOn(afterConfirm, DISCOUNT_CODE), 100, 'and the discount is debited once');
+                AssertEqual(netOn(afterConfirm, AR_CODE), 450, 'only the due instalment is billed');
+                AssertEqual(netOn(afterConfirm, UNBILLED_CODE), 450, 'the rest is a contract asset');
+                AssertEqual(netOn(afterConfirm, DEFERRED_CODE), 0, 'and nothing is deferred');
+
+                Assert((await issue(ctx, ids[1])).Success, 'issue the future instalment');
+
+                // After the second instalment the order is fully billed and fully earned, so both
+                // contra accounts must be flat. THE DISCOUNT HAS NOT MOVED — that is the check.
+                const all = await allLedger(ctx, orderID);
+                assertBalanced(all, 'confirm plus both instalments');
+                AssertEqual(netOn(all, DISCOUNT_CODE), 100, 'the discount is still booked exactly once');
+                AssertEqual(netOn(all, SALES_CODE), -1000, 'and Sales is still gross');
+                AssertEqual(netOn(all, AR_CODE), 900, 'the customer owes net, not gross');
+                AssertEqual(netOn(all, UNBILLED_CODE), 0, 'the contract asset is fully relieved');
+                AssertEqual(netOn(all, DEFERRED_CODE), 0, 'and nothing is stranded in Deferred');
+
+                const totals = await lineTotals(ctx, orderID);
+                AssertEqual(Number(totals[0].BilledToDate), 900, 'BilledToDate is net, not gross');
+                AssertEqual(Number(totals[0].RecognizedToDate), 900, 'and it has caught up to recognition');
             }),
     },
 ];

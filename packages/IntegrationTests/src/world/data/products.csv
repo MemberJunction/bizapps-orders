@@ -3,7 +3,7 @@ STYLE-HB,Style Handbook,BCP,HANDBOOKS,PhysicalGood,UpFront,,WidgetA
 KIT-BOOK,New Member Kit — Handbook,BCP,HANDBOOKS,PhysicalGood,UpFront,,BundlePartX
 KIT-SEAT,New Member Kit — Workshop,BCP,WORKSHOPS,Service,UpFront,,BundlePartY
 KIT-NEW,New Member Kit,BCP,BUNDLES,Bundle,UpFront,,BundleA
-WORKSHOP,Editing Workshop Seat,BCP,WORKSHOPS,Service,UpFront,,
+WORKSHOP,Editing Workshop Seat,BCP,WORKSHOPS,Service,UpFront,,DiscountedA
 CONSULT-HR,Editorial Consulting (hourly),BCP,SERVICES,Service,UpFront,,
 EDIT-COURSE,Editorial Course (straight-line),BCP,SERVICES,Service,EvenOverTime,,DeferredA
 CONF-DEFER,Deferred Conference Hold,BCP,ANNUAL-CONF,Service,AllBackEnd,,EventA

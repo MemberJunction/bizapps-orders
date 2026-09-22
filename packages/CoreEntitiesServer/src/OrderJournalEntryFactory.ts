@@ -16,19 +16,24 @@
  * Both discount fields are applied because the line applies both.
  * The entry balances by construction: net + discount = gross.
  *
- * Plan D91 — A COMPANY BILLED BY INSTALMENT BOOKS NO VALUE HERE. The order and its schedule are
- * the subledger; the ledger records what happened — billed, collected, earned. So when a company
- * on the order carries live payment-schedule rows, confirm raises NO value entry for its lines:
- * the same entry is raised once per instalment, at invoicing, for that instalment's slice, by
- * `EmitInstalmentInvoiceEntry` (./InstalmentInvoiceEntry.ts). Both moments build their lines with
- * {@link BuildValueEntryLines}, so they cannot drift into booking different shapes.
+ * Plan D92 — A COMPANY BILLED BY INSTALMENT RAISES NO BILLING ENTRY HERE. The order and its
+ * schedule are the subledger; the ledger records what happened — billed, collected, earned. So
+ * when a company on the order carries live payment-schedule rows, confirm raises no value entry
+ * for its lines: that entry is raised once per instalment, at invoicing, for that instalment's
+ * slice, by `EmitInstalmentInvoiceEntry` (./InstalmentInvoiceEntry.ts). Both moments build their
+ * lines with {@link BuildValueEntryLines}, so they cannot drift into booking different shapes.
  *
- * An UP-FRONT line on such a company still earns at booking, so it emits `Dr Deferred Revenue /
- * Cr Sales` — today's credit side with the AR debit replaced by Deferred. Deferred then runs to a
- * debit balance until the instalments are invoiced, and THAT debit balance is the contract asset;
- * it is presented as Unbilled Receivable by a period-end reclass, not by a second running account
- * in this file. (This supersedes D89, which split the booking debit between AR and Unbilled and
- * put the whole contract value on the balance sheet at signature.)
+ * Confirm does invoke that emitter for the instalments already due on the confirmation date —
+ * usually the first — via `OrderEntityServer.issueDueInstalments`, which runs AFTER this factory's
+ * booking entries in the same transaction.
+ *
+ * WHAT CONFIRM STILL BOOKS FOR SUCH A COMPANY IS THE REVENUE SIDE. An UP-FRONT line earns at
+ * booking whatever its billing schedule says, so it credits Sales in full; the debit is rule 2 of
+ * {@link SplitContraLegs} — Deferred down to what has been billed, then Unbilled Receivable for
+ * the rest. Unbilled is a real running account under D92, not a period-end presentation of a
+ * negative Deferred. (This supersedes D89, which split the booking DEBIT between AR and Unbilled
+ * and put the whole contract value on the balance sheet at signature, and D91, which left the
+ * contract asset implicit in a debit-balance Deferred.)
  *
  * An order with NO schedule — every order that exists today — is untouched, byte for byte.
  *
@@ -220,7 +225,7 @@ export interface ValueEntryAccounts {
  *         Cr  Sales / Deferred     gross (or net when the discount nets in)
  *         Cr  each charge and tax  its own amount
  *
- * ONE CONSTRUCTION, TWO MOMENTS (D91). An order with no payment schedule raises this at confirm,
+ * ONE CONSTRUCTION, TWO MOMENTS (D92). An order with no payment schedule raises this at confirm,
  * exactly as it always has. A company billed by instalment raises the same entry once per
  * instalment, at invoicing, for that instalment's slice — so the two paths cannot drift into
  * booking different shapes, which is the failure this extraction exists to prevent.
@@ -410,7 +415,7 @@ export class OrderJournalEntryFactory {
     }
 
     /**
-     * The facts the instalment billing entry needs about one company's lines (D91).
+     * The facts the instalment billing entry needs about one company's lines (D92).
      *
      * Lives here, not in the operation, because every one of these numbers is decided by this
      * file's arithmetic — `LineAmounts`, the product walk, the merged dimensions and the charge
@@ -581,10 +586,13 @@ export class OrderJournalEntryFactory {
 
         // ── the value entry (D10/D11), raised here only when this company is NOT on instalments ──
         //
-        // D91: a company billed by instalment puts NO value on the ledger at confirm. Its AR, its
-        // revenue credit, its discount contra and its charge/tax credits are all raised later, one
-        // slice per instalment, by EmitInstalmentInvoiceEntry — which builds them through the very
-        // same BuildValueEntryLines, so the two moments cannot drift into different shapes.
+        // D92: a company billed by instalment raises NO BILLING entry at confirm. Its AR and its
+        // charge/tax credits are raised later, one slice per instalment, by
+        // EmitInstalmentInvoiceEntry — which builds them through the very same
+        // BuildValueEntryLines, so the two moments cannot drift into different shapes.
+        //
+        // The REVENUE side is not deferred with them: an up-front line credits Sales and debits the
+        // discount below, at confirm, because that is when it is earned.
         //
         // Nothing about the NON-scheduled path changes: same construction, same accounts, same
         // amounts, same order of lines. That is the regression fence (order-booking.OB18).
@@ -628,10 +636,8 @@ export class OrderJournalEntryFactory {
 
         // AN UP-FRONT LINE ON A SCHEDULED COMPANY STILL EARNS AT BOOKING. Its revenue is recognised
         // when the sale happens — that is what "not deferred" means — so it needs a credit to Sales
-        // now even though nothing is billable yet. The offsetting debit is Deferred Revenue, which
-        // therefore runs to a DEBIT balance until the instalments are invoiced. That debit balance
-        // IS the contract asset (D91); it is presented as Unbilled by a period-end reclass, not by
-        // a second running account in this file.
+        // now even though nothing may be billable yet. The offsetting DEBIT is rule 2's, below: the
+        // line's Deferred balance first, then Unbilled Receivable as a real contract asset.
         //
         // A deferred driver needs nothing here: its staged releases below already debit Deferred
         // and credit Sales on their own dates, and they are untouched by the schedule.
@@ -646,8 +652,17 @@ export class OrderJournalEntryFactory {
             // case where confirmation legitimately debits a contract asset — Andrew's design and
             // #225's earlier D89 behaviour agree here, for once.
             //
-            // BilledToDate is read AFTER issueDueInstalments has run for this order, so `billed`
-            // is what was actually invoiced at confirm and not what the schedule merely promises.
+            // BilledToDate IS ZERO HERE ON A FIRST CONFIRM, and that is correct rather than a
+            // race. `issueDueInstalments` runs AFTER this factory, deliberately — rule 1 reads
+            // these same totals, so issuing first would price the invoice's contra split against a
+            // total this booking is about to change. The two entries therefore arrive in the order
+            // a person would write them: earn the revenue into Unbilled, then convert the part just
+            // invoiced into a receivable. Andrew's Scenario 3 end balances come out the same; only
+            // the intermediate legs differ from his single-entry table.
+            //
+            // On a RE-confirm, or any later booking against a line already partly billed, it is the
+            // real billed total and rule 2 relieves that Deferred first, which is the whole point of
+            // reading it rather than assuming zero.
             const billed = Math.abs(Number(line.BilledToDate ?? 0));
             const recognized = Math.abs(Number(line.RecognizedToDate ?? 0));
             const legs = SplitContraLegs(billed, recognized, net, 'Recognize');

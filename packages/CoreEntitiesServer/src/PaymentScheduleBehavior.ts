@@ -180,19 +180,23 @@ export interface ScheduleTimingFacts extends ScheduleRowFacts {
 }
 
 /**
- * The companies on this order that are BILLED BY INSTALMENT, lower-cased (D91).
+ * The companies on this order that are BILLED BY INSTALMENT, lower-cased (D92).
  *
  * This is the whole scope trigger for the new booking model. A company with at least one live
- * schedule row books no value at confirm — its value reaches the ledger when each instalment is
- * invoiced. A company with none is every order that exists today and is untouched.
+ * schedule row raises no BILLING entry at confirm — its receivable reaches the ledger one
+ * instalment at a time, as each is invoiced. A company with none is every order that exists today
+ * and is untouched.
  *
  * `Canceled` rows have left the schedule, so a company whose only row was cancelled is NOT
  * scheduled and books normally. That is the same liveness rule {@link ScheduleShortfalls} uses, by
  * the same constant, so the tie check and the ledger cannot disagree about which rows count.
  *
- * Deliberately not a date test. D89 split the debit by which instalments were still future; D91
- * does not split anything, so WHEN an instalment falls due no longer changes what confirm books —
- * only WHETHER the company is billed by instalment at all.
+ * DELIBERATELY NOT A DATE TEST, and under D92 that is worth stating precisely, because the dates do
+ * now matter — just not here. This answers one question only: is this company billed by instalment
+ * at all? WHICH of its instalments are due on the confirmation date is a separate decision, made by
+ * `OrderEntityServer.issueDueInstalments` against each row's own `DueDate` after booking. Folding a
+ * date test into this one would couple "does the new model apply" to "what is due today", and a
+ * company whose instalments all fall next year would then book as if it had no schedule.
  */
 export function ScheduledCompanyIDs(rows: ScheduleTimingFacts[]): Set<string> {
     const out = new Set<string>();

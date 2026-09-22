@@ -80,7 +80,7 @@ describe('BuildValueEntryLines', () => {
 });
 
 describe('an instalment slice sums back to the whole line (gross is DERIVED, never sliced)', () => {
-    // THE PROPERTY THAT MATTERS UNDER D91: invoicing every instalment must post, per account,
+    // THE PROPERTY THAT MATTERS UNDER D92: invoicing every instalment must post, per account,
     // exactly what a non-scheduled order would have posted at confirm — to the penny.
     const line: ValueEntryAmounts = { Net: 1000.01, Tax: 80.02, Charges: 33.33, Discount: 111.11, Gross: 1111.12 };
     const instalments = [333.34, 333.33, 333.33];
@@ -113,8 +113,9 @@ describe('an instalment slice sums back to the whole line (gross is DERIVED, nev
                 Tax: sliceAll('Tax')[i],
                 Charges: sliceAll('Charges')[i],
                 Discount: sliceAll('Discount')[i],
-                // Derived, never sliced independently — see the emitter: three separate roundings
-                // do not preserve net + discount = gross within a slice.
+                // Derived, never sliced independently: three separate roundings do not preserve
+                // net + discount = gross within a slice. The instalment emitter avoids this by not
+                // booking a discount at all; any future caller that slices one must derive gross.
                 Gross: money(sliceAll('Net')[i] + sliceAll('Discount')[i]),
             };
             return BuildValueEntryLines(piece, accounts({ Discount: DISCOUNT, ChargeCredits: chargesFor(piece) }), 'Widget', []);

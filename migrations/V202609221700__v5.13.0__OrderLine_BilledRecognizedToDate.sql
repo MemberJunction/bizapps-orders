@@ -41,7 +41,7 @@ EXEC sp_addextendedproperty @name = N'MS_Description',
 GO
 
 EXEC sp_addextendedproperty @name = N'MS_Description',
-    @value = N'Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
+    @value = N'Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. ADVANCED FOR UP-FRONT AND ATTESTED LINES ONLY. A deferred driver stages its monthly releases as forward-dated entries at confirm; those credit Sales on their own dates without passing through rule 2, so they leave this total untouched. A subscription line therefore depends on its instalments being invoiced on time for the gap between the two totals to mean anything. Routing the staged releases through rule 2 is orders #241, parked. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'OrderLine',
     @level2type = N'COLUMN', @level2name = N'RecognizedToDate';
@@ -177,6 +177,10 @@ GO
      2. IF NOT EXISTS guards added on the two Event Order Lines IS-A inserts, which
         CodeGen emits unguarded. Without them the migration throws a primary-key
         violation on any database where CodeGen has already registered those fields.
+     3. RecognizedToDate's Description extended to say the total moves for up-front and
+        attested lines only (#225 review). CodeGen copies that text from the column's
+        extended property above the banner, so re-running it reproduces this edit rather
+        than reverting it; both copies were changed together so they cannot disagree.
 
    OMITTED FROM THE FOLD because they belong elsewhere:
      * The two Dimension / DimensionValue EntityRelationship rows — orders #236.
@@ -291,7 +295,7 @@ GO
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'),
             'RecognizedToDate',
             'Recognized To Date',
-            'Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
+            'Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. ADVANCED FOR UP-FRONT AND ATTESTED LINES ONLY. A deferred driver stages its monthly releases as forward-dated entries at confirm; those credit Sales on their own dates without passing through rule 2, so they leave this total untouched. A subscription line therefore depends on its instalments being invoiced on time for the gap between the two totals to mean anything. Routing the staged releases through rule 2 is orders #241, parked. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.',
             'decimal',
             9,
             18,
