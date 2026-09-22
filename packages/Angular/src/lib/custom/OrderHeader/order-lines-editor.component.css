@@ -190,6 +190,16 @@
     opacity: 0.55;
 }
 
+.mjo-ol-override__req {
+    font-style: normal;
+    color: var(--mj-status-danger-text, #b42318);
+    margin-left: 2px;
+}
+
+.mjo-ol-override__reason.is-required textarea {
+    border-color: var(--mj-status-danger-text, #b42318);
+}
+
 .mjo-ol-override__reason textarea:disabled {
     cursor: not-allowed;
     background: var(--mj-bg-surface-subtle, var(--mj-bg-surface));
@@ -232,6 +242,12 @@
 .mjo-ol-override__done:hover,
 .mjo-ol-override__reset:hover {
     background: var(--mj-bg-surface-hover);
+}
+
+.mjo-ol-override__done:disabled {
+    color: var(--mj-text-muted);
+    cursor: not-allowed;
+    background: transparent;
 }
 
 .mjo-ol-card__amt {

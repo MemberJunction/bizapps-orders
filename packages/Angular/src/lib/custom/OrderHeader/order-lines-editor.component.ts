@@ -23,6 +23,7 @@ import {
     ListApplicablePrices,
     LoadOrdersEngine,
     OrdersEngine,
+    isEnginePrice,
     loadApplicabilityContext,
     moneyEqual,
     priceOverrideCatalogInstalled,
@@ -44,7 +45,19 @@ import {
     type MJOProductOption,
 } from '../../data/orders-queries';
 import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
-import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
+import { MJOPricingScheduler, type MJOEngineDefault, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
+
+/**
+ * The picker's option values that are not ProductPrice ids.
+ *
+ * `Default` used to be the empty string, and that is what golive #253 item 1 was: a `<select>`
+ * whose bound value names an option that is not in the DOM yet falls back to its first option, and
+ * an option whose value is `""` is indistinguishable from "nothing selected". The DOM then showed
+ * Default while the component believed the line was on a custom amount, so choosing Default fired
+ * no change event and nothing ran. A real sentinel cannot be mistaken for absence.
+ */
+export const PRICE_PICK_DEFAULT = '__default__';
+export const PRICE_PICK_CUSTOM = '__custom__';
 import {
     ExtensionCollapsedHint,
     ExtensionToggleLabel,
@@ -436,10 +449,20 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public SelectedPriceID(line: mjBizAppsOrdersOrderLineEntity): string {
-        if (this.customAmountLineIds.has(line.ID)) return '__custom__';
-        if (!this.IsOverridden(line)) return '';
+        if (this.customAmountLineIds.has(line.ID)) return PRICE_PICK_CUSTOM;
+        if (!this.IsOverridden(line)) return PRICE_PICK_DEFAULT;
         if (line.ProductPriceID) return String(line.ProductPriceID);
-        return this.OverrideKind === 'any' ? '__custom__' : '';
+        return this.OverrideKind === 'any' ? PRICE_PICK_CUSTOM : PRICE_PICK_DEFAULT;
+    }
+
+    /**
+     * Whether this option is the one in force — bound per option rather than as `[value]` on the
+     * select. The select's value is applied before its `@if`/`@for` options exist, so a value naming
+     * one of them lands on nothing and the browser falls back to the first row (see
+     * {@link PRICE_PICK_DEFAULT}). An option knows whether it is selected as soon as it is created.
+     */
+    public IsPicked(line: mjBizAppsOrdersOrderLineEntity, value: string): boolean {
+        return this.SelectedPriceID(line) === value;
     }
 
     public DisplayUnit(line: mjBizAppsOrdersOrderLineEntity): number | null {
@@ -460,7 +483,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public DefaultLabel(line: mjBizAppsOrdersOrderLineEntity): string {
         const unit = this.DefaultUnit(line);
         if (unit == null) return 'Default price';
-        const rule = this.PricedLine(line)?.PriceSource;
+        const priced = this.PricedLine(line);
+        // The engine default names its own rule even while the line is pinned; `PriceSource` says
+        // 'stated' for a pinned line, which is not the rule's name.
+        const rule = priced?.Default?.PriceName ?? priced?.PriceSource;
         const amount = FormatMoney(unit);
         // 'stated' is not a rule name — it means the user typed this price, and saying
         // "Default (stated)" would present their own entry back to them as a resolution.
@@ -468,24 +494,58 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public ShowCustomAmount(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return this.OverrideKind === 'any' && this.SelectedPriceID(line) === '__custom__';
+        return this.OverrideKind === 'any' && this.SelectedPriceID(line) === PRICE_PICK_CUSTOM;
     }
 
+    /**
+     * The explanation is for a line that actually left its default — which, now that every pick
+     * and typed amount is compared against the engine default before the flag is set, is exactly
+     * what {@link IsOverridden} says.
+     */
     public CanExplainOverride(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        const picked = this.SelectedPriceID(line);
-        if (picked && picked !== '__custom__') return true;
-        if (picked === '__custom__') {
-            const typed = this.DisplayUnit(line);
-            const def = this.DefaultUnit(line);
-            if (typed == null || def == null) return typed != null;
-            return !moneyEqual(typed, def);
-        }
-        return false;
+        return this.IsOverridden(line);
     }
 
+    /**
+     * True while the line is overridden and nobody has said why (golive #253 item 4). Done stays
+     * disabled until this is false; the server refuses the save on the same rule, so closing the
+     * editor another way does not get around it.
+     */
+    public NeedsOverrideReason(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.IsOverridden(line) && this.OverrideReasonText(line).trim() === '';
+    }
+
+    /**
+     * What the rules say this line costs, whether or not it is currently pinned.
+     *
+     * The pricing pass reports the engine default alongside the priced amount, so a pinned line
+     * still knows what it would have been. The per-line cache remains as the fallback for a
+     * result that predates that field.
+     */
     public DefaultUnit(line: mjBizAppsOrdersOrderLineEntity): number | null {
+        const priced = this.PricedLine(line);
+        if (priced?.Default !== undefined) return priced.Default?.UnitPrice ?? null;
         if (this.defaultUnitByLine.has(line.ID)) return this.defaultUnitByLine.get(line.ID) ?? null;
-        return this.IsOverridden(line) ? null : (this.PricedLine(line)?.UnitPrice ?? null);
+        return this.IsOverridden(line) ? null : (priced?.UnitPrice ?? null);
+    }
+
+    /** The engine default in full — rule id and name as well as the amount — when the pass reported it. */
+    public EngineDefault(line: mjBizAppsOrdersOrderLineEntity): MJOEngineDefault | null {
+        return this.PricedLine(line)?.Default ?? null;
+    }
+
+    /**
+     * The named rules the picker offers BESIDES the default (golive #253 item 3).
+     *
+     * The rule the engine already chose is not listed: the Default row is that rule, named and
+     * priced, and a second option that means the same thing is what made the picker ambiguous. A
+     * product with one applicable rule therefore offers Default (and Custom amount) alone.
+     */
+    public NamedPricesFor(line: mjBizAppsOrdersOrderLineEntity): ApplicablePrice[] {
+        const applicable = this.ApplicableFor(line);
+        const engine = this.EngineDefault(line);
+        if (!engine?.ProductPriceID) return applicable;
+        return applicable.filter((p) => !UUIDsEqual(p.ID, engine.ProductPriceID ?? ''));
     }
 
     public PickNamedPrice(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -493,20 +553,26 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const target = event.target;
         if (!(target instanceof HTMLSelectElement)) return;
         const id = target.value;
-        if (!id) {
-            this.ResetOverride(line);
+        if (id === PRICE_PICK_DEFAULT) {
+            this.restoreDefault(line);
             return;
         }
-        if (id === '__custom__') {
+        if (id === PRICE_PICK_CUSTOM) {
+            // Choosing the row is not yet an override: nothing has been typed, so the amount box
+            // opens on the default and the flag waits for an amount that differs from it.
             this.customAmountLineIds.add(line.ID);
-            this.stamp(line, 'ProductPriceID', null);
-            this.markOverridden(line);
             this.cdr.detectChanges();
             return;
         }
         this.customAmountLineIds.delete(line.ID);
         const hit = this.ApplicableFor(line).find((p) => UUIDsEqual(p.ID, id));
         if (!hit) return;
+        const engine = this.EngineDefault(line);
+        // A named rule that IS the default restates the rules rather than overriding them (item 2).
+        if (engine && isEnginePrice({ UnitPrice: hit.UnitPrice, ProductPriceID: hit.ID }, engine)) {
+            this.restoreDefault(line);
+            return;
+        }
         this.stamp(line, 'ProductPriceID', hit.ID);
         this.stamp(line, 'UnitPrice', hit.UnitPrice);
         this.markOverridden(line);
@@ -521,6 +587,14 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const amount = Number.parseFloat(target.value);
         if (!Number.isFinite(amount) || amount < 0) return;
         this.customAmountLineIds.add(line.ID);
+        const def = this.DefaultUnit(line);
+        // Typing the default back in is a return to the rules, not an override of them (item 2).
+        if (def != null && moneyEqual(amount, def)) {
+            this.clearOverride(line);
+            this.schedulePricing();
+            this.cdr.detectChanges();
+            return;
+        }
         this.stamp(line, 'ProductPriceID', null);
         this.stamp(line, 'UnitPrice', amount);
         this.markOverridden(line);
@@ -548,17 +622,49 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.overrideEditorLineIds.delete(line.ID);
     }
 
+    /** The "Use Default Price" button: back to the rules, and the editor closes. */
     public ResetOverride(line: mjBizAppsOrdersOrderLineEntity): void {
-        this.clearOverride(line);
-        this.customAmountLineIds.delete(line.ID);
+        this.restoreDefault(line);
         this.overrideEditorLineIds.delete(line.ID);
-        this.schedulePricing();
     }
 
+    /**
+     * Back to whatever the rules say, with the editor left open — the Default row of the picker.
+     * The override, its reason and any custom amount all go; the flag is cleared because the price
+     * is no longer a deviation, not merely hidden.
+     */
+    private restoreDefault(line: mjBizAppsOrdersOrderLineEntity): void {
+        const engine = this.EngineDefault(line);
+        if (line.IsSaved && engine) {
+            // A saved line's baseline is whatever was stored, which may itself be the override; the
+            // rules' answer is what Default promises, so that is what is written.
+            this.stamp(line, 'UnitPrice', engine.UnitPrice);
+            this.stamp(line, 'ProductPriceID', engine.ProductPriceID);
+            this.stamp(line, 'PriceOverridden', false);
+            this.stamp(line, 'PriceOverrideReason', null);
+        } else {
+            // An unsaved line's baseline is "unpriced", which the engine fills at save — the purest
+            // form of "whatever the rules say".
+            this.clearOverride(line);
+        }
+        this.customAmountLineIds.delete(line.ID);
+        this.schedulePricing();
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Whether the line's price is a deviation from the rules.
+     *
+     * The flag settles it when set. Otherwise a dirty price counts only when it differs from the
+     * engine default — a saved line put back on its default carries a changed value that is not an
+     * override, and saying "overridden" of it is the false statement golive #253 item 2 reported.
+     */
     public IsOverridden(line: mjBizAppsOrdersOrderLineEntity): boolean {
         const flag = line.GetFieldByName('PriceOverridden');
         if (flag && (flag.Value === true || flag.Value === 1 || flag.Value === '1')) return true;
-        return anyFieldIsDirty(line, ['UnitPrice', 'ProductPriceID']);
+        if (!anyFieldIsDirty(line, ['UnitPrice', 'ProductPriceID'])) return false;
+        const engine = this.EngineDefault(line);
+        return engine ? !isEnginePrice(line, engine) : true;
     }
 
     public OverrideReasonText(line: mjBizAppsOrdersOrderLineEntity): string {

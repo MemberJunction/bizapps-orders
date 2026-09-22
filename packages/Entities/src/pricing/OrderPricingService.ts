@@ -36,7 +36,7 @@ import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import type { mjBizAppsOrdersOrderLineEntity } from '../generated/entity_subclasses';
 import type { ComputeChargesResult } from './ChargeBehavior.js';
 import type { RequestedCharge } from './ChargeEngine.js';
-import type { ResolvedPrice } from './PriceResolver.js';
+import type { PriceResolutionContext, ResolvedPrice } from './PriceResolver.js';
 import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngine.js';
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { RunCharges, SplitChargesByLine } from './ChargeEngine.js';
@@ -109,6 +109,19 @@ export interface OrderPricingContext {
     PriceListID?: string | null;
     /** PreviewPrice fee-type filter; omitted means the resolver default (Standard). */
     FeeType?: string;
+    /**
+     * Also resolve what the rules WOULD say for a line whose price the caller stated.
+     *
+     * A stated price pins the line and the walk normally stops there — the engine fills a blank and
+     * never argues. But the screen that lets a user move a line off its default has to know what the
+     * default IS while the line is pinned, or it cannot say whether the badge, the reason field and
+     * the picker's Default row describe a real deviation. With this set the walk resolves the rule
+     * anyway, stamps nothing, and reports the answer in `EngineDefaults`. A line the rules cannot
+     * price reports null rather than refusing: a stated price on an unpriceable product is legal.
+     *
+     * Off for the save path, where the extra resolution would buy nothing.
+     */
+    IncludeDefaultsForStatedLines?: boolean;
 }
 
 /**
@@ -125,6 +138,14 @@ export interface OrderPricingResult {
     TaxReasons: Map<number, string>;
     /** Per-line price decomposition, written once the lines have IDs (D69). */
     PriceComponents: Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>;
+    /**
+     * What the rules say for each line INDEPENDENT of any stated price — the engine's default.
+     *
+     * For a line the engine priced this is the same answer as `PriceComponents`. For a stated line
+     * it is present only when `IncludeDefaultsForStatedLines` asked for it, and null when no rule
+     * prices the product. Absent from the map means the question was not asked.
+     */
+    EngineDefaults: Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice | null>;
     /** Promotion applications to record, or null when no code or manual discount applied. */
     Promotions: PromotionRunResult | null;
     /** Charge and tax rows to record, or null when the order attracts neither. */
@@ -179,6 +200,7 @@ export class OrderPricingService {
             UnusableCodes: [],
             TaxReasons: new Map<number, string>(),
             PriceComponents: new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>(),
+            EngineDefaults: new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice | null>(),
             Promotions: null,
             Charges: null,
         };
@@ -462,29 +484,17 @@ export class OrderPricingService {
         // for a free line and must not be mistaken for silence.
         const field = line.GetFieldByName('UnitPrice');
         const stated = field?.Dirty === true || (line.UnitPrice ?? 0) > 0;
-        if (stated) return;
-
-        const provider = this.host.Provider;
-        const user = this.host.User;
+        if (stated) {
+            if (this.ctx.IncludeDefaultsForStatedLines) await this.recordDefaultForStatedLine(line);
+            return;
+        }
 
         const product = await this.loadProductForPricing(line.ProductID);
         // Before pricing it, establish that it may be sold at all — a retired or
         // out-of-window product should not reach the ledger, and refusing here aborts
         // the confirm before any line is written.
         if (product) this.assertProductSellable(line, product);
-        const resolutionCtx = {
-            ProductID: line.ProductID,
-            ProductCategoryID: product?.ProductCategoryID ?? null,
-            CompanyID: product?.CompanyID ?? this.ctx.CompanyID,
-            Quantity: Number(line.Quantity ?? 0),
-            AsOf: this.ctx.OrderDate ? new Date(this.ctx.OrderDate) : new Date(),
-            OrganizationID: this.ctx.BillToOrganizationID ?? null,
-            PersonID: this.ctx.BillToPersonID ?? null,
-            ApplicabilityContext: await this.applicabilityBag(line.ProductID),
-            ...(this.ctx.PriceListID !== undefined ? { PriceListID: this.ctx.PriceListID } : {}),
-            ...(this.ctx.FeeType ? { FeeType: this.ctx.FeeType } : {}),
-        };
-        const resolved = await this.resolveRetryingStaleCatalog(resolutionCtx);
+        const resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
 
         if (!resolved) {
             if (await this.refusesUnpricedLines()) {
@@ -507,6 +517,42 @@ export class OrderPricingService {
         // the pricing answer is identical either way.
         (line as unknown as CarriesResolvedExtendedAmount).ResolvedExtendedAmount = resolved.ExtendedAmount;
         this.out.PriceComponents.set(line, resolved);
+        this.out.EngineDefaults.set(line, resolved);
+    }
+
+    /**
+     * Resolve the rules' answer for a STATED line and record it, stamping nothing.
+     *
+     * The line keeps the price somebody decided on; this only answers "and what would it have been".
+     * Failure to price is an answer here (null), not a refusal — the stated price is what books, and
+     * the caller asked for the default to compare against, not to enforce.
+     */
+    private async recordDefaultForStatedLine(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        try {
+            const product = await this.loadProductForPricing(line.ProductID);
+            const resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
+            this.out.EngineDefaults.set(line, resolved);
+        } catch {
+            this.out.EngineDefaults.set(line, null);
+        }
+    }
+
+    private async resolutionContextFor(
+        line: mjBizAppsOrdersOrderLineEntity,
+        product: Awaited<ReturnType<OrderPricingService['loadProductForPricing']>>,
+    ): Promise<PriceResolutionContext> {
+        return {
+            ProductID: line.ProductID,
+            ProductCategoryID: product?.ProductCategoryID ?? null,
+            CompanyID: product?.CompanyID ?? this.ctx.CompanyID,
+            Quantity: Number(line.Quantity ?? 0),
+            AsOf: this.ctx.OrderDate ? new Date(this.ctx.OrderDate) : new Date(),
+            OrganizationID: this.ctx.BillToOrganizationID ?? null,
+            PersonID: this.ctx.BillToPersonID ?? null,
+            ApplicabilityContext: await this.applicabilityBag(line.ProductID),
+            ...(this.ctx.PriceListID !== undefined ? { PriceListID: this.ctx.PriceListID } : {}),
+            ...(this.ctx.FeeType ? { FeeType: this.ctx.FeeType } : {}),
+        };
     }
 
     /**

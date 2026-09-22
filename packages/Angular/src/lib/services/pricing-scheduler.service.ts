@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Metadata, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { CanPriceOrderLocally, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, type PreviewComponent, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { CanPriceOrderLocally, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { anyFieldIsDirty } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
@@ -44,7 +44,24 @@ export interface MJOLinePrice {
     Components: PreviewComponent[];
     /** True when the user typed the price rather than the engine resolving one. */
     WasStated: boolean;
+    /** The rule that produced `UnitPrice`; null when the price was stated or no rule applied. */
+    ProductPriceID: string | null;
+    /**
+     * What the rules say for this line whether or not its price is pinned — the engine's default.
+     *
+     * This is the answer the override editor compares against: it is what the picker's Default row
+     * restores, and a pick or a typed amount that lands on it is not an override at all. Null when
+     * no rule prices the product; undefined when the pricing pass did not report one.
+     */
+    Default?: MJOEngineDefault | null;
     Error: string | null;
+}
+
+/** The engine's default for a line, as `Orders.PriceOrder` reports it. */
+export interface MJOEngineDefault {
+    UnitPrice: number;
+    ProductPriceID: string | null;
+    PriceName: string | null;
 }
 
 /**
@@ -310,6 +327,8 @@ export class MJOPricingScheduler {
             PromotionCodes: [],
             ManualDiscounts: [],
             Charges: [],
+            // The editor needs the rules' answer for a pinned line too — see `MJOLinePrice.Default`.
+            IncludeDefaultsForStatedLines: true,
         });
 
         if (issued <= this.applied) return true; // overtaken, but it WAS handled
@@ -327,6 +346,8 @@ export class MJOPricingScheduler {
                 Amount: Number((c as { Amount?: number }).Amount ?? 0),
             })),
             TaxExemptReason: result.TaxReasons.get(i) ?? null,
+            ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
+            Default: engineDefault(result.EngineDefaults.get(line)),
         }));
         const sum = (pick: (l: (typeof priced)[number]) => number) =>
             Math.round(priced.reduce((t, l) => t + pick(l), 0) * 100) / 100;
@@ -360,6 +381,8 @@ export class MJOPricingScheduler {
                 UnitPrice: number; DiscountAmount: number; LineTotalNet: number;
                 Components?: Array<{ Kind: string; Label: string; Amount: number }>;
                 TaxExemptReason?: string | null;
+                ProductPriceID?: string | null;
+                Default?: MJOEngineDefault | null;
             }>;
             Totals: { Net: number; Discount: number; Gross: number };
         },
@@ -384,6 +407,8 @@ export class MJOPricingScheduler {
                 PriceSource: priced.UnitPrice > 0 ? (stated ? 'stated' : (WinningRuleLabel(priced.Components) ?? 'base price')) : null,
                 Components: (priced.Components ?? []) as unknown as PreviewComponent[],
                 WasStated: stated,
+                ProductPriceID: priced.ProductPriceID ?? null,
+                Default: priced.Default,
             };
         });
 
@@ -421,6 +446,16 @@ export class MJOPricingScheduler {
 export function WinningRuleLabel(components?: ReadonlyArray<{ Kind: string; Label: string }>): string | null {
     const hit = components?.find((c) => c.Kind === 'Base' || c.Kind === 'Rule');
     return hit?.Label?.trim() || null;
+}
+
+/**
+ * The engine default as the local walk reports it, in the shape the wire uses: undefined when the
+ * walk was not asked, null when it was asked and no rule priced the product.
+ */
+function engineDefault(resolved: ResolvedPrice | null | undefined): MJOEngineDefault | null | undefined {
+    if (resolved === undefined) return undefined;
+    if (resolved === null) return null;
+    return { UnitPrice: resolved.UnitPrice, ProductPriceID: resolved.ProductPriceID, PriceName: resolved.PriceName ?? null };
 }
 
 /** Round to cents the way the engine does, so client and server agree on the last penny. */

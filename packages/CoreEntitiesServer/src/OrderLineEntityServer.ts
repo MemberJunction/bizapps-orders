@@ -49,7 +49,9 @@ import {
     NetAfterDiscount,
     OrderLineEntity,
     OrdersEngine,
+    PRICE_OVERRIDE_REASON_REQUIRED,
     ResolveOrderLineEditRefusal,
+    priceOverrideReasonMissing,
     type OrderLineEditKind,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
@@ -127,10 +129,38 @@ export class OrderLineEntityServer extends OrderLineEntity {
             );
         }
 
+        this.refuseUnexplainedOverride(result);
         await this.refuseNewLineOnBookedOrder(result);
         await this.refuseVetoedEdit(result, this.IsSaved ? 'update' : 'create');
 
         return result;
+    }
+
+    /**
+     * A line flagged `PriceOverridden` has to say why (bc-aidp-next-golive#253 item 4).
+     *
+     * The reason is the audit trail for a price that left the rules; without it the flag records that
+     * a concession happened and nothing about it. Refused here, in validation, rather than by a
+     * database constraint: lines converted from the previous system carry overridden prices with no
+     * reason and must stay loadable, and an unrelated edit to one of them — a quantity, a dimension —
+     * must not suddenly demand a reason nobody recorded at the time. So the rule fires only when the
+     * override itself is being written: a new line, or a saved one whose price or override fields
+     * changed.
+     */
+    private refuseUnexplainedOverride(result: ValidationResult): void {
+        if (!priceOverrideReasonMissing(this)) return;
+        const writingOverride =
+            !this.IsSaved || this.FieldIsDirty('UnitPrice', 'ProductPriceID', 'PriceOverridden', 'PriceOverrideReason');
+        if (!writingOverride) return;
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo(
+                'PriceOverrideReason',
+                PRICE_OVERRIDE_REASON_REQUIRED,
+                this.PriceOverrideReason,
+                ValidationErrorType.Failure,
+            ),
+        );
     }
 
     /**
