@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609221300 — heal: register OrderLine's two dimension NAME fields
+-- V202609221300 — heal: register OrderLine's dimension name fields and relationships
 -- (bc-aidp-next-golive#236, the gap left by V202609191200)
 -- =============================================================================
 -- V202609191200 added OrderLine.DimensionID / DimensionValueID and regenerated vwOrderLines to
@@ -22,10 +22,22 @@
 -- this file and no banner below it, and the values are transcribed from what CodeGen itself wrote
 -- when it was run by hand against the shared AIDP database on 2026-09-22.
 --
+-- The same run left two ENTITY RELATIONSHIPS unregistered for the same reason, and they are healed
+-- below the fields. V202609191200 contains no EntityRelationship statement at all, and the only
+-- Dimension relationships the baseline carries attach to the OrderLineDimension entity rather than
+-- to Order Lines, so on a host built from migrations the accounting vocabulary is not reachable
+-- from an order line in the API or on its form.
+--
 -- Idempotent on (EntityID, Name) as well as on the hardcoded id, so it is safe on a database where
 -- someone has already run CodeGen — which is every developer's. Sequence is the apply-time
 -- MAX + 1 expression rather than the literal CodeGen emits: the literal was only ever free on the
 -- database CodeGen ran against, and UQ_EntityField_EntityID_Sequence is unique.
+--
+-- NOT healed here: OrderLine.FulfillmentStatus's value list. It LOOKS like the same gap in a CodeGen
+-- diff and is not — V202609061900 already seeds it, deliberately by natural key, and its own header
+-- explains that CodeGen's per-host EntityField ids cannot be used for it. What CodeGen emits there
+-- replaces migration-seeded rows with its own ids; folding that in would duplicate the list on every
+-- host that ran V202609061900.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -94,4 +106,50 @@ GO
 UPDATE [${mjSchema}].[Entity]
 SET [__mj_UpdatedAt] = GETUTCDATE()
 WHERE [ID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'; -- MJ_BizApps_Orders: Order Lines
+GO
+
+-- -----------------------------------------------------------------------------
+-- The two entity relationships, unregistered by the same run.
+--
+-- EntityRelationship rows are what make the related entity reachable: without them the accounting
+-- dimension a line is tagged with is a bare id in the API and the form has nothing to resolve it
+-- against. `Sequence` here is the position among Order Lines' relationships, not an EntityField
+-- sequence, so CodeGen's literal is the right value and there is no uniqueness constraint to dodge.
+-- -----------------------------------------------------------------------------
+IF NOT EXISTS (
+    SELECT 1 FROM [${mjSchema}].[EntityRelationship]
+    WHERE ID = '58f8662e-9168-47e0-a063-9f3d5150048c'
+       OR (EntityID = 'E382FFAB-748C-4EB6-BEA9-1E8DCB7DBC3F'
+           AND RelatedEntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00'
+           AND RelatedEntityJoinField = 'DimensionValueID')
+)
+BEGIN
+    INSERT INTO [${mjSchema}].[EntityRelationship]
+        ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type],
+         [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
+    VALUES
+        ('58f8662e-9168-47e0-a063-9f3d5150048c',
+         'E382FFAB-748C-4EB6-BEA9-1E8DCB7DBC3F', -- MJ_BizApps_Accounting: Dimension Values
+         '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- MJ_BizApps_Orders: Order Lines
+         'DimensionValueID', 'One To Many', 1, 1, 5, GETUTCDATE(), GETUTCDATE());
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM [${mjSchema}].[EntityRelationship]
+    WHERE ID = '25681c3b-09e4-4524-aab5-0e8ec06d1f7d'
+       OR (EntityID = 'F15DE0FC-C7FC-4080-8F33-9308DECB0E46'
+           AND RelatedEntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00'
+           AND RelatedEntityJoinField = 'DimensionID')
+)
+BEGIN
+    INSERT INTO [${mjSchema}].[EntityRelationship]
+        ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type],
+         [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
+    VALUES
+        ('25681c3b-09e4-4524-aab5-0e8ec06d1f7d',
+         'F15DE0FC-C7FC-4080-8F33-9308DECB0E46', -- MJ_BizApps_Accounting: Dimensions
+         '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- MJ_BizApps_Orders: Order Lines
+         'DimensionID', 'One To Many', 1, 1, 6, GETUTCDATE(), GETUTCDATE());
+END;
 GO
