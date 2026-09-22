@@ -39,6 +39,7 @@ import {
     type OrdersCapturePaymentOutput,
 } from '@mj-biz-apps/orders-entities';
 
+import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
@@ -312,7 +313,12 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         header.ReceivingCompanyID = ctx.receivingCompanyID;
         header.PaymentTypeID = ctx.paymentTypeID;
         header.Amount = ctx.amount;
-        header.PaymentDate = input?.PaymentDate ? new Date(input.PaymentDate) : new Date();
+        // The day the caller named, or today's business day when it named none (#209).
+        // `new Date(input.PaymentDate)` kept a supplied instant's time, which a `date` column then
+        // truncates in UTC; the bare `new Date()` fallback dated an evening capture tomorrow. That
+        // mattered most here: this is the ordinary capture door, and a capture dated a day after
+        // the reversal that reverses it can straddle a month boundary into another period.
+        header.PaymentDate = await CalendarDayOrToday(input?.PaymentDate, provider, user);
         if (input?.BillToOrganizationID) header.BillToOrganizationID = input.BillToOrganizationID;
         if (input?.BillToPersonID) header.BillToPersonID = input.BillToPersonID;
         if (input?.Reference) header.Description = input.Reference;

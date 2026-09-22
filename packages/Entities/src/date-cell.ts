@@ -151,6 +151,25 @@ export function TodayAsDateValue(): Date {
     return FromCalendarDay(Today());
 }
 
+/**
+ * The calendar day a cell NAMES, as a `Date` safe to assign to a `date`-typed field — or `null`
+ * when it names none.
+ *
+ * The counterpart to {@link TodayAsDateValue} for a day that came from somewhere: a form field, a
+ * remote operation's input, a row already in hand. `new Date(cell)` is nearly right and quietly
+ * wrong at the edges — on `'2026-08-27'` it gives midnight UTC, which is correct, but on a full
+ * instant (`'2026-08-27T21:00:00-05:00'`) it keeps the time, and a `date` column then truncates
+ * that in UTC and files the row on the 28th. Reading the day first and re-pinning it to midnight
+ * makes both inputs behave the same.
+ *
+ * Returns `null` rather than today for an absent or unreadable cell, so the caller decides what
+ * absence means — usually `?? TodayAsDateValue()`, occasionally a refusal.
+ */
+export function AsDateValue(value: unknown): Date | null {
+    const day = ToISODate(value);
+    return day === null ? null : FromCalendarDay(day);
+}
+
 /** The UTC calendar fields, zero-padded. */
 function utcDay(date: Date): string {
     return `${String(date.getUTCFullYear()).padStart(4, '0')}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;

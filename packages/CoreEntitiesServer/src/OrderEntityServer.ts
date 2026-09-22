@@ -45,7 +45,6 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
-import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
     OrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
@@ -56,8 +55,8 @@ import {
     mjBizAppsOrdersSubscriptionEntity,
     mjBizAppsOrdersSubscriptionEventEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
-    TodayAsDateValue,
 } from '@mj-biz-apps/orders-entities';
+import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
@@ -1190,7 +1189,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
         await CreateEntitlementGrants(
             {
                 ID: this.ID,
-                OrderDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                // Not the `date`-column defect the other sites carry — `GrantedOn` becomes the
+                // grant's `ValidFrom`/`ValidTo`, which are `DATETIMEOFFSET`. It is the same
+                // INCONSISTENCY, though: with an order date the grant started at that day's
+                // midnight, without one it started at whatever instant the confirm happened to run.
+                OrderDate: await CalendarDayOrToday(this.OrderDate, provider, user),
                 Balance: fresh.Balance,
                 TotalGross: fresh.TotalGross,
                 BillToPersonID: this.BillToPersonID ?? null,
@@ -2739,20 +2742,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
         payment.ReceivingCompanyID = this.CompanyID;
         payment.BillToOrganizationID = this.BillToOrganizationID;
         payment.BillToPersonID = this.BillToPersonID;
-        // The fallback is the business calendar day, not the instant (#209). `OrderDate` is itself
-        // defaulted at `NewRecord()` since #168, so this branch is very likely unreachable — but a
+        // The order's own day, or today's business day when it has none (#209). `OrderDate` is
+        // defaulted at `NewRecord()` since #168, so the fallback is very likely unreachable — but a
         // `DATE` column fed `new Date()` is dated tomorrow for the whole American evening, and the
-        // next caller to reach this method with no order date should not discover that.
-        //
-        // Branched rather than `?? TodayAsDateValue()` so the engine is only warmed when its answer
-        // is actually used: an unconditional `Config()` would read instance configuration on every
-        // order confirm to compute a day the line below then discards.
-        if (this.OrderDate) {
-            payment.PaymentDate = this.OrderDate;
-        } else {
-            await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
-            payment.PaymentDate = TodayAsDateValue();
-        }
+        // next caller to reach this method with no order date should not discover that. Keeping the
+        // stated day matters just as much: a backdated order's payment must carry the same date.
+        payment.PaymentDate = await CalendarDayOrToday(this.OrderDate, provider, user);
         payment.PaymentTypeID = this.InitialPaymentTypeID;
         payment.Amount = amount;
         payment.PaymentDetailID = paymentDetailID;

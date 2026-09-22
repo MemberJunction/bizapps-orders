@@ -224,6 +224,12 @@ export async function CreateReversingPayment(
     request: PaymentReversalRequest,
     lines: mjBizAppsOrdersPaymentLineEntity[],
 ): Promise<PaymentReversalResult> {
+    // Warmed before `NextPaymentNumber`, which takes an UPDLOCK/HOLDLOCK on the single global
+    // `PaymentSequence` row: on a cold engine a metadata read after that point would serialise
+    // every other payment-number mint behind it. Both callers have already opened a transaction,
+    // so this cannot be hoisted out of one entirely — but it can be hoisted out of the lock.
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+
     const reversal = await provider.GetEntityObject<PaymentHeaderEntityServer>(PAYMENT_HEADER_ENTITY, user);
     reversal.NewRecord();
     reversal.PaymentNumber = await NextPaymentNumber(provider);
@@ -233,15 +239,7 @@ export async function CreateReversingPayment(
     // The business calendar day, not the instant (#209). `PaymentDate` is a SQL `DATE`, and
     // `new Date()` is an instant that serialises in UTC — a refund issued at 9 PM Eastern was
     // dated tomorrow, which files the reversal in the wrong period from the one it reverses.
-    //
-    // The warm-up lives HERE, next to the read, rather than in the two callers. Both of them
-    // (`RefundPaymentOperation`, `PaymentSettlement`) have already opened a transaction by the
-    // time they call this, so on a cold engine this one metadata SELECT is enlisted in it — a cost
-    // worth paying over the alternative, which is a requirement spread across callers where the
-    // third one to arrive forgets it and silently gets the UTC day back. `Config(false, …)` is a
-    // no-op once loaded, and the server pre-warms the engine at startup, so the cold case is the
-    // exception rather than the path.
-    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+    // Today rather than the original's day on purpose: a reversal is its own cash event.
     reversal.PaymentDate = TodayAsDateValue();
     reversal.PaymentTypeID = original.PaymentTypeID;
     reversal.Amount = request.Amount;

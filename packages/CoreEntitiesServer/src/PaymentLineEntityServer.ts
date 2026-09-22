@@ -59,6 +59,7 @@ import {
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
+import { CalendarDayOrToday } from './calendar-day.js';
 import { LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import { PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 
@@ -232,7 +233,12 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             PaymentNumber: row.PaymentNumber,
             ReceivingCompanyID: row.ReceivingCompanyID,
             Status: row.Status,
-            PaymentDate: row.PaymentDate ? new Date(row.PaymentDate) : new Date(),
+            // A day, not an instant (#209) — it becomes the allocation entry's `EffectiveDate`.
+            PaymentDate: await CalendarDayOrToday(
+                row.PaymentDate,
+                this.ProviderToUse as unknown as IMetadataProvider,
+                this.ContextCurrentUser as UserInfo,
+            ),
         };
     }
 

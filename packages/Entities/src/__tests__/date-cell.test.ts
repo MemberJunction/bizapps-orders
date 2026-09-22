@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
-import { ToISODate, ISOYear, IsBefore, Today, LocalDay, TodayAsDateValue, type DateCell } from '../date-cell';
+import { ToISODate, ISOYear, IsBefore, Today, LocalDay, TodayAsDateValue, AsDateValue, type DateCell } from '../date-cell';
 
 /**
  * Tier 1 for reading a date cell.
@@ -194,5 +194,37 @@ describe('TodayAsDateValue', () => {
         expect(v.getUTCMinutes()).toBe(0);
         expect(v.getUTCSeconds()).toBe(0);
         expect(v.getUTCMilliseconds()).toBe(0);
+    });
+});
+
+describe('AsDateValue', () => {
+    it('keeps a date-only string on the day it names', () => {
+        expect(ToISODate(AsDateValue('2026-08-27'))).toBe('2026-08-27');
+    });
+
+    it('reduces a full instant to its UTC day rather than carrying the time along', () => {
+        // The case `new Date(cell)` gets wrong: the time survives, and a `date` column truncates
+        // it in UTC — so an evening instant is filed on the following day.
+        const v = AsDateValue('2026-08-27T21:00:00.000Z') as Date;
+        expect(ToISODate(v)).toBe('2026-08-27');
+        expect(v.getUTCHours()).toBe(0);
+    });
+
+    it('round-trips a Date that already came from a date column unchanged', () => {
+        const fromColumn = new Date('2026-08-27T00:00:00.000Z');
+        expect(AsDateValue(fromColumn)?.getTime()).toBe(fromColumn.getTime());
+    });
+
+    it('is null for absence and for garbage, so the caller decides what absence means', () => {
+        expect(AsDateValue(null)).toBeNull();
+        expect(AsDateValue(undefined)).toBeNull();
+        expect(AsDateValue('')).toBeNull();
+        expect(AsDateValue('not a date')).toBeNull();
+        expect(AsDateValue(new Date('nope'))).toBeNull();
+    });
+
+    it('is pinned to midnight UTC, like TodayAsDateValue', () => {
+        const v = AsDateValue('2026-08-27T13:45:11.500Z') as Date;
+        expect([v.getUTCHours(), v.getUTCMinutes(), v.getUTCSeconds(), v.getUTCMilliseconds()]).toEqual([0, 0, 0, 0]);
     });
 });
