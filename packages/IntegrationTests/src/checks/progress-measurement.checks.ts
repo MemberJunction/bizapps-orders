@@ -17,6 +17,8 @@
  *   PM4  a posted observation refuses modification (the trigger is the floor; DELETE shares its branch)
  *   PM5  an unchanged percent is a success that writes no entry
  *   PM6  a non-POC line, and an observation dated on or before the last one, are refused
+ *   PM7  Andrew's Scenario 4 end to end on a SCHEDULED project — nine steps, each entry's contra
+ *        legs and the line's running totals exactly as his table states them, closing at zero
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -44,10 +46,13 @@ import {
     TxQuery,
 } from '../fixture.js';
 import { ConfirmOrder } from '../order-builder.js';
+import { issue, scheduledOrder, type Instalment } from './payment-schedule.checks.js';
 
 const SALES = '40100';
 const DEFERRED = '21301';
 const AR = '11201';
+/** The contract asset: revenue earned ahead of billing (D92 rule 2). */
+const UNBILLED = '11300';
 
 interface RecordOutput {
     Success: boolean;
@@ -114,6 +119,107 @@ const observations = (ctx: IntegrationCheckContext, lineID: string) =>
     );
 
 const cents = (n: number) => Math.round(n * 100) / 100;
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Andrew's Scenario 4 (#227): a $100,000 project on four quarterly instalments of $25,000 in
+ * advance, attested monthly, including a backward slide at month 7.
+ *
+ * It lives here rather than in `payment-schedule` because what it exercises is RULE 2 CHOOSING ITS
+ * CONTRA ACCOUNT — the same table `ContractBalance.test.ts` proves arithmetically, driven end to end
+ * through real confirms, real invoices and real attestations, so the two cannot agree on paper while
+ * disagreeing in the ledger.
+ *
+ * AMOUNTS ARE DEBIT-POSITIVE, which is why his credits appear as negatives: one convention for every
+ * account makes a step's four assertions readable side by side. `Deferred` and `Unbilled` are the
+ * legs the two rules produce; `Billed` and `Recognized` are the line's running totals AFTER the
+ * step, exactly as his table states them.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** Four quarters in advance. Instalment 1 falls on the order date, so confirm issues it (D92). */
+const QUARTERLY: Instalment[] = [
+    { InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 25_000 },
+    { InstallmentNumber: 2, DueDate: '2026-10-01', Amount: 25_000 },
+    { InstallmentNumber: 3, DueDate: '2027-01-01', Amount: 25_000 },
+    { InstallmentNumber: 4, DueDate: '2027-04-01', Amount: 25_000 },
+];
+
+interface ScenarioStep {
+    Kind: 'invoice' | 'attest';
+    Label: string;
+    /** `invoice` only — which instalment to issue. */
+    Instalment?: number;
+    /** `attest` only. */
+    Date?: string;
+    Percent?: number;
+    AR?: number;
+    Sales?: number;
+    Deferred: number;
+    Unbilled: number;
+    Billed: number;
+    Recognized: number;
+}
+
+const SCENARIO_4: ScenarioStep[] = [
+    { Kind: 'invoice', Label: 'Order confirmed — instalment 1 issued', Instalment: 1, AR: 25_000, Deferred: -25_000, Unbilled: 0, Billed: 25_000, Recognized: 0 },
+    { Kind: 'attest', Label: 'Month 1, attested 40%', Date: '2026-07-31', Percent: 0.4, Sales: -40_000, Deferred: 25_000, Unbilled: 15_000, Billed: 25_000, Recognized: 40_000 },
+    { Kind: 'invoice', Label: 'Quarter 2 invoice', Instalment: 2, AR: 25_000, Deferred: -10_000, Unbilled: -15_000, Billed: 50_000, Recognized: 40_000 },
+    { Kind: 'attest', Label: 'Month 5, attested 45%', Date: '2026-11-30', Percent: 0.45, Sales: -5_000, Deferred: 5_000, Unbilled: 0, Billed: 50_000, Recognized: 45_000 },
+    { Kind: 'invoice', Label: 'Quarter 3 invoice', Instalment: 3, AR: 25_000, Deferred: -25_000, Unbilled: 0, Billed: 75_000, Recognized: 45_000 },
+    { Kind: 'attest', Label: 'Month 7, attested 40%', Date: '2027-01-31', Percent: 0.4, Sales: 5_000, Deferred: -5_000, Unbilled: 0, Billed: 75_000, Recognized: 40_000 },
+    { Kind: 'attest', Label: 'Month 9, attested 90%', Date: '2027-03-31', Percent: 0.9, Sales: -50_000, Deferred: 35_000, Unbilled: 15_000, Billed: 75_000, Recognized: 90_000 },
+    { Kind: 'invoice', Label: 'Quarter 4 invoice', Instalment: 4, AR: 25_000, Deferred: -10_000, Unbilled: -15_000, Billed: 100_000, Recognized: 90_000 },
+    { Kind: 'attest', Label: 'Month 12, attested 100%', Date: '2027-06-30', Percent: 1, Sales: -10_000, Deferred: 10_000, Unbilled: 0, Billed: 100_000, Recognized: 100_000 },
+];
+
+/** Attest one step and return the entry it posted. */
+async function attestStep(ctx: IntegrationCheckContext, lineID: string, step: ScenarioStep): Promise<string> {
+    const out = await record(ctx, { OrderLineID: lineID, MeasurementDate: step.Date!, PercentComplete: step.Percent! });
+    Assert(out.Success, `${step.Label}: ${out.Message}`);
+    Assert(!!out.JournalEntryID, `${step.Label}: an entry was written`);
+    return out.JournalEntryID!;
+}
+
+/** Issue one instalment and return its entry — or, for instalment 1, the one confirm already posted. */
+async function invoiceStep(ctx: IntegrationCheckContext, scheduleID: string): Promise<string> {
+    const before = await TxOne<{ JournalEntryID: string | null; Status: string }>(
+        ctx,
+        `SELECT JournalEntryID, Status FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE ID = '${scheduleID}'`,
+    );
+    // Instalment 1 is already Invoiced: confirm issues everything due on or before the order date,
+    // through this same path. Issuing it again would be refused, quite correctly (PS-E).
+    if (before.Status !== 'Scheduled') {
+        Assert(!!before.JournalEntryID, 'an instalment issued at confirm carries its billing entry');
+        return before.JournalEntryID!;
+    }
+    await issue(ctx, scheduleID);
+    const after = await TxOne<{ JournalEntryID: string | null }>(
+        ctx,
+        `SELECT JournalEntryID FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE ID = '${scheduleID}'`,
+    );
+    Assert(!!after.JournalEntryID, 'invoicing an instalment writes its billing entry');
+    return after.JournalEntryID!;
+}
+
+/** One entry's movement per account, DEBITS LESS CREDITS, so every step reads in one convention. */
+const entryLegs = (ctx: IntegrationCheckContext, journalEntryID: string) =>
+    TxQuery<{ Code: string; Net: number }>(
+        ctx,
+        `SELECT gl.Code, SUM(ISNULL(jel.DebitAmount, 0)) - SUM(ISNULL(jel.CreditAmount, 0)) AS Net
+           FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+           JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+          WHERE jel.JournalEntryID = '${journalEntryID}'
+          GROUP BY gl.Code`,
+    );
+
+const netOn = (legs: Array<{ Code: string; Net: number }>, code: string): number =>
+    cents(legs.filter((l) => l.Code === code).reduce((sum, l) => sum + Number(l.Net), 0));
+
+const lineTotals = (ctx: IntegrationCheckContext, lineID: string) =>
+    TxOne<{ BilledToDate: number; RecognizedToDate: number }>(
+        ctx,
+        `SELECT BilledToDate, RecognizedToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID}'`,
+    );
 
 export const ProgressMeasurementChecks: NamedCheck[] = [
     {
@@ -243,6 +349,50 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 AssertEqual(backdated.Success, false, 'July cannot be restated after August has posted');
                 Assert((backdated.Message ?? '').includes('Corrections happen forward'), `and says why: ${backdated.Message}`);
                 AssertEqual((await recognitionEntries(ctx, lineID)).length, 1, 'only the August entry exists');
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM7',
+        Name: "PM7: Andrew's Scenario 4 end to end — nine steps on a scheduled project, every contra leg where his table says",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { orderID, ids, saved, message } = await scheduledOrder(ctx, QUARTERLY, {
+                    gross: 100_000,
+                    productID: Fx().Products.PocA,
+                });
+                Assert(saved, `the scheduled project must confirm: ${message}`);
+                const lineID = (await TxQuery<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`))[0].ID;
+
+                for (const step of SCENARIO_4) {
+                    const journalEntryID =
+                        step.Kind === 'attest'
+                            ? await attestStep(ctx, lineID, step)
+                            : await invoiceStep(ctx, ids[step.Instalment! - 1]);
+
+                    const legs = await entryLegs(ctx, journalEntryID);
+                    AssertEqual(netOn(legs, AR), step.AR ?? 0, `${step.Label}: Accounts Receivable`);
+                    AssertEqual(netOn(legs, SALES), step.Sales ?? 0, `${step.Label}: Sales`);
+                    AssertEqual(netOn(legs, DEFERRED), step.Deferred, `${step.Label}: Deferred Revenue`);
+                    AssertEqual(netOn(legs, UNBILLED), step.Unbilled, `${step.Label}: Unbilled Receivable`);
+                    AssertEqual(cents(legs.reduce((sum, l) => sum + Number(l.Net), 0)), 0, `${step.Label}: the entry balances`);
+
+                    const totals = await lineTotals(ctx, lineID);
+                    AssertEqual(cents(Number(totals.BilledToDate)), step.Billed, `${step.Label}: BilledToDate after`);
+                    AssertEqual(cents(Number(totals.RecognizedToDate)), step.Recognized, `${step.Label}: RecognizedToDate after`);
+                }
+
+                // WHERE THE CONTRACT ENDS UP is the point of the whole table: billed in full, earned
+                // in full, and neither contra account holding anything. A model that merely balanced
+                // every entry could still strand a balance here.
+                const final = await lineTotals(ctx, lineID);
+                AssertEqual(cents(Number(final.BilledToDate)), 100_000, 'billed in full');
+                AssertEqual(cents(Number(final.RecognizedToDate)), 100_000, 'earned in full');
+                AssertEqual(
+                    cents(Number(final.BilledToDate) - Number(final.RecognizedToDate)),
+                    0,
+                    'so the line holds nothing in Deferred Revenue and nothing in Unbilled Receivable',
+                );
             }),
     },
 ];
