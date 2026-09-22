@@ -13,6 +13,7 @@ BCP,Sales,Sales,ProductType,Bundle
 BCP,Sales,Sales,Category,EVENTS
 BCP,Sales,Sales,Product,STYLE-HB
 BCP,Discounts,Sales Discounts,Product,WORKSHOP
+BCP,Discounts,Sales Discounts,Product,IMPL-PROJ
 HH,AR,Accounts Receivable,Company,
 HH,Sales,Sales,Company,
 HH,Deferred,Deferred Revenue,Company,
