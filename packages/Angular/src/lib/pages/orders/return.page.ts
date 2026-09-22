@@ -1,4 +1,14 @@
-import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output, inject } from '@angular/core';
+import {
+    ChangeDetectorRef,
+    Component,
+    EventEmitter,
+    Input,
+    OnChanges,
+    OnInit,
+    Output,
+    SimpleChanges,
+    inject,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
@@ -74,7 +84,24 @@ interface MJOReturnLine {
                         {{ Origin.BillToOrganization ?? Origin.BillToPerson ?? '—' }}
                     </mjo-stated-value>
                     <mjo-stated-value Label="Original">{{ Origin.TotalGross | mjoMoney }}</mjo-stated-value>
+                    <button type="button" mjButton variant="outline" size="sm" (click)="OpenPicker()">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Change origin order
+                    </button>
                 </div>
+                @if (PickerOpen) {
+                    <div class="mj-card-pad mjo-rt__picker">
+                        <mj-dropdown
+                            AriaLabel="Original order"
+                            Placeholder="Choose an order…"
+                            [Data]="PickerOrders"
+                            TextField="OrderNumber"
+                            ValueField="ID"
+                            [ValuePrimitive]="true"
+                            [Filterable]="true"
+                            (ValueChange)="ChooseOrigin($any($event))"
+                            name="changeOriginOrder" />
+                    </div>
+                }
             </div>
 
             <div class="mjo-rt__split">
@@ -199,6 +226,25 @@ interface MJOReturnLine {
                 <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
                 <div class="t">Select an order to return</div>
                 <div class="small">Choose the original order to start a return.</div>
+                @if (PickerOrders.length) {
+                    <div class="mjo-rt__picker">
+                        <mj-dropdown
+                            AriaLabel="Original order"
+                            Placeholder="Choose an order…"
+                            [Data]="PickerOrders"
+                            TextField="OrderNumber"
+                            ValueField="ID"
+                            [ValuePrimitive]="true"
+                            [Filterable]="true"
+                            (ValueChange)="ChooseOrigin($any($event))"
+                            name="originOrder" />
+                    </div>
+                } @else {
+                    <div class="small muted mjo-rt__picker">
+                        No booked orders to return against yet. An order has to be confirmed before it
+                        can be reversed.
+                    </div>
+                }
             </div>
         }
     `,
@@ -227,6 +273,15 @@ interface MJOReturnLine {
             .mjo-rt__qty { width: 74px; }
             .mjo-rt__actions { margin-top: var(--mj-space-4); }
             .mjo-rt__empty { padding: var(--mj-space-12); }
+            /* The picker reads as one control rather than filling the card, and is centred in the
+               empty state because everything above it there is centred too. */
+            .mjo-rt__picker {
+                margin: var(--mj-space-4) auto 0;
+                max-width: 340px;
+                text-align: left;
+            }
+            /* The origin row pushes its action to the right, as the approved design does. */
+            .mjo-rt__origin-row > button { margin-left: auto; }
 
             @media (max-width: 1100px) {
                 .mjo-rt__split { flex-direction: column; }
@@ -238,7 +293,7 @@ interface MJOReturnLine {
         `,
     ],
 })
-export class MJOReturnPageComponent implements OnInit {
+export class MJOReturnPageComponent implements OnInit, OnChanges {
     /**
      * Render what was just loaded.
      *
@@ -257,8 +312,29 @@ export class MJOReturnPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
     private readonly entry = inject(MJOPricingScheduler);
 
-    /** The order being returned against. */
+    /**
+     * The order being returned against.
+     *
+     * Optional, and it was the ONLY way in until the picker below existed — which is why golive#250
+     * reported the page as unreachable: nothing in the repo ever set it, so the page showed its
+     * "choose the original order" empty state and offered nothing to choose with.
+     */
     @Input() OriginOrderID: string | null = null;
+
+    /**
+     * THE ORIGIN PICKER (golive#250, and `mockups/orders/return.html`'s `<!-- origin picker -->`).
+     *
+     * Only BOOKED orders are offered, because that is what a return reverses — `IsBooked` is
+     * "journal entries exist and the receivable is real". A Draft or Quoted order has no money to
+     * give back, and `ReversalResolver` skips Draft and Voided on the server, so offering one would
+     * be offering a choice the server refuses.
+     *
+     * Filtered server-side rather than fetched-and-filtered: `MJOGetOrdersOptions` records a real
+     * performance bug from doing the latter, and a returns picker on a long-lived instance is
+     * exactly where it would bite.
+     */
+    public PickerOrders: mjBizAppsOrdersOrderHeaderEntity[] = [];
+    public PickerOpen = false;
 
     /** Emitted AFTER the return is booked, carrying the new order's id. */
     @Output() ReturnCreated = new EventEmitter<string | null>();
@@ -280,10 +356,76 @@ export class MJOReturnPageComponent implements OnInit {
     public Reason = 'Damaged in transit';
 
     public async ngOnInit(): Promise<void> {
-        if (!this.OriginOrderID) return;
-        const orders = await GetOrders({ Preset: 'all' });
-        this.Origin = orders.find((o) => o.ID === this.OriginOrderID) ?? null;
-        if (!this.Origin) return;
+        await this.LoadReturnableOrders();
+        await this.LoadOrigin();
+    }
+
+    /**
+     * THE INPUT CAN ARRIVE AFTER CONSTRUCTION, and `ngOnInit` runs once.
+     *
+     * The section shell hands a cached page its record with `setInput(...)`, which runs `ngOnChanges`
+     * and nothing else. Without this the page would load an order only when it happened to be
+     * constructed with one already set, and silently keep showing the previous origin otherwise —
+     * the shape `order-document.page.ts` still has.
+     */
+    public async ngOnChanges(changes: SimpleChanges): Promise<void> {
+        if (changes['OriginOrderID'] && !changes['OriginOrderID'].firstChange) {
+            await this.LoadOrigin();
+        }
+    }
+
+    /** The orders a return may be written against — see `PickerOrders`. */
+    private async LoadReturnableOrders(): Promise<void> {
+        this.PickerOrders = await GetOrders({ Preset: 'booked', MaxRows: 200 });
+        this.cdr.detectChanges();
+    }
+
+    /** A label a person can pick by: the number, then who it was for and what it came to. */
+    public PickerLabel(order: mjBizAppsOrdersOrderHeaderEntity): string {
+        const who = order.BillToOrganization ?? order.BillToPerson ?? '—';
+        return `${order.OrderNumber} · ${who}`;
+    }
+
+    /** Choose the origin from the picker. Same load path as the input, so both routes agree. */
+    public async ChooseOrigin(orderID: string | null): Promise<void> {
+        if (!orderID) return;
+        this.Error = null;
+        this.OriginOrderID = orderID;
+        this.PickerOpen = false;
+        // The picker closing is a visible change of its own, and it happens BEFORE the await rather
+        // than as a side effect of whatever `LoadOrigin` does after it. `render-after-load` asks for
+        // the call in the same body as the assignment for exactly this reason: a tick that only
+        // happens across an await boundary is one the caller can move or drop without noticing.
+        this.cdr.detectChanges();
+        await this.LoadOrigin();
+    }
+
+    /** Reopen the picker to swap origins — the design's "Change origin order". */
+    public OpenPicker(): void {
+        this.PickerOpen = true;
+        this.cdr.detectChanges();
+    }
+
+    /** Load `OriginOrderID`'s order and its returnable lines, or clear the page if there is none. */
+    private async LoadOrigin(): Promise<void> {
+        this.Lines = [];
+        this.Origin = null;
+        if (!this.OriginOrderID) {
+            this.cdr.detectChanges();
+            return;
+        }
+        // BY ID, not every order then `.find`. `MJOGetOrdersOptions.OrderHeaderID` exists for exactly
+        // this and says why: "cheaper and exact where a caller already has the ID". The previous
+        // `Preset: 'all'` read the whole table to keep one row — invisible on a fresh instance and
+        // steadily worse with every order taken, which is the performance bug that options doc
+        // already records against fast entry's customer picker.
+        const orders = await GetOrders({ OrderHeaderID: this.OriginOrderID });
+        this.Origin = orders[0] ?? null;
+        if (!this.Origin) {
+            this.Error = 'That order could not be loaded.';
+            this.cdr.detectChanges();
+            return;
+        }
 
         const lines = await GetOrderLines(this.Origin.ID);
         // WHAT HAS ALREADY GONE BACK, from the server. The cap counts reversals across every order

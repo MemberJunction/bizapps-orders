@@ -265,7 +265,17 @@ function likeText(value: string): string {
 
 /* ── Orders ──────────────────────────────────────────────────────────────────── */
 
-export type MJOOrderPreset = 'all' | 'overdue' | 'unpaid' | 'notposted' | 'drafts' | 'credits';
+/**
+ * `booked` WAS `notposted`, WHICH NAMED A STATUS THAT NO LONGER EXISTS.
+ *
+ * `ORDER_STATUSES` is `Draft | Quoted | Confirmed | Voided` — there is no `Posted`, and has not been
+ * since the lifecycle collapsed (KI-27). The preset had no callers at all, so the stale name was
+ * costing nothing yet and would have cost the next reader the time it took to find that out.
+ *
+ * Renamed for what it selects rather than what it once excluded: an order that has BOOKED, which is
+ * `IsBooked` in `OrderStatusBehavior` — "journal entries exist and the receivable is real".
+ */
+export type MJOOrderPreset = 'all' | 'overdue' | 'unpaid' | 'booked' | 'drafts' | 'credits';
 
 export interface MJOGetOrdersOptions {
     Preset?: MJOOrderPreset;
@@ -318,7 +328,10 @@ export async function GetOrders(
         case 'unpaid':
             filters.push(`Balance > 0 AND Status NOT IN ('Draft','Quoted','Voided')`);
             break;
-        case 'notposted':
+        case 'booked':
+            // The SQL says `Confirmed` because `IsBooked` does. Kept as a literal rather than
+            // imported because this builds a server-side filter string, not a client-side test —
+            // but if `IsBooked` ever widens, this is the other half that has to widen with it.
             filters.push(`Status = 'Confirmed'`);
             break;
         case 'drafts':
