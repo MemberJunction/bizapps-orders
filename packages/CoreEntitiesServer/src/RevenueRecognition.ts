@@ -23,6 +23,7 @@
  *   CALLER: OrderJournalEntryFactory (./OrderJournalEntryFactory.ts)
  */
 import { RegisterClass } from '@memberjunction/global';
+import type { mjBizAppsOrdersOrderLineProgressMeasurementEntity } from '@mj-biz-apps/orders-entities';
 
 /** What a driver is given. Deliberately plain data — no entities, no provider, no I/O. */
 export interface RevRecContext {
@@ -168,14 +169,23 @@ export class AllBackEndDriver extends RevenueRecognitionDriver {
  * release entries; `Orders.RecordProgress` posts the catch-up as observations arrive.
  * ──────────────────────────────────────────────────────────────────────────── */
 
-/** One observation, as the driver sees it. Plain data, mirroring OrderLineProgressMeasurement. */
-export interface ProgressMeasurement {
-    /** Cumulative fraction earned, 0..1, when the signer states it directly. */
-    PercentComplete?: number | null;
-    /** Quantitative inputs, for a derived method (cost-to-cost, units delivered). */
-    MeasureNumerator?: number | null;
-    MeasureDenominator?: number | null;
-}
+/**
+ * One observation, as the driver sees it: the three measurement columns of the row it came from.
+ *
+ * TAKEN FROM THE GENERATED ENTITY rather than restated. A hand-written interface mirroring entity
+ * columns is an MJ anti-pattern (Amith): it compiles happily after the schema moves underneath it,
+ * so the first sign of drift is a wrong number rather than a build error. `Pick` keeps the
+ * compiler's opinion authoritative — rename or retype one of these columns and every driver that
+ * reads it stops building.
+ *
+ * `Partial`, because a driver is given whatever the attestation supplied: `ManualAttestation` needs
+ * only `PercentComplete`, a cost-to-cost driver would need only the other two, and requiring all
+ * three would make every caller pass nulls it has no opinion about. The entity's own nullability is
+ * preserved underneath — this widens optionality, it does not restate the types.
+ */
+export type ProgressMeasurement = Partial<
+    Pick<mjBizAppsOrdersOrderLineProgressMeasurementEntity, 'PercentComplete' | 'MeasureNumerator' | 'MeasureDenominator'>
+>;
 
 /**
  * Base progress driver. Subclass and register under a `MethodCode`:
