@@ -72,7 +72,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
-import { SplitContraLegs } from './ContractBalance.js';
+import { BuildCreditMemoLines, SplitContraLegs } from './ContractBalance.js';
 import {
     GL_ROLE,
     GLAccountResolver,
@@ -372,6 +372,14 @@ export class OrderJournalEntryFactory {
          * line debits AR exactly as it did before payment schedules existed.
          */
         scheduleRows?: ScheduleTimingFacts[],
+        /**
+         * The credit memo each REVERSING line gives back, keyed by the reversing line's ID (D92 §6).
+         * The amount is the ORIGIN line's billed-and-unearned balance, which lives on a different
+         * order and so cannot be read from `lines` — the caller already loads the reversal context
+         * and hands it in, the same bargain `scheduleRows` strikes. Absent for every order that
+         * reverses nothing, which is nearly all of them.
+         */
+        creditMemoByLine?: Map<string, number>,
     ): Promise<OrderLineDraft[]> {
         if (lines.length === 0) {
             throw new Error(`Order ${order.OrderNumber} has no lines to book.`);
@@ -418,6 +426,7 @@ export class OrderJournalEntryFactory {
                     order, line, products, revRecTypes, dimensions, effectiveDate, asOf, giftCardTypeIDs,
                     scheduledCompanies,
                     termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
+                    creditMemoByLine?.get(String(line.ID)) ?? 0,
                 )),
             );
         }
@@ -487,6 +496,8 @@ export class OrderJournalEntryFactory {
         scheduledCompanies: Set<string>,
         term?: { ID: string; StartDate: Date; EndDate: Date; Amount: number },
         recognitionMonths?: number,
+        /** This reversing line's credit memo — the origin line's billed-and-unearned balance (D92 §6). */
+        creditMemo = 0,
     ): Promise<OrderLineDraft[]> {
         const product = products.get(line.ProductID.toLowerCase());
         if (!product) {
@@ -626,7 +637,16 @@ export class OrderJournalEntryFactory {
             );
         }
 
-        const bookingLines: JELineDraft[] = isScheduled
+        // A REVERSAL ON A SCHEDULED COMPANY CREDITS THE MEMO, NOT A MIRRORED BOOKING ENTRY (D92 §6).
+        // An ordinary reversal mirrors what booking posted, but a scheduled company never posted a
+        // value entry — its value reaches the ledger one instalment at a time — so mirroring nothing
+        // would give nothing back. What the customer is owed is what they were invoiced and have not
+        // consumed: the origin line's Deferred balance, computed by the caller and handed in.
+        const memo = isScheduled && isReversal ? creditMemo : 0;
+
+        const bookingLines: JELineDraft[] = memo > 0
+            ? BuildCreditMemoLines(memo, { AR: arAccount, Deferred: await resolve(GL_ROLE.DeferredRevenue) }, product.Name, lineDims)
+            : isScheduled
             ? []
             : BuildValueEntryLines(
                   { Net: net, Tax: tax, Charges: charges, Discount: discount, Gross: gross },

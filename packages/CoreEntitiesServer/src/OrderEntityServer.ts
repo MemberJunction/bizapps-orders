@@ -65,7 +65,7 @@ import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
-import { InstalmentsToCancel, RefuseEarnedNotBilled } from './ContractBalance.js';
+import { CreditMemoByLine, InstalmentsToCancel, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
@@ -1713,6 +1713,41 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * than inferred from the reversal.
      */
     /**
+     * The credit memo each reversing line gives back, keyed by the REVERSING line's id (D92 §6).
+     *
+     * `CreditMemoByLine` decides the amount from the origin line's two totals; this only fetches
+     * them. A line whose origin has nothing billed-and-unearned is left out rather than mapped to
+     * zero, so the factory's lookup answers "no memo" by absence and the entry has no empty lines
+     * to filter.
+     */
+    private async creditMemosForReversals(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+    ): Promise<Map<string, number>> {
+        const memos = new Map<string, number>();
+        const reversals = lines.filter((l) => l.ReversesOrderLineID);
+        if (!reversals.length) return memos;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        for (const line of reversals) {
+            const context = await LoadReversalContext(line.ReversesOrderLineID, provider, user, [line.ID]);
+            if (!context) continue; // applyReversalOrigin already refused anything unresolvable
+            const byOrigin = CreditMemoByLine([
+                {
+                    OrderLineID: context.Origin.ID,
+                    LineNumber: context.Origin.LineNumber ?? null,
+                    BilledToDate: Number(context.Origin.BilledToDate ?? 0),
+                    RecognizedToDate: Number(context.Origin.RecognizedToDate ?? 0),
+                },
+            ]);
+            const memo = byOrigin.get(context.Origin.ID);
+            if (memo) memos.set(String(line.ID), memo);
+        }
+        return memos;
+    }
+
+    /**
      * Withdraw the instalments the reversed order will never bill (D92 §6).
      *
      * A future instalment is a promise to invoice, not money that has moved, so it is simply taken
@@ -2302,7 +2337,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
             user,
         );
 
-        const drafts = await factory.BuildDrafts(this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows);
+        // WHAT EACH REVERSING LINE GIVES BACK (D92 §6). Read here, not in the factory: the amount is
+        // the ORIGIN line's billed-and-unearned balance and the origin sits on a different order, so
+        // the factory would have to query for it. Empty for an order that reverses nothing.
+        const creditMemoByLine = await this.creditMemosForReversals(unbooked);
+        const drafts = await factory.BuildDrafts(
+            this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows, creditMemoByLine,
+        );
         // An order can legitimately produce NO entries: every line fully comped, so nothing to
         // debit or credit. Accounting refuses an empty draft set, quite correctly, so the call is
         // skipped rather than the order being refused for having no ledger impact.

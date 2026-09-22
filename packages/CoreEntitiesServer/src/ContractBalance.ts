@@ -193,3 +193,53 @@ export function RefuseEarnedNotBilled(
           `reversal would strand that amount in Unbilled Receivable. Someone needs to correct the ` +
           `schedule before this order can be reversed.`;
 }
+
+/** One journal line, in the shape both entry builders here produce. */
+export interface CreditMemoLine {
+    GLAccountID: string;
+    DebitAmount?: number;
+    CreditAmount?: number;
+    Description: string;
+    Dimensions: Array<{ DimensionID: string; DimensionValueID: string }>;
+}
+
+/**
+ * The credit memo a reversal books for one line: `Dr Deferred / Cr AR` (D92 §6).
+ *
+ * This REPLACES the value entry for a reversing line on a scheduled company. An ordinary reversal
+ * mirrors the booking entry, but a scheduled company never booked one — its value reaches the ledger
+ * one instalment at a time — so mirroring nothing would credit nothing back. What the customer is
+ * actually owed is what they were invoiced and have not yet consumed, which is the line's Deferred
+ * balance, and that is what this gives back.
+ *
+ * Two amounts on purpose. The customer's receivable falls by the memo, and the obligation to deliver
+ * falls with it, so both legs are the same number and the entry balances by construction. Revenue
+ * already recognised is not touched: the service was delivered and reversing the contract does not
+ * undeliver it (Andrew).
+ *
+ * @param amount the line's `max(0, BilledToDate − RecognizedToDate)`, from {@link CreditMemoByLine}
+ * @returns the two lines, or an empty array when there is nothing billed-and-unearned to give back
+ */
+export function BuildCreditMemoLines(
+    amount: number,
+    accounts: { AR: string; Deferred: string },
+    label: string,
+    dimensions: Array<{ DimensionID: string; DimensionValueID: string }>,
+): CreditMemoLine[] {
+    const memo = money(amount);
+    if (memo <= 0) return [];
+    return [
+        {
+            GLAccountID: accounts.Deferred,
+            DebitAmount: memo,
+            Description: `Deferred Revenue — credit memo, ${label}`,
+            Dimensions: dimensions,
+        },
+        {
+            GLAccountID: accounts.AR,
+            CreditAmount: memo,
+            Description: `AR — credit memo, ${label}`,
+            Dimensions: dimensions,
+        },
+    ];
+}
