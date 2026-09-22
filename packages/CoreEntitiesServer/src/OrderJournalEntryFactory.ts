@@ -379,6 +379,10 @@ export class OrderJournalEntryFactory {
                 ProductName: product.Name,
                 Quantity: line.Quantity,
                 ...LineAmounts(line),
+                // The totals as they stand BEFORE this instalment — rule 1 reads them to decide
+                // how much of the credit relieves the contract asset (D92).
+                BilledToDate: Number(line.BilledToDate ?? 0),
+                RecognizedToDate: Number(line.RecognizedToDate ?? 0),
                 ProductID: product.ID,
                 ProductCategoryID: product.ProductCategoryID,
                 ProductTypeID: product.ProductTypeID,
