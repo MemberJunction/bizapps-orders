@@ -61,6 +61,15 @@ function money(v: number): number {
     return Math.round((v + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Local-calendar YYYYMMDD. Recognition dates are built from local-midnight Dates while an `asOf`
+ * arrives from wherever the caller got it, so comparing the Dates themselves slips a day in any
+ * timezone with an offset — the classic way a month-end run books a period early or late.
+ */
+function dayKey(d: Date): number {
+    return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
+}
+
 function addMonths(d: Date, n: number): Date {
     const r = new Date(d.getTime());
     const day = r.getDate();
@@ -79,6 +88,37 @@ function addMonths(d: Date, n: number): Date {
 export abstract class RevenueRecognitionDriver {
     /** Compute when and how much is earned. Pure: no I/O, no side effects. */
     public abstract BuildSchedule(context: RevRecContext): RevRecSchedule;
+
+    /**
+     * How much of the line is earned AS AT `asOf` — the cumulative sum of every schedule entry
+     * dated on or before that day (D92 §8).
+     *
+     * Derived from `BuildSchedule` rather than implemented per driver: a driver that already says
+     * when each slice is earned has, by saying so, answered this too, and a second hand-written
+     * answer is a second thing to keep in step. Three properties hold for every driver as a result
+     * — it never decreases as `asOf` advances, it is 0 before the first entry, and it equals the
+     * context's `Amount` at or after the last one, because `AllocateEvenly` sums exactly.
+     *
+     * SIGN LIVES WITH THE CALLER, not here. A reversal line asks this question with `Amount` as its
+     * ABSOLUTE net and mirrors the resulting entry once, exactly as the booking factory handles every
+     * other amount (D92) — so this returns a positive running total for an origin and a reversal
+     * alike, and "never decreases" stays true of both.
+     *
+     * Overridable for a driver whose earned-to-date is genuinely not its schedule's running total.
+     * Percentage-of-completion is NOT such a driver — it is the other family entirely
+     * ({@link ProgressRecognitionDriver}), because its answer depends on observations rather than
+     * on time, and nothing here can compute it.
+     */
+    public EarnedThrough(context: RevRecContext, asOf: Date): number {
+        if (Number.isNaN(asOf.getTime())) {
+            throw new Error(`EarnedThrough needs a real date, but asOf is Invalid Date.`);
+        }
+        const cutoff = dayKey(asOf);
+        const earned = this.BuildSchedule(context)
+            .Entries.filter((e) => dayKey(e.RecognitionDate) <= cutoff)
+            .reduce((sum, e) => sum + e.Amount, 0);
+        return money(earned);
+    }
 
     /**
      * Split `amount` across `periods`, front-loading the rounding remainder into the first period

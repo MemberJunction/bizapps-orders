@@ -733,60 +733,24 @@ export class OrderJournalEntryFactory {
               ]
             : [];
 
-        // ── the forward-dated releases (D14/D43) ──
-        // A percentage-of-completion type (ScheduleBasis 'OnMeasurement', D90) is deferred but its
-        // schedule is not knowable at booking: the credit parks in Deferred Revenue above and
-        // Orders.RecordProgress releases it as progress is attested. Nothing is staged here.
-        if (revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard) {
-            // A subscription line's coverage window comes from its TERM (which applied anchoring,
-            // deferral and proration); a non-subscription deferred line uses the line's own dates.
-            const schedule = this.driverFor(revRec).BuildSchedule({
-                Amount: term ? term.Amount : net,
-                BookingDate: new Date(effectiveDate),
-                ServicePeriodStart: term ? term.StartDate : (line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null),
-                ServicePeriodEnd: term ? term.EndDate : (line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null),
-                ProductName: product.Name,
-                PeriodMonths: recognitionMonths,
-            });
-
-            for (const entry of schedule.Entries) {
-                const releaseLines: JELineDraft[] = [
-                    {
-                        GLAccountID: bookingCreditAccount,
-                        DebitAmount: entry.Amount,
-                        Description: `Release deferred — ${product.Name}`,
-                        Dimensions: lineDims,
-                    },
-                    {
-                        GLAccountID: salesAccount,
-                        CreditAmount: entry.Amount,
-                        Description: `Revenue — ${product.Name}`,
-                        Dimensions: lineDims,
-                    },
-                ];
-                const releaseEntryLines = mirrorIf(isReversal, releaseLines);
-                this.assertBalanced(releaseEntryLines, order, line, 'recognition');
-
-                out.push({
-                    OrderLineID: line.ID,
-                    IsBooking: false,
-                    SubscriptionTermID: term?.ID,
-                    RecognitionEntry: entry,
-                    Draft: {
-                        EffectiveDate: isoDate(entry.RecognitionDate),
-                        EntryType: 'RevenueRecognition',
-                        Description:
-                            `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
-                            `${isReversal ? 'unrecognize' : 'recognize'} ${product.Name}`,
-                        // D46: anchor to the TERM when there is one; otherwise the line (event
-                        // products are deferred but have no subscription and therefore no term).
-                        LinkedEntityID: term ? this._subscriptionTermEntityID : this._orderLineEntityID,
-                        LinkedRecordID: term ? term.ID : line.ID,
-                        Lines: releaseEntryLines,
-                    },
-                });
-            }
-        }
+        // ── NOTHING IS STAGED AT CONFIRM ANY MORE (D92 §8) ──
+        //
+        // This is where D14's twelve forward-dated release entries used to be written, inside the
+        // booking transaction, so that "the ledger holds the future" and no job was needed. That
+        // property was real and it is deliberately given up here, because it made the ledger assert
+        // revenue for months nobody had reached yet: a term amended, a line reversed or an order
+        // cancelled in month three left nine entries already written against months four to twelve,
+        // and unwinding them is a second mechanism that only ever runs on the unhappy path.
+        //
+        // Recognition is now built at post time by `Orders.PostDueRecognition`, which asks each
+        // driver what is earned through a date and books the difference from the line's
+        // `RecognizedToDate` under rule 2. The schedule is unchanged — the drivers are the same and
+        // `EarnedThrough` is derived from the same `BuildSchedule` — so the same amounts land on the
+        // same dates; only the moment they are written moves. A scheduled job runs it monthly ahead
+        // of accounting's sweep.
+        //
+        // Percentage-of-completion never staged anything here anyway (D90): its schedule is not
+        // knowable at booking, which is the argument this change generalises to every driver.
 
         return out;
     }

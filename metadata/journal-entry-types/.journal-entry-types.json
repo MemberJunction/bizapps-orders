@@ -20,7 +20,7 @@
     "fields": {
       "Code": "RevenueRecognition",
       "Name": "Revenue Recognition",
-      "Description": "A forward-dated release of deferred revenue (orders D14). Written AT BOOKING for every future period rather than by a scheduler, so the whole obligation is visible in the ledger the day the order is confirmed.",
+      "Description": "A release of deferred revenue into revenue as it is earned (orders D92). Written AT POST TIME for the period being closed, not staged at booking: `Orders.PostDueRecognition` asks each line's driver what is earned through a date and books the difference from what the line has already recognised. Attested progress on a percentage-of-completion line posts the same type through the same rule.",
       "IsSystem": false,
       "IsJournalEntryBatchSummary": false,
       "IsActive": true

@@ -503,5 +503,36 @@
       "lastModified": "2026-09-20T20:17:13.467Z",
       "checksum": "0b0670c1a165041a4f67206cb880c8af9d8ab0d7b530cca773edd2dc27269f47"
     }
+  },
+  {
+    "_comments": [
+      "THE MONTHLY RECOGNITION PASS (D92 §8). Its own entry in this file rather than its own dot-json,",
+      "because the two #227 operations already live here and MetadataSync reads the whole file either way.",
+      "",
+      "orders:write, not orders:read, though it reads far more than it writes: a live pass books journal",
+      "entries and moves RecognizedToDate on every line it touches. Preview is a parameter on the same",
+      "operation rather than a second read-only one, so the pass a person confirms is the pass that runs."
+    ],
+    "fields": {
+      "Name": "Post Due Recognition",
+      "OperationKey": "Orders.PostDueRecognition",
+      "Description": "Recognise revenue earned through a date on every confirmed line whose revenue recognition type is deferred and time-driven (D92 §8). Each driver is asked what is earned through AsOf and the difference from the line's RecognizedToDate is posted as a RevenueRecognition entry under rule 2 — crediting Sales, debiting Deferred Revenue up to the line's deferred balance and Unbilled Receivable beyond it. Cumulative, so a back-dated term or a missed month catches up in one pass and a second run for the same date posts nothing. One transaction per line: a line that fails is reported with its reason and the pass continues. Preview reports what would post and writes nothing.",
+      "InputTypeName": "OrdersPostDueRecognitionInput",
+      "InputTypeDefinition": "@file:types/orders-post-due-recognition.input.ts",
+      "OutputTypeName": "OrdersPostDueRecognitionOutput",
+      "OutputTypeDefinition": "@file:types/orders-post-due-recognition.output.ts",
+      "RequiredScope": "orders:write",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "InputTypeIsArray": false,
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F22"
+    }
   }
 ]
