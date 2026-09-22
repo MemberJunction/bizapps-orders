@@ -267,7 +267,14 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
      */
     private async advanceRecognizedToDate(line: mjBizAppsOrdersOrderLineEntity, delta: number): Promise<void> {
         if (money(delta) === 0) return;
-        line.RecognizedToDate = money(Number(line.RecognizedToDate ?? 0) + delta);
+        // THE LINE'S SIGN, APPLIED HERE AND NOWHERE ELSE. The delta is a magnitude: it is computed
+        // against |LineTotalNet| and |RecognizedToDate| because the rule reads magnitudes, and the
+        // entry gets its direction from `RecognitionMirrors`. The STORED total is the other axis —
+        // a reversal line's totals run negative so an origin and its reversals net to zero — and
+        // adding an unsigned delta to it made a reversal line's recognition climb instead of unwind.
+        // Same one-line flip #225's confirm and #241's pass apply.
+        const signed = Number(line.Quantity) < 0 ? -delta : delta;
+        line.RecognizedToDate = money(Number(line.RecognizedToDate ?? 0) + signed);
         if (!(await line.Save())) {
             throw new Error(
                 line.LatestResult?.CompleteMessage ??

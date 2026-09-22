@@ -66,7 +66,15 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         const pocProductIDs = await this.pocProductIDs(provider, user);
         if (pocProductIDs.length === 0) return { Success: true, Rows: [], RowCount: 0, Truncated: false };
 
-        const filters = [`ProductID IN (${pocProductIDs.map((id) => `'${id}'`).join(',')})`, `JournalEntryID IS NOT NULL`];
+        // CONFIRMED, NOT "HAS A BOOKING ENTRY" — the same test `Orders.RecordProgress` applies.
+        // A POC project on a payment schedule books no value entry at confirm (D92): its value is
+        // booked as each instalment is invoiced, and that entry is stamped on the schedule row
+        // rather than on the line. Filtering on `JournalEntryID` therefore hid exactly the case this
+        // screen exists for, and hid it silently — the line was simply absent, not refused.
+        const filters = [
+            `ProductID IN (${pocProductIDs.map((id) => `'${id}'`).join(',')})`,
+            `OrderHeaderID IN (SELECT ID FROM __mj_BizAppsOrders.vwOrderHeaders WHERE ConfirmedAt IS NOT NULL)`,
+        ];
         if (input?.CompanyIDs?.length) {
             filters.push(`CompanyID IN (${input.CompanyIDs.map((id) => `'${RequireUUID(id, 'CompanyIDs')}'`).join(',')})`);
         }
@@ -75,7 +83,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
             {
                 EntityName: ORDER_LINE_ENTITY,
                 ExtraFilter: filters.join(' AND '),
-                Fields: ['ID', 'OrderHeaderID', 'ProductID', 'Product', 'CompanyID', 'Company', 'LineNumber', 'LineTotalNet', 'ServicePeriodStart', 'ServicePeriodEnd'],
+                Fields: ['ID', 'OrderHeaderID', 'ProductID', 'Product', 'CompanyID', 'Company', 'LineNumber', 'LineTotalNet', 'RecognizedToDate', 'ServicePeriodStart', 'ServicePeriodEnd'],
                 OrderBy: 'OrderHeaderID, LineNumber',
                 ResultType: 'simple',
             },
@@ -109,14 +117,13 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         }
 
         const orderByID = new Map((orders.Results ?? []).map((o) => [String(o.ID).toLowerCase(), o]));
-        // Observations arrive oldest first, so the last write per line wins and the sum accumulates.
+        // Observations arrive oldest first, so the last write per line wins. They are read for the
+        // LAST one only: what is recognised to date comes off the line itself (D92), not from summing
+        // these rows. The two agreed while progress was the only thing that recognised revenue on a
+        // POC line, and a screen that keeps its own running total is a second answer waiting to
+        // disagree with the operation's.
         const lastByLine = new Map<string, MeasurementShape>();
-        const recognizedByLine = new Map<string, number>();
-        for (const m of measurements.Results ?? []) {
-            const key = String(m.OrderLineID).toLowerCase();
-            lastByLine.set(key, m);
-            recognizedByLine.set(key, money((recognizedByLine.get(key) ?? 0) + Number(m.RecognitionAmount ?? 0)));
-        }
+        for (const m of measurements.Results ?? []) lastByLine.set(String(m.OrderLineID).toLowerCase(), m);
 
         const all: ProgressWorklistRow[] = lineRows.map((l) => {
             const key = String(l.ID).toLowerCase();
@@ -136,7 +143,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
                 ServicePeriodEnd: ToISODate(l.ServicePeriodEnd),
                 LastMeasurementDate: last ? ToISODate(last.MeasurementDate) : null,
                 LastPercentComplete: last ? Number(last.PercentComplete) : 0,
-                RecognizedToDate: recognizedByLine.get(key) ?? 0,
+                RecognizedToDate: money(Number(l.RecognizedToDate ?? 0)),
                 LastAttestedBy: last?.AttestedByUser ?? null,
                 OrderStatus: order?.Status ?? '—',
             };

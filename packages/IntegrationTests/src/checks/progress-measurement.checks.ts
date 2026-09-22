@@ -21,6 +21,9 @@
  *        legs and the line's running totals exactly as his table states them, closing at zero
  *   PM8  the same nine steps with tax on the order, which is what makes the BASIS observable: both
  *        running totals move by net while AR moves by net + tax and the tax account by the tax
+ *   PM9  a POC project billed by INSTALMENT appears on the attestation screen — it books no entry
+ *        of its own at confirm, so a worklist keyed on one hid the case the screen exists for
+ *   PM10 a REVERSAL line stores its recognition NEGATIVE, so an origin and its reversal net to zero
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -287,6 +290,25 @@ async function walkScenario4(ctx: IntegrationCheckContext, taxRate: number): Pro
     );
 }
 
+
+interface WorklistRow {
+    OrderLineID: string;
+    OrderNumber: string;
+    LineNumber: number;
+    RecognizedToDate: number;
+    LastPercentComplete: number;
+}
+
+/** The attestation screen's list, read the way the screen reads it. */
+async function worklist(ctx: IntegrationCheckContext): Promise<WorklistRow[]> {
+    const result = await operation<{ MaxCount?: number }, { Success: boolean; Message?: string; Rows: WorklistRow[] }>(
+        'Orders.GetProgressWorklist',
+    ).Execute({ MaxCount: 500 }, { provider: ctx.Provider, user: ctx.User });
+    Assert(result.Success, `GetProgressWorklist did not execute: ${result.ErrorMessage ?? 'unknown'}`);
+    Assert(result.Output!.Success, `GetProgressWorklist reported failure: ${result.Output!.Message}`);
+    return result.Output!.Rows;
+}
+
 export const ProgressMeasurementChecks: NamedCheck[] = [
     {
         Id: 'progress-measurement.PM1',
@@ -428,6 +450,88 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
         Name: 'PM8: the same nine steps with tax on the order — both running totals move by NET while AR moves by net + tax',
         RequiresMutation: true,
         Fn: async (ctx) => InRolledBackTransaction(ctx, () => walkScenario4(ctx, 0.1)),
+    },
+    {
+        Id: 'progress-measurement.PM9',
+        Name: 'PM9: a POC project billed by instalment APPEARS on the attestation screen — the case the screen exists for',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // A scheduled POC line books no value entry at confirm (D92), so it carries no
+                // JournalEntryID. The worklist used to require one, which hid exactly this line —
+                // and hid it by absence, which is the kind of wrong that reports nothing at all.
+                const { orderID, saved, message } = await scheduledOrder(ctx, quarterly(0), {
+                    gross: 100_000,
+                    productID: Fx().Products.PocA,
+                });
+                Assert(saved, `the scheduled project must confirm: ${message}`);
+                const lineID = (await TxQuery<{ ID: string; JournalEntryID: string | null }>(ctx, `SELECT ID, JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`))[0];
+                AssertEqual(lineID.JournalEntryID, null, 'the premise: a scheduled POC line has no booking entry of its own');
+
+                const rows = await worklist(ctx);
+                const mine = rows.find((r) => r.OrderLineID.toLowerCase() === lineID.ID.toLowerCase());
+                Assert(mine != null, `the scheduled project must be listed: ${JSON.stringify(rows.map((r) => r.OrderNumber))}`);
+                AssertEqual(mine!.RecognizedToDate, 0, 'nothing attested yet');
+
+                // And the number the screen shows comes off the LINE, so it cannot drift from what
+                // the operation reads when the attestation is posted.
+                await record(ctx, { OrderLineID: lineID.ID, MeasurementDate: '2026-07-31', PercentComplete: 0.4 });
+                const after = (await worklist(ctx)).find((r) => r.OrderLineID.toLowerCase() === lineID.ID.toLowerCase());
+                AssertEqual(after!.RecognizedToDate, 40_000, 'the screen reads recognised-to-date from the order line');
+                AssertEqual(
+                    after!.RecognizedToDate,
+                    cents(Number((await TxOne<{ RecognizedToDate: number }>(ctx, `SELECT RecognizedToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID.ID}'`)).RecognizedToDate)),
+                    'and it is the same number, not a second running total that agrees by luck',
+                );
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM10',
+        Name: 'PM10: a REVERSAL line stores RecognizedToDate negative, so an origin and its reversal net to zero',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const origin = await bookedProjectLine(ctx);
+                await record(ctx, { OrderLineID: origin.lineID, MeasurementDate: '2026-07-31', PercentComplete: 1 });
+                const originTotal = cents(Number((await TxOne<{ R: number }>(ctx, `SELECT RecognizedToDate AS R FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${origin.lineID}'`)).R));
+                AssertEqual(originTotal, 1000.01, 'the origin recognised its whole value');
+
+                const ret = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderType: 'Return',
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-08-01T00:00:00Z'),
+                    Lines: [
+                        {
+                            ProductID: f.Products.PocA,
+                            Quantity: -1,
+                            UnitPrice: 1000.01,
+                            ReversesOrderLineID: origin.lineID,
+                            ServicePeriodStart: '2026-07-01',
+                            ServicePeriodEnd: '2026-12-31',
+                        },
+                    ],
+                } as Parameters<typeof ConfirmOrder>[1]);
+                Assert(ret.Saved, `the return must confirm: ${ret.Message}`);
+                const reversalLineID = ret.Lines[0].ID as string;
+
+                // Attesting the reversal FORWARD unwinds the sale: the entry mirrors, and the stored
+                // total has to go the other way with it. Adding the delta unsigned made a reversal
+                // line's recognition climb — an entry that unwound revenue beside a total that said
+                // more had been earned, each correct on its own and contradicting each other.
+                const out = await record(ctx, { OrderLineID: reversalLineID, MeasurementDate: '2026-08-31', PercentComplete: 1 });
+                Assert(out.Success, `attesting the reversal: ${out.Message}`);
+
+                const stored = cents(Number((await TxOne<{ R: number }>(ctx, `SELECT RecognizedToDate AS R FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${reversalLineID}'`)).R));
+                AssertEqual(stored, -1000.01, 'the reversal line stores its recognition NEGATIVE');
+                AssertEqual(cents(originTotal + stored), 0, 'so the origin and its reversal net to nothing');
+
+                // The entry itself was already right; this is the half that was not.
+                const entries = await recognitionEntries(ctx, reversalLineID);
+                AssertEqual(entries.length, 1, 'one catch-up entry on the reversal line');
+                AssertEqual(cents(Number(entries[0].Signed)), -1000.01, 'and it takes revenue back OUT of Sales');
+            }),
     },
 ];
 
