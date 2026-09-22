@@ -19,6 +19,8 @@
  *   PM6  a non-POC line, and an observation dated on or before the last one, are refused
  *   PM7  Andrew's Scenario 4 end to end on a SCHEDULED project — nine steps, each entry's contra
  *        legs and the line's running totals exactly as his table states them, closing at zero
+ *   PM8  the same nine steps with tax on the order, which is what makes the BASIS observable: both
+ *        running totals move by net while AR moves by net + tax and the tax account by the tax
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -53,6 +55,8 @@ const DEFERRED = '21301';
 const AR = '11201';
 /** The contract asset: revenue earned ahead of billing (D92 rule 2). */
 const UNBILLED = '11300';
+/** Sales tax payable — the account that separates the net basis from the AR debit. */
+const TAX = '21500';
 
 interface RecordOutput {
     Success: boolean;
@@ -136,13 +140,18 @@ const cents = (n: number) => Math.round(n * 100) / 100;
  * step, exactly as his table states them.
  * ──────────────────────────────────────────────────────────────────────────── */
 
-/** Four quarters in advance. Instalment 1 falls on the order date, so confirm issues it (D92). */
-const QUARTERLY: Instalment[] = [
-    { InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 25_000 },
-    { InstallmentNumber: 2, DueDate: '2026-10-01', Amount: 25_000 },
-    { InstallmentNumber: 3, DueDate: '2027-01-01', Amount: 25_000 },
-    { InstallmentNumber: 4, DueDate: '2027-04-01', Amount: 25_000 },
-];
+/**
+ * Four quarters in advance. Instalment 1 falls on the order date, so confirm issues it (D92).
+ *
+ * The amounts are the CHARGED gross, because that is what the schedule ties to — so a 10% tax turns
+ * Andrew's 25,000 instalments into 27,500 while his table's numbers stay the net ones.
+ */
+const quarterly = (taxRate: number): Instalment[] =>
+    [1, 2, 3, 4].map((n) => ({
+        InstallmentNumber: n,
+        DueDate: ['2026-07-01', '2026-10-01', '2027-01-01', '2027-04-01'][n - 1],
+        Amount: cents(25_000 * (1 + taxRate)),
+    }));
 
 interface ScenarioStep {
     Kind: 'invoice' | 'attest';
@@ -220,6 +229,63 @@ const lineTotals = (ctx: IntegrationCheckContext, lineID: string) =>
         ctx,
         `SELECT BilledToDate, RecognizedToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID}'`,
     );
+
+
+/**
+ * Drive Andrew's nine steps against a real scheduled project and assert every leg of every entry.
+ *
+ * WHY IT RUNS TWICE, ONCE WITH TAX. Untaxed, the line's net, its gross and its instalment amount are
+ * all 100,000, so the check cannot tell which of those `BilledToDate` is measured on — it passes on
+ * either basis, which makes it decorative about the one thing D92 most needs pinned. `BilledToDate`
+ * had two writers on different bases and nothing compared them, and that is exactly how the defect
+ * this pair now guards survived review. With a charge on the order the three quantities separate:
+ * AR moves by net + tax, the tax account by tax, and BOTH running totals by net alone.
+ *
+ * The untaxed walk is kept because it is the one a reviewer can read line by line against Andrew's
+ * comment; the taxed one is the one that would fail if a writer ever changed basis.
+ */
+async function walkScenario4(ctx: IntegrationCheckContext, taxRate: number): Promise<void> {
+    const { orderID, ids, saved, message } = await scheduledOrder(ctx, quarterly(taxRate), {
+        gross: 100_000,
+        productID: Fx().Products.PocA,
+        ...(taxRate ? { charges: [{ Code: 'SalesTax', Rate: taxRate }] } : {}),
+    });
+    Assert(saved, `the scheduled project must confirm: ${message}`);
+    const lineID = (await TxQuery<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`))[0].ID;
+
+    for (const step of SCENARIO_4) {
+        const journalEntryID =
+            step.Kind === 'attest' ? await attestStep(ctx, lineID, step) : await invoiceStep(ctx, ids[step.Instalment! - 1]);
+        const legs = await entryLegs(ctx, journalEntryID);
+        const where = `${step.Label}${taxRate ? ' (taxed)' : ''}`;
+
+        // AR carries the tax; the contra legs and Sales never do — revenue is earned on net.
+        const netAR = step.AR ?? 0;
+        AssertEqual(netOn(legs, AR), cents(netAR * (1 + taxRate)), `${where}: Accounts Receivable moves by net + tax`);
+        AssertEqual(netOn(legs, TAX), cents(-netAR * taxRate), `${where}: the tax account moves by the tax alone`);
+        AssertEqual(netOn(legs, SALES), step.Sales ?? 0, `${where}: Sales`);
+        AssertEqual(netOn(legs, DEFERRED), step.Deferred, `${where}: Deferred Revenue`);
+        AssertEqual(netOn(legs, UNBILLED), step.Unbilled, `${where}: Unbilled Receivable`);
+        AssertEqual(cents(legs.reduce((sum, l) => sum + Number(l.Net), 0)), 0, `${where}: the entry balances`);
+
+        // AND THE TOTALS DO NOT MOVE WITH IT. This is the assertion the untaxed walk cannot make.
+        const totals = await lineTotals(ctx, lineID);
+        AssertEqual(cents(Number(totals.BilledToDate)), step.Billed, `${where}: BilledToDate moves by NET`);
+        AssertEqual(cents(Number(totals.RecognizedToDate)), step.Recognized, `${where}: RecognizedToDate moves by NET`);
+    }
+
+    // WHERE THE CONTRACT ENDS UP is the point of the whole table: billed in full, earned in full, and
+    // neither contra account holding anything. A model that merely balanced every entry could still
+    // strand a balance here.
+    const final = await lineTotals(ctx, lineID);
+    AssertEqual(cents(Number(final.BilledToDate)), 100_000, 'billed in full, on the net basis whatever the tax');
+    AssertEqual(cents(Number(final.RecognizedToDate)), 100_000, 'earned in full');
+    AssertEqual(
+        cents(Number(final.BilledToDate) - Number(final.RecognizedToDate)),
+        0,
+        'so the line holds nothing in Deferred Revenue and nothing in Unbilled Receivable',
+    );
+}
 
 export const ProgressMeasurementChecks: NamedCheck[] = [
     {
@@ -355,45 +421,13 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
         Id: 'progress-measurement.PM7',
         Name: "PM7: Andrew's Scenario 4 end to end — nine steps on a scheduled project, every contra leg where his table says",
         RequiresMutation: true,
-        Fn: async (ctx) =>
-            InRolledBackTransaction(ctx, async () => {
-                const { orderID, ids, saved, message } = await scheduledOrder(ctx, QUARTERLY, {
-                    gross: 100_000,
-                    productID: Fx().Products.PocA,
-                });
-                Assert(saved, `the scheduled project must confirm: ${message}`);
-                const lineID = (await TxQuery<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`))[0].ID;
-
-                for (const step of SCENARIO_4) {
-                    const journalEntryID =
-                        step.Kind === 'attest'
-                            ? await attestStep(ctx, lineID, step)
-                            : await invoiceStep(ctx, ids[step.Instalment! - 1]);
-
-                    const legs = await entryLegs(ctx, journalEntryID);
-                    AssertEqual(netOn(legs, AR), step.AR ?? 0, `${step.Label}: Accounts Receivable`);
-                    AssertEqual(netOn(legs, SALES), step.Sales ?? 0, `${step.Label}: Sales`);
-                    AssertEqual(netOn(legs, DEFERRED), step.Deferred, `${step.Label}: Deferred Revenue`);
-                    AssertEqual(netOn(legs, UNBILLED), step.Unbilled, `${step.Label}: Unbilled Receivable`);
-                    AssertEqual(cents(legs.reduce((sum, l) => sum + Number(l.Net), 0)), 0, `${step.Label}: the entry balances`);
-
-                    const totals = await lineTotals(ctx, lineID);
-                    AssertEqual(cents(Number(totals.BilledToDate)), step.Billed, `${step.Label}: BilledToDate after`);
-                    AssertEqual(cents(Number(totals.RecognizedToDate)), step.Recognized, `${step.Label}: RecognizedToDate after`);
-                }
-
-                // WHERE THE CONTRACT ENDS UP is the point of the whole table: billed in full, earned
-                // in full, and neither contra account holding anything. A model that merely balanced
-                // every entry could still strand a balance here.
-                const final = await lineTotals(ctx, lineID);
-                AssertEqual(cents(Number(final.BilledToDate)), 100_000, 'billed in full');
-                AssertEqual(cents(Number(final.RecognizedToDate)), 100_000, 'earned in full');
-                AssertEqual(
-                    cents(Number(final.BilledToDate) - Number(final.RecognizedToDate)),
-                    0,
-                    'so the line holds nothing in Deferred Revenue and nothing in Unbilled Receivable',
-                );
-            }),
+        Fn: async (ctx) => InRolledBackTransaction(ctx, () => walkScenario4(ctx, 0)),
+    },
+    {
+        Id: 'progress-measurement.PM8',
+        Name: 'PM8: the same nine steps with tax on the order — both running totals move by NET while AR moves by net + tax',
+        RequiresMutation: true,
+        Fn: async (ctx) => InRolledBackTransaction(ctx, () => walkScenario4(ctx, 0.1)),
     },
 ];
 
