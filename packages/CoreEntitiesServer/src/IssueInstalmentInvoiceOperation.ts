@@ -68,14 +68,33 @@ interface ScheduleRow extends Record<string, unknown> {
     JournalEntryID: string | null;
 }
 
-@RegisterClass(BaseRemotableOperation, 'Orders.IssueInstalmentInvoice')
-export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoiceOperationBase {
-    protected async InternalExecute(
-        input: OrdersIssueInstalmentInvoiceInput,
-        provider: IMetadataProvider,
-        user: UserInfo,
-    ): Promise<OrdersIssueInstalmentInvoiceOutput> {
-        const scheduleID = RequireUUID(input?.OrderHeaderPaymentScheduleID, 'OrderHeaderPaymentScheduleID');
+/** A refusal in the operation's own shape, usable outside the class. */
+const refuse = (
+    message: string,
+    echo: Partial<OrdersIssueInstalmentInvoiceOutput> = {},
+): OrdersIssueInstalmentInvoiceOutput => ({ Success: false, AlreadyInvoiced: false, Message: message, ...echo });
+
+/**
+ * Issue one instalment: freeze its document number, stamp it `Invoiced`, book the billing entry
+ * and advance `BilledToDate` — ASSUMING AN OPEN TRANSACTION, which the caller owns.
+ *
+ * TWO CALLERS, ONE ACT (D92). `Orders.IssueInstalmentInvoice` opens a transaction and calls this,
+ * which is a person billing an instalment when it comes due. Order confirm calls it, inside the
+ * confirm transaction, for every live row already due on the order date — because under D92 a
+ * scheduled company books nothing at confirm EXCEPT what is billable at that moment, and "billable"
+ * means issued. Both routes must produce the same document number, the same stamps and the same
+ * entry, so there is one function and not two that look alike.
+ *
+ * Returns a refusal rather than throwing for business reasons the caller can act on (already
+ * invoiced, wrong status, schedule out of tie, number already taken); THROWS when the ledger or a
+ * save fails, so the caller's transaction rolls back and nothing is half-done.
+ */
+export async function IssueInstalment(
+    scheduleID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<OrdersIssueInstalmentInvoiceOutput> {
+    {
         const rv = RunView.FromMetadataProvider(provider);
 
         const rowResult = await rv.RunView<ScheduleRow>(
@@ -83,14 +102,14 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             user,
         );
         const row = rowResult.Results?.[0];
-        if (!row) return this.refuse(`No instalment with ID ${scheduleID}.`);
+        if (!row) return refuse(`No instalment with ID ${scheduleID}.`);
 
         const orderResult = await rv.RunView<{ ID: string; OrderNumber: string; Status: string }>(
             { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${RequireUUID(row.OrderHeaderID, 'OrderHeaderID')}'`, Fields: ['ID', 'OrderNumber', 'Status'], ResultType: 'simple' },
             user,
         );
         const order = orderResult.Results?.[0];
-        if (!order) return this.refuse(`Instalment ${scheduleID} belongs to an order that could not be read.`);
+        if (!order) return refuse(`Instalment ${scheduleID} belongs to an order that could not be read.`);
 
         const echo = {
             OrderHeaderPaymentScheduleID: row.ID,
@@ -114,10 +133,10 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             };
         }
         if (row.Status !== 'Scheduled') {
-            return this.refuse(`Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} is ${row.Status} and cannot be invoiced.`, echo);
+            return refuse(`Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} is ${row.Status} and cannot be invoiced.`, echo);
         }
         if (!BOOKED_STATUSES.has(order.Status)) {
-            return this.refuse(`Order ${order.OrderNumber} is ${order.Status}; only a Confirmed order has a receivable to invoice.`, echo);
+            return refuse(`Order ${order.OrderNumber} is ${order.Status}; only a Confirmed order has a receivable to invoice.`, echo);
         }
 
         // The schedule must tie to the lines — the same check the confirm ran, because a Scheduled
@@ -133,12 +152,12 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             ),
         ]);
         if (!lines.Success || !siblings.Success) {
-            return this.refuse(`Could not read order ${order.OrderNumber} to check its schedule: ${lines.ErrorMessage ?? siblings.ErrorMessage ?? 'unknown error'}`, echo);
+            return refuse(`Could not read order ${order.OrderNumber} to check its schedule: ${lines.ErrorMessage ?? siblings.ErrorMessage ?? 'unknown error'}`, echo);
         }
         const shortfalls = ScheduleShortfalls(siblings.Results ?? [], lines.Results ?? []);
         if (shortfalls.length) {
             const names = new Map((siblings.Results ?? []).map((s) => [String(s.CompanyID).toLowerCase(), s.Company ?? s.CompanyID]));
-            return this.refuse(ExplainShortfalls(order.OrderNumber, shortfalls, (id) => String(names.get(id) ?? id)), echo);
+            return refuse(ExplainShortfalls(order.OrderNumber, shortfalls, (id) => String(names.get(id) ?? id)), echo);
         }
 
         // Position is stable: companies in ID order (as the document builder sorts them), the row's
@@ -174,7 +193,7 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             (s) => s.DocumentNumber === documentNumber && String(s.ID).toLowerCase() !== String(row.ID).toLowerCase(),
         );
         if (clash) {
-            return this.refuse(
+            return refuse(
                 `Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} would be numbered ` +
                     `${documentNumber}, which instalment ${clash.InstallmentNumber} of the same order already ` +
                     `holds. Two documents cannot share a number — the customer's AP system and Bill.com both ` +
@@ -193,7 +212,7 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             user,
         );
         if (!lineEntities.Success) {
-            return this.refuse(`Could not read order ${order.OrderNumber}'s lines to bill this instalment: ${lineEntities.ErrorMessage ?? 'unknown error'}`, echo);
+            return refuse(`Could not read order ${order.OrderNumber}'s lines to bill this instalment: ${lineEntities.ErrorMessage ?? 'unknown error'}`, echo);
         }
         const factory = new OrderJournalEntryFactory(
             await BuildGLAccountResolver(provider, user),
@@ -207,15 +226,13 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
         try {
             instalmentLines = await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], row.CompanyID, invoicedAt);
         } catch (err) {
-            return this.refuse(err instanceof Error ? err.message : String(err), echo);
+            return refuse(err instanceof Error ? err.message : String(err), echo);
         }
         if (!instalmentLines.length) {
-            return this.refuse(`Order ${order.OrderNumber} has no lines for the company this instalment bills, so there is nothing to invoice.`, echo);
+            return refuse(`Order ${order.OrderNumber} has no lines for the company this instalment bills, so there is nothing to invoice.`, echo);
         }
 
-        const dbProvider = provider as unknown as DatabaseProviderBase;
-        await dbProvider.BeginTransaction();
-        try {
+        {
             const entity = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, user);
             if (!(await entity.Load(row.ID))) throw new Error(`Instalment ${row.ID} could not be loaded for update.`);
             entity.DocumentNumber = documentNumber;
@@ -281,7 +298,6 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
                 }
             }
 
-            await dbProvider.CommitTransaction();
             return {
                 Success: true,
                 AlreadyInvoiced: false,
@@ -291,6 +307,29 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
                 JournalEntryID: journalEntryID,
                 ...echo,
             };
+        }
+    }
+}
+
+@RegisterClass(BaseRemotableOperation, 'Orders.IssueInstalmentInvoice')
+export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoiceOperationBase {
+    /**
+     * Owns the transaction; {@link IssueInstalment} does the work. A refusal rolls back too — a
+     * business refusal leaves nothing written, so committing one would persist a half-issued row.
+     */
+    protected async InternalExecute(
+        input: OrdersIssueInstalmentInvoiceInput,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<OrdersIssueInstalmentInvoiceOutput> {
+        const scheduleID = RequireUUID(input?.OrderHeaderPaymentScheduleID, 'OrderHeaderPaymentScheduleID');
+        const dbProvider = provider as unknown as DatabaseProviderBase;
+        await dbProvider.BeginTransaction();
+        try {
+            const out = await IssueInstalment(scheduleID, provider, user);
+            if (out.Success) await dbProvider.CommitTransaction();
+            else await dbProvider.RollbackTransaction();
+            return out;
         } catch (err) {
             LogError(`Orders.IssueInstalmentInvoice failed for ${scheduleID}: ${err}`);
             try {
@@ -298,12 +337,8 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             } catch (rollbackErr) {
                 LogError(`Rollback failed after IssueInstalmentInvoice error: ${rollbackErr}`);
             }
-            return this.refuse(err instanceof Error ? err.message : String(err), echo);
+            return refuse(err instanceof Error ? err.message : String(err));
         }
-    }
-
-    private refuse(message: string, echo: Partial<OrdersIssueInstalmentInvoiceOutput> = {}): OrdersIssueInstalmentInvoiceOutput {
-        return { Success: false, AlreadyInvoiced: false, Message: message, ...echo };
     }
 }
 

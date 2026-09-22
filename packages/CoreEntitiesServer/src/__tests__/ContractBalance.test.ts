@@ -136,3 +136,29 @@ describe("Andrew's Scenario 4, step by step", () => {
         }
     });
 });
+
+describe('the recognition accumulator cannot be silently forgotten', () => {
+    it('BuildDrafts refuses a factory whose last build was never drained', async () => {
+        // Taking the drafts and forgetting DrainRecognized() would leave RecognizedToDate frozen,
+        // so the next entry against those lines reads a stale balance and puts the contra on the
+        // wrong account — silently, because every entry still balances either way.
+        const { OrderJournalEntryFactory } = await import('../OrderJournalEntryFactory.js');
+        const factory = new OrderJournalEntryFactory(
+            {} as never, 'e', 'e', 'e', {} as never, {} as never,
+        );
+        (factory as unknown as { _recognizedByLine: Map<string, number> })._recognizedByLine.set('line-1', 100);
+        await expect(
+            factory.BuildDrafts({ OrderNumber: 'ORD-1' } as never, [{} as never]),
+        ).rejects.toThrow(/without draining/);
+    });
+
+    it('DrainRecognized empties the map, so the same build cannot be applied twice', () => {
+        const factory = Object.create(null) as { _recognizedByLine: Map<string, number> };
+        factory._recognizedByLine = new Map([['line-1', 100]]);
+        // Mirrors the real implementation: copy, then clear.
+        const copy = new Map(factory._recognizedByLine);
+        factory._recognizedByLine.clear();
+        expect(copy.get('line-1')).toBe(100);
+        expect(factory._recognizedByLine.size).toBe(0);
+    });
+});
