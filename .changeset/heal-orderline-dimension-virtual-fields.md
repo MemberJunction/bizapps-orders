@@ -1,5 +1,5 @@
 ---
-'@mj-biz-apps/orders-entities': patch
+'@mj-biz-apps/orders-entities': minor
 ---
 
 Register the two virtual `EntityField` rows for `OrderLine.Dimension` and `OrderLine.DimensionValue` (golive #236).
