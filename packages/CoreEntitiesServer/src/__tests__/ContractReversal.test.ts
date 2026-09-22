@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
     CreditMemoByLine,
     InstalmentsToCancel,
+    BuildCreditMemoLines,
     RefuseEarnedNotBilled,
     type ContractLineBalance,
     type ReversalScheduleRow,
@@ -147,5 +148,33 @@ describe("Andrew's Scenario 1 — 12,000 billed quarterly in advance, reversed a
 
     it('credits back exactly the 1,000 of Deferred, leaving the 5,000 recognised', () => {
         expect(CreditMemoByLine(lines)).toEqual(new Map([['L1', 1000]]));
+    });
+});
+
+describe('BuildCreditMemoLines', () => {
+    const ACCOUNTS = { AR: 'ar-account', Deferred: 'deferred-account' };
+    const DIMS = [{ DimensionID: 'd1', DimensionValueID: 'v1' }];
+
+    it('gives back the deferred balance on both legs, so the entry balances by construction', () => {
+        const lines = BuildCreditMemoLines(1000, ACCOUNTS, 'Widget A', DIMS);
+        expect(lines).toEqual([
+            { GLAccountID: 'deferred-account', DebitAmount: 1000, Description: 'Deferred Revenue — credit memo, Widget A', Dimensions: DIMS },
+            { GLAccountID: 'ar-account', CreditAmount: 1000, Description: 'AR — credit memo, Widget A', Dimensions: DIMS },
+        ]);
+    });
+
+    it('posts nothing when the line has no billed-and-unearned balance', () => {
+        expect(BuildCreditMemoLines(0, ACCOUNTS, 'Widget A', DIMS)).toEqual([]);
+        expect(BuildCreditMemoLines(-50, ACCOUNTS, 'Widget A', DIMS)).toEqual([]);
+    });
+
+    it('carries the line dimensions onto both legs', () => {
+        for (const l of BuildCreditMemoLines(10, ACCOUNTS, 'x', DIMS)) expect(l.Dimensions).toBe(DIMS);
+    });
+
+    it('rounds to the penny', () => {
+        const [debit, credit] = BuildCreditMemoLines(33.335, ACCOUNTS, 'x', DIMS);
+        expect(debit.DebitAmount).toBe(33.34);
+        expect(credit.CreditAmount).toBe(33.34);
     });
 });
