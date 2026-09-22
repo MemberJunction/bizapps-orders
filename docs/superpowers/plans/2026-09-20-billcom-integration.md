@@ -183,7 +183,7 @@ switch (process.env.BILLCOM_PROBE ?? 'login') {
 
 - [x] **Step 3: Write `docs/superpowers/specs/2026-09-20-billcom-spike-results.md`** with a table: spike, question, observed result, decision. Required entries:
   - S1 archive via `PUT {archived:true}` — **does not** (400, PUT is a full replace). `POST /invoices/{id}/archive` does, idempotently. `CancelInvoice` now uses it through `BillComGateway.archiveInvoice` (connector's session helpers) until U1 lands.
-  - S2 `receivable-payments.status` literal values seen for pending vs cleared vs voided, and `onlinePayment`/`receivablesType` values → the table in Task 9.
+  - S2 **done 2026-09-22.** Live: `PAID` / `CHECK` / `onlinePayment false` on an offline check. Documented enums: status `PAID|VOID|SCHEDULED|CANCELED|ESCHEATED|UNDEFINED`, receivablesType `CASH|CHECK|CREDIT_CARD|ACH|PAYPAL|OTHER|WALLET|VIRTUAL_CARD|UNDEFINED`. Task 9's table is rewritten to exactly these; `UNDEFINED` intentionally unmapped. Pending (`SCHEDULED`) and reversed (`VOID`) were NOT observed live — they are documented but unexercised, and a `0rp` cannot be voided through v3, so `VOID` may only ever be reachable through BILL's UI.
   - S3 fetch time and count with/without watermark; whether `NewWatermarkValue` is returned.
   - S4 duplicate `invoiceNumber` accepted or refused; `invoiceLineItems` field names BILL accepted; whether `totalAmount` equals Σ(quantity×price).
   - S5 whether creating an invoice emailed the sandbox customer.

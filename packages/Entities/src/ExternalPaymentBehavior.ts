@@ -25,25 +25,28 @@ export type ExternalPaymentDisposition = 'Captured' | 'Held' | 'Unmatched' | 'Re
 export type RailPaymentClass = 'Cleared' | 'Pending' | 'Reversed';
 
 /**
- * Bill.com `receivable-payments.status` → what it means for cash. Keys are upper-cased. PROVISIONAL
- * until spike S2 has been run against the sandbox with a pending and a cleared payment; add what it
- * shows here and nowhere else.
+ * Bill.com `receivable-payments.status` → what it means for cash. Keys are upper-cased.
+ *
+ * THIS IS THE WHOLE ENUM, not a guess: BILL documents exactly six values for
+ * `ReceivablePaymentResponseDto.status`, and `PAID` on an offline check was confirmed live in the
+ * sandbox on 2026-09-22 (spike S2). An earlier provisional table carried `CLEARED`, `PROCESSING`,
+ * `PENDING`, `VOIDED`, `CANCELLED`, `SETTLED`, `COMPLETED`, `IN_PROCESS`, `FAILED` and `RETURNED` —
+ * none of which BILL can emit. They are gone rather than kept "just in case", because a key that
+ * cannot occur is a claim about the vendor that no one can check.
+ *
+ * `UNDEFINED` is deliberately absent so it falls to `Unknown` → Hold: BILL saying it does not know
+ * is not a reason for us to decide.
+ *
+ * `ESCHEATED` means the funds went unclaimed and were remitted to the state. The money is not coming,
+ * so it classes with the reversals: never captured, and if we already captured it, surfaced as
+ * `ReversalNeeded` for a person.
  */
 export const BILLCOM_PAYMENT_STATUS: Readonly<Record<string, RailPaymentClass>> = Object.freeze({
     PAID: 'Cleared',
-    CLEARED: 'Cleared',
-    SETTLED: 'Cleared',
-    COMPLETED: 'Cleared',
     SCHEDULED: 'Pending',
-    PROCESSING: 'Pending',
-    PENDING: 'Pending',
-    IN_PROCESS: 'Pending',
     VOID: 'Reversed',
-    VOIDED: 'Reversed',
     CANCELED: 'Reversed',
-    CANCELLED: 'Reversed',
-    FAILED: 'Reversed',
-    RETURNED: 'Reversed',
+    ESCHEATED: 'Reversed',
 });
 
 export function ClassifyPaymentStatus(status: string | null | undefined): RailPaymentClass | 'Unknown' {
@@ -167,12 +170,35 @@ export function ExternalPaymentIdempotencyKey(typeCode: string, externalPaymentR
     return `${typeCode.toLowerCase()}:${externalPaymentRef}`;
 }
 
-/** Tender code for `Orders.CapturePayment`. Money BILL moved itself is ACH; money recorded in BILL follows its type. */
-export function TenderFor(p: { OnlinePayment: boolean | null; ReceivablesType: string | null }): 'ACH' | 'Check' | 'CreditCard' | 'Wire' {
-    if (p.OnlinePayment === true) return 'ACH';
-    const t = (p.ReceivablesType ?? '').toUpperCase();
-    if (t.includes('CHECK') || t.includes('CHEQUE')) return 'Check';
-    if (t.includes('CARD')) return 'CreditCard';
-    if (t.includes('WIRE')) return 'Wire';
+/**
+ * Bill.com `receivablesType` → an Orders `PaymentType.Code`, for `Orders.CapturePayment`.
+ *
+ * `receivablesType` is the authoritative signal and is read FIRST. An earlier version short-circuited
+ * on `OnlinePayment === true` and answered ACH, which would have booked an online card payment to the
+ * bank: BILL reports the method on online payments too. `OnlinePayment` now only breaks the tie when
+ * BILL reports no type at all, where "BILL moved it" is the one thing we do know.
+ *
+ * The keys are BILL's whole documented enum. Note what is NOT in it: there is no `WIRE`, so the Wire
+ * branch this function used to carry could never fire, and Orders' `Wire` tender is unreachable from
+ * this rail. `CASH` maps to Orders' own `Cash` type, which the old default silently booked as ACH.
+ *
+ * `PAYPAL`, `WALLET`, `OTHER` and `UNDEFINED` have no Orders equivalent and fall to ACH. That is a
+ * placeholder, not a finding — see spec §12 question 6, open for Finance. It is a much smaller
+ * residue than before, when every unrecognised value landed here.
+ */
+const BILLCOM_TENDER: Readonly<Record<string, OrdersTenderCode>> = Object.freeze({
+    CASH: 'Cash',
+    CHECK: 'Check',
+    CREDIT_CARD: 'CreditCard',
+    VIRTUAL_CARD: 'CreditCard',
+    ACH: 'ACH',
+});
+
+/** The `PaymentType.Code` values this rail can produce. Seeded metadata; `Wire` is unreachable from BILL. */
+export type OrdersTenderCode = 'ACH' | 'Cash' | 'Check' | 'CreditCard';
+
+export function TenderFor(p: { OnlinePayment: boolean | null; ReceivablesType: string | null }): OrdersTenderCode {
+    const mapped = BILLCOM_TENDER[(p.ReceivablesType ?? '').trim().toUpperCase()];
+    if (mapped) return mapped;
     return 'ACH';
 }

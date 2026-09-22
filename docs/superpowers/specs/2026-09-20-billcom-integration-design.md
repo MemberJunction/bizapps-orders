@@ -75,8 +75,10 @@ immutability trigger permits `ExternalSystem`/`ExternalInvoiceRef`/`SentAt` edit
 - Objects: `customers` (create needs `name`, `email`), `invoices` (create **must** send
   `customer: {id}` and must not send `customerId`; totals are `totalAmount`, `dueAmount`,
   `scheduledAmount`, `creditAmount`; there is no `paidAmount`), `receivable-payments` (`0rp`;
-  `invoicePayments[] = {invoiceId, amount, paymentDate}`; `status` is an object whose values are not
-  in the catalog; `onlinePayment` distinguishes money moved by BILL from money recorded in BILL).
+  `invoicePayments[] = {invoiceId, amount, paymentDate}`; `status` is a **bare string** whose values are
+  not in the catalog but ARE documented, confirmed live 2026-09-22 — an earlier reading of this note as
+  an object was wrong, and cost nothing only because the rail's `str()` helper flattens both;
+  `onlinePayment` distinguishes money moved by BILL from money recorded in BILL).
 - Verified live in a sandbox: customer create, invoice create, invoice archive (`POST
   /v3/invoices/{id}/archive`, idempotent), read paths and the `updatedTime` filter. **Not verified:**
   receivable-payment create (we do not need it), any production write.
@@ -715,6 +717,23 @@ Full table in `2026-09-20-billcom-spike-results.md`. What it changed in this des
   metadata migration — the connector normalises a base URL that ends in `/v3` — so **once it releases, the QA
   database's `/v3` patch becomes harmless rather than required**, and `BillComGateway.archiveInvoice` can move
   to the connector verb.
-- **Open until Robert records a sandbox payment:** S2's status vocabulary; `BILLCOM_PAYMENT_STATUS` stays
-  provisional and `TenderFor`'s `receivablesType` mapping is unverified.
+- **S2 closed 2026-09-22.** Robert recorded an offline check in the sandbox and the poller read it end to
+  end. BILL's status enum is exactly `PAID`, `VOID`, `SCHEDULED`, `CANCELED`, `ESCHEATED`, `UNDEFINED`;
+  `receivablesType` is `CASH`, `CHECK`, `CREDIT_CARD`, `ACH`, `PAYPAL`, `OTHER`, `WALLET`,
+  `VIRTUAL_CARD`, `UNDEFINED`. Three consequences:
+  - `BILLCOM_PAYMENT_STATUS` had **ten keys BILL cannot emit** and was missing `ESCHEATED`, which is money
+    remitted to the state and must never read as cleared. Both fixed; `UNDEFINED` is left unmapped so it
+    Holds rather than being guessed at.
+  - `TenderFor` was wrong twice. It short-circuited on `onlinePayment === true` and answered ACH, which
+    would have booked an online card payment to the bank; and it branched on `WIRE`, which BILL cannot
+    emit, while sending `CASH` to ACH although Orders has a `Cash` payment type. `receivablesType` is now
+    authoritative. **Orders' `Wire` tender is unreachable from this rail** — worth saying out loud to
+    Finance, since §12 q6 asked about it.
+  - `PAYPAL`, `WALLET`, `OTHER` and `UNDEFINED` still fall to ACH. That is a placeholder and **§12 q6 stays
+    open**, but it is now a four-value residue rather than everything unrecognised.
+- **The capture leg is still unproven.** The poll correctly returned `Unmatched`, because the probe invoice
+  was created in BILL directly and Orders never issued it. Proving capture needs a Confirmed QA order, an
+  issued invoice, and a payment against that. That is the last live gap.
+- **`status` is a bare string, not an object** (§2 corrected). The design's `str()` helper flattened both,
+  so this cost nothing — but the assumption was wrong and is worth not repeating.
 

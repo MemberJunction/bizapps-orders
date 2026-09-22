@@ -93,15 +93,69 @@ describe('AllocateInvoicePayments', () => {
     });
 });
 
+/**
+ * BILL documents exactly six status values. These pin the whole enum so a future edit that reintroduces
+ * an invented key (the provisional table had ten that BILL cannot emit) fails here.
+ */
+describe('Bill.com payment status vocabulary', () => {
+    it('classifies every documented status', () => {
+        expect(ClassifyPaymentStatus('PAID')).toBe('Cleared');
+        expect(ClassifyPaymentStatus('SCHEDULED')).toBe('Pending');
+        expect(ClassifyPaymentStatus('VOID')).toBe('Reversed');
+        expect(ClassifyPaymentStatus('CANCELED')).toBe('Reversed');
+        expect(ClassifyPaymentStatus('ESCHEATED')).toBe('Reversed');
+    });
+
+    it("holds on UNDEFINED rather than deciding — BILL not knowing is not a reason for us to know", () => {
+        expect(ClassifyPaymentStatus('UNDEFINED')).toBe('Unknown');
+    });
+
+    it('holds on anything outside the enum, including the keys the provisional table invented', () => {
+        for (const s of ['CLEARED', 'PROCESSING', 'PENDING', 'VOIDED', 'FAILED', 'RETURNED', '', null, undefined]) {
+            expect(ClassifyPaymentStatus(s)).toBe('Unknown');
+        }
+    });
+
+    it('reads the bare string BILL actually sends, case-insensitively', () => {
+        // Confirmed live 2026-09-22: status is a bare string "PAID", not the object the design assumed.
+        expect(ClassifyPaymentStatus('paid')).toBe('Cleared');
+        expect(ClassifyPaymentStatus(' PAID ')).toBe('Cleared');
+    });
+
+    it('an escheated payment already captured needs a person, not a silent pass', () => {
+        const d = DecideExternalPayment({ ExternalPaymentRef: '0rp1', Status: 'ESCHEATED', PriorDisposition: 'Captured' });
+        expect(d.Action).toBe('ReversalNeeded');
+    });
+});
+
 describe('idempotency key and tender', () => {
     it('keys are lower-cased type code plus the rail id', () => {
         expect(ExternalPaymentIdempotencyKey('BillCom', '0rp1')).toBe('billcom:0rp1');
     });
-    it('money BILL moved is ACH; money recorded in BILL follows its receivables type', () => {
-        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'CHECK' })).toBe('ACH');
+    it('follows the receivables type, whoever moved the money', () => {
+        // The old rule short-circuited on OnlinePayment and answered ACH, which would book an online
+        // card payment to the bank. BILL reports the method on online payments too, so it wins.
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'CREDIT_CARD' })).toBe('CreditCard');
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'ACH' })).toBe('ACH');
         expect(TenderFor({ OnlinePayment: false, ReceivablesType: 'CHECK' })).toBe('Check');
-        expect(TenderFor({ OnlinePayment: false, ReceivablesType: 'CREDIT_CARD' })).toBe('CreditCard');
-        expect(TenderFor({ OnlinePayment: false, ReceivablesType: 'WIRE' })).toBe('Wire');
+    });
+
+    it("maps BILL's whole documented receivablesType enum", () => {
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: 'CASH' })).toBe('Cash');
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: 'CHECK' })).toBe('Check');
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'CREDIT_CARD' })).toBe('CreditCard');
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'VIRTUAL_CARD' })).toBe('CreditCard');
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'ACH' })).toBe('ACH');
+    });
+
+    it('sends the values Orders has no tender for to ACH, pending Finance (spec §12 q6)', () => {
+        for (const t of ['PAYPAL', 'WALLET', 'OTHER', 'UNDEFINED']) {
+            expect(TenderFor({ OnlinePayment: true, ReceivablesType: t })).toBe('ACH');
+        }
         expect(TenderFor({ OnlinePayment: null, ReceivablesType: null })).toBe('ACH');
+    });
+
+    it('tolerates case and padding, since the value is echoed vendor text', () => {
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: ' check ' })).toBe('Check');
     });
 });
