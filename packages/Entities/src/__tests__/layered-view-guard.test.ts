@@ -16,6 +16,36 @@
  * that has nothing to do with this view. `viewBody` cuts the single `CREATE VIEW ... GO` batch the
  * database is left holding, and that is what everything here reads.
  *
+ * ---------------------------------------------------------------------------------------------
+ * WHAT A CURATED PREDICATE IS ALLOWED TO BE. Adversarial review found the previous list failing in
+ * BOTH directions, which is the worst place a guard can be: it passed semantics-breaking rewrites
+ * and failed semantics-preserving ones.
+ *
+ * So only two kinds of thing are curated here, because only two kinds survive a legitimate rewrite:
+ *
+ *   - A STRING LITERAL. `'Scheduled'` is the same five characters however the SQL around it is
+ *     formatted, and it cannot be reformatted away. If it is gone, the meaning changed.
+ *   - A REFERENCED OBJECT NAME, matched through `references()` — the selector's own name matcher, so
+ *     bracketed, bare and `${...}`-qualified spellings are all the same name, because to the
+ *     database they are.
+ *
+ * Everything that was SYNTAX is gone, each entry for a measured reason:
+ *
+ *   - `CROSS JOIN … AS bt` pinned a join keyword and an alias. `CROSS APPLY` is the same result set
+ *     and renaming `bt` changes nothing, yet both failed red. What matters is that the day comes
+ *     from `fnBusinessToday`, and that is a NAME.
+ *   - `bt.Today` was an alias reference and nothing else. The business day is defended by the
+ *     function name above and by the forbidden `GETUTCDATE` below, which is where the actual
+ *     regression lives.
+ *   - `\[\$\{flyway:defaultSchema\}\]\.\[vwOrderHeadersGenerated\]` pinned one spelling of a name
+ *     CodeGen writes both ways.
+ *
+ * WHAT THIS DELIBERATELY NO LONGER CATCHES, so nobody is surprised: a rewrite that keeps every
+ * literal and every object name but changes a join's CARDINALITY — turning an outer join inner, or
+ * dropping a `GROUP BY` — passes here. That is not an oversight, it is the price of a list that
+ * never fails correct work. `producedColumns` covers the "a column vanished" half; the row-count
+ * half belongs to a test with a database behind it, not to a regex over DDL.
+ *
  * Four assertions, and they fail for different reasons on purpose.
  *
  * 1. THE NEWEST DEFINER IS THE ONE WE THINK IT IS. `newestViewDefiner` matches any DDL naming the
@@ -24,8 +54,8 @@
  *    `CREATE VIEW` definer was filtered out and the selector fell back to older SQL while reporting
  *    success — and CodeGen's own output for THIS view uses exactly that form (V202607061432).
  *
- * 2. THE LOAD-BEARING PREDICATES SURVIVE. Curated by hand, because only a person knows which
- *    predicates carry meaning. That is the half a diff does not show and a column check cannot
+ * 2. THE LOAD-BEARING LITERALS AND NAMES SURVIVE. Curated by hand, because only a person knows
+ *    which ones carry meaning. That is the half a diff does not show and a column check cannot
  *    reach.
  *
  * 3. THE BUSINESS DAY IS NEVER REVERTED TO THE UTC DAY. Asserted as a negative because the revert
@@ -46,37 +76,67 @@ import { fileURLToPath } from 'node:url';
 import {
     newestViewDefiner,
     producedColumns,
+    references,
     viewBody,
 } from './helpers/view-definer';
 
 const MIGRATIONS = fileURLToPath(new URL('../../../../migrations', import.meta.url));
 
 /**
- * Predicates that must survive every re-creation, per view. Matched against the view's own body
- * with comments stripped, so neither a copied comment block nor an unrelated statement elsewhere in
- * the same migration can satisfy one.
+ * Literals and object names that must survive every re-creation, per view. Matched against the
+ * view's own body with comments stripped, so neither a copied comment block nor an unrelated
+ * statement elsewhere in the same migration can satisfy one.
+ *
+ * String literals are matched CASE-SENSITIVELY: under a case-sensitive collation `'scheduled'` and
+ * `'Scheduled'` are different values, so a guard that accepted either would be lying about which.
  */
 const REQUIRED: Record<string, RegExp[]> = {
     vwOrderHeaders: [
-        // The business day, not the UTC day (bc-aidp-next-golive#168). A re-creation that reverts to
-        // CAST(GETUTCDATE() AS date) reads as overdue through the whole American evening.
-        /CROSS\s+JOIN\s+\[__mj_BizAppsCommon\]\.\[fnBusinessToday\]\(\)\s+AS\s+bt/i,
-        // The join is only worth having if the predicate actually reads it.
-        /bt\.Today/,
         // The outer view must read the CodeGen base view, never the table directly. Reaching past it
         // is how a column added by a later regeneration silently stops being exposed.
-        /FROM\s+\[\$\{flyway:defaultSchema\}\]\.\[vwOrderHeadersGenerated\]/i,
+        references('vwOrderHeadersGenerated'),
+        // The business day, not the UTC day (bc-aidp-next-golive#168). This function is the whole
+        // fix: it is the only thing in the body that knows a day boundary is a business question.
+        references('fnBusinessToday'),
+        // NextDueDate is an aggregate over the payment schedule. Read something else and the column
+        // keeps its name, its type and its plausibility while answering a different question.
+        references('OrderHeaderPaymentSchedule'),
+        // WHICH SCHEDULE ROWS COUNT. A row that is neither scheduled nor invoiced is not money owed
+        // yet; widen this set and orders acquire a due date they do not have.
+        /'Scheduled'/,
+        /'Invoiced'/,
+        // WHICH ORDERS CAN BE OVERDUE AT ALL. Lose one of these three and drafts, quotes or voided
+        // orders start appearing on the collections queue — a customer chased for a debt that does
+        // not exist, which is this view's worst outcome.
+        /'Draft'/,
+        /'Quoted'/,
+        /'Voided'/,
     ],
 };
 
 /**
  * Fragments that must NEVER appear in the view body, per view.
+ *
+ * The UTC clock has no legitimate use anywhere in this view, so the NAME is forbidden rather than
+ * one spelling of one expression: `CAST(GETUTCDATE() AS date)` was the shape of the original
+ * defect, but `CONVERT(date, GETUTCDATE())` is the same bug and the old pattern let it through.
  */
 const FORBIDDEN: Record<string, RegExp[]> = {
-    vwOrderHeaders: [/CAST\s*\(\s*GETUTCDATE\s*\(\s*\)\s+AS\s+date\s*\)/i],
+    vwOrderHeaders: [/\bGETUTCDATE\b/i],
 };
 
 describe('layered views: the newest definer is resolvable and loses nothing', () => {
+    /**
+     * A forbidden entry that names a view nobody guards, or that is present but empty, asserts
+     * nothing while looking like it does. Both are caught here rather than by a silently empty loop.
+     */
+    it('curates no forbidden list for a view this file does not guard', () => {
+        for (const [view, forbidden] of Object.entries(FORBIDDEN)) {
+            expect(REQUIRED[view], `FORBIDDEN names ${view}, which is not a guarded view`).toBeDefined();
+            expect(forbidden, `FORBIDDEN[${view}] is empty — remove it or fill it in`).not.toEqual([]);
+        }
+    });
+
     for (const view of Object.keys(REQUIRED)) {
         describe(view, () => {
             it('resolves a newest definer, and nothing later redefines it unseen', () => {
@@ -94,18 +154,33 @@ describe('layered views: the newest definer is resolvable and loses nothing', ()
                 }
             });
 
-            it('never reverts the business day to the UTC day', () => {
+            it('never reintroduces a fragment known to fail silently', (context) => {
+                const forbidden = FORBIDDEN[view];
+                // NOT `?? []`. A view with no forbidden entry used to run this test with an empty
+                // loop and report a PASS — a green tick standing for zero assertions, which on a
+                // results page is indistinguishable from a check that actually ran.
+                if (forbidden === undefined) {
+                    context.skip(`nothing is forbidden for ${view}, so this asserts nothing`);
+                    return;
+                }
                 const { code, file } = newestViewDefiner(MIGRATIONS, view);
                 const body = viewBody(code, view);
                 expect(body, `${file} has no CREATE VIEW body for ${view}`).toBeTruthy();
-                for (const forbidden of FORBIDDEN[view] ?? []) {
-                    expect(body, `${file} reintroduced ${forbidden}`).not.toMatch(forbidden);
+                for (const pattern of forbidden) {
+                    expect(body, `${file} reintroduced ${pattern}`).not.toMatch(pattern);
                 }
             });
 
-            it('drops no column a previous definer produced', () => {
+            it('drops no column a previous definer produced', (context) => {
                 const { chain } = newestViewDefiner(MIGRATIONS, view);
-                if (chain.length < 2) return;
+                // A view with a single definer has no BEFORE to compare a re-creation against. This
+                // used to `return` quietly and report a pass, so the day someone consolidated the
+                // history into one migration the column guard would have switched itself off with
+                // nothing in the output to say so.
+                if (chain.length < 2) {
+                    context.skip(`${view} has one definer (${chain[0]}) — there is no BEFORE to compare`);
+                    return;
+                }
                 const previous = chain[chain.length - 2];
                 // BOTH SIDES ARE READ THE SAME WAY: own columns plus the ones inherited through
                 // `g.*`, each measured as of the migration it belongs to. Comparing an alias-only

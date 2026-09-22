@@ -103,6 +103,21 @@
  *    columns — a false pass. A star is now recognised only as a whole SELECT item, and its
  *    qualifier is resolved against the FROM/JOIN aliases so the columns come from the view the star
  *    actually belongs to.
+ *
+ * K. `DROP VIEW` TAKES A LIST, AND ONLY THE FIRST NAME WAS READ. T-SQL's grammar is
+ *    `DROP VIEW [schema.]view [ ,...n ]`, so `DROP VIEW [vwOther], [vwJournalEntries];` drops two
+ *    views. `viewDdlTargets` stopped at the first object, so the second name was invisible: a
+ *    migration after the newest definer that dropped the guarded view in second position left the
+ *    suite GREEN, reproduced in bizapps-accounting before this was fixed. (In FIRST position the
+ *    same statement went red, because `ddlFor` matched it — which is how the asymmetry hid.) Only
+ *    `DROP` takes a list; `CREATE` and `ALTER` name exactly one view, so the list is read for
+ *    `DROP` alone.
+ *
+ * L. THE GUARDS MATCH NAMES THE SAME WAY THIS FILE DOES. `references()` hands the per-repo guards
+ *    the selector's own name matcher, so a curated predicate naming an object accepts every
+ *    spelling the database treats as identical. Curating `\[\$\{flyway:defaultSchema\}\]\.\[vwX\]`
+ *    by hand failed on correct SQL the moment anyone wrote `[__mj_BizAppsSales].[vwX]` instead —
+ *    and a guard that fails on correct work is a guard somebody switches off.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 
@@ -264,6 +279,23 @@ function mentions(view: string): RegExp {
     return new RegExp(String.raw`(?:\[${view}\]|\b${view}\b)`, 'i');
 }
 
+/**
+ * A reference to `object` anywhere in a view body, in every spelling the database treats as the
+ * same name: bracketed or bare, schema-qualified in any spelling or not qualified at all —
+ * `[__mj_BizAppsCommon].[vwPeople]`, `${flyway:defaultSchema}.vwPeople`, a plain `vwPeople`.
+ *
+ * This is the selector's own name matcher, handed to the per-repo guards on purpose. A curated
+ * predicate that spelled the schema out by hand failed on correct SQL the moment CodeGen wrote the
+ * other spelling — see note L — and one that demanded brackets missed an unbracketed re-creation
+ * entirely, which is note A. An object name matched this way is one of the two things a legitimate
+ * reformatting cannot take away; a string literal is the other.
+ *
+ * The `\b` after the bare form is what keeps `vwPeople` from matching inside `vwPeopleGenerated`.
+ */
+export function references(object: string): RegExp {
+    return new RegExp(qualifiedName(object), 'i');
+}
+
 /** The verbs that define, redefine or remove a view. */
 const VIEW_DDL_VERB = String.raw`(?:CREATE\s+(?:OR\s+ALTER\s+)?VIEW|ALTER\s+VIEW|DROP\s+VIEW(?:\s+IF\s+EXISTS)?)`;
 
@@ -341,8 +373,14 @@ function sqlFiles(migrationsDir: string): string[] {
     return readdirSync(migrationsDir).filter((f) => f.toLowerCase().endsWith('.sql'));
 }
 
-/** The migrations Flyway applies, in the order it applies them. */
-function migrationFiles(migrationsDir: string): string[] {
+/**
+ * The migrations Flyway applies, in the order it applies them.
+ *
+ * Exported because FILENAME ORDER IS NOT APPLY ORDER and a guard that sorts filenames to decide
+ * "this must run before that" is asserting about the directory listing, not about the database —
+ * an `R__` repeatable sorts before every `V__` and runs after all of them (note B).
+ */
+export function migrationFiles(migrationsDir: string): string[] {
     const migrations: Migration[] = [];
     for (const file of sqlFiles(migrationsDir)) {
         const migration = parseMigration(file);
@@ -373,17 +411,39 @@ function batches(code: string): string[] {
 }
 
 /**
- * The object each view-DDL verb in `code` targets — the name immediately after the verb — with
- * `undefined` for a verb whose target cannot be read (dynamic SQL built from a variable, say).
+ * Every object the view-DDL verbs in `code` target, with `undefined` for a verb whose target cannot
+ * be read (dynamic SQL built from a variable, say).
+ *
+ * `DROP VIEW` takes a COMMA-SEPARATED LIST — `DROP VIEW [vwOther], [vwJournalEntries];` drops both —
+ * and reading only the name immediately after the verb made every name but the first invisible to
+ * the "redefined later" alarm. See note K. `CREATE` and `ALTER` name exactly one view, so the list
+ * is only read after a `DROP`.
  */
 function viewDdlTargets(code: string): (string | undefined)[] {
-    const verb = new RegExp(String.raw`\b${VIEW_DDL_VERB}\s*`, 'gi');
+    const verb = new RegExp(String.raw`\b(${VIEW_DDL_VERB})\s*`, 'gi');
     const object = new RegExp(OBJECT_REFERENCE, 'y');
+    const separator = /\s*,\s*/y;
     const targets: (string | undefined)[] = [];
     for (const match of code.matchAll(verb)) {
         object.lastIndex = match.index + match[0].length;
-        const reference = object.exec(code);
-        targets.push(reference === null ? undefined : (reference[1] ?? reference[2]));
+        let reference = object.exec(code);
+        if (reference === null) {
+            targets.push(undefined);
+            continue;
+        }
+        targets.push(reference[1] ?? reference[2]);
+        if (!/^DROP/i.test(match[1])) continue;
+        // A sticky regex resets lastIndex to 0 when it fails, so the cursor is carried by hand.
+        let cursor = object.lastIndex;
+        for (;;) {
+            separator.lastIndex = cursor;
+            if (separator.exec(code) === null) break;
+            object.lastIndex = separator.lastIndex;
+            reference = object.exec(code);
+            if (reference === null) break;
+            targets.push(reference[1] ?? reference[2]);
+            cursor = object.lastIndex;
+        }
     }
     return targets;
 }
