@@ -39,6 +39,20 @@ column never appears and nothing reports a problem — and flyway checksums the 
 existing database refuses to migrate until someone repairs it by hand. `scripts/rebuild-db.sh`
 remains only for standing up a brand-new empty database; it is not a development loop.
 
+**Once a migration is merged to `next` it is LOCKED — no edits, no renames, no deletions.** Fix it
+forward in a new file. Every database that ran it recorded its checksum, so a change makes those
+databases refuse to migrate while the ones that never ran it get different SQL; the two diverge and
+nothing reports it. A rename is not a lesser change: the runner keys on the twelve-digit version in
+the filename, so a renamed migration is one nobody has run, and it executes again against objects
+that already exist. Renumbering an **unmerged** migration is ordinary and stays allowed — that is the
+normal answer when `next` gains a higher timestamp while your branch is open.
+
+CI enforces this (`.github/scripts/check-migrations-locked.mjs`), and **reviewers should treat it as a
+blocking finding, not a nit.** It has been merged past: `V202609221500` was edited a PR after it
+landed, and `V202609061900` twice, with the check red. If a change to a merged migration is genuinely
+unavoidable, it needs saying explicitly in the PR description and a second reviewer — never a quiet
+merge over a failing gate.
+
 Write migrations idempotently (`IF NOT EXISTS`, `IF COL_LENGTH(...) IS NULL`) and assume the database
 already has data. A migration that reads `__mj.Entity` must skip cleanly when the row is absent —
 CodeGen runs *after* migrations — and if the change is really about metadata (field categories,

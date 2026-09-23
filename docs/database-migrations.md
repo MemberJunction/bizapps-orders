@@ -29,6 +29,27 @@ Add a new migration:
 migrations/V<yyyyMMddHHmm>__v<app-version>__<Short_Description>.sql
 ```
 
+## A merged migration is locked
+
+No edits, no renames, no deletions once it is on `next`. Fix it forward in a new file.
+
+The runner records each applied migration's version, script name and checksum. Change the file and
+every database that ran it refuses to migrate until somebody repairs the history table by hand, while
+every database that did not run it gets different SQL. The populations diverge silently — which
+schema a colleague has depends on when they last pulled.
+
+Renaming counts, and is the case people miss. The version is the twelve digits in the filename, so a
+rename produces a migration nobody has run: it executes again, and plain DDL then fails on objects
+that already exist. Because a run is one transaction, that failure takes every other pending
+migration down with it.
+
+Renumbering a migration that has **not** merged is fine and is the normal response when `next` gains a
+higher timestamp while your branch is open. Only the author's own database is affected, and the file
+is not yet anybody's history.
+
+`.github/scripts/check-migrations-locked.mjs` enforces this on every PR and carries its own
+self-test. Reviewers: a red result here is blocking. It has been merged past twice.
+
 It runs after the baseline on every deploy — clean install or existing database — so both converge
 on the same schema. Write it to be **idempotent** and to work on a database that already has data:
 guard with `IF NOT EXISTS` / `IF COL_LENGTH(...) IS NULL`, and give new `NOT NULL` columns a default
