@@ -50,7 +50,7 @@ import {
     ExtensionToggleLabel,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
-import { anyFieldIsDirty } from '@mj-biz-apps/orders-entities';
+import { anyFieldIsDirty, AsDateValue, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 
 /**
  * How many catalog rows the picker offers at once.
@@ -693,7 +693,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * exist".
      */
     private async loadDimensionCatalog(): Promise<void> {
-        const asOf = this._order?.OrderDate ? new Date(this._order.OrderDate) : new Date();
+        // A calendar day (#209): `DimensionValue` is effective-dated against `date` columns, and
+        // `new Date()` is an instant the viewer's evening reads back as tomorrow.
+        const asOf = AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue();
         this.DimensionCatalog = await GetDimensionOptions(asOf);
     }
 
@@ -907,7 +909,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
                 ProductCategoryID: product?.ProductCategoryID ?? null,
                 CompanyID: companyID,
                 Quantity: Number(line.Quantity ?? 0),
-                AsOf: this._order.OrderDate ? new Date(this._order.OrderDate) : new Date(),
+                // A calendar day, as above (#209) — price applicability is bounded by
+                // `EffectiveFrom`/`EffectiveTo`, both `date` columns.
+                AsOf: AsDateValue(this._order.OrderDate) ?? TodayAsDateValue(),
                 OrganizationID: this._order.BillToOrganizationID ?? null,
                 PersonID: this._order.BillToPersonID ?? null,
                 ApplicabilityContext: await loadApplicabilityContext(

@@ -27,6 +27,7 @@
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
 import { randomUUID } from "node:crypto";
+import { TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
 import { BaseRemotableOperation } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
@@ -752,7 +753,7 @@ export const PaymentLedgerChecks: NamedCheck[] = [
           ReceivingCompanyID: f.CoA.ID,
           PaymentTypeID: f.PaymentTypeIDs.get("Cash"),
           Amount: 100,
-          PaymentDate: new Date(),
+          PaymentDate: TodayAsDateValue(),
           Status: "Pending",
         });
 

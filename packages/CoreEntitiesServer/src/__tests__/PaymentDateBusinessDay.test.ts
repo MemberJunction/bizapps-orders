@@ -95,6 +95,8 @@ import {
     type ApplyAccountCreditOutput,
 } from '../ApplyAccountCreditOperation.js';
 import { CapturePaymentOperation } from '../CapturePaymentOperation.js';
+import { PreviewPriceOperation } from '../PreviewPriceOperation.js';
+import { SpawnRenewalsOperation } from '../SpawnRenewalsOperation.js';
 
 /** 01:00 UTC on the 28th = 21:00 EDT on the 27th. The bug report's own scenario. */
 const BUG_INSTANT = '2026-08-28T01:00:00.000Z';
@@ -105,6 +107,45 @@ const UTC_DAY = '2026-08-28';
 
 const SRC = fileURLToPath(new URL('..', import.meta.url));
 const source = (relative: string): string => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
+
+/**
+ * Every production root this guard covers.
+ *
+ * It used to be this package's `src` alone, which was the scope of the sites being fixed and not
+ * the scope of the defect: `OrderPricingService` judges price applicability against `date` columns
+ * from the Entities package, the order-lines editor does the same in the browser, and the
+ * integration harness stamps `OrderDate`/`PaymentDate` on the fixtures every DB-backed assertion
+ * is measured against — a harness carrying the defect under test dates its own rows tomorrow for
+ * the whole American evening. A guard whose scope stops at one package reads as complete while
+ * the same shape sits one directory over, which is how this set stayed partial twice.
+ *
+ * `generated/` is excluded: CodeGen owns those files and a fix there belongs upstream, not in a
+ * test that would fail on the next regeneration. `__tests__` is excluded because a test that
+ * DESCRIBES the defect must be allowed to spell it.
+ */
+const SCANNED_ROOTS: ReadonlyArray<readonly [string, string]> = [
+    ['core-entities-server', SRC],
+    ['entities', fileURLToPath(new URL('../../../Entities/src/', import.meta.url))],
+    ['orders-ng', fileURLToPath(new URL('../../../Angular/src/lib/', import.meta.url))],
+    ['integration-tests', fileURLToPath(new URL('../../../IntegrationTests/src/', import.meta.url))],
+];
+
+/** `[package, path-for-the-message, absolute-path]` for every scanned file. */
+const SCANNED_FILES: Array<[string, string, string]> = SCANNED_ROOTS.flatMap(([pkg, root]) => {
+    const out: Array<[string, string, string]> = [];
+    const walk = (dir: string, prefix: string): void => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            if (entry.isDirectory()) {
+                if (entry.name === '__tests__' || entry.name === 'generated' || entry.name === 'node_modules') continue;
+                walk(`${dir}${entry.name}/`, `${prefix}${entry.name}/`);
+            } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
+                out.push([pkg, `${prefix}${entry.name}`, `${dir}${entry.name}`]);
+            }
+        }
+    };
+    walk(root.endsWith('/') ? root : `${root}/`, '');
+    return out;
+});
 
 /**
  * Every column the migrations declare `DATE` — read rather than remembered — minus the ones whose
@@ -167,9 +208,6 @@ const codeLines = (text: string, pattern: RegExp): string[] =>
  * removal from this list.
  */
 const DEFERRED_ASOF: ReadonlyArray<readonly [string, string]> = [
-    ['OrderEntityServer.ts', 'const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();'],
-    ['PreviewPriceOperation.ts', 'const asOf = input.AsOf ? new Date(input.AsOf) : new Date();'],
-    ['SpawnRenewalsOperation.ts', 'const asOf = input.AsOfDate ? new Date(input.AsOfDate) : new Date();'],
     [
         'InvoiceDisplay.ts',
         "const generatedOn = options?.GeneratedOn ?? new Date().toISOString().slice(0, 10);",
@@ -452,6 +490,49 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
     });
 
     /**
+     * The two as-of operations, converted out of the deferred list.
+     *
+     * Both judge "which rules were in force" against `EffectiveFrom`/`EffectiveTo` and the renewal
+     * due dates — `date` columns — so their as-of value is a calendar day, and an instant answered
+     * the UTC day: an evening preview quoted tomorrow's prices, and an evening renewal pass would
+     * spawn tomorrow's renewals a day early.
+     *
+     * Each also refuses an impossible day at its boundary rather than absorbing it.
+     * `CalendarDayOrToday` cannot refuse — it normalises, and today is a plausible wrong answer no
+     * caller can detect. Both refusals are driven here with an empty provider, which proves they
+     * happen before any database work: anything further in would throw on the missing provider.
+     */
+    describe('the as-of operations (PreviewPrice, SpawnRenewals)', () => {
+        const PRODUCT_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3331';
+
+        it('PreviewPrice refuses a day that does not exist', async () => {
+            const op = new PreviewPriceOperation() as unknown as {
+                InternalExecute(i: unknown, p: IMetadataProvider, u: UserInfo): Promise<{ Success: boolean; Message?: string }>;
+            };
+            const out = await op.InternalExecute(
+                { ProductID: PRODUCT_ID, AsOf: '2026-02-30' },
+                {} as unknown as IMetadataProvider,
+                { ID: 'user-1' } as unknown as UserInfo,
+            );
+            expect(out.Success).toBe(false);
+            expect(out.Message).toMatch(/not a real calendar day/);
+        });
+
+        it('SpawnRenewals refuses a day that does not exist', async () => {
+            const op = new SpawnRenewalsOperation() as unknown as {
+                InternalExecute(i: unknown, p: IMetadataProvider, u: UserInfo): Promise<{ Success: boolean; Message?: string }>;
+            };
+            const out = await op.InternalExecute(
+                { AsOfDate: '2026-02-30' },
+                {} as unknown as IMetadataProvider,
+                { ID: 'user-1' } as unknown as UserInfo,
+            );
+            expect(out.Success).toBe(false);
+            expect(out.Message).toMatch(/not a real calendar day/);
+        });
+    });
+
+    /**
      * The sites that cannot be driven, and why.
      *
      * `OrderEntityServer`, `PaymentHeaderEntityServer` and `PaymentLineEntityServer` stamp their
@@ -485,8 +566,9 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             // the clock at the USE satisfies completely. Bind the consumer as well.
             ['CancelSubscriptionOperation.ts', /RequestDate: requestDate,/, "the request day reaching the decision"],
             ['OrderEntityServer.ts', /PurchaseDate: purchaseDay,/, 'the booking day reaching the rules'],
-            // The remote boundary: a caller-supplied day is text until something says otherwise,
-            // and `AsDateValue` throws rather than returns null on `2026-02-30`.
+            // The remote boundary: a caller-supplied day is text until something says otherwise.
+            // `AsDateValue` answers `null` for `2026-02-30` rather than throwing, and a normaliser
+            // that answers `null` cannot report the typo — so the operation refuses it by name.
             ['CancelSubscriptionOperation.ts', /RequireDate\(input\.RequestDate, 'RequestDate'\)/, 'the request day validated at the boundary'],
             // Both checkout sites warm through the ORDER's provider, not the global one. Only the
             // fallback path consumes those arguments, and the line above these sets `OrderDate`,
@@ -537,12 +619,15 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
      * the clock". That idiom is the entire reason `CalendarDayOrToday` exists, and it is wrong for
      * a calendar day wherever it appears, whatever the binding is called.
      */
-    describe('no server path stamps a calendar day from the clock', () => {
-        const production = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
-
-        it('finds the production files at all', () => {
-            // Guards the guard: an empty list makes the checks below vacuous.
-            expect(production.length).toBeGreaterThan(20);
+    describe('no code in this app stamps a calendar day from the clock', () => {
+        it('finds the production files at all, in every package it claims to cover', () => {
+            // Guards the guard: an empty list makes the checks below vacuous, and a root that
+            // silently resolves to nothing would quietly stop covering a whole package.
+            expect(SCANNED_FILES.length).toBeGreaterThan(80);
+            for (const [pkg] of SCANNED_ROOTS) {
+                expect(SCANNED_FILES.filter(([p]) => p === pkg).length, `${pkg} contributed no files`)
+                    .toBeGreaterThan(3);
+            }
         });
 
         it('reads the date columns from the migrations rather than from memory', () => {
@@ -559,19 +644,21 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             expect(DATE_COLUMNS).not.toContain('ExpiresAt');
         });
 
-        it.each(production)('%s stamps no date column from the clock', (file) => {
+        it.each(SCANNED_FILES)('%s/%s stamps no date column from the clock', (_pkg, file, path) => {
             // Deliberately allows `new Date(x)` — parsing a day already in hand is fine — and
             // catches only the zero-argument form, which is an instant with no day in it.
             const pattern = new RegExp(
                 String.raw`^.*\b(?:${DATE_COLUMNS.join('|')})\b\s*[:=][^;\n]*new Date\(\s*\).*$`,
                 'gm',
             );
-            const offenders = codeLines(source(file), pattern);
+            const offenders = codeLines(readFileSync(path, 'utf8'), pattern);
             expect(offenders, `${file} stamps a date column from the clock`).toEqual([]);
         });
 
-        it.each(production)('%s falls back to no clock for a day it already asked for', (file) => {
-            const offenders = codeLines(source(file), clockFallback()).filter((line) => !deferred(file, line));
+        it.each(SCANNED_FILES)('%s/%s falls back to no clock for a day it already asked for', (_pkg, file, path) => {
+            const offenders = codeLines(readFileSync(path, 'utf8'), clockFallback()).filter(
+                (line) => !deferred(file, line),
+            );
             expect(offenders, `${file}: use CalendarDayOrToday, not a clock fallback`).toEqual([]);
         });
 
@@ -584,12 +671,14 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             }
         });
 
-        it('covers the Angular payment form too, which stamps the same column', () => {
+        it('pins the Angular payment form positively, since both nets are negative', () => {
+            // The form is inside the scan now, so the negative halves are covered above. What a
+            // negative net cannot say is which expression SHOULD be there — and a setter that
+            // dropped the fallback entirely would satisfy both nets while leaving the field null.
             const form = readFileSync(
                 new URL('../../../Angular/src/lib/custom/PaymentHeader/payment-header-form.component.ts', import.meta.url),
                 'utf8',
             );
-            expect(form).not.toMatch(/PaymentDate\s*=\s*[^;\n]*new Date\(\s*\)/);
             expect(form).toMatch(/PaymentDate = AsDateValue\(val\) \?\? TodayAsDateValue\(\)/);
         });
     });

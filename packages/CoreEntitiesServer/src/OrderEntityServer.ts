@@ -2286,7 +2286,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (!subscriber.PersonID) return subscriber;
         if (!OrdersSettings.AutoPopulateOrganizationFromPerson) return subscriber;
 
-        const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();
+        // The affiliation question is asked AS OF a calendar day, and the `Relationship` rows it
+        // reads carry `StartDate`/`EndDate` `date` columns (#209). An instant answers the UTC day,
+        // so an evening confirm asked about tomorrow — and a person who changes employer overnight
+        // would be filed against the wrong organization on the order.
+        const asOf = await CalendarDayOrToday(
+            this.OrderDate,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
         const inferred = await this.organizationAsOf(subscriber.PersonID, asOf);
         return inferred ? { ...subscriber, OrganizationID: inferred } : subscriber;
     }

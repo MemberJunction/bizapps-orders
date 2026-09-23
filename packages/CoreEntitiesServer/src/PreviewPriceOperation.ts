@@ -27,7 +27,8 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { LoadOrdersEngine, OrderPricingService, OrdersEngine, PriceResolutionError, ResolvePriceListForCustomer } from '@mj-biz-apps/orders-entities';
-import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { RequireDate, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { CalendarDayOrToday } from './calendar-day.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
@@ -88,6 +89,18 @@ export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceIn
         RequireOptionalUUID(input.OrganizationID, 'OrganizationID');
         RequireOptionalUUID(input.PersonID, 'PersonID');
 
+        // A caller-supplied DAY is caller input too. Refused here rather than absorbed, because
+        // `CalendarDayOrToday` normalises — an unreadable day quietly becomes today, and a quote
+        // answered for the wrong day is wrong with nothing to notice. `RequireDate` also rejects
+        // `2026-02-30`, which `Date.parse` used to roll forward to 2 March.
+        if (input.AsOf) {
+            try {
+                RequireDate(String(input.AsOf), 'AsOf');
+            } catch (e) {
+                return { Success: false, Message: String((e as Error).message) };
+            }
+        }
+
         const quantity = input.Quantity == null ? 1 : Number(input.Quantity);
         if (!(quantity > 0)) {
             return { Success: false, Message: `Quantity must be greater than zero (received ${input.Quantity}).` };
@@ -98,10 +111,11 @@ export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceIn
             return { Success: false, Message: `Product ${input.ProductID} was not found.` };
         }
 
-        const asOf = input.AsOf ? new Date(input.AsOf) : new Date();
-        if (Number.isNaN(asOf.getTime())) {
-            return { Success: false, Message: `AsOf is not a valid date (received ${String(input.AsOf)}).` };
-        }
+        // Price applicability is judged against `EffectiveFrom`/`EffectiveTo`, both `date`
+        // columns, so the as-of value is a calendar day (#209). An instant answers the UTC day,
+        // which for an evening preview is tomorrow — quoting a price that is not yet in effect.
+        // Its shape was validated at the boundary above.
+        const asOf = await CalendarDayOrToday(input.AsOf, provider, user);
 
         const md = new Metadata();
         const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
