@@ -32,6 +32,18 @@
  * person signs it, and the entry names the observation and the signer. A posted observation is
  * immutable (trigger); corrections happen forward, in the next period.
  *
+ * SUPERSEDE IS THE WAY OUT OF A WRONG ONE (golive #260). Forward correction cannot fix a DATE: an
+ * observation mistakenly dated a year ahead refuses every later one until that date arrives. With
+ * `SupersedesMeasurementID`, a user holding `MJ.BizApps.Orders.Progress.Supersede` replaces the
+ * line's latest observation instead. Nothing is edited. In one transaction the operation posts a
+ * reversal of the replaced observation's recognition, dated on the replaced observation's own date so
+ * the pair nets to zero in that period, then this observation's catch-up computed from the restored
+ * total. The replaced row stays Posted and immutable; it stops counting because a row points at it.
+ * See `./ProgressSupersede.ts`.
+ *
+ * A DATE AFTER THIS BUSINESS MONTH WARNS, it does not block. Forward dating stays allowed with no cap;
+ * the warning is there because a mistyped year posts silently.
+ *
  * ATOMICITY: the journal entry and the observation row share one transaction opened here. The entry
  * goes through `Accounting.CreateJournalEntries`, which joins the caller's transaction — no new
  * accounting API. `Preview` computes the draft and returns before the transaction is opened, so it
@@ -55,6 +67,7 @@ import {
 } from '@memberjunction/core';
 import { UserCache } from '@memberjunction/generic-database-provider';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
     LoadOrdersEngine,
     OrdersEngine,
@@ -71,6 +84,7 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 import { RegisterOperationPost, ReleaseOperationPost } from './OrderLineProgressMeasurementEntityServer.js';
 import { OrderJournalEntryFactory, type JEDraft } from './OrderJournalEntryFactory.js';
+import { EffectiveObservations, FutureDateWarning, PlanSupersede, SupersedeRefusal } from './ProgressSupersede.js';
 import { ComputeCatchUp, ProgressRecognitionDriver } from './RevenueRecognition.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
@@ -84,9 +98,16 @@ export const PROGRESS_ATTEST_AUTH = 'MJ.BizApps.Orders.Progress.Attest';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
-/** A posted observation, read only for the ordering guard — the amounts live on the line now. */
-interface PostedMeasurement {
+/**
+ * An observation on the line, read for the ordering guard, the date clash and a supersede. What is
+ * recognised to date lives on the line; `RecognitionAmount` is read only to reverse it exactly.
+ */
+interface LineObservation {
+    ID: string;
     MeasurementDate: string;
+    Status: string;
+    SupersedesMeasurementID: string | null;
+    RecognitionAmount: number;
 }
 
 interface CreateJournalEntriesResult {
@@ -116,6 +137,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         const lineID = RequireUUID(input?.OrderLineID, 'OrderLineID');
         const measurementDate = RequireDate(input?.MeasurementDate, 'MeasurementDate');
         const preview = !!input?.Preview;
+        const supersedesID = input?.SupersedesMeasurementID ? RequireUUID(input.SupersedesMeasurementID, 'SupersedesMeasurementID') : null;
 
         const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ledger);
         if (!(await line.Load(lineID))) return this.refuse(preview, `No order line with ID ${lineID}.`);
@@ -147,9 +169,45 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             return this.refuse(preview, err instanceof Error ? err.message : String(err), echo);
         }
 
-        const last = (await this.postedObservations(line.ID, provider, ledger)).at(-1)?.MeasurementDate ?? null;
+        const observations = await this.lineObservations(line.ID, provider, ledger);
+        const effective = EffectiveObservations(observations.filter((o) => o.Status === 'Posted'));
+        let replaced: LineObservation | null = null;
+        if (supersedesID) {
+            const refusal = SupersedeRefusal(user, provider.Authorizations ?? []);
+            if (refusal) return this.refuse(preview, refusal, echo);
+            const latest = effective.at(-1);
+            if (!latest || latest.ID.toLowerCase() !== supersedesID.toLowerCase()) {
+                const named = observations.find((o) => o.ID.toLowerCase() === supersedesID.toLowerCase());
+                return this.refuse(
+                    preview,
+                    named
+                        ? `Only the latest observation on order line ${line.LineNumber} of ${order.OrderNumber} can be superseded` +
+                              (latest ? ` — that is the one dated ${latest.MeasurementDate}` : '') +
+                              `. The observation dated ${named.MeasurementDate} is ${named.Status !== 'Posted' ? 'not posted' : 'already superseded or not the latest'}.`
+                        : `Order line ${line.LineNumber} of ${order.OrderNumber} has no observation ${supersedesID} to supersede.`,
+                    echo,
+                );
+            }
+            replaced = latest;
+        }
+
+        // The ordering guard compares against the latest observation that will STILL COUNT — on a
+        // supersede, the one before the replaced observation. That is the whole recovery: a date typed
+        // a year ahead no longer holds every later observation hostage.
+        const last = (replaced ? effective.at(-2) : effective.at(-1))?.MeasurementDate ?? null;
         if (last && measurementDate <= last) {
             return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} already has an observation posted for ${last}. Corrections happen forward: record the current period instead.`, echo);
+        }
+        // One observation per line per date (UQ_OLPM_Period), superseded rows included: a replaced row
+        // keeps its date. Said here rather than left to surface as a constraint error on save.
+        const clash = observations.find((o) => o.MeasurementDate === measurementDate);
+        if (clash) {
+            return this.refuse(
+                preview,
+                `Order line ${line.LineNumber} of ${order.OrderNumber} already has an observation dated ${measurementDate}` +
+                    `${clash.ID === replaced?.ID ? ', the one being superseded' : ''}. Each observation needs its own date — choose another day in the period.`,
+                echo,
+            );
         }
 
         const lineAmount = money(Math.abs(Number(line.LineTotalNet ?? 0)));
@@ -159,34 +217,55 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         // and the running total is the one the contra-account rule reads. The observation rows keep
         // `RecognizedToDateBefore/After` as the audit trail of what each attestation saw.
         const recognizedToDate = money(Math.abs(Number(line.RecognizedToDate ?? 0)));
-        const catchUp = ComputeCatchUp(lineAmount, percent, recognizedToDate);
+        // On a supersede the catch-up runs against the total the replaced observation found, so this
+        // row's RecognitionAmount is its own delta and a later supersede of it reverses exactly that.
+        const plan = replaced ? PlanSupersede(lineAmount, percent, recognizedToDate, replaced.RecognitionAmount) : null;
+        const catchUp = plan ? plan.CatchUp : ComputeCatchUp(lineAmount, percent, recognizedToDate);
+        const reversal = plan?.Reversal ?? 0;
         // Read once, echoed on BOTH paths: the preview is where it is meant to be seen, and the live
-        // output carries it so the screen can show it after a post that was made anyway.
-        const ClosedPeriodWarning = await this.closedPeriodWarning(line, measurementDate, provider, ledger);
+        // output carries it so the screen can show it after a post that was made anyway. A supersede
+        // writes on two dates, so both are checked.
+        const closed = [
+            await this.closedPeriodWarning(line, measurementDate, provider, ledger),
+            replaced && reversal !== 0 ? await this.closedPeriodWarning(line, replaced.MeasurementDate, provider, ledger, 'The reversal') : null,
+        ].filter((w): w is string => !!w);
         const numbers = {
             ...echo,
             PercentComplete: percent,
             LineAmount: lineAmount,
-            RecognizedToDateBefore: recognizedToDate,
+            RecognizedToDateBefore: plan ? plan.Restored : recognizedToDate,
             RecognizedToDateAfter: catchUp.Target,
             RecognitionAmount: catchUp.Delta,
-            ClosedPeriodWarning,
+            ClosedPeriodWarning: closed.length ? closed.join(' ') : null,
+            FutureDateWarning: await this.futureDateWarning(measurementDate, provider, ledger),
+            SupersededMeasurementID: replaced?.ID ?? null,
+            ReversalAmount: reversal,
         };
-        const note = `to ${(percent * 100).toFixed(2).replace(/\.?0+$/, '')}% (attested by ${user.Name || user.Email}, ${measurementDate})`;
+        const signer = user.Name || user.Email;
+        const note = `to ${(percent * 100).toFixed(2).replace(/\.?0+$/, '')}% (attested by ${signer}, ${measurementDate})`;
+        // The reversal is shaped from the line as the replaced observation left it, then the line is
+        // moved back in memory so the catch-up's contra split starts from the restored position. Only
+        // the live path saves the line.
+        const reversalDraft =
+            replaced && reversal !== 0
+                ? await this.buildDraft(order, line, reversal, replaced.MeasurementDate, `reversing the ${replaced.MeasurementDate} observation (superseded by ${signer}, ${measurementDate})`, provider, ledger)
+                : null;
+        if (reversal !== 0) this.applyRecognized(line, reversal);
         const draft = catchUp.Delta === 0 ? null : await this.buildDraft(order, line, catchUp.Delta, measurementDate, note, provider, ledger);
 
         if (preview) {
-            return { Success: true, Preview: true, ...numbers, OrderLineProgressMeasurementID: null, JournalEntryID: null, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, true) };
+            return { Success: true, Preview: true, ...numbers, OrderLineProgressMeasurementID: null, JournalEntryID: null, ReversalJournalEntryID: null, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, true, replaced, reversal) };
         }
 
         const dbProvider = provider as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
+            const reversalJournalEntryID = reversalDraft ? await this.createJournalEntry(reversalDraft, provider, ledger) : null;
             const journalEntryID = draft ? await this.createJournalEntry(draft, provider, ledger) : null;
-            const measurementID = await this.writeObservation(line.ID, measurementDate, percent, methodCode, input, user, numbers, journalEntryID, provider);
-            await this.advanceRecognizedToDate(line, catchUp.Delta);
+            const measurementID = await this.writeObservation(line.ID, measurementDate, percent, methodCode, input, user, numbers, journalEntryID, replaced?.ID ?? null, reversalJournalEntryID, provider);
+            await this.advanceRecognizedToDate(line, catchUp.Delta, reversal !== 0);
             await dbProvider.CommitTransaction();
-            return { Success: true, Preview: false, ...numbers, OrderLineProgressMeasurementID: measurementID, JournalEntryID: journalEntryID, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, false) };
+            return { Success: true, Preview: false, ...numbers, OrderLineProgressMeasurementID: measurementID, JournalEntryID: journalEntryID, ReversalJournalEntryID: reversalJournalEntryID, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, false, replaced, reversal) };
         } catch (err) {
             LogError(`Orders.RecordProgress failed for line ${lineID}: ${err}`);
             try {
@@ -211,17 +290,24 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
     }
 
     /**
-     * Every posted observation on the line, oldest first — for the ORDERING GUARD only.
+     * Every observation on the line, any status, oldest first — for the ORDERING GUARD, the date
+     * clash, and finding what a supersede replaces.
      *
      * What is recognised to date is the line's own `RecognizedToDate` (D92), not a sum of these.
      * The rows remain the audit trail of what each attestation saw and what it posted.
      */
-    private async postedObservations(lineID: string, provider: IMetadataProvider, user: UserInfo): Promise<PostedMeasurement[]> {
-        const result = await RunView.FromMetadataProvider(provider).RunView<{ MeasurementDate: unknown }>(
+    private async lineObservations(lineID: string, provider: IMetadataProvider, user: UserInfo): Promise<LineObservation[]> {
+        const result = await RunView.FromMetadataProvider(provider).RunView<{
+            ID: string;
+            MeasurementDate: unknown;
+            Status: string;
+            SupersedesMeasurementID: string | null;
+            RecognitionAmount: number | null;
+        }>(
             {
                 EntityName: ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY,
-                ExtraFilter: `OrderLineID = '${lineID}' AND Status = 'Posted'`,
-                Fields: ['MeasurementDate'],
+                ExtraFilter: `OrderLineID = '${lineID}'`,
+                Fields: ['ID', 'MeasurementDate', 'Status', 'SupersedesMeasurementID', 'RecognitionAmount'],
                 OrderBy: 'MeasurementDate',
                 ResultType: 'simple',
                 BypassCache: true,
@@ -229,7 +315,28 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             user,
         );
         if (!result.Success) throw new Error(`Could not read the line's progress observations: ${result.ErrorMessage ?? 'unknown error'}`);
-        return (result.Results ?? []).map((r) => ({ MeasurementDate: ToISODate(r.MeasurementDate) ?? '' }));
+        return (result.Results ?? []).map((r) => ({
+            ID: r.ID,
+            MeasurementDate: ToISODate(r.MeasurementDate) ?? '',
+            Status: r.Status,
+            SupersedesMeasurementID: r.SupersedesMeasurementID ?? null,
+            RecognitionAmount: money(Number(r.RecognitionAmount ?? 0)),
+        }));
+    }
+
+    /**
+     * {@link FutureDateWarning} against the BUSINESS calendar's today — or null.
+     *
+     * Advisory, so a calendar that cannot be read produces no warning rather than a refusal, for the
+     * reason {@link closedPeriodWarning} gives.
+     */
+    private async futureDateWarning(measurementDate: string, provider: IMetadataProvider, user: UserInfo): Promise<string | null> {
+        try {
+            await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+            return FutureDateWarning(measurementDate, BusinessTimeZoneEngine.Instance.Today());
+        } catch {
+            return null;
+        }
     }
 
     /**
@@ -255,6 +362,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         measurementDate: string,
         provider: IMetadataProvider,
         user: UserInfo,
+        subject = 'Measurement date',
     ): Promise<string | null> {
         const companyID = line.CompanyID;
         if (!companyID) return null;
@@ -275,7 +383,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             const batch = result.Success ? result.Results?.[0] : null;
             if (!batch) return null;
             return (
-                `Measurement date ${measurementDate} falls in a period already posted in batch ` +
+                `${subject} ${measurementDate} falls in a period already posted in batch ` +
                 `${batch.JournalEntryBatchNumber}. The entry will still be written and will be swept into a ` +
                 `later batch; nothing is blocked. Check with finance before posting if this period is closed.`
             );
@@ -339,22 +447,30 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
      * SIGNED, deliberately: a reversal line's delta is negative, so an origin and its reversals net
      * to zero across a contract. The rules read magnitudes; only storage carries the sign.
      */
-    private async advanceRecognizedToDate(line: mjBizAppsOrdersOrderLineEntity, delta: number): Promise<void> {
-        if (money(delta) === 0) return;
-        // THE LINE'S SIGN, APPLIED HERE AND NOWHERE ELSE. The delta is a magnitude: it is computed
-        // against |LineTotalNet| and |RecognizedToDate| because the rule reads magnitudes, and the
-        // entry gets its direction from `RecognitionMirrors`. The STORED total is the other axis —
-        // a reversal line's totals run negative so an origin and its reversals net to zero — and
-        // adding an unsigned delta to it made a reversal line's recognition climb instead of unwind.
-        // Same one-line flip #225's confirm and #241's pass apply.
-        const signed = Number(line.Quantity) < 0 ? -delta : delta;
-        line.RecognizedToDate = money(Number(line.RecognizedToDate ?? 0) + signed);
+    private async advanceRecognizedToDate(line: mjBizAppsOrdersOrderLineEntity, delta: number, alreadyMoved = false): Promise<void> {
+        if (money(delta) === 0 && !alreadyMoved) return;
+        this.applyRecognized(line, delta);
         if (!(await line.Save())) {
             throw new Error(
                 line.LatestResult?.CompleteMessage ??
                     `RecognizedToDate could not be advanced on order line ${line.ID}.`,
             );
         }
+    }
+
+    /**
+     * Move the line's `RecognizedToDate` in memory by a magnitude-space delta. The caller saves.
+     *
+     * THE LINE'S SIGN, APPLIED HERE AND NOWHERE ELSE. The delta is a magnitude: it is computed
+     * against |LineTotalNet| and |RecognizedToDate| because the rule reads magnitudes, and the
+     * entry gets its direction from `RecognitionMirrors`. The STORED total is the other axis —
+     * a reversal line's totals run negative so an origin and its reversals net to zero — and
+     * adding an unsigned delta to it made a reversal line's recognition climb instead of unwind.
+     */
+    private applyRecognized(line: mjBizAppsOrdersOrderLineEntity, delta: number): void {
+        if (money(delta) === 0) return;
+        const signed = Number(line.Quantity) < 0 ? -delta : delta;
+        line.RecognizedToDate = money(Number(line.RecognizedToDate ?? 0) + signed);
     }
 
     private async writeObservation(
@@ -366,6 +482,8 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         user: UserInfo,
         numbers: { RecognizedToDateBefore: number; RecognizedToDateAfter: number; RecognitionAmount: number },
         journalEntryID: string | null,
+        supersedesID: string | null,
+        reversalJournalEntryID: string | null,
         provider: IMetadataProvider,
     ): Promise<string> {
         const row = await provider.GetEntityObject<mjBizAppsOrdersOrderLineProgressMeasurementEntity>(ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY, user);
@@ -382,6 +500,8 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         row.RecognizedToDateAfter = numbers.RecognizedToDateAfter;
         row.RecognitionAmount = numbers.RecognitionAmount;
         row.JournalEntryID = journalEntryID;
+        row.SupersedesMeasurementID = supersedesID;
+        row.ReversalJournalEntryID = reversalJournalEntryID;
         row.Status = 'Posted';
         // TELL THE ENTITY GUARD THIS ONE IS OURS. It refuses any row saved Posted that the operation
         // did not name, which is the half of Jeremy's posting guard a trigger cannot see: an INSERT
@@ -400,11 +520,24 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
 
     // ─── Shape ─────────────────────────────────────────────────────────────────
 
-    private explain(delta: number, orderNumber: string | undefined, lineNumber: number, preview: boolean): string {
+    private explain(
+        delta: number,
+        orderNumber: string | undefined,
+        lineNumber: number,
+        preview: boolean,
+        replaced: LineObservation | null = null,
+        reversal = 0,
+    ): string {
         const verb = preview ? 'would' : 'did';
-        if (delta === 0) return `Order ${orderNumber} line ${lineNumber}: progress unchanged — nothing to recognise.`;
-        if (delta < 0) return `Order ${orderNumber} line ${lineNumber}: progress slid back; ${money(-delta).toFixed(2)} ${verb} come out of revenue.`;
-        return `Order ${orderNumber} line ${lineNumber}: ${money(delta).toFixed(2)} ${verb} move from deferred revenue to revenue.`;
+        const head = `Order ${orderNumber} line ${lineNumber}: `;
+        const undo = !replaced
+            ? ''
+            : reversal === 0
+              ? `supersedes the ${replaced.MeasurementDate} observation, which moved nothing; `
+              : `supersedes the ${replaced.MeasurementDate} observation — ${money(Math.abs(reversal)).toFixed(2)} ${verb} ${reversal < 0 ? 'come back out of' : 'return to'} revenue on ${replaced.MeasurementDate}; then `;
+        if (delta === 0) return `${head}${undo}${replaced ? 'nothing further to recognise.' : 'progress unchanged — nothing to recognise.'}`;
+        if (delta < 0) return `${head}${undo}${replaced ? '' : 'progress slid back; '}${money(-delta).toFixed(2)} ${verb} come out of revenue.`;
+        return `${head}${undo}${money(delta).toFixed(2)} ${verb} move from deferred revenue to revenue.`;
     }
 
     private refuse(preview: boolean, message: string, echo: Partial<OrdersRecordProgressOutput> = {}): OrdersRecordProgressOutput {

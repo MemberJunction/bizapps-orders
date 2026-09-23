@@ -37,4 +37,16 @@ export interface OrdersRecordProgressOutput {
      * run, because an attestation must not depend on the availability of a hint.
      */
     ClosedPeriodWarning?: string | null;
+    /**
+     * Set when the measurement date is after the end of the current month on the business calendar.
+     * ADVISORY ONLY — forward dating is allowed with no cap. It exists because a mistyped year posts
+     * silently and only surfaces when the next month's attestation is refused.
+     */
+    FutureDateWarning?: string | null;
+    /** On a supersede: the observation replaced. Null otherwise. */
+    SupersededMeasurementID?: string | null;
+    /** On a supersede: the recognition taken back out on the replaced observation's date (its RecognitionAmount, negated). Zero otherwise. */
+    ReversalAmount?: number;
+    /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */
+    ReversalJournalEntryID?: string | null;
 }

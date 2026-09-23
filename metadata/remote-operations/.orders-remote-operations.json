@@ -454,7 +454,7 @@
     "fields": {
       "Name": "Record Progress",
       "OperationKey": "Orders.RecordProgress",
-      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated before the last posted one; a posted observation is immutable.",
+      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date and the new catch-up is computed as if it had never posted, with no row edited.",
       "InputTypeName": "OrdersRecordProgressInput",
       "InputTypeDefinition": "@file:types/orders-record-progress.input.ts",
       "OutputTypeName": "OrdersRecordProgressOutput",
@@ -473,8 +473,8 @@
       "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F20"
     },
     "sync": {
-      "lastModified": "2026-09-20T20:17:13.919Z",
-      "checksum": "8973fadac2206558d8d087a3b14f4640d5495c63b8da5c8b1465b67d9e53cc8b"
+      "lastModified": "2026-09-23T18:27:59.540Z",
+      "checksum": "542fa41be9ba6af2a9d1a2b2cce904ba92c2124ef1a216deb59a7044db151f9b"
     }
   },
   {
@@ -500,8 +500,8 @@
       "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F21"
     },
     "sync": {
-      "lastModified": "2026-09-20T20:17:13.467Z",
-      "checksum": "0b0670c1a165041a4f67206cb880c8af9d8ab0d7b530cca773edd2dc27269f47"
+      "lastModified": "2026-09-23T18:27:59.555Z",
+      "checksum": "f57c4859375c1f288d104a7d0eedca46e42395601efb56677fe9bf2d0fe545d7"
     }
   }
 ]

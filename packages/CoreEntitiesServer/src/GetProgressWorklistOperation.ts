@@ -21,6 +21,7 @@ import {
     type ProgressWorklistRow,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
+import { EffectiveObservations, SupersedeRefusal } from './ProgressSupersede.js';
 import { RequireUUID } from './sql-guards.js';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 
@@ -48,7 +49,9 @@ interface OrderShape extends Record<string, unknown> {
 }
 
 interface MeasurementShape extends Record<string, unknown> {
+    ID: string;
     OrderLineID: string;
+    SupersedesMeasurementID?: string | null;
     MeasurementDate: unknown;
     PercentComplete: number;
     RecognitionAmount: number | null;
@@ -63,8 +66,11 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         user: UserInfo,
     ): Promise<OrdersGetProgressWorklistOutput> {
         const maxCount = Math.max(1, Math.floor(Number(input?.MaxCount ?? 500)));
+        // Said so the screen can offer the action; `Orders.RecordProgress` checks again, so a stale
+        // answer here can hide the button but never grant it.
+        const canSupersede = SupersedeRefusal(user, provider.Authorizations ?? []) === null;
         const pocProductIDs = await this.pocProductIDs(provider, user);
-        if (pocProductIDs.length === 0) return { Success: true, Rows: [], RowCount: 0, Truncated: false };
+        if (pocProductIDs.length === 0) return { Success: true, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
 
         // CONFIRMED, NOT "HAS A BOOKING ENTRY" — the same test `Orders.RecordProgress` applies.
         // A POC project on a payment schedule books no value entry at confirm (D92): its value is
@@ -89,9 +95,9 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
             },
             user,
         );
-        if (!lines.Success) return { Success: false, Message: `Could not read the order lines: ${lines.ErrorMessage ?? 'unknown error'}`, Rows: [], RowCount: 0, Truncated: false };
+        if (!lines.Success) return { Success: false, Message: `Could not read the order lines: ${lines.ErrorMessage ?? 'unknown error'}`, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
         const lineRows = lines.Results ?? [];
-        if (lineRows.length === 0) return { Success: true, Rows: [], RowCount: 0, Truncated: false };
+        if (lineRows.length === 0) return { Success: true, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
 
         const lineIDs = lineRows.map((l) => `'${RequireUUID(l.ID, 'ID')}'`).join(',');
         const orderIDs = [...new Set(lineRows.map((l) => `'${RequireUUID(l.OrderHeaderID, 'OrderHeaderID')}'`))].join(',');
@@ -104,7 +110,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
                 {
                     EntityName: ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY,
                     ExtraFilter: `OrderLineID IN (${lineIDs}) AND Status = 'Posted'`,
-                    Fields: ['OrderLineID', 'MeasurementDate', 'PercentComplete', 'RecognitionAmount', 'AttestedByUser'],
+                    Fields: ['ID', 'OrderLineID', 'SupersedesMeasurementID', 'MeasurementDate', 'PercentComplete', 'RecognitionAmount', 'AttestedByUser'],
                     OrderBy: 'MeasurementDate',
                     ResultType: 'simple',
                     BypassCache: true,
@@ -113,7 +119,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
             ),
         ]);
         if (!orders.Success || !measurements.Success) {
-            return { Success: false, Message: `Could not read the orders or observations: ${orders.ErrorMessage ?? measurements.ErrorMessage ?? 'unknown error'}`, Rows: [], RowCount: 0, Truncated: false };
+            return { Success: false, Message: `Could not read the orders or observations: ${orders.ErrorMessage ?? measurements.ErrorMessage ?? 'unknown error'}`, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
         }
 
         const orderByID = new Map((orders.Results ?? []).map((o) => [String(o.ID).toLowerCase(), o]));
@@ -122,8 +128,19 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         // these rows. The two agreed while progress was the only thing that recognised revenue on a
         // POC line, and a screen that keeps its own running total is a second answer waiting to
         // disagree with the operation's.
+        //
+        // A SUPERSEDED observation is not "last" (golive #260): it was replaced, and its successor is
+        // what the line now stands on. Its id is what a supersede from this screen would name.
+        const byLine = new Map<string, MeasurementShape[]>();
+        for (const m of measurements.Results ?? []) {
+            const key = String(m.OrderLineID).toLowerCase();
+            byLine.set(key, [...(byLine.get(key) ?? []), m]);
+        }
         const lastByLine = new Map<string, MeasurementShape>();
-        for (const m of measurements.Results ?? []) lastByLine.set(String(m.OrderLineID).toLowerCase(), m);
+        for (const [key, rows] of byLine) {
+            const last = EffectiveObservations(rows).at(-1);
+            if (last) lastByLine.set(key, last);
+        }
 
         const all: ProgressWorklistRow[] = lineRows.map((l) => {
             const key = String(l.ID).toLowerCase();
@@ -141,6 +158,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
                 LineAmount: money(Math.abs(Number(l.LineTotalNet ?? 0))),
                 ServicePeriodStart: ToISODate(l.ServicePeriodStart),
                 ServicePeriodEnd: ToISODate(l.ServicePeriodEnd),
+                LastMeasurementID: last?.ID ?? null,
                 LastMeasurementDate: last ? ToISODate(last.MeasurementDate) : null,
                 LastPercentComplete: last ? Number(last.PercentComplete) : 0,
                 RecognizedToDate: money(Number(l.RecognizedToDate ?? 0)),
@@ -151,7 +169,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         const open = input?.IncludeComplete ? all : all.filter((r) => r.LastPercentComplete < 1);
         const truncated = open.length > maxCount;
         const rows = truncated ? open.slice(0, maxCount) : open;
-        return { Success: true, Rows: rows, RowCount: rows.length, Truncated: truncated };
+        return { Success: true, Rows: rows, RowCount: rows.length, Truncated: truncated, CanSupersede: canSupersede };
     }
 
     /** Products whose EFFECTIVE revenue recognition type is OnMeasurement — the product's own, else its type's default. */

@@ -28,6 +28,16 @@ export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from '
 export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
+    EffectiveObservations,
+    FutureDateWarning,
+    MonthEnd,
+    PlanSupersede,
+    PROGRESS_SUPERSEDE_AUTH,
+    SupersedeRefusal,
+    type ObservationLink,
+    type SupersedePlan,
+} from './ProgressSupersede.js';
+export {
     AddMonths,
     BuildPaymentSchedule,
     DefaultScheduleWeights,
