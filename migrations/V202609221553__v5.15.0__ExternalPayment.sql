@@ -341,7 +341,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '035c9d20-ea33-4144-aba6-369d1d66f935',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            1,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'ID',
             'ID',
             NULL,
@@ -405,7 +407,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'c11aa055-85e2-4d56-bbd4-fd90b86756d0',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            2,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'PaymentProviderID',
             'Payment Provider ID',
             'The provider row (rail + company) the payment was read from.',
@@ -469,7 +473,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '4b274763-06f1-410c-9a8f-60ef285da244',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            3,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'ExternalPaymentRef',
             'External Payment Ref',
             'The rail''s payment id (Bill.com 0rp…). Unique per provider.',
@@ -533,7 +539,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '45ab2005-2ad6-4099-b9f5-4cbbc8c23bfa',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            4,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'ExternalCustomerRef',
             'External Customer Ref',
             'The rail''s customer id the payment came from.',
@@ -597,7 +605,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '3abdcb7e-5549-4ede-9e47-3e6789e96f9d',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            5,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'Amount',
             'Amount',
             'The payment''s gross amount as the rail reports it.',
@@ -661,7 +671,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '0eac9798-4fe1-4d59-96f9-37410f441fe0',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            6,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'UnappliedAmount',
             'Unapplied Amount',
             'The part the rail has not applied to any invoice (over-payment or unlinked). Stays on the rail as the customer''s credit.',
@@ -725,7 +737,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'b1755b9b-a887-440a-b13f-391b7ba33328',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            7,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'PaymentDate',
             'Payment Date',
             'When the rail says funds moved.',
@@ -789,7 +803,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '7b26fe6c-e304-4b63-89e5-6ff4afc6dc5f',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            8,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'ExternalStatus',
             'External Status',
             'The rail''s status string, verbatim, as last seen.',
@@ -853,7 +869,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'd515c784-70d5-4a2f-8941-e355391b399f',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            9,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'ExternalUpdatedAt',
             'External Updated At',
             'The rail''s updatedTime as last seen — the watermark candidate.',
@@ -917,7 +935,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'bb6560e3-6e78-4b6d-a11b-f7d45253c370',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            10,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'Disposition',
             'Disposition',
             'Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), ReversalNeeded (captured, and the rail now reports it reversed).',
@@ -981,7 +1001,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '64dd727b-80b2-4a3f-bc00-fe12e54fea56',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            11,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'DispositionReason',
             'Disposition Reason',
             'Why, in words a person can act on.',
@@ -1045,7 +1067,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'b1761381-eccc-45e1-ba4e-55165eb9286d',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            12,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'PaymentHeaderID',
             'Payment Header ID',
             'The Orders payment created for a Captured row.',
@@ -1109,7 +1133,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '10bfebe2-6343-47ad-85a9-c8adae725f7a',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            13,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'Payload',
             'Payload',
             'The rail''s record as received, JSON, for the audit trail.',
@@ -1173,7 +1199,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '7c9456d8-4266-44b5-a113-241b7b656478',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            14,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'FirstSeenAt',
             'First Seen At',
             'First poll that saw this payment.',
@@ -1237,7 +1265,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '62938db4-026e-4bee-9059-3695bcb5dfb2',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            15,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'LastSeenAt',
             'Last Seen At',
             'Most recent poll that saw this payment.',
@@ -1301,7 +1331,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '1864dcf1-a508-49c6-b0c1-c55252a49813',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            16,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             '__mj_CreatedAt',
             'Created At',
             NULL,
@@ -1365,7 +1397,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '3507a4cd-b05f-42e3-a45b-afaeff763dd1',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            17,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             '__mj_UpdatedAt',
             'Updated At',
             NULL,
@@ -1439,7 +1473,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '542954ce-513f-4691-8848-6f92754c387b',
             'CC876FF9-D182-498D-8D34-E109ADF56A0E', -- Entity: MJ_BizApps_Orders: Payment Provider Sync States
-            1,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CC876FF9-D182-498D-8D34-E109ADF56A0E'),
             'ID',
             'ID',
             NULL,
@@ -1503,7 +1539,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'b993912b-46ea-435e-8e9f-9b527f583596',
             'CC876FF9-D182-498D-8D34-E109ADF56A0E', -- Entity: MJ_BizApps_Orders: Payment Provider Sync States
-            2,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CC876FF9-D182-498D-8D34-E109ADF56A0E'),
             'PaymentProviderID',
             'Payment Provider ID',
             'The provider row (rail + company) this watermark belongs to.',
@@ -1567,7 +1605,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'c7b2055e-556b-45cb-a2d7-571029515688',
             'CC876FF9-D182-498D-8D34-E109ADF56A0E', -- Entity: MJ_BizApps_Orders: Payment Provider Sync States
-            3,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CC876FF9-D182-498D-8D34-E109ADF56A0E'),
             'ObjectName',
             'Object Name',
             'The rail object polled, e.g. receivable-payments.',
@@ -1631,7 +1671,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '1af06c51-62e2-4949-9489-c1ffc7be79e7',
             'CC876FF9-D182-498D-8D34-E109ADF56A0E', -- Entity: MJ_BizApps_Orders: Payment Provider Sync States
-            4,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CC876FF9-D182-498D-8D34-E109ADF56A0E'),
             'Watermark',
             'Watermark',
             'The rail''s max updatedTime seen on the last clean pass (ISO). The next pass reads from one day before it; dedupe is by payment id.',
@@ -1695,7 +1737,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'a3f1ccbd-a2a5-44d9-960e-01a6066da070',
             'CC876FF9-D182-498D-8D34-E109ADF56A0E', -- Entity: MJ_BizApps_Orders: Payment Provider Sync States
-            5,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CC876FF9-D182-498D-8D34-E109ADF56A0E'),
             'LastPolledAt',
             'Last Polled At',
             'When the last pass started.',
@@ -1759,7 +1803,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '0ffa66f4-0dfb-4cb5-8810-03bb01e0cf34',
             'CC876FF9-D182-498D-8D34-E109ADF56A0E', -- Entity: MJ_BizApps_Orders: Payment Provider Sync States
-            6,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CC876FF9-D182-498D-8D34-E109ADF56A0E'),
             'LastSucceededAt',
             'Last Succeeded At',
             'When the last pass completed without a fault.',
@@ -1823,7 +1869,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'ebc0273e-bd40-4b9d-9ee7-be1a16c65774',
             'CC876FF9-D182-498D-8D34-E109ADF56A0E', -- Entity: MJ_BizApps_Orders: Payment Provider Sync States
-            7,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CC876FF9-D182-498D-8D34-E109ADF56A0E'),
             'LastError',
             'Last Error',
             'The fault that stopped the last pass, if any.',
@@ -1887,7 +1935,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'ca825ef3-9533-4c16-8785-fdd4363b5a89',
             'CC876FF9-D182-498D-8D34-E109ADF56A0E', -- Entity: MJ_BizApps_Orders: Payment Provider Sync States
-            8,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CC876FF9-D182-498D-8D34-E109ADF56A0E'),
             '__mj_CreatedAt',
             'Created At',
             NULL,
@@ -1951,7 +2001,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '2c099c9f-16c7-47b9-941c-05df22899ede',
             'CC876FF9-D182-498D-8D34-E109ADF56A0E', -- Entity: MJ_BizApps_Orders: Payment Provider Sync States
-            9,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CC876FF9-D182-498D-8D34-E109ADF56A0E'),
             '__mj_UpdatedAt',
             'Updated At',
             NULL,
@@ -2715,7 +2767,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'b6b0bb4d-1c04-42d8-b4ea-44cc9ddeeaf5',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            18,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'PaymentProvider',
             'Payment Provider',
             NULL,
@@ -2779,7 +2833,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             'b4ccee7a-e75d-476e-a702-ddb040fec7e3',
             'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D', -- Entity: MJ_BizApps_Orders: External Payments
-            19,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'PaymentHeader',
             'Payment Header',
             NULL,
@@ -2853,7 +2909,9 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '7eca88cf-09dc-4b95-a216-00d877fe4ed7',
             'CC876FF9-D182-498D-8D34-E109ADF56A0E', -- Entity: MJ_BizApps_Orders: Payment Provider Sync States
-            10,
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1
+               FROM [${mjSchema}].[EntityField]
+              WHERE [EntityID] = 'CC876FF9-D182-498D-8D34-E109ADF56A0E'),
             'PaymentProvider',
             'Payment Provider',
             NULL,
