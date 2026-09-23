@@ -1,7 +1,7 @@
 {
   "fields": {
     "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
-    "Name": "ORD-37 - Contract Reversal",
+    "Name": "ORD-38 - Contract Reversal",
     "Description": "Reversing a scheduled order (golive #240, D92 section 6). A company billed by instalment never posts a value entry at confirm, so a reversal cannot mirror one: instalments nobody was billed for are withdrawn with no entry, what was billed and not yet earned is credited back as a credit memo debiting Deferred Revenue and crediting Accounts Receivable, and a line that earned more than it billed refuses the reversal rather than stranding a contract asset in Unbilled Receivable. Revenue already recognised stays recognised.",
     "InputDefinition": {},
     "ExpectedOutcomes": {
