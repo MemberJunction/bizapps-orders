@@ -106,19 +106,54 @@ const UTC_DAY = '2026-08-28';
 const SRC = fileURLToPath(new URL('..', import.meta.url));
 const source = (relative: string): string => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
 
-/** Every `date` column the migrations declare — the guard's column list, read rather than remembered. */
-const DATE_COLUMNS: string[] = (() => {
+/**
+ * Every column the migrations declare `DATE` — read rather than remembered — minus the ones whose
+ * NAME is not enough to know the type.
+ *
+ * Two corrections to the first version of this list, both found by re-reading it adversarially:
+ *
+ * - It only matched a column at the start of a line, which is the baseline's `CREATE TABLE` shape.
+ *   Under this repo's incremental-migration rule a column arrives as `ALTER TABLE … ADD [Col] DATE`
+ *   instead, mid-line, and would have been missed — so the claim that a new column is covered
+ *   without anyone coming here was false. Both idioms are read now.
+ * - A name can carry two types: `ExpiresAt` is `DATE` on StoredValueAccount and `DATETIMEOFFSET`
+ *   on CheckoutSession. Guarding it by name alone would fail a CORRECT `session.ExpiresAt =
+ *   new Date()`, and a guard that fails correct code is a guard someone deletes. Ambiguous names
+ *   are dropped, and `AMBIGUOUS_COLUMNS` records which — a source guard reads names, not types,
+ *   and that limit should be visible rather than discovered.
+ */
+const { DATE_COLUMNS, AMBIGUOUS_COLUMNS } = ((): { DATE_COLUMNS: string[]; AMBIGUOUS_COLUMNS: string[] } => {
     const dir = fileURLToPath(new URL('../../../../migrations/', import.meta.url));
-    const names = new Set<string>();
+    const asDate = new Set<string>();
+    const asOther = new Set<string>();
+    // A column declaration in either idiom: at the start of a line (`CREATE TABLE`) or after
+    // `ADD` (`ALTER TABLE`). `\bDATE\b` excludes DATETIME/DATETIME2/DATETIMEOFFSET on its own —
+    // a word boundary cannot fall between `DATE` and `TIME`.
+    const decl = /(?:^\s*|\bADD\s+)\[?([A-Za-z0-9_]+)\]?\s+(DATE|DATETIME2?|DATETIMEOFFSET|SMALLDATETIME)\b/gim;
     for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql'))) {
-        // `\bDATE\b` excludes DATETIME/DATETIME2/DATETIMEOFFSET on its own: the word boundary
-        // cannot fall between `DATE` and `TIME`.
-        for (const m of readFileSync(`${dir}${file}`, 'utf8').matchAll(/^\s*\[?([A-Za-z0-9_]+)\]?\s+DATE\b/gim)) {
-            names.add(m[1]);
+        for (const m of readFileSync(`${dir}${file}`, 'utf8').matchAll(decl)) {
+            (m[2].toUpperCase() === 'DATE' ? asDate : asOther).add(m[1]);
         }
     }
-    return [...names].sort();
+    return {
+        DATE_COLUMNS: [...asDate].filter((n) => !asOther.has(n)).sort(),
+        AMBIGUOUS_COLUMNS: [...asDate].filter((n) => asOther.has(n)).sort(),
+    };
 })();
+
+/**
+ * "A day in hand, else the clock" — in BOTH spellings.
+ *
+ * The first version banned only the ternary and left `X ?? new Date()` alone, though
+ * `calendar-day.ts`'s own header names that form as one of the ways this defect was written and
+ * `OrderEntityServer` had been fixed from exactly it. The inner `new Date(…)` also tolerates one
+ * level of nesting now: `x ? new Date(String(x)) : new Date()` slipped through a `[^)]*` body.
+ *
+ * Built fresh per call — a `/g` regex carries `lastIndex`, and sharing one instance across files
+ * makes the guard's answer depend on the order the files were scanned in.
+ */
+const clockFallback = (): RegExp =>
+    /^.*(?:\?\s*new Date\((?:[^()]|\([^()]*\))*\)\s*:\s*new Date\(\s*\)|\?\?\s*new Date\(\s*\)).*$/gm;
 
 /** Matching lines that are actually code — comment bodies naming the defect are not the defect. */
 const codeLines = (text: string, pattern: RegExp): string[] =>
@@ -132,13 +167,23 @@ const codeLines = (text: string, pattern: RegExp): string[] =>
  * removal from this list.
  */
 const DEFERRED_ASOF: ReadonlyArray<readonly [string, string]> = [
-    ['OrderEntityServer.ts', 'const asOf = this.OrderDate'],
-    ['PreviewPriceOperation.ts', 'const asOf = input.AsOf'],
-    ['SpawnRenewalsOperation.ts', 'const asOf = input.AsOfDate'],
+    ['OrderEntityServer.ts', 'const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();'],
+    ['PreviewPriceOperation.ts', 'const asOf = input.AsOf ? new Date(input.AsOf) : new Date();'],
+    ['SpawnRenewalsOperation.ts', 'const asOf = input.AsOfDate ? new Date(input.AsOfDate) : new Date();'],
+    [
+        'InvoiceDisplay.ts',
+        "const generatedOn = options?.GeneratedOn ?? new Date().toISOString().slice(0, 10);",
+    ],
 ];
 
+/**
+ * Exact line, not a prefix. `startsWith` exempted anything that merely BEGAN like a deferred site,
+ * so a later `const asOf = this.OrderDateOverride ? …` would have been waved through silently while
+ * the staleness check still passed. Matching the whole line costs a deliberate edit here whenever
+ * one of these is touched, which is the point: the list should be annoying to leave stale.
+ */
 const deferred = (file: string, line: string): boolean =>
-    DEFERRED_ASOF.some(([f, prefix]) => f === file && line.startsWith(prefix));
+    DEFERRED_ASOF.some(([f, exact]) => f === file && line === exact);
 
 const engine = BusinessTimeZoneEngine.Instance as unknown as {
     _configurations: InstanceConfigurationRow[];
@@ -433,8 +478,16 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             // `const requestDate = new Date();`: no column name at the assignment, no ternary.
             // These two sites launder the day through exactly such a binding, so each is pinned
             // positively to the expression it must use.
-            ['CancelSubscriptionOperation.ts', /const requestDate = await CalendarDayOrToday\(input\.RequestDate, provider, user\)/, "the cancellation's request day"],
+            ['CancelSubscriptionOperation.ts', /const requestDate = await CalendarDayOrToday\(requestedDay, provider, user\)/, "the cancellation's request day"],
             ['OrderEntityServer.ts', /const purchaseDay = await CalendarDayOrToday\(\s*this\.OrderDate,/, "the booking day behind every subscription term"],
+            // Declaring the day is half of it. The first version of these two guards asserted only
+            // that the `const` existed, which a revert that leaves the binding in place and stamps
+            // the clock at the USE satisfies completely. Bind the consumer as well.
+            ['CancelSubscriptionOperation.ts', /RequestDate: requestDate,/, "the request day reaching the decision"],
+            ['OrderEntityServer.ts', /PurchaseDate: purchaseDay,/, 'the booking day reaching the rules'],
+            // The remote boundary: a caller-supplied day is text until something says otherwise,
+            // and `AsDateValue` throws rather than returns null on `2026-02-30`.
+            ['CancelSubscriptionOperation.ts', /RequireDate\(input\.RequestDate, 'RequestDate'\)/, 'the request day validated at the boundary'],
         ])('%s derives %s through CalendarDayOrToday', (file, pattern) => {
             expect(source(file)).toMatch(pattern);
         });
@@ -486,6 +539,13 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             expect(DATE_COLUMNS.length).toBeGreaterThan(10);
         });
 
+        it('drops columns whose name does not determine their type, and says which', () => {
+            // `ExpiresAt` is DATE on StoredValueAccount and DATETIMEOFFSET on CheckoutSession.
+            // Guarding it by name would fail a correct `session.ExpiresAt = new Date()`.
+            expect(AMBIGUOUS_COLUMNS).toContain('ExpiresAt');
+            expect(DATE_COLUMNS).not.toContain('ExpiresAt');
+        });
+
         it.each(production)('%s stamps no date column from the clock', (file) => {
             // Deliberately allows `new Date(x)` — parsing a day already in hand is fine — and
             // catches only the zero-argument form, which is an instant with no day in it.
@@ -498,19 +558,16 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
         });
 
         it.each(production)('%s falls back to no clock for a day it already asked for', (file) => {
-            const offenders = codeLines(
-                source(file),
-                /^.*\?\s*new Date\([^)]*\)\s*:\s*new Date\(\s*\).*$/gm,
-            ).filter((line) => !deferred(file, line));
+            const offenders = codeLines(source(file), clockFallback()).filter((line) => !deferred(file, line));
             expect(offenders, `${file}: use CalendarDayOrToday, not a clock fallback`).toEqual([]);
         });
 
         it('every deferred asOf site still exists, so fixing one forces it off the list', () => {
             // A stale allowlist is a guard with a hole in it that nobody can see. When the follow-up
             // against #209 converts one of these, this fails until the entry is removed.
-            for (const [file, prefix] of DEFERRED_ASOF) {
-                const shapes = codeLines(source(file), /^.*\?\s*new Date\([^)]*\)\s*:\s*new Date\(\s*\).*$/gm);
-                expect(shapes.some((l) => l.startsWith(prefix)), `${file}: '${prefix}' is no longer there`).toBe(true);
+            for (const [file, exact] of DEFERRED_ASOF) {
+                const shapes = codeLines(source(file), clockFallback());
+                expect(shapes, `${file}: '${exact}' is no longer there`).toContain(exact);
             }
         });
 

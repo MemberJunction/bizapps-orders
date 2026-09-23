@@ -54,7 +54,7 @@ import {
     mjBizAppsOrdersSubscriptionTermEntity,
 } from '@mj-biz-apps/orders-entities';
 import type { OrderEntityServer } from './OrderEntityServer.js';
-import { RequireUUID } from './sql-guards.js';
+import { RequireDate, RequireUUID } from './sql-guards.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { RevokeGrantsForCanceledSubscription } from './EntitlementEngine.js';
 import {
@@ -149,7 +149,17 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         // An instant taken at 9 PM Eastern reduces to tomorrow, so an evening cancellation refunded
         // a day the customer had not reached yet. Computed before `BeginTransaction` below, so the
         // fallback's metadata read never lands inside the write transaction.
-        const requestDate = await CalendarDayOrToday(input.RequestDate, provider, user);
+        // A day that arrived over the wire is text until something says otherwise, and the sibling
+        // field three lines up is already validated here for the same reason. Without this,
+        // `2026-02-30` passes the shape check inside `AsDateValue` and comes back as a `RangeError`
+        // from a helper, not as this operation's own refusal. Only a string is validated: an
+        // in-process caller may hand over a real `Date`, which has no text to check.
+        const requestedDay =
+            typeof input.RequestDate === 'string'
+                ? RequireDate(input.RequestDate, 'RequestDate')
+                : (input.RequestDate ?? null);
+
+        const requestDate = await CalendarDayOrToday(requestedDay, provider, user);
 
         const subscription = await this.loadSubscription(provider, user, input.SubscriptionID);
         if (!subscription) {
