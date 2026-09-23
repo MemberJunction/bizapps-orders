@@ -1,0 +1,41 @@
+[
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements",
+      "RoleID": "@lookup:MJ: Roles.Name=Engagement Lead",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "C0B68E6D-5088-4853-B3C1-06238739E7DD"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers",
+      "RoleID": "@lookup:MJ: Roles.Name=Engagement Lead",
+      "CanCreate": false,
+      "CanRead": true,
+      "CanUpdate": false,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "2E4096AE-0173-4CFE-8235-DC1478487F5D"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines",
+      "RoleID": "@lookup:MJ: Roles.Name=Engagement Lead",
+      "CanCreate": false,
+      "CanRead": true,
+      "CanUpdate": false,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "4948AFC8-966D-4317-873A-C500071C283E"
+    }
+  }
+]
