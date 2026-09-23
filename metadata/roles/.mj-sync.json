@@ -1,0 +1,21 @@
+{
+  "entity": "MJ: Roles",
+  "filePattern": ".*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".roles.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "preserveFields": [],
+    "excludeFields": [],
+    "ignoreVirtualFields": true,
+    "ignoreNullFields": true,
+    "mergeStrategy": "merge",
+    "backupBeforeUpdate": true,
+    "backupDirectory": ".backups",
+    "filter": "Name IN ('Engagement Lead', 'Account Director')",
+    "externalizeFields": [],
+    "lookupFields": {},
+    "relatedEntities": {}
+  }
+}

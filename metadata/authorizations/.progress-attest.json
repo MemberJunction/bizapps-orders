@@ -1,0 +1,14 @@
+[
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Progress.Attest",
+      "ParentID": null,
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Record an attested progress observation on a percentage-of-completion order line through Orders.RecordProgress, which posts the revenue catch-up it implies. Held by the Engagement Lead role, never alongside the price override grants."
+    },
+    "primaryKey": {
+      "ID": "41284F29-E8A0-4FAB-BD77-A48120B4ED36"
+    }
+  }
+]

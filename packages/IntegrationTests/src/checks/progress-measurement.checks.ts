@@ -30,6 +30,12 @@
  *   PM13 a Posted observation can only be written by the operation — hand-insert and Draft→Posted
  *        are both refused, by the entity guard and by the trigger respectively
  *   PM14 and the operation itself still posts, so the guard admits exactly one writer
+ *   PM15 a user whose ONLY role is Engagement Lead attests: the observation and its entry land
+ *   PM16 a UI-only user is refused before anything is written — observation and ledger counts unchanged
+ *   PM17 an Account Director (OverrideAny, no Attest) is refused too, so the two grants are separable
+ *
+ * Every attestation here is made as an Engagement Lead-only user, never the System owner, so each
+ * check also proves the role is enough on its own.
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -37,7 +43,7 @@
  *   CODE: RecordProgressOperation · OrderJournalEntryFactory.BuildProgressDraft · RevenueRecognition.ComputeCatchUp
  *   DB:   V202609221900__v5.13.0__OrderLineProgressMeasurement.sql
  */
-import { BaseRemotableOperation } from '@memberjunction/core';
+import { BaseRemotableOperation, UserInfo, UserRoleInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import {
     Assert,
@@ -95,8 +101,20 @@ function operation<I, O>(key: string) {
     return op!;
 }
 
-async function record(ctx: IntegrationCheckContext, input: RecordInput): Promise<RecordOutput> {
-    const result = await operation<RecordInput, RecordOutput>('Orders.RecordProgress').Execute(input, { provider: ctx.Provider, user: ctx.User });
+/**
+ * The context user with every role replaced by the one named — the same person, holding only that
+ * role, so `AttestedByUserID` still points at a real user row. The role comes from synced metadata:
+ * a missing one means `mj sync push` has not run against this database.
+ */
+function withOnlyRole(ctx: IntegrationCheckContext, roleName: string): UserInfo {
+    const role = ctx.Provider.Roles.find((r) => r.Name === roleName);
+    Assert(role != null, `role '${roleName}' is not in metadata — run mj sync push for this app`);
+    const userRole = new UserRoleInfo({ UserID: ctx.User.ID, RoleID: role!.ID, Role: role!.Name });
+    return new UserInfo(ctx.Provider, { ...ctx.User, UserRoles: [userRole] });
+}
+
+async function record(ctx: IntegrationCheckContext, input: RecordInput, user = withOnlyRole(ctx, 'Engagement Lead')): Promise<RecordOutput> {
+    const result = await operation<RecordInput, RecordOutput>('Orders.RecordProgress').Execute(input, { provider: ctx.Provider, user });
     Assert(result.Success, `RecordProgress did not execute: ${result.ErrorMessage ?? 'unknown'}`);
     return result.Output!;
 }
@@ -711,6 +729,52 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 Assert(!!rows[0].JournalEntryID, 'with the entry it was written beside');
             }),
     },
+    {
+        Id: 'progress-measurement.PM15',
+        Name: 'PM15: a user whose only role is Engagement Lead can attest — the observation and its entry land',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { lineID } = await bookedProjectLine(ctx);
+                const lead = withOnlyRole(ctx, 'Engagement Lead');
+                AssertEqual(lead.UserRoles.length, 1, 'the attester holds exactly one role');
+                const out = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4 }, lead);
+                Assert(out.Success, `an Engagement Lead must be able to attest: ${out.Message}`);
+                const rows = await observations(ctx, lineID);
+                AssertEqual(rows.length, 1, 'the observation row landed');
+                AssertEqual(rows[0].JournalEntryID, out.JournalEntryID, 'carrying the entry it posted');
+                const entries = await recognitionEntries(ctx, lineID);
+                AssertEqual(entries.length, 1, 'and the recognition entry is in the ledger');
+                AssertEqual(cents(Number(entries[0].Signed)), 400, 'for 40% of the line');
+            }),
+    },
+    ...(['UI', 'Account Director'] as const).map((roleName, i) => ({
+        Id: `progress-measurement.PM${16 + i}`,
+        Name:
+            roleName === 'UI'
+                ? 'PM16: a UI-only user is refused before anything is written'
+                : 'PM17: an Account Director (OverrideAny, no Attest) cannot attest — the two grants are separable',
+        RequiresMutation: true,
+        Fn: async (ctx: IntegrationCheckContext) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { lineID } = await bookedProjectLine(ctx);
+                const counts = () =>
+                    TxOne<{ Obs: number; JE: number; JEL: number }>(
+                        ctx,
+                        `SELECT (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderLineProgressMeasurement) AS Obs,
+                                (SELECT COUNT(*) FROM ${ACCT_SCHEMA}.JournalEntry) AS JE,
+                                (SELECT COUNT(*) FROM ${ACCT_SCHEMA}.JournalEntryLine) AS JEL`,
+                    );
+                const before = await counts();
+                const out = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4 }, withOnlyRole(ctx, roleName));
+                Assert(!out.Success, `a ${roleName} user must not be able to attest`);
+                Assert(/MJ\.BizApps\.Orders\.Progress\.Attest/.test(out.Message ?? ''), `the refusal names the authorization: ${out.Message}`);
+                const after = await counts();
+                AssertEqual(after.Obs, before.Obs, 'no observation row was written');
+                AssertEqual(after.JE, before.JE, 'no journal entry was written');
+                AssertEqual(after.JEL, before.JEL, 'no journal entry line was written');
+            }),
+    })),
 ];
 
 for (const check of ProgressMeasurementChecks) {

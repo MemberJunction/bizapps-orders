@@ -1,0 +1,24 @@
+{
+  "entity": "MJ: Entity Permissions",
+  "filePattern": ".*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".entity-permissions.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "preserveFields": [],
+    "excludeFields": [],
+    "ignoreVirtualFields": true,
+    "ignoreNullFields": true,
+    "mergeStrategy": "merge",
+    "backupBeforeUpdate": true,
+    "backupDirectory": ".backups",
+    "filter": "RoleID IN (SELECT ID FROM ${flyway:defaultSchema}.Role WHERE Name IN ('Engagement Lead', 'Account Director'))",
+    "externalizeFields": [],
+    "lookupFields": {
+      "EntityID": { "entity": "MJ: Entities", "field": "Name" },
+      "RoleID": { "entity": "MJ: Roles", "field": "Name" }
+    },
+    "relatedEntities": {}
+  }
+}
