@@ -1,0 +1,18 @@
+[
+  {
+    "_comments": [
+      "PriceOverrideReason is required when PriceOverridden is set: the order line's own validation",
+      "refuses a flagged line with no reason (bc-aidp-next-golive#253). The column itself stays",
+      "nullable — lines converted from the previous system carry overridden prices with no reason",
+      "and must stay loadable. AutoUpdateDescription is off so CodeGen does not restore the column's",
+      "extended-property text, which still calls the note optional."
+    ],
+    "fields": {
+      "Description": "Why this line's price was moved off the default. Required when PriceOverridden is set: a save that flags the price as overridden and gives no reason is refused. NULL when the price is the default.",
+      "AutoUpdateDescription": false
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Lines&Name=PriceOverrideReason"
+    }
+  }
+]

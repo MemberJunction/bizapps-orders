@@ -39,12 +39,34 @@
         {
           "fields": {
             "IncludeInUserSearchAPI": true,
-            "UserSearchPredicateAPI": "Exact",
+            "UserSearchPredicateAPI": "Contains",
             "AutoUpdateIncludeInUserSearchAPI": false,
             "AutoUpdateUserSearchPredicate": false
           },
           "primaryKey": {
             "ID": "@lookup:MJ: Entity Fields.Name=OrderNumber&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Contains",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=BillToOrganization&EntityID=@parent:ID"
+          }
+        },
+        {
+          "fields": {
+            "IncludeInUserSearchAPI": true,
+            "UserSearchPredicateAPI": "Contains",
+            "AutoUpdateIncludeInUserSearchAPI": false,
+            "AutoUpdateUserSearchPredicate": false
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.Name=BillToPerson&EntityID=@parent:ID"
           }
         },
         {

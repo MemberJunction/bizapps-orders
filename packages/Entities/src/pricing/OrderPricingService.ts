@@ -33,10 +33,11 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
+import { UUIDsEqual } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderLineEntity } from '../generated/entity_subclasses';
 import type { ComputeChargesResult } from './ChargeBehavior.js';
 import type { RequestedCharge } from './ChargeEngine.js';
-import type { ResolvedPrice } from './PriceResolver.js';
+import type { PriceResolutionContext, ResolvedPrice } from './PriceResolver.js';
 import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngine.js';
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { AsDateValue, TodayAsDateValue } from '../date-cell';
@@ -44,7 +45,7 @@ import { RunCharges, SplitChargesByLine } from './ChargeEngine.js';
 import { PriceResolutionError, ResolvePrice } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
-import { AllocateProRata, LineGross, NetAfterDiscount } from './PricingBehavior.js';
+import { AllocateProRata, LineGross, Money, NetAfterDiscount } from './PricingBehavior.js';
 /**
  * The one thing this walk needs from the SERVER line subclass: somewhere to record the extended
  * amount it resolved.
@@ -57,6 +58,7 @@ type CarriesResolvedExtendedAmount = { ResolvedExtendedAmount?: number | null };
 import type { StackingMode } from './PromotionBehavior.js';
 import {
     AuthorizeManualDiscount,
+    ManualDiscountAmount,
     RunPromotions,
     WriteAdjustments,
     type PromotableLine,
@@ -110,6 +112,19 @@ export interface OrderPricingContext {
     PriceListID?: string | null;
     /** PreviewPrice fee-type filter; omitted means the resolver default (Standard). */
     FeeType?: string;
+    /**
+     * Also resolve what the rules WOULD say for a line whose price the caller stated.
+     *
+     * A stated price pins the line and the walk normally stops there — the engine fills a blank and
+     * never argues. But the screen that lets a user move a line off its default has to know what the
+     * default IS while the line is pinned, or it cannot say whether the badge, the reason field and
+     * the picker's Default row describe a real deviation. With this set the walk resolves the rule
+     * anyway, stamps nothing, and reports the answer in `EngineDefaults`. A line the rules cannot
+     * price reports null rather than refusing: a stated price on an unpriceable product is legal.
+     *
+     * Off for the save path, where the extra resolution would buy nothing.
+     */
+    IncludeDefaultsForStatedLines?: boolean;
 }
 
 /**
@@ -126,6 +141,14 @@ export interface OrderPricingResult {
     TaxReasons: Map<number, string>;
     /** Per-line price decomposition, written once the lines have IDs (D69). */
     PriceComponents: Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>;
+    /**
+     * What the rules say for each line INDEPENDENT of any stated price — the engine's default.
+     *
+     * For a line the engine priced this is the same answer as `PriceComponents`. For a stated line
+     * it is present only when `IncludeDefaultsForStatedLines` asked for it, and null when no rule
+     * prices the product. Absent from the map means the question was not asked.
+     */
+    EngineDefaults: Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice | null>;
     /** Promotion applications to record, or null when no code or manual discount applied. */
     Promotions: PromotionRunResult | null;
     /** Charge and tax rows to record, or null when the order attracts neither. */
@@ -180,6 +203,7 @@ export class OrderPricingService {
             UnusableCodes: [],
             TaxReasons: new Map<number, string>(),
             PriceComponents: new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>(),
+            EngineDefaults: new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice | null>(),
             Promotions: null,
             Charges: null,
         };
@@ -256,10 +280,40 @@ export class OrderPricingService {
         );
         this.out.UnusableCodes = run.Unusable;
 
+        // A LINE THAT ALREADY CARRIES A DISCOUNT KEEPS IT.
+        //
+        // The stamp at the bottom of this method ASSIGNS `DiscountAmount`, which is right for a run
+        // that decided every discount on the line — a promotion pass does exactly that. A manual
+        // discount added to an order that already has one does not: this run knows only about the
+        // new request, so assigning would erase the stored figure while the earlier adjustment rows
+        // survive describing money the line no longer shows. Seeding the running total with what the
+        // line already carries makes the new request ACCUMULATE, and leaves the promotion case
+        // untouched because a line a promotion re-decided already has an entry here.
+        //
+        // Keyed off the VALUE rather than off `IsSaved`, so the preview walks agree with the booking
+        // walk: they price copies that were never saved, and hand them the stored discount to start
+        // from. A genuinely new line carries zero and is unaffected either way.
+        for (const l of lines) {
+            if (run.PerLine.has(l.ID)) continue;
+            const stored = Money(Number(l.Entity.DiscountAmount ?? 0));
+            if (stored > 0) run.PerLine.set(l.ID, stored);
+        }
+
         // Manual discounts are authorized individually — the cap is per user, not per order.
         for (const md of this.ctx.ManualDiscounts) {
-            const target = md.OrderLineID ? lines.find((l) => l.ID === md.OrderLineID) : null;
-            const base = target ? target.Net : lines.reduce((sum, l) => sum + l.Net, 0);
+            const target = md.OrderLineID ? this.manualDiscountTarget(md.OrderLineID, lines) : null;
+            // WHAT IS LEFT TO GIVE AWAY, not what the line started at. A second concession on a line
+            // that already carries one is judged against the remainder, so concessions cannot be
+            // stacked past the cap one authorized slice at a time — and cannot take the line below
+            // zero, where the net silently floors and the discount stops being visible anywhere.
+            // `PerLine` holds both what is already stored and what this loop has granted so far, so
+            // the first discount on a fresh line sees exactly the base it always saw.
+            const base = target
+                ? Money(target.Net - (run.PerLine.get(target.ID) ?? 0))
+                : lines.reduce((sum, l) => sum + l.Net, 0);
+            // A rate becomes money against the SAME base the authorization judges it on, so "20%"
+            // and "$240 off a $1,200 line" are one request expressed two ways rather than two paths.
+            const amount = ManualDiscountAmount(md, base);
             const auth = await AuthorizeManualDiscount(md, base, user?.ID ?? null, provider, user);
             if (auth.Refusal) throw new Error(`Manual discount refused: ${auth.Refusal}`);
 
@@ -268,17 +322,17 @@ export class OrderPricingService {
                     PromotionID: null,
                     PromotionCodeID: null,
                     OrderLineID: target.ID,
-                    Amount: md.Amount,
+                    Amount: amount,
                     Label: 'manual discount',
                     Reason: md.Reason,
                     AuthorizedBySalesAuthorityID: auth.AuthorityID,
                     ApprovedByUserID: auth.ApprovedByUserID ?? null,
                 });
-                run.PerLine.set(target.ID, Math.round(((run.PerLine.get(target.ID) ?? 0) + md.Amount) * 100) / 100);
+                run.PerLine.set(target.ID, Math.round(((run.PerLine.get(target.ID) ?? 0) + amount) * 100) / 100);
             } else {
                 // An order-level manual discount allocates exactly like an order-level promotion —
                 // it must reach the lines or tax and GL see the wrong base.
-                const parts = AllocateProRata(md.Amount, lines.map((l) => l.Net));
+                const parts = AllocateProRata(amount, lines.map((l) => l.Net));
                 lines.forEach((l, i) => {
                     if (parts[i] <= 0) return;
                     run.Applications.push({
@@ -302,6 +356,46 @@ export class OrderPricingService {
             if (total) l.Entity.DiscountAmount = total;
         }
         return run;
+    }
+
+    /**
+     * The line a manual discount names, whether it named it by REAL KEY or by position.
+     *
+     * The walk keys lines positionally, because an unsaved line has no id yet and the writer maps
+     * the keys back by index after the inserts. A caller composing an order on screen has the
+     * opposite problem: the line it is discounting is one the user can point at, so it names the
+     * real `OrderLine.ID`. Matching only the positional key meant such a request found no target and
+     * fell through to the ORDER-LEVEL branch, where it was allocated pro-rata across every line on
+     * the order — a different discount from the one that was asked for, applied silently, and with
+     * the adjustment row losing its line as well. Both spellings resolve here.
+     *
+     * A named line that is not on this order is REFUSED rather than widened into an order-level
+     * discount. Silently discounting lines the caller did not name is the failure this replaces.
+     *
+     * A BOOKED LINE IS REFUSED TOO. Trigger 51003 freezes a Confirmed line's financial fields, and
+     * the journal entry its discount would change has already been written; without this the save
+     * fails from inside the CRUD proc with a message naming neither the line nor the discount.
+     */
+    private manualDiscountTarget(orderLineID: string, lines: PromotableLine[]): PromotableLine {
+        // The real key matches whether or not the line has been saved: `NewRecord()` generates the
+        // uniqueidentifier the INSERT will carry, so a line composed on screen already has the id
+        // the caller is naming. Positional keys are digits and can never collide with a UUID.
+        const target =
+            lines.find((l) => l.ID === orderLineID) ??
+            lines.find((l) => !!l.Entity.ID && UUIDsEqual(l.Entity.ID, orderLineID));
+        if (!target) {
+            throw new Error(
+                `A manual discount names order line ${orderLineID}, which is not a line on this order. ` +
+                    `Discount a line the order actually has, or leave the line unset for an order-level discount.`,
+            );
+        }
+        if (target.Entity.JournalEntryID) {
+            throw new Error(
+                `Order line ${orderLineID} has been booked, so its money is frozen and a discount can no ` +
+                    `longer be applied to it. Reverse the line and re-sell it at the discounted price.`,
+            );
+        }
+        return target;
     }
 
     /**
@@ -463,29 +557,17 @@ export class OrderPricingService {
         // for a free line and must not be mistaken for silence.
         const field = line.GetFieldByName('UnitPrice');
         const stated = field?.Dirty === true || (line.UnitPrice ?? 0) > 0;
-        if (stated) return;
-
-        const provider = this.host.Provider;
-        const user = this.host.User;
+        if (stated) {
+            if (this.ctx.IncludeDefaultsForStatedLines) await this.recordDefaultForStatedLine(line);
+            return;
+        }
 
         const product = await this.loadProductForPricing(line.ProductID);
         // Before pricing it, establish that it may be sold at all — a retired or
         // out-of-window product should not reach the ledger, and refusing here aborts
         // the confirm before any line is written.
         if (product) this.assertProductSellable(line, product);
-        const resolutionCtx = {
-            ProductID: line.ProductID,
-            ProductCategoryID: product?.ProductCategoryID ?? null,
-            CompanyID: product?.CompanyID ?? this.ctx.CompanyID,
-            Quantity: Number(line.Quantity ?? 0),
-            AsOf: AsDateValue(this.ctx.OrderDate) ?? TodayAsDateValue(),
-            OrganizationID: this.ctx.BillToOrganizationID ?? null,
-            PersonID: this.ctx.BillToPersonID ?? null,
-            ApplicabilityContext: await this.applicabilityBag(line.ProductID),
-            ...(this.ctx.PriceListID !== undefined ? { PriceListID: this.ctx.PriceListID } : {}),
-            ...(this.ctx.FeeType ? { FeeType: this.ctx.FeeType } : {}),
-        };
-        const resolved = await this.resolveRetryingStaleCatalog(resolutionCtx);
+        const resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
 
         if (!resolved) {
             if (await this.refusesUnpricedLines()) {
@@ -508,6 +590,42 @@ export class OrderPricingService {
         // the pricing answer is identical either way.
         (line as unknown as CarriesResolvedExtendedAmount).ResolvedExtendedAmount = resolved.ExtendedAmount;
         this.out.PriceComponents.set(line, resolved);
+        this.out.EngineDefaults.set(line, resolved);
+    }
+
+    /**
+     * Resolve the rules' answer for a STATED line and record it, stamping nothing.
+     *
+     * The line keeps the price somebody decided on; this only answers "and what would it have been".
+     * Failure to price is an answer here (null), not a refusal — the stated price is what books, and
+     * the caller asked for the default to compare against, not to enforce.
+     */
+    private async recordDefaultForStatedLine(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        try {
+            const product = await this.loadProductForPricing(line.ProductID);
+            const resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
+            this.out.EngineDefaults.set(line, resolved);
+        } catch {
+            this.out.EngineDefaults.set(line, null);
+        }
+    }
+
+    private async resolutionContextFor(
+        line: mjBizAppsOrdersOrderLineEntity,
+        product: Awaited<ReturnType<OrderPricingService['loadProductForPricing']>>,
+    ): Promise<PriceResolutionContext> {
+        return {
+            ProductID: line.ProductID,
+            ProductCategoryID: product?.ProductCategoryID ?? null,
+            CompanyID: product?.CompanyID ?? this.ctx.CompanyID,
+            Quantity: Number(line.Quantity ?? 0),
+            AsOf: AsDateValue(this.ctx.OrderDate) ?? TodayAsDateValue(),
+            OrganizationID: this.ctx.BillToOrganizationID ?? null,
+            PersonID: this.ctx.BillToPersonID ?? null,
+            ApplicabilityContext: await this.applicabilityBag(line.ProductID),
+            ...(this.ctx.PriceListID !== undefined ? { PriceListID: this.ctx.PriceListID } : {}),
+            ...(this.ctx.FeeType ? { FeeType: this.ctx.FeeType } : {}),
+        };
     }
 
     /**

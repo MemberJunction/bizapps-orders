@@ -72,6 +72,20 @@
         {
           "fields": {
             "ActionID": "@parent:ID",
+            "Name": "PaymentScheduleID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Render ONE instalment of the order's payment schedule: that row's frozen document number, due date and balance, for its company only. Omit for the whole order, which is the implicit single instalment every order without a schedule bills."
+          },
+          "primaryKey": {
+            "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C432"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
             "Name": "AsOfDate",
             "Type": "Input",
             "ValueType": "Scalar",

@@ -5,6 +5,7 @@ import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import {
     OrdersGetOverdueWorklistOperation,
+    OverdueFilter,
     type OverdueWorklistRow,
 } from '@mj-biz-apps/orders-entities';
 import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
@@ -186,7 +187,8 @@ export class MJOOverduePageComponent implements OnInit {
         return {
             EntityID: this.OrderEntityInfo.ID,
             Entity: this.OrderEntityInfo.Name,
-            WhereClause: `Balance > 0 AND DueDate IS NOT NULL AND DueDate < '${today}' AND Status NOT IN ('Draft','Quoted','Voided')`,
+            // ONE definition of overdue (overdue.ts), the same one the worklist operation filters by.
+            WhereClause: OverdueFilter(today),
             ID: 'preset-overdue-worklist',
             Name: 'Overdue Collections'
         } as unknown as MJUserViewEntityExtended;

@@ -26,12 +26,13 @@ import {
     type InvoiceAdjustmentFacts,
     type InvoiceChargeFacts,
     type InvoiceDocument,
+    type InvoiceInstalmentFacts,
     type InvoiceLineFacts,
     type InvoiceOrderFacts,
     type InvoicePartyFacts,
     type InvoicePaymentFacts,
 } from './InvoiceBehavior.js';
-import { ORDER_HEADER_ENTITY } from './entity-names.js';
+import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 import { LoadOrdersEngine, OrdersEngine, ToISODate } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
@@ -123,13 +124,29 @@ export async function BuildInvoiceDocuments(
     orderHeaderID: string,
     provider: IMetadataProvider,
     user: UserInfo,
-    options?: { AsOf?: string | null; OnlyCompanyID?: string | null },
+    options?: {
+        AsOf?: string | null;
+        OnlyCompanyID?: string | null;
+        /**
+         * Render one instalment of the order's schedule: that row's frozen number, due date and
+         * balance, for its company only. Omit for the whole order — the implicit single instalment.
+         */
+        PaymentScheduleID?: string | null;
+    },
 ): Promise<InvoiceBuildResult> {
     const id = RequireUUID(orderHeaderID, 'OrderHeaderID');
     // A calendar day, from the business zone (#209). This drives the days-until-due countdown
     // against `DueDate`, a `date` column, so a UTC-day default made an evening invoice read one
     // day closer to due than it was.
     const asOf = ToISODate(await CalendarDayOrToday(options?.AsOf, provider, user)) as string;
+
+    // Read first, because it decides which company's document this is.
+    const instalmentResult = options?.PaymentScheduleID
+        ? await readInstalment(provider, user, id, RequireUUID(options.PaymentScheduleID, 'PaymentScheduleID'))
+        : { instalment: null };
+    if ('error' in instalmentResult) return { Success: false, Message: instalmentResult.error, Documents: [] };
+    const instalment = instalmentResult.instalment;
+    const onlyCompanyID = instalment?.CompanyID ?? options?.OnlyCompanyID ?? null;
 
     const header = await view<Row>(provider, user, ORDER_HEADER_ENTITY, `ID = '${id}'`);
     if (header.error) return { Success: false, Message: `Could not read the order — ${header.error}`, Documents: [] };
@@ -406,16 +423,55 @@ export async function BuildInvoiceDocuments(
         CompanyNames: companyNames,
         Issuers: issuers,
         AsOf: asOf,
-        OnlyCompanyID: options?.OnlyCompanyID ?? null,
+        OnlyCompanyID: onlyCompanyID,
+        Instalment: instalment,
     });
 
-    if (options?.OnlyCompanyID && !documents.length) {
+    if (onlyCompanyID && !documents.length) {
         return {
             Success: false,
-            Message: `Order ${orderFacts.OrderNumber} has no lines sold by company ${options.OnlyCompanyID}.`,
+            Message: `Order ${orderFacts.OrderNumber} has no lines sold by company ${onlyCompanyID}.`,
             Documents: [],
         };
     }
 
     return { Success: true, Documents: documents };
+}
+
+/**
+ * One schedule row as instalment facts, plus how many live instalments its company has — the count
+ * is what makes `2 of 4` printable and the derived number correct when the row has no frozen one.
+ */
+async function readInstalment(
+    provider: IMetadataProvider,
+    user: UserInfo,
+    orderHeaderID: string,
+    scheduleID: string,
+): Promise<{ instalment: InvoiceInstalmentFacts } | { error: string }> {
+    const rows = await view<Row>(
+        provider,
+        user,
+        ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+        `OrderHeaderID = '${orderHeaderID}' AND Status <> 'Canceled'`,
+        'InstallmentNumber',
+    );
+    if (rows.error) return { error: `Could not read the payment schedule — ${rows.error}` };
+    const row = rows.rows.find((r) => String(r.ID).toLowerCase() === scheduleID.toLowerCase());
+    if (!row) return { error: `Instalment ${scheduleID} is not on order ${orderHeaderID}, or has been cancelled.` };
+
+    const companyID = String(row.CompanyID);
+    const siblings = rows.rows.filter((r) => String(r.CompanyID).toLowerCase() === companyID.toLowerCase());
+    const paid = num(row.AmountPaid);
+    return {
+        instalment: {
+            CompanyID: companyID,
+            InstallmentNumber: num(row.InstallmentNumber),
+            InstallmentCount: siblings.length,
+            DueDate: ToISODate(row.DueDate),
+            Amount: num(row.Amount),
+            AmountPaid: paid,
+            DocumentNumber: str(row.DocumentNumber),
+            Payments: paid !== 0 ? [{ Label: 'Paid on this instalment', Amount: paid }] : [],
+        },
+    };
 }

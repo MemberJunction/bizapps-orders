@@ -1,30 +1,44 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
+import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
+import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../../data/entity-names';
-import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
+import { LoadOrdersWorkingView } from '../../data/order-views';
 
 /**
- * `mjo-orders-list-page` — All Orders view powered by MemberJunction's native `<mj-entity-viewer>`.
+ * The payload `mj-view-workspace` emits from `OpenRecordRequested`.
  *
- * Provides server-side search, filtering, AG Grid high-density rendering,
- * saved views, column customization, and export.
+ * The workspace declares this shape inline rather than exporting a named type, so it is restated
+ * here instead of widening the handler to `any` — the compiler still checks the binding.
+ */
+type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> };
+
+/**
+ * `mjo-orders-list-page` — All Orders, hosted in MemberJunction's `<mj-view-workspace>`.
+ *
+ * The workspace, not a bare `mj-entity-viewer`, because it owns the column-config panel the grid's
+ * "Manage columns" item opens. It opens on the shared "Orders: Working" view, which carries the
+ * column set and money formatting (see `data/order-views.ts`).
  */
 @Component({
     selector: 'mjo-orders-list-page',
     standalone: true,
-    imports: [CommonModule, EntityViewerModule],
+    imports: [CommonModule, EntityViewerModule, MJAlertComponent],
     template: `
         <div class="mjo-list-page-container">
             <div class="mjo-viewer-wrapper">
-                @if (OrderEntityInfo) {
-                    <mj-entity-viewer
+                @if (ViewError) {
+                    <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" role="alert">{{ ViewError }}</mj-alert>
+                } @else if (OrderEntityInfo && WorkingView) {
+                    <mj-view-workspace
                         [Entity]="OrderEntityInfo"
-                        [GridState]="OrderGridState"
-                        (RecordOpened)="OnRecordOpened($event)">
-                    </mj-entity-viewer>
+                        [SelectedView]="WorkingView"
+                        [AutoSaveView]="true"
+                        (OpenRecordRequested)="OnRecordOpened($event)">
+                    </mj-view-workspace>
                 } @else {
                     <div class="small muted" style="padding: 24px;">Loading order metadata...</div>
                 }
@@ -61,12 +75,13 @@ import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
                 height: 100%;
                 width: 100%;
+                min-height: 0;
             }
             @media (max-width: 760px) {
                 .mjo-list-page-container {
@@ -82,16 +97,26 @@ export class MJOOrdersListPageComponent implements OnInit {
     @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
 
     public OrderEntityInfo: EntityInfo | null = null;
-    public readonly OrderGridState = MJO_ORDER_HEADER_GRID_STATE;
+    public WorkingView: MJUserViewEntityExtended | null = null;
+    public ViewError: string | null = null;
 
-    public ngOnInit(): void {
+    public async ngOnInit(): Promise<void> {
         const md = new Metadata();
         this.OrderEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.OrderHeader) || null;
+        try {
+            this.WorkingView = await LoadOrdersWorkingView();
+        } catch (e) {
+            this.ViewError = e instanceof Error ? e.message : String(e);
+        }
         this.cdr.detectChanges();
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    /**
+     * The workspace hands back the row it opened, not a composite key — Order Header's key is `ID`,
+     * so the row carries it. A row without an `ID` is not openable and is dropped.
+     */
+    public OnRecordOpened(event: OpenRecordRequest): void {
+        const id = event.record['ID'] as string | undefined;
         if (id) {
             const surrogate = { ID: id } as mjBizAppsOrdersOrderHeaderEntity;
             this.OrderOpened.emit(surrogate);

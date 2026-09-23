@@ -528,6 +528,90 @@ export const mjBizAppsOrdersCustomerTaxExemptionSchema = z.object({
 export type mjBizAppsOrdersCustomerTaxExemptionEntityType = z.infer<typeof mjBizAppsOrdersCustomerTaxExemptionSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Dimension Defaults
+ */
+export const mjBizAppsOrdersDimensionDefaultSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    EntityID: z.string().describe(`
+        * * Field Name: EntityID
+        * * Display Name: Entity ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Entities (vwEntities.ID)
+        * * Description: The kind of record this default hangs off — MJ Entity id for Products, Product Categories, Product Types or Companies.`),
+    RecordID: z.string().describe(`
+        * * Field Name: RecordID
+        * * Display Name: Record ID
+        * * SQL Data Type: nvarchar(400)
+        * * Description: The record this default hangs off, within EntityID.`),
+    DimensionID: z.string().describe(`
+        * * Field Name: DimensionID
+        * * Display Name: Dimension ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimensions (vwDimensions.ID)
+        * * Description: The analysis axis this default supplies, from __mj_BizAppsAccounting.Dimension.`),
+    DimensionValueID: z.string().describe(`
+        * * Field Name: DimensionValueID
+        * * Display Name: Dimension Value ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimension Values (vwDimensionValues.ID)
+        * * Description: The value supplied for that axis, from __mj_BizAppsAccounting.DimensionValue.`),
+    Status: z.union([z.literal('Active'), z.literal('Disabled'), z.literal('Pending')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(10)
+        * * Default Value: Active
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Disabled
+    *   * Pending
+        * * Description: Pending, Active or Disabled. Only Active rows are considered, matching how GL account links are resolved.`),
+    StartedAt: z.date().nullable().describe(`
+        * * Field Name: StartedAt
+        * * Display Name: Started At
+        * * SQL Data Type: datetimeoffset
+        * * Description: Start of the window this default applies to. NULL is open-ended. Judged against the order date, not today, so a back-dated order resolves what was live when it was placed.`),
+    EndedAt: z.date().nullable().describe(`
+        * * Field Name: EndedAt
+        * * Display Name: Ended At
+        * * SQL Data Type: datetimeoffset
+        * * Description: End of the window this default applies to. NULL is open-ended.`),
+    Comments: z.string().nullable().describe(`
+        * * Field Name: Comments
+        * * Display Name: Comments
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: Free-text note for why this default exists. Not read by anything.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Entity: z.string().describe(`
+        * * Field Name: Entity
+        * * Display Name: Entity
+        * * SQL Data Type: nvarchar(255)`),
+    Dimension: z.string().describe(`
+        * * Field Name: Dimension
+        * * Display Name: Dimension
+        * * SQL Data Type: nvarchar(100)`),
+    DimensionValue: z.string().describe(`
+        * * Field Name: DimensionValue
+        * * Display Name: Dimension Value
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersDimensionDefaultEntityType = z.infer<typeof mjBizAppsOrdersDimensionDefaultSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Entitlement Grants
  */
 export const mjBizAppsOrdersEntitlementGrantSchema = z.object({
@@ -1370,6 +1454,137 @@ export const mjBizAppsOrdersOrderCompanyPolicySchema = z.object({
 export type mjBizAppsOrdersOrderCompanyPolicyEntityType = z.infer<typeof mjBizAppsOrdersOrderCompanyPolicySchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Order Header Payment Schedules
+ */
+export const mjBizAppsOrdersOrderHeaderPaymentScheduleSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderHeaderID: z.string().describe(`
+        * * Field Name: OrderHeaderID
+        * * Display Name: Order Header ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)`),
+    CompanyID: z.string().describe(`
+        * * Field Name: CompanyID
+        * * Display Name: Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+        * * Description: The selling company this instalment bills for. Stamped server-side from the order's lines (D86), never authored; a multi-company order carries one schedule per company.`),
+    InstallmentNumber: z.number().describe(`
+        * * Field Name: InstallmentNumber
+        * * Display Name: Installment Number
+        * * SQL Data Type: int
+        * * Description: 1-based position within the order and company. Unique per (order, company). Part of the frozen document number, so it must not be renumbered after invoicing.`),
+    DueDate: z.date().describe(`
+        * * Field Name: DueDate
+        * * Display Name: Due Date
+        * * SQL Data Type: date
+        * * Description: When this instalment is due. Re-datable while Scheduled; frozen once Invoiced. The earliest unpaid row's DueDate is the order's NextDueDate, which ageing reads.`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The instalment amount. Per (order, company) the non-Canceled rows must sum to that company's LineTotalGross once the order is Confirmed; enforced at confirm and again at invoicing.`),
+    Status: z.union([z.literal('Canceled'), z.literal('Invoiced'), z.literal('Paid'), z.literal('Scheduled'), z.literal('WrittenOff')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Scheduled
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Canceled
+    *   * Invoiced
+    *   * Paid
+    *   * Scheduled
+    *   * WrittenOff
+        * * Description: Scheduled | Invoiced | Paid | Canceled | WrittenOff. Scheduled -> Invoiced is Orders.IssueInstalmentInvoice; Invoiced <-> Paid follows the rollup; WrittenOff and Canceled are explicit and never overwritten.`),
+    DocumentNumber: z.string().nullable().describe(`
+        * * Field Name: DocumentNumber
+        * * Display Name: Document Number
+        * * SQL Data Type: nvarchar(40)
+        * * Description: The invoice number the customer holds, frozen by Orders.IssueInstalmentInvoice and never recomputed (D87). NULL while Scheduled. Format: ORD-1234-2, or ORD-1234-B2 on a company-split order.`),
+    InvoicedAt: z.date().nullable().describe(`
+        * * Field Name: InvoicedAt
+        * * Display Name: Invoiced At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the instalment was invoiced. NULL while Scheduled. Set once, never cleared.`),
+    InvoicedByUserID: z.string().nullable().describe(`
+        * * Field Name: InvoicedByUserID
+        * * Display Name: Invoiced By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: Who issued the instalment invoice.`),
+    JournalEntryID: z.string().nullable().describe(`
+        * * Field Name: JournalEntryID
+        * * Display Name: Journal Entry ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: The AR reclass journal entry (Unbilled Receivable -> Accounts Receivable) booked when the instalment was invoiced. Soft reference into accounting. NULL until the reclass entry ships (AIDP-25).`),
+    ExternalSystem: z.string().nullable().describe(`
+        * * Field Name: ExternalSystem
+        * * Display Name: External System
+        * * SQL Data Type: nvarchar(40)
+        * * Description: The outbound system that holds the invoice (e.g. BillCom). Written by the delivery integration, not by Orders.`),
+    ExternalInvoiceRef: z.string().nullable().describe(`
+        * * Field Name: ExternalInvoiceRef
+        * * Display Name: External Invoice Ref
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The external system's own invoice id, so "what is this invoice's Bill.com id" is answerable from the database.`),
+    SentAt: z.date().nullable().describe(`
+        * * Field Name: SentAt
+        * * Display Name: Sent At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the invoice was delivered to the customer. NULL means unsent — the audit fact behind reversing an unsent invoice.`),
+    AmountPaid: z.number().describe(`
+        * * Field Name: AmountPaid
+        * * Display Name: Amount Paid
+        * * SQL Data Type: decimal(18, 2)
+        * * Default Value: 0
+        * * Description: Trigger-maintained: payments named to this row plus the oldest-due-first share of payments applied to the order as a whole. Never authored.`),
+    Balance: z.number().nullable().describe(`
+        * * Field Name: Balance
+        * * Display Name: Balance
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Trigger-maintained: Amount - AmountPaid, computed in the same statement as AmountPaid. Never authored.`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(500)
+        * * Description: What this instalment is for, as it should print on the invoice (e.g. "Year 2 of 3").`),
+    Notes: z.string().nullable().describe(`
+        * * Field Name: Notes
+        * * Display Name: Notes
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: Free text. Editable at any status.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    OrderHeader: z.string().describe(`
+        * * Field Name: OrderHeader
+        * * Display Name: Order Header
+        * * SQL Data Type: nvarchar(40)`),
+    Company: z.string().describe(`
+        * * Field Name: Company
+        * * Display Name: Company
+        * * SQL Data Type: nvarchar(50)`),
+    InvoicedByUser: z.string().nullable().describe(`
+        * * Field Name: InvoicedByUser
+        * * Display Name: Invoiced By User
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersOrderHeaderPaymentScheduleEntityType = z.infer<typeof mjBizAppsOrdersOrderHeaderPaymentScheduleSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Headers
  */
 export const mjBizAppsOrdersOrderHeaderSchema = z.object({
@@ -1653,6 +1868,10 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Field Name: __mj_Longitude_ShipToAddressID
         * * Display Name: Shipping Longitude
         * * SQL Data Type: decimal(9, 6)`),
+    NextDueDate: z.date().nullable().describe(`
+        * * Field Name: NextDueDate
+        * * Display Name: Next Due Date
+        * * SQL Data Type: date`),
     IsOverdue: z.number().describe(`
         * * Field Name: IsOverdue
         * * Display Name: Is Overdue
@@ -2532,6 +2751,12 @@ export const mjBizAppsOrdersPaymentLineSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    OrderHeaderPaymentScheduleID: z.string().nullable().describe(`
+        * * Field Name: OrderHeaderPaymentScheduleID
+        * * Display Name: Order Header Payment Schedule ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Header Payment Schedules (vwOrderHeaderPaymentSchedules.ID)
+        * * Description: The instalment this allocation settles, when the payer said which one ("this is for the 2027 payment"). NULL applies the money to the order as a whole, oldest instalment first. Frozen with the rest of the allocation once the payment is Captured.`),
     PaymentHeader: z.string().describe(`
         * * Field Name: PaymentHeader
         * * Display Name: Payment Header
@@ -6527,6 +6752,211 @@ export class mjBizAppsOrdersCustomerTaxExemptionEntity extends BaseEntity<mjBizA
 
 
 /**
+ * MJ_BizApps_Orders: Dimension Defaults - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: DimensionDefault
+ * * Base View: vwDimensionDefaults
+ * * @description Default GL dimension values for order lines, resolved by the same precedence as GL account links: product, then its category and that category's ancestors, then its product type, then the line's company. Most specific wins, per dimension.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Dimension Defaults')
+export class mjBizAppsOrdersDimensionDefaultEntity extends BaseEntity<mjBizAppsOrdersDimensionDefaultEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Dimension Defaults record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Dimension Defaults record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersDimensionDefaultEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: EntityID
+    * * Display Name: Entity ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Entities (vwEntities.ID)
+    * * Description: The kind of record this default hangs off — MJ Entity id for Products, Product Categories, Product Types or Companies.
+    */
+    get EntityID(): string {
+        return this.Get('EntityID');
+    }
+    set EntityID(value: string) {
+        this.Set('EntityID', value);
+    }
+
+    /**
+    * * Field Name: RecordID
+    * * Display Name: Record ID
+    * * SQL Data Type: nvarchar(400)
+    * * Description: The record this default hangs off, within EntityID.
+    */
+    get RecordID(): string {
+        return this.Get('RecordID');
+    }
+    set RecordID(value: string) {
+        this.Set('RecordID', value);
+    }
+
+    /**
+    * * Field Name: DimensionID
+    * * Display Name: Dimension ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimensions (vwDimensions.ID)
+    * * Description: The analysis axis this default supplies, from __mj_BizAppsAccounting.Dimension.
+    */
+    get DimensionID(): string {
+        return this.Get('DimensionID');
+    }
+    set DimensionID(value: string) {
+        this.Set('DimensionID', value);
+    }
+
+    /**
+    * * Field Name: DimensionValueID
+    * * Display Name: Dimension Value ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimension Values (vwDimensionValues.ID)
+    * * Description: The value supplied for that axis, from __mj_BizAppsAccounting.DimensionValue.
+    */
+    get DimensionValueID(): string {
+        return this.Get('DimensionValueID');
+    }
+    set DimensionValueID(value: string) {
+        this.Set('DimensionValueID', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(10)
+    * * Default Value: Active
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Disabled
+    *   * Pending
+    * * Description: Pending, Active or Disabled. Only Active rows are considered, matching how GL account links are resolved.
+    */
+    get Status(): 'Active' | 'Disabled' | 'Pending' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Active' | 'Disabled' | 'Pending') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: StartedAt
+    * * Display Name: Started At
+    * * SQL Data Type: datetimeoffset
+    * * Description: Start of the window this default applies to. NULL is open-ended. Judged against the order date, not today, so a back-dated order resolves what was live when it was placed.
+    */
+    get StartedAt(): Date | null {
+        return this.Get('StartedAt');
+    }
+    set StartedAt(value: Date | null) {
+        this.Set('StartedAt', value);
+    }
+
+    /**
+    * * Field Name: EndedAt
+    * * Display Name: Ended At
+    * * SQL Data Type: datetimeoffset
+    * * Description: End of the window this default applies to. NULL is open-ended.
+    */
+    get EndedAt(): Date | null {
+        return this.Get('EndedAt');
+    }
+    set EndedAt(value: Date | null) {
+        this.Set('EndedAt', value);
+    }
+
+    /**
+    * * Field Name: Comments
+    * * Display Name: Comments
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: Free-text note for why this default exists. Not read by anything.
+    */
+    get Comments(): string | null {
+        return this.Get('Comments');
+    }
+    set Comments(value: string | null) {
+        this.Set('Comments', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Entity
+    * * Display Name: Entity
+    * * SQL Data Type: nvarchar(255)
+    */
+    get Entity(): string {
+        return this.Get('Entity');
+    }
+
+    /**
+    * * Field Name: Dimension
+    * * Display Name: Dimension
+    * * SQL Data Type: nvarchar(100)
+    */
+    get Dimension(): string {
+        return this.Get('Dimension');
+    }
+
+    /**
+    * * Field Name: DimensionValue
+    * * Display Name: Dimension Value
+    * * SQL Data Type: nvarchar(200)
+    */
+    get DimensionValue(): string {
+        return this.Get('DimensionValue');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Entitlement Grants - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: EntitlementGrant
@@ -9042,6 +9472,330 @@ export class mjBizAppsOrdersOrderCompanyPolicyEntity extends BaseEntity<mjBizApp
 
 
 /**
+ * MJ_BizApps_Orders: Order Header Payment Schedules - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OrderHeaderPaymentSchedule
+ * * Base View: vwOrderHeaderPaymentSchedules
+ * * @description One instalment of an order's billing schedule (D85). Editable while Scheduled provided the per-company sum still ties to the order; immutable once Invoiced (D88). An order with no rows is billed as one implicit instalment on its DueDate.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Header Payment Schedules')
+export class mjBizAppsOrdersOrderHeaderPaymentScheduleEntity extends BaseEntity<mjBizAppsOrdersOrderHeaderPaymentScheduleEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Order Header Payment Schedules record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Header Payment Schedules record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOrderHeaderPaymentScheduleEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderID
+    * * Display Name: Order Header ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+    */
+    get OrderHeaderID(): string {
+        return this.Get('OrderHeaderID');
+    }
+    set OrderHeaderID(value: string) {
+        this.Set('OrderHeaderID', value);
+    }
+
+    /**
+    * * Field Name: CompanyID
+    * * Display Name: Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    * * Description: The selling company this instalment bills for. Stamped server-side from the order's lines (D86), never authored; a multi-company order carries one schedule per company.
+    */
+    get CompanyID(): string {
+        return this.Get('CompanyID');
+    }
+    set CompanyID(value: string) {
+        this.Set('CompanyID', value);
+    }
+
+    /**
+    * * Field Name: InstallmentNumber
+    * * Display Name: Installment Number
+    * * SQL Data Type: int
+    * * Description: 1-based position within the order and company. Unique per (order, company). Part of the frozen document number, so it must not be renumbered after invoicing.
+    */
+    get InstallmentNumber(): number {
+        return this.Get('InstallmentNumber');
+    }
+    set InstallmentNumber(value: number) {
+        this.Set('InstallmentNumber', value);
+    }
+
+    /**
+    * * Field Name: DueDate
+    * * Display Name: Due Date
+    * * SQL Data Type: date
+    * * Description: When this instalment is due. Re-datable while Scheduled; frozen once Invoiced. The earliest unpaid row's DueDate is the order's NextDueDate, which ageing reads.
+    */
+    get DueDate(): Date {
+        return this.Get('DueDate');
+    }
+    set DueDate(value: Date) {
+        this.Set('DueDate', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The instalment amount. Per (order, company) the non-Canceled rows must sum to that company's LineTotalGross once the order is Confirmed; enforced at confirm and again at invoicing.
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Scheduled
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Canceled
+    *   * Invoiced
+    *   * Paid
+    *   * Scheduled
+    *   * WrittenOff
+    * * Description: Scheduled | Invoiced | Paid | Canceled | WrittenOff. Scheduled -> Invoiced is Orders.IssueInstalmentInvoice; Invoiced <-> Paid follows the rollup; WrittenOff and Canceled are explicit and never overwritten.
+    */
+    get Status(): 'Canceled' | 'Invoiced' | 'Paid' | 'Scheduled' | 'WrittenOff' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Canceled' | 'Invoiced' | 'Paid' | 'Scheduled' | 'WrittenOff') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: DocumentNumber
+    * * Display Name: Document Number
+    * * SQL Data Type: nvarchar(40)
+    * * Description: The invoice number the customer holds, frozen by Orders.IssueInstalmentInvoice and never recomputed (D87). NULL while Scheduled. Format: ORD-1234-2, or ORD-1234-B2 on a company-split order.
+    */
+    get DocumentNumber(): string | null {
+        return this.Get('DocumentNumber');
+    }
+    set DocumentNumber(value: string | null) {
+        this.Set('DocumentNumber', value);
+    }
+
+    /**
+    * * Field Name: InvoicedAt
+    * * Display Name: Invoiced At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the instalment was invoiced. NULL while Scheduled. Set once, never cleared.
+    */
+    get InvoicedAt(): Date | null {
+        return this.Get('InvoicedAt');
+    }
+    set InvoicedAt(value: Date | null) {
+        this.Set('InvoicedAt', value);
+    }
+
+    /**
+    * * Field Name: InvoicedByUserID
+    * * Display Name: Invoiced By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: Who issued the instalment invoice.
+    */
+    get InvoicedByUserID(): string | null {
+        return this.Get('InvoicedByUserID');
+    }
+    set InvoicedByUserID(value: string | null) {
+        this.Set('InvoicedByUserID', value);
+    }
+
+    /**
+    * * Field Name: JournalEntryID
+    * * Display Name: Journal Entry ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: The AR reclass journal entry (Unbilled Receivable -> Accounts Receivable) booked when the instalment was invoiced. Soft reference into accounting. NULL until the reclass entry ships (AIDP-25).
+    */
+    get JournalEntryID(): string | null {
+        return this.Get('JournalEntryID');
+    }
+    set JournalEntryID(value: string | null) {
+        this.Set('JournalEntryID', value);
+    }
+
+    /**
+    * * Field Name: ExternalSystem
+    * * Display Name: External System
+    * * SQL Data Type: nvarchar(40)
+    * * Description: The outbound system that holds the invoice (e.g. BillCom). Written by the delivery integration, not by Orders.
+    */
+    get ExternalSystem(): string | null {
+        return this.Get('ExternalSystem');
+    }
+    set ExternalSystem(value: string | null) {
+        this.Set('ExternalSystem', value);
+    }
+
+    /**
+    * * Field Name: ExternalInvoiceRef
+    * * Display Name: External Invoice Ref
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The external system's own invoice id, so "what is this invoice's Bill.com id" is answerable from the database.
+    */
+    get ExternalInvoiceRef(): string | null {
+        return this.Get('ExternalInvoiceRef');
+    }
+    set ExternalInvoiceRef(value: string | null) {
+        this.Set('ExternalInvoiceRef', value);
+    }
+
+    /**
+    * * Field Name: SentAt
+    * * Display Name: Sent At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the invoice was delivered to the customer. NULL means unsent — the audit fact behind reversing an unsent invoice.
+    */
+    get SentAt(): Date | null {
+        return this.Get('SentAt');
+    }
+    set SentAt(value: Date | null) {
+        this.Set('SentAt', value);
+    }
+
+    /**
+    * * Field Name: AmountPaid
+    * * Display Name: Amount Paid
+    * * SQL Data Type: decimal(18, 2)
+    * * Default Value: 0
+    * * Description: Trigger-maintained: payments named to this row plus the oldest-due-first share of payments applied to the order as a whole. Never authored.
+    */
+    get AmountPaid(): number {
+        return this.Get('AmountPaid');
+    }
+    set AmountPaid(value: number) {
+        this.Set('AmountPaid', value);
+    }
+
+    /**
+    * * Field Name: Balance
+    * * Display Name: Balance
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Trigger-maintained: Amount - AmountPaid, computed in the same statement as AmountPaid. Never authored.
+    */
+    get Balance(): number | null {
+        return this.Get('Balance');
+    }
+    set Balance(value: number | null) {
+        this.Set('Balance', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(500)
+    * * Description: What this instalment is for, as it should print on the invoice (e.g. "Year 2 of 3").
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: Notes
+    * * Display Name: Notes
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: Free text. Editable at any status.
+    */
+    get Notes(): string | null {
+        return this.Get('Notes');
+    }
+    set Notes(value: string | null) {
+        this.Set('Notes', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: OrderHeader
+    * * Display Name: Order Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get OrderHeader(): string {
+        return this.Get('OrderHeader');
+    }
+
+    /**
+    * * Field Name: Company
+    * * Display Name: Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get Company(): string {
+        return this.Get('Company');
+    }
+
+    /**
+    * * Field Name: InvoicedByUser
+    * * Display Name: Invoiced By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get InvoicedByUser(): string | null {
+        return this.Get('InvoicedByUser');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Order Headers - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: OrderHeader
@@ -9879,6 +10633,15 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     */
     get __mj_Longitude_ShipToAddressID(): number | null {
         return this.Get('__mj_Longitude_ShipToAddressID');
+    }
+
+    /**
+    * * Field Name: NextDueDate
+    * * Display Name: Next Due Date
+    * * SQL Data Type: date
+    */
+    get NextDueDate(): Date | null {
+        return this.Get('NextDueDate');
     }
 
     /**
@@ -12476,6 +13239,20 @@ export class mjBizAppsOrdersPaymentLineEntity extends BaseEntity<mjBizAppsOrders
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: OrderHeaderPaymentScheduleID
+    * * Display Name: Order Header Payment Schedule ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Header Payment Schedules (vwOrderHeaderPaymentSchedules.ID)
+    * * Description: The instalment this allocation settles, when the payer said which one ("this is for the 2027 payment"). NULL applies the money to the order as a whole, oldest instalment first. Frozen with the rest of the allocation once the payment is Captured.
+    */
+    get OrderHeaderPaymentScheduleID(): string | null {
+        return this.Get('OrderHeaderPaymentScheduleID');
+    }
+    set OrderHeaderPaymentScheduleID(value: string | null) {
+        this.Set('OrderHeaderPaymentScheduleID', value);
     }
 
     /**

@@ -49,6 +49,8 @@ export interface RenderedInvoice {
 export interface RenderInvoiceOptions {
     /** Render only this selling company's document. Omit for every document the order produces. */
     CompanyID?: string | null;
+    /** Render one instalment of the order's payment schedule; its company's document only. */
+    PaymentScheduleID?: string | null;
     AsOfDate?: string | null;
     TemplateName?: string | null;
     Locale?: string | null;
@@ -94,6 +96,7 @@ export async function RenderInvoiceDocuments(
     const built = await BuildInvoiceDocuments(orderID, provider, user, {
         AsOf: asOf,
         OnlyCompanyID: options.CompanyID ?? null,
+        PaymentScheduleID: options.PaymentScheduleID ?? null,
     });
 
     if (!built.Success) {

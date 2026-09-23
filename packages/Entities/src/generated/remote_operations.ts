@@ -585,6 +585,73 @@ export interface OrdersFulfillOrderLinesOutput {
 }
 
 /**
+ * Input for `Orders.GetBillingWorklist`.
+ *
+ * The due-with-no-invoice control: instalments still `Scheduled` whose due date falls inside
+ * the billing window. Computed at read time from the schedule rows, because "inside the window"
+ * moves with the calendar rather than with a write — the same reason the overdue worklist is an
+ * operation and not a stored flag.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersGetBillingWorklistInput {
+    /** Treat this as "today", `YYYY-MM-DD`. Defaults to today. */
+    AsOfDate?: string;
+    /** How far ahead to look, in days. Defaults to 30. Zero means "due today or earlier". */
+    WindowDays?: number;
+    /** Restrict to instalments billed by these companies. Omit for everything in scope. */
+    CompanyIDs?: string[];
+    /** Cap the result. Defaults to 500. */
+    MaxCount?: number;
+}
+
+/**
+ * Output for `Orders.GetBillingWorklist`.
+ *
+ * One row per `Scheduled` instalment due inside the window, earliest first — the order a
+ * person should issue them in. Each row carries enough to decide and to act (the schedule row
+ * id is what `Orders.IssueInstalmentInvoice` takes) without a second round trip.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface BillingWorklistRow {
+    OrderHeaderPaymentScheduleID: string;
+    OrderHeaderID: string;
+    OrderNumber: string;
+    /** 1-based, within the order and company. */
+    InstallmentNumber: number;
+    /** How many non-cancelled instalments the order has for this company. */
+    InstallmentCount: number;
+    DueDate: string;
+    /** Negative once past due. */
+    DaysUntilDue: number;
+    Amount: number;
+    CompanyID: string;
+    CompanyName: string;
+    /** Whichever party the order bills — organization wins, else the person. */
+    CustomerName: string;
+    BillToOrganizationID?: string | null;
+    BillToPersonID?: string | null;
+    Description?: string | null;
+    /** The order's status. A Draft order's instalments are listed but cannot be issued. */
+    OrderStatus: string;
+}
+
+export interface OrdersGetBillingWorklistOutput {
+    Success: boolean;
+    Message?: string;
+    Rows: BillingWorklistRow[];
+    /** Sum of Amount over the returned rows. */
+    TotalDue: number;
+    RowCount: number;
+    /** True when `MaxCount` clipped the result. */
+    Truncated: boolean;
+    /** The window the rows were selected in, echoed so the UI can say what it is showing. */
+    AsOfDate: string;
+    WindowEnd: string;
+}
+
+/**
  * Input for `Orders.GetFulfillmentQueue`.
  *
  * The queue is a COMPUTED surface, like the overdue worklist: it is every line that still needs
@@ -728,6 +795,7 @@ export interface OverdueWorklistRow {
     OrderHeaderID: string;
     OrderNumber: string;
     OrderDate: string;
+    /** The day being aged: the next unpaid instalment's due date, or the header's when there is no schedule. */
     DueDate: string;
     DaysOverdue: number;
     CompanyID: string;
@@ -770,6 +838,83 @@ export interface OrdersGetOverdueWorklistOutput {
     Truncated: boolean;
     /** Aging buckets over the returned set. */
     Buckets: { Current: number; Days1To30: number; Days31To60: number; Days61Plus: number };
+}
+
+/**
+ * Input for `Orders.IssueInstalmentInvoice`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersIssueInstalmentInvoiceInput {
+    /** The `Scheduled` instalment to issue. */
+    OrderHeaderPaymentScheduleID: string;
+}
+
+/**
+ * Output for `Orders.IssueInstalmentInvoice`.
+ *
+ * Issuing freezes the document number on the row, stamps InvoicedAt and who did it, and
+ * advances the row to Invoiced. It is idempotent: issuing an instalment that is already
+ * Invoiced returns its existing number with `AlreadyInvoiced: true` and changes nothing.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersIssueInstalmentInvoiceOutput {
+    Success: boolean;
+    Message?: string;
+    OrderHeaderPaymentScheduleID?: string | null;
+    OrderHeaderID?: string | null;
+    OrderNumber?: string | null;
+    InstallmentNumber?: number | null;
+    /** The frozen invoice number, e.g. `ORD-1234-2`. */
+    DocumentNumber?: string | null;
+    InvoicedAt?: string | null;
+    Amount?: number | null;
+    DueDate?: string | null;
+    /** True when the row was already Invoiced and this call changed nothing. */
+    AlreadyInvoiced: boolean;
+    /**
+     * The AR reclass journal entry (Unbilled -> AR). Null until AIDP-25 (#240) fills the
+     * `EmitInstalmentReclassEntry` seam; the number, the stamp and the status advance regardless.
+     */
+    JournalEntryID?: string | null;
+}
+
+/**
+ * Input for `Orders.GetPriorReturns`.
+ *
+ * How much of each line has ALREADY been sent back. The Return page asks this before it offers a
+ * quantity, because the cap it shows has to be the cap the server will enforce — and the rule
+ * behind that cap is not simple enough to restate on the client: reversals sum ACROSS orders, and
+ * Draft and Voided returns do not count toward the total (a draft that never confirms would
+ * otherwise hold the allowance hostage, and a voided one has already given it back).
+ *
+ * Read-only.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface GetPriorReturnsInput {
+    /** The ORIGIN lines being asked about — the lines a return would reverse, not reversal lines. */
+    OrderLineIDs: string[];
+}
+
+/**
+ * Output of `Orders.GetPriorReturns`.
+ *
+ * One row per line ASKED ABOUT, including lines nothing has been returned against — a caller
+ * showing a cap needs an answer for every line, and an absent row is indistinguishable from a
+ * lookup that quietly failed.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface GetPriorReturnsOutput {
+    Lines: {
+        OrderLineID: string;
+        /** Units already reversed against this line, as a positive magnitude. */
+        AlreadyReturned: number;
+        /** What may still come back: the line's quantity less what has already gone. */
+        RemainingReturnable: number;
+    }[];
 }
 
 /**
@@ -970,6 +1115,22 @@ export interface PriceOrderOutput {
         Components?: Array<{ Kind: string; Label: string; Amount: number }>;
         /** Present when the line owes no tax, saying why (exempt, non-taxable, no nexus). */
         TaxExemptReason?: string | null;
+        /**
+         * The rule that produced `UnitPrice`, or null when the caller pinned the price or no rule
+         * applied. This is what `OrderLine.ProductPriceID` would be stamped with.
+         */
+        ProductPriceID?: string | null;
+        /**
+         * What the rules say for this line REGARDLESS of any pinned price — the engine's default.
+         *
+         * A pinned line is priced at what the caller stated, so `UnitPrice` above cannot say what
+         * the line would have cost on its own. The editor needs that answer while a line is
+         * overridden: it is how the Default row of the picker knows what it restores, how the
+         * "overridden" badge knows whether the stated price is actually a deviation, and how a
+         * named rule that merely restates the default is told apart from one that changes it.
+         * Null when no rule prices the product. Absent when the operation was not asked for it.
+         */
+        Default?: { UnitPrice: number; ProductPriceID: string | null; PriceName: string | null } | null;
     }>;
 
     Totals: {
@@ -1194,6 +1355,22 @@ export class OrdersFulfillOrderLinesOperation extends BaseRemotableOperation<Ord
 }
 
 // ============================================================
+// Orders.GetBillingWorklist — Get Billing Worklist
+// ============================================================
+/**
+ * Get Billing Worklist
+ * The due-with-no-invoice control: every Scheduled instalment whose due date falls inside the billing window, earliest first. An instalment that has entered its window and has no invoice behind it must surface on its own — no tracker, no diary note, nobody remembering in December 2028. Computed at read time from the schedule rows because the window moves with the calendar, not with a write.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.GetBillingWorklist'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersGetBillingWorklistOperation extends BaseRemotableOperation<OrdersGetBillingWorklistInput, OrdersGetBillingWorklistOutput> {
+    public readonly OperationKey = "Orders.GetBillingWorklist";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
 // Orders.GetFulfillmentQueue — Get Fulfillment Queue
 // ============================================================
 /**
@@ -1220,6 +1397,38 @@ export class OrdersGetFulfillmentQueueOperation extends BaseRemotableOperation<O
  */
 export class OrdersGetOverdueWorklistOperation extends BaseRemotableOperation<OrdersGetOverdueWorklistInput, OrdersGetOverdueWorklistOutput> {
     public readonly OperationKey = "Orders.GetOverdueWorklist";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.IssueInstalmentInvoice — Issue Instalment Invoice
+// ============================================================
+/**
+ * Issue Instalment Invoice
+ * Issue one Scheduled instalment: freeze its document number (D87), stamp InvoicedAt and who did it, and advance it to Invoiced. Refuses when the order is not Confirmed or its schedule does not tie to the order's lines. Idempotent — issuing an instalment already Invoiced returns its number and changes nothing. Calls the AR reclass seam (Unbilled -> AR), which is a documented no-op until AIDP-25 fills it.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.IssueInstalmentInvoice'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersIssueInstalmentInvoiceOperation extends BaseRemotableOperation<OrdersIssueInstalmentInvoiceInput, OrdersIssueInstalmentInvoiceOutput> {
+    public readonly OperationKey = "Orders.IssueInstalmentInvoice";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.GetPriorReturns — Get Prior Returns
+// ============================================================
+/**
+ * Get Prior Returns
+ * How much of each order line has already been returned, and how much may still come back. Read-only. The cap counts reversals across every order and excludes Draft and Voided returns, which is why it is an operation rather than a view the caller filters for itself — a second copy of that rule on the client is a second place for it to drift. Powers the Return page's per-line maximum.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.GetPriorReturns'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersGetPriorReturnsOperation extends BaseRemotableOperation<GetPriorReturnsInput, GetPriorReturnsOutput> {
+    public readonly OperationKey = "Orders.GetPriorReturns";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:read";
     public readonly RequiresSystemUser = false;

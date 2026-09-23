@@ -1,5 +1,123 @@
 # @mj-biz-apps/orders-server
 
+## 5.16.0
+
+### Minor Changes
+
+- 2e9e3dd: `V202609221500__DimensionDefault` could not apply on any host but the one it was generated from.
+
+  It seeds five `EntityFieldValue` rows for `OrderLine.FulfillmentStatus` against the hardcoded
+  `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
+  GUID exists only on the authoring database. Everywhere else:
+
+      The INSERT statement conflicted with the FOREIGN KEY constraint
+      "FK_EntityFieldValue_EntityField"
+
+  which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
+  and left the app registered `Error`.
+
+  **This is a regression of the 5.11.0 fix** — same GUID, same five values — which corrected the identical
+  defect in `V202609061900`. Regenerating a migration from the authoring database re-emitted the hardcoded
+  ID, and nothing in CI catches it.
+
+  The field is now resolved by natural key (`Entity.BaseTable = 'OrderLine'` + `EntityField.Name =
+'FulfillmentStatus'`), with a `THROW` if genuinely absent rather than a silent no-op. Each value is
+  guarded independently on `(EntityFieldID, Value)` and on its own row ID, so a host carrying some of them
+  already — which includes every host that ran the 5.11.0 fix — keeps its rows and gains only what is
+  missing.
+
+  Edited in place rather than superseded, because a later migration cannot rescue this one: it aborts the
+  run before anything after it executes. No host carries a checksum for it, since it cannot have applied
+  successfully anywhere but the authoring database.
+
+### Patch Changes
+
+- Updated dependencies [2e9e3dd]
+  - @mj-biz-apps/orders-entities@5.16.0
+  - @mj-biz-apps/orders-core-entities-server@5.16.0
+  - @mj-biz-apps/orders-actions@5.16.0
+
+## 5.15.0
+
+### Minor Changes
+
+- 21167e2: Order Headers: stop emitting the geocoding columns, so the view and the generated types agree again.
+
+  `Entity.SupportsGeoCoding` was set on Order Headers at some point, so CodeGen emitted `__mj_Latitude` /
+  `__mj_Longitude` into `vwOrderHeadersGenerated` along with a join to `[__mj].[vwRecordGeoCodes]`. The
+  generated TypeScript was later regenerated with the flag off, dropping both fields from the entity and
+  GraphQL types — but **CodeGen only adds geo columns, it never removes them**, so the view kept them.
+
+  Between 5.13.0 and 5.14.0 the two halves diverged:
+
+  |                         | `__mj_Latitude` |
+  | ----------------------- | --------------- |
+  | 5.13.0 generated code   | present         |
+  | 5.14.0 generated code   | **gone**        |
+  | the view, both releases | present         |
+
+  A client builds its query from live `__mj.EntityField` metadata, which reflects the **view**, so it asks
+  for `_mj__Latitude` (GraphQL reserves a leading `__`). The API type, built from the generated code, has
+  no such field:
+
+      Cannot query field "_mj__Latitude" on type "mjBizAppsOrdersOrderHeader_"
+
+  Single-record load and save on Order Headers both fail. Grids keep working, because views do not go
+  through the generated type — which is what made it look like a deployment problem rather than a
+  packaging one. Reported as MemberJunction/bc-aidp-next-golive#251; root cause in #238.
+
+  **The view loses the columns rather than the generated code regaining them.** Order Headers has no use
+  for geocoding and the columns have never carried a value — 120 rows on the reporting host, none with a
+  latitude.
+
+  Both statements in the migration are required, and neither is sufficient alone: clearing the flag leaves
+  the existing columns in place, and recreating the view without also clearing the flag lets the next
+  CodeGen run add them straight back. `AutoUpdateSupportsGeoCoding` is cleared too, so the flag is not
+  re-derived.
+
+  The recreated view is the CodeGen output from `V202609061900` minus exactly the two select expressions
+  and the `vwRecordGeoCodes` join, so a later regeneration against a host with the flag off is a no-op.
+  `CREATE OR ALTER` because the view exists on every installed host.
+
+- 7ec08da: Payment schedules on the order header (golive #239, plan D85–D88, W1/W4–W8). New `OrderHeaderPaymentSchedule` table: one row per instalment with a stamped `CompanyID`, its own `AmountPaid`/`Balance` rollup, and invoice identity (`DocumentNumber`, `InvoicedAt`, `InvoicedByUserID`, `JournalEntryID`) frozen at invoicing; `ExternalSystem`/`ExternalInvoiceRef`/`SentAt` for the outbound integration to write. `PaymentLine.OrderHeaderPaymentScheduleID` aims a payment at one instalment; unnamed payments cascade oldest-due-first. `vwOrderHeaders` gains `NextDueDate` and `IsOverdue` ages on it. New operations `Orders.IssueInstalmentInvoice` (freeze number, stamp, advance; idempotent; calls the AR-reclass seam AIDP-25 fills) and `Orders.GetBillingWorklist` (instalments due with no invoice), with a Billing worklist page on the Receivables rail. Confirm refuses a schedule that does not tie to the lines, naming the shortfall. Per-instalment invoice documents via `PaymentScheduleID` on `Orders.GenerateInvoice`. An order with no schedule behaves exactly as before.
+
+### Patch Changes
+
+- c869137: A confirmed order containing a subscription or membership line can be returned again.
+
+  Service-period inheritance for reversal lines landed separately and is already on `next`; this
+  carries the rest of what that defect needs.
+
+  The recognition CADENCE is now inherited too. The window says which months a reversal covers; it
+  does not say how they are cut, and that arrived separately through a map built only where terms are
+  created — a path a reversal never takes — so it fell back to one month. A quarterly or annual
+  subscription therefore unwound into more, smaller releases than it was sold with: the year netted to
+  zero while every month inside it was wrong, which no balance check can see. The cadence now comes
+  from the `SubscriptionTerm` the origin line bought rather than from the product's current rules, so
+  re-pointing a product at a different subscription type cannot restate an outstanding return. This
+  half also fixes `Orders.CancelSubscription`, whose reversal lines had the same gap.
+
+  Two further defects on the Return page, both found while tracing the first:
+
+  - Reversal lines were written with a POSITIVE quantity. The sign is the switch the journal entry
+    factory reads to decide whether to mirror an entry, so a return booked the sale's entry — debiting
+    the customer again for goods coming back — while the document was labelled a credit memo and the
+    entitlements were revoked. Every other caller writes it negative.
+  - The per-line maximum ignored prior returns, because the page hard-coded them to zero. It now asks
+    the new read-only `Orders.GetPriorReturns` operation, which answers from the same rule the server
+    refuses an over-return with: reversals sum across orders, and Draft and Voided returns do not
+    count. The server always enforced the real cap, so this was a display fault, not a hole.
+
+- Updated dependencies [09624cb]
+- Updated dependencies [426e730]
+- Updated dependencies [21167e2]
+- Updated dependencies [7ec08da]
+- Updated dependencies [5293c47]
+- Updated dependencies [c869137]
+  - @mj-biz-apps/orders-core-entities-server@5.15.0
+  - @mj-biz-apps/orders-entities@5.15.0
+  - @mj-biz-apps/orders-actions@5.15.0
+
 ## 5.14.0
 
 ### Minor Changes

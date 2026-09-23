@@ -100,6 +100,20 @@ export interface OrderSpec {
     /** Ad-hoc discounts, each gated by the applying user's SalesAuthority (D70). */
     ManualDiscounts?: ManualDiscountRequest[];
     /**
+     * Ad-hoc discounts aimed at ONE LINE, named by its position in {@link OrderSpec.Lines}.
+     *
+     * A spec cannot name a line by key — the lines do not exist when it is written — so the index is
+     * resolved to the real `OrderLine.ID` once they are built. That is the spelling the order screen
+     * uses (a line composed in the browser already carries the id it will be inserted under), and it
+     * is the path that used to fall through to an ORDER-LEVEL discount spread across every line.
+     */
+    ManualDiscountsByLineIndex?: Array<{
+        LineIndex: number;
+        Amount?: number | null;
+        Percent?: number | null;
+        Reason: string;
+    }>;
+    /**
      * Charges to apply — shipping, handling, tax layers (D71). Computed after promotions.
      *
      * The ENGINE's request shape, keyed on `ChargeType.Code`. Typed rather than
@@ -222,6 +236,20 @@ export async function BuildOrder(
     // stamps OrderHeaderID and the LineNumber sequence, rather than assigned as an array.
     for (const line of lines) {
         order.Lines.Add(line);
+    }
+
+    // Positions become keys now that the lines exist. `NewRecord()` has already generated each
+    // line's uniqueidentifier, so these are the ids the INSERT will carry.
+    if (spec.ManualDiscountsByLineIndex?.length) {
+        order.RequestedDiscounts = [
+            ...order.RequestedDiscounts,
+            ...spec.ManualDiscountsByLineIndex.map((d) => ({
+                OrderLineID: lines[d.LineIndex]?.ID ?? null,
+                Amount: d.Amount ?? null,
+                Percent: d.Percent ?? null,
+                Reason: d.Reason,
+            })),
+        ];
     }
     return { Order: order, Lines: lines };
 }
