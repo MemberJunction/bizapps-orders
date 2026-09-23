@@ -58,7 +58,8 @@ import { MJOReturnPageComponent } from '../pages/orders/return.page';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { CompositeKey, Metadata } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { GetCatalogOptions, GetPaymentTypes, GetProducts, GetSellingCompanies, type MJOProductOption } from '../data/orders-queries';
+import { GetCatalogOptions, GetPaymentTypes, GetSellingCompanies, type MJOProductOption } from '../data/orders-queries';
+import { CommonSettings } from '@mj-biz-apps/common-ng';
 
 /**
  * An order and its lines, loaded together.
@@ -348,16 +349,23 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     private companyCache: string | null = null;
 
     /**
-     * The company a new order belongs to.
+     * The company a new order belongs to — the legal entity that books the revenue.
      *
-     * Taken from the catalog rather than asked for: a company with no products
-     * cannot be sold from, so the first product's company is a better default than
-     * an empty picker. A multi-company user changes it on the order.
+     * This used to be the first product's company, on the reasoning that a company with no
+     * products cannot be sold from. That is true and still the wrong default: which entity
+     * books an order is a finance decision, not a consequence of how the catalogue happens to
+     * sort, and it was invisible to the person entering the order. It now comes from the
+     * configured Common setting, the same one the order form's selling-company field defaults
+     * to and confirms against, so fast entry and the form cannot disagree.
+     *
+     * An instance that has configured nothing gets an empty value, which is the pre-existing
+     * behaviour for an unconfigured picker rather than a guess.
      */
     private async defaultCompanyID(): Promise<string> {
-        if (this.companyCache) return this.companyCache;
-        const products = await GetProducts({ MaxRows: 1 });
-        this.companyCache = String(products[0]?.['CompanyID'] ?? '');
+        if (this.companyCache !== null) return this.companyCache;
+        const md = new Metadata();
+        await CommonSettings.Load(Metadata.Provider, md.CurrentUser);
+        this.companyCache = CommonSettings.DefaultSellingCompanyID ?? '';
         return this.companyCache;
     }
 
