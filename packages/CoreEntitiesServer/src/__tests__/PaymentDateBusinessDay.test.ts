@@ -488,8 +488,21 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             // The remote boundary: a caller-supplied day is text until something says otherwise,
             // and `AsDateValue` throws rather than returns null on `2026-02-30`.
             ['CancelSubscriptionOperation.ts', /RequireDate\(input\.RequestDate, 'RequestDate'\)/, 'the request day validated at the boundary'],
+            // Both checkout sites warm through the ORDER's provider, not the global one. Only the
+            // fallback path consumes those arguments, and the line above these sets `OrderDate`,
+            // so no driven test can observe them without defeating that line — but a widget
+            // checkout may run against a provider that is not `Metadata.Provider`, and warming the
+            // wrong instance is the kind of wrong that answers plausibly.
+            ['CheckoutSessionService.ts', /CalendarDayOrToday\(\s*order\.OrderDate,\s*\(order\.ProviderToUse \?\? md\)/, "the pricing as-of day, through the order's own provider"],
         ])('%s derives %s through CalendarDayOrToday', (file, pattern) => {
             expect(source(file)).toMatch(pattern);
+        });
+
+        it('CheckoutSessionService routes BOTH of its pricing as-of days through it', () => {
+            const matches = source('CheckoutSessionService.ts').match(
+                /CalendarDayOrToday\(\s*order\.OrderDate,\s*\(order\.ProviderToUse \?\? md\)/g,
+            );
+            expect(matches).toHaveLength(2);
         });
 
         it('PaymentHeaderEntityServer routes BOTH of its journal-entry dates through it', () => {
