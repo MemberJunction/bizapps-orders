@@ -12,6 +12,7 @@ describe('buildCheckoutDraftLine', () => {
         const event: CheckoutSubmissionEvent = {
             email: 'jane@example.com',
             quantity: 2,
+            billingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' },
             attendees: [
                 { firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' },
             ],
@@ -42,6 +43,7 @@ describe('buildCheckoutDraftLine', () => {
         const event: CheckoutSubmissionEvent = {
             email: 'a@b.com',
             quantity: 1,
+            billingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' },
             attendees: [],
             extensionData: {},
             totalGross: 10,

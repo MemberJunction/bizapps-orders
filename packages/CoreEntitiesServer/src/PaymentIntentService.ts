@@ -61,6 +61,13 @@ import type { IntentStatus } from './PaymentProviderBehavior.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 
+/**
+ * The only currency an intent may be opened in. Orders, lines and payment intents carry no currency
+ * column, so an amount taken in any other currency would be stored as a bare number that nothing can
+ * convert later. Widen this only together with the schema change that records currency.
+ */
+export const SUPPORTED_PAYMENT_CURRENCY = 'USD';
+
 /** What to ask the gateway to stand ready for. */
 export interface OpenIntentRequest {
     /** Which configured `PaymentProvider` account. Decides the driver and the credentials. */
@@ -124,6 +131,12 @@ export async function OpenPaymentIntent(
     }
     if (!request?.PaymentProviderID) {
         return { Success: false, Reason: 'A payment intent needs a PaymentProviderID — it decides which gateway to ask.' };
+    }
+    if ((request.CurrencyCode ?? '').trim().toUpperCase() !== SUPPORTED_PAYMENT_CURRENCY) {
+        return {
+            Success: false,
+            Reason: `Payments can only be taken in ${SUPPORTED_PAYMENT_CURRENCY} — '${request.CurrencyCode ?? ''}' is not supported, because orders do not yet record a currency.`,
+        };
     }
 
     const driver = await ResolvePaymentProvider(request.PaymentProviderID, provider, user);

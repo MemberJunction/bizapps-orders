@@ -330,7 +330,7 @@ export { ResolveDeliveryChannel, DeliveryChannelNotConfiguredError } from './Del
 export { LoadOrderDeliveryContacts, LoadOrderStatus } from './DeliveryRecipientResolver.js';
 
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
-export { OpenPaymentIntent } from './PaymentIntentService.js';
+export { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 export type { OpenIntentRequest, OpenIntentResult } from './PaymentIntentService.js';
 export { SettlePaymentForEvent } from './PaymentSettlement.js';
 export type { SettlementOutcome } from './PaymentSettlement.js';
@@ -500,6 +500,7 @@ export { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
 export type {
     AttendeeInput,
     CheckoutAttendeeInput,
+    CheckoutBillingAddressInput,
     CheckoutLineExtensionData,
     CheckoutLineInput,
     CheckoutLineSummary,

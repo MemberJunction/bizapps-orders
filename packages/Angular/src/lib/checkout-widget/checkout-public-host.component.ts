@@ -41,7 +41,15 @@ interface StripeInstance {
     elements(): { create(type: string): StripeCard };
     confirmCardPayment(
         clientSecret: string,
-        opts: { payment_method: { card: StripeCard; billing_details?: { email?: string } } }
+        opts: {
+            payment_method: {
+                card: StripeCard;
+                billing_details?: {
+                    email?: string;
+                    address?: { country?: string; state?: string; postal_code?: string };
+                };
+            };
+        }
     ): Promise<{ error?: { message?: string }; paymentIntent?: { status?: string } }>;
 }
 
@@ -75,6 +83,9 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public loadError: string | null = null;
     public successMessage: string | null = null;
     public orderNumber: string | null = null;
+    /** The server's total and tax for the details last drafted — shown before the buyer is charged. */
+    public quotedTotal: number | null = null;
+    public quotedTax: number | null = null;
 
     private stripe: StripeInstance | null = null;
     private card: StripeCard | null = null;
@@ -152,6 +163,11 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.errorMessage = null;
     }
 
+    public onQuoteInvalidated(): void {
+        this.quotedTotal = null;
+        this.quotedTax = null;
+    }
+
     public async onSubmitted(event: CheckoutSubmissionEvent): Promise<void> {
         if (this.processing || !this.config?.productId) {
             return;
@@ -165,12 +181,16 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 clientSessionKey: this.sessionKey,
                 email: event.email,
                 lines: [line],
+                billingAddress: event.billingAddress,
             });
             if (!draft?.Success) {
                 throw new Error(this.str(draft?.ErrorMessage, 'Could not price this checkout.'));
             }
             if (!draft.RequiresPayment) {
                 await this.finish();
+                return;
+            }
+            if (this.quoteChanged(draft, event.totalGross)) {
                 return;
             }
             const intent = await this.post('/payment-intent', {
@@ -193,7 +213,14 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             const result = await this.stripe.confirmCardPayment(String(intent.ClientSecret), {
                 payment_method: {
                     card: this.card,
-                    billing_details: { email: event.email },
+                    billing_details: {
+                        email: event.email,
+                        address: {
+                            country: event.billingAddress.Country,
+                            state: event.billingAddress.StateProvince,
+                            postal_code: event.billingAddress.PostalCode,
+                        },
+                    },
                 },
             });
             if (result.error) {
@@ -214,6 +241,25 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.processing = false;
             this.cdr.detectChanges();
         }
+    }
+
+    /**
+     * Stop before charging when the server's total differs from what the buyer was shown. Tax
+     * depends on the billing location, so the first press of Pay is also the first time the total
+     * including tax is known; the buyer sees it and presses Pay again.
+     */
+    private quoteChanged(draft: Record<string, unknown>, shownTotal: number): boolean {
+        const total = typeof draft.TotalGross === 'number' ? draft.TotalGross : 0;
+        const tax = typeof draft.Tax === 'number' ? draft.Tax : 0;
+        if (Math.abs(total - shownTotal) <= 0.005) {
+            return false;
+        }
+        this.quotedTotal = total;
+        this.quotedTax = tax > 0 ? tax : null;
+        this.errorMessage = tax > 0
+            ? `The total is ${total.toFixed(2)}, including ${tax.toFixed(2)} sales tax. Review it and press Pay again.`
+            : `The total is ${total.toFixed(2)}. Review it and press Pay again.`;
+        return true;
     }
 
     private async finish(): Promise<void> {
