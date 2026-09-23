@@ -1,0 +1,14 @@
+[
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Progress.Supersede",
+      "ParentID": null,
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Replace the latest posted progress observation on a percentage-of-completion line. Orders.RecordProgress writes a new observation that names the one it replaces, reverses the replaced observation's recognition on its own date, and posts the new catch-up. Nothing is edited; the replaced row stays Posted and immutable. Held by the Orders Revenue Supervisor role, on top of MJ.BizApps.Orders.Progress.Attest, which every attestation needs. Without this row, supersede is refused."
+    },
+    "primaryKey": {
+      "ID": "6CF663E9-4180-42F4-BBAE-18C1BC598E5C"
+    }
+  }
+]

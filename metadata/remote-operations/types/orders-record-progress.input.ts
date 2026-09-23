@@ -23,4 +23,13 @@ export interface OrdersRecordProgressInput {
     Notes?: string | null;
     /** Compute and return what WOULD post, writing nothing — for the confirmation step before finance commits. */
     Preview?: boolean;
+    /**
+     * SUPERSEDE: the posted observation this one replaces. It must be the line's latest observation
+     * that is not already superseded, and the caller must hold `MJ.BizApps.Orders.Progress.Supersede`.
+     * Nothing is edited: the replaced observation's recognition is reversed on its own date, and this
+     * observation's catch-up is computed as if the replaced one had never posted. `MeasurementDate`
+     * must then be after the observation before the replaced one — not after the replaced one — which
+     * is what makes a mistyped future date recoverable.
+     */
+    SupersedesMeasurementID?: string | null;
 }

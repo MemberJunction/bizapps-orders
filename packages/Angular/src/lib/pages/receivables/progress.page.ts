@@ -24,6 +24,16 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
  * POSTING IS THE IRREVERSIBLE STEP, so it asks first — through `MJConfirmService`, never
  * `window.confirm`, which throws under the Electron host.
  *
+ * SUPERSEDE IS THE WAY BACK FROM A WRONG ONE (golive #260). A user holding the supersede
+ * authorization sees a toggle that makes the next post replace the line's last observation: its
+ * recognition is reversed on its own date and the new observation posts as if it had never been
+ * there. Nothing is edited. The operation checks the grant again; the toggle only hides the action
+ * from people who cannot use it.
+ *
+ * A DATE AFTER THIS MONTH WARNS. Forward dating is allowed, but a mistyped year is the mistake that
+ * made supersede necessary, so the warning rides the preview and the confirm like the closed-period
+ * one does.
+ *
  * ## Example
  *
  * ```html
@@ -65,6 +75,11 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                 <span class="small muted">Complete to date (%)</span>
                 <input class="mj-input is-num" type="number" min="0" max="100" step="0.01" [(ngModel)]="PercentInput" name="percent" [disabled]="!Selected" (ngModelChange)="Draft = null" aria-label="Percent complete">
             </label>
+            @if (CanSupersede && Selected?.LastMeasurementID) {
+                <button type="button" mjButton [variant]="Supersede ? 'primary' : 'outline'" [attr.aria-pressed]="Supersede" [disabled]="Busy" (click)="ToggleSupersede()">
+                    <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Supersede last
+                </button>
+            }
             <button type="button" mjButton variant="outline" [disabled]="!CanSubmit || Busy" (click)="PreviewSelected()">
                 <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
             </button>
@@ -82,6 +97,18 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                     <strong> → {{ Draft.Message }}</strong>
                 }
             </div>
+            @if (Supersede && row.LastMeasurementDate) {
+                <div class="mjo-pg__closed" role="status">
+                    <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                    Superseding the {{ FormatDate(row.LastMeasurementDate, { Short: true }) }} observation at {{ percent(row.LastPercentComplete) }}.
+                    Its recognition is reversed on its own date; nothing is edited. The new date must be after the observation before it.
+                </div>
+            }
+            @if (Draft?.FutureDateWarning; as future) {
+                <div class="mjo-pg__closed" role="status">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ future }}
+                </div>
+            }
             @if (Draft?.ClosedPeriodWarning; as closed) {
                 <div class="mjo-pg__closed" role="status">
                     <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ closed }}
@@ -135,6 +162,10 @@ export class MJOProgressPageComponent implements OnInit {
     public Notice: { Tone: 'success' | 'error' | 'warning'; Text: string } | null = null;
     public Truncated = false;
     public Busy = false;
+    /** True when the caller holds the supersede authorization — from the worklist, rechecked by the operation. */
+    public CanSupersede = false;
+    /** When set, the next preview or post replaces the selected line's last observation. */
+    public Supersede = false;
     public Rows: ProgressWorklistRow[] = [];
     public Selected: ProgressWorklistRow | null = null;
     public MeasurementDate = new Date().toISOString().slice(0, 10);
@@ -182,8 +213,14 @@ export class MJOProgressPageComponent implements OnInit {
     public Select(row: ProgressWorklistRow): void {
         this.Selected = row;
         this.PercentInput = Math.round(row.LastPercentComplete * 10000) / 100;
+        this.Supersede = false;
         this.Draft = null;
         this.Notice = null;
+    }
+
+    public ToggleSupersede(): void {
+        this.Supersede = !this.Supersede;
+        this.Draft = null;
     }
 
     public OpenSelected(): void {
@@ -201,15 +238,18 @@ export class MJOProgressPageComponent implements OnInit {
         if (!row) return;
         const draft = this.Draft ?? (await this.record(true));
         if (!draft) return;
+        const superseding = this.Supersede && row.LastMeasurementDate ? `, superseding the ${FormatDate(row.LastMeasurementDate, { Short: true })} observation` : '';
+        const warnings = [draft.FutureDateWarning, draft.ClosedPeriodWarning].filter((w): w is string => !!w);
         const proceed = await this.confirm.Confirm({
-            title: `Attest ${row.OrderNumber} line ${row.LineNumber} at ${this.percent(Number(this.PercentInput) / 100)}?`,
+            title: `Attest ${row.OrderNumber} line ${row.LineNumber} at ${this.percent(Number(this.PercentInput) / 100)}${superseding}?`,
             message: draft.Message ?? '',
             // THE WARNING RIDES THE CONFIRM, not just the strip above the table. It is advisory —
             // nothing blocks a closed period — so the one place it has to be unmissable is the
             // moment before the entry is written, which is exactly where this dialog sits.
             detail:
-                `Signed by you, dated ${FormatDate(this.MeasurementDate, { Short: true })}. A posted observation cannot be changed; a correction is a new observation in a later period.` +
-                (draft.ClosedPeriodWarning ? `\n\n${draft.ClosedPeriodWarning}` : ''),
+                `Signed by you, dated ${FormatDate(this.MeasurementDate, { Short: true })}. A posted observation cannot be changed; a correction is a new observation in a later period` +
+                (this.CanSupersede ? ', or a supersede.' : '.') +
+                warnings.map((w) => `\n\n${w}`).join(''),
             type: 'warning',
             confirmText: 'Attest & post',
             cancelText: 'Not yet',
@@ -217,10 +257,12 @@ export class MJOProgressPageComponent implements OnInit {
         if (!proceed) return;
         const output = await this.record(false);
         if (!output) return;
-        this.Notice = output.ClosedPeriodWarning
-            ? { Tone: 'warning', Text: `${output.Message ?? 'Posted.'} ${output.ClosedPeriodWarning}` }
+        const after = [output.FutureDateWarning, output.ClosedPeriodWarning].filter((w): w is string => !!w);
+        this.Notice = after.length
+            ? { Tone: 'warning', Text: `${output.Message ?? 'Posted.'} ${after.join(' ')}` }
             : { Tone: 'success', Text: output.Message ?? 'Posted.' };
         this.Selected = null;
+        this.Supersede = false;
         this.Draft = null;
         await this.load();
         this.cdr.detectChanges();
@@ -238,6 +280,7 @@ export class MJOProgressPageComponent implements OnInit {
                 MeasurementDate: this.MeasurementDate,
                 PercentComplete: Number(this.PercentInput) / 100,
                 Preview: preview,
+                SupersedesMeasurementID: this.Supersede ? this.Selected.LastMeasurementID ?? null : null,
             });
             const output = result.Output;
             if (!result.Success || !output?.Success) {
@@ -267,6 +310,7 @@ export class MJOProgressPageComponent implements OnInit {
         this.LoadError = null;
         this.Rows = output.Rows;
         this.Truncated = output.Truncated;
+        this.CanSupersede = output.CanSupersede;
         this.cdr.detectChanges();
     }
 
