@@ -53,6 +53,7 @@ import {
     RunView,
     UserInfo,
 } from '@memberjunction/core';
+import { UserCache } from '@memberjunction/generic-database-provider';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import {
     LoadOrdersEngine,
@@ -64,6 +65,7 @@ import {
     type mjBizAppsOrdersOrderLineProgressMeasurementEntity,
     type OrdersRecordProgressInput,
     type OrdersRecordProgressOutput,
+    UserHasAuthorization,
 } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
@@ -77,6 +79,8 @@ const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 /** Accounting's batch header. Orders reads it; it never writes one (D7/D8). */
 const JOURNAL_ENTRY_BATCH_ENTITY = 'MJ_BizApps_Accounting: Journal Entry Batches';
 const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
+/** Held by the Engagement Lead role — never alongside the price override grants (#227). */
+export const PROGRESS_ATTEST_AUTH = 'MJ.BizApps.Orders.Progress.Attest';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
@@ -98,17 +102,28 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<OrdersRecordProgressOutput> {
+        // FIRST, BEFORE ANY READ OR WRITE. The attestation posts revenue, so who may make it is the
+        // control; the entity permission on the observation row is only the second layer.
+        if (!UserHasAuthorization(PROGRESS_ATTEST_AUTH, user, provider)) {
+            return this.refuse(!!input?.Preview, `Recording progress requires the ${PROGRESS_ATTEST_AUTH} authorization (the Engagement Lead role).`);
+        }
+        // PAST THE GATE, THE OPERATION IS THE AUTHORITY. The attester holds create rights on the
+        // observation entity and nothing in the ledger (Jeremy on #227: not a widened role), so the
+        // reads, the entry and the line's running total are made as the system user. The attester is
+        // still who signs: the observation row is saved as them and names them, and so does the entry.
+        const ledger = UserCache.Instance.GetSystemUser();
+        if (!ledger) throw new Error('Orders.RecordProgress needs the MJ system user, and the user cache does not hold it.');
         const lineID = RequireUUID(input?.OrderLineID, 'OrderLineID');
         const measurementDate = RequireDate(input?.MeasurementDate, 'MeasurementDate');
         const preview = !!input?.Preview;
 
-        const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+        const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ledger);
         if (!(await line.Load(lineID))) return this.refuse(preview, `No order line with ID ${lineID}.`);
-        const order = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, user);
+        const order = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, ledger);
         if (!(await order.Load(line.OrderHeaderID))) return this.refuse(preview, `Order line ${lineID} belongs to an order that could not be read.`);
         const echo = { OrderLineID: line.ID, OrderNumber: order.OrderNumber, LineNumber: line.LineNumber, MeasurementDate: measurementDate };
 
-        const revRec = await this.revRecTypeOf(line, provider, user);
+        const revRec = await this.revRecTypeOf(line, provider, ledger);
         if (!revRec) return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} has no revenue recognition type.`, echo);
         if (revRec.ScheduleBasis !== 'OnMeasurement') {
             return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} recognises revenue ${revRec.Code} at booking, not by progress. Only a percentage-of-completion line takes an observation.`, echo);
@@ -132,7 +147,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             return this.refuse(preview, err instanceof Error ? err.message : String(err), echo);
         }
 
-        const last = (await this.postedObservations(line.ID, provider, user)).at(-1)?.MeasurementDate ?? null;
+        const last = (await this.postedObservations(line.ID, provider, ledger)).at(-1)?.MeasurementDate ?? null;
         if (last && measurementDate <= last) {
             return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} already has an observation posted for ${last}. Corrections happen forward: record the current period instead.`, echo);
         }
@@ -147,7 +162,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         const catchUp = ComputeCatchUp(lineAmount, percent, recognizedToDate);
         // Read once, echoed on BOTH paths: the preview is where it is meant to be seen, and the live
         // output carries it so the screen can show it after a post that was made anyway.
-        const ClosedPeriodWarning = await this.closedPeriodWarning(line, measurementDate, provider, user);
+        const ClosedPeriodWarning = await this.closedPeriodWarning(line, measurementDate, provider, ledger);
         const numbers = {
             ...echo,
             PercentComplete: percent,
@@ -158,7 +173,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             ClosedPeriodWarning,
         };
         const note = `to ${(percent * 100).toFixed(2).replace(/\.?0+$/, '')}% (attested by ${user.Name || user.Email}, ${measurementDate})`;
-        const draft = catchUp.Delta === 0 ? null : await this.buildDraft(order, line, catchUp.Delta, measurementDate, note, provider, user);
+        const draft = catchUp.Delta === 0 ? null : await this.buildDraft(order, line, catchUp.Delta, measurementDate, note, provider, ledger);
 
         if (preview) {
             return { Success: true, Preview: true, ...numbers, OrderLineProgressMeasurementID: null, JournalEntryID: null, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, true) };
@@ -167,7 +182,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         const dbProvider = provider as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
-            const journalEntryID = draft ? await this.createJournalEntry(draft, provider, user) : null;
+            const journalEntryID = draft ? await this.createJournalEntry(draft, provider, ledger) : null;
             const measurementID = await this.writeObservation(line.ID, measurementDate, percent, methodCode, input, user, numbers, journalEntryID, provider);
             await this.advanceRecognizedToDate(line, catchUp.Delta);
             await dbProvider.CommitTransaction();

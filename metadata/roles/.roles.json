@@ -1,0 +1,22 @@
+[
+  {
+    "fields": {
+      "Name": "Engagement Lead",
+      "Description": "Runs a professional services engagement and attests its progress (MJ.BizApps.Orders.Progress.Attest). Holds no price override grant.",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "B245C559-8D52-4AAE-A4CB-540F0A88D7E2"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Account Director",
+      "Description": "Books the order and may type any unit price on it (MJ.BizApps.Orders.Price.OverrideAny, which implies OverrideList). Does not hold progress attestation.",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "1318256E-6FE4-4349-82D6-FED8724E7103"
+    }
+  }
+]

@@ -51,6 +51,22 @@ export function userPriceOverrideKind(
     return 'none';
 }
 
+/**
+ * Whether `user` holds the named authorization (directly or through an ancestor). FAILS CLOSED:
+ * an authorization missing from the catalog is held by nobody. The price-override gate stays open
+ * before its metadata is synced; a caller that must never be open — progress attestation — uses this.
+ */
+export function UserHasAuthorization(
+    name: string,
+    user: UserInfo | null | undefined,
+    provider?: IMetadataProvider | { Authorizations?: AuthorizationInfo[] },
+): boolean {
+    if (!user) return false;
+    const auths = authorizationCatalog(provider);
+    const auth = auths.find((a) => a.Name === name);
+    return !!auth && new AuthorizationEvaluator().UserCanExecuteWithAncestors(auth, user, auths);
+}
+
 export function moneyEqual(a: number, b: number): boolean {
     return Money(a) === Money(b);
 }
