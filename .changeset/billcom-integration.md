@@ -2,6 +2,7 @@
 '@mj-biz-apps/orders-entities': minor
 '@mj-biz-apps/orders-core-entities-server': minor
 '@mj-biz-apps/orders-server': minor
+'@mj-biz-apps/orders-ng': minor
 ---
 
 Bill.com integration: invoices out, payments in (golive #146, #147, #148, #242).
@@ -46,6 +47,19 @@ Two defects in `@memberjunction/connector-bill-com` 0.3.1 surfaced and are filed
 API version and 404s, and invoice archive has no connector verb. Until that release, a fresh database
 needs the version prefix stripped from the three seeded Bill.com `IntegrationObject` rows, and the
 gateway reaches the archive endpoint through the connector's own session.
+
+**The screens.** An **External invoicing** panel on the order form lists what the rail holds for that
+order and carries the two acts a person may take; it hides itself entirely for a company with no rail,
+so orders invoiced natively look untouched. An **Invoicing queue** page under Receivables shows what is
+waiting to send and what the payment poll could not finish, and can run either job by hand — which
+matters because both ship disabled and somebody has to prove them first. The billing worklist gains a
+column naming the rail a company invoices through, so issuing an instalment tells the truth about what
+happens next.
+
+Every label is read from the `PaymentProvider` row: no screen says Bill.com. The rule that decides when
+Send may be offered lives in a pure module (`external-invoice-view.ts`) and is unit-tested, because
+offering it against a unit already live — or one whose last send was never confirmed — is how one
+billing unit becomes two invoices in a customer's inbox.
 
 **Scheduling.** Two Actions and two `MJ: Scheduled Jobs` rows (half-hourly send in business hours,
 hourly poll), both shipped **Disabled and set to Preview**, like the renewal job. The metadata rows

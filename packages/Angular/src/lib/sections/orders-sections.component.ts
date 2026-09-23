@@ -50,6 +50,7 @@ import { MJOAccountCreditPageComponent } from '../pages/payments/account-credit.
 import { MJOPaymentsDashboardPageComponent } from '../pages/payments/payments-dashboard.page';
 import { MJOOverduePageComponent } from '../pages/receivables/overdue.page';
 import { MJOBillingPageComponent } from '../pages/receivables/billing.page';
+import { MJOExternalInvoicingQueuePageComponent } from '../pages/receivables/external-invoicing-queue.page';
 import { MJOCustomerARPageComponent } from '../pages/receivables/customer-ar.page';
 import { MJOSubscriptionsPageComponent } from '../pages/receivables/subscriptions.page';
 import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/catalog/products.page';
@@ -889,6 +890,8 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
                 return MJOOverduePageComponent;
             case 'billing':
                 return MJOBillingPageComponent;
+            case 'invoicing-queue':
+                return MJOExternalInvoicingQueuePageComponent;
             case 'aging':
                 return MJOCustomerARPageComponent;
             case 'subscriptions':
