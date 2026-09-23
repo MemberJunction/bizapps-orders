@@ -26,6 +26,10 @@
  *   PM10 a REVERSAL line stores its recognition NEGATIVE, so an origin and its reversal net to zero
  *   PM11 a DISCOUNTED project credits Sales the gross share and debits Sales Discounts its share on
  *        every attestation, closing at exactly the discount once the line reaches 100%
+ *   PM12 attesting into a month accounting has already posted WARNS and never blocks
+ *   PM13 a Posted observation can only be written by the operation — hand-insert and Draft→Posted
+ *        are both refused, by the entity guard and by the trigger respectively
+ *   PM14 and the operation itself still posts, so the guard admits exactly one writer
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -45,6 +49,7 @@ import {
 import {
     ACCT_SCHEMA,
     CreateOrdersFixture,
+    createViaEntity,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
@@ -53,6 +58,7 @@ import {
     TxQuery,
 } from '../fixture.js';
 import { ConfirmOrder } from '../order-builder.js';
+import { ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from '../entity-names.js';
 import { issue, scheduledOrder, type Instalment } from './payment-schedule.checks.js';
 
 const SALES = '40100';
@@ -68,6 +74,7 @@ const TAX = '21500';
 interface RecordOutput {
     Success: boolean;
     Message?: string;
+    ClosedPeriodWarning?: string | null;
     Preview: boolean;
     RecognizedToDateBefore?: number;
     RecognizedToDateAfter?: number;
@@ -591,6 +598,117 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                     900,
                     'the running total tracks NET, not gross — it is what has been earned',
                 );
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM12',
+        Name: 'PM12: attesting into a month accounting has already POSTED warns, and never blocks',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { lineID } = await bookedProjectLine(ctx);
+                const companyID = (await TxOne<{ CompanyID: string }>(ctx, `SELECT CompanyID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID}'`)).CompanyID;
+
+                // An OPEN month first, so the warning cannot be something this check always sees.
+                const open = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.2, Preview: true });
+                Assert(open.Success, open.Message ?? '');
+                AssertEqual(open.ClosedPeriodWarning ?? null, null, 'no batch has been posted for July, so nothing to warn about');
+
+                // Close August the way accounting closes it: a batch in Posted status, dated in the
+                // month, for this company. Pending and Approved are periods being worked, not closed,
+                // which is why the operation looks for Posted specifically.
+                await TxQuery(
+                    ctx,
+                    `INSERT INTO ${ACCT_SCHEMA}.JournalEntryBatch (JournalEntryBatchNumber, CompanyID, PostingDate, TargetSystem, BatchedByUserID, Status, PostedAt)
+                     VALUES ('PM12-AUG', '${companyID}', '2026-08-31', 'BusinessCentral', '${ctx.User.ID}', 'Posted', SYSDATETIMEOFFSET())`,
+                );
+
+                const closed = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.4, Preview: true });
+                Assert(closed.Success, `a closed period must not fail the preview: ${closed.Message}`);
+                Assert(
+                    /PM12-AUG/.test(String(closed.ClosedPeriodWarning ?? '')),
+                    `the warning must name the batch: ${JSON.stringify(closed.ClosedPeriodWarning)}`,
+                );
+                Assert(/2026-08-31/.test(String(closed.ClosedPeriodWarning ?? '')), 'and the date that landed in it');
+
+                // AND IT POSTS ANYWAY. Jeremy's whole point: the batch build is the control, the
+                // warning is so nobody walks into it by accident. A guard that blocked here would
+                // gate revenue recognition on a state the attester cannot see or change.
+                const posted = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.4 });
+                Assert(posted.Success, `a closed period must not block the post: ${posted.Message}`);
+                Assert(!!posted.JournalEntryID, 'the entry is written');
+                Assert(
+                    /PM12-AUG/.test(String(posted.ClosedPeriodWarning ?? '')),
+                    'and the live output carries the same warning, so the screen can show it after the fact',
+                );
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM13',
+        Name: 'PM13: nothing but the operation can post an observation — hand-inserted Posted, and Draft→Posted, are both refused',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { lineID } = await bookedProjectLine(ctx);
+
+                // A Posted row carries a recognition amount and a journal entry id, and what makes
+                // those true is that the entry was written in the same transaction. Hand-writing one
+                // asserts revenue the ledger never saw — and the subledger and the ledger are read by
+                // different reports, so neither would contradict the other.
+                let refusedInsert = '';
+                try {
+                    await createViaEntity(ctx, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY, {
+                        OrderLineID: lineID,
+                        MeasurementDate: new Date('2026-09-30T00:00:00Z'),
+                        PercentComplete: 0.9,
+                        MethodCode: 'ManualAttestation',
+                        AttestedByUserID: ctx.User.ID,
+                        RecognitionAmount: 900,
+                        Status: 'Posted',
+                    });
+                } catch (e) {
+                    refusedInsert = String(e);
+                }
+                Assert(/only be posted by Orders.RecordProgress/i.test(refusedInsert), `hand-inserting a Posted row must be refused: ${refusedInsert || 'it was allowed'}`);
+
+                // A Draft row is fine — it claims nothing.
+                const draftID = await createViaEntity(ctx, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY, {
+                    OrderLineID: lineID,
+                    MeasurementDate: new Date('2026-09-30T00:00:00Z'),
+                    PercentComplete: 0.9,
+                    MethodCode: 'ManualAttestation',
+                    AttestedByUserID: ctx.User.ID,
+                    Status: 'Draft',
+                });
+                Assert(!!draftID, 'a Draft observation is allowed');
+
+                // Promoting it is refused in the DATABASE, not just the entity layer: no legitimate
+                // path performs that update, so the trigger can refuse it outright without needing to
+                // know its caller — and a bypassed class cannot reach past it.
+                let refusedPromote = '';
+                try {
+                    await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderLineProgressMeasurement SET Status = 'Posted' WHERE ID = '${draftID}'`);
+                } catch (e) {
+                    refusedPromote = String(e);
+                }
+                Assert(/Draft to Posted/i.test(refusedPromote), `promoting Draft to Posted must be refused by the DB: ${refusedPromote || 'it was allowed'}`);
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM14',
+        Name: 'PM14: and the operation itself still posts — the guard admits exactly one writer',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The other half of PM13, kept separate because its transaction survives: a guard
+                // that refused everything would pass PM13 on its own and break the feature.
+                const { lineID } = await bookedProjectLine(ctx);
+                const out = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4 });
+                Assert(out.Success, `the operation must still be able to post: ${out.Message}`);
+                const rows = await observations(ctx, lineID);
+                AssertEqual(rows.length, 1, 'one observation');
+                AssertEqual(rows[0].Status, 'Posted', 'written Posted, by the one writer allowed to');
+                Assert(!!rows[0].JournalEntryID, 'with the entry it was written beside');
             }),
     },
 ];

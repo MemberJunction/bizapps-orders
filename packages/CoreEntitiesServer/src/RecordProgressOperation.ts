@@ -67,12 +67,15 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
+import { RegisterOperationPost, ReleaseOperationPost } from './OrderLineProgressMeasurementEntityServer.js';
 import { OrderJournalEntryFactory, type JEDraft } from './OrderJournalEntryFactory.js';
 import { ComputeCatchUp, ProgressRecognitionDriver } from './RevenueRecognition.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+/** Accounting's batch header. Orders reads it; it never writes one (D7/D8). */
+const JOURNAL_ENTRY_BATCH_ENTITY = 'MJ_BizApps_Accounting: Journal Entry Batches';
 const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
@@ -142,6 +145,9 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         // `RecognizedToDateBefore/After` as the audit trail of what each attestation saw.
         const recognizedToDate = money(Math.abs(Number(line.RecognizedToDate ?? 0)));
         const catchUp = ComputeCatchUp(lineAmount, percent, recognizedToDate);
+        // Read once, echoed on BOTH paths: the preview is where it is meant to be seen, and the live
+        // output carries it so the screen can show it after a post that was made anyway.
+        const ClosedPeriodWarning = await this.closedPeriodWarning(line, measurementDate, provider, user);
         const numbers = {
             ...echo,
             PercentComplete: percent,
@@ -149,6 +155,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             RecognizedToDateBefore: recognizedToDate,
             RecognizedToDateAfter: catchUp.Target,
             RecognitionAmount: catchUp.Delta,
+            ClosedPeriodWarning,
         };
         const note = `to ${(percent * 100).toFixed(2).replace(/\.?0+$/, '')}% (attested by ${user.Name || user.Email}, ${measurementDate})`;
         const draft = catchUp.Delta === 0 ? null : await this.buildDraft(order, line, catchUp.Delta, measurementDate, note, provider, user);
@@ -208,6 +215,58 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         );
         if (!result.Success) throw new Error(`Could not read the line's progress observations: ${result.ErrorMessage ?? 'unknown error'}`);
         return (result.Results ?? []).map((r) => ({ MeasurementDate: ToISODate(r.MeasurementDate) ?? '' }));
+    }
+
+    /**
+     * A warning when this observation lands in a month accounting has already closed — or null.
+     *
+     * WARNS, NEVER BLOCKS (Jeremy on #227). Period close is not built into AIDP for go-live and the
+     * batch build stays the control; attestation is manual and must not be gated on a state the
+     * attester cannot see or change. This only stops someone walking into it by accident.
+     *
+     * CLOSED MEANS A POSTED BATCH, which is accounting's own word for it: `JournalEntryBatch` runs
+     * Pending → Approved → Sent → Posted, and `Posted` is the one that means the ERP has it. A batch
+     * still Pending or Approved is a period being worked, not a period closed, so attesting into it
+     * is ordinary. The batch is per company and carries a single accountant-set `PostingDate`, so
+     * the month of that date is the period, and the company is the LINE's company — the same one the
+     * entry will book against, not the order header's.
+     *
+     * A read that fails is not a refusal. This is advisory; if the query cannot run — accounting not
+     * installed, no permission on its entity — the attestation still proceeds without a warning,
+     * because blocking revenue recognition on the availability of a hint would be the worse failure.
+     */
+    private async closedPeriodWarning(
+        line: mjBizAppsOrdersOrderLineEntity,
+        measurementDate: string,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<string | null> {
+        const companyID = line.CompanyID;
+        if (!companyID) return null;
+        const month = measurementDate.slice(0, 7);
+        try {
+            const result = await RunView.FromMetadataProvider(provider).RunView<{ JournalEntryBatchNumber: string; PostingDate: unknown }>(
+                {
+                    EntityName: JOURNAL_ENTRY_BATCH_ENTITY,
+                    ExtraFilter:
+                        `CompanyID = '${RequireUUID(companyID, 'CompanyID')}' AND Status = 'Posted' ` +
+                        `AND PostingDate >= '${month}-01' AND PostingDate < DATEADD(month, 1, '${month}-01')`,
+                    Fields: ['JournalEntryBatchNumber', 'PostingDate'],
+                    OrderBy: 'PostingDate DESC',
+                    ResultType: 'simple',
+                },
+                user,
+            );
+            const batch = result.Success ? result.Results?.[0] : null;
+            if (!batch) return null;
+            return (
+                `Measurement date ${measurementDate} falls in a period already posted in batch ` +
+                `${batch.JournalEntryBatchNumber}. The entry will still be written and will be swept into a ` +
+                `later batch; nothing is blocked. Check with finance before posting if this period is closed.`
+            );
+        } catch {
+            return null;
+        }
     }
 
     private async buildDraft(
@@ -309,8 +368,17 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         row.RecognitionAmount = numbers.RecognitionAmount;
         row.JournalEntryID = journalEntryID;
         row.Status = 'Posted';
-        if (!(await row.Save())) {
-            throw new Error(row.LatestResult?.CompleteMessage ?? 'The progress observation could not be saved.');
+        // TELL THE ENTITY GUARD THIS ONE IS OURS. It refuses any row saved Posted that the operation
+        // did not name, which is the half of Jeremy's posting guard a trigger cannot see: an INSERT
+        // of a Posted row is the same statement whoever issues it. Registered by ID and released in
+        // `finally`, so the window is one save wide and a throw cannot leave it open.
+        RegisterOperationPost(lineID, measurementDate);
+        try {
+            if (!(await row.Save())) {
+                throw new Error(row.LatestResult?.CompleteMessage ?? 'The progress observation could not be saved.');
+            }
+        } finally {
+            ReleaseOperationPost(lineID, measurementDate);
         }
         return row.ID;
     }

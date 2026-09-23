@@ -29,4 +29,12 @@ export interface OrdersRecordProgressOutput {
     OrderLineProgressMeasurementID?: string | null;
     /** The RevenueRecognition journal entry. Null on a preview and when the delta was zero. */
     JournalEntryID?: string | null;
+    /**
+     * Set when the measurement date falls in a month accounting has already posted a batch for.
+     * ADVISORY ONLY — nothing is blocked, on either the preview or the live path. Period close is
+     * not built into AIDP; the batch build is the control, and this only stops someone walking into
+     * a closed period by accident. Null when the period is open, and null when the check could not
+     * run, because an attestation must not depend on the availability of a hint.
+     */
+    ClosedPeriodWarning?: string | null;
 }

@@ -41,6 +41,7 @@ import {
     LoadRecordProgressOperation,
     LoadGetProgressWorklistOperation,
     LoadOrderHeaderPaymentScheduleEntityServer,
+    LoadOrderLineProgressMeasurementEntityServer,
     LoadGetFulfillmentQueueOperation,
     LoadGetPriorReturnsOperation,
     LoadFulfillOrderLinesOperation,
@@ -117,6 +118,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadRecordProgressOperation(); // 'Orders.RecordProgress' — one attested POC observation and its catch-up entry (AIDP-26)
     LoadGetProgressWorklistOperation(); // 'Orders.GetProgressWorklist' — open POC lines with their last observation
     LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
+    LoadOrderLineProgressMeasurementEntityServer(); // refuses a Posted observation the operation did not write
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
