@@ -23,7 +23,8 @@
  *   ACTIONS: ../custom/generate-invoice.action.ts · ../custom/send-document.action.ts
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import { BuildInvoiceDocuments, DecorateInvoice, type DisplayInvoice } from '@mj-biz-apps/orders-core-entities-server';
+import { BuildInvoiceDocuments, CalendarDayOrToday, DecorateInvoice, type DisplayInvoice } from '@mj-biz-apps/orders-core-entities-server';
+import { ToISODate } from '@mj-biz-apps/orders-entities';
 import { TemplateEngineServer } from '@memberjunction/templates';
 
 /** The template rendered when a caller does not name one. */
@@ -108,7 +109,9 @@ export async function RenderInvoiceDocuments(
 
     const format = options.Format ?? 'HTML';
     const locale = options.Locale ?? 'en-US';
-    const generatedOn = asOf ?? new Date().toISOString().slice(0, 10);
+    // The BUSINESS day (#209): the UTC day is already tomorrow for the whole American evening,
+    // and this is the date printed on the document.
+    const generatedOn = ToISODate(await CalendarDayOrToday(asOf, provider, user)) as string;
     const templateName = options.TemplateName ?? DEFAULT_INVOICE_TEMPLATE;
 
     let render: ((doc: DisplayInvoice) => Promise<{ html: string | null; error?: string }>) | null = null;

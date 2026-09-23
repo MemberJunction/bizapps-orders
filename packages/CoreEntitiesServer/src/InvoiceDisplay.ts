@@ -19,6 +19,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 
+import { Today } from '@mj-biz-apps/orders-entities';
 import type { InvoiceDocument, InvoiceRow, LadderRow } from './InvoiceBehavior.js';
 
 /** How to render the numbers. The app is single-currency today; this is the seam for when it is not. */
@@ -144,7 +145,10 @@ function decorateRow(row: InvoiceRow, options: DisplayOptions): DisplayRow {
 /** Decorate a document for printing. Pure: same document and locale in, same strings out. */
 export function DecorateInvoice(doc: InvoiceDocument, options?: DisplayOptions & { GeneratedOn?: string }): DisplayInvoice {
     const opts = { ...DEFAULTS, ...options };
-    const generatedOn = options?.GeneratedOn ?? new Date().toISOString().slice(0, 10);
+    // The BUSINESS day, not the UTC one (#209). `toISOString()` is already tomorrow for the
+    // whole American evening, so an invoice printed at 6 PM Central was dated the next day — on
+    // the document the customer keeps, next to a due date computed from a different calendar.
+    const generatedOn = options?.GeneratedOn ?? Today();
     const dueLabel = doc.Kind === 'Credit Memo' ? 'Credit due you' : doc.Kind === 'Quote' ? 'Quote total' : 'Amount due';
 
     return {

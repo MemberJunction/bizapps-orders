@@ -34,6 +34,7 @@ import {
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 import { LoadOrdersEngine, OrdersEngine, ToISODate } from '@mj-biz-apps/orders-entities';
+import { CalendarDayOrToday } from './calendar-day.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_CHARGE_ENTITY = 'MJ_BizApps_Orders: Order Charges';
@@ -125,7 +126,10 @@ export async function BuildInvoiceDocuments(
     options?: { AsOf?: string | null; OnlyCompanyID?: string | null },
 ): Promise<InvoiceBuildResult> {
     const id = RequireUUID(orderHeaderID, 'OrderHeaderID');
-    const asOf = options?.AsOf ? String(options.AsOf).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    // A calendar day, from the business zone (#209). This drives the days-until-due countdown
+    // against `DueDate`, a `date` column, so a UTC-day default made an evening invoice read one
+    // day closer to due than it was.
+    const asOf = ToISODate(await CalendarDayOrToday(options?.AsOf, provider, user)) as string;
 
     const header = await view<Row>(provider, user, ORDER_HEADER_ENTITY, `ID = '${id}'`);
     if (header.error) return { Success: false, Message: `Could not read the order — ${header.error}`, Documents: [] };

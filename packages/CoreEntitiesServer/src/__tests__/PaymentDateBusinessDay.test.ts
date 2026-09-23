@@ -128,6 +128,7 @@ const SCANNED_ROOTS: ReadonlyArray<readonly [string, string]> = [
     ['entities', fileURLToPath(new URL('../../../Entities/src/', import.meta.url))],
     ['orders-ng', fileURLToPath(new URL('../../../Angular/src/lib/', import.meta.url))],
     ['integration-tests', fileURLToPath(new URL('../../../IntegrationTests/src/', import.meta.url))],
+    ['orders-server', fileURLToPath(new URL('../../../Server/src/', import.meta.url))],
 ];
 
 /** `[package, path-for-the-message, absolute-path]` for every scanned file. */
@@ -146,6 +147,13 @@ const SCANNED_FILES: Array<[string, string, string]> = SCANNED_ROOTS.flatMap(([p
     walk(root.endsWith('/') ? root : `${root}/`, '');
     return out;
 });
+
+/** The text of one scanned file, addressed the way the scan names it. */
+const scannedSource = (pkg: string, relative: string): string => {
+    const hit = SCANNED_FILES.find(([p, rel]) => p === pkg && rel === relative);
+    if (!hit) throw new Error(`${pkg}/${relative} is not in the scan — renamed, moved, or the root is wrong.`);
+    return readFileSync(hit[2], 'utf8');
+};
 
 /**
  * Every column the migrations declare `DATE` — read rather than remembered — minus the ones whose
@@ -201,18 +209,15 @@ const codeLines = (text: string, pattern: RegExp): string[] =>
     [...text.matchAll(pattern)].map((m) => m[0].trim()).filter((l) => !l.startsWith('*') && !l.startsWith('//'));
 
 /**
- * The "day in hand, else the clock" sites this PR deliberately leaves alone: `asOf` values compared
- * against `EffectiveFrom`/`EffectiveTo`, not written to a `date` column. Named one by one, because
- * a deferral that the guard simply cannot see is indistinguishable from an oversight — which is
- * how the two sites above it were missed. The staleness check below makes fixing one force its
- * removal from this list.
+ * Sites deliberately left on the old shape, named one by one.
+ *
+ * EMPTY, and that is the point: every `asOf` that was on this list has been converted, so the shape
+ * net below now holds without exception across all five scanned packages. The mechanism stays
+ * because the next deferral should have to be written down here rather than argued in a PR comment
+ * — a deferral the guard cannot see is indistinguishable from an oversight, which is exactly how
+ * two sites were missed — and the staleness check makes an entry that is no longer real fail.
  */
-const DEFERRED_ASOF: ReadonlyArray<readonly [string, string]> = [
-    [
-        'InvoiceDisplay.ts',
-        "const generatedOn = options?.GeneratedOn ?? new Date().toISOString().slice(0, 10);",
-    ],
-];
+const DEFERRED_ASOF: ReadonlyArray<readonly [string, string]> = [];
 
 /**
  * Exact line, not a prefix. `startsWith` exempted anything that merely BEGAN like a deferred site,
@@ -621,8 +626,17 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
      */
     describe('no code in this app stamps a calendar day from the clock', () => {
         it('finds the production files at all, in every package it claims to cover', () => {
-            // Guards the guard: an empty list makes the checks below vacuous, and a root that
-            // silently resolves to nothing would quietly stop covering a whole package.
+            // Guards the guard twice over. The per-root count catches a root that resolves to
+            // nothing; the NAMED list catches a root deleted outright, which the count check
+            // cannot — it iterates the same list it is meant to be checking, so removing an entry
+            // makes it pass. That hole was found by mutating this file rather than by reading it.
+            expect(SCANNED_ROOTS.map(([pkg]) => pkg)).toEqual([
+                'core-entities-server',
+                'entities',
+                'orders-ng',
+                'integration-tests',
+                'orders-server',
+            ]);
             expect(SCANNED_FILES.length).toBeGreaterThan(80);
             for (const [pkg] of SCANNED_ROOTS) {
                 expect(SCANNED_FILES.filter(([p]) => p === pkg).length, `${pkg} contributed no files`)
@@ -662,6 +676,12 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             expect(offenders, `${file}: use CalendarDayOrToday, not a clock fallback`).toEqual([]);
         });
 
+        it('nothing is deferred: the shape net holds without exception', () => {
+            // Stated as an assertion rather than left implicit, so re-adding a deferral is a
+            // deliberate edit to this line with a reason beside it.
+            expect(DEFERRED_ASOF).toEqual([]);
+        });
+
         it('every deferred asOf site still exists, so fixing one forces it off the list', () => {
             // A stale allowlist is a guard with a hole in it that nobody can see. When the follow-up
             // against #209 converts one of these, this fails until the entry is removed.
@@ -669,6 +689,26 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
                 const shapes = codeLines(source(file), clockFallback());
                 expect(shapes, `${file}: '${exact}' is no longer there`).toContain(exact);
             }
+        });
+
+        it('pins the three invoice day sites positively, which neither net can reach', () => {
+            // `options?.AsOf ? String(options.AsOf).slice(0, 10) : new Date().toISOString().slice(0, 10)`
+            // is the defect in a spelling both nets miss: the branches are not `new Date(x)` and
+            // `new Date()`, and no date-column name appears on the line. Reverting it passed the
+            // whole suite until these three assertions existed — found by mutating, not by reading.
+            //
+            // The general form of that idiom, `new Date().toISOString().slice(0, 10)` used as
+            // "today", is a THIRD net this guard does not yet have, because ~20 sites across the
+            // Angular pages still use it. That net belongs to the follow-up that converts them.
+            expect(scannedSource('core-entities-server', 'InvoiceDisplay.ts')).toMatch(
+                /const generatedOn = options\?\.GeneratedOn \?\? Today\(\);/,
+            );
+            expect(scannedSource('core-entities-server', 'InvoiceBuilder.ts')).toMatch(
+                /const asOf = ToISODate\(await CalendarDayOrToday\(options\?\.AsOf, provider, user\)\)/,
+            );
+            expect(scannedSource('orders-server', 'services/invoice-renderer.ts')).toMatch(
+                /const generatedOn = ToISODate\(await CalendarDayOrToday\(asOf, provider, user\)\)/,
+            );
         });
 
         it('pins the Angular payment form positively, since both nets are negative', () => {
