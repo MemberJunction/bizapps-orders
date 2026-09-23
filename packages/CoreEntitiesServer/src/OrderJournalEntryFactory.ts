@@ -73,7 +73,14 @@ import {
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { SplitContraLegs } from './ContractBalance.js';
-import { GL_ROLE, GLAccountResolver, GLAccountResolutionError, type GLRole } from './GLAccountResolver.js';
+import {
+    GL_ROLE,
+    GLAccountResolver,
+    GLAccountResolutionError,
+    IsRoleNotLinked,
+    UnbilledReceivableNotLinkedError,
+    type GLRole,
+} from './GLAccountResolver.js';
 import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
 import { MergeLineDimensions } from './LineDimensionMerge.js';
@@ -552,7 +559,10 @@ export class OrderJournalEntryFactory {
             try {
                 bookingCreditAccount = await resolve(GL_ROLE.GiftCardLiability);
                 creditLabel = 'Gift card liability';
-            } catch {
+            } catch (err) {
+                // Only "nothing linked" is tolerated. A cross-company link (D6) or any other failure
+                // is not a missing optional role and must not be papered over with Deferred Revenue.
+                if (!IsRoleNotLinked(err)) throw err;
                 // Same tolerance as Processing Fee: a role accounting has not seeded must not take
                 // the sale down. Deferred Revenue is the same SHAPE of obligation, so the entry stays
                 // correct and balanced — just coarser than a dedicated card liability. Reported
@@ -579,7 +589,8 @@ export class OrderJournalEntryFactory {
         if (discount !== 0) {
             try {
                 discountAccount = await resolve(GL_ROLE.SalesDiscounts);
-            } catch {
+            } catch (err) {
+                if (!IsRoleNotLinked(err)) throw err;
                 discountAccount = null; // plan D11 — net into the revenue credit instead
             }
         }
@@ -682,16 +693,14 @@ export class OrderJournalEntryFactory {
                 });
             }
             if (legs.Unbilled !== 0) {
-                const contra = await this.unbilledOrDeferred(resolve, legs.Unbilled, {
-                    OrderNumber: order.OrderNumber ?? '',
-                    LineNumber: line.LineNumber,
-                    CompanyID: companyID,
-                    ProductName: product.Name,
-                });
                 bookingLines.push({
-                    GLAccountID: contra.GLAccountID,
+                    GLAccountID: await this.resolveUnbilledReceivable(resolve, legs.Unbilled, {
+                        OrderNumber: order.OrderNumber ?? '',
+                        LineNumber: line.LineNumber,
+                        CompanyID: companyID,
+                    }),
                     DebitAmount: legs.Unbilled,
-                    Description: contra.Description,
+                    Description: `Unbilled receivable — ${product.Name}`,
                     Dimensions: lineDims,
                 });
             }
@@ -802,38 +811,31 @@ export class OrderJournalEntryFactory {
     }
 
     /**
-     * Where a contract-asset leg posts: Unbilled Receivable, or Deferred Revenue when nobody has
-     * linked one (D92).
+     * The Unbilled Receivable account for a contract-asset leg (D92), or a refusal when nobody has
+     * linked one.
      *
-     * NOT LINKED IS NOT FATAL, and never has been for this role. The entry stays correct and
-     * balanced with the whole leg on Deferred — just coarser, because a reader then cannot tell
-     * revenue earned ahead of billing from billing ahead of performance. Reported rather than
-     * swallowed, since nothing else would ever say so.
+     * NOT LINKED IS FATAL for this leg (golive #261). Falling back to Deferred Revenue balanced and
+     * misstated no revenue, but it booked a contract asset into a liability account and reported it
+     * only to a server log. Only `NotLinked` is turned into the explanatory refusal; a cross-company
+     * link (D6) or any other failure propagates as it is.
      *
      * Shared with #227's progress catch-up, which raises the same leg from the same rule.
      */
-    private async unbilledOrDeferred(
+    private async resolveUnbilledReceivable(
         resolve: (role: GLRole) => Promise<string>,
         amount: number,
-        where: { OrderNumber: string; LineNumber: number; CompanyID: string; ProductName: string },
-    ): Promise<{ GLAccountID: string; Description: string }> {
+        where: { OrderNumber: string; LineNumber: number; CompanyID: string },
+    ): Promise<string> {
         try {
-            return {
-                GLAccountID: await resolve(GL_ROLE.UnbilledReceivable),
-                Description: `Unbilled receivable — ${where.ProductName}`,
-            };
-        } catch {
-            console.warn(
-                `Order ${where.OrderNumber} line ${where.LineNumber}: no '${GL_ROLE.UnbilledReceivable}' GL ` +
-                    `account is linked for company ${where.CompanyID}, so ${Math.abs(amount).toFixed(2)} of ` +
-                    `revenue earned ahead of billing went to Deferred Revenue instead. The entry balances and ` +
-                    `no revenue is misstated, but the contract asset is now indistinguishable from unearned ` +
-                    `billing on the balance sheet. Link an '${GL_ROLE.UnbilledReceivable}' account to the company.`,
+            return await resolve(GL_ROLE.UnbilledReceivable);
+        } catch (err) {
+            if (!IsRoleNotLinked(err)) throw err;
+            throw UnbilledReceivableNotLinkedError(
+                `Order ${where.OrderNumber} line ${where.LineNumber}`,
+                where.CompanyID,
+                amount,
+                err,
             );
-            return {
-                GLAccountID: await resolve(GL_ROLE.DeferredRevenue),
-                Description: `Deferred revenue (unbilled, no contract-asset account) — ${where.ProductName}`,
-            };
         }
     }
 
@@ -1038,6 +1040,7 @@ export class OrderJournalEntryFactory {
                 throw new GLAccountResolutionError(
                     GL_ROLE.Sales,
                     line.ProductID,
+                    'NotLinked',
                     `Charge '${info.Label}' has no GL account linked for company ${companyID}. Link one to the ` +
                         `charge type before booking — a charge with nowhere to go would be billed to the customer ` +
                         `and never recorded in the ledger.`,
