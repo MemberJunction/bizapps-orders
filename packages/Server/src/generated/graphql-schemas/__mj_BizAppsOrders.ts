@@ -5421,6 +5421,14 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `The posted observation this row replaces. Set only by Orders.RecordProgress for a user holding MJ.BizApps.Orders.Progress.Supersede. The replaced row is not edited: its recognition is reversed by ReversalJournalEntryID and it stops counting as the line's last observation. At most one row may supersede any observation.`}) 
+    @MaxLength(36)
+    SupersedesMeasurementID?: string;
+        
+    @Field({nullable: true, description: `Soft reference into accounting: the entry reversing the superseded observation's recognition, dated on that observation's MeasurementDate so the pair nets to zero in its period. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`}) 
+    @MaxLength(36)
+    ReversalJournalEntryID?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     AttestedByUser?: string;
@@ -5484,6 +5492,12 @@ export class CreatemjBizAppsOrdersOrderLineProgressMeasurementInput {
     @Field({ nullable: true })
     Status?: string;
 
+    @Field({ nullable: true })
+    SupersedesMeasurementID: string | null;
+
+    @Field({ nullable: true })
+    ReversalJournalEntryID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -5541,6 +5555,12 @@ export class UpdatemjBizAppsOrdersOrderLineProgressMeasurementInput {
 
     @Field({ nullable: true })
     Status?: string;
+
+    @Field({ nullable: true })
+    SupersedesMeasurementID?: string | null;
+
+    @Field({ nullable: true })
+    ReversalJournalEntryID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

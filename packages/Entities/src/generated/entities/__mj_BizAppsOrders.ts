@@ -2111,6 +2111,17 @@ export const mjBizAppsOrdersOrderLineProgressMeasurementSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    SupersedesMeasurementID: z.string().nullable().describe(`
+        * * Field Name: SupersedesMeasurementID
+        * * Display Name: Supersedes Measurement ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Line Progress Measurements (vwOrderLineProgressMeasurements.ID)
+        * * Description: The posted observation this row replaces. Set only by Orders.RecordProgress for a user holding MJ.BizApps.Orders.Progress.Supersede. The replaced row is not edited: its recognition is reversed by ReversalJournalEntryID and it stops counting as the line's last observation. At most one row may supersede any observation.`),
+    ReversalJournalEntryID: z.string().nullable().describe(`
+        * * Field Name: ReversalJournalEntryID
+        * * Display Name: Reversal Journal Entry ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition, dated on that observation's MeasurementDate so the pair nets to zero in its period. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`),
     AttestedByUser: z.string().nullable().describe(`
         * * Field Name: AttestedByUser
         * * Display Name: Attested By User
@@ -11432,6 +11443,33 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntit
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: SupersedesMeasurementID
+    * * Display Name: Supersedes Measurement ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Line Progress Measurements (vwOrderLineProgressMeasurements.ID)
+    * * Description: The posted observation this row replaces. Set only by Orders.RecordProgress for a user holding MJ.BizApps.Orders.Progress.Supersede. The replaced row is not edited: its recognition is reversed by ReversalJournalEntryID and it stops counting as the line's last observation. At most one row may supersede any observation.
+    */
+    get SupersedesMeasurementID(): string | null {
+        return this.Get('SupersedesMeasurementID');
+    }
+    set SupersedesMeasurementID(value: string | null) {
+        this.Set('SupersedesMeasurementID', value);
+    }
+
+    /**
+    * * Field Name: ReversalJournalEntryID
+    * * Display Name: Reversal Journal Entry ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition, dated on that observation's MeasurementDate so the pair nets to zero in its period. NULL when this row supersedes nothing, or when the superseded observation posted no entry.
+    */
+    get ReversalJournalEntryID(): string | null {
+        return this.Get('ReversalJournalEntryID');
+    }
+    set ReversalJournalEntryID(value: string | null) {
+        this.Set('ReversalJournalEntryID', value);
     }
 
     /**

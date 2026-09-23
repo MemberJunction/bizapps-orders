@@ -33,6 +33,14 @@
  *   PM15 a user whose ONLY role is Engagement Lead attests: the observation and its entry land
  *   PM16 a UI-only user is refused before anything is written — observation and ledger counts unchanged
  *   PM17 an Account Director (OverrideAny, no Attest) is refused too, so the two grants are separable
+ *   PM18 a date after the current business month WARNS and still posts
+ *   PM19 a mistyped future date is recoverable: a supervisor supersedes it, the reversal nets it to
+ *        zero ON ITS OWN DATE, the replacement catches up from the restored total, and the next
+ *        month's ordinary attestation is accepted again
+ *   PM20 supersede without the grant is refused and writes nothing
+ *   PM21 only the latest observation can be superseded, so nothing is reversed twice — and the
+ *        filtered unique index refuses a second row naming the same observation
+ *   PM22 the worklist's "last attested" is the replacement, not the superseded row
  *
  * Every attestation here is made as an Engagement Lead-only user, never the System owner, so each
  * check also proves the role is enough on its own.
@@ -41,7 +49,9 @@
  *
  * CONNECTS TO:
  *   CODE: RecordProgressOperation · OrderJournalEntryFactory.BuildProgressDraft · RevenueRecognition.ComputeCatchUp
+ *         ProgressSupersede
  *   DB:   V202609230600__v5.13.0__OrderLineProgressMeasurement.sql
+ *         V202609231200__v5.13.0__OrderLineProgressMeasurement_Supersede.sql
  */
 import { BaseRemotableOperation, UserInfo, UserRoleInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
@@ -81,6 +91,10 @@ interface RecordOutput {
     Success: boolean;
     Message?: string;
     ClosedPeriodWarning?: string | null;
+    FutureDateWarning?: string | null;
+    SupersededMeasurementID?: string | null;
+    ReversalAmount?: number;
+    ReversalJournalEntryID?: string | null;
     Preview: boolean;
     RecognizedToDateBefore?: number;
     RecognizedToDateAfter?: number;
@@ -93,6 +107,7 @@ interface RecordInput {
     MeasurementDate: string;
     PercentComplete: number;
     Preview?: boolean;
+    SupersedesMeasurementID?: string | null;
 }
 
 function operation<I, O>(key: string) {
@@ -155,6 +170,37 @@ const observations = (ctx: IntegrationCheckContext, lineID: string) =>
     );
 
 const cents = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * An attester who can also supersede: the context user holding Engagement Lead AND Orders Revenue
+ * Supervisor, built the way {@link withOnlyRole} builds a single-role user. The supervisor role is
+ * additive — a supersede is itself an attestation, so it needs Attest as well.
+ */
+function supervisor(ctx: IntegrationCheckContext): UserInfo {
+    const roles = ['Engagement Lead', 'Orders Revenue Supervisor'].map((name) => {
+        const role = ctx.Provider.Roles.find((r) => r.Name === name);
+        Assert(role != null, `role '${name}' is not in metadata — run mj sync push for this app`);
+        return new UserRoleInfo({ UserID: ctx.User.ID, RoleID: role!.ID, Role: role!.Name });
+    });
+    return new UserInfo(ctx.Provider, { ...ctx.User, UserRoles: roles });
+}
+
+interface WorklistOutput {
+    Success: boolean;
+    Message?: string;
+    CanSupersede: boolean;
+    Rows: Array<{ OrderLineID: string; LastMeasurementID?: string | null; LastMeasurementDate?: string | null; LastPercentComplete: number }>;
+}
+
+/** The worklist's whole output, including the supersede flag the rows-only helper below drops. */
+async function worklistOutput(ctx: IntegrationCheckContext, user = withOnlyRole(ctx, 'Engagement Lead')): Promise<WorklistOutput> {
+    const result = await operation<{ IncludeComplete?: boolean }, WorklistOutput>('Orders.GetProgressWorklist').Execute({ IncludeComplete: true }, { provider: ctx.Provider, user });
+    Assert(result.Success, `GetProgressWorklist did not execute: ${result.ErrorMessage ?? 'unknown'}`);
+    return result.Output!;
+}
+
+const lineTotal = (ctx: IntegrationCheckContext, lineID: string) =>
+    TxOne<{ RecognizedToDate: number }>(ctx, `SELECT RecognizedToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID}'`);
 
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -775,6 +821,148 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 AssertEqual(after.JEL, before.JEL, 'no journal entry line was written');
             }),
     })),
+    {
+        Id: 'progress-measurement.PM18',
+        Name: 'PM18: a date after the current business month WARNS and still posts',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { lineID } = await bookedProjectLine(ctx);
+                const past = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.2, Preview: true });
+                Assert(past.Success, past.Message ?? '');
+                AssertEqual(past.FutureDateWarning ?? null, null, 'a date in a past month is not a future date');
+
+                const ahead = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2099-12-31', PercentComplete: 0.4 });
+                Assert(ahead.Success, `forward dating must not be blocked: ${ahead.Message}`);
+                Assert(!!ahead.JournalEntryID, 'the entry is written');
+                Assert(/2099-12-31/.test(String(ahead.FutureDateWarning ?? '')), `the warning names the date: ${JSON.stringify(ahead.FutureDateWarning)}`);
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM19',
+        Name: 'PM19: a mistyped future date is superseded — reversed on its own date, replaced from the restored total, and the line unfrozen',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { lineID } = await bookedProjectLine(ctx);
+                Assert((await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4 })).Success, 'July at 40%');
+                // August typed with the wrong year.
+                const typo = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2027-08-31', PercentComplete: 0.7 });
+                Assert(typo.Success, typo.Message ?? '');
+
+                // The trap: the real August is refused, because it is "before" the typo.
+                const frozen = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.55 });
+                AssertEqual(frozen.Success, false, 'an ordinary observation dated before the typo is still refused');
+
+                const fixed = await record(
+                    ctx,
+                    { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.55, SupersedesMeasurementID: typo.OrderLineProgressMeasurementID },
+                    supervisor(ctx),
+                );
+                Assert(fixed.Success, `the supersede must post: ${fixed.Message}`);
+                AssertEqual(fixed.SupersededMeasurementID?.toLowerCase(), typo.OrderLineProgressMeasurementID?.toLowerCase(), 'it names the row it replaced');
+                AssertEqual(fixed.ReversalAmount, -300.01, "the reversal is the typo's own delta, negated");
+                Assert(!!fixed.ReversalJournalEntryID && !!fixed.JournalEntryID, 'two entries: the reversal and the catch-up');
+                AssertEqual(fixed.RecognizedToDateBefore, 400, 'the catch-up starts from what July left');
+                AssertEqual(fixed.RecognitionAmount, 150.01, 'and posts only its own delta');
+
+                const entries = await recognitionEntries(ctx, lineID);
+                const onTypoDate = entries.filter((e) => e.EffectiveDate === '2027-08-31').map((e) => cents(Number(e.Signed)));
+                AssertEqual(JSON.stringify(onTypoDate.sort((a, b) => a - b)), JSON.stringify([-300.01, 300.01]), "the typo's period nets to zero on its own date");
+                AssertEqual(cents(entries.reduce((s, e) => s + Number(e.Signed), 0)), 550.01, 'the ledger holds exactly 55%');
+                AssertEqual(Number((await lineTotal(ctx, lineID)).RecognizedToDate), 550.01, "and so does the line's running total");
+
+                const rows = await observations(ctx, lineID);
+                const replaced = rows.find((r) => r.ID.toLowerCase() === typo.OrderLineProgressMeasurementID!.toLowerCase());
+                AssertEqual(replaced?.Status, 'Posted', 'the replaced row is untouched — still Posted, still immutable');
+                AssertEqual(Number(replaced?.RecognitionAmount), 300.01, 'with its original amount');
+
+                // And the line accepts the next month again, with no supervisor involved.
+                const september = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-09-30', PercentComplete: 0.6 });
+                Assert(september.Success, `the next ordinary attestation must be accepted: ${september.Message}`);
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM20',
+        Name: 'PM20: supersede without the grant is refused and writes nothing',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { lineID } = await bookedProjectLine(ctx);
+                const first = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2027-07-31', PercentComplete: 0.4 });
+                Assert(first.Success, first.Message ?? '');
+                const before = (await recognitionEntries(ctx, lineID)).length;
+                const refused = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4, SupersedesMeasurementID: first.OrderLineProgressMeasurementID });
+                AssertEqual(refused.Success, false, 'refused without the authorization');
+                Assert(/Progress\.Supersede/.test(refused.Message ?? ''), `the refusal names the grant: ${refused.Message}`);
+                AssertEqual((await observations(ctx, lineID)).length, 1, 'no observation written');
+                AssertEqual((await recognitionEntries(ctx, lineID)).length, before, 'no entry written');
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM21',
+        Name: 'PM21: only the latest observation can be superseded, so nothing is reversed twice',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { lineID } = await bookedProjectLine(ctx);
+                const july = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4 });
+                const august = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.5 });
+                Assert(july.Success && august.Success, 'two observations');
+
+                {
+                    const lead = supervisor(ctx);
+                    const older = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-15', PercentComplete: 0.45, SupersedesMeasurementID: july.OrderLineProgressMeasurementID }, lead);
+                    AssertEqual(older.Success, false, 'an observation with a later one on top of it cannot be superseded');
+                    Assert(/Only the latest observation/.test(older.Message ?? ''), older.Message ?? '');
+
+                    const once = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-30', PercentComplete: 0.5, SupersedesMeasurementID: august.OrderLineProgressMeasurementID }, lead);
+                    Assert(once.Success, `the latest can: ${once.Message}`);
+                    const twice = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-29', PercentComplete: 0.5, SupersedesMeasurementID: august.OrderLineProgressMeasurementID }, lead);
+                    AssertEqual(twice.Success, false, 'and not a second time');
+                }
+                AssertEqual(Number((await lineTotal(ctx, lineID)).RecognizedToDate), 500.01, "one reversal, not two: the line stands at 50%");
+
+                // The database floor, last because a failed statement ends the check's usefulness.
+                let refused = '';
+                try {
+                    await TxQuery(
+                        ctx,
+                        `INSERT INTO ${ORDERS_SCHEMA}.OrderLineProgressMeasurement (OrderLineID, MeasurementDate, PercentComplete, MethodCode, Status, SupersedesMeasurementID)
+                         VALUES ('${lineID}', '2026-08-28', 0.5, 'ManualAttestation', 'Draft', '${august.OrderLineProgressMeasurementID}')`,
+                    );
+                } catch (e) {
+                    refused = String(e);
+                }
+                Assert(/UQ_OLPM_Supersedes|duplicate key/i.test(refused), `a second row naming the same observation must be refused by the DB: ${refused || 'it was allowed'}`);
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM22',
+        Name: 'PM22: the worklist shows the replacement as last attested, not the superseded row',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { lineID } = await bookedProjectLine(ctx);
+                const typo = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2027-07-31', PercentComplete: 0.9 });
+                Assert(typo.Success, typo.Message ?? '');
+                AssertEqual((await worklistOutput(ctx)).CanSupersede, false, 'the screen is told the attester cannot supersede');
+
+                AssertEqual((await worklistOutput(ctx, supervisor(ctx))).CanSupersede, true, 'and the supervisor can');
+                const fixed = await record(
+                    ctx,
+                    { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4, SupersedesMeasurementID: typo.OrderLineProgressMeasurementID },
+                    supervisor(ctx),
+                );
+                Assert(fixed.Success, fixed.Message ?? '');
+
+                const row = (await worklistOutput(ctx)).Rows.find((r) => r.OrderLineID.toLowerCase() === lineID.toLowerCase());
+                Assert(row != null, 'the line is on the worklist');
+                AssertEqual(row!.LastMeasurementID?.toLowerCase(), fixed.OrderLineProgressMeasurementID?.toLowerCase(), 'last is the replacement');
+                AssertEqual(row!.LastMeasurementDate, '2026-07-31', 'with its date');
+                AssertEqual(row!.LastPercentComplete, 0.4, 'and its percent');
+            }),
+    },
 ];
 
 for (const check of ProgressMeasurementChecks) {

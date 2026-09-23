@@ -18,5 +18,15 @@
     "primaryKey": {
       "ID": "D8F2A094-F8A9-43F4-A347-716C4657BD8D"
     }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Progress.Supersede",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Revenue Supervisor",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "48240466-28E4-4967-98B4-71225560D805"
+    }
   }
 ]
