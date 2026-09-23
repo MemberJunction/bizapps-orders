@@ -27,7 +27,7 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
-import { OrderPricingService } from '@mj-biz-apps/orders-entities';
+import { NetAfterDiscount, OrderPricingService, type ResolvedPrice } from '@mj-biz-apps/orders-entities';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
@@ -56,6 +56,7 @@ interface PricedLine {
     ProductID: string;
     Quantity: number;
     UnitPrice: number;
+    /** The line's WHOLE discount — the percentage concession and the allocated amount together. */
     DiscountAmount: number;
     ChargeAmount: number;
     LineTax: number;
@@ -63,6 +64,8 @@ interface PricedLine {
     LineTotalGross: number;
     Components?: Array<{ Kind: string; Label: string; Amount: number }>;
     TaxExemptReason?: string | null;
+    ProductPriceID?: string | null;
+    Default?: { UnitPrice: number; ProductPriceID: string | null; PriceName: string | null } | null;
 }
 
 interface PriceOrderOutput {
@@ -130,16 +133,42 @@ export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput,
                 ShipToAddressID: input.ShipToAddressID ?? null,
                 Lines: lines,
                 PromotionCodes: input.PromotionCodes ?? [],
-                ManualDiscounts: (input.ManualDiscounts ?? []) as never,
+                // `LineIndex` IS THE LINE, and it has to be translated.
+                //
+                // The walk keys lines positionally, and the engine's request shape names its target
+                // as `OrderLineID` — so handing it this input's rows unchanged passed a `LineIndex`
+                // under a field the engine reads as an id. It matched nothing, and an unmatched
+                // line-level discount became an ORDER-LEVEL one spread pro-rata across every line: a
+                // different discount from the one asked for, applied without complaint. A negative
+                // index is how a caller says "the whole order", which is what an absent target means.
+                ManualDiscounts: (input.ManualDiscounts ?? []).map((d) => ({
+                    OrderLineID: d.LineIndex >= 0 ? String(d.LineIndex) : null,
+                    Amount: d.Amount ?? null,
+                    Percent: d.Percent ?? null,
+                    Reason: d.Reason,
+                })),
                 Charges: (input.Charges ?? []) as never,
+                // The editor asks this on every edit and needs the rules' answer for a pinned line
+                // too — it is what tells an override apart from a restatement of the default.
+                IncludeDefaultsForStatedLines: true,
             });
 
             const priced: PricedLine[] = lines.map((line, i) => {
                 const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
-                const discount = Number(line.DiscountAmount ?? 0);
+                // BOTH discount fields, through the SAME function the line and the journal entry use.
+                //
+                // This read `gross - DiscountAmount` and ignored `DiscountPct` outright, so a line
+                // carrying a percentage concession was quoted on screen at a figure the ledger would
+                // never book — `OrderLineEntityServer.computeTotals` applies the percentage, and the
+                // journal entry mirrors it. The two could only disagree, and nothing reported it:
+                // the entry still balances, the order still saves, and only the number the customer
+                // was shown is wrong. Converted orders carry the field today, so this was already
+                // live before anything in the product could set it.
+                const pct = Math.round(Number(line.DiscountPct ?? 0) * 1e4) / 1e4;
                 const charge = Number(line.ChargeAmount ?? 0);
                 const tax = Number(line.LineTax ?? 0);
-                const net = Math.round((gross - discount) * 100) / 100;
+                const net = NetAfterDiscount(gross, pct, Number(line.DiscountAmount ?? 0));
+                const discount = Math.round((gross - net) * 100) / 100;
                 return {
                     ProductID: line.ProductID,
                     Quantity: Number(line.Quantity ?? 0),
@@ -155,6 +184,8 @@ export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput,
                         Amount: Number((c as { Amount?: number }).Amount ?? 0),
                     })),
                     TaxExemptReason: result.TaxReasons.get(i) ?? null,
+                    ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
+                    Default: engineDefault(result.EngineDefaults.get(line)),
                 };
             });
 
@@ -183,6 +214,22 @@ export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput,
             };
         }
     }
+}
+
+/**
+ * The engine default as the wire carries it: absent when the walk was not asked, null when it was
+ * asked and no rule priced the product.
+ */
+function engineDefault(
+    resolved: ResolvedPrice | null | undefined,
+): PricedLine['Default'] {
+    if (resolved === undefined) return undefined;
+    if (resolved === null) return null;
+    return {
+        UnitPrice: resolved.UnitPrice,
+        ProductPriceID: resolved.ProductPriceID,
+        PriceName: resolved.PriceName ?? null,
+    };
 }
 
 /**

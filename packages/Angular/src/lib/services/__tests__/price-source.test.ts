@@ -100,3 +100,46 @@ describe('MJOLinePrice.PriceSource', () => {
         expect(priceSourceFor(150, [{ Kind: 'Base', Label: 'Member 195', Amount: 195 }], overridden)).toBe('stated');
     });
 });
+
+/**
+ * golive #253 — the editor compares every pick against the engine default, so the pass has to
+ * carry it, pinned line or not, and name the rule that produced the priced amount.
+ */
+describe('MJOLinePrice.Default and ProductPriceID', () => {
+    function summarizeOne(priced: Record<string, unknown>, line: Line = { ID: 'L1', Quantity: 1 }) {
+        const scheduler = new MJOPricingScheduler();
+        const summarize = (scheduler as unknown as {
+            summarize: (order: OrderHeaderEntity, out: unknown) => {
+                Lines: Array<{ ProductPriceID: string | null; Default?: { UnitPrice: number; ProductPriceID: string | null; PriceName: string | null } | null }>;
+            };
+        }).summarize.bind(scheduler);
+        return summarize(orderWith([line]), {
+            Lines: [{ UnitPrice: 100, DiscountAmount: 0, LineTotalNet: 100, ...priced }],
+            Totals: { Net: 100, Discount: 0, Gross: 100 },
+        }).Lines[0];
+    }
+
+    it('carries the winning rule and the engine default through unchanged', () => {
+        const out = summarizeOne({
+            ProductPriceID: 'pp-base',
+            Default: { UnitPrice: 1200, ProductPriceID: 'pp-base', PriceName: 'Base list price' },
+        });
+        expect(out.ProductPriceID).toBe('pp-base');
+        expect(out.Default).toEqual({ UnitPrice: 1200, ProductPriceID: 'pp-base', PriceName: 'Base list price' });
+    });
+
+    it('reports the default for a PINNED line, which is the case the editor needs', () => {
+        const out = summarizeOne(
+            { UnitPrice: 1100, ProductPriceID: null, Default: { UnitPrice: 1200, ProductPriceID: 'pp-base', PriceName: 'Base list price' } },
+            { ID: 'L1', Quantity: 1, StatedPrice: true },
+        );
+        expect(out.ProductPriceID).toBeNull();
+        expect(out.Default?.UnitPrice).toBe(1200);
+    });
+
+    it('keeps null (asked, no rule) distinct from undefined (not asked)', () => {
+        expect(summarizeOne({ Default: null }).Default).toBeNull();
+        expect(summarizeOne({}).Default).toBeUndefined();
+        expect(summarizeOne({}).ProductPriceID).toBeNull();
+    });
+});

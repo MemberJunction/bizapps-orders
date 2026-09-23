@@ -70,6 +70,9 @@ function realLine(calls: { asked: number }) {
         // because Object.create leaves the generated accessors unusable on a bare prototype.
         DimensionID: null,
         DimensionValueID: null,
+        // Read by the override-reason check in the same ValidateAsync, for the same reason.
+        PriceOverridden: false,
+        PriceOverrideReason: null,
         LineNumber: 1,
     })) {
         Object.defineProperty(line, k, { value: v, writable: true });
@@ -113,7 +116,7 @@ function orderWith(line: unknown, booking: boolean) {
         Object.defineProperty(order, k, { value: v, writable: true });
     }
     // Everything after the line loop is someone else's subject.
-    for (const m of ['saveTaxReasons', 'writePromotionRecords', 'writeChargeRecords']) {
+    for (const m of ['saveTaxReasons', 'stampLineDimensions', 'writePromotionRecords', 'writeChargeRecords']) {
         Object.defineProperty(order, m, { value: async () => undefined, writable: true });
     }
     return order;

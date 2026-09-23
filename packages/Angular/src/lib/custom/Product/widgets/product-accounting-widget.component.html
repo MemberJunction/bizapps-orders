@@ -1,63 +1,28 @@
+<!--
+    CARD SHELL — the product's own fields are PROJECTED by the caller.
+    Same reason as the fulfillment and subscription widgets: mj-collapsible-panel reads its
+    fields through @ContentChildren, which cannot see a field declared inside a child
+    component's view. That query drives hide-when-empty (golive#184) and the rail badge
+    (golive#255), so the fields are declared in the panel template and projected in here.
+
+    StandaloneSellingPrice is deliberately deprecated off generated forms by
+    metadata/entities/.product-standalone-selling-price-deprecation.json and is NOT rendered.
+-->
 <div class="mjo-acct-widget-wrap">
     <div class="mjo-acct-card">
         <div class="mjo-card-head">
             <i class="fa-solid fa-scale-balanced"></i>
             <span>General Ledger &amp; Revenue Recognition Classification</span>
         </div>
-        <div class="mjo-card-body">
-            <!--
-                CompanyID moved here from the generated `financialAndAccounting` section,
-                which this panel now replaces (replacesSectionKey). Every other field in
-                that section was already rendered twice, except StandaloneSellingPrice —
-                deliberately deprecated off generated forms by
-                metadata/entities/.product-standalone-selling-price-deprecation.json, so it
-                is NOT carried over.
-            -->
-            <mj-form-field
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="CompanyID"
-                Type="textbox"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                LinkType="Record"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
-            <mj-form-field
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="RevenueRecognitionTypeID"
-                Type="textbox"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                LinkType="Record"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
-            <mj-form-field
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="IsTaxable"
-                Type="checkbox"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
-            <mj-form-field 
-                [Record]="Product"
-                [ShowLabel]="true"
-                FieldName="TaxCategory"
-                Type="textbox"
-                [EditMode]="EditMode"
-                [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)"
-            ></mj-form-field>
+        <div class="mjo-card-body mjo-acct-fields">
+            <ng-content></ng-content>
         </div>
     </div>
 
     <!--
         bizapps-orders#113 — the GL accounts this product books to.
 
-        Andrew expected these HERE, under Accounting, and the section showed only the
+        Users expect these HERE, under Accounting, and the section showed only the
         product's own columns. The links live in accounting, but they are polymorphic
         ((EntityID, RecordID)) and accounting must not depend on orders, so its own screen
         cannot even name a product. Rendering them from this side is what makes the pair

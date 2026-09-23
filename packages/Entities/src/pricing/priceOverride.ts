@@ -75,3 +75,26 @@ export function isNamedListPick(
     if (!hit) return false;
     return moneyEqual(Number(line.UnitPrice ?? 0), hit.UnitPrice);
 }
+
+/**
+ * The line says its price was overridden and gives no reason for it.
+ *
+ * `PriceOverrideReason` is the audit trail for a price that left the rules: who reviews the order
+ * later reads it instead of guessing at a concession. Whitespace is not a reason. The flag is read
+ * loosely because it arrives as a boolean from the entity and as 0/1 from a raw row.
+ *
+ * Nothing here decides WHETHER the flag is right — that is the client's job at the moment of the
+ * pick, comparing against the engine default — only whether a flagged line explains itself.
+ */
+export function priceOverrideReasonMissing(line: {
+    PriceOverridden?: boolean | number | string | null;
+    PriceOverrideReason?: string | null;
+}): boolean {
+    const flag = line.PriceOverridden;
+    const overridden = flag === true || flag === 1 || flag === '1' || flag === 'true';
+    if (!overridden) return false;
+    return (line.PriceOverrideReason ?? '').trim() === '';
+}
+
+/** The refusal an operator sees when a flagged line carries no reason. */
+export const PRICE_OVERRIDE_REASON_REQUIRED = 'Enter a reason for the price override';

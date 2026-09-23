@@ -2,6 +2,7 @@ import { RunQuery, RunView, type IMetadataProvider, type IRunQueryProvider } fro
 import type { MJOSummaryFigure } from '../panels/summary-strip.component';
 import { FormatMoney } from '../panels/money-format';
 import { MJO_ENTITIES } from '../data/entity-names';
+import { OverdueFilter } from '@mj-biz-apps/orders-entities';
 
 export type PartyKind = 'person' | 'organization';
 
@@ -127,7 +128,8 @@ async function loadCountFigures(
         {
             Label: 'Overdue',
             EntityName: MJO_ENTITIES.OrderHeader,
-            Filter: `${partyCol}='${id}' AND Balance > 0 AND DueDate < GETUTCDATE() AND Status<>'Voided'`,
+            // ONE definition of overdue (overdue.ts): this used to retype it, and forgot Draft/Quoted.
+            Filter: `${partyCol}='${id}' AND ${OverdueFilter(new Date().toISOString().slice(0, 10))}`,
             Tone: 'muted',
         },
         {

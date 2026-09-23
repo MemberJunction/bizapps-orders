@@ -52,3 +52,26 @@ export function MergeLineDimensions(
         { DimensionID, DimensionValueID },
     ];
 }
+
+/**
+ * Combine the tags a product's mapping implies with the tags derived from the line itself.
+ *
+ * THE RULE WINS ON A SHARED AXIS. They normally address different ones — Venture, Product and Event
+ * come from the mapping, ARR-Type and Vintage are facts about this line — but where both name the
+ * same axis the rule is the more specific answer: it was computed from this line, while the mapping
+ * is a default somebody set on a product, a category or a company.
+ *
+ * Case-insensitive on the axis for the same reason as `MergeLineDimensions`: ids arrive from SQL
+ * Server uppercased and from a browser lower case, and a missed match here would send accounting two
+ * values for one dimension, which it refuses.
+ */
+export function MergeDerivedTags(
+    fromMapping: readonly LineDimensionTag[],
+    fromRules: readonly LineDimensionTag[],
+): LineDimensionTag[] {
+    const ruleAxes = new Set(fromRules.map((tag) => tag.DimensionID.toLowerCase()));
+    return [
+        ...fromMapping.filter((tag) => !ruleAxes.has(tag.DimensionID.toLowerCase())),
+        ...fromRules,
+    ];
+}

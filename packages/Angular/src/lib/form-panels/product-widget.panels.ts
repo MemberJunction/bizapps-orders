@@ -75,19 +75,27 @@ export class ProductPromosPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
         sortKey: 60,
         contributionKey: 'accounting',
         // Claims the generated `financialAndAccounting` section, which rendered the same
-        // Rev-Rec / IsTaxable / TaxCategory fields a second time. CompanyID moved into the
-        // widget so nothing is lost; StandaloneSellingPrice is deliberately deprecated off
+        // Rev-Rec / IsTaxable / TaxCategory fields a second time. CompanyID moved into this
+        // panel so nothing is lost; StandaloneSellingPrice is deliberately deprecated off
         // generated forms and is not carried over.
-        //
-        // This panel keeps its fields inside the widget on purpose — unlike fulfillment and
-        // subscriptions it also renders bizapps-product-gl-links, which is real content when
-        // the three product columns are empty, so it must NOT be hide-when-empty.
         replacesSectionKey: 'financialAndAccounting',
     },
 })
 @Component({
     standalone: false,
     selector: 'mjo-product-accounting-panel',
+    // The mj-form-fields are declared HERE, not inside the widget, for the same reason as
+    // fulfillment and subscriptions: mj-collapsible-panel reads its fields through
+    // @ContentChildren, which cannot see a field declared inside a child component's view.
+    // That query is also what drives the rail badge — a section that sees no fields reports
+    // no required-and-empty count before a save and claims none of the field-named errors
+    // after a failed one, so Accounting never badged even while CompanyID and
+    // RevenueRecognitionTypeID sat empty and red (golive #255).
+    //
+    // This used to keep its fields in the widget so the panel could never hide-when-empty
+    // and take the GL links with it. That is not a risk: CompanyID and
+    // RevenueRecognitionTypeID are NOT NULL, so a saved record always has a renderable field
+    // here, and an unsaved one opens in edit mode where fields render regardless.
     template: `
         <mj-collapsible-panel
             SectionKey="accounting"
@@ -100,6 +108,44 @@ export class ProductPromosPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
                 [EditMode]="EditMode"
                 [FormContext]="FormContext"
                 (Navigate)="FormComponent.OnFormNavigate($event)">
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="CompanyID"
+                    Type="textbox"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    LinkType="Record"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="RevenueRecognitionTypeID"
+                    Type="textbox"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    LinkType="Record"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="IsTaxable"
+                    Type="checkbox"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="TaxCategory"
+                    Type="textbox"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
             </bizapps-product-accounting-widget>
         </mj-collapsible-panel>
     `,

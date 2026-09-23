@@ -21,6 +21,7 @@ import {
     DiscountTotalOf,
     DocumentNumber,
     DueDateFor,
+    InstalmentDocumentNumber,
     LineDiscountOf,
     ListSubtotalOf,
     PaymentStatusLabel,
@@ -28,6 +29,7 @@ import {
     TermsLabel,
     type InvoiceAdjustmentFacts,
     type InvoiceChargeFacts,
+    type InvoiceInstalmentFacts,
     type InvoiceLineFacts,
     type InvoiceOrderFacts,
     type InvoicePartyFacts,
@@ -616,5 +618,69 @@ describe('assembling documents', () => {
         const l = line({ LineTotalNet: 100, ChargeAmount: 0, LineTax: 0, LineTotalGross: 175 });
         const [doc] = build({ Lines: [l], Order: order({ TotalGross: 175 }) });
         expect(doc.Notes.join(' ')).toMatch(/does not add up/i);
+    });
+});
+
+// ── Instalments (AIDP-24, plan §6) ───────────────────────────────────────────────────────────────
+
+describe('instalment documents', () => {
+    const instalment = (over: Partial<InvoiceInstalmentFacts> = {}): InvoiceInstalmentFacts => ({
+        CompanyID: CO_A,
+        InstallmentNumber: 2,
+        InstallmentCount: 4,
+        DueDate: '2027-03-18',
+        Amount: 25,
+        AmountPaid: 0,
+        DocumentNumber: null,
+        Payments: [],
+        ...over,
+    });
+
+    it('numbers by position: plain order number for one instalment, -N for several, letter+N when split', () => {
+        expect(InstalmentDocumentNumber('ORD-1005', 0, 1, 1, 1)).toBe('ORD-1005');
+        expect(InstalmentDocumentNumber('ORD-1005', 0, 1, 2, 4)).toBe('ORD-1005-2');
+        expect(InstalmentDocumentNumber('ORD-1005', 1, 2, 1, 1)).toBe('ORD-1005-B');
+        expect(InstalmentDocumentNumber('ORD-1005', 1, 2, 3, 4)).toBe('ORD-1005-B3');
+    });
+
+    it('with no instalment given, the document is exactly what it always was', () => {
+        // THE REGRESSION FENCE. The implicit instalment is the whole company gross on the header
+        // date, so nothing about a schedule-less order's document moves.
+        const [doc] = build({ Order: order({ DueDate: '2026-07-31' }) });
+        expect(doc.DocumentNumber).toBe('ORD-1005');
+        expect(doc.DueDate).toBe('2026-07-31');
+        expect(doc.AmountDue).toBe(100);
+        expect(doc.Ladder.map((r) => r.Kind)).toEqual(['Subtotal', 'Total', 'Due']);
+    });
+
+    it('demands the instalment: full order value, the instalment as the amount due, its own due date', () => {
+        const [doc] = build({ Order: order({ DueDate: '2026-07-31' }), Instalment: instalment() });
+        expect(doc.Gross).toBe(100);
+        expect(doc.AmountDue).toBe(25);
+        expect(doc.DueDate).toBe('2027-03-18');
+        expect(doc.DocumentNumber).toBe('ORD-1005-2');
+        expect(doc.Ladder.map((r) => r.Kind)).toEqual(['Subtotal', 'Total', 'Instalment', 'Due']);
+        expect(doc.Ladder.find((r) => r.Kind === 'Instalment')?.Label).toBe('Instalment 2 of 4');
+    });
+
+    it('prints the FROZEN number when the row has one, never a recomputed one', () => {
+        const [doc] = build({ Instalment: instalment({ DocumentNumber: 'ORD-1005-2', InstallmentNumber: 9 }) });
+        expect(doc.DocumentNumber).toBe('ORD-1005-2');
+    });
+
+    it('subtracts what was paid on THIS instalment, not on the order', () => {
+        const [doc] = build({
+            Instalment: instalment({ AmountPaid: 10, Payments: [{ Label: 'Paid on this instalment', Amount: 10 }] }),
+        });
+        expect(doc.AmountDue).toBe(15);
+        expect(doc.AmountPaid).toBe(10);
+        expect(doc.PaymentStatusLabel).toBe('Partly paid');
+        expect(doc.Ladder.map((r) => r.Kind)).toEqual(['Subtotal', 'Total', 'Instalment', 'Payment', 'Due']);
+    });
+
+    it("another company's instalment does not touch this company's document", () => {
+        const [doc] = build({ Instalment: instalment({ CompanyID: CO_B }) });
+        expect(doc.AmountDue).toBe(100);
+        expect(doc.DocumentNumber).toBe('ORD-1005');
     });
 });

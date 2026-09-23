@@ -19,7 +19,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { MergeLineDimensions } from '../LineDimensionMerge.js';
+import { MergeDerivedTags, MergeLineDimensions } from '../LineDimensionMerge.js';
 
 const VENTURE = 'a1111111-1111-4111-8111-111111111111';
 const PRODUCT = 'b2222222-2222-4222-8222-222222222222';
@@ -78,5 +78,53 @@ describe('MergeLineDimensions', () => {
         expect(
             MergeLineDimensions({ DimensionID: PRODUCT, DimensionValueID: MEMBERSHIP }, []),
         ).toEqual([{ DimensionID: PRODUCT, DimensionValueID: MEMBERSHIP }]);
+    });
+});
+
+/**
+ * Which derived tag wins when the product's mapping and a line-level rule name the same axis.
+ *
+ * The two normally address different axes, so the interesting case is the collision: somebody sets
+ * an ARR-Type default on a product category, and the line's own subscription decision says
+ * otherwise. The rule was computed from this line; the mapping is a default. Getting this backwards
+ * would let a stale category default overrule what the order actually did, and nothing downstream
+ * would show it.
+ */
+describe('MergeDerivedTags', () => {
+    it('keeps both when they name different axes', () => {
+        expect(
+            MergeDerivedTags(
+                [{ DimensionID: VENTURE, DimensionValueID: SIDECAR }],
+                [{ DimensionID: PRODUCT, DimensionValueID: MEMBERSHIP }],
+            ),
+        ).toEqual([
+            { DimensionID: VENTURE, DimensionValueID: SIDECAR },
+            { DimensionID: PRODUCT, DimensionValueID: MEMBERSHIP },
+        ]);
+    });
+
+    it('lets the rule win over the mapping on a shared axis', () => {
+        expect(
+            MergeDerivedTags(
+                [{ DimensionID: VENTURE, DimensionValueID: SIDECAR }],
+                [{ DimensionID: VENTURE, DimensionValueID: ASCEND }],
+            ),
+        ).toEqual([{ DimensionID: VENTURE, DimensionValueID: ASCEND }]);
+    });
+
+    it('matches the axis regardless of GUID case', () => {
+        expect(
+            MergeDerivedTags(
+                [{ DimensionID: VENTURE.toLowerCase(), DimensionValueID: SIDECAR }],
+                [{ DimensionID: VENTURE.toUpperCase(), DimensionValueID: ASCEND }],
+            ),
+        ).toEqual([{ DimensionID: VENTURE.toUpperCase(), DimensionValueID: ASCEND }]);
+    });
+
+    it('handles either side being empty', () => {
+        const mapping = [{ DimensionID: VENTURE, DimensionValueID: SIDECAR }];
+        expect(MergeDerivedTags(mapping, [])).toEqual(mapping);
+        expect(MergeDerivedTags([], mapping)).toEqual(mapping);
+        expect(MergeDerivedTags([], [])).toEqual([]);
     });
 });

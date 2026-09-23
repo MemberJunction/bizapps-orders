@@ -17,3 +17,6 @@ export const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
 /** The order line's accounting dimension tags (D31). */
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
+
+/** One instalment of an order's billing schedule (AIDP-24). */
+export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';

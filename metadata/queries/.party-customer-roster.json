@@ -1,0 +1,20 @@
+[
+  {
+    "fields": {
+      "Name": "Party Customer Roster",
+      "CategoryID": "@lookup:MJ: Query Categories.Name=Party Signals",
+      "UserQuestion": "Which organizations and people have placed orders, how many, and when did they last order?",
+      "Description": "Orders' contribution to the Party Signals roster: one row per bill-to organization and one per bill-to person over non-voided orders, with the count and the latest order date. Read by the shared party pickers so a picker can offer customers before the rest of the directory. [signal: order|orders]",
+      "SQL": "@file:SQL/party-customer-roster.sql",
+      "TechnicalDescription": "Party Signals contract columns PartyKind ('organization' | 'person'), PartyID, Count, LastActivityAt. Two grouped selects over __mj_BizAppsOrders.vwOrderHeaders WHERE Status <> 'Voided', unioned; bill-to is the customer (D65), ship-to is not. No parameters and no template — the picker filters and ranks the rows.",
+      "Status": "Approved",
+      "QualityRank": 8,
+      "ExecutionCostRank": 2,
+      "UsesTemplate": false
+    },
+    "relatedEntities": {},
+    "primaryKey": {
+      "ID": "6607C386-8978-44AF-96E4-7C78FEF848A4"
+    }
+  }
+]

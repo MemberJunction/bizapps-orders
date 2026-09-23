@@ -22,6 +22,7 @@ import type { ReversalOrigin } from './ReversalBehavior.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
+const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 
 /** The origin line plus what prior reversals have already taken from it. */
 export interface ReversalContext {
@@ -66,6 +67,7 @@ export async function LoadReversalContext(
         DiscountAmount: number;
         ServicePeriodStart?: Date | string | null;
         ServicePeriodEnd?: Date | string | null;
+        SubscriptionID?: string | null;
     };
 
     // The origin and every reversal already pointing at it, in ONE view. Splitting them costs a
@@ -102,6 +104,22 @@ export async function LoadReversalContext(
         }
     }
 
+    // THE TERM IS THE AUTHORITY ON WHICH SUBSCRIPTION THIS LINE BOUGHT, not the line's own
+    // `SubscriptionID`. That column is a FORWARD link added later for the confirm pre-flight to read,
+    // and it is only populated on lines written since — an order line from before it existed, or one
+    // whose subscription was attached by any path that does not stamp it, carries NULL while its term
+    // sits there naming the subscription correctly. `SubscriptionTerm.OrderLineID` is NOT NULL and is
+    // written by the same step that creates the term, so it is the link that is always there.
+    const terms = await rv.RunView<{ SubscriptionID: string; OrderLineID: string }>(
+        {
+            EntityName: SUBSCRIPTION_TERM_ENTITY,
+            ExtraFilter: `OrderLineID = '${reversesOrderLineID}'`,
+            ResultType: 'simple',
+        },
+        user,
+    );
+    const subscriptionID = terms?.Results?.[0]?.SubscriptionID ?? origin.SubscriptionID ?? null;
+
     const excluded = new Set(excludeLineIDs.map((id) => id.toLowerCase()));
     let alreadyReversed = 0;
     for (const prior of priors) {
@@ -125,8 +143,12 @@ export async function LoadReversalContext(
             DiscountPct: Number(origin.DiscountPct ?? 0),
             DiscountAmount: Number(origin.DiscountAmount ?? 0),
             OrderNumber: null,
+            // The coverage window the origin actually sold — for a subscription that is the SETTLED
+            // term, which `materializeSubscriptions` stamped back onto the line, so the anchoring and
+            // proration the type applied are already baked in here and need no re-deriving.
             ServicePeriodStart: origin.ServicePeriodStart ? new Date(origin.ServicePeriodStart) : null,
             ServicePeriodEnd: origin.ServicePeriodEnd ? new Date(origin.ServicePeriodEnd) : null,
+            SubscriptionID: subscriptionID,
         },
         AlreadyReversed: Math.round(alreadyReversed * 1e4) / 1e4,
     };
