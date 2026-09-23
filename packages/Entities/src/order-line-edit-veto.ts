@@ -44,6 +44,7 @@
  */
 
 import type { UserInfo } from '@memberjunction/core';
+import { GetGlobalObjectStore } from '@memberjunction/global';
 
 /** What is being attempted, so a vetoer can allow some edits and refuse others. */
 export type OrderLineEditKind = 'create' | 'update' | 'delete';
@@ -86,7 +87,24 @@ export interface OrderLineEditVeto {
     MayEdit(context: OrderLineEditContext): Promise<string | null>;
 }
 
-let hostVeto: OrderLineEditVeto | null = null;
+/**
+ * Where the registered veto lives: MJ's global object store, not a module-scoped variable.
+ *
+ * A module-scoped `let` is per COPY of this package, not per process. A host that resolves two
+ * copies — two consumers disagreeing on a version, npm nesting one under the other — would put the
+ * registration in one copy and the lookup in the other, and the veto would silently never run. The
+ * only defence a module-scoped registry has is forcing every cross-repo consumer to pin this package
+ * exactly, and an exact pin is itself what makes npm nest a second copy the moment two consumers
+ * disagree (bc-aidp-next-golive#258). Keyed on the process-wide store, every copy reads and writes
+ * the same slot, so consumers can take a range.
+ *
+ * Same shape as MJ's own field-transform registry, which is kept there for the same reason.
+ */
+const STORE_KEY = '__mj_BizApps_Orders_OrderLineEditVeto__';
+
+function store(): Record<string, unknown> {
+    return (GetGlobalObjectStore() ?? globalThis) as unknown as Record<string, unknown>;
+}
 
 /**
  * Register the veto for this host. Pass null to clear it.
@@ -95,12 +113,12 @@ let hostVeto: OrderLineEditVeto | null = null;
  * twice in one process must not end up with two, and there is no sensible way to merge them.
  */
 export function RegisterOrderLineEditVeto(veto: OrderLineEditVeto | null): void {
-    hostVeto = veto;
+    store()[STORE_KEY] = veto;
 }
 
 /** The registered veto, or null on a host where nothing freezes lines from outside Orders. */
 export function HostOrderLineEditVeto(): OrderLineEditVeto | null {
-    return hostVeto;
+    return (store()[STORE_KEY] as OrderLineEditVeto | null | undefined) ?? null;
 }
 
 /**
