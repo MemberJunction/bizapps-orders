@@ -1120,38 +1120,56 @@ GO
          )
       END;
 
-/* SQL text to insert entity field value with ID a88f282d-c98e-4e01-80f0-f1bd37dc94a0 */
-INSERT INTO [${mjSchema}].[EntityFieldValue]
-                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
-                                    VALUES
-                                       ('a88f282d-c98e-4e01-80f0-f1bd37dc94a0', 'F04330BA-4A37-4674-A2FE-237CE04E2C52', 1, 'Fulfilled', 'Fulfilled', GETUTCDATE(), GETUTCDATE());
 
-/* SQL text to insert entity field value with ID 6646842a-6fac-4fd3-b768-c5071e9e1e1c */
-INSERT INTO [${mjSchema}].[EntityFieldValue]
-                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
-                                    VALUES
-                                       ('6646842a-6fac-4fd3-b768-c5071e9e1e1c', 'F04330BA-4A37-4674-A2FE-237CE04E2C52', 2, 'NotApplicable', 'NotApplicable', GETUTCDATE(), GETUTCDATE());
+/* Fulfillment status value list for OrderLine.FulfillmentStatus.
 
-/* SQL text to insert entity field value with ID aedb3c4b-ecf2-4e94-be1a-68fa958ba75d */
-INSERT INTO [${mjSchema}].[EntityFieldValue]
-                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
-                                    VALUES
-                                       ('aedb3c4b-ecf2-4e94-be1a-68fa958ba75d', 'F04330BA-4A37-4674-A2FE-237CE04E2C52', 3, 'PartiallyFulfilled', 'PartiallyFulfilled', GETUTCDATE(), GETUTCDATE());
+   Resolved by NATURAL KEY, not by the authoring database's EntityField ID. CodeGen mints
+   EntityField IDs per host, so 'F04330BA-4A37-4674-A2FE-237CE04E2C52' exists only on the
+   database this file was generated from. Every other install fails here with
 
-/* SQL text to insert entity field value with ID 7c0ebe63-0088-4f8f-a32e-ce9e97c9b577 */
-INSERT INTO [${mjSchema}].[EntityFieldValue]
-                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
-                                    VALUES
-                                       ('7c0ebe63-0088-4f8f-a32e-ce9e97c9b577', 'F04330BA-4A37-4674-A2FE-237CE04E2C52', 4, 'Pending', 'Pending', GETUTCDATE(), GETUTCDATE());
+       The INSERT statement conflicted with the FOREIGN KEY constraint
+       "FK_EntityFieldValue_EntityField"
 
-/* SQL text to insert entity field value with ID 45402546-5241-4a96-94e3-a5f62d5c67ff */
-INSERT INTO [${mjSchema}].[EntityFieldValue]
-                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
-                                    VALUES
-                                       ('45402546-5241-4a96-94e3-a5f62d5c67ff', 'F04330BA-4A37-4674-A2FE-237CE04E2C52', 5, 'Returned', 'Returned', GETUTCDATE(), GETUTCDATE());
+   which aborts the whole migration -- on AIDP Next stage, at batch 19/30.
 
-/* SQL text to update ValueListType for entity field ID F04330BA-4A37-4674-A2FE-237CE04E2C52 */
-UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='F04330BA-4A37-4674-A2FE-237CE04E2C52';
+   This is a REGRESSION: the identical defect in V202609061900 was fixed in 5.11.0 by the
+   block this one now mirrors. Regenerating this migration from the authoring database
+   re-emitted the hardcoded ID. Any future CodeGen output touching EntityFieldValue needs the
+   same treatment before it ships.
+
+   Each value is guarded independently on (EntityFieldID, Value) so a host that already
+   carries some of them -- including every host that ran the 5.11.0 fix, which seeded these
+   same five values under its own row IDs -- keeps its rows untouched and gains only what is
+   missing. */
+DECLARE @FulfillmentStatusFieldID UNIQUEIDENTIFIER = (
+    SELECT f.[ID]
+      FROM [${mjSchema}].[EntityField] f
+      JOIN [${mjSchema}].[Entity]      e ON e.[ID] = f.[EntityID]
+     WHERE e.[SchemaName] = '${flyway:defaultSchema}'
+       AND e.[BaseTable]  = 'OrderLine'
+       AND f.[Name]       = 'FulfillmentStatus');
+
+IF @FulfillmentStatusFieldID IS NULL
+    THROW 50000, 'OrderLine.FulfillmentStatus EntityField not found - CodeGen must run before this migration.', 1;
+
+INSERT INTO [${mjSchema}].[EntityFieldValue]
+       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+SELECT CAST(v.[ID] AS UNIQUEIDENTIFIER), @FulfillmentStatusFieldID, v.[Sequence], v.[Value], v.[Value],
+       GETUTCDATE(), GETUTCDATE()
+  FROM (VALUES
+            ('a88f282d-c98e-4e01-80f0-f1bd37dc94a0', 1, 'Fulfilled'),
+            ('6646842a-6fac-4fd3-b768-c5071e9e1e1c', 2, 'NotApplicable'),
+            ('aedb3c4b-ecf2-4e94-be1a-68fa958ba75d', 3, 'PartiallyFulfilled'),
+            ('7c0ebe63-0088-4f8f-a32e-ce9e97c9b577', 4, 'Pending'),
+            ('45402546-5241-4a96-94e3-a5f62d5c67ff', 5, 'Returned')
+       ) AS v([ID], [Sequence], [Value])
+ WHERE NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityFieldValue] x
+                    WHERE x.[EntityFieldID] = @FulfillmentStatusFieldID AND x.[Value] = v.[Value])
+   AND NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityFieldValue] x
+                    WHERE x.[ID] = CAST(v.[ID] AS UNIQUEIDENTIFIER));
+
+UPDATE [${mjSchema}].[EntityField] SET ValueListType = 'List' WHERE [ID] = @FulfillmentStatusFieldID;
+
 
 /* SQL text to insert entity field value with ID 426bbdff-8c6b-46e7-b79e-d769ecb59e7d */
 INSERT INTO [${mjSchema}].[EntityFieldValue]
