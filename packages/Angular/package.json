@@ -26,7 +26,7 @@
     "@memberjunction/ng-hierarchy-tree": "^6.1.0-edge.5",
     "@mj-biz-apps/accounting-engine-base": ">=0.5.0",
     "@mj-biz-apps/accounting-ng": ">=0.5.0",
-    "@mj-biz-apps/common-entities": ">=5.44.0",
+    "@mj-biz-apps/common-entities": ">=5.46.0",
     "@mj-biz-apps/common-ng": ">=5.45.0",
     "@mj-biz-apps/orders-entities": "5.16.0",
     "ag-grid-angular": "^35.0.1",
