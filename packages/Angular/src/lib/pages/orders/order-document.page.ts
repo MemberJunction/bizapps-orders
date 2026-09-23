@@ -4,7 +4,8 @@ import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format
 
 import { MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
-import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { ParseAddressSnapshot, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { FormatPartyAddress } from '../../custom/OrderHeader/order-header-prefs';
 
 /** Who issued the bill. */
 export interface MJOIssuer {
@@ -104,7 +105,7 @@ export interface MJOIssuer {
                     <div>
                         <div class="lbl">Ship to</div>
                         <div class="who">
-                            <div>{{ Order['ShipToAddress'] ?? '—' }}</div>
+                            <div>{{ ShipToAddressText ?? '—' }}</div>
                         </div>
                     </div>
                 </div>
@@ -308,6 +309,12 @@ export class MJOOrderDocumentPageComponent implements OnInit {
     /** A credit memo is a return — the same document with a negative total. */
     public get IsCredit(): boolean {
         return this.Order?.OrderType === 'Return' || (this.Order?.TotalGross ?? 0) < 0;
+    }
+
+    /** A confirmed order prints the address it was sold to; anything else the live ship-to. */
+    public get ShipToAddressText(): string | null {
+        const sold = ParseAddressSnapshot(this.Order?.ShipToAddressSnapshot);
+        return (sold ? FormatPartyAddress(sold) : null) || this.Order?.ShipToAddress || null;
     }
 
     public get IsPaid(): boolean {

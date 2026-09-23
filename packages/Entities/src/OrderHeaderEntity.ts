@@ -40,6 +40,7 @@ import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
 import { anyFieldIsDirty } from './field-dirty';
 import { TodayAsDateValue } from './date-cell';
+import { ORDER_LINE_ADDRESS_FIELDS, ParseAddressSnapshot, type OrderAddressSnapshot } from './order-address-snapshot';
 import {
     BookedMoneyEditMessage,
     ORDER_HEADER_MONEY_FIELDS,
@@ -88,6 +89,16 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
     public ClearShipToAddress(): void {
         this.GetCompanion<EmbeddedRecord>('ShipToAddressID_Object')?.Clear();
+    }
+
+    /** The bill-to address this order was confirmed with, or null before it is confirmed. */
+    public get BillToAddressAsSold(): OrderAddressSnapshot | null {
+        return ParseAddressSnapshot(this.BillToAddressSnapshot);
+    }
+
+    /** The ship-to address this order was confirmed with, or null before it is confirmed. */
+    public get ShipToAddressAsSold(): OrderAddressSnapshot | null {
+        return ParseAddressSnapshot(this.ShipToAddressSnapshot);
     }
 
     public get InitialPaymentReference(): string | null {
@@ -227,6 +238,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         const result = super.Validate();
         this.dropSavePopulatedFieldErrors(result);
         this.refuseBookedMoneyEdits(result);
+        this.refuseBookedAddressEdits(result);
 
         const verdict = this.statusTransitionVerdict();
         if (!verdict.Allowed) {
@@ -381,6 +393,54 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 ValidationErrorType.Failure,
             ),
         );
+    }
+
+    /**
+     * Refuse a change to where a confirmed order was sold (golive #263).
+     *
+     * A confirmed order keeps the addresses it was confirmed with, and its snapshots of them, for
+     * the life of the order: the state a sale counts in is decided by where the customer was on the
+     * date of sale. `trg_OrderHeader_AddressFrozenAfterConfirm` (51015) and
+     * `trg_OrderLine_AddressFrozenAfterConfirm` (51016) hold the same rule at the database; this
+     * says so before the round trip, against the field that was changed.
+     *
+     * The snapshots are the server's to write, on the booking save only, so outside it a change to
+     * one is refused on any order.
+     */
+    private refuseBookedAddressEdits(result: ValidationResult): void {
+        const refuse = (source: string, message: string): void => {
+            result.Success = false;
+            result.Errors.push(new ValidationErrorInfo(source, message, null, ValidationErrorType.Failure));
+        };
+
+        if (!this.bookingInFlight) {
+            for (const name of ['BillToAddressSnapshot', 'ShipToAddressSnapshot'] as const) {
+                if (this.FieldIsDirty(name)) {
+                    refuse(name, `${name} is written when the order is confirmed and cannot be set directly.`);
+                }
+            }
+        }
+
+        if (!this.MoneyLocked) return;
+        const order = `Order ${this.OrderNumber ?? ''}`.trim();
+        for (const name of ['BillToAddressID', 'ShipToAddressID'] as const) {
+            if (this.FieldIsDirty(name)) {
+                refuse(
+                    name,
+                    `${order} is confirmed, so its ${name === 'BillToAddressID' ? 'bill-to' : 'ship-to'} address ` +
+                        `cannot change: the order keeps the address it was sold to. Use a reversal order.`,
+                );
+            }
+        }
+        this.Lines.Items.forEach((line, index) => {
+            if (line.IsSaved && anyFieldIsDirty(line, [...ORDER_LINE_ADDRESS_FIELDS])) {
+                refuse(
+                    `Lines[${index}].ShipToAddressID`,
+                    `${order} is confirmed, so line ${line.LineNumber ?? index + 1}'s ship-to address cannot change: ` +
+                        `the line keeps the address it was sold to. Use a reversal order.`,
+                );
+            }
+        });
     }
 
     /**

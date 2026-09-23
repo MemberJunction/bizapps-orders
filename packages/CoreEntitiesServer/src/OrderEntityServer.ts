@@ -46,8 +46,11 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
+    ADDRESS_SNAPSHOT_FIELDS,
+    BuildAddressSnapshot,
     OrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
+    type AddressLike,
     mjBizAppsOrdersOrderLinePriceComponentEntity,
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersPaymentLineEntity,
@@ -536,6 +539,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
                 booking ? await this.decideSubscriptions() : new Map();
             await this.prepareLines(decisions);
+
+            // THE ADDRESS AS SOLD, copied onto the order at the first confirm (golive #263).
+            //
+            // HERE, before either line write below: a draft's existing lines are written while the
+            // header is still Draft, and `trg_OrderLine_AddressFrozenAfterConfirm` refuses the line
+            // snapshot once the header is Confirmed. Inside the transaction, so it reads the same
+            // Address rows the tax resolution in `prepareLines` just read.
+            if (booking) await this.stampAddressSnapshots();
 
             // CONFIRM-AFTER-DRAFT: the lines already exist. `prepareLines` just prorated them
             // (membership qty 1 → 0.3836). If the header flips to Confirmed first, trigger 51003
@@ -1481,6 +1492,59 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /** The header's rollup columns as the DATABASE now holds them, after the payment triggers ran. */
+    /**
+     * Copy the bill-to and ship-to addresses onto the order and its lines (golive #263).
+     *
+     * A line gets a snapshot only when it names a ship-to address of its own; a line without one
+     * ships to the header's. A reference with no Address row behind it refuses the confirm:
+     * `OrderLine.ShipToAddressID` has no foreign key, and confirming with no record of where the sale
+     * went is the defect this exists to prevent.
+     */
+    private async stampAddressSnapshots(): Promise<void> {
+        const ids = [
+            this.BillToAddressID,
+            this.ShipToAddressID,
+            ...this.Lines.Items.map((line) => line.ShipToAddressID),
+        ].filter((id): id is string => !!id);
+
+        const byID = new Map<string, AddressLike>();
+        if (ids.length) {
+            const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+            const result = await rv.RunView<AddressLike>(
+                {
+                    EntityName: COMMON_ADDRESS_ENTITY,
+                    ExtraFilter: `ID IN (${RequireUUIDs(ids, 'AddressID').map((id) => `'${id}'`).join(',')})`,
+                    Fields: [...ADDRESS_SNAPSHOT_FIELDS],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                this.ContextCurrentUser as UserInfo,
+            );
+            if (!result.Success) {
+                throw new Error(`Could not read the order's addresses to keep with it: ${result.ErrorMessage}`);
+            }
+            for (const row of result.Results) byID.set(row.ID.toLowerCase(), row);
+        }
+
+        const snapshot = (id: string | null, what: string): string | null => {
+            if (!id) return null;
+            const row = byID.get(id.toLowerCase());
+            if (!row) {
+                throw new Error(
+                    `Order ${this.OrderNumber ?? ''} cannot be confirmed: its ${what} address (${id}) no longer exists. ` +
+                        `Choose the address again and confirm.`,
+                );
+            }
+            return BuildAddressSnapshot(row);
+        };
+
+        this.BillToAddressSnapshot = snapshot(this.BillToAddressID, 'bill-to');
+        this.ShipToAddressSnapshot = snapshot(this.ShipToAddressID, 'ship-to');
+        for (const line of this.Lines.Items) {
+            line.ShipToAddressSnapshot = snapshot(line.ShipToAddressID, `line ${line.LineNumber ?? ''} ship-to`);
+        }
+    }
+
     private async readBalanceFromRow(): Promise<ResolvedOrderRollups> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const result = await rv.RunView<OrderRollups>(

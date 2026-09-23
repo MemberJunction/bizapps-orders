@@ -546,6 +546,8 @@ erDiagram
         nvarchar_max Description
         nvarchar_max Notes
         datetimeoffset ConfirmedAt
+        nvarchar_max BillToAddressSnapshot
+        nvarchar_max ShipToAddressSnapshot
     }
     OrderLine {
         uuid ID PK "required"
@@ -563,6 +565,7 @@ erDiagram
         decimal_18_2 LineTax "required"
         decimal_18_2 LineTotalGross
         uuid ShipToAddressID
+        nvarchar_max ShipToAddressSnapshot
         uuid ShipToOrganizationID FK
         uuid ShipToPersonID FK
         uuid RenewsSubscriptionID
@@ -1131,12 +1134,14 @@ migration.
 
 ## 5. The rules that live in TRIGGERS, not in the tables
 
-7 business triggers, and they carry two of the app's load-bearing guarantees. A diagram cannot
+9 business triggers, and they carry two of the app's load-bearing guarantees. A diagram cannot
 show either, and code that ignores them will fail at runtime rather than at compile time.
 
 | table | trigger | what it guarantees |
 |---|---|---|
 | `OrderLine` | `trg_OrderLine_ImmutableAfterConfirm` | A confirmed line's money is history. Error 51003. This is why the server short-circuits its own total recomputation once `JournalEntryID` is stamped — a figure it cannot reproduce from stored state alone would be rejected here and roll back the whole confirm. |
+| `OrderHeader` | `trg_OrderHeader_AddressFrozenAfterConfirm` | A confirmed order keeps the address it was sold to. Once the order is Confirmed, `BillToAddressID`, `ShipToAddressID` and their snapshots cannot change, and a written snapshot never changes on any order. Error 51015. Reporting and the invoice read `BillToAddressSnapshot` / `ShipToAddressSnapshot` on a confirmed order, because the Common `Address` row stays editable. |
+| `OrderLine` | `trg_OrderLine_AddressFrozenAfterConfirm` | The same rule for a line's own `ShipToAddressID` and `ShipToAddressSnapshot`. Error 51016. The confirm path writes a draft's line snapshots while the header is still Draft for this reason. |
 | `OrderLine` | `trg_OrderLine_RollupTotals` | Header totals are derived from lines by the database, so a client cannot supply a total that disagrees with what was booked. |
 | `PaymentDetail` | `trg_PaymentDetail_Immutable` | A recorded payment instrument cannot be edited after the fact. |
 | `PaymentHeader` | `trg_PaymentHeader_ImmutableAfterCapture` | Captured money is frozen. |

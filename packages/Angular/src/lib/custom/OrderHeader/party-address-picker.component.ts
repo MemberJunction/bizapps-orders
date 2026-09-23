@@ -78,6 +78,12 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
      * on the order view — not a second Address RunView).
      */
     public get SelectedAddressText(): string {
+        // A confirmed order shows the address it was sold to, which the Address row may no longer say.
+        const sold = this.Side === 'ship' ? this.Order.ShipToAddressAsSold : this.Order.BillToAddressAsSold;
+        if (sold) {
+            const formatted = FormatPartyAddress(sold);
+            if (formatted) return formatted;
+        }
         const embedded = this.CustomAddress;
         if (embedded) {
             const formatted = FormatPartyAddress(embedded);

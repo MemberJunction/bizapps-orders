@@ -2259,6 +2259,9 @@ export class mjBizAppsOrdersEventOrderLine_ {
     DimensionValueID?: string;
         
     @Field({nullable: true}) 
+    ShipToAddressSnapshot?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
         
@@ -2413,6 +2416,9 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     @Field({ nullable: true })
     DimensionValueID: string | null;
 
+    @Field({ nullable: true })
+    ShipToAddressSnapshot: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -2563,6 +2569,9 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     DimensionValueID?: string | null;
+
+    @Field({ nullable: true })
+    ShipToAddressSnapshot?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -4562,6 +4571,12 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(20)
     FulfillmentStatus?: string;
         
+    @Field({nullable: true, description: `The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`}) 
+    BillToAddressSnapshot?: string;
+        
+    @Field({nullable: true, description: `The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`}) 
+    ShipToAddressSnapshot?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -4748,6 +4763,12 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     @Field({ nullable: true })
     FulfillmentStatus?: string;
 
+    @Field({ nullable: true })
+    BillToAddressSnapshot: string | null;
+
+    @Field({ nullable: true })
+    ShipToAddressSnapshot: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -4859,6 +4880,12 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     FulfillmentStatus?: string;
+
+    @Field({ nullable: true })
+    BillToAddressSnapshot?: string | null;
+
+    @Field({ nullable: true })
+    ShipToAddressSnapshot?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -5468,6 +5495,9 @@ export class mjBizAppsOrdersOrderLine_ {
     @MaxLength(36)
     DimensionValueID?: string;
         
+    @Field({nullable: true, description: `The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`}) 
+    ShipToAddressSnapshot?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(40)
     OrderHeader?: string;
@@ -5637,6 +5667,9 @@ export class CreatemjBizAppsOrdersOrderLineInput {
     @Field({ nullable: true })
     DimensionValueID: string | null;
 
+    @Field({ nullable: true })
+    ShipToAddressSnapshot: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -5745,6 +5778,9 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field({ nullable: true })
     DimensionValueID?: string | null;
+
+    @Field({ nullable: true })
+    ShipToAddressSnapshot?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

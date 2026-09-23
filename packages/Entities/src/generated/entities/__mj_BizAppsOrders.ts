@@ -957,6 +957,10 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: DimensionValueID
         * * Display Name: Dimension Value ID
         * * SQL Data Type: uniqueidentifier`),
+    ShipToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: ShipToAddressSnapshot
+        * * Display Name: Ship To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)`),
     Person: z.string().describe(`
         * * Field Name: Person
         * * Display Name: Person
@@ -1796,6 +1800,16 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
     *   * Pending
     *   * Returned
         * * Description: Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`),
+    BillToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: BillToAddressSnapshot
+        * * Display Name: Bill To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
+    ShipToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: ShipToAddressSnapshot
+        * * Display Name: Ship To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -2196,6 +2210,11 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimension Values (vwDimensionValues.ID)
         * * Description: The value of DimensionID this line is tagged with, from __mj_BizAppsAccounting.DimensionValue. Carried with DimensionID onto every journal entry line the order line produces. Set together with DimensionID (CK_OrderLine_DimensionPair).`),
+    ShipToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: ShipToAddressSnapshot
+        * * Display Name: Ship To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header Display
@@ -7983,6 +8002,19 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
+    * * Field Name: ShipToAddressSnapshot
+    * * Display Name: Ship To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ShipToAddressSnapshot(): string | null {
+        return this.Get('ShipToAddressSnapshot');
+    }
+    set ShipToAddressSnapshot(value: string | null) {
+        this.Set('ShipToAddressSnapshot', value);
+    }
+
+    /**
     * * Field Name: Person
     * * Display Name: Person
     * * SQL Data Type: nvarchar(201)
@@ -10474,6 +10506,32 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: BillToAddressSnapshot
+    * * Display Name: Bill To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.
+    */
+    get BillToAddressSnapshot(): string | null {
+        return this.Get('BillToAddressSnapshot');
+    }
+    set BillToAddressSnapshot(value: string | null) {
+        this.Set('BillToAddressSnapshot', value);
+    }
+
+    /**
+    * * Field Name: ShipToAddressSnapshot
+    * * Display Name: Ship To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.
+    */
+    get ShipToAddressSnapshot(): string | null {
+        return this.Get('ShipToAddressSnapshot');
+    }
+    set ShipToAddressSnapshot(value: string | null) {
+        this.Set('ShipToAddressSnapshot', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
@@ -11680,6 +11738,19 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set DimensionValueID(value: string | null) {
         this.Set('DimensionValueID', value);
+    }
+
+    /**
+    * * Field Name: ShipToAddressSnapshot
+    * * Display Name: Ship To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).
+    */
+    get ShipToAddressSnapshot(): string | null {
+        return this.Get('ShipToAddressSnapshot');
+    }
+    set ShipToAddressSnapshot(value: string | null) {
+        this.Set('ShipToAddressSnapshot', value);
     }
 
     /**
