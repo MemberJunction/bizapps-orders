@@ -690,6 +690,64 @@ the fixes introduced; all four are fixed:
 - **Deploy prerequisites carried forward:** bizapps-common ≥ 5.43 on the host (`fnBusinessToday`) and the
   `BizApps.BusinessTimeZone` configuration row set to Central — `aidp-next` pins common 5.42.0 today.
 
+### 13.10 2026-09-23 — the CFO's answers, and the two things they expose
+
+**Q5 (D-B9, the fee leg) — CLOSED, as designed.** Bill.com does not charge per transaction. We pay
+monthly for the console and monthly per instance, invoiced separately. Booking the cash leg gross with
+a zero fee leg is therefore correct, and bank reconciliation sees Bill.com's fee as an ordinary
+monthly expense. One caveat the CFO raised: on the rare credit-card receipt, the convenience fee
+Bill.com passes to the customer and the fee it charges us rarely line up, so a few pennies are
+reconciled by hand today. That is unchanged by this integration. Tyler owns the day-to-day detail.
+
+**Q6 (tender mapping) — CLOSED, as built.** "I am unaware of any PayPal, wallet, or other payment
+types." The bulk is ACH; credit card is rare. The four unmapped values falling to ACH is therefore
+harmless, because they do not occur.
+
+**Q3 (instalment numbering) — effectively Craig's call.** The CFO's own preference is to suffix the
+re-issue, matching how they operate today, but he defers: "I am fine with any approach that gives us
+clear traceability," and notes Craig favours a new schedule row. Either satisfies Finance.
+
+**A cancel must NOT push a credit memo to the rail — and does not.** Today, cancelling in Business
+Central generates a corrective credit memo which syncs to Bill.com and sits there active and
+unmatched, so the customer balance is wrong until somebody cleans it up by hand. The CFO's stated
+preference is that archiving the invoice alone is enough and the credit memo need not exist in
+Bill.com at all. That is already this design's behaviour: `CancelInvoice` archives and nothing else,
+and the rail refuses any document whose kind is not `Invoice`, so a credit memo cannot reach it. No
+change; worth recording because it was arrived at independently and now has an owner's endorsement.
+
+---
+
+Two things the answer exposes, neither previously visible.
+
+**A. WIRES ARE REAL, RECURRING, AND THIS RAIL CANNOT CLASSIFY THEM.** Earlier notes said wires simply
+do not come through Bill.com. That was wrong. Money arriving directly in the bank — ACH, wire and
+cheque — is recorded by Finance and then **marked as paid in Bill.com**, and that practice continues
+after cutover because the flow out of Bill.com is how AIDP Next learns about cash. So wires do arrive
+here, as offline-recorded payments.
+
+Bill.com has no wire payment type: its enum is `CASH`, `CHECK`, `CREDIT_CARD`, `ACH`, `PAYPAL`,
+`OTHER`, `WALLET`, `VIRTUAL_CARD`, `UNDEFINED`. Whoever marks the invoice paid must pick one of those,
+and `TenderFor` then maps `OTHER` to ACH by default. A wire is therefore recorded in Orders as ACH —
+and Orders' own `Wire` payment type, which exists and is seeded, stays unreachable. Finance's own
+`Wire` classification is lost at the boundary.
+
+Options, none yet chosen: agree a convention (mark wires as `OTHER` and map `OTHER` → Wire, which is
+safe only because PayPal and wallet genuinely do not occur here); read Bill.com's `description` or
+`referenceNumber` for a marker; or accept the loss and reclassify downstream.
+
+**B. THE WIRE FEE HAS NO PATH INTO AIDP NEXT.** Finance records a wire gross with the bank's fee as a
+separate expense: $9,975 received on a $10,000 invoice is booked as a $10,000 receipt and a $25 fee.
+Bill.com is then marked paid for the gross, which is what we poll, so the capture books $10,000 with a
+zero fee leg — correct as far as it goes. But the $25 expense exists only in Finance's own process.
+Nothing in this integration learns about it, because Bill.com was never told.
+
+If AIDP Next becomes the record for cash inflows, that fee needs a route in. This is not a Bill.com
+defect and not fixable inside this rail; it is a gap between "mark as paid for gross" and "the bank
+credited less". Raised for Finance and accounting to decide where the fee is booked.
+
+**Left open by the CFO, back to Robert:** whether the Stripe and HubSpot cash-receipt flows need the
+same examination. Outside this integration's scope, but he asked.
+
 ### 13.9 2026-09-22 — adversarial review, and the six defects it found
 
 A four-dimension review (money, concurrency, security, migrations) over the whole branch. Six defects
