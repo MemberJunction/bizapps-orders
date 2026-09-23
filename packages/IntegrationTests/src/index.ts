@@ -39,7 +39,7 @@
  *   embedded-payment-detail PD1–PD14  PaymentDetail as an owner-held 1:1 embed (D38/D39)
  *   payment-schedule     PS1–PS13  instalments on the order: tie, issue, per-instalment rollup and ageing (D85–D88)
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
- *   progress-measurement PM1–PM11   percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
+ *   progress-measurement PM1–PM14   percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
  *
  * Note that `events` and `line-subscriber` are listed out of order above because that is the order
  * they were written in; the runner's order is presentational — each bundle owns its own fixture.

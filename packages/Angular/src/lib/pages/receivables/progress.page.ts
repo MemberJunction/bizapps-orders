@@ -82,6 +82,11 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                     <strong> → {{ Draft.Message }}</strong>
                 }
             </div>
+            @if (Draft?.ClosedPeriodWarning; as closed) {
+                <div class="mjo-pg__closed" role="status">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ closed }}
+                </div>
+            }
         }
 
         <mjo-worklist-table
@@ -104,6 +109,14 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
             .mjo-pg__field { display: flex; flex-direction: column; gap: 2px; }
             .mjo-pg__field .mj-input { width: 160px; }
             .mjo-pg__context { margin-bottom: var(--mj-space-4); }
+            .mjo-pg__closed {
+                margin-bottom: var(--mj-space-4);
+                padding: var(--mj-space-3) var(--mj-space-4);
+                border-left: 3px solid var(--mj-color-warning, #b8860b);
+                background: var(--mj-color-warning-subtle, rgba(184, 134, 11, 0.08));
+                border-radius: var(--mj-radius-sm, 4px);
+                font-size: 0.9rem;
+            }
             @media (max-width: 760px) { :host { padding: var(--mj-space-4); } }
         `,
     ],
@@ -191,7 +204,12 @@ export class MJOProgressPageComponent implements OnInit {
         const proceed = await this.confirm.Confirm({
             title: `Attest ${row.OrderNumber} line ${row.LineNumber} at ${this.percent(Number(this.PercentInput) / 100)}?`,
             message: draft.Message ?? '',
-            detail: `Signed by you, dated ${FormatDate(this.MeasurementDate, { Short: true })}. A posted observation cannot be changed; a correction is a new observation in a later period.`,
+            // THE WARNING RIDES THE CONFIRM, not just the strip above the table. It is advisory —
+            // nothing blocks a closed period — so the one place it has to be unmissable is the
+            // moment before the entry is written, which is exactly where this dialog sits.
+            detail:
+                `Signed by you, dated ${FormatDate(this.MeasurementDate, { Short: true })}. A posted observation cannot be changed; a correction is a new observation in a later period.` +
+                (draft.ClosedPeriodWarning ? `\n\n${draft.ClosedPeriodWarning}` : ''),
             type: 'warning',
             confirmText: 'Attest & post',
             cancelText: 'Not yet',
@@ -199,7 +217,9 @@ export class MJOProgressPageComponent implements OnInit {
         if (!proceed) return;
         const output = await this.record(false);
         if (!output) return;
-        this.Notice = { Tone: 'success', Text: output.Message ?? 'Posted.' };
+        this.Notice = output.ClosedPeriodWarning
+            ? { Tone: 'warning', Text: `${output.Message ?? 'Posted.'} ${output.ClosedPeriodWarning}` }
+            : { Tone: 'success', Text: output.Message ?? 'Posted.' };
         this.Selected = null;
         this.Draft = null;
         await this.load();

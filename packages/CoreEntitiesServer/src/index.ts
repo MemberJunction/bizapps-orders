@@ -19,6 +19,10 @@ export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
 // Percentage-of-completion (AIDP-26, plan D90): the attestation, the catch-up entry, the worklist.
 export { RecordProgressOperation, LoadRecordProgressOperation } from './RecordProgressOperation.js';
+export {
+    OrderLineProgressMeasurementEntityServer,
+    LoadOrderLineProgressMeasurementEntityServer,
+} from './OrderLineProgressMeasurementEntityServer.js';
 export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from './GetProgressWorklistOperation.js';
 export {
     AddMonths,
