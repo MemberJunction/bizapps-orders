@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609231700 — Keep each order's customer address as it was at the time of
+-- V202609240100 — Keep each order's customer address as it was at the time of
 -- sale (bc-aidp-next-golive#263)
 -- =============================================================================
 -- OrderHeader.BillToAddressID, ShipToAddressID and OrderLine.ShipToAddressID
