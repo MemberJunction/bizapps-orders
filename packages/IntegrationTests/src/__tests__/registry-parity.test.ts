@@ -79,7 +79,7 @@ const registry = IntegrationCheckRegistry.Instance;
  */
 const EXPECTED_BUNDLES: Record<string, number> = {
     'catalog-world': 1,
-    'order-booking': 20,
+    'order-booking': 24,
     'revenue-recognition': 7,
     subscriptions: 15,
     'subscription-cancellation': 10,

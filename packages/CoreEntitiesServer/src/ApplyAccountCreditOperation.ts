@@ -63,9 +63,11 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersPaymentLineEntity,
+    TodayAsDateValue,
 } from '@mj-biz-apps/orders-entities';
 import type { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { RequireUUID } from './sql-guards.js';
@@ -213,6 +215,11 @@ export class ApplyAccountCreditOperation extends BaseRemotableOperation<ApplyAcc
             };
         }
 
+        // Warmed BEFORE the transaction opens: this reads instance configuration through the same
+        // provider, and a metadata read has no business riding inside the credit's write
+        // transaction. A no-op once the engine is loaded.
+        await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+
         const db = provider as unknown as DatabaseProviderBase;
         await db.BeginTransaction();
         try {
@@ -237,7 +244,10 @@ export class ApplyAccountCreditOperation extends BaseRemotableOperation<ApplyAcc
             // received. The D68 invariant holds exactly: 0 == (-requested) + (+requested).
             payment.Amount = 0;
             payment.ProcessingFeeAmount = 0;
-            payment.PaymentDate = new Date();
+            // The business calendar day, not the instant (#209). `PaymentDate` is a SQL `DATE`,
+            // and an instant serialises in UTC — a credit applied at 9 PM Eastern was dated
+            // tomorrow, so the settlement and the order it settles fell in different periods.
+            payment.PaymentDate = TodayAsDateValue();
             payment.Status = 'Captured';
             payment.Notes = input.Reason ?? `Applied ${requested} of order ${source.OrderNumber}'s credit`;
 

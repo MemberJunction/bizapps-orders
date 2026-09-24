@@ -55,12 +55,15 @@
                 <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderType" Type="select" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
             </div>
             <div class="mjo-oh-fact">
-                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="CompanyID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                <bizapps-selling-company-field [Record]="record" [ShowLabel]="true" FieldName="CompanyID" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></bizapps-selling-company-field>
             </div>
             <div class="mjo-oh-fact">
-                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderDate" Type="datepicker" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
             </div>
         </div>
+        @if (EditMode && record.MoneyLocked) {
+            <div class="mjo-oh-hint"><i class="fa-solid fa-lock" aria-hidden="true"></i> This order is booked, so its type, selling company, order date and bill-to are locked. Corrections go through a reversal order.</div>
+        }
 
         <div class="mjo-oh-parties" [class.is-ship]="ExpandedParty === 'ship'" [class.is-bill]="ExpandedParty === 'bill'" [class.is-none]="ExpandedParty === null">
             <div class="mjo-oh-bubble" [class.is-open]="ExpandedParty === 'ship'" [class.is-rail]="ExpandedParty === 'bill'">
@@ -122,8 +125,8 @@
                 </div>
                 @if (ExpandedParty === 'bill') {
                     <div class="mjo-oh-bubble__edit">
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToOrganizationID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)" (ValueChange)="OnPartyPersonChange('BillTo')"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToOrganizationID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToPersonID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)" (ValueChange)="OnPartyPersonChange('BillTo')"></mj-form-field>
                         <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentTermsTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                         <mjo-party-address-picker
                             [Order]="record"

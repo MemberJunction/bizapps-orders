@@ -12,6 +12,7 @@ import { loadApplicabilityContext } from './applicability.js';
 import { isEnginePrice, isNamedListPick } from './priceOverride.js';
 import { ListApplicablePrices, ResolvePrice, type PriceResolutionContext, type ResolvedPrice } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
+import { AsDateValue, TodayAsDateValue } from '../date-cell';
 
 /** The line fields the context depends on. */
 export interface PricedLineFacts {
@@ -50,7 +51,9 @@ export async function BuildLinePriceContext(
         ProductCategoryID: product?.ProductCategoryID ?? null,
         CompanyID: companyID,
         Quantity: Number(line.Quantity ?? 0),
-        AsOf: header?.OrderDate ? new Date(header.OrderDate) : new Date(),
+        // A calendar day: price applicability is bounded by `EffectiveFrom`/`EffectiveTo`, both
+        // `date` columns, and an instant answers the UTC day.
+        AsOf: AsDateValue(header?.OrderDate) ?? TodayAsDateValue(),
         OrganizationID: header?.BillToOrganizationID ?? null,
         PersonID: header?.BillToPersonID ?? null,
         ApplicabilityContext: await loadApplicabilityContext(
