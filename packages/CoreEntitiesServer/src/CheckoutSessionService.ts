@@ -12,6 +12,7 @@ import { BaseEntity, EntityFieldInfo, IMetadataProvider, LogError, Metadata, Run
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 // Local fallback engine — see identityClaimContracts.ts. Restore this import to
 // '@memberjunction/core-entities-server' once MJ publishes the engine.
+import { CalendarDayOrToday } from './calendar-day.js';
 import { IdentityClaimEngineServer } from './identityClaimContracts.js';
 import {
     LoadOrdersEngine,
@@ -994,7 +995,19 @@ export class CheckoutSessionService {
                 CompanyID: widget.CompanyID,
                 BillToPersonID: order.BillToPersonID ?? null,
                 BillToOrganizationID: order.BillToOrganizationID ?? null,
-                OrderDate: order.OrderDate ?? new Date(),
+                // Set to the business day a few lines above; the fallback stays a day rather than
+                // an instant so the price rules this prices against (EffectiveFrom/To are `date`
+                // columns) are never judged against tomorrow (#209).
+                //
+                // The ORDER's provider and user, matching the pricing service built two lines up:
+                // a widget checkout may run against a provider that is not the global one, and a
+                // warm-up read through `Metadata.Provider` would then be configured from a
+                // different instance than the order it is dating.
+                OrderDate: await CalendarDayOrToday(
+                    order.OrderDate,
+                    (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
+                    contextUser ?? (order.ContextCurrentUser as UserInfo),
+                ),
                 ShipToAddressID: order.ShipToAddressID ?? null,
                 Lines: [...order.Lines.Items],
                 PromotionCodes: [],
@@ -1424,7 +1437,19 @@ export class CheckoutSessionService {
                 CompanyID: widget.CompanyID,
                 BillToPersonID: order.BillToPersonID ?? null,
                 BillToOrganizationID: order.BillToOrganizationID ?? null,
-                OrderDate: order.OrderDate ?? new Date(),
+                // Set to the business day a few lines above; the fallback stays a day rather than
+                // an instant so the price rules this prices against (EffectiveFrom/To are `date`
+                // columns) are never judged against tomorrow (#209).
+                //
+                // The ORDER's provider and user, matching the pricing service built two lines up:
+                // a widget checkout may run against a provider that is not the global one, and a
+                // warm-up read through `Metadata.Provider` would then be configured from a
+                // different instance than the order it is dating.
+                OrderDate: await CalendarDayOrToday(
+                    order.OrderDate,
+                    (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
+                    contextUser ?? (order.ContextCurrentUser as UserInfo),
+                ),
                 ShipToAddressID: order.ShipToAddressID ?? null,
                 Lines: [...order.Lines.Items],
                 PromotionCodes: [],

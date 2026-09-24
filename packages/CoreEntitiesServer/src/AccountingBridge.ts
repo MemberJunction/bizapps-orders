@@ -17,7 +17,8 @@
  * resolves by key — but that is a different package (`accounting-server`, wired up by the host app's
  * resolver paths) and is unaffected by how this one is imported.
  */
-import { IMetadataProvider, Metadata, UserInfo } from '@memberjunction/core';
+import { BaseRemotableOperation, IMetadataProvider, Metadata, UserInfo } from '@memberjunction/core';
+import { MJGlobal } from '@memberjunction/global';
 import { AccountingEngineBase, pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
 import { GLAccountResolver, type ResolverEntityIDs } from './GLAccountResolver.js';
 import type { IntercompanyLookup } from './PaymentAllocationFactory.js';
@@ -65,6 +66,15 @@ export interface AccountingEngineSurface {
      */
     Dimensions: Array<{ ID: string; Code: string; IsActive: boolean }>;
     DimensionValues: Array<{ ID: string; DimensionID: string; Code: string; IsActive: boolean }>;
+    /**
+     * Journal entry types this database actually has, by Code.
+     *
+     * Read before naming an EntryType that orders has added only as metadata JSON: a JSON row
+     * reaches a host at the release's Metadata_Sync and not before, and accounting refuses an
+     * unseeded code outright (ENTRY_TYPE_UNKNOWN), so an entry naming one would fail everywhere the
+     * release has not reached.
+     */
+    JournalEntryTypeByCode(code: string): { ID: string; Code: string } | undefined;
     /**
      * The Due To / Due From pair for an ORDERED company pair (BA-D26), each leg carrying the
      * dimensions pinned on the match. `DimensionValueID` is nullable there by design.
@@ -201,4 +211,60 @@ export async function BuildIntercompanyLookup(
             DueFromDimensions: pinned(hit.DueFrom.Dimensions),
         };
     };
+}
+
+/** What `Accounting.CreateJournalEntries` answers with, in the shape callers here read. */
+export interface CreateJournalEntriesOutcome {
+    Success: boolean;
+    Results?: Array<{ Success: boolean; JournalEntryID?: string; EntryNumber?: string }>;
+    Errors?: Array<{ Code?: string; Message?: string; DraftIndex?: number; LineIndex?: number }>;
+}
+
+/**
+ * Submit journal-entry drafts to accounting and return its payload.
+ *
+ * SIDE EFFECT, DELIBERATELY NAMED: this writes journal entries. It joins the CALLER'S transaction
+ * rather than opening one, so it commits or rolls back with whatever act produced the drafts.
+ *
+ * Resolved through MJ's class factory by key, so this package does not hard-depend on the
+ * accounting server package at build time — the same indirection `OrderEntityServer` and
+ * `PaymentLineEntityServer` each open-code today. Those two are older and phrase their failures in
+ * their own domain's words; this exists for callers that have no reason to copy that a fourth time.
+ *
+ * @param what names the act in the error message, e.g. 'the instalment reclass'
+ * @throws when the operation is unregistered, the call fails, or accounting refuses the drafts
+ */
+export async function SubmitJournalEntryDrafts(
+    drafts: unknown[],
+    what: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<CreateJournalEntriesOutcome> {
+    const op = MJGlobal.Instance.ClassFactory.CreateInstance<
+        BaseRemotableOperation<{ Drafts: unknown[] }, CreateJournalEntriesOutcome>
+    >(BaseRemotableOperation, 'Accounting.CreateJournalEntries');
+    if (!op) {
+        throw new Error(
+            `The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps Accounting ` +
+                `server package must be loaded before orders can book ${what}.`,
+        );
+    }
+
+    // The envelope reports transport/authorization failure; the payload reports the
+    // accounting-domain outcome. Both must be checked — a successful call can still carry a
+    // failed booking.
+    const result = await op.Execute({ Drafts: drafts }, { provider, user });
+    if (!result.Success) {
+        throw new Error(
+            `Accounting.CreateJournalEntries did not execute for ${what}: ` +
+                `${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`,
+        );
+    }
+    const payload = result.Output;
+    if (!payload) throw new Error(`Accounting.CreateJournalEntries returned no payload for ${what}.`);
+    if (!payload.Success) {
+        const detail = (payload.Errors ?? []).map((e) => `${e.Code ?? 'ERROR'}: ${e.Message ?? ''}`).join('; ');
+        throw new Error(`Journal entry booking failed for ${what}. ${detail}`);
+    }
+    return payload;
 }

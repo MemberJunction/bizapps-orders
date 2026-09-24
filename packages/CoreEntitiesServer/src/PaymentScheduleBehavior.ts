@@ -161,6 +161,51 @@ export function ScheduleShortfalls(rows: ScheduleRowFacts[], lines: ScheduleLine
     return out;
 }
 
+/**
+ * A schedule row as the booking-scope test reads it.
+ *
+ * DELIBERATELY NOT `Pick`ed from the generated entity, unlike {@link InstalmentSibling}. These rows
+ * arrive from `RunView` with `ResultType: 'simple'`, which hands back the driver's raw values — so
+ * `DueDate` is a STRING at runtime, while the entity declares it `Date`. Picking would assert a
+ * type the data does not honour, make the `ToISODate` call that handles both look redundant, and
+ * hide the string path behind a green compile. A hand-written shape that tells the truth beats a
+ * generated one that does not.
+ */
+export interface ScheduleTimingFacts extends ScheduleRowFacts {
+    /** `YYYY-MM-DD`, or anything `Date` parses. Carried for callers; the scope test ignores it. */
+    DueDate: string | Date;
+    /** The row itself, so confirm can issue the instalments already due (D92). */
+    ID?: string;
+    InstallmentNumber?: number;
+}
+
+/**
+ * The companies on this order that are BILLED BY INSTALMENT, lower-cased (D92).
+ *
+ * This is the whole scope trigger for the new booking model. A company with at least one live
+ * schedule row raises no BILLING entry at confirm — its receivable reaches the ledger one
+ * instalment at a time, as each is invoiced. A company with none is every order that exists today
+ * and is untouched.
+ *
+ * `Canceled` rows have left the schedule, so a company whose only row was cancelled is NOT
+ * scheduled and books normally. That is the same liveness rule {@link ScheduleShortfalls} uses, by
+ * the same constant, so the tie check and the ledger cannot disagree about which rows count.
+ *
+ * DELIBERATELY NOT A DATE TEST, and under D92 that is worth stating precisely, because the dates do
+ * now matter — just not here. This answers one question only: is this company billed by instalment
+ * at all? WHICH of its instalments are due on the confirmation date is a separate decision, made by
+ * `OrderEntityServer.issueDueInstalments` against each row's own `DueDate` after booking. Folding a
+ * date test into this one would couple "does the new model apply" to "what is due today", and a
+ * company whose instalments all fall next year would then book as if it had no schedule.
+ */
+export function ScheduledCompanyIDs(rows: ScheduleTimingFacts[]): Set<string> {
+    const out = new Set<string>();
+    for (const row of rows) {
+        if (LIVE_STATUSES.has(row.Status)) out.add(String(row.CompanyID).toLowerCase());
+    }
+    return out;
+}
+
 /** The refusal, in words a person can act on. Names every company that is off and by how much. */
 export function ExplainShortfalls(orderNumber: string, shortfalls: ScheduleShortfall[], companyName?: (id: string) => string): string {
     const name = (id: string): string => companyName?.(id) ?? id;

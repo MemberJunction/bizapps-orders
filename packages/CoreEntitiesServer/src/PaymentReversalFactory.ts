@@ -37,9 +37,11 @@ import {
     type IRunViewProvider,
     type UserInfo,
 } from '@memberjunction/core';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersPaymentLineEntity,
+    TodayAsDateValue,
 } from '@mj-biz-apps/orders-entities';
 import type { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 
@@ -222,13 +224,23 @@ export async function CreateReversingPayment(
     request: PaymentReversalRequest,
     lines: mjBizAppsOrdersPaymentLineEntity[],
 ): Promise<PaymentReversalResult> {
+    // Warmed before `NextPaymentNumber`, which takes an UPDLOCK/HOLDLOCK on the single global
+    // `PaymentSequence` row: on a cold engine a metadata read after that point would serialise
+    // every other payment-number mint behind it. Both callers have already opened a transaction,
+    // so this cannot be hoisted out of one entirely — but it can be hoisted out of the lock.
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+
     const reversal = await provider.GetEntityObject<PaymentHeaderEntityServer>(PAYMENT_HEADER_ENTITY, user);
     reversal.NewRecord();
     reversal.PaymentNumber = await NextPaymentNumber(provider);
     reversal.ReceivingCompanyID = original.ReceivingCompanyID;
     reversal.BillToOrganizationID = original.BillToOrganizationID;
     reversal.BillToPersonID = original.BillToPersonID;
-    reversal.PaymentDate = new Date();
+    // The business calendar day, not the instant (#209). `PaymentDate` is a SQL `DATE`, and
+    // `new Date()` is an instant that serialises in UTC — a refund issued at 9 PM Eastern was
+    // dated tomorrow, which files the reversal in the wrong period from the one it reverses.
+    // Today rather than the original's day on purpose: a reversal is its own cash event.
+    reversal.PaymentDate = TodayAsDateValue();
     reversal.PaymentTypeID = original.PaymentTypeID;
     reversal.Amount = request.Amount;
     reversal.ProcessingFeeAmount = 0;

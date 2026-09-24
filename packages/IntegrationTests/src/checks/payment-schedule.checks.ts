@@ -30,11 +30,21 @@
  *   PS11  issuing refuses when the schedule no longer ties, and when the order is still a Draft
  *   PS12  a payment aimed at another order's instalment is refused
  *   PS13  the per-instalment document demands the instalment against the full order value
+ *   PS-A  confirm ISSUES the instalment already due, books Dr AR / Cr Deferred for its share only
+ *   PS-B  a schedule due entirely later books no receivable at confirm
+ *   PS-C  invoicing a later instalment posts rule 1 and advances BilledToDate
+ *   PS-D  every instalment issued sums, per account, to what a non-scheduled order books
+ *   PS-E  invoicing twice does not post twice
+ *   PS-F  a row already paid in full posts nothing at invoice, and still takes its number
+ *   PS-G  Scenario 3: an UpFront line earns in full at confirm, the unbilled part to the contract asset
+ *   PS-H  a line carrying an Unbilled balance is invoiced against Unbilled FIRST, then Deferred
+ *   PS-I  a discount spanning a due AND a future instalment is booked ONCE, at recognition
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
  * CONNECTS TO:
  *   CODE: OrderEntityServer.verifyScheduleTies · OrderHeaderPaymentScheduleEntityServer
+ *         OrderJournalEntryFactory.BuildValueEntryLines · ScheduledCompanyIDs · EmitInstalmentInvoiceEntry
  *         IssueInstalmentInvoiceOperation · GetBillingWorklistOperation · PaymentLineEntityServer
  *         InvoiceBuilder (PaymentScheduleID) · overdue.ts (NextDueDate)
  *   DB:   V202609211200__v5.13.0__OrderHeaderPaymentSchedule.sql
@@ -63,10 +73,11 @@ import {
 } from '../fixture.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from '../entity-names.js';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
+import type { RequestedCharge } from '@mj-biz-apps/orders-core-entities-server';
 import { CreatePayment } from '../payment-builder.js';
 
 /** One instalment as a check authors it. */
-interface Instalment {
+export interface Instalment {
     InstallmentNumber: number;
     DueDate: string;
     Amount: number;
@@ -88,7 +99,7 @@ interface ScheduleRow {
 }
 
 /** The schedule as stored, oldest first. Dates come back `YYYY-MM-DD` so a check compares days. */
-const schedule = (ctx: IntegrationCheckContext, orderID: string) =>
+export const schedule = (ctx: IntegrationCheckContext, orderID: string) =>
     TxQuery<ScheduleRow>(
         ctx,
         `SELECT ID, InstallmentNumber, CompanyID, CONVERT(varchar(10), DueDate, 23) AS DueDate, Amount, AmountPaid, Balance, Status,
@@ -123,14 +134,52 @@ async function addInstalments(ctx: IntegrationCheckContext, orderID: string, row
 }
 
 /** A $300 draft order with a schedule, then confirmed. Returns the order and its rows. */
-async function scheduledOrder(ctx: IntegrationCheckContext, rows: Instalment[], over: { gross?: number } = {}) {
+/**
+ * A confirmed order with a payment schedule, for any check that needs one.
+ *
+ * EXPORTED so #227's Scenario 4 check builds its project from the same fixture rather than a
+ * lookalike: two fixtures that drift are two different claims about what a scheduled order is.
+ */
+export async function scheduledOrder(
+    ctx: IntegrationCheckContext,
+    rows: Instalment[],
+    over: {
+        gross?: number;
+        productID?: string;
+        /**
+         * Charges to put on the order before confirm, in `confirmWithCharges`' shape — e.g.
+         * `[{ Code: 'SalesTax', Rate: 0.1 }]`.
+         *
+         * WITHOUT ONE, NET AND THE AR DEBIT ARE THE SAME NUMBER, and no check can tell which basis
+         * `BilledToDate` is measured on. With a charge they separate: AR moves by net + charges,
+         * the charge account moves by the charge, and both running totals move by net alone. Any
+         * check about the totals' basis needs this; the schedule must then tie to the CHARGED gross.
+         */
+        charges?: RequestedCharge[];
+        /**
+         * A line-level discount, as a fraction. `gross` is then the LIST price and the line's net —
+         * what the schedule must tie to — is `gross × (1 − discountPct)`.
+         */
+        discountPct?: number;
+    } = {},
+) {
     const f = Fx();
     const gross = over.gross ?? 300;
     const draft = await BuildOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
         OrderDate: new Date('2026-07-01T00:00:00Z'),
-        Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: gross }],
+        // The LINE's product decides the company the schedule and the ledger book against, whatever
+        // the header says — which is how a check reaches a second company's ledger.
+        Lines: [
+            {
+                ProductID: over.productID ?? f.Products.WidgetA,
+                Quantity: 1,
+                UnitPrice: gross,
+                ...(over.discountPct ? { DiscountPct: over.discountPct } : {}),
+            },
+        ],
+        ...(over.charges ? { Charges: over.charges } : {}),
     });
     Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
     const orderID = draft.Order.ID as string;
@@ -150,7 +199,8 @@ async function confirm(ctx: IntegrationCheckContext, orderID: string) {
 }
 
 /** Pay `amount` against an order, optionally aimed at one instalment. */
-async function pay(ctx: IntegrationCheckContext, orderID: string, amount: number, scheduleID?: string) {
+/** Pay against an order, optionally naming one instalment. Exported for the same reason. */
+export async function pay(ctx: IntegrationCheckContext, orderID: string, amount: number, scheduleID?: string) {
     const f = Fx();
     const cash = f.PaymentTypeIDs.get('Cash');
     Assert(cash != null, "PaymentType 'Cash' missing — push the orders app metadata");
@@ -174,7 +224,8 @@ function operation<I, O>(key: string) {
     return op!;
 }
 
-async function issue(ctx: IntegrationCheckContext, scheduleID: string) {
+/** Issue one instalment through the real operation. Exported for the same reason. */
+export async function issue(ctx: IntegrationCheckContext, scheduleID: string) {
     const result = await operation<{ OrderHeaderPaymentScheduleID: string }, IssueOutput>('Orders.IssueInstalmentInvoice').Execute(
         { OrderHeaderPaymentScheduleID: scheduleID },
         { provider: ctx.Provider, user: ctx.User },
@@ -204,9 +255,96 @@ async function overdueAsOf(ctx: IntegrationCheckContext, asOf: string) {
 const has = (rows: Array<{ OrderHeaderID: string }>, orderID: string) =>
     rows.some((r) => String(r.OrderHeaderID).toLowerCase() === orderID.toLowerCase());
 
+const AR_CODE = '11201';
+const DEFERRED_CODE = '21301';
+const SALES_CODE = '40100';
+const UNBILLED_CODE = '11300';
+/** Linked on ONE product (WORKSHOP → `Products.DiscountedA`), so only PS-I books a discount contra. */
+const DISCOUNT_CODE = '41000';
+
+interface LedgerLine {
+    Code: string;
+    DebitAmount: number;
+    CreditAmount: number;
+}
+
+/** Every ledger line the order's BOOKING entries carry — the per-line entries confirm produced. */
+const bookingLedger = (ctx: IntegrationCheckContext, orderID: string) =>
+    TxQuery<LedgerLine>(
+        ctx,
+        `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
+           FROM ${ORDERS_SCHEMA}.OrderLine ol
+           JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ol.JournalEntryID
+           JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+          WHERE ol.OrderHeaderID = '${orderID}'`,
+    );
+
+/** Every ledger line the order's INSTALMENT BILLING entries carry, across all its schedule rows. */
+const instalmentLedger = (ctx: IntegrationCheckContext, orderID: string) =>
+    TxQuery<LedgerLine>(
+        ctx,
+        `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
+           FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule ps
+           JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ps.JournalEntryID
+           JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+          WHERE ps.OrderHeaderID = '${orderID}'`,
+    );
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** Net movement on one account across a set of lines: debits less credits. */
+const netOn = (lines: LedgerLine[], code: string): number =>
+    round2(
+        lines
+            .filter((l) => l.Code === code)
+            .reduce((sum, l) => sum + Number(l.DebitAmount ?? 0) - Number(l.CreditAmount ?? 0), 0),
+    );
+
+/** What every journal entry must do, whatever else this ticket changed. */
+function assertBalanced(lines: LedgerLine[], what: string): void {
+    const debits = round2(lines.reduce((s, l) => s + Number(l.DebitAmount ?? 0), 0));
+    const credits = round2(lines.reduce((s, l) => s + Number(l.CreditAmount ?? 0), 0));
+    AssertEqual(debits, credits, `${what} must balance: ${JSON.stringify(lines)}`);
+}
+
+/** The two running totals per line, which are the whole of D92's balance-sheet position. */
+const lineTotals = (ctx: IntegrationCheckContext, orderID: string) =>
+    TxQuery<{ ID: string; LineNumber: number; BilledToDate: number; RecognizedToDate: number }>(
+        ctx,
+        `SELECT ID, LineNumber, BilledToDate, RecognizedToDate
+           FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}' ORDER BY LineNumber`,
+    );
+
+/** Every ledger line the order touched, confirm and instalments together. */
+const allLedger = async (ctx: IntegrationCheckContext, orderID: string): Promise<LedgerLine[]> => [
+    ...(await bookingLedger(ctx, orderID)),
+    ...(await instalmentLedger(ctx, orderID)),
+];
+
+/**
+ * Three instalments, the first of which falls ON the order date.
+ *
+ * Under D92 confirm ISSUES that first row, so an order built from this lands with instalment 1
+ * already `Invoiced`. Checks that need a row still `Scheduled` use {@link FUTURE} instead.
+ */
 const THREE = [
     { InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 100 },
     { InstallmentNumber: 2, DueDate: '2027-07-01', Amount: 100 },
+    { InstallmentNumber: 3, DueDate: '2028-07-01', Amount: 100 },
+];
+
+/**
+ * Three instalments, none of them due at confirm — so confirm issues nothing and every row is
+ * still `Scheduled` when the check starts.
+ *
+ * This is what every check about the instalment LIFECYCLE wants: freezing a number, re-amending a
+ * row, aiming a payment, working the billing list. Before D92 `THREE` served that purpose because
+ * confirm never issued anything; now it does, so the two fixtures say different things and the
+ * choice between them is the check's own statement about when it wants billing to have happened.
+ */
+const FUTURE = [
+    { InstallmentNumber: 1, DueDate: '2027-07-01', Amount: 100 },
+    { InstallmentNumber: 2, DueDate: '2027-10-01', Amount: 100 },
     { InstallmentNumber: 3, DueDate: '2028-07-01', Amount: 100 },
 ];
 
@@ -291,7 +429,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
-                const { orderID, ids, order, saved, message } = await scheduledOrder(ctx, THREE);
+                const { orderID, ids, order, saved, message } = await scheduledOrder(ctx, FUTURE);
                 Assert(saved, `confirm: ${message}`);
 
                 const first = await issue(ctx, ids[1]);
@@ -374,7 +512,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
-                const { orderID, ids, saved, message } = await scheduledOrder(ctx, THREE);
+                const { orderID, ids, saved, message } = await scheduledOrder(ctx, FUTURE);
                 Assert(saved, `confirm: ${message}`);
                 Assert((await issue(ctx, ids[1])).Success, 'issue row 2');
 
@@ -450,15 +588,20 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 const { orderID, ids, order, saved, message } = await scheduledOrder(ctx, THREE);
                 Assert(saved, `confirm: ${message}`);
 
+                // D92 CHANGED WHAT THIS LIST CAN EVER CONTAIN, and that is the point of the check
+                // now. Instalment 1 falls on the order date, so confirm issued it — a past-due row
+                // with no invoice behind it is no longer reachable on a confirmed order, which is
+                // precisely the gap this worklist existed to catch. What remains is the forward
+                // window: row 2, sixteen days out. Before D92 this asserted '1,2'.
                 const inWindow = await billingWorklist(ctx, '2027-06-15', 30);
                 const mine = inWindow.filter((r) => r.OrderNumber === order.OrderNumber);
-                AssertEqual(mine.map((r) => r.InstallmentNumber).join(','), '1,2', 'instalments 1 (past due) and 2 (16 days out); not 3');
-                AssertEqual(mine[1].InstallmentCount, 3, 'and it knows the row is 2 of 3');
-                AssertEqual(mine[1].DaysUntilDue, 16, 'days until due, as a number');
+                AssertEqual(mine.map((r) => r.InstallmentNumber).join(','), '2', 'row 2 is 16 days out; 1 was issued at confirm and 3 is far off');
+                AssertEqual(mine[0].InstallmentCount, 3, 'and it knows the row is 2 of 3');
+                AssertEqual(mine[0].DaysUntilDue, 16, 'days until due, as a number');
 
                 Assert((await issue(ctx, ids[1])).Success, 'issue row 2');
                 const after = (await billingWorklist(ctx, '2027-06-15', 30)).filter((r) => r.OrderNumber === order.OrderNumber);
-                AssertEqual(after.map((r) => r.InstallmentNumber).join(','), '1', 'an issued instalment has an invoice behind it and leaves the list');
+                AssertEqual(after.length, 0, 'an issued instalment has an invoice behind it and leaves the list');
                 void orderID;
             }),
     },
@@ -475,7 +618,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                     Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 300 }],
                 });
                 Assert(await draft.Order.Save(), 'draft saves');
-                const [id] = await addInstalments(ctx, draft.Order.ID as string, [{ InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 300 }]);
+                const [id] = await addInstalments(ctx, draft.Order.ID as string, [{ InstallmentNumber: 1, DueDate: '2027-07-01', Amount: 300 }]);
 
                 const onDraft = await issue(ctx, id);
                 Assert(!onDraft.Success, 'a Draft order has no receivable to invoice');
@@ -531,6 +674,246 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 AssertEqual(doc.AmountDue, 60, 'the instalment less its payments');
                 AssertEqual(doc.DueDate, '2027-07-01', "the instalment's due date, not the header's");
                 AssertEqual(doc.Ladder.some((r) => r.Kind === 'Instalment' && r.Label === 'Instalment 2 of 3'), true, 'the ladder names the instalment');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-A',
+        Name: 'PS-A: confirm ISSUES the instalment already due and books only its share',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // D92's central claim. THREE's first instalment falls on the order date, so confirm
+                // bills it — through the same act a person triggers later — and books nothing for
+                // the two that are not due yet.
+                const { orderID, saved, message } = await scheduledOrder(ctx, THREE);
+                Assert(saved, `confirm: ${message}`);
+
+                const rows = await schedule(ctx, orderID);
+                AssertEqual(rows[0].Status, 'Invoiced', 'the instalment due today was issued by the confirm');
+                Assert(rows[0].DocumentNumber != null, 'and took its document number');
+                AssertEqual(rows[1].Status, 'Scheduled', 'the one due next year was not');
+                AssertEqual(rows[2].Status, 'Scheduled', 'nor the one after');
+
+                const all = await allLedger(ctx, orderID);
+                assertBalanced(all, 'everything confirm booked');
+                AssertEqual(netOn(all, AR_CODE), 100, 'only the due instalment is a receivable');
+
+                const totals = await lineTotals(ctx, orderID);
+                AssertEqual(Number(totals[0].BilledToDate), 100, "BilledToDate is the line's share of what was billed");
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-B',
+        Name: 'PS-B: a schedule due entirely in the future books no receivable at confirm',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { orderID, saved, message } = await scheduledOrder(ctx, [
+                    { InstallmentNumber: 1, DueDate: '2027-01-01', Amount: 150 },
+                    { InstallmentNumber: 2, DueDate: '2027-07-01', Amount: 150 },
+                ]);
+                Assert(saved, `confirm: ${message}`);
+
+                const rows = await schedule(ctx, orderID);
+                AssertEqual(rows.every((r) => r.Status === 'Scheduled'), true, 'nothing was issued');
+                const all = await allLedger(ctx, orderID);
+                AssertEqual(netOn(all, AR_CODE), 0, 'and no receivable exists — nobody has been billed');
+                AssertEqual(Number((await lineTotals(ctx, orderID))[0].BilledToDate), 0, 'BilledToDate stays zero');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-C',
+        Name: 'PS-C: invoicing a later instalment posts rule 1 and advances BilledToDate',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { orderID, ids, saved, message } = await scheduledOrder(ctx, THREE);
+                Assert(saved, `confirm: ${message}`);
+                const before = Number((await lineTotals(ctx, orderID))[0].BilledToDate);
+
+                const issued = await issue(ctx, ids[1]);
+                Assert(issued.Success, `issue row 2: ${issued.Message}`);
+                Assert(issued.JournalEntryID != null, 'the billing entry is recorded on the row');
+
+                const after = Number((await lineTotals(ctx, orderID))[0].BilledToDate);
+                AssertEqual(after - before, 100, 'BilledToDate advanced by exactly this instalment');
+
+                const all = await allLedger(ctx, orderID);
+                assertBalanced(all, 'confirm plus the second instalment');
+                AssertEqual(netOn(all, AR_CODE), 200, 'two instalments billed, two in AR');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-D',
+        Name: 'PS-D: every instalment issued sums, per account, to what a non-scheduled order books',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // THE EQUIVALENCE THAT MAKES D92 SAFE. Billing is spread over time, but once every
+                // instalment is issued the ledger must hold exactly what an unscheduled order of the
+                // same value holds, to the penny. This is what breaks if a slice rounds independently.
+                const { orderID, ids, saved, message } = await scheduledOrder(ctx, THREE);
+                Assert(saved, `confirm: ${message}`);
+                for (const id of ids.slice(1)) Assert((await issue(ctx, id)).Success, `issue ${id}`);
+
+                const all = await allLedger(ctx, orderID);
+                assertBalanced(all, 'confirm plus every instalment');
+                AssertEqual(netOn(all, AR_CODE), 300, 'the whole order value is a receivable once fully billed');
+                AssertEqual(netOn(all, SALES_CODE), -300, 'and earned exactly once');
+                AssertEqual(netOn(all, DEFERRED_CODE), 0, 'Deferred nets to zero');
+                AssertEqual(netOn(all, UNBILLED_CODE), 0, 'and so does the contract asset');
+
+                const totals = await lineTotals(ctx, orderID);
+                AssertEqual(Number(totals[0].BilledToDate), 300, 'BilledToDate closes at the line value');
+                AssertEqual(Number(totals[0].RecognizedToDate), 300, 'and so does RecognizedToDate');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-E',
+        Name: 'PS-E: invoicing twice does not post twice',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { orderID, ids, saved, message } = await scheduledOrder(ctx, THREE);
+                Assert(saved, `confirm: ${message}`);
+                const first = await issue(ctx, ids[1]);
+                Assert(first.Success, `issue: ${first.Message}`);
+                const billedOnce = Number((await lineTotals(ctx, orderID))[0].BilledToDate);
+
+                const again = await issue(ctx, ids[1]);
+                Assert(again.Success && again.AlreadyInvoiced, `issuing again is not an error: ${again.Message}`);
+                AssertEqual(again.JournalEntryID, first.JournalEntryID, 'and returns the SAME entry');
+                AssertEqual(
+                    Number((await lineTotals(ctx, orderID))[0].BilledToDate),
+                    billedOnce,
+                    'BilledToDate did not advance a second time',
+                );
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-F',
+        Name: 'PS-F: a row already paid in full posts nothing at invoice, and still takes its number',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Cash before a bill raised no receivable — the deposit posted Dr Cash / Cr Deferred
+                // and never touched AR. Billing it would claim money already held.
+                const { orderID, ids, saved, message } = await scheduledOrder(ctx, THREE);
+                Assert(saved, `confirm: ${message}`);
+                Assert((await pay(ctx, orderID, 100, ids[1])).Saved, 'prepay instalment 2 before issuing it');
+
+                const arBefore = netOn(await allLedger(ctx, orderID), AR_CODE);
+                const issued = await issue(ctx, ids[1]);
+                Assert(issued.Success, `issue the prepaid row: ${issued.Message}`);
+                Assert(issued.DocumentNumber != null, 'it still takes a document number');
+                AssertEqual(issued.JournalEntryID ?? null, null, 'but posts no billing entry');
+                AssertEqual(netOn(await allLedger(ctx, orderID), AR_CODE), arBefore, 'and raises no receivable');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-G',
+        Name: "PS-G: Scenario 3 — an UpFront line earns in full at confirm, the unbilled part to the contract asset",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Andrew's Scenario 3, at this order's scale: the product is delivered, so all 300
+                // is earned; 100 is billed and the other 200 is earned money not yet invoiceable,
+                // which is the one case where confirmation legitimately debits a contract asset.
+                const { orderID, saved, message } = await scheduledOrder(ctx, THREE);
+                Assert(saved, `confirm: ${message}`);
+
+                const all = await allLedger(ctx, orderID);
+                assertBalanced(all, 'the confirm entries');
+                AssertEqual(netOn(all, SALES_CODE), -300, 'the whole line is earned at booking');
+                AssertEqual(netOn(all, AR_CODE), 100, 'only the due instalment is billed');
+                AssertEqual(netOn(all, UNBILLED_CODE), 200, 'the rest is a contract asset');
+                AssertEqual(netOn(all, DEFERRED_CODE), 0, 'and nothing is left deferred');
+
+                const totals = await lineTotals(ctx, orderID);
+                AssertEqual(Number(totals[0].RecognizedToDate), 300, 'RecognizedToDate is the whole line');
+                AssertEqual(Number(totals[0].BilledToDate), 100, 'BilledToDate is only what was invoiced');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-H',
+        Name: 'PS-H: a line carrying an Unbilled balance is invoiced against Unbilled FIRST, then Deferred',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // RULE 1's exception, and the reason the rule is ordered at all. After confirm this
+                // line has Recognized 300 against Billed 100, so 200 sits in Unbilled. Invoicing the
+                // next 100 must RELIEVE that contract asset rather than open new Deferred: crediting
+                // Deferred would leave the asset standing while deferring revenue already earned —
+                // two wrong balances, and the entry balancing anyway.
+                const { orderID, ids, saved, message } = await scheduledOrder(ctx, THREE);
+                Assert(saved, `confirm: ${message}`);
+                AssertEqual(netOn(await allLedger(ctx, orderID), UNBILLED_CODE), 200, 'precondition: 200 unbilled');
+
+                Assert((await issue(ctx, ids[1])).Success, 'issue instalment 2');
+
+                const all = await allLedger(ctx, orderID);
+                assertBalanced(all, 'confirm plus the second instalment');
+                AssertEqual(netOn(all, UNBILLED_CODE), 100, 'the contract asset was relieved by the instalment');
+                AssertEqual(netOn(all, DEFERRED_CODE), 0, 'and no new Deferred was opened');
+                AssertEqual(netOn(all, AR_CODE), 200, 'two instalments billed');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-I',
+        Name: 'PS-I: a discount spanning a due AND a future instalment is booked ONCE, at recognition',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // ANDREW'S #225 COUNTER-EXAMPLE, at his numbers. List 1,000 less 10% is 900 net,
+                // billed as two instalments of 450 — the first due at confirm, the second a year
+                // out, so the SAME discount spans a due and a future instalment.
+                //
+                // The defect this check exists for: the instalment invoice used to credit Deferred
+                // for GROSS and debit the discount slice, while the recognition entry credited
+                // Sales gross and debited the discount again. Sales Discounts ended at 200 against
+                // a real discount of 100, and the surplus sat stranded in Unbilled and Deferred.
+                // Every entry balanced, so nothing else in this suite would have caught it.
+                //
+                // It needs a Sales Discounts LINK to be visible at all — without one the discount
+                // nets into the revenue credit (D11) and both the right and the wrong model post
+                // the same two lines. That link is seeded on this product alone.
+                const f = Fx();
+                const { orderID, ids, saved, message } = await scheduledOrder(
+                    ctx,
+                    [
+                        { InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 450 },
+                        { InstallmentNumber: 2, DueDate: '2027-07-01', Amount: 450 },
+                    ],
+                    { productID: f.Products.DiscountedA, gross: 1000, discountPct: 0.1 },
+                );
+                Assert(saved, `confirm: ${message}`);
+
+                // After confirm: the line is UpFront, so all 900 is earned and the discount is
+                // booked once, here. Only instalment 1 is billed, so 450 of the earned revenue is
+                // still a contract asset.
+                const afterConfirm = await allLedger(ctx, orderID);
+                assertBalanced(afterConfirm, 'the confirm entries');
+                AssertEqual(netOn(afterConfirm, SALES_CODE), -1000, 'Sales is credited GROSS');
+                AssertEqual(netOn(afterConfirm, DISCOUNT_CODE), 100, 'and the discount is debited once');
+                AssertEqual(netOn(afterConfirm, AR_CODE), 450, 'only the due instalment is billed');
+                AssertEqual(netOn(afterConfirm, UNBILLED_CODE), 450, 'the rest is a contract asset');
+                AssertEqual(netOn(afterConfirm, DEFERRED_CODE), 0, 'and nothing is deferred');
+
+                Assert((await issue(ctx, ids[1])).Success, 'issue the future instalment');
+
+                // After the second instalment the order is fully billed and fully earned, so both
+                // contra accounts must be flat. THE DISCOUNT HAS NOT MOVED — that is the check.
+                const all = await allLedger(ctx, orderID);
+                assertBalanced(all, 'confirm plus both instalments');
+                AssertEqual(netOn(all, DISCOUNT_CODE), 100, 'the discount is still booked exactly once');
+                AssertEqual(netOn(all, SALES_CODE), -1000, 'and Sales is still gross');
+                AssertEqual(netOn(all, AR_CODE), 900, 'the customer owes net, not gross');
+                AssertEqual(netOn(all, UNBILLED_CODE), 0, 'the contract asset is fully relieved');
+                AssertEqual(netOn(all, DEFERRED_CODE), 0, 'and nothing is stranded in Deferred');
+
+                const totals = await lineTotals(ctx, orderID);
+                AssertEqual(Number(totals[0].BilledToDate), 900, 'BilledToDate is net, not gross');
+                AssertEqual(Number(totals[0].RecognizedToDate), 900, 'and it has caught up to recognition');
             }),
     },
 ];

@@ -39,10 +39,11 @@ import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
 import { anyFieldIsDirty } from './field-dirty';
-import { TodayAsDateValue } from './date-cell';
+import { AsDateValue, TodayAsDateValue } from './date-cell';
 import {
     BookedMoneyEditMessage,
     ORDER_HEADER_MONEY_FIELDS,
+    ORDER_HEADER_SET_ONCE_FIELDS,
     ORDER_LINE_MONEY_FIELDS,
 } from './booked-money';
 
@@ -361,6 +362,12 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 dirtyHeaderMoney.push(name);
             }
         }
+        for (const name of ORDER_HEADER_SET_ONCE_FIELDS) {
+            const field = this.GetFieldByName(name);
+            if (field?.Dirty && field.OldValue != null) {
+                dirtyHeaderMoney.push(name);
+            }
+        }
 
         const message = BookedMoneyEditMessage({
             NewLineCount: newLineCount,
@@ -565,7 +572,10 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         const provider = this.ProviderToUse as unknown as IRunViewProvider;
         if (!provider) return null;
 
-        const asOf = this.OrderDate ?? new Date();
+        // Affiliation is a point-in-time question answered against `StartDate`/`EndDate`, both
+        // `date` columns, so this is a calendar day (#209). `new Date()` is an instant that reads
+        // back as the UTC day, which for an evening order is tomorrow.
+        const asOf = AsDateValue(this.OrderDate) ?? TodayAsDateValue();
         const orgId = await ResolveActiveEmployerOrganization(provider, targetPersonID, asOf, this.ContextCurrentUser);
         if (!orgId) return null;
 
