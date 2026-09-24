@@ -40,7 +40,7 @@
  *   node check-migrations-locked.mjs --self-test     # the detector's own fixtures
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -57,6 +57,9 @@ function git(args, cwd = process.cwd()) {
 /**
  * Migrations the branch changed rather than added, as `[{ Status, Path, From }]`.
  *
+ * `T` is a type change — the file replaced by a symlink, say. The runner then reads different bytes
+ * under the same name, which is an edit by another route, so it reports as `modified`.
+ *
  * `-M` asks git to pair a deletion with an addition as a rename, which is what makes `R` reachable
  * at all; without it a `git mv` reads as `D` plus `A` and the addition would look legitimate.
  *
@@ -68,7 +71,7 @@ function git(args, cwd = process.cwd()) {
  * teaches people to merge past this check — the exact habit it exists to stop.
  */
 export function ChangedLockedMigrations(base, head, cwd = process.cwd()) {
-    const raw = git(['diff', '--diff-filter=MRD', '--name-status', '-M', `${base}...${head}`, '--', 'migrations/'], cwd);
+    const raw = git(['diff', '--diff-filter=MRDT', '--name-status', '-M', `${base}...${head}`, '--', 'migrations/'], cwd);
     if (!raw) return [];
     return raw
         .split('\n')
@@ -136,6 +139,10 @@ function selfTest() {
     scenario('a rename of a merged migration is caught', (d) => git(['mv', 'migrations/V202601010000__v1__A.sql', 'migrations/V202699010000__v1__A.sql'], d), ['renamed']);
     scenario('a rename of a merged migration off .sql is caught', (d) => git(['mv', 'migrations/V202601010000__v1__A.sql', 'migrations/V202601010000__v1__A.sql.bak'], d), ['renamed']);
     scenario('a deletion of a merged migration is caught', (d) => git(['rm', '-q', 'migrations/V202601010000__v1__A.sql'], d), ['deleted']);
+    scenario('a merged migration swapped for a symlink is caught', (d) => {
+        rmSync(join(d, 'migrations', 'V202601010000__v1__A.sql'));
+        symlinkSync('V202601010001__v1__B.sql', join(d, 'migrations', 'V202601010000__v1__A.sql'));
+    }, ['modified']);
     scenario('a brand-new migration is allowed', (d) => writeFileSync(join(d, 'migrations', 'V202699990000__v1__C.sql'), 'CREATE TABLE c(i int);\n'), []);
     scenario('a non-SQL file beside them is ignored', (d) => writeFileSync(join(d, 'migrations', '_README.md'), 'notes\n'), []);
     // The regression that made this check unusable before it shipped: comparing against the base's

@@ -29,6 +29,18 @@ Add a new migration:
 migrations/V<yyyyMMddHHmm>__v<app-version>__<Short_Description>.sql
 ```
 
+It runs after the baseline on every deploy — clean install or existing database — so both converge
+on the same schema. Write it to be **idempotent** and to work on a database that already has data:
+guard with `IF NOT EXISTS` / `IF COL_LENGTH(...) IS NULL`, and give new `NOT NULL` columns a default
+or backfill them before adding the constraint.
+
+Then regenerate the code CodeGen owns:
+
+```bash
+npm run mj:migrate      # apply the new migration to your database
+npm run mj:codegen      # entity metadata, base views, CRUD procs, TypeScript
+```
+
 ## A merged migration is locked
 
 No edits, no renames, no deletions once it is on `next`. Fix it forward in a new file.
@@ -49,18 +61,6 @@ is not yet anybody's history.
 
 `.github/scripts/check-migrations-locked.mjs` enforces this on every PR and carries its own
 self-test. Reviewers: a red result here is blocking. It has been merged past twice.
-
-It runs after the baseline on every deploy — clean install or existing database — so both converge
-on the same schema. Write it to be **idempotent** and to work on a database that already has data:
-guard with `IF NOT EXISTS` / `IF COL_LENGTH(...) IS NULL`, and give new `NOT NULL` columns a default
-or backfill them before adding the constraint.
-
-Then regenerate the code CodeGen owns:
-
-```bash
-npm run mj:migrate      # apply the new migration to your database
-npm run mj:codegen      # entity metadata, base views, CRUD procs, TypeScript
-```
 
 ## What must NOT happen any more
 
