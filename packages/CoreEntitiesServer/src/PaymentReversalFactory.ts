@@ -64,9 +64,18 @@ export interface ReversiblePayment {
     PaymentDetailID: string | null;
 }
 
-/** One order the original payment was applied to, and by how much. */
+/**
+ * One line of the original payment: the order it settled, by how much, and what it named.
+ *
+ * The line and the instalment it named ride onto the reversing line, so the refund un-applies the
+ * cash from exactly where the capture put it. Without them a refund of cash that named a Scheduled
+ * instalment lands as unnamed, the cascade places it on no row, the named row keeps its deposit, and
+ * the refund debits AR for money that was booked to Customer Deposits.
+ */
 export interface AppliedAllocation {
     OrderHeaderID: string;
+    OrderLineID: string | null;
+    OrderHeaderPaymentScheduleID: string | null;
     Amount: number;
 }
 
@@ -111,7 +120,7 @@ export async function LoadAppliedAllocations(
         {
             EntityName: PAYMENT_LINE_ENTITY,
             ExtraFilter: `PaymentHeaderID='${paymentID}'`,
-            Fields: ['OrderHeaderID', 'Amount'],
+            Fields: ['OrderHeaderID', 'OrderLineID', 'OrderHeaderPaymentScheduleID', 'Amount'],
             ResultType: 'simple',
             // The lines may have been written moments ago by the capture this is reversing, and a
             // cached read that missed them would spread the reversal across too few orders.
@@ -123,7 +132,8 @@ export async function LoadAppliedAllocations(
 }
 
 /**
- * Un-apply the reversed cash from the orders the original settled.
+ * Un-apply the reversed cash from the lines the original settled, each keeping the order line and
+ * instalment its original named.
  *
  * PROPORTIONAL, so a payment split across three orders reverses across the same three rather than
  * dumping the whole thing on whichever happened to be first — which would leave two orders looking
@@ -153,6 +163,8 @@ export async function BuildUnapplyLines(
         const line = await provider.GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
         line.NewRecord();
         line.OrderHeaderID = app.OrderHeaderID;
+        line.OrderLineID = app.OrderLineID ?? null;
+        line.OrderHeaderPaymentScheduleID = app.OrderHeaderPaymentScheduleID ?? null;
         // NEGATIVE: this removes cash from the order, which is what moves Balance back up.
         line.Amount = -share;
         line.AllocatedAt = new Date();
