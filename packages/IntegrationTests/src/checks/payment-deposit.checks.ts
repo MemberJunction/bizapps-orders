@@ -1,5 +1,5 @@
 /**
- * payment-deposit.checks.ts — the `payment-deposit` bundle (PM1–PM11).
+ * payment-deposit.checks.ts — the `payment-deposit` bundle (PM1–PM12).
  *
  * CASH AHEAD OF BILLING IS NOT A PAYMENT ON ACCOUNT (D91). A scheduled company books no value at
  * confirm, so until an instalment is invoiced there is no receivable for cash to clear. Crediting
@@ -25,6 +25,8 @@
  *   PM10 a deposit and its application land on the SAME account, resolved per product, with a
  *        shipping charge so the AR debit and the revenue part differ
  *   PM11 a deposit for a company with no Customer Deposits account is refused, naming both
+ *   PM12 refunding PM3's named deposit mirrors it: Dr Customer Deposits / Cr Cash, and the named
+ *        instalment goes back to zero paid
  *
  * PM1 is the cascade half and PM2/PM3 the ledger half of one rule; they are in one bundle because
  * a change that satisfies either alone is wrong.
@@ -479,6 +481,39 @@ export const PaymentDepositChecks: NamedCheck[] = [
             }),
     },
     {
+        Id: 'payment-deposit.PM12',
+        Name: 'PM12: refunding a payment that named a Scheduled instalment mirrors the deposit it booked',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // PM3's shape, then all of it back. The reversing lines must name instalment 2 as
+                // the original did; unnamed, the cascade placed the -150 on no row, instalment 2
+                // kept its 150, and the refund debited AR for money booked to Customer Deposits.
+                const f = Fx();
+                const orderID = await orderWith(ctx, TWO);
+                const rows = await schedule(ctx, orderID);
+                await issue(ctx, rows[0].ID);
+                const paymentID = await pay(ctx, orderID, 150, rows[1].ID);
+
+                const refundID = await refund(ctx, paymentID);
+                const lines = await allocationLines(ctx, refundID);
+                const ar = await accountCodeForRole(ctx, 'Accounts Receivable', f.CoA.ID);
+                const deposits = await accountCodeForRole(ctx, CUSTOMER_DEPOSITS, f.CoA.ID);
+                const cash = await accountCodeForRole(ctx, 'Cash', f.CoA.ID);
+                AssertEqual(debitedTo(lines, deposits), 150, 'Dr Customer Deposits 150: the deposit goes back');
+                AssertEqual(debitedTo(lines, ar), 0, 'and AR is not touched');
+                AssertEqual(creditedTo(lines, cash), 150, 'Cr Cash 150');
+
+                const after = await schedule(ctx, orderID);
+                AssertEqual(Number(after[1].AmountPaid), 0, 'the named instalment is back to zero paid');
+                AssertEqual(Number(after[0].AmountPaid), 0, 'and the invoiced one was never paid');
+
+                const both = [...(await allocationLines(ctx, paymentID)), ...lines];
+                AssertEqual(netOn(both, ar), 0, 'the payment and refund net to nothing on AR');
+                AssertEqual(netOn(both, deposits), 0, 'and to nothing on Customer Deposits');
+            }),
+    },
+    {
         Id: 'payment-deposit.PM8',
         Name: 'PM8: the webhook promotion from Pending to Captured books a deposit, not a receivable',
         RequiresMutation: true,
@@ -592,8 +627,12 @@ export const PaymentDepositChecks: NamedCheck[] = [
             InRolledBackTransaction(ctx, async () => {
                 // Harbor House is left unlinked on purpose. Jeremy can link the role to Deferred
                 // Revenue if he wants fewer accounts, so there is no reason to fall back silently.
+                // Harbor House links no Unbilled Receivable either, and since #258 a confirm that
+                // recognises ahead of billing is refused for that. Its membership is deferred, so the
+                // confirm books nothing and the refusal under test is the only one in play.
                 const f = Fx();
-                const orderID = await orderWith(ctx, TWO, 300, { companyID: f.CoB.ID, productID: f.Products.WidgetB });
+                const membership = await TxOne<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE SKU='HH-MEM'`);
+                const orderID = await orderWith(ctx, TWO, 300, { companyID: f.CoB.ID, productID: membership.ID });
                 const result = await payWith(ctx, [{ OrderHeaderID: orderID, Amount: 50 }], { receiving: f.CoB.ID });
 
                 Assert(!result.Saved, 'a deposit with nowhere to go must not capture');
