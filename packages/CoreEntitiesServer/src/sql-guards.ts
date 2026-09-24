@@ -97,6 +97,32 @@ export function RequireDate(value: string, field: string): string {
 }
 
 /**
+ * Require a caller-supplied day in either form an operation input accepts, or throw.
+ *
+ * Operations type a caller's day as `Date | string`, and `CalendarDayOrToday` cannot refuse: an
+ * unreadable value simply becomes today. So both forms are refused here, at the boundary. A string
+ * goes through `RequireDate`. A `Date` has no text to check — `String(date)` is the long human
+ * form, which no ISO pattern matches — so it is refused only when it names no instant at all
+ * (`new Date('garbage')`). Checking one form and passing the other through is how the two drift.
+ *
+ * @param value The caller-supplied day, or nothing.
+ * @param field Field name, used in the error so the caller can find their mistake.
+ * @returns `null` when no day was named, so the caller's fallback to today stays explicit;
+ *   otherwise the validated day, as a `YYYY-MM-DD` string or the `Date` unchanged.
+ * @throws {InvalidOperationInputError} If a day was named and is not a valid one.
+ */
+export function RequireOptionalDay(value: Date | string | null | undefined, field: string): Date | string | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) {
+            throw new InvalidOperationInputError(`${field} is not a valid date.`);
+        }
+        return value;
+    }
+    return RequireDate(value, field);
+}
+
+/**
  * Escape a free-text value for a SQL string literal.
  *
  * For the values that are legitimately text rather than ids — a provider's refund

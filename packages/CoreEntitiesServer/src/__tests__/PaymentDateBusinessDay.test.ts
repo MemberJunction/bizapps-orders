@@ -94,6 +94,7 @@ import {
     type ApplyAccountCreditInput,
     type ApplyAccountCreditOutput,
 } from '../ApplyAccountCreditOperation.js';
+import { CancelSubscriptionOperation } from '../CancelSubscriptionOperation.js';
 import { CapturePaymentOperation } from '../CapturePaymentOperation.js';
 import { PreviewPriceOperation } from '../PreviewPriceOperation.js';
 import { SpawnRenewalsOperation } from '../SpawnRenewalsOperation.js';
@@ -507,7 +508,7 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
      * caller can detect. Both refusals are driven here with an empty provider, which proves they
      * happen before any database work: anything further in would throw on the missing provider.
      */
-    describe('the as-of operations (PreviewPrice, SpawnRenewals)', () => {
+    describe('the as-of operations (PreviewPrice, SpawnRenewals, CancelSubscription)', () => {
         const PRODUCT_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3331';
 
         it('PreviewPrice refuses a day that does not exist', async () => {
@@ -572,6 +573,22 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             expect(out.Success).toBe(false);
             expect(out.Message).toMatch(/not a real calendar day/);
         });
+
+        // An invalid `Date` is a day the caller named, not an absent one. `CalendarDayOrToday`
+        // reads it as no day and falls back to today, so each operation refuses it first (#272).
+        // The empty provider proves the refusal comes before any provider work.
+        type DayOperation = {
+            InternalExecute(i: unknown, p: IMetadataProvider, u: UserInfo): Promise<{ Success: boolean; Message?: string }>;
+        };
+        it.each<[string, () => DayOperation, Record<string, unknown>, RegExp]>([
+            ['PreviewPrice', () => new PreviewPriceOperation() as unknown as DayOperation, { ProductID: PRODUCT_ID, AsOf: new Date('garbage') }, /AsOf is not a valid date/],
+            ['SpawnRenewals', () => new SpawnRenewalsOperation() as unknown as DayOperation, { AsOfDate: new Date('garbage') }, /AsOfDate is not a valid date/],
+            ['CancelSubscription', () => new CancelSubscriptionOperation() as unknown as DayOperation, { SubscriptionID: '3f2504e0-4f89-41d3-9a0c-0305e82c3332', RequestDate: new Date('garbage') }, /RequestDate is not a valid date/],
+        ])('%s refuses an invalid Date instead of running for today', async (_name, make, input, message) => {
+            const out = await make().InternalExecute(input, {} as unknown as IMetadataProvider, { ID: 'user-1' } as unknown as UserInfo);
+            expect(out.Success).toBe(false);
+            expect(out.Message).toMatch(message);
+        });
     });
 
     /**
@@ -611,7 +628,7 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             // The remote boundary: a caller-supplied day is text until something says otherwise.
             // `AsDateValue` answers `null` for `2026-02-30` rather than throwing, and a normaliser
             // that answers `null` cannot report the typo — so the operation refuses it by name.
-            ['CancelSubscriptionOperation.ts', /RequireDate\(input\.RequestDate, 'RequestDate'\)/, 'the request day validated at the boundary'],
+            ['CancelSubscriptionOperation.ts', /RequireOptionalDay\(input\.RequestDate, 'RequestDate'\)/, 'the request day validated at the boundary'],
             // Both checkout sites warm through the ORDER's provider, not the global one. Only the
             // fallback path consumes those arguments, and the line above these sets `OrderDate`,
             // so no driven test can observe them without defeating that line — but a widget
