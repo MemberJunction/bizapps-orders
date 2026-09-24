@@ -84,7 +84,16 @@ export function RequireDate(value: string, field: string): string {
     if ((!isDateOnly && !isDateTime) || Number.isNaN(Date.parse(whole))) {
         throw new InvalidOperationInputError(`${field} must be an ISO date (YYYY-MM-DD).`);
     }
-    return whole.slice(0, 10);
+    // `Date.parse` is not enough: it ROLLS OVER, so `2026-02-30` parses happily as 2 March and
+    // `2026-06-31` as 1 July. A day that does not exist is a typo in the caller's input, and
+    // silently moving it is the worst of the three options — the caller is never told, and the
+    // row is filed on a day they did not name. Round-tripping the day part catches exactly that.
+    const day = whole.slice(0, 10);
+    const roundTrip = new Date(`${day}T00:00:00.000Z`);
+    if (Number.isNaN(roundTrip.getTime()) || roundTrip.toISOString().slice(0, 10) !== day) {
+        throw new InvalidOperationInputError(`${field} is not a real calendar day: ${day}.`);
+    }
+    return day;
 }
 
 /**

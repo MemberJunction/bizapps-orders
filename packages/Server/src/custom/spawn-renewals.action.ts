@@ -30,6 +30,7 @@ import type { ActionParam, ActionResultSimple, RunActionParams } from '@memberju
 import { Metadata, type IMetadataProvider } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { OrdersSpawnRenewalsOperation, type SpawnRenewalsInput } from '@mj-biz-apps/orders-entities';
+import { RequireDate } from '@mj-biz-apps/orders-core-entities-server';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -129,7 +130,13 @@ export class SpawnRenewalsAction extends BaseAction {
             // A date we cannot read is refused rather than quietly replaced with today. Today is
             // the one value most likely to look right and be wrong — a preview run for the cutover
             // would silently report the wrong quarter, and a live run would bill it.
-            if (Number.isNaN(new Date(asOf).getTime())) {
+            //
+            // Through `RequireDate` rather than `new Date(asOf)`, which ROLLS OVER: `2026-02-30`
+            // parsed happily as 2 March, so the check passed and the pass ran for a day nobody
+            // named. The operation below refuses it too; this keeps the action's own message.
+            try {
+                RequireDate(asOf, 'AsOfDate');
+            } catch {
                 return {
                     Success: false,
                     ResultCode: 'INVALID_AS_OF_DATE',

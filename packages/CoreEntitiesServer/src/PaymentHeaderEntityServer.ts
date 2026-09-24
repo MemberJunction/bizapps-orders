@@ -67,6 +67,7 @@ import {
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
+import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
@@ -420,7 +421,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 ReceivingCompanyID: this.ReceivingCompanyID,
                 OrderLines: orderLines,
                 TargetOrderLineID: line.OrderLineID ?? null,
-                PaymentDate: this.PaymentDate ? new Date(this.PaymentDate) : new Date(),
+                // The allocation entry's `EffectiveDate` comes from this (#209): a day, so the
+                // fallback has to be a day too, not the instant the booking happened to run at.
+                PaymentDate: await CalendarDayOrToday(this.PaymentDate, provider, user),
                 IsReversal: this.Status === 'Refunded' || (line.Amount ?? 0) < 0,
             });
 
@@ -693,7 +696,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             CompanyID: this.ReceivingCompanyID,
             Amount: this.Amount ?? 0,
             ProcessingFeeAmount: this.ProcessingFeeAmount ?? 0,
-            PaymentDate: this.PaymentDate ? new Date(this.PaymentDate) : new Date(),
+            // As in `bookAllocations`: the fee entry's `EffectiveDate` is this day (#209).
+            PaymentDate: await CalendarDayOrToday(this.PaymentDate, provider, user),
             IsReversal: this.Status === 'Refunded',
         });
 
