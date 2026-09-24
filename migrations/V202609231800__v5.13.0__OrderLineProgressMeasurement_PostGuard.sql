@@ -1,4 +1,4 @@
--- V202609230700 — the immutability trigger also looks FORWARD (golive #241, Jeremy on PR #227)
+-- V202609231800 — the immutability trigger also looks FORWARD (golive #241, Jeremy on PR #227)
 -- =============================================================================
 -- Trigger 51030 asked only "was this row already Posted?", which covers editing
 -- or deleting a posted observation and nothing else. Jeremy's review names the
