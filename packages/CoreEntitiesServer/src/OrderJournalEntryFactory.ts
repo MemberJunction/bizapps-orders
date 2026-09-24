@@ -937,16 +937,14 @@ export class OrderJournalEntryFactory {
             });
         }
         if (legs.Unbilled !== 0) {
-            const contra = await this.unbilledOrDeferred(resolve, legs.Unbilled, {
-                OrderNumber: order.OrderNumber ?? '',
-                LineNumber: line.LineNumber,
-                CompanyID: companyID,
-                ProductName: product.Name,
-            });
             debits.push({
-                GLAccountID: contra.GLAccountID,
+                GLAccountID: await this.resolveUnbilledReceivable(resolve, legs.Unbilled, {
+                    OrderNumber: order.OrderNumber ?? '',
+                    LineNumber: line.LineNumber,
+                    CompanyID: companyID,
+                }),
                 DebitAmount: Math.abs(legs.Unbilled),
-                Description: contra.Description,
+                Description: `Unbilled receivable — ${product.Name}`,
                 Dimensions: lineDims,
             });
         }
