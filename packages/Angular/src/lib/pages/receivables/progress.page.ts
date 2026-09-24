@@ -5,6 +5,7 @@ import { MJAlertComponent, MJButtonDirective, MJConfirmService } from '@memberju
 import {
     OrdersGetProgressWorklistOperation,
     OrdersRecordProgressOperation,
+    Today,
     type OrdersRecordProgressOutput,
     type ProgressWorklistRow,
 } from '@mj-biz-apps/orders-entities';
@@ -137,7 +138,7 @@ export class MJOProgressPageComponent implements OnInit {
     public Busy = false;
     public Rows: ProgressWorklistRow[] = [];
     public Selected: ProgressWorklistRow | null = null;
-    public MeasurementDate = new Date().toISOString().slice(0, 10);
+    public MeasurementDate = Today();
     public PercentInput: number | null = null;
     /** The last preview for the current inputs; cleared whenever they change. */
     public Draft: OrdersRecordProgressOutput | null = null;
