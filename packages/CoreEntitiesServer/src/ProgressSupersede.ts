@@ -57,7 +57,9 @@ export interface SupersedePlan {
  * The arithmetic of a supersede, in the same magnitude space as {@link ComputeCatchUp}.
  *
  * The reversal is the replaced observation's own `RecognitionAmount`, negated — not a recomputation —
- * so the pair nets to exactly zero whatever the rounding history. The new catch-up then runs against
+ * so the REVENUE the pair recognises nets to exactly zero whatever the rounding history. (Its contra
+ * legs are shaped from the line's current billing, so they need not mirror the replaced entry's.)
+ * The new catch-up then runs against
  * the restored total, which makes the new observation's `RecognitionAmount` its own delta and nothing
  * else: a later supersede of IT reverses exactly what it posted.
  */
