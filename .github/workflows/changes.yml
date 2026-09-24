@@ -24,7 +24,9 @@ jobs:
       - name: Resolve current base branch tip
         id: base
         run: |
-          git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.ref }}
+          # Not --depth=1: that marks the fetched tip shallow, and if the base has moved since the
+          # merge ref was computed (or on a re-run of an old job) there is no merge base to diff against.
+          git fetch --no-tags origin ${{ github.event.pull_request.base.ref }}
           echo "sha=$(git rev-parse FETCH_HEAD)" >> $GITHUB_OUTPUT
 
       - name: Check for migration file changes

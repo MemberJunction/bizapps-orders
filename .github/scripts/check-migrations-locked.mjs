@@ -49,7 +49,7 @@ const YELLOW = '\x1b[0;33m';
 const DIM = '\x1b[2m';
 const OFF = '\x1b[0m';
 
-/** `git` in `cwd`, trimmed, never throwing on a non-zero exit we expect to read. */
+/** `git` in `cwd`, trimmed. Throws on a non-zero exit; the entry points turn that into a plain message. */
 function git(args, cwd = process.cwd()) {
     return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
@@ -73,10 +73,10 @@ export function ChangedLockedMigrations(base, head, cwd = process.cwd()) {
     return raw
         .split('\n')
         .map((line) => line.split('\t'))
-        .filter(([status, a, b]) => {
-            const touched = status?.startsWith('R') ? b : a;
-            return touched?.endsWith('.sql');
-        })
+        // The locked file is the BASE-side path, for every status. Testing the new path of a rename would
+        // let `git mv X.sql X.sql.bak` (or `.SQL`) through — the obvious way to "disable" a migration —
+        // and the timestamp check would not see it either, since a rename is not an addition.
+        .filter(([, a]) => a?.endsWith('.sql'))
         .map(([status, a, b]) => (status.startsWith('R') ? { Status: 'renamed', Path: b, From: a } : { Status: status === 'D' ? 'deleted' : 'modified', Path: a, From: null }));
 }
 
@@ -85,6 +85,7 @@ function report(found, baseLabel) {
         console.log(`${DIM}no migration on ${baseLabel} was modified, renamed or deleted${OFF}`);
         return 0;
     }
+    console.log(`::error::${found.length} migration(s) already on ${baseLabel} were modified, renamed or deleted — fix forward in a new migration`);
     console.error(`${RED}✗ migrations already on ${baseLabel} were changed${OFF}`);
     for (const f of found) {
         const what = f.From ? `${f.From} → ${f.Path}` : f.Path;
@@ -133,6 +134,7 @@ function selfTest() {
     console.log('self-test:');
     scenario('an edit to a merged migration is caught', (d) => writeFileSync(join(d, 'migrations', 'V202601010000__v1__A.sql'), 'CREATE TABLE a(i int, j int);\n'), ['modified']);
     scenario('a rename of a merged migration is caught', (d) => git(['mv', 'migrations/V202601010000__v1__A.sql', 'migrations/V202699010000__v1__A.sql'], d), ['renamed']);
+    scenario('a rename of a merged migration off .sql is caught', (d) => git(['mv', 'migrations/V202601010000__v1__A.sql', 'migrations/V202601010000__v1__A.sql.bak'], d), ['renamed']);
     scenario('a deletion of a merged migration is caught', (d) => git(['rm', '-q', 'migrations/V202601010000__v1__A.sql'], d), ['deleted']);
     scenario('a brand-new migration is allowed', (d) => writeFileSync(join(d, 'migrations', 'V202699990000__v1__C.sql'), 'CREATE TABLE c(i int);\n'), []);
     scenario('a non-SQL file beside them is ignored', (d) => writeFileSync(join(d, 'migrations', '_README.md'), 'notes\n'), []);
@@ -189,8 +191,23 @@ if (args[0] === '--self-test') {
     process.exit(selfTest());
 }
 
+/** Run the check, or explain in one line why it could not — never a stack trace in place of a verdict. */
+function run(base, head, baseLabel) {
+    let found;
+    try {
+        found = ChangedLockedMigrations(base, head);
+    } catch (e) {
+        const why = String(e.stderr || e.message).trim().split('\n')[0];
+        console.log(`::error::could not compare ${base}...${head}: ${why}`);
+        console.error(`${RED}cannot compare ${base}...${head}: ${why}${OFF}`);
+        console.error('A missing merge base usually means one side was fetched shallow; fetch full history and re-run.');
+        return 2;
+    }
+    return report(found, baseLabel);
+}
+
 if (args.length >= 2) {
-    process.exit(report(ChangedLockedMigrations(args[0], args[1]), 'the base branch'));
+    process.exit(run(args[0], args[1], 'the base branch'));
 }
 
 const baseRef = process.env.BASE_REF || 'origin/next';
@@ -200,4 +217,4 @@ try {
     console.error(`${RED}cannot resolve ${baseRef}; pass <base> <head> explicitly${OFF}`);
     process.exit(2);
 }
-process.exit(report(ChangedLockedMigrations(baseRef, 'HEAD'), baseRef));
+process.exit(run(baseRef, 'HEAD', baseRef));
