@@ -46,22 +46,20 @@ export interface BillComGatewaySeams {
      * `POST /invoices/{id}/archive` — BILL's only way to archive an invoice. Verified live 2026-09-21
      * (spike S1): `PUT {archived:true}` is refused with 400 because PUT is a full replace that demands
      * `customer` and `invoiceLineItems`; the archive verb returns 200 with `archived: true`,
-     * `recordStatus: INACTIVE`, and is idempotent. The connector has no verb for it (Integrations ask
-     * U1), so the default gateway reaches the endpoint through the connector's own session.
+     * `recordStatus: INACTIVE`, and is idempotent. Delegates to the connector's own `ArchiveInvoice`
+     * since 0.3.2 (Integrations #391); earlier builds have no such verb and this refuses with a
+     * sentence rather than failing obscurely.
      */
     archiveInvoice(ci: MJCompanyIntegrationEntity, externalID: string, user: UserInfo): Promise<CRUDResult>;
 }
 
 /**
- * The protected surface of `BaseRESTIntegrationConnector` that `archiveInvoice` borrows until the
- * connector grows an archive verb: the same session, base URL, headers and 401-retrying request the
- * generic CRUD uses. Structural, so nothing here depends on the connector's class hierarchy.
+ * The connector's public archive verb, structurally typed so nothing here depends on its class
+ * hierarchy — and so a host pinned to a build without it fails with a sentence a person can act on
+ * rather than a TypeError.
  */
-interface ConnectorSession {
-    Authenticate(ci: MJCompanyIntegrationEntity, user: UserInfo): Promise<unknown>;
-    GetBaseURL(ci: MJCompanyIntegrationEntity, auth: unknown): string;
-    BuildHeaders(auth: unknown): Record<string, string>;
-    MakeHTTPRequest(auth: unknown, url: string, method: string, headers: Record<string, string>, body?: unknown): Promise<{ Status: number; Body: unknown }>;
+interface ArchivingConnector {
+    ArchiveInvoice?(ctx: { CompanyIntegration: MJCompanyIntegrationEntity; ExternalID: string; ContextUser: UserInfo }): Promise<CRUDResult>;
 }
 
 let seams: BillComGatewaySeams | null = null;
@@ -176,12 +174,21 @@ export function DefaultBillComGateway(provider: IMetadataProvider): BillComGatew
             return c.GetRecord({ CompanyIntegration: ci, ObjectName: object, ContextUser: user, ExternalID: externalID });
         },
         async archiveInvoice(ci, externalID, user) {
-            const c = (await connectorFor(ci, provider, user)) as unknown as ConnectorSession;
-            const auth = await c.Authenticate(ci, user);
-            const url = `${c.GetBaseURL(ci, auth).replace(/\/+$/, '')}/invoices/${encodeURIComponent(externalID)}/archive`;
-            const r = await c.MakeHTTPRequest(auth, url, 'POST', c.BuildHeaders(auth), undefined);
-            if (r.Status >= 200 && r.Status < 300) return { Success: true, StatusCode: r.Status, ExternalID: externalID };
-            return { Success: false, StatusCode: r.Status, ErrorMessage: billComErrorText(r.Body) ?? `HTTP ${r.Status} on archive` };
+            // The connector's own verb since 0.3.2 (Integrations #391). This used to build the URL
+            // from the connector's protected session helpers, which was always a last resort and is
+            // now actively wrong: 0.3.2 moved the version out of the base URL and into the paths
+            // (Integrations #390), so `${base}/invoices/…/archive` silently loses the `/v3`.
+            const c = (await connectorFor(ci, provider, user)) as unknown as ArchivingConnector;
+            if (typeof c.ArchiveInvoice !== 'function') {
+                return {
+                    Success: false,
+                    StatusCode: 0,
+                    ErrorMessage:
+                        'This build of @memberjunction/connector-bill-com has no ArchiveInvoice verb. Upgrade to 0.3.2 or later; ' +
+                        'cancelling an invoice is not possible without it.',
+                };
+            }
+            return c.ArchiveInvoice({ CompanyIntegration: ci, ExternalID: externalID, ContextUser: user });
         },
         async fetchChanges(ci, object, watermark, user) {
             const c = await connectorFor(ci, provider, user);

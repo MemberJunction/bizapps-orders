@@ -49,7 +49,7 @@
     "@memberjunction/cli": "^6.1.0-edge.5",
     "@memberjunction/communication-engine": "^6.1.0-edge.5",
     "@memberjunction/communication-types": "^6.1.0-edge.5",
-    "@memberjunction/connector-bill-com": "0.3.1",
+    "@memberjunction/connector-bill-com": "0.3.2",
     "@memberjunction/core": "^6.1.0-edge.5",
     "@memberjunction/core-entities": "^6.1.0-edge.5",
     "@memberjunction/core-entities-server": "^6.1.0-edge.5",

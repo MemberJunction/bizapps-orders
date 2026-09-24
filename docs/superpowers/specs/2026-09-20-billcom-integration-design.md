@@ -690,6 +690,34 @@ the fixes introduced; all four are fixed:
 - **Deploy prerequisites carried forward:** bizapps-common ≥ 5.43 on the host (`fnBusinessToday`) and the
   `BizApps.BusinessTimeZone` configuration row set to Central — `aidp-next` pins common 5.42.0 today.
 
+### 13.11 2026-09-24 — connector 0.3.2, and the workaround is gone
+
+`@memberjunction/connector-bill-com` 0.3.2 is published and carries both fixes from Integrations #392:
+the version segment moved out of the base URL and into the paths (#390), and `ArchiveInvoice` /
+`RestoreInvoice` exist as real verbs (#391). **Nothing in this repo needs to patch anything any more.**
+
+Three consequences, all now done:
+
+1. **The QA `/v3` patch is REVERSED.** Stripping the prefix from the three seeded `IntegrationObject`
+   rows was a workaround for 0.3.1, where the base URL already carried the version. On 0.3.2 the base
+   is `…/connect` and the seeded paths are correct as the connector ships them. A host installing
+   0.3.2 needs no patch at all; a host still pinned to 0.3.1 needs the old one.
+2. **`BillComGateway.archiveInvoice` delegates to the connector's verb.** It used to build the URL
+   itself from the connector's protected session helpers — always a last resort, and on 0.3.2 actively
+   wrong: `${base}/invoices/…/archive` silently loses the `/v3` once the base stops carrying it. The
+   seam now calls `ArchiveInvoice`, and refuses with a readable sentence on a build that lacks it
+   rather than failing with a TypeError.
+3. **Upstream asks U1 and U3 are CLOSED.** Both shipped in 0.3.2. U2 (the connector ignoring the
+   watermark on `FetchChanges`) is still open and still covered by the rail's local narrowing.
+
+Verified live against the sandbox on 0.3.2 with the shipped paths and no patch: customer create,
+invoice create with totals tying at 250.25, archive returning 200 and `archived: true` with
+`recordStatus: INACTIVE`, a second archive also 200 (idempotent), and the environment guard reading
+`sandbox` correctly.
+
+**For stage:** pin `@memberjunction/connector-bill-com` to 0.3.2 or later. `aidp-next`'s stage branch
+currently pins 0.3.1, which needs bumping before Bill.com will work there.
+
 ### 13.10 2026-09-23 — the CFO's answers, and the two things they expose
 
 **Q5 (D-B9, the fee leg) — CLOSED, as designed.** Bill.com does not charge per transaction. We pay

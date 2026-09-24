@@ -68,8 +68,8 @@ importers:
         specifier: ^6.1.0-edge.5
         version: 6.1.0-edge.5
       '@memberjunction/connector-bill-com':
-        specifier: 0.3.1
-        version: 0.3.1(@memberjunction/core-entities@6.1.0-edge.5)(@memberjunction/core@6.1.0-edge.5)(@memberjunction/global@6.1.0-edge.5)(@memberjunction/integration-engine@6.1.0-edge.5)
+        specifier: 0.3.2
+        version: 0.3.2(@memberjunction/core-entities@6.1.0-edge.5)(@memberjunction/core@6.1.0-edge.5)(@memberjunction/global@6.1.0-edge.5)(@memberjunction/integration-engine@6.1.0-edge.5)
       '@memberjunction/core':
         specifier: ^6.1.0-edge.5
         version: 6.1.0-edge.5
@@ -168,7 +168,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
-        version: 4.1.10(@types/node@25.9.5)(jsdom@26.1.0)(vite@7.3.6(@types/node@25.9.5))
+        version: 4.1.10(@types/node@25.9.5)(jsdom@26.1.0)
 
   packages/Actions:
     dependencies:
@@ -294,7 +294,7 @@ importers:
         version: 7.3.6(@types/node@25.9.5)
       vitest:
         specifier: ^4.0.18
-        version: 4.1.10(@types/node@25.9.5)(jsdom@26.1.0)(vite@7.3.6(@types/node@25.9.5))
+        version: 4.1.10(@types/node@25.9.5)(jsdom@26.1.0)
 
   packages/Entities:
     dependencies:
@@ -347,7 +347,7 @@ importers:
         version: 7.3.6(@types/node@22.20.1)
       vitest:
         specifier: ^4.0.18
-        version: 4.1.10(@types/node@22.20.1)(jsdom@26.1.0)(vite@7.3.6(@types/node@22.20.1))
+        version: 4.1.10(@types/node@22.20.1)(jsdom@26.1.0)
 
   packages/Server:
     dependencies:
@@ -2073,8 +2073,8 @@ packages:
   '@memberjunction/config@6.1.0-edge.5':
     resolution: {integrity: sha512-Pn+RLNcS4is1MiL5NQhXhNrvwgBdqv9/d/xEwGIiVzexjt+s5xU1p6vsCjfzSTij5lNcjCcQlsoNpbcWacjcAA==}
 
-  '@memberjunction/connector-bill-com@0.3.1':
-    resolution: {integrity: sha512-HfT2P88UADqm2Vq2J/skoVcHLtqDuaoBH86xjubjifFnLzgGR1NNSTBedxaUKhKxc+fVGL/htcEQm+WsbTISDA==}
+  '@memberjunction/connector-bill-com@0.3.2':
+    resolution: {integrity: sha512-m4kHgsOwy0+81TKdwu1msBYU3SMRRGuxP7D/b2u6YOPFJNaBg+HpQHa7jWhxVrSrX4oKZgje6lG3j2vAC5Rn9w==}
     peerDependencies:
       '@memberjunction/core': ^6.1.0-edge.5
       '@memberjunction/core-entities': '>=5.43.0 <7.0.0'
@@ -7735,7 +7735,6 @@ packages:
       '@vitest/ui': 4.1.10
       happy-dom: '*'
       jsdom: '*'
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
@@ -11896,7 +11895,7 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@memberjunction/connector-bill-com@0.3.1(@memberjunction/core-entities@6.1.0-edge.5)(@memberjunction/core@6.1.0-edge.5)(@memberjunction/global@6.1.0-edge.5)(@memberjunction/integration-engine@6.1.0-edge.5)':
+  '@memberjunction/connector-bill-com@0.3.2(@memberjunction/core-entities@6.1.0-edge.5)(@memberjunction/core@6.1.0-edge.5)(@memberjunction/global@6.1.0-edge.5)(@memberjunction/integration-engine@6.1.0-edge.5)':
     dependencies:
       '@memberjunction/core': 6.1.0-edge.5
       '@memberjunction/core-entities': 6.1.0-edge.5
@@ -21120,7 +21119,7 @@ snapshots:
       '@types/node': 25.9.5
       fsevents: 2.3.3
 
-  vitest@4.1.10(@types/node@22.20.1)(jsdom@26.1.0)(vite@7.3.6(@types/node@22.20.1)):
+  vitest@4.1.10(@types/node@22.20.1)(jsdom@26.1.0):
     dependencies:
       '@vitest/expect': 4.1.10
       '@vitest/mocker': 4.1.10(vite@7.3.6(@types/node@22.20.1))
@@ -21146,9 +21145,19 @@ snapshots:
       '@types/node': 22.20.1
       jsdom: 26.1.0
     transitivePeerDependencies:
+      - jiti
+      - less
+      - lightningcss
       - msw
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - terser
+      - tsx
+      - yaml
 
-  vitest@4.1.10(@types/node@25.9.5)(jsdom@26.1.0)(vite@7.3.6(@types/node@25.9.5)):
+  vitest@4.1.10(@types/node@25.9.5)(jsdom@26.1.0):
     dependencies:
       '@vitest/expect': 4.1.10
       '@vitest/mocker': 4.1.10(vite@7.3.6(@types/node@25.9.5))
@@ -21174,7 +21183,17 @@ snapshots:
       '@types/node': 25.9.5
       jsdom: 26.1.0
     transitivePeerDependencies:
+      - jiti
+      - less
+      - lightningcss
       - msw
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - terser
+      - tsx
+      - yaml
 
   w3c-keyname@2.2.8: {}
 
