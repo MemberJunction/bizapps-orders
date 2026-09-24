@@ -45,7 +45,28 @@ vi.mock('../../data/orders-queries', () => ({
 // compile of a large standalone component; done inside `page()` the first test paid that cost and
 // timed out at 5s under full-suite load while passing in isolation -- the worst shape of flake,
 // because the file looks fine when you re-run it on its own.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+
 import { MJOReturnPageComponent } from '../orders/return.page';
+
+/** The component's own source, for the binding check at the end of this file. */
+function returnPageSource(): string {
+    const candidates = [
+        fileURLToPath(new URL('../orders/return.page.ts', import.meta.url)),
+        resolve(process.cwd(), 'packages/Angular/src/lib/pages/orders/return.page.ts'),
+        resolve(process.cwd(), 'src/lib/pages/orders/return.page.ts'),
+    ];
+    for (const c of candidates) {
+        try {
+            return readFileSync(c, 'utf8');
+        } catch {
+            /* try the next one */
+        }
+    }
+    throw new Error(`could not read return.page.ts; tried:\n  ${candidates.join('\n  ')}`);
+}
 
 const ORDERS = [
     { ID: 'o-1', OrderNumber: 'ORD-000010', Status: 'Confirmed', TotalGross: 1200, BillToOrganization: 'Sidecar' },
@@ -348,5 +369,31 @@ describe('the returns page can be reached', () => {
 
         expect(c.Reason, 're-picking the loaded order is a no-op, not a reset').toBe('Pricing error');
         expect(c.PickerOpen, 'and it still closes the picker').toBe(false);
+    });
+    it('wires EVERY order dropdown to the server filter, not just the first one', () => {
+        /**
+         * Found in the running app, not here. The empty-state picker had `(FilterChange)` and the
+         * "Change origin order" picker did not, so once you were in the flow the filter fell back to
+         * searching the rows already fetched — which is exactly the capped-list bug the binding
+         * exists to fix, left in place on the path people actually use. Typing an order number that
+         * certainly exists returned "No data found".
+         *
+         * Asserted over the TEMPLATE SOURCE because the fault is a missing binding on one element
+         * among several. A test that drives `FilterOrders()` directly passes either way — which is
+         * why the suite was green while the screen was broken.
+         */
+        const source = returnPageSource();
+        // Only the ORDER pickers. The page also renders a Reason dropdown, which is a fixed list and
+        // has nothing to search for — counting every `mj-dropdown` would demand a binding there too.
+        const orderDropdowns = (source.match(/<mj-dropdown[\s\S]*?\/>/g) ?? []).filter((d) =>
+            d.includes('[Data]="PickerOrders"'),
+        );
+
+        expect(orderDropdowns.length, 'the page should still render its order pickers').toBeGreaterThan(1);
+        const unwired = orderDropdowns.filter((d) => !d.includes('FilterChange'));
+        expect(
+            unwired.map((d) => /name="([^"]+)"/.exec(d)?.[1] ?? '(unnamed)'),
+            'each order picker must query the server; one filtering its cached rows is the capped-list bug',
+        ).toEqual([]);
     });
 });

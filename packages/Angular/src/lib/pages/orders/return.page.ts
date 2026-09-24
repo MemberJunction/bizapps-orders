@@ -83,8 +83,8 @@ interface MJOReturnLine {
             three happen while the origin card is not rendered.
         -->
         @if (Error) {
-            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-rt__note"
-                      data-testid="return-error">
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation"
+                      class="mjo-rt__note mjo-rt__error" data-testid="return-error">
                 {{ Error }}
             </mj-alert>
         }
@@ -122,6 +122,7 @@ interface MJOReturnLine {
                             ValueField="ID"
                             [ValuePrimitive]="true"
                             [Filterable]="true"
+                            (FilterChange)="FilterOrders($any($event))"
                             (ValueChange)="ChooseOrigin($any($event))"
                             name="changeOriginOrder" />
                     </div>
@@ -307,6 +308,16 @@ interface MJOReturnLine {
             .mjo-rt__qty { width: 74px; }
             .mjo-rt__actions { margin-top: var(--mj-space-4); }
             .mjo-rt__empty { padding: var(--mj-space-12); }
+            /* A SERVER ERROR IS NOT A SENTENCE. Measured on the golive#251 save failure: 11,636
+               characters and 4,003px tall, which pushed the whole return off screen. The text is
+               kept in full -- it is the only diagnostic anyone gets -- but it scrolls in its own
+               box instead of becoming the page. */
+            .mjo-rt__error {
+                max-height: 12rem;
+                overflow-y: auto;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
             /* The picker reads as one control rather than filling the card, and is centred in the
                empty state because everything above it there is centred too. */
             .mjo-rt__picker {
