@@ -67,6 +67,8 @@ function page(opts: PageOpts = {}) {
         Origin: unknown;
         Lines: unknown[];
         Error: string | null;
+        Reason: string;
+        Notice: string | null;
         ngOnInit(): Promise<void>;
         ngOnChanges(changes: Record<string, unknown>): Promise<void>;
         ChooseOrigin(id: string | null): Promise<void>;
@@ -87,6 +89,9 @@ function page(opts: PageOpts = {}) {
     // EVERY load treats itself as superseded and silently returns — which is what this fixture did
     // until the new race check caught it.
     (c as Record<string, unknown>).originLoadToken = 0;
+    (c as Record<string, unknown>).selectedOriginID = null;
+    (c as Record<string, unknown>).Reason = 'Damaged in transit';
+    (c as Record<string, unknown>).Notice = null;
     (c as Record<string, unknown>).cdr = { detectChanges: () => undefined };
     // Prior returns are the server's answer; this suite is about reaching the page at all.
     (c as unknown as { LoadPriorReturns(ids: string[]): Promise<Map<string, number>> }).LoadPriorReturns =
@@ -179,7 +184,7 @@ describe('the returns page can be reached', () => {
 
         await c.ChooseOrigin('o-1');
 
-        expect(c.OriginOrderID).toBe('o-1');
+        // NOT `OriginOrderID`. The component no longer writes its own @Input — see below.
         expect(c.Origin, 'the origin card can only render once this is set').toEqual(ORDERS[0]);
         // Kills dropping `PickerOpen = false`. It starts TRUE here on purpose.
         expect(c.PickerOpen, 'leaving it open covers the order it just loaded').toBe(false);
@@ -281,5 +286,67 @@ describe('the returns page can be reached', () => {
         await slow;
 
         expect(c.Origin, 'the abandoned first pick must not overwrite the second').toEqual(ORDERS[1]);
+    });
+    it('does NOT write its own @Input when the picker chooses', async () => {
+        // Angular diffs an input against the last value IT bound. After the component wrote one, a
+        // parent binding that SAME id produced no `ngOnChanges` and the page quietly refused to
+        // reload. The selection is the component's own state now.
+        mockGetOrders.mockResolvedValue(ORDERS);
+        const c = page();
+        await c.ngOnInit();
+        mockGetOrders.mockResolvedValue([ORDERS[0]]);
+
+        await c.ChooseOrigin('o-1');
+
+        expect(c.OriginOrderID, 'the input belongs to the parent').toBeNull();
+        expect(c.Origin, 'and the order still loaded').toEqual(ORDERS[0]);
+    });
+
+    it('surfaces a THROWN load instead of dying with a blank page', async () => {
+        // `GetOrders` throws on a malformed id rather than returning nothing, and nothing caught it,
+        // so the load died mid-flight with `Error` still null. The fetch-all-and-find it replaced
+        // could only come back empty, so the throw arrived with the by-id read.
+        mockGetOrders.mockResolvedValue(ORDERS);
+        const c = page();
+        await c.ngOnInit();
+        mockGetOrders.mockRejectedValueOnce(new Error('invalid uniqueidentifier'));
+
+        await c.ChooseOrigin('not-a-guid');
+
+        expect(c.Origin).toBeNull();
+        expect(c.Error, 'a thrown load must say so, like a failed one does').toContain('could not be loaded');
+    });
+
+    it('resets the reason when the origin changes, and says what it discarded', async () => {
+        // `Reason` carried across, so a reason chosen for one order silently became the reason
+        // recorded against another. The quantities go too — they name the previous order's lines.
+        mockGetOrders.mockResolvedValue(ORDERS);
+        const c = page();
+        await c.ngOnInit();
+        mockGetOrders.mockResolvedValue([ORDERS[0]]);
+        await c.ChooseOrigin('o-1');
+        c.Reason = 'Pricing error';
+        c.Lines = [{ LineID: 'l-1', Returning: 3, AlreadyReturned: 0 } as never];
+
+        mockGetOrders.mockResolvedValue([ORDERS[1]]);
+        await c.ChooseOrigin('o-2');
+
+        expect(c.Reason, 'a reason chosen for one order must not be booked against another')
+            .toBe('Damaged in transit');
+        expect(c.Notice, 'discarding typed work silently is the thing being fixed').toBeTruthy();
+    });
+
+    it('does not discard work when the SAME order is picked again', async () => {
+        mockGetOrders.mockResolvedValue(ORDERS);
+        const c = page({ pickerOpen: true });
+        await c.ngOnInit();
+        mockGetOrders.mockResolvedValue([ORDERS[0]]);
+        await c.ChooseOrigin('o-1');
+        c.Reason = 'Pricing error';
+
+        await c.ChooseOrigin('o-1');
+
+        expect(c.Reason, 're-picking the loaded order is a no-op, not a reset').toBe('Pricing error');
+        expect(c.PickerOpen, 'and it still closes the picker').toBe(false);
     });
 });

@@ -26,6 +26,9 @@ import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@membe
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 
+/** The reason a return opens with, and the one it returns to when the origin changes. */
+const DEFAULT_RETURN_REASON = 'Damaged in transit';
+
 /** A line being returned, with the cap the origin imposes. */
 interface MJOReturnLine {
     LineID: string;
@@ -83,6 +86,14 @@ interface MJOReturnLine {
             <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-rt__note"
                       data-testid="return-error">
                 {{ Error }}
+            </mj-alert>
+        }
+
+        <!-- Work this page discarded on the user's behalf, said out loud rather than done quietly. -->
+        @if (Notice) {
+            <mj-alert Variant="warning" Icon="fa-solid fa-circle-info" class="mjo-rt__note"
+                      data-testid="return-notice">
+                {{ Notice }}
             </mj-alert>
         }
 
@@ -345,6 +356,18 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
     @Input() OriginOrderID: string | null = null;
 
     /**
+     * The order actually being returned against — the component's own state, NOT the `@Input`.
+     *
+     * `ChooseOrigin` used to assign `this.OriginOrderID`. Angular diffs an input against the last
+     * value IT bound, so after the picker wrote one, a parent binding that SAME id produced no
+     * `ngOnChanges` and the page quietly refused to reload. Writing your own input also means the
+     * parent and the child disagree about who owns it. The input is now read-only to this class:
+     * `ngOnInit`/`ngOnChanges` copy it in, the picker sets this directly, and everything downstream
+     * reads this.
+     */
+    private selectedOriginID: string | null = null;
+
+    /**
      * THE ORIGIN PICKER (golive#250, and `mockups/orders/return.html`'s `<!-- origin picker -->`).
      *
      * Only BOOKED orders are offered, because that is what a return reverses — `IsBooked` is
@@ -399,9 +422,14 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         'Pricing error',
     ];
 
-    public Reason = 'Damaged in transit';
+    public Reason = DEFAULT_RETURN_REASON;
+
+    /** A non-blocking note about something the page did on the user's behalf, such as clearing work. */
+    public Notice: string | null = null;
 
     public async ngOnInit(): Promise<void> {
+        // The input is copied in, never written back — see `selectedOriginID`.
+        this.selectedOriginID = this.OriginOrderID;
         await this.LoadReturnableOrders();
         await this.LoadOrigin();
     }
@@ -416,6 +444,7 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
      */
     public async ngOnChanges(changes: SimpleChanges): Promise<void> {
         if (changes['OriginOrderID'] && !changes['OriginOrderID'].firstChange) {
+            this.selectedOriginID = this.OriginOrderID;
             await this.LoadOrigin();
         }
     }
@@ -448,8 +477,23 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
     /** Choose the origin from the picker. Same load path as the input, so both routes agree. */
     public async ChooseOrigin(orderID: string | null): Promise<void> {
         if (!orderID) return;
+        if (orderID === this.selectedOriginID) {
+            // Picking the order already loaded should not discard the quantities typed against it.
+            this.PickerOpen = false;
+            this.cdr.detectChanges();
+            return;
+        }
+        // WHAT MUST NOT CROSS ORDERS. `LoadOrigin` replaces `Lines`, so quantities typed against the
+        // previous order go — correctly, since they name its line ids. `Reason` did NOT reset, so a
+        // reason chosen for one order silently became the reason recorded against another. Say when
+        // work is discarded rather than doing it quietly.
+        const discarding = this.Lines.some((l) => l.Returning > 0);
+        this.Reason = DEFAULT_RETURN_REASON;
+        this.Notice = discarding
+            ? 'Quantities from the previous order were cleared — they belong to its lines, not this one.'
+            : null;
         this.Error = null;
-        this.OriginOrderID = orderID;
+        this.selectedOriginID = orderID;
         this.PickerOpen = false;
         // The picker closing is a visible change of its own, and it happens BEFORE the await rather
         // than as a side effect of whatever `LoadOrigin` does after it. `render-after-load` asks for
@@ -474,7 +518,7 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
         this.Lines = [];
         this.Origin = null;
-        if (!this.OriginOrderID) {
+        if (!this.selectedOriginID) {
             this.cdr.detectChanges();
             return;
         }
@@ -483,7 +527,19 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         // `Preset: 'all'` read the whole table to keep one row — invisible on a fresh instance and
         // steadily worse with every order taken, which is the performance bug that options doc
         // already records against fast entry's customer picker.
-        const orders = await GetOrders({ OrderHeaderID: this.OriginOrderID });
+        // GUARDED. `GetOrders` THROWS on a malformed id rather than returning nothing, and nothing
+        // above catches — so a bad id killed the load mid-flight with `Error` still null, i.e. a
+        // blank page and no reason. The `Preset:'all'` + `.find` this replaced could only come back
+        // empty, so the throw arrived with the by-id read.
+        let orders: mjBizAppsOrdersOrderHeaderEntity[];
+        try {
+            orders = await GetOrders({ OrderHeaderID: this.selectedOriginID });
+        } catch (e) {
+            if (!current()) return;
+            this.Error = `That order could not be loaded: ${e instanceof Error ? e.message : String(e)}`;
+            this.cdr.detectChanges();
+            return;
+        }
         if (!current()) return;
         this.Origin = orders[0] ?? null;
         if (!this.Origin) {
