@@ -309,8 +309,8 @@ export interface MJOGetOrdersOptions {
  *   honest.
  * - `unpaid` — a balance owing on an order that has confirmed. Drafts are excluded because a draft
  *   owes nothing yet.
- * - `notposted` — confirmed but not yet posted. Normally a matter of seconds; a row lingering here
- *   is worth investigating.
+ * - `booked` — the order has confirmed, so journal entries exist and the receivable is real. This
+ *   is `IsBooked` in `OrderStatusBehavior`, and it is what a return reverses.
  * - `credits` — a NEGATIVE balance, which IS the customer's credit. There is no separate instrument
  *   to look up.
  */
@@ -417,7 +417,7 @@ export async function GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary>
             all: rows.length,
             overdue: owing.filter((o) => IsBefore(o.DueDate, today)).length,
             unpaid: owing.length,
-            notposted: rows.filter((o) => o.Status === 'Confirmed').length,
+            booked: rows.filter((o) => o.Status === 'Confirmed').length,
             drafts: rows.filter((o) => ['Draft', 'Quoted'].includes(o.Status ?? '')).length,
             credits: credits.length,
         },

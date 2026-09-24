@@ -1,5 +1,5 @@
 ---
-'@mj-biz-apps/orders-ng': patch
+'@mj-biz-apps/orders-ng': minor
 ---
 
 A return can be started from the UI.
@@ -33,5 +33,14 @@ Three things fixed on the way, all in the code this touches:
   showing the previous origin for ever, which made the input-driven route broken by construction.
 - The origin is loaded **by `OrderHeaderID`** instead of reading every order and `.find`-ing one —
   the exact bug that options doc records against fast entry's customer picker.
-- **`notposted` renamed to `booked`.** It had no callers and named `Posted`, a status that has not
-  existed since the order lifecycle collapsed (KI-27).
+- **`notposted` renamed to `booked`** — and this is why the bump is `minor` rather than `patch`.
+  It had no callers in this repo and named `Posted`, a status that has not existed since the order
+  lifecycle collapsed (KI-27). But `MJOOrderPreset` is PUBLIC API: `public-api.ts` re-exports
+  `lib/data/orders-queries`, and that file is the package's `main`/`types`. The type change alone
+  would be a compile error an external caller could see and fix. The runtime half would not be:
+  the preset `switch` ends `default: filters.push("Status <> 'Voided'")`, so a caller still passing
+  `'notposted'` does not error — it silently receives **Draft + Quoted + Confirmed** where it
+  previously received Confirmed only. A widened result set is not something to hand someone who
+  accepted a patch upgrade. The rename is still right; the bump has to say so.
+  `GetOrderSummary`'s `Counts.notposted` key and the preset docblock are renamed with it — the
+  first pass left both behind, and `Counts` is `Record<string, number>` so the compiler stayed quiet.
