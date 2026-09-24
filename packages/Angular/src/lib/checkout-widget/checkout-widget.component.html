@@ -216,6 +216,66 @@
         }
     </section>
 
+    <!-- Billing Location — required so the sale can be placed in a tax jurisdiction -->
+    <section class="mj-widget-form-section">
+        <h3 class="mj-section-title">Billing Location</h3>
+        <div class="mj-form-grid">
+            <div class="mj-form-group">
+                <label class="mj-label" [attr.for]="widgetInstanceId + '-billing-country'">
+                    Country <span class="mj-required">*</span>
+                </label>
+                <select
+                    class="mj-select"
+                    [id]="widgetInstanceId + '-billing-country'"
+                    autocomplete="country"
+                    [ngModel]="billingCountry()"
+                    (ngModelChange)="onBillingCountryChange($event)"
+                    required>
+                    <option [ngValue]="''">Select country</option>
+                    @for (c of billingCountries; track c.Code) {
+                        <option [ngValue]="c.Code">{{ c.Name }}</option>
+                    }
+                </select>
+            </div>
+            @if (billingRegions().length > 0) {
+                <div class="mj-form-group">
+                    <label class="mj-label" [attr.for]="widgetInstanceId + '-billing-region'">
+                        State / Province <span class="mj-required">*</span>
+                    </label>
+                    <select
+                        class="mj-select"
+                        [id]="widgetInstanceId + '-billing-region'"
+                        autocomplete="address-level1"
+                        [ngModel]="billingRegion()"
+                        (ngModelChange)="onBillingRegionChange($event)"
+                        required>
+                        <option [ngValue]="''">Select state or province</option>
+                        @for (r of billingRegions(); track r.Code) {
+                            <option [ngValue]="r.Code">{{ r.Name }}</option>
+                        }
+                    </select>
+                </div>
+            }
+            <div class="mj-form-group">
+                <label class="mj-label" [attr.for]="widgetInstanceId + '-billing-postal'">
+                    Postal Code
+                    @if (billingPostalRequired()) {
+                        <span class="mj-required">*</span>
+                    }
+                </label>
+                <input
+                    type="text"
+                    class="mj-input"
+                    [id]="widgetInstanceId + '-billing-postal'"
+                    autocomplete="postal-code"
+                    maxlength="20"
+                    [ngModel]="billingPostalCode()"
+                    (ngModelChange)="onBillingPostalCodeChange($event)"
+                    [required]="billingPostalRequired()" />
+            </div>
+        </div>
+    </section>
+
     <!-- Stripe Embedded Payment Section -->
     @if (!isFree()) {
         <section class="mj-widget-payment-section">
@@ -232,6 +292,12 @@
         </section>
 
         <!-- Final Total Line -->
+        @if (quotedTax !== null) {
+            <div class="mj-checkout-total-row">
+                <span class="mj-total-label">Sales Tax</span>
+                <span class="mj-total-amount">{{ currencySymbol() }}{{ (quotedTax ?? 0).toFixed(2) }}</span>
+            </div>
+        }
         <div class="mj-checkout-total-row">
             <span class="mj-total-label">Total Due</span>
             <span class="mj-total-amount">{{ currencySymbol() }}{{ totalGross().toFixed(2) }}</span>

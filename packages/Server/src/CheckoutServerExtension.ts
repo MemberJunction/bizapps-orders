@@ -59,7 +59,12 @@ import {
     type ExtensionInitResult,
     type ServerExtensionConfig,
 } from '@memberjunction/server-extensions-core';
-import { CheckoutSessionService, EscapeText, type CheckoutLineInput } from '@mj-biz-apps/orders-core-entities-server';
+import {
+    CheckoutSessionService,
+    EscapeText,
+    type CheckoutBillingAddressInput,
+    type CheckoutLineInput
+} from '@mj-biz-apps/orders-core-entities-server';
 import type { CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -535,7 +540,12 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
         const email = typeof req.body?.email === 'string' ? req.body.email : '';
         const lines = Array.isArray(req.body?.lines) ? (req.body.lines as CheckoutLineInput[]) : [];
-        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user);
+        // Shape-checked by the service (CheckBillingLocation); anything that is not an object is absent.
+        const rawAddress: unknown = req.body?.billingAddress;
+        const billingAddress = rawAddress && typeof rawAddress === 'object' && !Array.isArray(rawAddress)
+            ? (rawAddress as CheckoutBillingAddressInput)
+            : null;
+        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, billingAddress, user);
         res.status(result.Success ? 200 : 400).json(result);
     }
 

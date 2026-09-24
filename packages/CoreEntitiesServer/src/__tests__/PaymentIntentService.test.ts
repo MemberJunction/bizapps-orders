@@ -124,6 +124,23 @@ describe('OpenPaymentIntent — refusing before it asks', () => {
         expect(result.Reason).toMatch(/PaymentProviderID/);
         expect(state.Saved).toHaveLength(0);
     });
+
+    it('refuses any currency but USD, and a missing one, without calling the gateway', async () => {
+        // Orders carry no currency column: a GBP amount would be stored as a bare number.
+        const state = fresh();
+        for (const currency of ['GBP', 'CHF', '', undefined]) {
+            const result = await open(state, { CurrencyCode: currency });
+            expect(result.Success).toBe(false);
+            expect(result.Reason).toMatch(/only be taken in USD/);
+        }
+        expect(driverResponse.LastRequest).toBeNull();
+        expect(state.Saved).toHaveLength(0);
+    });
+
+    it('accepts USD in any case', async () => {
+        const result = await open(fresh(), { CurrencyCode: 'usd' });
+        expect(result.Success).toBe(true);
+    });
 });
 
 describe('OpenPaymentIntent — the happy path', () => {

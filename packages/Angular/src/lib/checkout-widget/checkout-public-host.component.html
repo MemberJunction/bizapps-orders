@@ -21,8 +21,11 @@
             [isPaymentReady]="isPaymentReady"
             [stripePaymentMethodId]="stripePaymentMethodId"
             [errorMessage]="errorMessage"
+            [quotedTotal]="quotedTotal"
+            [quotedTax]="quotedTax"
             (submitted)="onSubmitted($event)"
-            (cancelled)="onCancelled()">
+            (cancelled)="onCancelled()"
+            (quoteInvalidated)="onQuoteInvalidated()">
         </mj-checkout-widget>
     }
 </div>

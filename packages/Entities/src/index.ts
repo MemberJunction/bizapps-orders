@@ -115,3 +115,10 @@ export * from './date-cell';
 export * from './overdue';
 export * from './configuration-types';
 export * from './base-entity-augmentation';
+
+/**
+ * `CheckBillingLocation` and the ISO country/subdivision lists — the one definition of a valid
+ * billing location, read by the checkout widget's pickers and by the server that refuses payment
+ * without one.
+ */
+export * from './billing-location';

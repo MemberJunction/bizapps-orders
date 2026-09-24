@@ -277,6 +277,25 @@ describe('CheckoutServerExtension', () => {
         expect(mockRunView.mock.calls[0][0].ExtraFilter).toContain("Slug = 'summit_2027'");
     });
 
+    it('passes the billing location from the draft body to UpdateDraft, and nothing when it is not an object', async () => {
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({ Success: true } as Awaited<ReturnType<typeof CheckoutSessionService.UpdateDraft>>);
+        const ext = new CheckoutServerExtension() as unknown as { handleDraft(req: Request, res: Response): Promise<void> };
+        const draft = (billingAddress: unknown) =>
+            ext.handleDraft(
+                { body: { sessionId: 's', clientSessionKey: 'k', email: 'a@b.com', lines: [], billingAddress } } as unknown as Request,
+                mockRes() as unknown as Response
+            );
+
+        await draft({ Country: 'US', StateProvince: 'IL', PostalCode: '60601' });
+        await draft('US');
+        await draft(['US']);
+
+        const calls = vi.mocked(CheckoutSessionService.UpdateDraft).mock.calls;
+        expect(calls[0][4]).toEqual({ Country: 'US', StateProvince: 'IL', PostalCode: '60601' });
+        expect(calls[1][4]).toBeNull();
+        expect(calls[2][4]).toBeNull();
+    });
+
     it('does not key rate limits on a spoofed leftmost X-Forwarded-For (default TrustedProxyHops=0)', async () => {
         const { app, routes } = mockApp();
         const ext = new CheckoutServerExtension();

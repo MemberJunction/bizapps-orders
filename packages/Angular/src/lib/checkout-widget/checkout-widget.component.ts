@@ -32,6 +32,15 @@ import type {
     CustomUIThemeConfiguration,
     CheckoutWidgetConfiguration
 } from '@mj-biz-apps/orders-entities';
+// Deep import on purpose: this module has no dependencies, while the package root would pull every
+// entity class into the public checkout bundle. The server checks the same lists.
+import {
+    BILLING_COUNTRIES,
+    BillingPostalCodeRequired,
+    BillingSubdivisionsFor,
+    CheckBillingLocation,
+    type LocationOption
+} from '@mj-biz-apps/orders-entities/dist/billing-location.js';
 
 export interface CheckoutWidgetTheme extends CustomUIThemeConfiguration {
     primaryColor?: string;
@@ -83,9 +92,17 @@ export interface CheckoutWidgetConfig extends CheckoutWidgetConfiguration {
     isEvent?: boolean;
 }
 
+/** Codes only — Country is ISO 3166-1 alpha-2, StateProvince an ISO 3166-2 subdivision code. */
+export interface CheckoutBillingAddress {
+    Country: string;
+    StateProvince?: string;
+    PostalCode?: string;
+}
+
 export interface CheckoutSubmissionEvent {
     email: string;
     quantity: number;
+    billingAddress: CheckoutBillingAddress;
     attendees: CheckoutAttendee[];
     extensionData: {
         entityName?: string;
@@ -150,8 +167,32 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     @Input() public isPaymentReady: boolean = false;
     @Input() public stripePaymentMethodId: string | null = null;
 
+    /**
+     * The server's priced total and tax for the current details, once the host has drafted them.
+     * Tax depends on the billing location, so the client cannot compute it; while no quote is set
+     * the widget shows the pre-tax subtotal.
+     */
+    private _quotedTotal = signal<number | null>(null);
+    private _quotedTax = signal<number | null>(null);
+    @Input()
+    public set quotedTotal(val: number | null) {
+        this._quotedTotal.set(val);
+    }
+    public get quotedTotal(): number | null {
+        return this._quotedTotal();
+    }
+    @Input()
+    public set quotedTax(val: number | null) {
+        this._quotedTax.set(val);
+    }
+    public get quotedTax(): number | null {
+        return this._quotedTax();
+    }
+
     @Output() public submitted = new EventEmitter<CheckoutSubmissionEvent>();
     @Output() public cancelled = new EventEmitter<void>();
+    /** Emitted when an input that changes the price (quantity, location) changes, so the host drops its quote. */
+    @Output() public quoteInvalidated = new EventEmitter<void>();
 
     // Internal error message for client-side validation failures
     public internalErrorMessage = signal<string | null>(null);
@@ -164,6 +205,20 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     public company = signal<string>('');
     public title = signal<string>('');
     public quantity = signal<number>(1);
+
+    // Billing location — required before payment so the sale can be placed in a tax jurisdiction
+    public readonly billingCountries: ReadonlyArray<LocationOption> = BILLING_COUNTRIES;
+    public billingCountry = signal<string>('');
+    public billingRegion = signal<string>('');
+    public billingPostalCode = signal<string>('');
+    public billingRegions = computed<ReadonlyArray<LocationOption>>(() => BillingSubdivisionsFor(this.billingCountry()));
+    public billingPostalRequired = computed<boolean>(() => BillingPostalCodeRequired(this.billingCountry()));
+    public billingAddress = computed<CheckoutBillingAddress>(() => ({
+        Country: this.billingCountry(),
+        StateProvince: this.billingRegion() || undefined,
+        PostalCode: this.billingPostalCode().trim() || undefined
+    }));
+    public isBillingLocationValid = computed<boolean>(() => CheckBillingLocation(this.billingAddress()).Valid);
 
     // Generic units array holding field maps for each unit
     public units = signal<Array<Record<string, unknown>>>([]);
@@ -231,7 +286,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         return price * this.quantity();
     });
 
-    public totalGross = computed(() => this.subtotal());
+    public totalGross = computed(() => this._quotedTotal() ?? this.subtotal());
 
     public currencySymbol = computed(() => {
         const c = this._config()?.currency?.toUpperCase() ?? 'USD';
@@ -355,7 +410,25 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         const clamped = Math.max(1, Math.min(newQty, this.config?.maxQuantity ?? 50));
         this.quantity.set(clamped);
         this.syncUnits();
+        this.quoteInvalidated.emit();
         this.executeLifecycleHook('onQuantityChange', { quantity: clamped });
+    }
+
+    public onBillingCountryChange(country: string): void {
+        this.billingCountry.set(country ?? '');
+        // A region belongs to one country; keeping it across a change would submit a wrong pairing.
+        this.billingRegion.set('');
+        this.quoteInvalidated.emit();
+    }
+
+    public onBillingRegionChange(region: string): void {
+        this.billingRegion.set(region ?? '');
+        this.quoteInvalidated.emit();
+    }
+
+    public onBillingPostalCodeChange(postalCode: string): void {
+        this.billingPostalCode.set(postalCode ?? '');
+        this.quoteInvalidated.emit();
     }
 
     public syncUnits(): void {
@@ -435,6 +508,10 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         const currentUnits = this.units();
         const fields = this.activeFieldDefs();
 
+        if (!this.isBillingLocationValid()) {
+            return false;
+        }
+
         if (!currentUnits || currentUnits.length === 0) {
             const em = this.email().trim();
             const fn = this.firstName().trim();
@@ -491,6 +568,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         const submission: CheckoutSubmissionEvent = {
             email: String(currentUnits[0]?.['email'] || this.email()).trim().toLowerCase(),
             quantity: this.quantity(),
+            billingAddress: this.billingAddress(),
             attendees: isPerUnit ? this.attendees() : [],
             extensionData: {
                 entityName: this.config?.extensionEntityName,

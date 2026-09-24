@@ -17,7 +17,8 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 │     ├── Auto-Discover ProductType.OrderLineExtensionEntity via Metadata                 │
 │     └── Merge customUI (Theming + Custom CSS + Lifecycle JS Hooks)                       │
 │                                                                                          │
-│  2. UpdateDraft(sessionId, clientKey, email, lines)                                      │
+│  2. UpdateDraft(sessionId, clientKey, email, lines, billingAddress)                      │
+│     ├── Billing location required (ISO country + subdivision) — CheckBillingLocation    │
 │     └── In-Memory Pricing Engine (OrderPricingService) — No DB clutter                  │
 │                                                                                          │
 │  2b. OpenPaymentIntentForSession(sessionId, clientKey)   [paid orders]                   │
@@ -496,8 +497,10 @@ Initializes a new checkout session (or reuses the caller's open, unexpired one).
 }
 ```
 
-### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines)`
-Recalculates draft pricing in memory and persists the priced snapshot to the session. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
+### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines, billingAddress)`
+Recalculates draft pricing in memory and persists the priced snapshot to the session.
+
+The billing location is required. `Country` is an ISO 3166-1 alpha-2 code; `StateProvince` is an ISO 3166-2 subdivision code without its country prefix (`IL`, not `US-IL`), required for US, CA and AU; `PostalCode` is required and shape-checked for those three. Free text such as `"Illinois"` is refused. The lists and the check live in `@mj-biz-apps/orders-entities` (`billing-location.ts`), shared by the widget's pickers and the server. Tax is priced from the location inline (nothing is saved for it at draft), and the result's `Tax` is the tax resolved; `TotalGross` includes it. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
 
 **Request Parameters:**
 ```json
@@ -505,6 +508,7 @@ Recalculates draft pricing in memory and persists the priced snapshot to the ses
   "sessionId": "d1c080b0-379e-4b7f-a2e6-64156641e7d2",
   "clientSessionKey": "client-uuid-12345",
   "email": "janet@example.com",
+  "billingAddress": { "Country": "US", "StateProvince": "IL", "PostalCode": "60601" },
   "lines": [
     {
       "ProductID": "79b4a2c1-...",
@@ -519,7 +523,7 @@ Recalculates draft pricing in memory and persists the priced snapshot to the ses
 ```
 
 ### 3. `OpenPaymentIntentForSession(sessionID, clientSessionKey)`
-Opens (or idempotently re-opens) a payment intent for the session's **current server-priced total**. The amount comes from the session's own priced snapshot; the provider from the widget's `Configuration.paymentProviderId`. Returns the gateway `ClientSecret` (never persisted) for Stripe.js confirmation and stamps `session.PaymentIntentID`.
+Opens (or idempotently re-opens) a payment intent for the session's **current server-priced total**. Refused when the session's snapshot holds no valid billing location. The currency is the widget's `Configuration.currency`, defaulting to USD; `OpenPaymentIntent` refuses any other currency, because orders do not yet record one. The amount comes from the session's own priced snapshot; the provider from the widget's `Configuration.paymentProviderId`. Returns the gateway `ClientSecret` (never persisted) for Stripe.js confirmation and stamps `session.PaymentIntentID`.
 
 **Response:**
 ```json
@@ -534,6 +538,8 @@ Opens (or idempotently re-opens) a payment intent for the session's **current se
 
 ### 4. `CompleteCheckout(sessionID, clientSessionKey)`
 Executes payer-Person resolution (find-or-create by the session's captured email), payment verification (intent `Succeeded` + amount covers the re-priced total), line creation from the session's own snapshot (never fresh client input), companion extension hydration, atomic lifecycle booking, and GuestOrder claim generation. **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
+
+Once payment checks out, the snapshot's billing location is recorded as a Common `Address` (street and city empty), linked to the buyer as their `Billing` address, and set as the order's `BillToAddressID` and `ShipToAddressID` before `Confirm()`. The ship-to is what tax is resolved from. A session whose snapshot holds no valid location is refused and reverted to `Open`; an Address that cannot be saved fails the checkout, while a failed address-book link is logged and tolerated.
 
 **Request Parameters:**
 ```json
