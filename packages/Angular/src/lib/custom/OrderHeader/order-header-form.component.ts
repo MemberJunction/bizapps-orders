@@ -127,9 +127,10 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     /**
-     * Money composition (lines, tender, selling company) is editable only while
-     * the order is still a draft/quote. After Confirm the ledger owns those
-     * figures; the form Edit toggle may still open notes and parties.
+     * Money composition (lines, tender) and the sale's identity (selling company,
+     * order type, order date, bill-to) are editable only while the order is still
+     * a draft/quote. After Confirm the ledger owns them (golive #262); the form Edit
+     * toggle may still open notes, ship-to and the other party details.
      */
     public get ComposeMode(): boolean {
         return this.EditMode && !this.record?.MoneyLocked;

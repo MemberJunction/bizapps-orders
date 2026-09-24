@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB17).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB21).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -22,6 +22,11 @@
  *   OB15 confirm-after-draft with lines not loaded still books memberships
  *   OB16 a Draft with no lines saves (lines are required only at confirm)
  *   OB17 a draft line can be removed and replaced — the removed row actually leaves the database
+ *   OB18 a booked header refuses its frozen columns through the entity, naming the field, and still
+ *        saves an unfrozen one (golive #262)
+ *   OB19 the database refuses a booked header's OrderDate change, however it is reached (51013)
+ *   OB20 the database refuses a booked order leaving Confirmed (51014)
+ *   OB21 the database refuses a booked line's CompanyID change (51003)
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -69,6 +74,28 @@ async function confirmMultiCompanyOrder(ctx: IntegrationCheckContext) {
     });
     Assert(result.Saved, `confirm failed: ${result.Message}`);
     return result;
+}
+
+/** A confirmed single-line order in company A — the subject of the database-guard checks. */
+async function confirmedOrderID(ctx: IntegrationCheckContext): Promise<string> {
+    const f = Fx();
+    const sale = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 100 }],
+    });
+    Assert(sale.Saved, `confirm failed: ${sale.Message}`);
+    return sale.Order.ID as string;
+}
+
+/** Run a write the database must refuse, and return the refusal's message. */
+async function refusedBy(ctx: IntegrationCheckContext, sql: string): Promise<string> {
+    try {
+        await TxQuery(ctx, sql);
+    } catch (e) {
+        return (e as Error).message;
+    }
+    throw new Error(`the database accepted a write it must refuse: ${sql}`);
 }
 
 interface LineJoinRow {
@@ -682,6 +709,82 @@ export const OrderBookingChecks: NamedCheck[] = [
                 );
                 AssertEqual(Number(emptied.N), 0, 'the last line is gone too');
                 AssertEqual(Number(emptied.TotalGross ?? 0), 0, 'an order with no lines must not still carry a total');
+            }),
+    },
+    {
+        Id: 'order-booking.OB18',
+        Name: 'OB18: a booked header refuses its frozen columns through the entity, and saves the rest',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The entity refuses FIRST so the user reads which field and why. The trigger behind
+                // it (OB19) is the backstop, but a trigger rollback under the CRUD procedure's
+                // INSERT-EXEC names neither the column nor the rule (golive #262).
+                const f = Fx();
+                const sale = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 100 }],
+                });
+                Assert(sale.Saved, `confirm failed: ${sale.Message}`);
+
+                const md = new Metadata();
+                const header = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
+                Assert(await header.Load(sale.Order.ID as string), 'the booked order reloads');
+
+                const booked = new Date(header.OrderDate);
+                header.OrderDate = new Date(booked.getTime() + 24 * 60 * 60 * 1000);
+                AssertEqual(await header.Save(), false, 'moving a booked order to another day is refused');
+                const message = header.LatestResult?.CompleteMessage ?? '';
+                Assert(/booked/i.test(message) && message.includes('OrderDate'), `the refusal names the field: ${message}`);
+
+                // An unfrozen column still saves, and the DATE column round-trips through the trigger
+                // unchanged — every post-confirm header write now passes through it.
+                header.OrderDate = booked;
+                header.Notes = 'OB18 unfrozen edit';
+                Assert(await header.Save(), `an unfrozen edit on a booked order saves: ${header.LatestResult?.CompleteMessage ?? ''}`);
+                const row = await TxOne<{ Notes: string; OrderDate: Date }>(
+                    ctx,
+                    `SELECT Notes, OrderDate FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${header.ID}'`,
+                );
+                AssertEqual(row.Notes, 'OB18 unfrozen edit', 'the note landed');
+                AssertEqual(new Date(row.OrderDate).toISOString(), booked.toISOString(), 'and the booked date did not move');
+            }),
+    },
+    {
+        Id: 'order-booking.OB19',
+        Name: "OB19: the database refuses a booked header's OrderDate change (51013)",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Direct SQL, because the point is that the DATABASE refuses it however it is reached.
+                // One guard per check: the trigger's refusal dooms the enclosing transaction.
+                const orderID = await confirmedOrderID(ctx);
+                const refusal = await refusedBy(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET OrderDate = DATEADD(day, 1, OrderDate) WHERE ID = '${orderID}'`);
+                Assert(/cannot be changed once the order is Confirmed/.test(refusal), `refused by 51013: ${refusal}`);
+            }),
+    },
+    {
+        Id: 'order-booking.OB20',
+        Name: 'OB20: the database refuses a booked order leaving Confirmed (51014)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const orderID = await confirmedOrderID(ctx);
+                const refusal = await refusedBy(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET Status = 'Draft' WHERE ID = '${orderID}'`);
+                Assert(/Status cannot leave Confirmed/.test(refusal), `refused by 51014: ${refusal}`);
+            }),
+    },
+    {
+        Id: 'order-booking.OB21',
+        Name: "OB21: the database refuses a booked line's CompanyID change (51003)",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const orderID = await confirmedOrderID(ctx);
+                const refusal = await refusedBy(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderLine SET CompanyID = '${f.CoB.ID}' WHERE OrderHeaderID = '${orderID}'`);
+                Assert(/selling company cannot be changed/.test(refusal), `refused by 51003: ${refusal}`);
             }),
     },
 ];

@@ -21,12 +21,31 @@ export const ORDER_LINE_MONEY_FIELDS = [
     'LineTotalGross',
 ] as const;
 
-/** Header columns that change what was booked. */
+/**
+ * Header columns that change what was booked.
+ *
+ * The sale's identity — who sold it, when, what kind of order it is and what it reverses — is
+ * counted per company, per date for tax (golive #262), so it is frozen with the money. Trigger
+ * 51013 refuses the same columns at the database; refusing here first gives the user a message that
+ * names the field instead of a trigger rollback surfacing through the CRUD procedure's INSERT-EXEC.
+ */
 export const ORDER_HEADER_MONEY_FIELDS = [
     'InitialPaymentTypeID',
     'InitialPaymentAmount',
     'InitialPaymentDetailID',
     'CompanyID',
+    'OrderDate',
+    'OrderType',
+    'ReversesOrderHeaderID',
+] as const;
+
+/**
+ * Header columns a booked order may FILL but not change: an empty party can be recorded after
+ * booking, a set one cannot be replaced or cleared. Mirrors the set-once rule in trigger 51013.
+ */
+export const ORDER_HEADER_SET_ONCE_FIELDS = [
+    'BillToOrganizationID',
+    'BillToPersonID',
 ] as const;
 
 export interface BookedMoneyEditFacts {
