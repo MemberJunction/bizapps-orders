@@ -17,7 +17,7 @@ import { MaxLength } from 'class-validator';
 import * as mj_core_schema_server_object_types from '@memberjunction/server'
 
 
-import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
     
 
 //****************************************************************************
@@ -4118,6 +4118,307 @@ export class mjBizAppsOrdersOrderCompanyPolicyResolver extends ResolverBase {
         const provider = GetReadWriteProvider(providers);
         const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
         return this.DeleteRecord('MJ_BizApps_Orders: Order Company Policies', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Order Concessions
+//****************************************************************************
+@ObjectType({ description: `A concession granted on an order, valued the same way whatever form it takes: a price reduction, a term extended at no charge, seats or a product added at no charge. Within the requester\'s SalesAuthority it is Approved on save; outside it, Pending until a holder of the ConcessionLimit rule\'s role decides it. An order with a Pending concession cannot be confirmed and its documents cannot be sent.` })
+export class mjBizAppsOrdersOrderConcession_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({description: `The order the concession is granted on. For a term extension, the order whose line bought the term.`}) 
+    @MaxLength(36)
+    OrderHeaderID: string;
+        
+    @Field({nullable: true, description: `The line a Price, Scope or Seats concession applies to.`}) 
+    @MaxLength(36)
+    OrderLineID?: string;
+        
+    @Field({nullable: true, description: `The subscription term a Duration concession extends.`}) 
+    @MaxLength(36)
+    SubscriptionTermID?: string;
+        
+    @Field({description: `How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge).`}) 
+    @MaxLength(20)
+    DeliveryForm: string;
+        
+    @Field({description: `Why it was granted: Retention, Referral or Other. Retention concessions and referral credits have different economics and are reported separately.`}) 
+    @MaxLength(20)
+    ReasonCategory: string;
+        
+    @Field({description: `The requester's explanation of the concession.`}) 
+    Reason: string;
+        
+    @Field(() => Int, {nullable: true, description: `Days added to the term at no charge. Required for Duration.`}) 
+    AddedDays?: number;
+        
+    @Field(() => Float, {nullable: true, description: `Quantity added to the line at no charge. Required for Seats.`}) 
+    AddedQuantity?: number;
+        
+    @Field(() => Float, {description: `What the concession is worth, in currency, at the arrangement's own rate. Computed on save from the line or term; never authored.`}) 
+    ComputedValue: number;
+        
+    @Field({description: `Pending | Approved | Rejected. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role.`}) 
+    @MaxLength(20)
+    Status: string;
+        
+    @Field({description: `The user who recorded the concession. Their SalesAuthority is what it is checked against.`}) 
+    @MaxLength(36)
+    RequestedByUserID: string;
+        
+    @Field({nullable: true, description: `The SalesAuthority that covered the concession when it was approved without escalation. Stamped so a later change to the limit does not change how past concessions read.`}) 
+    @MaxLength(36)
+    AuthorizedBySalesAuthorityID?: string;
+        
+    @Field({nullable: true, description: `The ConcessionLimit rule whose role must decide this concession. Set when it exceeded the requester's authority.`}) 
+    @MaxLength(36)
+    SalesRuleID?: string;
+        
+    @Field({nullable: true, description: `Who approved or rejected it. For a concession within the requester's authority, the requester.`}) 
+    @MaxLength(36)
+    DecidedByUserID?: string;
+        
+    @Field({nullable: true, description: `When it was approved or rejected.`}) 
+    DecidedAt?: Date;
+        
+    @Field({nullable: true, description: `The approver's note on the decision.`}) 
+    DecisionNotes?: string;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field() 
+    @MaxLength(40)
+    OrderHeader: string;
+        
+    @Field() 
+    @MaxLength(100)
+    RequestedByUser: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    SalesRule?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    DecidedByUser?: string;
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Order Concessions
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersOrderConcessionInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    OrderHeaderID?: string;
+
+    @Field({ nullable: true })
+    OrderLineID: string | null;
+
+    @Field({ nullable: true })
+    SubscriptionTermID: string | null;
+
+    @Field({ nullable: true })
+    DeliveryForm?: string;
+
+    @Field({ nullable: true })
+    ReasonCategory?: string;
+
+    @Field({ nullable: true })
+    Reason?: string;
+
+    @Field(() => Int, { nullable: true })
+    AddedDays: number | null;
+
+    @Field(() => Float, { nullable: true })
+    AddedQuantity: number | null;
+
+    @Field(() => Float, { nullable: true })
+    ComputedValue?: number;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field({ nullable: true })
+    RequestedByUserID?: string;
+
+    @Field({ nullable: true })
+    AuthorizedBySalesAuthorityID: string | null;
+
+    @Field({ nullable: true })
+    SalesRuleID: string | null;
+
+    @Field({ nullable: true })
+    DecidedByUserID: string | null;
+
+    @Field({ nullable: true })
+    DecidedAt: Date | null;
+
+    @Field({ nullable: true })
+    DecisionNotes: string | null;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Order Concessions
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersOrderConcessionInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    OrderHeaderID?: string;
+
+    @Field({ nullable: true })
+    OrderLineID?: string | null;
+
+    @Field({ nullable: true })
+    SubscriptionTermID?: string | null;
+
+    @Field({ nullable: true })
+    DeliveryForm?: string;
+
+    @Field({ nullable: true })
+    ReasonCategory?: string;
+
+    @Field({ nullable: true })
+    Reason?: string;
+
+    @Field(() => Int, { nullable: true })
+    AddedDays?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    AddedQuantity?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    ComputedValue?: number;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field({ nullable: true })
+    RequestedByUserID?: string;
+
+    @Field({ nullable: true })
+    AuthorizedBySalesAuthorityID?: string | null;
+
+    @Field({ nullable: true })
+    SalesRuleID?: string | null;
+
+    @Field({ nullable: true })
+    DecidedByUserID?: string | null;
+
+    @Field({ nullable: true })
+    DecidedAt?: Date | null;
+
+    @Field({ nullable: true })
+    DecisionNotes?: string | null;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Order Concessions
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersOrderConcessionViewResult {
+    @Field(() => [mjBizAppsOrdersOrderConcession_])
+    Results: mjBizAppsOrdersOrderConcession_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersOrderConcession_)
+export class mjBizAppsOrdersOrderConcessionResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersOrderConcessionViewResult)
+    async RunmjBizAppsOrdersOrderConcessionViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersOrderConcessionViewResult)
+    async RunmjBizAppsOrdersOrderConcessionViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersOrderConcessionViewResult)
+    async RunmjBizAppsOrdersOrderConcessionDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Order Concessions';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersOrderConcession_, { nullable: true })
+    async mjBizAppsOrdersOrderConcession(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersOrderConcession_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Order Concessions', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwOrderConcessions')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Order Concessions', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Order Concessions', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersOrderConcession_)
+    async CreatemjBizAppsOrdersOrderConcession(
+        @Arg('input', () => CreatemjBizAppsOrdersOrderConcessionInput) input: CreatemjBizAppsOrdersOrderConcessionInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Order Concessions', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersOrderConcession_)
+    async UpdatemjBizAppsOrdersOrderConcession(
+        @Arg('input', () => UpdatemjBizAppsOrdersOrderConcessionInput) input: UpdatemjBizAppsOrdersOrderConcessionInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Order Concessions', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersOrderConcession_)
+    async DeletemjBizAppsOrdersOrderConcession(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Order Concessions', key, options, provider, userPayload, pubSub);
     }
     
 }
@@ -11635,6 +11936,12 @@ export class mjBizAppsOrdersSalesAuthority_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field(() => Float, {nullable: true, description: `Largest concession value, in currency, this rep may grant unaided, whatever form it takes. For a manual discount NULL leaves only MaxDiscountPct in force; for a concession delivered as duration, seats or scope NULL means no authority, so it goes to approval.`}) 
+    MaxConcessionValue?: number;
+        
+    @Field(() => Int, {nullable: true, description: `Longest term extension, in days, this rep may grant at no charge unaided. NULL means no authority to extend, so every extension goes to approval.`}) 
+    MaxTermExtensionDays?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     SalesRepUser?: string;
@@ -11670,6 +11977,12 @@ export class CreatemjBizAppsOrdersSalesAuthorityInput {
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
 
+    @Field(() => Float, { nullable: true })
+    MaxConcessionValue: number | null;
+
+    @Field(() => Int, { nullable: true })
+    MaxTermExtensionDays: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -11700,6 +12013,12 @@ export class UpdatemjBizAppsOrdersSalesAuthorityInput {
 
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
+
+    @Field(() => Float, { nullable: true })
+    MaxConcessionValue?: number | null;
+
+    @Field(() => Int, { nullable: true })
+    MaxTermExtensionDays?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -11807,7 +12126,7 @@ export class mjBizAppsOrdersSalesRule_ {
     @MaxLength(200)
     Name?: string;
         
-    @Field({nullable: true, description: `DiscountLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom.`}) 
+    @Field({nullable: true, description: `DiscountLimit | ConcessionLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom. ConcessionLimit names the role that approves a concession outside a rep's SalesAuthority.`}) 
     @MaxLength(40)
     RuleType?: string;
         

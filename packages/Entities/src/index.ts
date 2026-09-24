@@ -36,6 +36,7 @@ export * from './order-line-edit-veto';
  */
 export * from './OrderHeaderEntity';
 export * from './OrderLineEntity';
+export * from './SubscriptionTermEntity';
 export * from './ProductPriceEntity';
 export * from './OrderLineExtensionCompanion';
 export * from './CustomerPaymentMethodEntity';
@@ -88,10 +89,12 @@ export * from './pricing/ChargeBehavior';
 export * from './pricing/PromotionBehavior';
 export * from './pricing/ChargeEngine';
 export * from './pricing/PromotionEngine';
+export * from './pricing/ConcessionBehavior';
 export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';
 export * from './pricing/inheritPrices';
 export * from './pricing/priceOverride';
+export * from './pricing/linePriceContext';
 
 /**
  * `ToISODate` and friends — reading a date cell that may be a string or a `Date` and getting the

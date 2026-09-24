@@ -955,6 +955,9 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
             (SELECT ID FROM ${ORDERS_SCHEMA}.ProductEntitlement WHERE ProductID IN
                 (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies})))`,
 
+        // Concessions point at the order, a line and a term, so they go before any of those.
+        `DELETE FROM ${ORDERS_SCHEMA}.OrderConcession WHERE OrderHeaderID IN (${orderScope})`,
+
         // Money DETAIL that hangs off the lines — price components, adjustments and charges with
         // their allocations. These are what a line is made of, so they go before it.
         `DELETE FROM ${ORDERS_SCHEMA}.OrderLinePriceComponent WHERE OrderLineID IN

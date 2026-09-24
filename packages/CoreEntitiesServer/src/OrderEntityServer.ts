@@ -68,6 +68,7 @@ import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
@@ -390,6 +391,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         await this.ApplyPersonPartyDefaults();
 
         const booking = this.willBookOnThisSave();
+
+        // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
+        // for the same reason as the status move above: a refused confirm must change nothing.
+        if (booking && !(await this.passesConcessionGate())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
         //
@@ -848,6 +853,44 @@ export class OrderEntityServer extends OrderHeaderEntity {
         return false;
     }
 
+
+    /**
+     * Refuse the confirm while a concession on this order awaits a decision, or a line's typed price
+     * gives away value no approved concession covers (golive #222). The order itself saves; only
+     * the move to Confirmed waits, so the work is kept and the concession stays visible as a queue.
+     */
+    private async passesConcessionGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        const lines: ConcessionLineFacts[] = this.Lines.Items.map((line) => ({
+            ID: line.IsSaved ? line.ID : null,
+            LineNumber: line.LineNumber ?? null,
+            ProductID: line.ProductID,
+            OrderHeaderID: this.IsSaved ? this.ID : null,
+            Quantity: line.Quantity,
+            UnitPrice: line.UnitPrice,
+            ProductPriceID: line.ProductPriceID,
+            PriceOverridden: line.PriceOverridden === true,
+        }));
+        const problems = await FindUnapprovedConcessions(
+            this.IsSaved ? this.ID : null,
+            lines,
+            true,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            user,
+        );
+        if (problems.length === 0) return true;
+
+        this.RegisterResultHistoryEntry(
+            this.buildFailureResult(
+                new Error(
+                    `Order ${this.OrderNumber ?? ''} cannot be confirmed yet: ${problems.join('; ')}. A concession ` +
+                        `must be approved before the customer is committed to it.`,
+                ),
+            ),
+        );
+        return false;
+    }
 
     // ─── Booking ───────────────────────────────────────────────────────────────
 

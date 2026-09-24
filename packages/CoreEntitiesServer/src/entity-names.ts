@@ -20,3 +20,6 @@ export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimens
 
 /** One instalment of an order's billing schedule (AIDP-24). */
 export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
+
+/** A concession granted on an order, valued whatever form it takes (golive #222). */
+export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
