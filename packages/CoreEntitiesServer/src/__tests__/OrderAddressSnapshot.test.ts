@@ -50,7 +50,7 @@ function orderWith(
     bill: string | null,
     ship: string | null,
     lines: FakeLine[],
-    stored: { BillToAddressSnapshot?: string; ShipToAddressSnapshot?: string } = {},
+    stored: { BillToAddressSnapshot?: string; ShipToAddressSnapshot?: string; BillToAddressID?: string; ShipToAddressID?: string } = {},
 ): SnapshotOrder {
     const instance = Object.create(OrderEntityServer.prototype) as SnapshotOrder;
     // The generated accessors read and write field state BaseEntity would own; plain properties
@@ -71,11 +71,11 @@ function orderWith(
     return instance;
 }
 
-const line = (n: number, ship: string | null, stored: string | null = null): FakeLine => ({
+const line = (n: number, ship: string | null, stored: string | null = null, storedShip: string | null = null): FakeLine => ({
     LineNumber: n,
     ShipToAddressID: ship,
     ShipToAddressSnapshot: stored,
-    GetFieldByName: () => ({ OldValue: stored }),
+    GetFieldByName: (name: string) => ({ OldValue: name === 'ShipToAddressID' ? storedShip : stored }),
 });
 
 const TAMPERED = '{"AddressID":"44444444-4444-4444-8444-444444444444","StateProvince":"DE"}';
@@ -189,5 +189,38 @@ describe('OrderEntityServer.stampAddressSnapshots — fill, on a booked order', 
         expect(params.ExtraFilter).not.toContain(BILL);
         expect(ParseAddressSnapshot(order.ShipToAddressSnapshot)?.StateProvince).toBe('TX');
         expect(ParseAddressSnapshot(filledLine.ShipToAddressSnapshot)?.StateProvince).toBe('CO');
+    });
+
+    // An address that was on the order before this save and has since lost its row: deleted
+    // through the address editor before the backfill ran, or hidden from this user by RLS.
+    it('leaves a stored address with no row unsnapshotted and lets the save go ahead', async () => {
+        mockRunView.mockResolvedValue({ Success: true, Results: [] });
+        const inherited = line(1, LINE_SHIP, null, LINE_SHIP);
+        const order = orderWith(BILL, null, [inherited], { BillToAddressID: BILL });
+
+        await expect(order.stampAddressSnapshots('fill')).resolves.toBeUndefined();
+
+        expect(order.BillToAddressSnapshot).toBeNull();
+        expect(inherited.ShipToAddressSnapshot).toBeNull();
+        expect(order.addressSnapshotsStamped).toBe(true);
+    });
+
+    it('still refuses an address filled on this save when its row cannot be found', async () => {
+        mockRunView.mockResolvedValue({ Success: true, Results: [] });
+
+        await expect(orderWith(BILL, null, []).stampAddressSnapshots('fill')).rejects.toThrow(
+            /bill-to address .* does not exist or is not visible to you/,
+        );
+        await expect(orderWith(SHIP, null, [], { BillToAddressID: BILL }).stampAddressSnapshots('fill')).rejects.toThrow(
+            /bill-to address/,
+        );
+    });
+
+    it('still refuses a stored address with no row on the confirm', async () => {
+        mockRunView.mockResolvedValue({ Success: true, Results: [] });
+
+        await expect(orderWith(BILL, null, [], { BillToAddressID: BILL }).stampAddressSnapshots('confirm')).rejects.toThrow(
+            /does not exist or is not visible to you/,
+        );
     });
 });

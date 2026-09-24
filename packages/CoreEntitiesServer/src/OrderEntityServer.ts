@@ -1511,7 +1511,6 @@ export class OrderEntityServer extends OrderHeaderEntity {
         );
     }
 
-    /** The header's rollup columns as the DATABASE now holds them, after the payment triggers ran. */
     /**
      * Copy the bill-to and ship-to addresses onto the order and its lines (golive #263).
      *
@@ -1523,13 +1522,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * filled after confirm, and an order confirmed before snapshots existed.
      *
      * A line gets a snapshot only when it names a ship-to address of its own; a line without one
-     * ships to the header's. A reference with no Address row behind it refuses the save:
-     * `OrderLine.ShipToAddressID` has no foreign key, and a confirmed order with no record of where
-     * the sale went is the defect this exists to prevent.
+     * ships to the header's.
+     *
+     * A reference with no Address row behind it (deleted, or hidden from this user by row-level
+     * security) refuses the save when the address is being recorded now: on confirm, or when an
+     * empty address is filled on this save. `OrderLine.ShipToAddressID` has no foreign key, and a
+     * confirmed order with no record of where the sale went is the defect this exists to prevent.
+     *
+     * An address that was already on a booked order and has since lost its row is left without a
+     * snapshot, and the save goes ahead. Refusing it would lock the order: the save fails for a row
+     * nobody can bring back, and the ID cannot be replaced or cleared because the order is booked.
      */
     private async stampAddressSnapshots(mode: 'confirm' | 'fill'): Promise<void> {
         type Target = {
             entity: BaseEntity;
+            idField: string;
             snapshotField: string;
             what: string;
             addressID: () => string | null;
@@ -1538,6 +1545,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const targets: Target[] = [
             {
                 entity: this,
+                idField: 'BillToAddressID',
                 snapshotField: 'BillToAddressSnapshot',
                 what: 'bill-to',
                 addressID: () => this.BillToAddressID,
@@ -1545,6 +1553,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             },
             {
                 entity: this,
+                idField: 'ShipToAddressID',
                 snapshotField: 'ShipToAddressSnapshot',
                 what: 'ship-to',
                 addressID: () => this.ShipToAddressID,
@@ -1552,6 +1561,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             },
             ...this.Lines.Items.map((line): Target => ({
                 entity: line,
+                idField: 'ShipToAddressID',
                 snapshotField: 'ShipToAddressSnapshot',
                 what: `line ${line.LineNumber ?? ''} ship-to`,
                 addressID: () => line.ShipToAddressID,
@@ -1563,6 +1573,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             return typeof old === 'string' && old ? old : null;
         };
         const addressID = (t: Target): string | null => t.addressID() ?? null;
+        /** The address was set before this save and is still the same one. */
+        const unchanged = (t: Target): boolean => {
+            const old = t.entity.GetFieldByName(t.idField)?.OldValue;
+            return typeof old === 'string' && UUIDsEqual(old, addressID(t));
+        };
         const needsRead = (t: Target): boolean => !!addressID(t) && (mode === 'confirm' || !stored(t));
 
         const ids = targets.filter(needsRead).map((t) => addressID(t) as string);
@@ -1592,19 +1607,23 @@ export class OrderEntityServer extends OrderHeaderEntity {
             } else {
                 const id = addressID(t) as string;
                 const row = byID.get(id.toLowerCase());
-                if (!row) {
+                if (row) {
+                    value = BuildAddressSnapshot(row);
+                } else if (mode === 'fill' && unchanged(t)) {
+                    value = null;
+                } else {
                     throw new Error(
                         `Order ${this.OrderNumber ?? ''} cannot be saved: its ${t.what} address (${id}) does not exist ` +
                             `or is not visible to you. Choose the address again and save.`,
                     );
                 }
-                value = BuildAddressSnapshot(row);
             }
             t.write(value);
         }
         this.addressSnapshotsStamped = true;
     }
 
+    /** The header's rollup columns as the DATABASE now holds them, after the payment triggers ran. */
     private async readBalanceFromRow(): Promise<ResolvedOrderRollups> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const result = await rv.RunView<OrderRollups>(
