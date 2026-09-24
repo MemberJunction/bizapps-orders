@@ -292,7 +292,7 @@ GO
 
 /* SQL text to insert 3 new entity field(s) */
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '0ef126e6-9931-4593-92b7-73ae161be5d5' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'BillToAddressSnapshot')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '4bec4999-721d-423a-b88b-2076f475bb39' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'BillToAddressSnapshot')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -325,7 +325,7 @@ GO
          )
          VALUES
          (
-            '0ef126e6-9931-4593-92b7-73ae161be5d5',
+            '4bec4999-721d-423a-b88b-2076f475bb39',
             'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'),
             'BillToAddressSnapshot',
@@ -355,7 +355,7 @@ GO
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'eb6413c3-911f-46dc-97c5-57989f8e80cf' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'ShipToAddressSnapshot')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'f9f37487-78b3-4e0c-8f74-046efba959a8' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'ShipToAddressSnapshot')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -388,7 +388,7 @@ GO
          )
          VALUES
          (
-            'eb6413c3-911f-46dc-97c5-57989f8e80cf',
+            'f9f37487-78b3-4e0c-8f74-046efba959a8',
             'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'),
             'ShipToAddressSnapshot',
@@ -418,7 +418,7 @@ GO
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'd046277a-b71d-4fec-b5a5-ec6a67721862' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ShipToAddressSnapshot')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '0a8de5aa-338d-4963-a8e5-b50d814364f8' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ShipToAddressSnapshot')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -451,7 +451,7 @@ GO
          )
          VALUES
          (
-            'd046277a-b71d-4fec-b5a5-ec6a67721862',
+            '0a8de5aa-338d-4963-a8e5-b50d814364f8',
             '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'),
             'ShipToAddressSnapshot',
@@ -482,7 +482,7 @@ GO
       END;
 
 /* Create IS-A parent field ShipToAddressSnapshot on MJ_BizApps_Orders: Event Order Lines */
-IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '06b78e89-798d-4e4e-a487-44f11885103a' OR (EntityID = '90A1060F-35D6-44A7-9076-A9053BBF60E6' AND Name = 'ShipToAddressSnapshot')) BEGIN
+IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '7e8bdf43-c644-4dc5-b771-fcad55c1403c' OR (EntityID = '90A1060F-35D6-44A7-9076-A9053BBF60E6' AND Name = 'ShipToAddressSnapshot')) BEGIN
     INSERT INTO [${mjSchema}].[EntityField] (
                       [ID], [EntityID], [Name], [Type], [AllowsNull],
                       [Length], [Precision], [Scale],
@@ -490,7 +490,7 @@ IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '06b78e89-79
                       [IsPrimaryKey], [IsUnique],
                       [__mj_CreatedAt], [__mj_UpdatedAt])
                    VALUES (
-                      '06b78e89-798d-4e4e-a487-44f11885103a', '90A1060F-35D6-44A7-9076-A9053BBF60E6', 'ShipToAddressSnapshot',
+                      '7e8bdf43-c644-4dc5-b771-fcad55c1403c', '90A1060F-35D6-44A7-9076-A9053BBF60E6', 'ShipToAddressSnapshot',
                       'nvarchar', 1,
                       -1, 0, 0,
                       (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '90A1060F-35D6-44A7-9076-A9053BBF60E6'), 1, 1, 0, 0,
@@ -501,7 +501,7 @@ END;
 UPDATE [${mjSchema}].[Entity] SET [__mj_UpdatedAt]=GETUTCDATE() WHERE ID='90A1060F-35D6-44A7-9076-A9053BBF60E6';
 
 /* SQL text to update display name for field ShipToAddressSnapshot */
-UPDATE [${mjSchema}].[EntityField] SET [__mj_UpdatedAt]=GETUTCDATE(), DisplayName = 'Ship To Address Snapshot' WHERE ID = '06B78E89-798D-4E4E-A487-44F11885103A';
+UPDATE [${mjSchema}].[EntityField] SET [__mj_UpdatedAt]=GETUTCDATE(), DisplayName = 'Ship To Address Snapshot' WHERE ID = '7E8BDF43-C644-4DC5-B771-FCAD55C1403C';
 
 /* Refresh the views that select the tables with *, BEFORE the procedures below: spCreateOrderHeader and
    spUpdateOrderHeader read vwOrderHeaders, which does not see the new columns until it is refreshed */
@@ -572,6 +572,8 @@ SELECT
     __mj_isa_p1.[PriceOverrideReason],
     __mj_isa_p1.[DimensionID],
     __mj_isa_p1.[DimensionValueID],
+    __mj_isa_p1.[BilledToDate],
+    __mj_isa_p1.[RecognizedToDate],
     __mj_isa_p1.[ShipToAddressSnapshot],
     mjBizAppsCommonPerson_PersonID.[DisplayName] AS [Person]
 FROM
@@ -1099,6 +1101,8 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateOrderLine]
     @DimensionID uniqueidentifier = NULL,
     @DimensionValueID_Clear bit = 0,
     @DimensionValueID uniqueidentifier = NULL,
+    @BilledToDate decimal(18, 2) = NULL,
+    @RecognizedToDate decimal(18, 2) = NULL,
     @ShipToAddressSnapshot_Clear bit = 0,
     @ShipToAddressSnapshot nvarchar(MAX) = NULL
 AS
@@ -1144,6 +1148,8 @@ BEGIN
                 [PriceOverrideReason],
                 [DimensionID],
                 [DimensionValueID],
+                [BilledToDate],
+                [RecognizedToDate],
                 [ShipToAddressSnapshot]
             )
         OUTPUT INSERTED.[ID] INTO @InsertedRow
@@ -1182,6 +1188,8 @@ BEGIN
                 CASE WHEN @PriceOverrideReason_Clear = 1 THEN NULL ELSE ISNULL(@PriceOverrideReason, NULL) END,
                 CASE WHEN @DimensionID_Clear = 1 THEN NULL ELSE ISNULL(@DimensionID, NULL) END,
                 CASE WHEN @DimensionValueID_Clear = 1 THEN NULL ELSE ISNULL(@DimensionValueID, NULL) END,
+                ISNULL(@BilledToDate, 0),
+                ISNULL(@RecognizedToDate, 0),
                 CASE WHEN @ShipToAddressSnapshot_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressSnapshot, NULL) END
             )
     END
@@ -1222,6 +1230,8 @@ BEGIN
                 [PriceOverrideReason],
                 [DimensionID],
                 [DimensionValueID],
+                [BilledToDate],
+                [RecognizedToDate],
                 [ShipToAddressSnapshot]
             )
         OUTPUT INSERTED.[ID] INTO @InsertedRow
@@ -1259,6 +1269,8 @@ BEGIN
                 CASE WHEN @PriceOverrideReason_Clear = 1 THEN NULL ELSE ISNULL(@PriceOverrideReason, NULL) END,
                 CASE WHEN @DimensionID_Clear = 1 THEN NULL ELSE ISNULL(@DimensionID, NULL) END,
                 CASE WHEN @DimensionValueID_Clear = 1 THEN NULL ELSE ISNULL(@DimensionValueID, NULL) END,
+                ISNULL(@BilledToDate, 0),
+                ISNULL(@RecognizedToDate, 0),
                 CASE WHEN @ShipToAddressSnapshot_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressSnapshot, NULL) END
             )
     END
@@ -1342,6 +1354,8 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderLine]
     @DimensionID uniqueidentifier = NULL,
     @DimensionValueID_Clear bit = 0,
     @DimensionValueID uniqueidentifier = NULL,
+    @BilledToDate decimal(18, 2) = NULL,
+    @RecognizedToDate decimal(18, 2) = NULL,
     @ShipToAddressSnapshot_Clear bit = 0,
     @ShipToAddressSnapshot nvarchar(MAX) = NULL
 AS
@@ -1382,6 +1396,8 @@ BEGIN
         [PriceOverrideReason] = CASE WHEN @PriceOverrideReason_Clear = 1 THEN NULL ELSE ISNULL(@PriceOverrideReason, [PriceOverrideReason]) END,
         [DimensionID] = CASE WHEN @DimensionID_Clear = 1 THEN NULL ELSE ISNULL(@DimensionID, [DimensionID]) END,
         [DimensionValueID] = CASE WHEN @DimensionValueID_Clear = 1 THEN NULL ELSE ISNULL(@DimensionValueID, [DimensionValueID]) END,
+        [BilledToDate] = ISNULL(@BilledToDate, [BilledToDate]),
+        [RecognizedToDate] = ISNULL(@RecognizedToDate, [RecognizedToDate]),
         [ShipToAddressSnapshot] = CASE WHEN @ShipToAddressSnapshot_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressSnapshot, [ShipToAddressSnapshot]) END
     WHERE
         [ID] = @ID
