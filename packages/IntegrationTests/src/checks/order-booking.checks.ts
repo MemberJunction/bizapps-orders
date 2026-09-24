@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB21).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB24).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -22,11 +22,14 @@
  *   OB15 confirm-after-draft with lines not loaded still books memberships
  *   OB16 a Draft with no lines saves (lines are required only at confirm)
  *   OB17 a draft line can be removed and replaced — the removed row actually leaves the database
- *   OB18 a booked header refuses its frozen columns through the entity, naming the field, and still
+ *   OB18 an order with NO payment schedule debits AR alone — no contract-asset line exists (D89)
+ *   OB19 confirming a non-scheduled line sets BilledToDate to its NET, not net + charges (D92)
+ *   OB20 recognition on such a line relieves Deferred, never opening a contract asset (D92)
+ *   OB21 a booked header refuses its frozen columns through the entity, naming the field, and still
  *        saves an unfrozen one (golive #262)
- *   OB19 the database refuses a booked header's OrderDate change, however it is reached (51013)
- *   OB20 the database refuses a booked order leaving Confirmed (51014)
- *   OB21 the database refuses a booked line's CompanyID change (51003)
+ *   OB22 the database refuses a booked header's OrderDate change, however it is reached (51013)
+ *   OB23 the database refuses a booked order leaving Confirmed (51014)
+ *   OB24 the database refuses a booked line's CompanyID change (51003)
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -54,6 +57,9 @@ import { Metadata } from '@memberjunction/core';
 import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from '../entity-names.js';
+
+/** `11300 Unbilled Revenue (Contract Asset)` — the D89 role's account in the world fixture. */
+const UNBILLED_CODE = '11300';
 
 /** The three-line multi-company order OB1–OB6 all read from — built once per check, inside its tx. */
 async function confirmMultiCompanyOrder(ctx: IntegrationCheckContext) {
@@ -713,12 +719,137 @@ export const OrderBookingChecks: NamedCheck[] = [
     },
     {
         Id: 'order-booking.OB18',
-        Name: 'OB18: a booked header refuses its frozen columns through the entity, and saves the rest',
+        Name: 'OB18: an order with NO payment schedule debits AR alone — no contract-asset line exists',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // THE REGRESSION FENCE FOR D89. Splitting the booking debit between Unbilled
+                // Receivable and AR must be INVISIBLE to every order that has no instalments —
+                // which is every order that exists today. PS2 proves the AR amount is unchanged;
+                // this proves the SHAPE is: one debit, to AR, and not a second line anywhere in the
+                // entry pointing at the contract asset. A split that merely happened to sum right
+                // would pass an amount check and fail here.
+                const f = Fx();
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 300 }],
+                });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const lines = await TxQuery<{ Code: string; DebitAmount: number; CreditAmount: number }>(
+                    ctx,
+                    `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
+                       FROM ${ORDERS_SCHEMA}.OrderLine ol
+                       JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ol.JournalEntryID
+                       JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                      WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+                );
+                AssertEqual(lines.length, 2, `exactly the two lines it booked before D89: ${JSON.stringify(lines)}`);
+                AssertEqual(
+                    lines.filter((l) => l.Code === UNBILLED_CODE).length,
+                    0,
+                    `no contract-asset line on an unscheduled order: ${JSON.stringify(lines)}`,
+                );
+                const debits = lines.filter((l) => Number(l.DebitAmount ?? 0) !== 0);
+                AssertEqual(debits.length, 1, `ONE debit line, not a split: ${JSON.stringify(lines)}`);
+                AssertEqual(debits[0].Code, '11201', 'and it is Accounts Receivable');
+                AssertEqual(Number(debits[0].DebitAmount), 300, 'for the whole order value');
+            }),
+    },
+    {
+        Id: 'order-booking.OB19',
+        Name: 'OB19: confirming a non-scheduled line sets BilledToDate to its NET, not net + charges',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // BOOKING IS THE INVOICE for an order with no schedule, so confirm has to advance
+                // BilledToDate itself — nothing else ever will. Left at zero, rule 2 would read "no
+                // deferred balance" and every monthly release on an ordinary subscription would
+                // debit Unbilled Receivable instead of relieving the Deferred booking created.
+                //
+                // THE CHARGE IS WHAT MAKES THIS CHECK ABLE TO SEE ANYTHING. Without it net and the
+                // AR debit are the same number and the assertion passes on either basis. With a 10%
+                // charge they separate, and BilledToDate must follow NET — the same basis as
+                // RecognizedToDate, because tax and charges credit their own accounts and never
+                // touch Deferred.
+                const f = Fx();
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [{ ProductID: f.Products.DeferredA, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: '2026-07-01', ServicePeriodEnd: '2027-06-30' }],
+                    Charges: [{ Code: 'SalesTax', Rate: 0.1 }],
+                } as Parameters<typeof ConfirmOrder>[1]);
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const line = await TxOne<{ LineTotalNet: number; LineTax: number; ChargeAmount: number; BilledToDate: number; RecognizedToDate: number }>(
+                    ctx,
+                    `SELECT LineTotalNet, LineTax, ChargeAmount, BilledToDate, RecognizedToDate
+                       FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${result.Order.ID}'`,
+                );
+                const charged = Number(line.LineTax ?? 0) + Number(line.ChargeAmount ?? 0);
+                Assert(charged > 0, `the fixture must actually charge something, or this proves nothing: ${JSON.stringify(line)}`);
+                AssertEqual(Number(line.BilledToDate), Number(line.LineTotalNet), 'BilledToDate is the line NET');
+                Assert(
+                    Number(line.BilledToDate) !== Number(line.LineTotalNet) + charged,
+                    'and is NOT net + tax + charges — those credit their own accounts, never Deferred',
+                );
+            }),
+    },
+    {
+        Id: 'order-booking.OB20',
+        Name: 'OB20: recognition on a non-scheduled line relieves Deferred and opens no contract asset',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The consequence of OB19, stated on the ledger. A deferred product books
+                // Dr AR / Cr Deferred at confirm and stages its releases; each release must debit
+                // the Deferred that booking created. If BilledToDate were zero the rule would read
+                // recognition as running ahead of billing and debit Unbilled instead — a contract
+                // asset invented on the commonest order in the system, with the entry balancing.
+                const f = Fx();
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [{ ProductID: f.Products.DeferredA, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: '2026-07-01', ServicePeriodEnd: '2027-06-30' }],
+                });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const lines = await TxQuery<{ Code: string; DebitAmount: number; CreditAmount: number }>(
+                    ctx,
+                    `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
+                       FROM ${ORDERS_SCHEMA}.OrderLine ol
+                       JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ol.JournalEntryID
+                       JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                      WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+                );
+                AssertEqual(
+                    lines.filter((l) => l.Code === UNBILLED_CODE).length,
+                    0,
+                    `no contract-asset line on an ordinary order: ${JSON.stringify(lines)}`,
+                );
+
+                const totals = await TxOne<{ BilledToDate: number }>(
+                    ctx,
+                    `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${result.Order.ID}'`,
+                );
+                Assert(
+                    Number(totals.BilledToDate) > 0,
+                    'BilledToDate is non-zero, which is what makes the releases relieve Deferred rather than open Unbilled',
+                );
+            }),
+    },
+    {
+        Id: 'order-booking.OB21',
+        Name: 'OB21: a booked header refuses its frozen columns through the entity, and saves the rest',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
                 // The entity refuses FIRST so the user reads which field and why. The trigger behind
-                // it (OB19) is the backstop, but a trigger rollback under the CRUD procedure's
+                // it (OB22) is the backstop, but a trigger rollback under the CRUD procedure's
                 // INSERT-EXEC names neither the column nor the rule (golive #262).
                 const f = Fx();
                 const sale = await ConfirmOrder(ctx.User, {
@@ -741,19 +872,19 @@ export const OrderBookingChecks: NamedCheck[] = [
                 // An unfrozen column still saves, and the DATE column round-trips through the trigger
                 // unchanged — every post-confirm header write now passes through it.
                 header.OrderDate = booked;
-                header.Notes = 'OB18 unfrozen edit';
+                header.Notes = 'OB21 unfrozen edit';
                 Assert(await header.Save(), `an unfrozen edit on a booked order saves: ${header.LatestResult?.CompleteMessage ?? ''}`);
                 const row = await TxOne<{ Notes: string; OrderDate: Date }>(
                     ctx,
                     `SELECT Notes, OrderDate FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${header.ID}'`,
                 );
-                AssertEqual(row.Notes, 'OB18 unfrozen edit', 'the note landed');
+                AssertEqual(row.Notes, 'OB21 unfrozen edit', 'the note landed');
                 AssertEqual(new Date(row.OrderDate).toISOString(), booked.toISOString(), 'and the booked date did not move');
             }),
     },
     {
-        Id: 'order-booking.OB19',
-        Name: "OB19: the database refuses a booked header's OrderDate change (51013)",
+        Id: 'order-booking.OB22',
+        Name: "OB22: the database refuses a booked header's OrderDate change (51013)",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -765,8 +896,8 @@ export const OrderBookingChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'order-booking.OB20',
-        Name: 'OB20: the database refuses a booked order leaving Confirmed (51014)',
+        Id: 'order-booking.OB23',
+        Name: 'OB23: the database refuses a booked order leaving Confirmed (51014)',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -776,8 +907,8 @@ export const OrderBookingChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'order-booking.OB21',
-        Name: "OB21: the database refuses a booked line's CompanyID change (51003)",
+        Id: 'order-booking.OB24',
+        Name: "OB24: the database refuses a booked line's CompanyID change (51003)",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
