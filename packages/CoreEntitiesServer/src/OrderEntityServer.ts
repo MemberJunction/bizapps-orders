@@ -64,6 +64,7 @@ import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntitySe
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
@@ -1201,12 +1202,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * Create the grants this order's lines confer (D27/D76).
      *
      * Delegates entirely to `EntitlementEngine`; what lives here is the mapping from the order's own
-     * entities to the structural shape the engine takes, plus the balance the timing rule needs.
+     * entities to the structural shape the engine takes, plus the payment facts the timing rule needs.
      *
-     * `Balance` is re-read from the header rather than trusted from memory: `createInitialPayment`
+     * The payment facts are re-read from the row rather than trusted from memory: `createInitialPayment`
      * has just run, and the rollup triggers (D41) moved `AmountPaid`/`Balance` on the ROW without
-     * telling this object. An `OnPaidInFull` grant reading a stale balance would sit Suspended on an
-     * order that is already paid.
+     * telling this object. A payment-gated grant reading a stale balance would sit Suspended on an
+     * order that is already paid. They come from the same loader the payment path re-decides with,
+     * so a grant is born under the rule that will later move it.
      */
     private async grantEntitlements(
         lines: mjBizAppsOrdersOrderLineEntity[],
@@ -1216,14 +1218,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
-        const fresh = await this.readBalanceFromRow();
+        const asOf = await BusinessDay(provider, user);
+        const payment = (await LoadOrderPaymentFacts([this.ID], provider, user, asOf)).get(this.ID.toLowerCase());
+        if (!payment) {
+            throw new Error(`Order ${this.OrderNumber ?? this.ID} could not be re-read to decide its entitlement grants.`);
+        }
 
         await CreateEntitlementGrants(
             {
                 ID: this.ID,
                 OrderDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
-                Balance: fresh.Balance,
-                TotalGross: fresh.TotalGross,
+                Payment: payment,
                 BillToPersonID: this.BillToPersonID ?? null,
                 BillToOrganizationID: this.BillToOrganizationID ?? null,
             },
@@ -1233,6 +1238,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Quantity: Number(l.Quantity ?? 0),
                 ShipToPersonID: l.ShipToPersonID ?? null,
                 ShipToOrganizationID: l.ShipToOrganizationID ?? null,
+                RenewsSubscriptionID: l.RenewsSubscriptionID ?? null,
             })),
             subs.TermsByLine,
             provider,

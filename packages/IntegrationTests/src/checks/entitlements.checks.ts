@@ -44,6 +44,10 @@ import {
   upsertViaEntity,
 } from "../fixture.js";
 import { ConfirmOrder } from "../order-builder.js";
+import { BaseRemotableOperation } from "@memberjunction/core";
+import { MJGlobal } from "@memberjunction/global";
+import { OrdersEngine } from "@mj-biz-apps/orders-entities";
+import { EnforcePaymentGatedAccess, OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
 
 /**
  * Price a product ONCE, however many times a check asks.
@@ -119,6 +123,88 @@ async function buyWidget(ctx: IntegrationCheckContext, quantity = 1, over: Recor
   Assert(order.Saved, `confirm failed: ${order.Message}`);
   return order;
 }
+
+// ─── Payment-gated access (bc-aidp-next-golive#223) ─────────────────────────────────────────────
+
+interface GateRow {
+  ID: string;
+  Status: string;
+  GrantTimingApplied: string | null;
+  SuspensionReason: string | null;
+  SuspendedAt: Date | null;
+}
+
+/** The access columns of every grant an order produced. */
+const gatesFor = (ctx: IntegrationCheckContext, orderID: string) =>
+  TxQuery<GateRow>(
+    ctx,
+    `SELECT g.ID, g.Status, g.GrantTimingApplied, g.SuspensionReason, g.SuspendedAt
+       FROM ${ORDERS_SCHEMA}.EntitlementGrant g
+       JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = g.OrderLineID
+      WHERE ol.OrderHeaderID = '${orderID}'`,
+  );
+
+/**
+ * Run `body` with a product's grant timing set THROUGH THE OBJECT MODEL, and the catalog engine
+ * reloaded so the confirm path sees it.
+ *
+ * A raw `UPDATE Product` is not enough: the policy walk reads products from `OrdersEngine`'s cache,
+ * so a row changed behind its back keeps its old timing. The timing is put back the same way before
+ * the transaction rolls back, or the cache would carry this check's policy into the next one.
+ */
+async function withGrantTiming(
+  ctx: IntegrationCheckContext,
+  productID: string,
+  timing: string,
+  body: () => Promise<void>,
+): Promise<void> {
+  await upsertViaEntity(ctx, PRODUCT_ENTITY, productID, { EntitlementGrantTiming: timing });
+  await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+  try {
+    await body();
+  } finally {
+    await upsertViaEntity(ctx, PRODUCT_ENTITY, productID, { EntitlementGrantTiming: null });
+    await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+  }
+}
+
+/** Capture cash against one order through `Orders.CapturePayment` — the path a finance user takes. */
+async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: number): Promise<void> {
+  const f = Fx();
+  Assert(f.PaymentTypeIDs.get("Cash") != null, "PaymentType 'Cash' missing — push the orders app metadata");
+  const op = MJGlobal.Instance.ClassFactory.CreateInstance<
+    BaseRemotableOperation<Record<string, unknown>, { Success: boolean; Message?: string }>
+  >(BaseRemotableOperation, "Orders.CapturePayment");
+  Assert(op != null, "'Orders.CapturePayment' is not registered");
+  const result = await op!.Execute(
+    {
+      Amount: amount,
+      ReceivingCompanyID: f.CoA.ID,
+      BillToOrganizationID: f.Customers.OrganizationID,
+      TenderCode: "Cash",
+      Allocations: [{ OrderHeaderID: orderID, Amount: amount }],
+    },
+    { provider: ctx.Provider, user: ctx.User },
+  );
+  Assert(result.Success && result.Output?.Success, `capture failed: ${result.ErrorMessage ?? result.Output?.Message ?? "unknown"}`);
+}
+
+/** Place the renewal of one subscription through `Orders.SpawnRenewals`, and return its order. */
+async function renew(ctx: IntegrationCheckContext, subscriptionID: string, asOf: string): Promise<string> {
+  const op = MJGlobal.Instance.ClassFactory.CreateInstance<
+    BaseRemotableOperation<Record<string, unknown>, { Placed: number; Message?: string; Candidates: Array<{ OrderID?: string }> }>
+  >(BaseRemotableOperation, "Orders.SpawnRenewals");
+  Assert(op != null, "'Orders.SpawnRenewals' is not registered");
+  const result = await op!.Execute({ SubscriptionID: subscriptionID, AsOfDate: asOf }, { provider: ctx.Provider, user: ctx.User });
+  Assert(result.Success && result.Output?.Placed === 1, `expected one renewal: ${result.ErrorMessage ?? result.Output?.Message}`);
+  return result.Output!.Candidates[0].OrderID!;
+}
+
+const addDays = (iso: string, n: number): string => {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
 
 export const EntitlementsChecks: NamedCheck[] = [
   {
@@ -595,6 +681,155 @@ export const EntitlementsChecks: NamedCheck[] = [
         Assert(
           Number(seats!.Quantity) > 4 * Number(line.Q),
           "and it is strictly MORE than the exact fraction, which is what 'up' means",
+        );
+      }),
+  },
+  {
+    Id: "entitlements.EN16",
+    Name: "EN16: OnFirstPayment holds a new purchase until it is paid, and the payment releases it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.WidgetA, "OnFirstPayment", async () => {
+          const order = await buyWidget(ctx, 1);
+          const orderID = order.Order.ID as string;
+          const held = await gatesFor(ctx, orderID);
+          Assert(held.length > 0, "the grants exist while unpaid, so what is coming is visible");
+          Assert(
+            held.every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment" && g.SuspendedAt != null),
+            "held for payment, and each one says so and says when",
+          );
+          Assert(
+            held.every((g) => g.GrantTimingApplied === "OnFirstPayment"),
+            "the grant records the rule it was written under, so a later payment re-decides by it",
+          );
+
+          const gross = Number((await TxOne<{ TotalGross: number }>(ctx,
+            `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).TotalGross);
+          await payOrder(ctx, orderID, gross);
+
+          const live = await gatesFor(ctx, orderID);
+          Assert(
+            live.every((g) => g.Status === "Active" && g.SuspensionReason == null && g.SuspendedAt == null),
+            "the payment that clears the first amount due makes access live, inside the same capture",
+          );
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN17",
+    Name: "EN17: a part-payment keeps the hold; the payment that completes it releases it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.WidgetA, "OnFirstPayment", async () => {
+          const order = await buyWidget(ctx, 1);
+          const orderID = order.Order.ID as string;
+          const gross = Number((await TxOne<{ TotalGross: number }>(ctx,
+            `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).TotalGross);
+
+          await payOrder(ctx, orderID, Math.round(gross * 40) / 100);
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment"),
+            "40% of the first amount due is not the first payment",
+          );
+
+          await payOrder(ctx, orderID, Math.round((gross - Math.round(gross * 40) / 100) * 100) / 100);
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Active"),
+            "the rest arrives, and access goes live",
+          );
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN18",
+    Name: "EN18: an OnFirstPayment RENEWAL keeps access at confirm, is cut off at the cutoff, and payment restores it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.SubRolling, "OnFirstPayment", async () => {
+          const paymentTypeID = f.PaymentTypeIDs.get("Cash");
+          Assert(paymentTypeID != null, "PaymentType 'Cash' missing — push the orders app metadata");
+          const first = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            OrderDate: new Date("2026-01-01T00:00:00Z"),
+            BillToOrganizationID: f.Customers.OrganizationID,
+            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1 }],
+          });
+          Assert(first.Saved, `confirm failed: ${first.Message}`);
+          const term = await TxOne<{ SubscriptionID: string; EndDate: Date; Gross: number }>(ctx,
+            `SELECT st.SubscriptionID, st.EndDate, oh.TotalGross AS Gross
+               FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+               JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+              WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+          await payOrder(ctx, first.Order.ID as string, Number(term.Gross));
+
+          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+          const renewed = await gatesFor(ctx, renewalID);
+          Assert(renewed.length > 0, "the renewal grants the next term");
+          Assert(
+            renewed.every((g) => g.Status === "Active" && g.GrantTimingApplied === "OnFirstPayment"),
+            "a renewal is not held for payment: the customer already has the service",
+          );
+
+          const due = await TxOne<{ NextDueDate: Date | null; Balance: number }>(ctx,
+            `SELECT NextDueDate, Balance FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${renewalID}'`);
+          Assert(due.NextDueDate != null, "the renewal carries a due date, or nothing can be measured from it");
+          const dueDay = new Date(due.NextDueDate!).toISOString().slice(0, 10);
+          await OrdersSettings.Load(ctx.Provider, ctx.User);
+          const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+          Assert(cutoff != null && cutoff > 0, "the cutoff setting is on, with a positive number of days");
+
+          const before = await EnforcePaymentGatedAccess({ AsOfDate: addDays(dueDay, cutoff! - 1) }, ctx.Provider, ctx.User);
+          Assert(before.Success, `the pass ran: ${before.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "the day before the cutoff, access stands",
+          );
+
+          const preview = await EnforcePaymentGatedAccess({ AsOfDate: addDays(dueDay, cutoff!), Preview: true }, ctx.Provider, ctx.User);
+          Assert(
+            preview.Changes.some((c) => c.OrderID.toLowerCase() === renewalID.toLowerCase() && c.ToReason === "PastDue"),
+            "a preview on the cutoff day reports the suspension",
+          );
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "and writes nothing",
+          );
+
+          const cut = await EnforcePaymentGatedAccess({ AsOfDate: addDays(dueDay, cutoff!) }, ctx.Provider, ctx.User);
+          Assert(cut.Success, `the pass ran: ${cut.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "PastDue"),
+            "on the cutoff day the renewal's access is suspended, and says why",
+          );
+
+          await payOrder(ctx, renewalID, Number(due.Balance));
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active" && g.SuspensionReason == null),
+            "paying the renewal restores access in the same capture",
+          );
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN19",
+    Name: "EN19: an OnConfirm product is untouched by payment gating",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const order = await buyWidget(ctx, 1);
+        const orderID = order.Order.ID as string;
+        const grants = await gatesFor(ctx, orderID);
+        Assert(grants.length > 0, "the order granted something");
+        Assert(
+          grants.every((g) => g.Status === "Active" && g.GrantTimingApplied === "OnConfirm" && g.SuspensionReason == null),
+          "the default timing is live at confirm, and records that it was",
         );
       }),
   },

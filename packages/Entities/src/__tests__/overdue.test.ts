@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { newestViewDefiner, sqlCode } from './helpers/view-definer';
 import { describe, it, expect } from 'vitest';
-import { IsOverdue, OverdueFilter, OverdueSQL, OverdueViewSQL, NON_OWING_STATUSES, type OverdueFacts } from '../overdue';
+import { DaysOverdue, IsOverdue, OverdueFilter, OverdueSQL, OverdueViewSQL, NON_OWING_STATUSES, type OverdueFacts } from '../overdue';
 
 /**
  * Tier 1 for the overdue rule.
@@ -136,5 +136,26 @@ describe('the SQL and the filter say what the function says', () => {
         // No bare column names — an unqualified `Status` in a two-table view is ambiguous, and SQL
         // Server would reject it at create time rather than silently pick one. Cheap to assert.
         expect(sql).not.toMatch(/(?<![.\w])(Balance|DueDate|Status)\b/);
+    });
+});
+
+describe('DaysOverdue', () => {
+    it('counts whole days from the due day', () => {
+        expect(DaysOverdue({ Status: 'Confirmed', Balance: 10, DueDateISO: '2026-07-27' }, DAY)).toBe(14);
+    });
+
+    it('is 0 on the due day and before it', () => {
+        expect(DaysOverdue({ Status: 'Confirmed', Balance: 10, DueDateISO: DAY }, DAY)).toBe(0);
+        expect(DaysOverdue({ Status: 'Confirmed', Balance: 10, DueDateISO: '2026-09-01' }, DAY)).toBe(0);
+    });
+
+    it('is 0 whenever the rule says the order is not overdue', () => {
+        expect(DaysOverdue({ Status: 'Voided', Balance: 10, DueDateISO: '2026-07-01' }, DAY)).toBe(0);
+        expect(DaysOverdue({ Status: 'Confirmed', Balance: 0, DueDateISO: '2026-07-01' }, DAY)).toBe(0);
+        expect(DaysOverdue({ Status: 'Confirmed', Balance: 10, DueDateISO: null }, DAY)).toBe(0);
+    });
+
+    it('does not drift across a daylight-saving change', () => {
+        expect(DaysOverdue({ Status: 'Confirmed', Balance: 10, DueDateISO: '2026-10-25' }, '2026-11-08')).toBe(14);
     });
 });

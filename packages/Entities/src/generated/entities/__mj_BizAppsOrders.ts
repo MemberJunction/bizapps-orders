@@ -712,6 +712,32 @@ export const mjBizAppsOrdersEntitlementGrantSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    GrantTimingApplied: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnFirstPayment'), z.literal('OnPaidInFull')]).nullable().describe(`
+        * * Field Name: GrantTimingApplied
+        * * Display Name: Grant Timing Applied
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * OnActivation
+    *   * OnConfirm
+    *   * OnFirstPayment
+    *   * OnPaidInFull
+        * * Description: The grant timing that produced this grant (OnConfirm, OnPaidInFull, OnFirstPayment, OnActivation), resolved at confirm from product, category and product type. Access is re-decided from this when the order's payments change. NULL on grants written before the column existed.`),
+    SuspendedAt: z.date().nullable().describe(`
+        * * Field Name: SuspendedAt
+        * * Display Name: Suspended At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the grant was last suspended. Set together with SuspensionReason and cleared when the grant becomes Active again.`),
+    SuspensionReason: z.union([z.literal('AwaitingActivation'), z.literal('AwaitingPayment'), z.literal('PastDue')]).nullable().describe(`
+        * * Field Name: SuspensionReason
+        * * Display Name: Suspension Reason
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AwaitingActivation
+    *   * AwaitingPayment
+    *   * PastDue
+        * * Description: Why the grant is suspended: AwaitingPayment (a new purchase whose first payment has not been received), PastDue (a renewal past the configured cutoff), or AwaitingActivation. AwaitingPayment and PastDue are lifted automatically when payment arrives.`),
     ProductEntitlement: z.string().nullable().describe(`
         * * Field Name: ProductEntitlement
         * * Display Name: Product Entitlement Name
@@ -3375,7 +3401,7 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Display Name: Default Tax Category
         * * SQL Data Type: nvarchar(50)
         * * Description: Default taxability key for products in this category, matched against accounting's TaxRate.TaxCategory. NULL means the walk continues up the category tree and then to the product type.`),
-    DefaultEntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnPaidInFull')]).nullable().describe(`
+    DefaultEntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnFirstPayment'), z.literal('OnPaidInFull')]).nullable().describe(`
         * * Field Name: DefaultEntitlementGrantTiming
         * * Display Name: Default Entitlement Grant Timing
         * * SQL Data Type: nvarchar(20)
@@ -3383,6 +3409,7 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull`),
     DefaultEntitlementQuantityMode: z.union([z.literal('Flat'), z.literal('PerUnit')]).nullable().describe(`
         * * Field Name: DefaultEntitlementQuantityMode
@@ -3781,7 +3808,7 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 1
         * * Description: Whether this type is active and selectable.`),
-    DefaultEntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnPaidInFull')]).describe(`
+    DefaultEntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnFirstPayment'), z.literal('OnPaidInFull')]).describe(`
         * * Field Name: DefaultEntitlementGrantTiming
         * * Display Name: Default Entitlement Grant Timing
         * * SQL Data Type: nvarchar(20)
@@ -3790,6 +3817,7 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull`),
     DefaultEntitlementQuantityMode: z.union([z.literal('Flat'), z.literal('PerUnit')]).describe(`
         * * Field Name: DefaultEntitlementQuantityMode
@@ -3936,7 +3964,7 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Tax Category
         * * SQL Data Type: nvarchar(50)
         * * Description: Taxability key, matched against accounting's TaxRate.TaxCategory. A string rather than a lookup table because accounting already keys taxability by string, and a table here would need syncing to it and could drift.`),
-    EntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnPaidInFull')]).nullable().describe(`
+    EntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnFirstPayment'), z.literal('OnPaidInFull')]).nullable().describe(`
         * * Field Name: EntitlementGrantTiming
         * * Display Name: Entitlement Grant Timing
         * * SQL Data Type: nvarchar(20)
@@ -3944,6 +3972,7 @@ export const mjBizAppsOrdersProductSchema = z.object({
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull`),
     EntitlementQuantityMode: z.union([z.literal('Flat'), z.literal('PerUnit')]).nullable().describe(`
         * * Field Name: EntitlementQuantityMode
@@ -7293,6 +7322,56 @@ export class mjBizAppsOrdersEntitlementGrantEntity extends BaseEntity<mjBizAppsO
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: GrantTimingApplied
+    * * Display Name: Grant Timing Applied
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * OnActivation
+    *   * OnConfirm
+    *   * OnFirstPayment
+    *   * OnPaidInFull
+    * * Description: The grant timing that produced this grant (OnConfirm, OnPaidInFull, OnFirstPayment, OnActivation), resolved at confirm from product, category and product type. Access is re-decided from this when the order's payments change. NULL on grants written before the column existed.
+    */
+    get GrantTimingApplied(): 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null {
+        return this.Get('GrantTimingApplied');
+    }
+    set GrantTimingApplied(value: 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null) {
+        this.Set('GrantTimingApplied', value);
+    }
+
+    /**
+    * * Field Name: SuspendedAt
+    * * Display Name: Suspended At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the grant was last suspended. Set together with SuspensionReason and cleared when the grant becomes Active again.
+    */
+    get SuspendedAt(): Date | null {
+        return this.Get('SuspendedAt');
+    }
+    set SuspendedAt(value: Date | null) {
+        this.Set('SuspendedAt', value);
+    }
+
+    /**
+    * * Field Name: SuspensionReason
+    * * Display Name: Suspension Reason
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AwaitingActivation
+    *   * AwaitingPayment
+    *   * PastDue
+    * * Description: Why the grant is suspended: AwaitingPayment (a new purchase whose first payment has not been received), PastDue (a renewal past the configured cutoff), or AwaitingActivation. AwaitingPayment and PastDue are lifted automatically when payment arrives.
+    */
+    get SuspensionReason(): 'AwaitingActivation' | 'AwaitingPayment' | 'PastDue' | null {
+        return this.Get('SuspensionReason');
+    }
+    set SuspensionReason(value: 'AwaitingActivation' | 'AwaitingPayment' | 'PastDue' | null) {
+        this.Set('SuspensionReason', value);
     }
 
     /**
@@ -15217,12 +15296,13 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull
     */
-    get DefaultEntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnPaidInFull' | null {
+    get DefaultEntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null {
         return this.Get('DefaultEntitlementGrantTiming');
     }
-    set DefaultEntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnPaidInFull' | null) {
+    set DefaultEntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null) {
         this.Set('DefaultEntitlementGrantTiming', value);
     }
 
@@ -16416,12 +16496,13 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull
     */
-    get DefaultEntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnPaidInFull' {
+    get DefaultEntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' {
         return this.Get('DefaultEntitlementGrantTiming');
     }
-    set DefaultEntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnPaidInFull') {
+    set DefaultEntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull') {
         this.Set('DefaultEntitlementGrantTiming', value);
     }
 
@@ -16875,12 +16956,13 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull
     */
-    get EntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnPaidInFull' | null {
+    get EntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null {
         return this.Get('EntitlementGrantTiming');
     }
-    set EntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnPaidInFull' | null) {
+    set EntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null) {
         this.Set('EntitlementGrantTiming', value);
     }
 
