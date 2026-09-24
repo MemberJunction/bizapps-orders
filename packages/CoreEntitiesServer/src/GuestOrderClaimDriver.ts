@@ -21,6 +21,7 @@ import {
     type ClaimResult,
 } from './identityClaimContracts.js';
 import {
+    IsBooked,
     mjBizAppsOrdersOrderHeaderEntity,
     mjBizAppsOrdersEntitlementGrantEntity,
 } from '@mj-biz-apps/orders-entities';
@@ -92,9 +93,16 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
             };
         }
 
-        // Link Order Header parties to the redeeming person if unset or different
+        // Link Order Header parties to the redeeming person if unset or different.
+        //
+        // A BOOKED ORDER KEEPS ITS BILL-TO (golive #262). Checkout resolves the payer Person and
+        // stamps it as the bill-to before it confirms, so a claimed guest order already records who
+        // paid, and trigger 51013 refuses re-pointing it: the sale is history. On a booked order the
+        // claim fills an empty bill-to only and moves the ship-to (not frozen) on its own, so the
+        // claim still succeeds and the grants below still cascade.
+        const booked = IsBooked(order.Status);
         let orderModified = false;
-        if (!order.BillToPersonID || order.BillToPersonID !== personID) {
+        if (!order.BillToPersonID || (!booked && order.BillToPersonID !== personID)) {
             order.BillToPersonID = personID;
             orderModified = true;
         }

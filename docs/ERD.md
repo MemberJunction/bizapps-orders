@@ -1131,12 +1131,13 @@ migration.
 
 ## 5. The rules that live in TRIGGERS, not in the tables
 
-7 business triggers, and they carry two of the app's load-bearing guarantees. A diagram cannot
+8 business triggers, and they carry two of the app's load-bearing guarantees. A diagram cannot
 show either, and code that ignores them will fail at runtime rather than at compile time.
 
 | table | trigger | what it guarantees |
 |---|---|---|
-| `OrderLine` | `trg_OrderLine_ImmutableAfterConfirm` | A confirmed line's money is history. Error 51003. This is why the server short-circuits its own total recomputation once `JournalEntryID` is stamped — a figure it cannot reproduce from stored state alone would be rejected here and roll back the whole confirm. |
+| `OrderHeader` | `trg_OrderHeader_ImmutableAfterConfirm` | A confirmed order's date, selling company, order type, reversal link and set bill-to party are history (51013), and its status cannot leave Confirmed (51014). An empty bill-to party may still be filled, which is how a guest order is claimed. |
+| `OrderLine` | `trg_OrderLine_ImmutableAfterConfirm` | A confirmed line's money and selling company are history. Error 51003. This is why the server short-circuits its own total recomputation once `JournalEntryID` is stamped — a figure it cannot reproduce from stored state alone would be rejected here and roll back the whole confirm. |
 | `OrderLine` | `trg_OrderLine_RollupTotals` | Header totals are derived from lines by the database, so a client cannot supply a total that disagrees with what was booked. |
 | `PaymentDetail` | `trg_PaymentDetail_Immutable` | A recorded payment instrument cannot be edited after the fact. |
 | `PaymentHeader` | `trg_PaymentHeader_ImmutableAfterCapture` | Captured money is frozen. |

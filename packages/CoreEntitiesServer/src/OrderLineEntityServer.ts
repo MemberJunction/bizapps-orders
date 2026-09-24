@@ -6,7 +6,8 @@
  *   1. STAMP THE COMPANY (plan D6). `OrderLine.CompanyID` is a denormalized copy of the
  *      product's company, captured at save time so the line records who owned the product at
  *      transaction time even if product ownership later moves. It is derived, never authored —
- *      whatever a caller passes is overwritten.
+ *      whatever a caller passes is overwritten while the order is open, and once the order is
+ *      booked the stamped value is kept (trigger 51003 freezes it).
  *
  *   2. COMPUTE THE TOTALS. `LineTotalNet` / `LineTotalGross` are engine-materialized and never
  *      user-entered:
@@ -290,17 +291,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
     private async refuseNewLineOnBookedOrder(result: ValidationResult): Promise<void> {
         if (this.IsSaved || !this.OrderHeaderID || this.BypassBookedCheck) return;
 
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const lookup = await rv.RunView<{ ID: string; Status: string }>(
-            {
-                EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
-                Fields: ['ID', 'Status'],
-                ResultType: 'simple',
-            },
-            this.ContextCurrentUser,
-        );
-        const status = lookup?.Results?.[0]?.Status;
+        const status = await this.storedOrderStatus();
         if (!status || !IsBooked(status)) return;
 
         result.Success = false;
@@ -312,6 +303,28 @@ export class OrderLineEntityServer extends OrderLineEntity {
                 ValidationErrorType.Failure,
             ),
         );
+    }
+
+    /**
+     * The parent order's status AS STORED, not as the in-memory header holds it.
+     *
+     * Read through `this.ProviderToUse`, so inside the booking transaction it sees the header row the
+     * transaction has already written. The stored status is the one trigger 51003 judges by, which is
+     * why the confirming save itself (stored Draft, in-memory Confirmed) still counts as open.
+     */
+    private async storedOrderStatus(): Promise<string | null> {
+        if (!this.OrderHeaderID) return null;
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const lookup = await rv.RunView<{ ID: string; Status: string }>(
+            {
+                EntityName: ORDER_HEADER_ENTITY,
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
+                Fields: ['ID', 'Status'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        return lookup?.Results?.[0]?.Status ?? null;
     }
 
     /**
@@ -389,12 +402,26 @@ export class OrderLineEntityServer extends OrderLineEntity {
         return ext.Fields.some((f) => f.Dirty && !parentNames.has(f.Name));
     }
 
-    /** Derived from the product, always — plan D6. */
+    /**
+     * Derived from the product while the order is open — plan D6 — and kept once it is booked.
+     *
+     * A BOOKED LINE KEEPS THE COMPANY IT WAS SOLD UNDER (golive #262). Tax obligations are counted
+     * per selling company from confirmed orders, and the invoice renders from this column. Re-deriving
+     * it on every save meant that moving a product to another company and then touching an old
+     * confirmed line moved that sale too, leaving nothing on the order to say who actually made it.
+     * Trigger 51003 refuses the change at the database; skipping it here keeps an ordinary re-save of
+     * a booked line (stamping `JournalEntryID`, a fulfilment write) from tripping that refusal.
+     *
+     * The status is only read when the product's company actually differs from the line's, so the
+     * common save — nothing moved — costs no extra query.
+     */
     private async stampCompanyFromProduct(): Promise<void> {
         if (!this.ProductID) return;
         await LoadOrdersEngine(this.ProviderToUse as never, this.ContextCurrentUser);
         const product = OrdersEngine.Instance.ProductByID(this.ProductID);
-        if (product?.CompanyID) this.CompanyID = product.CompanyID;
+        if (!product?.CompanyID || product.CompanyID === this.CompanyID) return;
+        if (this.IsSaved && this.CompanyID && IsBooked((await this.storedOrderStatus()) ?? '')) return;
+        this.CompanyID = product.CompanyID;
     }
 
     private computeTotals(): void {
