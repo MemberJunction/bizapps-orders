@@ -19,6 +19,8 @@
  *   RV4  cancelled before the first invoice: four instalments withdrawn and NO entry — nothing to credit
  *   RV5  fully delivered and fully billed: no memo and no entry — nothing is owed back
  *   RV6  4 of 10 then the other 6: memos of 360 and 540, the schedule withdrawn only by the second
+ *   RV7  the same two reversals on different dates, with instalment 3 issued between: the second
+ *        memo is 1,620, because the months the first one already mirrored back are not earned twice
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -460,6 +462,44 @@ export const ContractReversalChecks: NamedCheck[] = [
                     (await schedule(ctx, orderID)).map((r) => r.Status).join(','),
                     'Invoiced,Invoiced,Canceled,Canceled',
                     'now the whole order is reversed, the unissued instalments are withdrawn',
+                );
+            }),
+    },
+    {
+        Id: 'contract-reversal.RV7',
+        Name: 'RV7: reversing 4 of 10 in November and the other 6 in February credits 360 then 1,620',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // Andrew's second pass. RV6 runs both reversals on one date, where the first one's
+                // mirrors all fall after the second and nothing is double-counted. Here the first one's
+                // December, January and February mirrors (3 x 360) sit before the second, so counting
+                // the origin's releases alone as earned would credit 540 rather than 1,620.
+                const { orderID, ids, originLineID } = await scenarioOneAtMonthFive(ctx, 10);
+                const window = SCENARIO_1().servicePeriod;
+                const ar = await accountCodeForRole(ctx, 'Accounts Receivable', f.CoA.ID);
+                const memoOf = async (id: string) =>
+                    cents((await valueLines(ctx, id)).filter((l) => l.Code === ar).reduce((s, l) => s + Number(l.Credit ?? 0), 0));
+
+                const four = await reverse(ctx, originLineID, f.Products.DeferredA, { orderDate: MONTH_FIVE, servicePeriod: window, quantity: 4 });
+                Assert(four.Saved, `the first reversal must confirm: ${four.Message}`);
+                AssertEqual(await memoOf(four.Order.ID as string), 360, 'four tenths of the 900');
+
+                Assert((await issue(ctx, ids[2])).Success, 'issue instalment 3 on 1 January');
+                AssertEqual(Number((await lineTotals(ctx, orderID))[0].BilledToDate), 7740, '5,040 plus the 2,700 instalment');
+
+                const six = await reverse(ctx, originLineID, f.Products.DeferredA, { orderDate: '2027-02-15', servicePeriod: window, quantity: 6 });
+                Assert(six.Saved, `the second reversal must confirm: ${six.Message}`);
+                // 7,740 billed, less 7,200 staged through 1 February, plus the 1,080 the first
+                // reversal already took back of it.
+                AssertEqual(await memoOf(six.Order.ID as string), 1620, 'owed 1,620, not 540');
+                AssertEqual(sum(await releases(ctx, six.Order.ID as string)), 2160, 'six tenths of the four releases after 15 February');
+                AssertEqual(Number((await lineTotals(ctx, orderID))[0].BilledToDate), 6120, 'the origin ends billed for what it kept earned');
+                AssertEqual(
+                    (await schedule(ctx, orderID)).map((r) => r.Status).join(','),
+                    'Invoiced,Invoiced,Invoiced,Canceled',
+                    'the whole order is reversed, so the one unissued instalment is withdrawn',
                 );
             }),
     },

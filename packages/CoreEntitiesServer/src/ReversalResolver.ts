@@ -44,6 +44,24 @@ export interface ReversalContext {
      * order.
      */
     OriginScheduled: boolean;
+    /**
+     * The earlier reversals counted in `AlreadyReversed`, with what the credit memo needs to rebuild
+     * the releases each one mirrored: its net (a magnitude), its window and its order date.
+     */
+    PriorReversals: PriorReversal[];
+}
+
+/** An earlier, counted reversal of the same origin line. */
+export interface PriorReversal {
+    ID: string;
+    Net: number;
+    /**
+     * `YYYY-MM-DD` — the reversal's order date, which its mirrored releases start after. `null` when
+     * its header could not be read; the credit memo refuses rather than guess (the count still holds).
+     */
+    OrderDate: string | null;
+    ServicePeriodStart: Date | null;
+    ServicePeriodEnd: Date | null;
 }
 
 /**
@@ -113,10 +131,11 @@ export async function LoadReversalContext(
     // and fetching it separately would be a second round trip for one string.
     const statusByOrder = new Map<string, string>();
     const numberByOrder = new Map<string, string | null>();
+    const dateByOrder = new Map<string, string | null>();
     {
         const wanted = [...new Set([origin.OrderHeaderID, ...priors.map((p) => p.OrderHeaderID)])];
         const ids = wanted.map((id) => `'${id}'`).join(',');
-        const headers = await rv.RunView<{ ID: string; Status: string; OrderNumber: string | null }>(
+        const headers = await rv.RunView<{ ID: string; Status: string; OrderNumber: string | null; OrderDate: Date | string | null }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
                 ExtraFilter: `ID IN (${ids})`,
@@ -127,6 +146,7 @@ export async function LoadReversalContext(
         for (const h of headers?.Results ?? []) {
             statusByOrder.set(String(h.ID).toLowerCase(), String(h.Status ?? ''));
             numberByOrder.set(String(h.ID).toLowerCase(), h.OrderNumber ?? null);
+            dateByOrder.set(String(h.ID).toLowerCase(), ToISODate(h.OrderDate));
         }
     }
 
@@ -149,6 +169,7 @@ export async function LoadReversalContext(
 
     const excluded = new Set(excludeLineIDs.map((id) => id.toLowerCase()));
     let alreadyReversed = 0;
+    const priorReversals: PriorReversal[] = [];
     for (const prior of priors) {
         if (excluded.has(String(prior.ID).toLowerCase())) continue;
         // A Draft return has not taken anything yet and a Voided one has given it back. Anything
@@ -159,6 +180,13 @@ export async function LoadReversalContext(
         // `ABS` because reversal quantities are stored negative, and a signed sum here would let a
         // reversal and a re-sale cancel out into a fresh allowance.
         alreadyReversed += Math.abs(Number(prior.Quantity ?? 0));
+        priorReversals.push({
+            ID: String(prior.ID),
+            Net: Math.abs(Number(prior.LineTotalNet ?? 0)),
+            OrderDate: dateByOrder.get(String(prior.OrderHeaderID).toLowerCase()) ?? null,
+            ServicePeriodStart: prior.ServicePeriodStart ? new Date(prior.ServicePeriodStart) : null,
+            ServicePeriodEnd: prior.ServicePeriodEnd ? new Date(prior.ServicePeriodEnd) : null,
+        });
     }
 
     return {
@@ -188,6 +216,7 @@ export async function LoadReversalContext(
         },
         AlreadyReversed: Math.round(alreadyReversed * 1e4) / 1e4,
         ScheduleRows: scheduleRows,
+        PriorReversals: priorReversals,
         OriginScheduled: scheduleRows.some(
             (r) => r.CompanyID.toLowerCase() === String(origin.CompanyID ?? '').toLowerCase(),
         ),
