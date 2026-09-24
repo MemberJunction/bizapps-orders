@@ -41,7 +41,7 @@
  *
  * CONNECTS TO:
  *   CODE: RecordProgressOperation · OrderJournalEntryFactory.BuildProgressDraft · RevenueRecognition.ComputeCatchUp
- *   DB:   V202609230600__v5.13.0__OrderLineProgressMeasurement.sql
+ *   DB:   V202609231700__v5.13.0__OrderLineProgressMeasurement.sql
  */
 import { BaseRemotableOperation, UserInfo, UserRoleInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
