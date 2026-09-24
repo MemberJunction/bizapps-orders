@@ -13,10 +13,13 @@
  * and the order's schedule must tie to its lines, because an instalment on a schedule that is a
  * cent short is a document for the wrong amount.
  *
- * THE LEDGER HALF IS A SEAM. `EmitInstalmentReclassEntry` (`InstalmentReclass.ts`) is where the
- * `Dr AR / Cr Unbilled` entry will be booked once AIDP-25 (#240) ships the Unbilled role; today it
- * returns null and `JournalEntryID` stays empty. The call sits inside this transaction so that when
- * it does book, the number, the stamp and the entry commit or roll back together.
+ * THE LEDGER HALF IS WHERE THE RECEIVABLE ARRIVES (D92). A company billed by instalment raises no
+ * billing entry at confirm, so `EmitInstalmentInvoiceEntry` (`InstalmentInvoiceEntry.ts`) raises
+ * this instalment's slice — Dr AR for net, tax and charges; Cr Unbilled Receivable then Deferred
+ * Revenue per rule 1; Cr each tax and charge account. The DISCOUNT is not here: it is booked once,
+ * with the revenue it reduces. All of it inside this transaction, so the number, the stamp and the entry
+ * commit or roll back together. It reads nothing itself: the order's lines and the company's
+ * sibling rows are read here and passed in.
  */
 import {
     BaseRemotableOperation,
@@ -32,10 +35,14 @@ import {
     type OrdersIssueInstalmentInvoiceInput,
     type OrdersIssueInstalmentInvoiceOutput,
     ToISODate,
+    type mjBizAppsOrdersOrderLineEntity,
+    type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
 } from '@mj-biz-apps/orders-entities';
 
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
-import { EmitInstalmentReclassEntry } from './InstalmentReclass.js';
+import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { EmitInstalmentInvoiceEntry, type InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
+import { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 import { InstalmentDocumentNumber } from './InvoiceBehavior.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
@@ -43,6 +50,10 @@ import { RequireUUID } from './sql-guards.js';
 
 /** Order statuses that carry a booked receivable. */
 const BOOKED_STATUSES = new Set(['Confirmed', 'Posted', 'Fulfilled']);
+
+/** Entity names the billing-entry factory needs; not in entity-names.ts, matching OrderEntityServer. */
+const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
+const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 
 interface ScheduleRow extends Record<string, unknown> {
     ID: string;
@@ -52,20 +63,41 @@ interface ScheduleRow extends Record<string, unknown> {
     InstallmentNumber: number;
     DueDate: string;
     Amount: number;
-    Status: string;
+    /** The entity's own domain, not a bare string — so a mistyped status cannot compile. */
+    Status: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity['Status'];
+    AmountPaid: number;
     DocumentNumber: string | null;
     InvoicedAt: string | null;
     JournalEntryID: string | null;
 }
 
-@RegisterClass(BaseRemotableOperation, 'Orders.IssueInstalmentInvoice')
-export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoiceOperationBase {
-    protected async InternalExecute(
-        input: OrdersIssueInstalmentInvoiceInput,
-        provider: IMetadataProvider,
-        user: UserInfo,
-    ): Promise<OrdersIssueInstalmentInvoiceOutput> {
-        const scheduleID = RequireUUID(input?.OrderHeaderPaymentScheduleID, 'OrderHeaderPaymentScheduleID');
+/** A refusal in the operation's own shape, usable outside the class. */
+const refuse = (
+    message: string,
+    echo: Partial<OrdersIssueInstalmentInvoiceOutput> = {},
+): OrdersIssueInstalmentInvoiceOutput => ({ Success: false, AlreadyInvoiced: false, Message: message, ...echo });
+
+/**
+ * Issue one instalment: freeze its document number, stamp it `Invoiced`, book the billing entry
+ * and advance `BilledToDate` — ASSUMING AN OPEN TRANSACTION, which the caller owns.
+ *
+ * TWO CALLERS, ONE ACT (D92). `Orders.IssueInstalmentInvoice` opens a transaction and calls this,
+ * which is a person billing an instalment when it comes due. Order confirm calls it, inside the
+ * confirm transaction, for every live row already due on the order date — because under D92 a
+ * scheduled company books nothing at confirm EXCEPT what is billable at that moment, and "billable"
+ * means issued. Both routes must produce the same document number, the same stamps and the same
+ * entry, so there is one function and not two that look alike.
+ *
+ * Returns a refusal rather than throwing for business reasons the caller can act on (already
+ * invoiced, wrong status, schedule out of tie, number already taken); THROWS when the ledger or a
+ * save fails, so the caller's transaction rolls back and nothing is half-done.
+ */
+export async function IssueInstalment(
+    scheduleID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<OrdersIssueInstalmentInvoiceOutput> {
+    {
         const rv = RunView.FromMetadataProvider(provider);
 
         const rowResult = await rv.RunView<ScheduleRow>(
@@ -73,14 +105,14 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             user,
         );
         const row = rowResult.Results?.[0];
-        if (!row) return this.refuse(`No instalment with ID ${scheduleID}.`);
+        if (!row) return refuse(`No instalment with ID ${scheduleID}.`);
 
         const orderResult = await rv.RunView<{ ID: string; OrderNumber: string; Status: string }>(
             { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${RequireUUID(row.OrderHeaderID, 'OrderHeaderID')}'`, Fields: ['ID', 'OrderNumber', 'Status'], ResultType: 'simple' },
             user,
         );
         const order = orderResult.Results?.[0];
-        if (!order) return this.refuse(`Instalment ${scheduleID} belongs to an order that could not be read.`);
+        if (!order) return refuse(`Instalment ${scheduleID} belongs to an order that could not be read.`);
 
         const echo = {
             OrderHeaderPaymentScheduleID: row.ID,
@@ -104,10 +136,10 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             };
         }
         if (row.Status !== 'Scheduled') {
-            return this.refuse(`Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} is ${row.Status} and cannot be invoiced.`, echo);
+            return refuse(`Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} is ${row.Status} and cannot be invoiced.`, echo);
         }
         if (!BOOKED_STATUSES.has(order.Status)) {
-            return this.refuse(`Order ${order.OrderNumber} is ${order.Status}; only a Confirmed order has a receivable to invoice.`, echo);
+            return refuse(`Order ${order.OrderNumber} is ${order.Status}; only a Confirmed order has a receivable to invoice.`, echo);
         }
 
         // The schedule must tie to the lines — the same check the confirm ran, because a Scheduled
@@ -123,33 +155,87 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             ),
         ]);
         if (!lines.Success || !siblings.Success) {
-            return this.refuse(`Could not read order ${order.OrderNumber} to check its schedule: ${lines.ErrorMessage ?? siblings.ErrorMessage ?? 'unknown error'}`, echo);
+            return refuse(`Could not read order ${order.OrderNumber} to check its schedule: ${lines.ErrorMessage ?? siblings.ErrorMessage ?? 'unknown error'}`, echo);
         }
         const shortfalls = ScheduleShortfalls(siblings.Results ?? [], lines.Results ?? []);
         if (shortfalls.length) {
             const names = new Map((siblings.Results ?? []).map((s) => [String(s.CompanyID).toLowerCase(), s.Company ?? s.CompanyID]));
-            return this.refuse(ExplainShortfalls(order.OrderNumber, shortfalls, (id) => String(names.get(id) ?? id)), echo);
+            return refuse(ExplainShortfalls(order.OrderNumber, shortfalls, (id) => String(names.get(id) ?? id)), echo);
         }
 
         // Position is stable: companies in ID order (as the document builder sorts them), the row's
-        // own InstallmentNumber, and how many live instalments its company has.
+        // own InstallmentNumber, and how many instalments its company has.
         const companyIDs = [...new Set((lines.Results ?? []).map((l) => String(l.CompanyID).toLowerCase()))].sort();
         const companyIndex = Math.max(0, companyIDs.indexOf(String(row.CompanyID).toLowerCase()));
-        const live = (siblings.Results ?? []).filter(
-            (s) => s.Status !== 'Canceled' && String(s.CompanyID).toLowerCase() === String(row.CompanyID).toLowerCase(),
-        );
+        const mine = (s: ScheduleRow): boolean =>
+            String(s.CompanyID).toLowerCase() === String(row.CompanyID).toLowerCase();
+
+        // THE COUNT INCLUDES CANCELLED ROWS, DELIBERATELY (golive #242, Robert). The suffix exists
+        // to disambiguate, and a cancelled instalment does not give its number back: archiving an
+        // invoice in Bill.com keeps the number, and re-presenting it 422s as a duplicate. Counting
+        // only live rows meant that cancelling a company's single instalment and adding a
+        // replacement produced the bare ORD-1234 a second time — the same number on two documents,
+        // one of which the customer may already hold.
+        const companyRows = (siblings.Results ?? []).filter(mine);
+        // The billing slice, by contrast, is taken against LIVE rows only: a cancelled instalment
+        // bills nothing and must not take a share of any line.
+        const live = companyRows.filter((s) => s.Status !== 'Canceled');
         const documentNumber = InstalmentDocumentNumber(
             order.OrderNumber,
             companyIndex,
             Math.max(1, companyIDs.length),
             Number(row.InstallmentNumber),
-            live.length,
+            companyRows.length,
         );
+
+        // AND REFUSE IF THAT NUMBER IS ALREADY ON THE ORDER. The count rule above prevents the
+        // collision this ticket found; this catches every other route to one — a hand-stamped row,
+        // an imported schedule, a renumbering — before the number is frozen and sent, rather than
+        // after Bill.com rejects it.
+        const clash = (siblings.Results ?? []).find(
+            (s) => s.DocumentNumber === documentNumber && String(s.ID).toLowerCase() !== String(row.ID).toLowerCase(),
+        );
+        if (clash) {
+            return refuse(
+                `Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} would be numbered ` +
+                    `${documentNumber}, which instalment ${clash.InstallmentNumber} of the same order already ` +
+                    `holds. Two documents cannot share a number — the customer's AP system and Bill.com both ` +
+                    `match on it. Renumber the instalments so each is distinct, then issue again.`,
+                echo,
+            );
+        }
         const invoicedAt = new Date();
 
-        const dbProvider = provider as unknown as DatabaseProviderBase;
-        await dbProvider.BeginTransaction();
+        // THE BILLING ENTRY'S FACTS, READ HERE (D92). The emitter queries nothing; every number it
+        // posts is decided by the factory's own arithmetic, so it is built here and handed over.
+        // Read before the transaction opens: these are pure reads and a failure should refuse the
+        // invoice rather than roll one back.
+        const lineEntities = await rv.RunView<mjBizAppsOrdersOrderLineEntity>(
+            { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID = '${RequireUUID(order.ID, 'OrderHeaderID')}'`, OrderBy: 'LineNumber', ResultType: 'entity_object' },
+            user,
+        );
+        if (!lineEntities.Success) {
+            return refuse(`Could not read order ${order.OrderNumber}'s lines to bill this instalment: ${lineEntities.ErrorMessage ?? 'unknown error'}`, echo);
+        }
+        const factory = new OrderJournalEntryFactory(
+            await BuildGLAccountResolver(provider, user),
+            EntityIDFor(ORDER_LINE_ENTITY),
+            EntityIDFor(SUBSCRIPTION_TERM_ENTITY),
+            EntityIDFor(CHARGE_TYPE_ENTITY),
+            provider,
+            user,
+        );
+        let instalmentLines: InstalmentLineFacts[];
         try {
+            instalmentLines = await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], row.CompanyID, invoicedAt);
+        } catch (err) {
+            return refuse(err instanceof Error ? err.message : String(err), echo);
+        }
+        if (!instalmentLines.length) {
+            return refuse(`Order ${order.OrderNumber} has no lines for the company this instalment bills, so there is nothing to invoice.`, echo);
+        }
+
+        {
             const entity = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, user);
             if (!(await entity.Load(row.ID))) throw new Error(`Instalment ${row.ID} could not be loaded for update.`);
             entity.DocumentNumber = documentNumber;
@@ -160,7 +246,7 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
                 throw new Error(entity.LatestResult?.CompleteMessage ?? 'The instalment could not be updated.');
             }
 
-            const journalEntryID = await EmitInstalmentReclassEntry(
+            const { JournalEntryID: journalEntryID, BilledByLine } = await EmitInstalmentInvoiceEntry(
                 {
                     OrderHeaderPaymentScheduleID: row.ID,
                     OrderHeaderID: order.ID,
@@ -170,6 +256,19 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
                     DocumentNumber: documentNumber,
                     Amount: Number(row.Amount),
                     InvoicedAt: invoicedAt,
+                    AmountPaid: Number(row.AmountPaid ?? 0),
+                    // `live` is this company's non-Canceled rows; the billing slice is taken
+                    // against them in InstallmentNumber order so every instalment's pieces of a
+                    // line sum to that line's full amount.
+                    Siblings: [...live]
+                        .sort((a, b) => Number(a.InstallmentNumber) - Number(b.InstallmentNumber))
+                        .map((r) => ({
+                            ID: r.ID,
+                            InstallmentNumber: Number(r.InstallmentNumber),
+                            Amount: Number(r.Amount),
+                            Status: r.Status,
+                        })),
+                    Lines: instalmentLines,
                 },
                 provider,
                 user,
@@ -177,11 +276,31 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             if (journalEntryID) {
                 entity.JournalEntryID = journalEntryID;
                 if (!(await entity.Save())) {
-                    throw new Error(entity.LatestResult?.CompleteMessage ?? 'The reclass entry could not be recorded on the instalment.');
+                    throw new Error(entity.LatestResult?.CompleteMessage ?? 'The billing entry could not be recorded on the instalment.');
                 }
             }
 
-            await dbProvider.CommitTransaction();
+            // ADVANCE BilledToDate IN THIS TRANSACTION (D92). The totals are the ledger's own
+            // summary of itself, so they are written by the same act that books the entry and roll
+            // back with it. A separate writer — a trigger, a later sweep — is how a total and the
+            // journal lines it summarises drift apart, and nothing downstream would report it.
+            for (const [orderLineID, billed] of BilledByLine) {
+                // Signed: a reversal line's piece is negative and must still be applied, so the
+                // guard is "did this bill anything", not "is it positive".
+                if (billed === 0) continue;
+                const lineEntity = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+                if (!(await lineEntity.Load(orderLineID))) {
+                    throw new Error(`Order line ${orderLineID} could not be loaded to advance its BilledToDate.`);
+                }
+                lineEntity.BilledToDate = Number(lineEntity.BilledToDate ?? 0) + billed;
+                if (!(await lineEntity.Save())) {
+                    throw new Error(
+                        lineEntity.LatestResult?.CompleteMessage ??
+                            `BilledToDate could not be advanced on order line ${orderLineID}.`,
+                    );
+                }
+            }
+
             return {
                 Success: true,
                 AlreadyInvoiced: false,
@@ -191,6 +310,29 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
                 JournalEntryID: journalEntryID,
                 ...echo,
             };
+        }
+    }
+}
+
+@RegisterClass(BaseRemotableOperation, 'Orders.IssueInstalmentInvoice')
+export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoiceOperationBase {
+    /**
+     * Owns the transaction; {@link IssueInstalment} does the work. A refusal rolls back too — a
+     * business refusal leaves nothing written, so committing one would persist a half-issued row.
+     */
+    protected async InternalExecute(
+        input: OrdersIssueInstalmentInvoiceInput,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<OrdersIssueInstalmentInvoiceOutput> {
+        const scheduleID = RequireUUID(input?.OrderHeaderPaymentScheduleID, 'OrderHeaderPaymentScheduleID');
+        const dbProvider = provider as unknown as DatabaseProviderBase;
+        await dbProvider.BeginTransaction();
+        try {
+            const out = await IssueInstalment(scheduleID, provider, user);
+            if (out.Success) await dbProvider.CommitTransaction();
+            else await dbProvider.RollbackTransaction();
+            return out;
         } catch (err) {
             LogError(`Orders.IssueInstalmentInvoice failed for ${scheduleID}: ${err}`);
             try {
@@ -198,12 +340,8 @@ export class IssueInstalmentInvoiceOperation extends OrdersIssueInstalmentInvoic
             } catch (rollbackErr) {
                 LogError(`Rollback failed after IssueInstalmentInvoice error: ${rollbackErr}`);
             }
-            return this.refuse(err instanceof Error ? err.message : String(err), echo);
+            return refuse(err instanceof Error ? err.message : String(err));
         }
-    }
-
-    private refuse(message: string, echo: Partial<OrdersIssueInstalmentInvoiceOutput> = {}): OrdersIssueInstalmentInvoiceOutput {
-        return { Success: false, AlreadyInvoiced: false, Message: message, ...echo };
     }
 }
 
