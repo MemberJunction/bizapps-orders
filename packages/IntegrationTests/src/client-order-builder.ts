@@ -14,6 +14,7 @@ import {
     mjBizAppsOrdersPaymentHeaderEntity,
     mjBizAppsOrdersPaymentLineEntity,
 } from '@mj-biz-apps/orders-entities';
+import { AsDateValue, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 import {
     EVENT_ORDER_LINE_ENTITY,
     ORDER_HEADER_ENTITY,
@@ -126,7 +127,10 @@ export async function CreateClientPayment(
     payment.ReceivingCompanyID = spec.ReceivingCompanyID;
     payment.PaymentTypeID = spec.PaymentTypeID;
     payment.Amount = spec.Amount;
-    payment.PaymentDate = spec.PaymentDate ?? new Date();
+    // The harness must not carry the defect under test (#209): a fixture dated from the clock
+    // is dated tomorrow for the whole American evening, so an assertion about which day a row
+    // landed on would pass or fail by the hour the suite happened to run.
+    payment.PaymentDate = AsDateValue(spec.PaymentDate) ?? TodayAsDateValue();
     payment.Status = 'Captured';
     if (spec.Notes) payment.Notes = spec.Notes;
     if (spec.BillToOrganizationID) payment.BillToOrganizationID = spec.BillToOrganizationID;
@@ -183,7 +187,7 @@ export function TenderByCode(code: 'Cash' | 'Check' | 'Wire'): ClientPaymentType
 
 function applyHeader(order: OrderHeaderEntity, spec: ClientOrderSpec): void {
     order.OrderType = 'Sale';
-    order.OrderDate = spec.OrderDate ?? new Date();
+    order.OrderDate = AsDateValue(spec.OrderDate) ?? TodayAsDateValue();
     order.Status = 'Draft';
     order.CompanyID = spec.CompanyID;
     order.Notes = spec.Notes;

@@ -523,3 +523,7 @@ export type {
 // (see the repo CLAUDE.md "SQL Safety" rule). Exported so the Server package's edge can use
 // the same audited helpers rather than hand-rolling its own.
 export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';
+
+// The calendar-day rule for records that carry a `date` column (#209). Exported for the same
+// reason as the guards above: the edge should reach for the audited helper, not re-derive it.
+export { CalendarDayOrToday } from './calendar-day.js';

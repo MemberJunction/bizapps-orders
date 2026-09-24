@@ -20,6 +20,7 @@ import { OrderLineExtensionCompanion } from './OrderLineExtensionCompanion';
 import { ORDER_LINE_MONEY_FIELDS } from './booked-money';
 import { anyFieldIsDirty } from './field-dirty';
 import { loadApplicabilityContext } from './pricing/applicability';
+import { AsDateValue, TodayAsDateValue } from './date-cell';
 import {
     isEnginePrice,
     isNamedListPick,
@@ -89,7 +90,9 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
                 ProductCategoryID: product?.ProductCategoryID ?? null,
                 CompanyID: product?.CompanyID ?? header?.CompanyID ?? '',
                 Quantity: Number(this.Quantity ?? 0),
-                AsOf: header?.OrderDate ? new Date(header.OrderDate) : new Date(),
+                // A calendar day: price applicability is bounded by `EffectiveFrom`/`EffectiveTo`,
+                // both `date` columns, and an instant answers the UTC day (#209).
+                AsOf: AsDateValue(header?.OrderDate) ?? TodayAsDateValue(),
                 OrganizationID: header?.BillToOrganizationID ?? null,
                 PersonID: header?.BillToPersonID ?? null,
                 ApplicabilityContext: await loadApplicabilityContext(

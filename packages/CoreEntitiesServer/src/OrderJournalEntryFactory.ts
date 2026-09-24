@@ -84,6 +84,7 @@ import {
 import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
 import { MergeLineDimensions } from './LineDimensionMerge.js';
+import { CalendarDayOrToday } from './calendar-day.js';
 import type { InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
 
 /** Mirrors accounting's `JournalEntryLineDraft`. */
@@ -390,7 +391,7 @@ export class OrderJournalEntryFactory {
         const giftCardTypeIDs = await this.loadGiftCardTypeIDs();
         const revRecTypes = await this.loadRevRecTypes();
         const dimensions = await this.loadLineDimensions(lines.map((l) => l.ID));
-        const effectiveDate = this.effectiveDateOf(order);
+        const effectiveDate = await this.effectiveDateOf(order);
         const asOf = new Date(effectiveDate);
         const scheduledCompanies = ScheduledCompanyIDs(scheduleRows ?? []);
 
@@ -874,9 +875,14 @@ export class OrderJournalEntryFactory {
         }
     }
 
-    /** `OrderDate` is the accounting date (backdating is allowed and unguarded — D25). */
-    private effectiveDateOf(order: mjBizAppsOrdersOrderHeaderEntity): string {
-        return isoDate(order.OrderDate ? new Date(order.OrderDate) : new Date());
+    /**
+     * `OrderDate` is the accounting date (backdating is allowed and unguarded — D25).
+     *
+     * An order with no date falls back to today's BUSINESS day rather than the instant (#209):
+     * `isoDate` reads UTC parts, so a confirm run at 9 PM Eastern booked its entry into tomorrow.
+     */
+    private async effectiveDateOf(order: mjBizAppsOrdersOrderHeaderEntity): Promise<string> {
+        return isoDate(await CalendarDayOrToday(order.OrderDate, this._provider, this._contextUser));
     }
 
     private async loadProducts(productIDs: string[]): Promise<Map<string, ProductRow>> {
