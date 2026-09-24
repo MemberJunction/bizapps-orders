@@ -30,6 +30,10 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
  * there. Nothing is edited. The operation checks the grant again; the toggle only hides the action
  * from people who cannot use it.
  *
+ * A LINE AT 100% IS STILL SUPERSEDABLE, so the same users get "Show 100%": the worklist omits
+ * completed lines by default, and a mistyped 100% would otherwise leave the only screen that can
+ * correct it. The tiles count open lines either way.
+ *
  * A DATE AFTER THIS MONTH WARNS. Forward dating is allowed, but a mistyped year is the mistake that
  * made supersede necessary, so the warning rides the preview and the confirm like the closed-period
  * one does.
@@ -46,7 +50,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
     imports: [CommonModule, FormsModule, MJButtonDirective, MJAlertComponent, MJOStatTileComponent, MJOWorklistTableComponent],
     template: `
         <div class="mj-stat-grid mjo-pg__tiles">
-            <mjo-stat-tile Label="Open project lines" Icon="fa-solid fa-diagram-project" [Value]="String(Rows.length)" Detail="Percentage of completion, not yet at 100%" />
+            <mjo-stat-tile Label="Open project lines" Icon="fa-solid fa-diagram-project" [Value]="String(OpenRows.length)" Detail="Percentage of completion, not yet at 100%" />
             <mjo-stat-tile Label="Contract value" Icon="fa-solid fa-file-signature" [Value]="money(TotalAmount, true)" Detail="Across the open lines" />
             <mjo-stat-tile Label="Recognised to date" Icon="fa-solid fa-chart-line" Tone="alert" [Value]="money(TotalRecognized, true)" [Detail]="RemainingDetail" />
         </div>
@@ -75,6 +79,11 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                 <span class="small muted">Complete to date (%)</span>
                 <input class="mj-input is-num" type="number" min="0" max="100" step="0.01" [(ngModel)]="PercentInput" name="percent" [disabled]="!Selected" (ngModelChange)="Draft = null" aria-label="Percent complete">
             </label>
+            @if (CanSupersede) {
+                <button type="button" mjButton [variant]="ShowComplete ? 'primary' : 'outline'" [attr.aria-pressed]="ShowComplete" [disabled]="Busy" (click)="ToggleShowComplete()">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i> Show 100%
+                </button>
+            }
             @if (CanSupersede && Selected?.LastMeasurementID) {
                 <button type="button" mjButton [variant]="Supersede ? 'primary' : 'outline'" [attr.aria-pressed]="Supersede" [disabled]="Busy" (click)="ToggleSupersede()">
                     <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Supersede last
@@ -101,7 +110,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                 <div class="mjo-pg__closed" role="status">
                     <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
                     Superseding the {{ FormatDate(row.LastMeasurementDate, { Short: true }) }} observation at {{ percent(row.LastPercentComplete) }}.
-                    Its recognition is reversed on its own date; nothing is edited. The new date must be after the observation before it.
+                    Its recognition is reversed on its own date; nothing is edited. Keep its date to correct the percent, or choose any date after the observation before it.
                 </div>
             }
             @if (Draft?.FutureDateWarning; as future) {
@@ -166,6 +175,8 @@ export class MJOProgressPageComponent implements OnInit {
     public CanSupersede = false;
     /** When set, the next preview or post replaces the selected line's last observation. */
     public Supersede = false;
+    /** When set, lines already attested at 100% are listed too — only offered to users who can supersede. */
+    public ShowComplete = false;
     public Rows: ProgressWorklistRow[] = [];
     public Selected: ProgressWorklistRow | null = null;
     public MeasurementDate = new Date().toISOString().slice(0, 10);
@@ -191,12 +202,17 @@ export class MJOProgressPageComponent implements OnInit {
 
     /* ── Tiles ──────────────────────────────────────────────────────────── */
 
+    /** The lines still below 100% — what the tiles describe, whether or not completed lines are shown. */
+    public get OpenRows(): ProgressWorklistRow[] {
+        return this.Rows.filter((r) => r.LastPercentComplete < 1);
+    }
+
     public get TotalAmount(): number {
-        return this.Rows.reduce((s, r) => s + r.LineAmount, 0);
+        return this.OpenRows.reduce((s, r) => s + r.LineAmount, 0);
     }
 
     public get TotalRecognized(): number {
-        return this.Rows.reduce((s, r) => s + r.RecognizedToDate, 0);
+        return this.OpenRows.reduce((s, r) => s + r.RecognizedToDate, 0);
     }
 
     public get RemainingDetail(): string {
@@ -216,6 +232,15 @@ export class MJOProgressPageComponent implements OnInit {
         this.Supersede = false;
         this.Draft = null;
         this.Notice = null;
+    }
+
+    public async ToggleShowComplete(): Promise<void> {
+        this.ShowComplete = !this.ShowComplete;
+        this.Selected = null;
+        this.Supersede = false;
+        this.Draft = null;
+        await this.load();
+        this.cdr.detectChanges();
     }
 
     public ToggleSupersede(): void {
@@ -297,7 +322,7 @@ export class MJOProgressPageComponent implements OnInit {
     /* ── Loading ────────────────────────────────────────────────────────── */
 
     private async load(): Promise<void> {
-        const result = await new OrdersGetProgressWorklistOperation().Execute({});
+        const result = await new OrdersGetProgressWorklistOperation().Execute({ IncludeComplete: this.ShowComplete });
         const output = result.Output;
         if (!result.Success || !output?.Success) {
             // SAY SO. An empty worklist and a failed one look identical, and "nothing to attest" is

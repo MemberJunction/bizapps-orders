@@ -41,6 +41,11 @@
  *   PM21 only the latest observation can be superseded, so nothing is reversed twice — and the
  *        filtered unique index refuses a second row naming the same observation
  *   PM22 the worklist's "last attested" is the replacement, not the superseded row
+ *   PM23 a mistyped 100% leaves the default worklist but not the complete one, and is superseded ON
+ *        ITS OWN DATE; a second ordinary row on that date is still refused by the filtered index
+ *   PM24 an invoice posted between the mistake and the supersede: revenue nets to zero on the
+ *        mistaken date, the contra legs need not, and the line's end balances match a control line
+ *        that was never mistyped
  *
  * Every attestation here is made as an Engagement Lead-only user, never the System owner, so each
  * check also proves the role is enough on its own.
@@ -961,6 +966,104 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 AssertEqual(row!.LastMeasurementID?.toLowerCase(), fixed.OrderLineProgressMeasurementID?.toLowerCase(), 'last is the replacement');
                 AssertEqual(row!.LastMeasurementDate, '2026-07-31', 'with its date');
                 AssertEqual(row!.LastPercentComplete, 0.4, 'and its percent');
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM23',
+        Name: 'PM23: a mistyped 100% is found on the complete worklist and superseded on its own date; the filtered index still guards ordinary rows',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { lineID } = await bookedProjectLine(ctx);
+                Assert((await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4 })).Success, 'July at 40%');
+                const typo = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 1 });
+                Assert(typo.Success, typo.Message ?? '');
+
+                // The screen's default list omits a line at 100%; the complete list is where it is found.
+                const onDefault = (await worklist(ctx)).some((r) => r.OrderLineID.toLowerCase() === lineID.toLowerCase());
+                AssertEqual(onDefault, false, 'a line attested at 100% leaves the default worklist');
+                const onComplete = (await worklistOutput(ctx, supervisor(ctx))).Rows.find((r) => r.OrderLineID.toLowerCase() === lineID.toLowerCase());
+                AssertEqual(onComplete?.LastMeasurementID?.toLowerCase(), typo.OrderLineProgressMeasurementID?.toLowerCase(), 'but is on the complete one, naming the row to supersede');
+
+                // Same date, right percent: a wrong percent is corrected on the day it was attested.
+                const fixed = await record(
+                    ctx,
+                    { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.55, SupersedesMeasurementID: typo.OrderLineProgressMeasurementID },
+                    supervisor(ctx),
+                );
+                Assert(fixed.Success, `a replacement may carry the replaced date: ${fixed.Message}`);
+                AssertEqual(fixed.ReversalAmount, -600.01, "the 100%'s own delta, negated");
+                AssertEqual(Number((await lineTotal(ctx, lineID)).RecognizedToDate), 550.01, 'the line stands at 55%');
+                const onAugust = (await recognitionEntries(ctx, lineID)).filter((e) => e.EffectiveDate === '2026-08-31').map((e) => cents(Number(e.Signed)));
+                AssertEqual(cents(onAugust.reduce((sum, a) => sum + a, 0)), 150.01, 'August carries +600.01, −600.01 and +150.01 — net, the 15 points it really moved');
+                const back = (await worklist(ctx)).find((r) => r.OrderLineID.toLowerCase() === lineID.toLowerCase());
+                AssertEqual(back?.LastPercentComplete, 0.55, 'and the line is back on the default worklist at 55%');
+
+                // An ordinary row on that date still collides with the superseded one: the index is
+                // filtered to rows that replace nothing, and the superseded row is one of them.
+                let refused = '';
+                try {
+                    await TxQuery(
+                        ctx,
+                        `INSERT INTO ${ORDERS_SCHEMA}.OrderLineProgressMeasurement (OrderLineID, MeasurementDate, PercentComplete, MethodCode, Status)
+                         VALUES ('${lineID}', '2026-08-31', 0.6, 'ManualAttestation', 'Draft')`,
+                    );
+                } catch (e) {
+                    refused = String(e);
+                }
+                Assert(/UQ_OLPM_Period|duplicate key/i.test(refused), `a second ordinary row on a used date must be refused by the DB: ${refused || 'it was allowed'}`);
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM24',
+        Name: 'PM24: an invoice between the mistake and the supersede — revenue nets to zero on the mistaken date, and end balances match a line never mistyped',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Two identical quarterly projects. The control is attested correctly; the other is
+                // attested with the year mistyped, invoiced, then superseded.
+                const project = async () => {
+                    const { orderID, ids, saved, message } = await scheduledOrder(ctx, quarterly(0), { gross: 100_000, productID: Fx().Products.PocA });
+                    Assert(saved, `the scheduled project must confirm: ${message}`);
+                    const lineID = (await TxQuery<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`))[0].ID;
+                    return { lineID, ids, entries: [await invoiceStep(ctx, ids[0])] };
+                };
+                const attest = async (p: { lineID: string; entries: string[] }, date: string, percent: number, user?: UserInfo, supersedes?: string | null) => {
+                    const out = await record(ctx, { OrderLineID: p.lineID, MeasurementDate: date, PercentComplete: percent, SupersedesMeasurementID: supersedes ?? null }, user);
+                    Assert(out.Success, `${date} @ ${percent}: ${out.Message}`);
+                    for (const id of [out.ReversalJournalEntryID, out.JournalEntryID]) if (id) p.entries.push(id);
+                    return out;
+                };
+                const balances = async (entries: string[]) => {
+                    const legs = (await Promise.all(entries.map((id) => entryLegs(ctx, id)))).flat();
+                    return { Sales: netOn(legs, SALES), Deferred: netOn(legs, DEFERRED), Unbilled: netOn(legs, UNBILLED), AR: netOn(legs, AR) };
+                };
+
+                const control = await project();
+                await attest(control, '2026-07-31', 0.4);
+                control.entries.push(await invoiceStep(ctx, control.ids[1]));
+                await attest(control, '2026-11-30', 0.45);
+
+                const mistyped = await project();
+                await attest(mistyped, '2026-07-31', 0.4);
+                const typo = await attest(mistyped, '2027-11-30', 0.45);
+                // Billing moves between the mistake and its correction: 25,000 → 50,000.
+                mistyped.entries.push(await invoiceStep(ctx, mistyped.ids[1]));
+                const fixed = await attest(mistyped, '2026-11-30', 0.45, supervisor(ctx), typo.OrderLineProgressMeasurementID);
+
+                // Revenue on the mistaken date nets to zero; the contra legs do not have to, because
+                // the reversal is split from billing as it stands at the supersede.
+                const typoLegs = [...(await entryLegs(ctx, typo.JournalEntryID!)), ...(await entryLegs(ctx, fixed.ReversalJournalEntryID!))];
+                AssertEqual(netOn(typoLegs, SALES), 0, 'Sales nets to zero on the mistaken date');
+                AssertEqual(netOn(typoLegs, UNBILLED), 5_000, 'the mistake opened Unbilled (billed 25,000, earned 45,000)');
+                AssertEqual(netOn(typoLegs, DEFERRED), -5_000, 'and the reversal, after the second invoice, comes back through Deferred');
+
+                // WHERE THE LINE ENDS UP is the claim: exactly where the correct attestation put it.
+                const [c, m] = [await balances(control.entries), await balances(mistyped.entries)];
+                AssertEqual(JSON.stringify(m), JSON.stringify(c), `end balances match the control line (control ${JSON.stringify(c)})`);
+                const [ct, mt] = [await lineTotals(ctx, control.lineID), await lineTotals(ctx, mistyped.lineID)];
+                AssertEqual(cents(Number(mt.RecognizedToDate)), cents(Number(ct.RecognizedToDate)), 'RecognizedToDate matches');
+                AssertEqual(cents(Number(mt.BilledToDate)), cents(Number(ct.BilledToDate)), 'BilledToDate matches');
             }),
     },
 ];

@@ -36,10 +36,17 @@
  * observation mistakenly dated a year ahead refuses every later one until that date arrives. With
  * `SupersedesMeasurementID`, a user holding `MJ.BizApps.Orders.Progress.Supersede` replaces the
  * line's latest observation instead. Nothing is edited. In one transaction the operation posts a
- * reversal of the replaced observation's recognition, dated on the replaced observation's own date so
- * the pair nets to zero in that period, then this observation's catch-up computed from the restored
- * total. The replaced row stays Posted and immutable; it stops counting because a row points at it.
- * See `./ProgressSupersede.ts`.
+ * reversal of the replaced observation's recognition, dated on the replaced observation's own date,
+ * then this observation's catch-up computed from the restored total. The replaced row stays Posted and
+ * immutable; it stops counting because a row points at it. A replacement may carry the replaced
+ * observation's date, so a wrong percent is corrected on the day it was attested. See
+ * `./ProgressSupersede.ts`.
+ *
+ * WHAT NETS TO ZERO ON THE REPLACED DATE IS REVENUE. The reversal is shaped by `BuildProgressDraft`
+ * from the line as it stands now, so its Deferred/Unbilled split follows the line's CURRENT billing,
+ * not the replaced entry's lines. With no invoice in between the two mirror each other; with one, the
+ * contra legs land differently on that date and the line's end balances are still exactly what they
+ * would have been without the mistake.
  *
  * A DATE AFTER THIS BUSINESS MONTH WARNS, it does not block. Forward dating stays allowed with no cap;
  * the warning is there because a mistyped year posts silently.
@@ -198,14 +205,16 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         if (last && measurementDate <= last) {
             return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} already has an observation posted for ${last}. Corrections happen forward: record the current period instead.`, echo);
         }
-        // One observation per line per date (UQ_OLPM_Period), superseded rows included: a replaced row
-        // keeps its date. Said here rather than left to surface as a constraint error on save.
-        const clash = observations.find((o) => o.MeasurementDate === measurementDate);
+        // THE SAME RULE AS UQ_OLPM_Period, which is filtered to rows that replace nothing: an ordinary
+        // observation may not share a date with another ordinary one — a superseded row included, since
+        // it keeps its date — and a replacement is outside the index altogether, so it may carry the date
+        // of the row it replaces. Said here rather than left to surface as a constraint error on save.
+        const clash = replaced ? null : observations.find((o) => !o.SupersedesMeasurementID && o.MeasurementDate === measurementDate);
         if (clash) {
             return this.refuse(
                 preview,
-                `Order line ${line.LineNumber} of ${order.OrderNumber} already has an observation dated ${measurementDate}` +
-                    `${clash.ID === replaced?.ID ? ', the one being superseded' : ''}. Each observation needs its own date — choose another day in the period.`,
+                `Order line ${line.LineNumber} of ${order.OrderNumber} already has an observation dated ${measurementDate} ` +
+                    `(${clash.Status === 'Posted' ? 'since superseded' : clash.Status}). Each observation needs its own date — choose another day in the period.`,
                 echo,
             );
         }

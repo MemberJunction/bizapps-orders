@@ -5367,7 +5367,7 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @MaxLength(36)
     OrderLineID: string;
         
-    @Field({description: `The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.`}) 
+    @Field({description: `The date this observation governs — the period it belongs to on the close calendar. One observation per line per date among observations that replace nothing (UQ_OLPM_Period, filtered); a superseding observation may carry the date of the one it replaces. It is also the recognition entry's EffectiveDate.`}) 
     MeasurementDate: Date;
         
     @Field(() => Float, {description: `CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.`}) 
@@ -5425,7 +5425,7 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @MaxLength(36)
     SupersedesMeasurementID?: string;
         
-    @Field({nullable: true, description: `Soft reference into accounting: the entry reversing the superseded observation's recognition, dated on that observation's MeasurementDate so the pair nets to zero in its period. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`}) 
+    @Field({nullable: true, description: `Soft reference into accounting: the entry reversing the superseded observation's recognition, dated on that observation's MeasurementDate so the revenue it recognised nets to zero on that date; the Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`}) 
     @MaxLength(36)
     ReversalJournalEntryID?: string;
         

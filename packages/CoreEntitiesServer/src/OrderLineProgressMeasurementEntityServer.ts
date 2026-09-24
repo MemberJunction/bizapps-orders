@@ -39,8 +39,9 @@ import { ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
  * Rows `Orders.RecordProgress` is posting right now, by NATURAL KEY — line plus measurement date.
  *
  * Not by `ID`, because on an insert there isn't one yet: the column defaults to `newsequentialid()`
- * and the value comes back with the row. The natural key is `UQ_OLPM_Period`, one observation per
- * line per date, so it names the row exactly as the database does and is known before the save.
+ * and the value comes back with the row. Line plus date is `UQ_OLPM_Period`'s key — filtered to rows
+ * that replace nothing, so a replacement may share its date with the row it replaces, which is already
+ * saved — and it is known before the save, which is all this needs: the one row being saved now.
  *
  * Module-level rather than per-instance because the operation and the entity it saves are different
  * objects; the operation cannot hand a flag to a class it does not construct.

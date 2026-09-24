@@ -2028,7 +2028,7 @@ export const mjBizAppsOrdersOrderLineProgressMeasurementSchema = z.object({
         * * Field Name: MeasurementDate
         * * Display Name: Measurement Date
         * * SQL Data Type: date
-        * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.`),
+        * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date among observations that replace nothing (UQ_OLPM_Period, filtered); a superseding observation may carry the date of the one it replaces. It is also the recognition entry's EffectiveDate.`),
     PercentComplete: z.number().describe(`
         * * Field Name: PercentComplete
         * * Display Name: Percent Complete
@@ -2121,7 +2121,7 @@ export const mjBizAppsOrdersOrderLineProgressMeasurementSchema = z.object({
         * * Field Name: ReversalJournalEntryID
         * * Display Name: Reversal Journal Entry ID
         * * SQL Data Type: uniqueidentifier
-        * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition, dated on that observation's MeasurementDate so the pair nets to zero in its period. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`),
+        * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition, dated on that observation's MeasurementDate so the revenue it recognised nets to zero on that date; the Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`),
     AttestedByUser: z.string().nullable().describe(`
         * * Field Name: AttestedByUser
         * * Display Name: Attested By User
@@ -11240,7 +11240,7 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntit
     * * Field Name: MeasurementDate
     * * Display Name: Measurement Date
     * * SQL Data Type: date
-    * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.
+    * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date among observations that replace nothing (UQ_OLPM_Period, filtered); a superseding observation may carry the date of the one it replaces. It is also the recognition entry's EffectiveDate.
     */
     get MeasurementDate(): Date {
         return this.Get('MeasurementDate');
@@ -11463,7 +11463,7 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntit
     * * Field Name: ReversalJournalEntryID
     * * Display Name: Reversal Journal Entry ID
     * * SQL Data Type: uniqueidentifier
-    * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition, dated on that observation's MeasurementDate so the pair nets to zero in its period. NULL when this row supersedes nothing, or when the superseded observation posted no entry.
+    * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition, dated on that observation's MeasurementDate so the revenue it recognised nets to zero on that date; the Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.
     */
     get ReversalJournalEntryID(): string | null {
         return this.Get('ReversalJournalEntryID');

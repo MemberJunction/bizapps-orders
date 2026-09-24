@@ -10,10 +10,15 @@
 -- The way out keeps immutability intact: nothing is edited. A supervisor
 -- records a NEW observation that names the one it replaces. In the same
 -- transaction the operation posts a reversal of the replaced row's recognition,
--- dated on the replaced row's own date so the two net to zero in that period,
--- and then the new observation's ordinary catch-up. A row is superseded when
--- another row points at it; its Status stays 'Posted' and trigger 51030 still
--- refuses any change to it.
+-- dated on the replaced row's own date, and then the new observation's ordinary
+-- catch-up. A row is superseded when another row points at it; its Status stays
+-- 'Posted' and trigger 51030 still refuses any change to it.
+--
+-- WHAT NETS TO ZERO ON THE REPLACED DATE IS THE REVENUE LEG. The reversal's
+-- Deferred/Unbilled split is computed from the line's billing as it stands at
+-- the supersede, not copied from the replaced entry, so an invoice posted in
+-- between moves the contra legs to a different account than the original used.
+-- The line's end balances are what they would have been without the mistake.
 --
 --   SupersedesMeasurementID — the observation this row replaces. At most one row
 --   may supersede any given observation (filtered unique index), so a replaced
@@ -21,6 +26,12 @@
 --
 --   ReversalJournalEntryID — the entry that reversed the replaced observation's
 --   recognition. NULL when that observation moved nothing.
+--
+--   UQ_OLPM_Period becomes a FILTERED unique index over rows that replace
+--   nothing, so a replacement may carry the date of the observation it replaces
+--   (a wrong percent on 8/31 is corrected on 8/31). Ordinary observations still
+--   collide with each other on (line, date), and two supersedes of the same row
+--   collide on UQ_OLPM_Supersedes, so concurrent posts cannot double-recognise.
 --
 -- Hand-written DDL is plain: migrations run once, in order.
 --
@@ -40,6 +51,15 @@ CREATE UNIQUE NONCLUSTERED INDEX [UQ_OLPM_Supersedes]
     WHERE [SupersedesMeasurementID] IS NOT NULL;
 GO
 
+ALTER TABLE [${flyway:defaultSchema}].[OrderLineProgressMeasurement]
+    DROP CONSTRAINT [UQ_OLPM_Period];
+GO
+
+CREATE UNIQUE NONCLUSTERED INDEX [UQ_OLPM_Period]
+    ON [${flyway:defaultSchema}].[OrderLineProgressMeasurement]([OrderLineID], [MeasurementDate])
+    WHERE [SupersedesMeasurementID] IS NULL;
+GO
+
 EXEC sp_addextendedproperty
     @name = N'MS_Description',
     @value = N'The posted observation this row replaces. Set only by Orders.RecordProgress for a user holding MJ.BizApps.Orders.Progress.Supersede. The replaced row is not edited: its recognition is reversed by ReversalJournalEntryID and it stops counting as the line''s last observation. At most one row may supersede any observation.',
@@ -49,10 +69,17 @@ EXEC sp_addextendedproperty
 GO
 EXEC sp_addextendedproperty
     @name = N'MS_Description',
-    @value = N'Soft reference into accounting: the entry reversing the superseded observation''s recognition, dated on that observation''s MeasurementDate so the pair nets to zero in its period. NULL when this row supersedes nothing, or when the superseded observation posted no entry.',
+    @value = N'Soft reference into accounting: the entry reversing the superseded observation''s recognition, dated on that observation''s MeasurementDate so the revenue it recognised nets to zero on that date; the Deferred/Unbilled split follows the line''s billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
     @level2type = N'COLUMN', @level2name = N'ReversalJournalEntryID';
+GO
+EXEC sp_updateextendedproperty
+    @name = N'MS_Description',
+    @value = N'The date this observation governs — the period it belongs to on the close calendar. One observation per line per date among observations that replace nothing (UQ_OLPM_Period, filtered); a superseding observation may carry the date of the one it replaces. It is also the recognition entry''s EffectiveDate.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
+    @level2type = N'COLUMN', @level2name = N'MeasurementDate';
 GO
 
 -- =============================================================================
@@ -175,7 +202,7 @@ UPDATE [${mjSchema}].[EntityField]
             20,
             'ReversalJournalEntryID',
             'Reversal Journal Entry ID',
-            'Soft reference into accounting: the entry reversing the superseded observation''s recognition, dated on that observation''s MeasurementDate so the pair nets to zero in its period. NULL when this row supersedes nothing, or when the superseded observation posted no entry.',
+            'Soft reference into accounting: the entry reversing the superseded observation''s recognition, dated on that observation''s MeasurementDate so the revenue it recognised nets to zero on that date; the Deferred/Unbilled split follows the line''s billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.',
             'uniqueidentifier',
             16,
             0,
