@@ -455,6 +455,25 @@ describe('assembling documents', () => {
         expect(taxRows[0].Amount).toBe(8);
     });
 
+    it('matches OnlyCompanyID regardless of UUID case', () => {
+        // SQL Server returns uppercase ids; callers routinely carry lower-cased copies. A
+        // case-sensitive match dropped every document and the caller reported the order as having no
+        // lines for that company — a wrong answer that reads like missing data. Found live, 2026-09-22.
+        const docs = BuildDocuments({
+            Order: order({ TotalGross: 200 }),
+            Lines: [line({ ID: 'l1', CompanyID: CO_A, LineTotalGross: 200 })],
+            Charges: [],
+            Adjustments: [],
+            Payments: [],
+            BillTo: party,
+            ShipTo: null,
+            AsOf: '2026-07-01',
+            OnlyCompanyID: CO_A.toUpperCase(),
+        });
+        expect(docs).toHaveLength(1);
+        expect(docs[0].CompanyID).toBe(CO_A);
+    });
+
     it('does not print a promotion code that merely repeats its own name', () => {
         // Many promotions are named after their code. "SPRING10 (SPRING10)" reads as a rendering
         // fault rather than as the reference it is meant to be.

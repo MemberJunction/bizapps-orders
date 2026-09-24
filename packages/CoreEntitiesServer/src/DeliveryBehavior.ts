@@ -63,6 +63,12 @@ export interface DeliverableFacts {
     AmountDue: number;
     /** Formatted for display by the caller's locale rules — this module never formats money. */
     AmountDueDisplay?: string;
+    /**
+     * True when this document's unit is invoiced through an external rail (Bill.com): a live external
+     * invoice exists for it, or its selling company has an active rail. Sending the native document as
+     * well would put two invoices for the same money in front of the customer (golive #146 AC5).
+     */
+    ExternallyInvoiced?: boolean;
     /** When it is due, already formatted. Null when the document carries no due date. */
     DueDateDisplay?: string | null;
 }
@@ -91,7 +97,7 @@ export interface DeliveryDecision {
     /** Why not, when not — written for the person who has to fix it. */
     Reason: string;
     /** A stable code so a caller can branch without parsing prose. */
-    Code: 'OK' | 'NOT_DELIVERABLE' | 'NO_RECIPIENT' | 'NO_DOCUMENT';
+    Code: 'OK' | 'NOT_DELIVERABLE' | 'NO_RECIPIENT' | 'NO_DOCUMENT' | 'EXTERNALLY_INVOICED';
 }
 
 /**
@@ -120,6 +126,15 @@ export function DecideDelivery(input: {
         };
     }
 
+    if (input.Document.ExternallyInvoiced === true) {
+        return {
+            Verdict: 'Refuse',
+            Code: 'EXTERNALLY_INVOICED',
+            Reason:
+                `${input.Document.DocumentNumber} is invoiced through Bill.com (or its company invoices through that rail). ` +
+                `Sending the native document as well would put two invoices for the same money in front of the customer.`,
+        };
+    }
     if (!ResolveRecipients(input.Recipients).length) {
         return {
             Verdict: 'Refuse',

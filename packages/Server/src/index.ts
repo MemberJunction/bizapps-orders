@@ -18,6 +18,8 @@ import { LoadGenerateInvoiceAction } from './custom/generate-invoice.action.js';
 import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action.js';
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
 import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
+import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
+import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -50,6 +52,13 @@ import {
     LoadSpawnRenewalsOperation,
     LoadEmailDeliveryChannel,
     LoadStoredValuePaymentProvider,
+    LoadBillComPaymentProvider,
+    LoadBillComInvoiceRail,
+    LoadIssueExternalInvoiceOperation,
+    LoadCancelExternalInvoiceOperation,
+    LoadGetExternalInvoicingWorklistOperation,
+    LoadSendExternalInvoicesOperation,
+    LoadPollExternalPaymentsOperation,
     LoadStripeACHPaymentProvider,
     LoadStripePaymentProvider,
     LoadSubscriptionBehavior,
@@ -64,6 +73,7 @@ import {
 import { LoadPaymentWebhookExtension } from './PaymentWebhookExtension.js';
 // The anonymous checkout edge — same pre-auth extension mechanism as the webhook.
 import { LoadCheckoutServerExtension } from './CheckoutServerExtension.js';
+import { LoadBillComWebhookExtension } from './BillComWebhookExtension.js';
 
 // Import generated GraphQL resolvers
 import './generated/generated.js';
@@ -75,6 +85,7 @@ import { CLASS_REGISTRATIONS } from './generated/class-registrations-manifest.js
 export { CLASS_REGISTRATIONS } from './generated/class-registrations-manifest.js';
 export { PaymentWebhookExtension, LoadPaymentWebhookExtension } from './PaymentWebhookExtension.js';
 export { CheckoutServerExtension, LoadCheckoutServerExtension } from './CheckoutServerExtension.js';
+export { BillComWebhookExtension, LoadBillComWebhookExtension, HandleBillComWebhook } from './BillComWebhookExtension.js';
 export { MJ_SERVER_EXTENSIONS } from './server-extensions-manifest.js';
 
 import { fileURLToPath } from 'node:url';
@@ -124,6 +135,11 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
     LoadSpawnRenewalsOperation();      // the 'Orders.SpawnRenewals' remote operation (D55)
+    LoadIssueExternalInvoiceOperation();        // 'Orders.IssueExternalInvoice' — one billing unit → one Bill.com invoice, once (golive #146)
+    LoadCancelExternalInvoiceOperation();       // 'Orders.CancelExternalInvoice' — archive an unpaid rail invoice, no ledger event (golive #147)
+    LoadGetExternalInvoicingWorklistOperation(); // 'Orders.GetExternalInvoicingWorklist' — invoiceable and unsent, computed per request
+    LoadSendExternalInvoicesOperation();        // 'Orders.SendExternalInvoices' — the sweep the scheduler calls
+    LoadPollExternalPaymentsOperation();        // 'Orders.PollExternalPayments' — cleared Bill.com payments, captured once (golive #148)
     LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
     LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator
 
@@ -135,6 +151,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadStripeACHPaymentProvider();    // US bank debits — settles LATE, so the webhook books the cash
     LoadManualPaymentProvider();       // cheque, wire, cash — no gateway to call
     LoadStoredValuePaymentProvider();  // gift cards and account credit, one driver (D38/D68)
+    LoadBillComPaymentProvider();      // Bill.com — the AR rail; refuses every checkout verb (golive #146/#148)
     LoadEnvironmentSecretResolver();   // the default CredentialsRef -> env lookup; replaceable
 
     // Actions. Same tree-shaking hazard as the operations above: without the anchor the action row
@@ -143,11 +160,14 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSendDocumentAction();          // 'Orders.SendDocument' — an order, rendered AND sent (§4.4)
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
     LoadSpawnRenewalsAction();         // 'Orders.SpawnRenewals' — the scheduler's way in to the renewal operation
+    LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
+    LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class
     // fallback rather than letting "nobody registered a channel" read as "the channel refused to send".
     LoadEmailDeliveryChannel();        // 'Email' — over MJ's communication framework
+    LoadBillComInvoiceRail();          // 'BillCom' — the outbound invoice rail over the published connector (golive #146)
 
     // Identity-claim drivers (guest checkout → account linking). Without these anchors the
     // @RegisterClass decorators are tree-shaken and MJ core's IdentityClaimEngine finds no
@@ -160,4 +180,5 @@ export function LoadBizAppsOrdersServer(): void {
     // in mj.config.cjs — so the webhook route is never mounted and no bank debit ever captures.
     LoadPaymentWebhookExtension();     // POST /webhooks/payments/:providerId, mounted before auth
     LoadCheckoutServerExtension();     // GET /checkout/:slug + POST /checkout/{initialize,draft,payment-intent,complete}, mounted before auth
+    LoadBillComWebhookExtension();     // POST /webhooks/billcom/:providerId — a verified Bill.com invoice event nudges the payment poll
 }

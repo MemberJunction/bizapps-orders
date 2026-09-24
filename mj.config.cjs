@@ -235,6 +235,19 @@ module.exports = {
       RootPath: '/checkout',
       Settings: {},
     },
+    {
+      /**
+       * Bill.com webhook receiver (BillComWebhookExtension). Bill.com publishes invoice events only —
+       * no payment-received event — so a VERIFIED notification does one thing: run
+       * Orders.PollExternalPayments for the provider in the URL now rather than at the next tick.
+       * The subscription's securityKey is read from <CredentialsRef>_WEBHOOK_SECRET on the BillCom
+       * PaymentProvider row. Harmless when no Bill.com provider is configured (every delivery 404s).
+       */
+      Enabled: true,
+      DriverClass: 'OrdersBillComWebhook',
+      RootPath: '/webhooks/billcom',
+      Settings: {},
+    },
   ],
 
   /**

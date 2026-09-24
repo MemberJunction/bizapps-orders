@@ -116,5 +116,33 @@
       "lastModified": "2026-09-02T03:26:24.918Z",
       "checksum": "a489abbb0a953a0f8d14e763de55ddc29fb2e64384f79e134a528106d27bd48a"
     }
+  },
+  {
+    "_comments": [
+      "Bill.com — the retained AR rail for invoiced ACH/check collection (golive #146/#147/#148).",
+      "NOT a checkout rail: the driver refuses CreateIntent/Capture/Refund. It exists so a company can",
+      "configure one row per Bill.com organisation, so Orders' invoice rail (BaseInvoiceRail, same code)",
+      "resolves from it, and so payments the poller captures carry a PaymentProviderID.",
+      "CredentialsRef stays NULL for this type: credentials live on the MJ: Company Integrations row named",
+      "by PaymentProvider.CompanyIntegrationID and are read by the connector, never by Orders."
+    ],
+    "fields": {
+      "Code": "BillCom",
+      "Name": "Bill.com",
+      "Description": "Bill.com accounts receivable. Invoices are created in Bill.com when a billing unit becomes invoiceable; cleared receivable payments are polled and captured once. Not a checkout rail — no intents, no card capture, no refunds through this type.",
+      "DriverClass": "BillComPaymentProvider",
+      "SupportsTokenization": 0,
+      "SupportsRefund": 0,
+      "SupportsWebhooks": 0,
+      "Sequence": 50,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C06"
+    },
+    "sync": {
+      "lastModified": "2026-09-21T18:40:45.953Z",
+      "checksum": "9e9db2395de6fc86db752a28ffe7dcf47d0a97b6447f7f4d2ecb328177ad4ab3"
+    }
   }
 ]

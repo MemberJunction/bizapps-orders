@@ -381,4 +381,28 @@
 
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 </mj-record-form-container>
-        
+            <!-- External Payments Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersExternalPayments"
+        SectionName="External Payments"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersExternalPayments')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: External Payments','PaymentHeaderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: External Payments','PaymentHeaderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersExternalPayments')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalPayments', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+

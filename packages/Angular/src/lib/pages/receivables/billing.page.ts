@@ -1,5 +1,6 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RunView } from '@memberjunction/core';
 import { MJAlertComponent, MJButtonDirective, MJConfirmService } from '@memberjunction/ng-ui-components';
 import {
     OrdersGetBillingWorklistOperation,
@@ -12,6 +13,11 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
 
 /** How far ahead the worklist looks. Finance's renewal lead is 90 days; a month is the working view. */
 const WINDOW_DAYS = 30;
+
+const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
+const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
+/** Provider type codes that invoice through an external rail. Mirrors `INVOICE_RAIL_TYPE_CODES`. */
+const RAIL_TYPE_CODES = ['BillCom'];
 
 /**
  * `mjo-billing-page` — instalments due with no invoice behind them (AIDP-24, plan §6.3).
@@ -141,6 +147,8 @@ export class MJOBillingPageComponent implements OnInit {
     public Rows: BillingWorklistRow[] = [];
     public Selected: BillingWorklistRow | null = null;
     public Preset = 'all';
+    /** Company ID (lower-cased) -> the name of its active invoice rail, for the "Then sends via" column. */
+    private Rails = new Map<string, string>();
     public AsOf = '';
     public WindowEnd = '';
 
@@ -152,6 +160,16 @@ export class MJOBillingPageComponent implements OnInit {
         { Key: 'Description', Label: 'For', HideBelow: 760 },
         { Key: 'Amount', Label: 'Amount', Kind: 'money', Width: '120px', Format: (r) => FormatMoney(r.Amount) },
         { Key: 'OrderStatus', Label: 'Order', Kind: 'chip', Width: '110px', HideBelow: 560, ChipClass: (r) => (r.OrderStatus === 'Confirmed' ? 'mj-chip--success' : 'mj-chip--outline') },
+        {
+            // Issuing an instalment freezes its number; for a company on a rail it ALSO queues an
+            // external invoice, which is the part nobody could see from this screen.
+            Key: 'CompanyID',
+            Label: 'Then sends via',
+            Width: '150px',
+            HideBelow: 1000,
+            Format: (r) => this.RailFor(r.CompanyID) ?? '—',
+            Secondary: (r) => (this.RailFor(r.CompanyID) ? 'automatically, after issuing' : null),
+        },
     ];
 
     /**
@@ -183,6 +201,11 @@ export class MJOBillingPageComponent implements OnInit {
 
     public get WindowDisplay(): string {
         return this.AsOf ? `${FormatDate(this.AsOf, { Short: true })} – ${FormatDate(this.WindowEnd, { Short: true })}` : '—';
+    }
+
+    /** The rail a company invoices through, or null. Read from seeded metadata once per load. */
+    public RailFor(companyID: string): string | null {
+        return this.Rails.get((companyID ?? '').toLowerCase()) ?? null;
     }
 
     /* ── Actions ────────────────────────────────────────────────────────── */
@@ -248,8 +271,33 @@ export class MJOBillingPageComponent implements OnInit {
         this.Truncated = output.Truncated;
         this.AsOf = output.AsOfDate;
         this.WindowEnd = output.WindowEnd;
+        await this.loadRails();
         this.applyPreset();
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Active invoice rails by company. Two small reads of seeded metadata rather than a per-row call,
+     * and a failure leaves the column empty rather than failing the page — it is context, not the work.
+     */
+    private async loadRails(): Promise<void> {
+        this.Rails = new Map();
+        try {
+            const rv = new RunView();
+            const codes = RAIL_TYPE_CODES.map((c) => `'${c}'`).join(',');
+            const types = await rv.RunView<{ ID: string }>({ EntityName: PAYMENT_PROVIDER_TYPE_ENTITY, ExtraFilter: `Code IN (${codes})`, Fields: ['ID'], ResultType: 'simple' });
+            const typeIDs = (types.Results ?? []).map((t) => `'${t.ID}'`);
+            if (!typeIDs.length) return;
+            const providers = await rv.RunView<{ CompanyID: string; Name: string }>({
+                EntityName: PAYMENT_PROVIDER_ENTITY,
+                ExtraFilter: `IsActive = 1 AND PaymentProviderTypeID IN (${typeIDs.join(',')})`,
+                Fields: ['CompanyID', 'Name'],
+                ResultType: 'simple',
+            });
+            for (const p of providers.Results ?? []) this.Rails.set((p.CompanyID ?? '').toLowerCase(), p.Name);
+        } catch {
+            // Context only. An order still bills the same way whether or not this column renders.
+        }
     }
 
     private applyPreset(): void {
