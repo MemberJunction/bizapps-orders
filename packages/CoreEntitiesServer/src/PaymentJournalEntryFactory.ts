@@ -35,7 +35,7 @@
  *   CALLER:     PaymentHeaderEntityServer (./PaymentHeaderEntityServer.ts)
  *   OP:         'Accounting.CreateJournalEntries' — the same op order booking uses
  */
-import { GL_ROLE, type GLAccountResolver } from './GLAccountResolver.js';
+import { GL_ROLE, IsRoleNotLinked, type GLAccountResolver } from './GLAccountResolver.js';
 
 /** One analytical tag on a ledger line. Mirrors accounting's `JournalEntryLineDimensionDraft`. */
 export interface PaymentJELineDimension {
@@ -147,7 +147,10 @@ export class PaymentJournalEntryFactory {
         let feeAccount: string;
         try {
             feeAccount = await this._resolver.Resolve(GL_ROLE.ProcessingFee, null, null, ctx.CompanyID, asOf);
-        } catch {
+        } catch (err) {
+            // Only "nothing linked" is tolerated. A cross-company link (D6) or any other failure is
+            // not a missing optional role and must not be reported as an unbooked fee.
+            if (!IsRoleNotLinked(err)) throw err;
             // No Processing Fee role/account configured — see the header. Book nothing and report.
             return { Draft: null, UnbookedFeeAmount: fee };
         }

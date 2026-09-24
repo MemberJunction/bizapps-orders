@@ -145,9 +145,9 @@ export function UnbilledReceivableNotLinkedError(
         'NotLinked',
         `${where}: ${Math.abs(amount).toFixed(2)} of this entry is revenue earned ahead of billing and ` +
             `belongs in '${GL_ROLE.UnbilledReceivable}', but no '${GL_ROLE.UnbilledReceivable}' GL ` +
-            `account is linked for company ${companyID}. Nothing was posted. Link an account for this ` +
-            `role in Accounting's Account Links — on the company, or on the product, its category or its ` +
-            `product type — then try again.`,
+            `account is linked for company ${companyID}. Nothing was posted. Link the company's ` +
+            `'${GL_ROLE.UnbilledReceivable}' account in Accounting's Account Links (one per company; see ` +
+            `bizapps-accounting docs/unbilled-receivable-seeding.md), then try again.`,
     );
 }
 
