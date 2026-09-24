@@ -363,7 +363,7 @@ describe('PaymentAllocationFactory — customer deposits (#234 review)', () => {
         const unlinked = {
             Resolve: async (role: string, _p: unknown, _c: unknown, companyID: string) => {
                 if (role === GL_ROLE.CustomerDeposits) {
-                    throw new GLAccountResolutionError(role, '', `No GL account is linked for role '${role}' at the company level for company ${companyID}.`);
+                    throw new GLAccountResolutionError(role, '', 'NotLinked', `No GL account is linked for role '${role}' at the company level for company ${companyID}.`);
                 }
                 return acct(role, companyID);
             },
@@ -378,7 +378,7 @@ describe('PaymentAllocationFactory — customer deposits (#234 review)', () => {
         const { GLAccountResolutionError } = await import('../GLAccountResolver.js');
         const cross = {
             Resolve: async (role: string, _p: unknown, _c: unknown, companyID: string) => {
-                if (role === GL_ROLE.CustomerDeposits) throw new GLAccountResolutionError(role, '', 'GL account X resolved for role belongs to company Z');
+                if (role === GL_ROLE.CustomerDeposits) throw new GLAccountResolutionError(role, '', 'CrossCompany', 'GL account X resolved for role belongs to company Z');
                 return acct(role, companyID);
             },
         } as never;
