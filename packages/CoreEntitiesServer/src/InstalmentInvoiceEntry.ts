@@ -7,6 +7,15 @@
  *         Cr  Deferred Revenue         the rest — billing that runs ahead of performance
  *         Cr  each charge and tax      its share of each
  *
+ *     Dr  Customer Deposits            what the customer had already paid ahead of this bill
+ *         Cr  Accounts Receivable      the same, so the prepaid part of the bill is settled
+ *
+ * THE INVOICE POSTS AT FULL VALUE and the deposit is cleared by its own pair of lines (#234
+ * review, item 7). An earlier revision netted the prepayment off both sides of the billing entry;
+ * that hid the receivable the invoice raises and let the deposit and its netting land on different
+ * Deferred accounts. Both legs of the application resolve through the same product walk as the
+ * rest of the entry, so the deposit taken at capture and the one cleared here are the same account.
+ *
  * THE DISCOUNT IS NOT HERE. It is booked once, with the revenue it reduces. See the long note at
  * its removal site below; the short version is that an entry crediting Deferred gross while the
  * recognition entry credits Sales gross double-debits Sales Discounts, and both entries balance.
@@ -47,6 +56,7 @@ import { SplitExactly } from './BundleBehavior.js';
 import {
     GL_ROLE,
     IsRoleNotLinked,
+    RefuseUnlinkedCustomerDeposits,
     UnbilledReceivableNotLinkedError,
     type GLAccountResolver,
 } from './GLAccountResolver.js';
@@ -147,8 +157,12 @@ export interface InstalmentInvoiceContext {
     DocumentNumber: string;
     Amount: number;
     InvoicedAt: Date;
-    /** Already paid against this row at the moment of invoicing — a deposit taken before billing. */
-    AmountPaid: number;
+    /**
+     * Customer deposits this issue turns into settlement of the new receivable: how much the rows'
+     * held deposits fell when the row became billed (`DepositReleasedByCompany`), read by the caller
+     * around the save that stamps the row. Zero when nothing was prepaid.
+     */
+    DepositApplied: number;
     /** The company's live rows in `InstallmentNumber` order, including this one. */
     Siblings: InstalmentSibling[];
     /** The company's lines on this order. */
@@ -234,8 +248,8 @@ export async function EmitInstalmentInvoiceEntry(
 
     const resolver = await BuildGLAccountResolver(provider, user);
     const asOf = new Date(context.InvoicedAt);
-    const deferredByLine = new Map<string, string>();
     const billedByLine = new Map<string, number>();
+    const receivables: LineReceivable[] = [];
     const lines: JELineDraft[] = [];
 
     for (const line of context.Lines) {
@@ -244,7 +258,6 @@ export async function EmitInstalmentInvoiceEntry(
 
         const arAccount = await resolve(GL_ROLE.AccountsReceivable);
         const deferredAccount = await resolve(GL_ROLE.DeferredRevenue);
-        deferredByLine.set(line.ID, deferredAccount);
 
         // THE DISCOUNT IS NOT BOOKED HERE — it is booked ONCE, when revenue is recognised.
         //
@@ -344,6 +357,11 @@ export async function EmitInstalmentInvoiceEntry(
         // subtract what its origin added.
         billedByLine.set(line.ID, line.Quantity < 0 ? money(-netPiece) : netPiece);
 
+        if (line.Quantity >= 0) {
+            const arDebit = money(built.reduce((t, l) => (l.GLAccountID === arAccount ? t + (l.DebitAmount ?? 0) : t), 0));
+            receivables.push({ Line: line, ARAccount: arAccount, ARDebit: arDebit });
+        }
+
         // A reversal line mirrors, exactly as booking mirrors it (D16): the same accounts with the
         // sides swapped at a positive amount, never a negative debit.
         lines.push(
@@ -353,14 +371,13 @@ export async function EmitInstalmentInvoiceEntry(
         );
     }
 
-    applyPrepayment(context, lines, deferredByLine);
+    lines.push(...(await depositApplicationLines(context, receivables, resolver, asOf)));
 
     const posted = lines.filter((l) => money(l.DebitAmount ?? 0) !== 0 || money(l.CreditAmount ?? 0) !== 0);
     if (posted.length < 2) {
         console.warn(
-            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} bills nothing ` +
-                `(${money(context.AmountPaid)} was already paid against it), so no journal entry was ` +
-                `posted. The document number and the Invoiced stamp still stand.`,
+            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} bills nothing, so no ` +
+                `journal entry was posted. The document number and the Invoiced stamp still stand.`,
         );
         return { JournalEntryID: null, BilledByLine: billedByLine };
     }
@@ -396,48 +413,68 @@ export async function EmitInstalmentInvoiceEntry(
     return { JournalEntryID: journalEntryID, BilledByLine: billedByLine };
 }
 
-/**
- * CASH TAKEN BEFORE THE BILL RAISES NO RECEIVABLE.
- *
- * A deposit already posted `Dr Cash / Cr Deferred Revenue` — it never touched AR, because there was
- * nothing to relieve. So the amount already paid against this row must come off BOTH sides of the
- * billing entry: the AR debit that would otherwise claim money we already hold, and the Deferred
- * credit that would otherwise count the same obligation twice.
- *
- * Reduced pro-rata across the lines by `SplitExactly`, so the two sides stay equal and the entry
- * balances by construction. Where a line's Deferred credit would go negative the sign flips to a
- * debit, which is the same account running the other way rather than an illegal negative credit.
- */
-function applyPrepayment(
-    context: InstalmentInvoiceContext,
-    lines: JELineDraft[],
-    deferredByLine: Map<string, string>,
-): void {
-    const prepaid = money(context.AmountPaid);
-    if (!(prepaid > 0)) return;
-
-    const arLines = lines.filter((l) => (l.DebitAmount ?? 0) > 0 && l.Description?.startsWith('AR — '));
-    const deferredAccounts = new Set(deferredByLine.values());
-    const creditLines = lines.filter((l) => (l.CreditAmount ?? 0) > 0 && deferredAccounts.has(l.GLAccountID));
-
-    reduce(arLines, prepaid, 'DebitAmount');
-    reduce(creditLines, prepaid, 'CreditAmount');
+/** One billed line's receivable: where its AR debit went and how much, for the deposit application. */
+interface LineReceivable {
+    Line: InstalmentLineFacts;
+    ARAccount: string;
+    ARDebit: number;
 }
 
-/** Take `total` off `field` across `lines`, pro-rata, flipping the side if one would go negative. */
-function reduce(lines: JELineDraft[], total: number, field: 'DebitAmount' | 'CreditAmount'): void {
-    if (!lines.length) return;
-    const other = field === 'DebitAmount' ? 'CreditAmount' : 'DebitAmount';
-    const shares = SplitExactly(total, lines.map((l) => Number(l[field] ?? 0)));
-    lines.forEach((l, i) => {
-        const after = money(Number(l[field] ?? 0) - shares[i]);
-        if (after >= 0) {
-            l[field] = after;
-        } else {
-            l[field] = 0;
-            l[other] = money(Number(l[other] ?? 0) + Math.abs(after));
-        }
-    });
+/**
+ * CASH TAKEN BEFORE THE BILL SETTLES PART OF IT: `Dr Customer Deposits / Cr AR` (#234 review, item 7).
+ *
+ * The capture credited Customer Deposits because there was no receivable yet. The invoice above has
+ * just raised one at full value, so the deposit now settles it. Spread over the lines by their AR
+ * debit with `SplitExactly`, so each line's application clears its own receivable on its own AR
+ * account, and Customer Deposits resolves per line through the same walk the capture used.
+ *
+ * Nothing prepaid → no lines and the role is never resolved, so a company that has not linked
+ * Customer Deposits can still bill. A deposit with no linked account is refused.
+ */
+async function depositApplicationLines(
+    context: InstalmentInvoiceContext,
+    receivables: LineReceivable[],
+    resolver: GLAccountResolver,
+    asOf: Date,
+): Promise<JELineDraft[]> {
+    const applied = money(context.DepositApplied);
+    if (!(applied > 0)) return [];
+    const billed = money(receivables.reduce((t, r) => t + r.ARDebit, 0));
+    if (applied > billed) {
+        throw new Error(
+            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber}: ${applied} of deposits ` +
+                `would settle a bill of ${billed}. A deposit cannot settle more than the instalment bills; ` +
+                `nothing was posted.`,
+        );
+    }
+
+    const pieces = SplitExactly(applied, receivables.map((r) => r.ARDebit));
+    const out: JELineDraft[] = [];
+    for (let i = 0; i < receivables.length; i++) {
+        if (!(pieces[i] > 0)) continue;
+        const { Line: line, ARAccount } = receivables[i];
+        const depositAccount = await RefuseUnlinkedCustomerDeposits(
+            () => resolver.Resolve(GL_ROLE.CustomerDeposits, line.ProductID, line.ProductCategoryID, context.CompanyID, asOf, line.ProductTypeID),
+            `Order ${context.OrderNumber} instalment ${context.InstallmentNumber}`,
+            context.CompanyID,
+            applied,
+        );
+        out.push(
+            {
+                GLAccountID: depositAccount,
+                DebitAmount: pieces[i],
+                Description: `Customer deposit applied — ${line.ProductName}`,
+                Dimensions: line.Dimensions,
+            },
+            {
+                GLAccountID: ARAccount,
+                CreditAmount: pieces[i],
+                Description: `AR settled by customer deposit — ${line.ProductName}`,
+                Dimensions: line.Dimensions,
+            },
+        );
+    }
+    return out;
 }
 
 /** The entry must balance before it is sent, with a message naming the instalment rather than a trigger. */

@@ -78,6 +78,20 @@ export const GL_ROLE = {
      * one-character drift resolves nothing and every entry still balances.
      */
     UnbilledReceivable: 'Unbilled Receivable',
+    /**
+     * Cash received against an instalment that has not been invoiced — money held ahead of billing
+     * (#234 review, Andrew). Credited at capture for the part no invoice covers, debited when that
+     * cash is refunded, and cleared against AR when the instalment is issued.
+     *
+     * NO FALLBACK. Finance may link it to a dedicated account or to Deferred Revenue; the entries are
+     * the same either way, so there is no reason to guess. An entry that needs this leg and finds
+     * nothing linked is refused ({@link CustomerDepositsNotLinkedError}). An entry with no deposit
+     * leg never resolves the role, so an unscheduled order is unaffected.
+     *
+     * A CROSS-REPO CONTRACT like the role above: seeded by bizapps-accounting's
+     * `metadata/gl-account-roles`, matched here by exact `Name`.
+     */
+    CustomerDeposits: 'Customer Deposits',
 } as const;
 
 export type GLRole = (typeof GL_ROLE)[keyof typeof GL_ROLE];
@@ -149,6 +163,51 @@ export function UnbilledReceivableNotLinkedError(
             `'${GL_ROLE.UnbilledReceivable}' account in Accounting's Account Links (one per company; see ` +
             `bizapps-accounting docs/unbilled-receivable-seeding.md), then try again.`,
     );
+}
+
+/**
+ * The refusal for an entry that needs a Customer Deposits leg when no account is linked for the
+ * role. Same shape as {@link UnbilledReceivableNotLinkedError}: what the money is, which role and
+ * company, that nothing was posted, and where to link it.
+ *
+ * @param where names the entry for the person reading the error, e.g. `Payment PAY-000123 on order 1042`
+ * @param cause the resolver's own `NotLinked` error; anything else is rethrown by the caller
+ */
+export function CustomerDepositsNotLinkedError(
+    where: string,
+    companyID: string,
+    amount: number,
+    cause: GLAccountResolutionError,
+): GLAccountResolutionError {
+    return new GLAccountResolutionError(
+        cause.Role,
+        cause.ProductID,
+        'NotLinked',
+        `${where}: ${Math.abs(amount).toFixed(2)} of this entry is cash held ahead of billing and ` +
+            `belongs in '${GL_ROLE.CustomerDeposits}', but no '${GL_ROLE.CustomerDeposits}' GL account ` +
+            `is linked for company ${companyID}. Nothing was posted. Link the company's ` +
+            `'${GL_ROLE.CustomerDeposits}' account in Accounting's Account Links (a dedicated deposits ` +
+            `account, or the Deferred Revenue account; see bizapps-accounting ` +
+            `docs/customer-deposits-seeding.md), then try again.`,
+    );
+}
+
+/**
+ * Resolve Customer Deposits, turning "nothing linked" into {@link CustomerDepositsNotLinkedError}.
+ * A cross-company link (D6) or any other error is rethrown as it is.
+ */
+export async function RefuseUnlinkedCustomerDeposits(
+    resolve: () => Promise<string>,
+    where: string,
+    companyID: string,
+    amount: number,
+): Promise<string> {
+    try {
+        return await resolve();
+    } catch (err) {
+        if (!IsRoleNotLinked(err)) throw err;
+        throw CustomerDepositsNotLinkedError(where, companyID, amount, err);
+    }
 }
 
 interface CategoryRow {
