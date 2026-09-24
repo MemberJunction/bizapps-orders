@@ -14,7 +14,8 @@
  *   CONSUMER: PaymentAllocationFactory (./PaymentAllocationFactory.ts)
  *   SIBLING:  BuildIntercompanyLookup (./AccountingBridge.ts)
  */
-import { IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import type { OrderLineShare } from './PaymentAllocationFactory.js';
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 import type { InstalmentCashFacts } from './PaymentScheduleBehavior.js';
@@ -24,6 +25,7 @@ import { RequireUUID } from './sql-guards.js';
 interface OrderLineRow {
     ID: string;
     CompanyID: string;
+    ProductID: string;
     LineTotalGross: number;
 }
 
@@ -54,7 +56,7 @@ export async function LoadOrderLineShares(
         {
             EntityName: ORDER_LINE_ENTITY,
             ExtraFilter: `OrderHeaderID='${orderHeaderID}'`,
-            Fields: ['ID', 'CompanyID', 'LineTotalGross'],
+            Fields: ['ID', 'CompanyID', 'ProductID', 'LineTotalGross'],
             ResultType: 'simple',
             BypassCache: true,
         },
@@ -73,12 +75,25 @@ export async function LoadOrderLineShares(
         rows.map((l) => l.ID),
     );
 
+    // The product's place in the role walk, so a deposit resolves Customer Deposits the way the
+    // invoice entry resolves every role: product, category tree, product type, then company.
+    await LoadOrdersEngine(provider as unknown as IMetadataProvider, user);
+
     return rows.map((l) => {
         const dims = tags.get(String(l.ID).toLowerCase());
+        const product = OrdersEngine.Instance.ProductByID(l.ProductID);
+        if (!product) {
+            throw new Error(`Order line ${l.ID} references product ${l.ProductID}, which was not found.`);
+        }
         return {
             OrderLineID: l.ID,
             CompanyID: l.CompanyID,
             Amount: Number(l.LineTotalGross ?? 0),
+            Product: {
+                ProductID: product.ID,
+                ProductCategoryID: product.ProductCategoryID ?? null,
+                ProductTypeID: product.ProductTypeID,
+            },
             ...(dims?.length ? { Dimensions: dims } : {}),
         };
     });
@@ -159,29 +174,4 @@ export async function LoadInstalmentCashFacts(
         AmountPaid: Number(r.AmountPaid ?? 0),
         DocumentNumber: r.DocumentNumber ? String(r.DocumentNumber) : null,
     }));
-}
-
-/**
- * Charge a receivable amount against the facts, so the next line of the same payment sees what the
- * previous one used.
- *
- * A payment can carry several allocations against one order, and they book in a loop before any of
- * them is in the database. Without this, two lines would each see the same unpaid invoice and each
- * credit AR for it. Applied billed-rows-first in the order the rows came back, which is the order
- * the database's own cascade uses.
- */
-export function ConsumeReceivable(
-    facts: InstalmentCashFacts[],
-    companyID: string,
-    amount: number,
-): InstalmentCashFacts[] {
-    let left = amount;
-    const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
-    return facts.map((row) => {
-        if (left <= 0 || !row.DocumentNumber || key(row.CompanyID) !== key(companyID)) return row;
-        const capacity = Math.max(0, row.Amount - row.AmountPaid);
-        const used = Math.min(left, capacity);
-        left -= used;
-        return used > 0 ? { ...row, AmountPaid: row.AmountPaid + used } : row;
-    });
 }
