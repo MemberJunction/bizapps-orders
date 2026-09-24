@@ -22,7 +22,7 @@
  * a change that satisfies either alone is wrong.
  *
  * CONNECTS TO:
- *   SQL:    spRecalcOrderHeaderPaymentSchedule (V202609230500 — billed rows first)
+ *   SQL:    spRecalcOrderHeaderPaymentSchedule (V202609231600 — billed rows first)
  *   CODE:   SplitCashForCompany · PaymentAllocationFactory · OrderHeaderPaymentScheduleEntityServer
  *
  * Deterministic. Every check runs inside a rolled-back transaction.

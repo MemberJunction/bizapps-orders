@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609230500 — unnamed cash settles an INVOICED instalment before a Scheduled one
+-- V202609231600 — unnamed cash settles an INVOICED instalment before a Scheduled one
 -- (bc-aidp-next-golive#239 follow-up · D91)
 -- =============================================================================
 -- Under D91 a scheduled company books no value at confirm; the receivable is created when an
