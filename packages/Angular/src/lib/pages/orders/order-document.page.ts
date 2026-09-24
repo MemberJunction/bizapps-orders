@@ -5,7 +5,7 @@ import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format
 import { MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
 import { ParseAddressSnapshot, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { FormatPartyAddress } from '../../custom/OrderHeader/order-header-prefs';
+import { FormatSoldAddress } from '../../custom/OrderHeader/order-header-prefs';
 
 /** Who issued the bill. */
 export interface MJOIssuer {
@@ -313,8 +313,7 @@ export class MJOOrderDocumentPageComponent implements OnInit {
 
     /** A confirmed order prints the address it was sold to; anything else the live ship-to. */
     public get ShipToAddressText(): string | null {
-        const sold = ParseAddressSnapshot(this.Order?.ShipToAddressSnapshot);
-        return (sold ? FormatPartyAddress(sold) : null) || this.Order?.ShipToAddress || null;
+        return FormatSoldAddress(() => ParseAddressSnapshot(this.Order?.ShipToAddressSnapshot)) || this.Order?.ShipToAddress || null;
     }
 
     public get IsPaid(): boolean {

@@ -19,7 +19,7 @@
 > **Schema:** `__mj_BizAppsOrders` · **Entity prefix:** `MJ_BizApps_Orders: ` · **Keys:** UUID throughout
 > **49 tables · 85 internal relationships · 48 cross-app foreign keys ·
 > 120 CHECK constraints · 32 unique indexes** beyond the primary keys ·
-> **7 business triggers** · 49 generated views.
+> **9 business triggers** · 49 generated views.
 >
 > (49 is the app's own tables. `sys.tables` reports 50 because Flyway keeps its
 > `flyway_schema_history` in this schema; that table belongs to the migration tool, not to the model.)
@@ -1140,8 +1140,8 @@ show either, and code that ignores them will fail at runtime rather than at comp
 | table | trigger | what it guarantees |
 |---|---|---|
 | `OrderLine` | `trg_OrderLine_ImmutableAfterConfirm` | A confirmed line's money is history. Error 51003. This is why the server short-circuits its own total recomputation once `JournalEntryID` is stamped — a figure it cannot reproduce from stored state alone would be rejected here and roll back the whole confirm. |
-| `OrderHeader` | `trg_OrderHeader_AddressFrozenAfterConfirm` | A confirmed order keeps the address it was sold to. Once the order is Confirmed, `BillToAddressID`, `ShipToAddressID` and their snapshots cannot change, and a written snapshot never changes on any order. Error 51015. Reporting and the invoice read `BillToAddressSnapshot` / `ShipToAddressSnapshot` on a confirmed order, because the Common `Address` row stays editable. |
-| `OrderLine` | `trg_OrderLine_AddressFrozenAfterConfirm` | The same rule for a line's own `ShipToAddressID` and `ShipToAddressSnapshot`. Error 51016. The confirm path writes a draft's line snapshots while the header is still Draft for this reason. |
+| `OrderHeader` | `trg_OrderHeader_AddressFrozenAfterConfirm` | A confirmed order keeps the address it was sold to. On a Confirmed order a set `BillToAddressID` / `ShipToAddressID` cannot be replaced or cleared, an empty one can be filled only together with its snapshot, and a written snapshot never changes on any order. Error 51015. Reporting and the invoice read `BillToAddressSnapshot` / `ShipToAddressSnapshot` on a confirmed order, because the Common `Address` row stays editable. |
+| `OrderLine` | `trg_OrderLine_AddressFrozenAfterConfirm` | The same set-once rule for a line's own `ShipToAddressID` and `ShipToAddressSnapshot`. Error 51016. The confirm path writes a draft's line snapshots while the header is still Draft for this reason. `test-harnesses/address-snapshot-triggers.mjs` exercises both triggers. |
 | `OrderLine` | `trg_OrderLine_RollupTotals` | Header totals are derived from lines by the database, so a client cannot supply a total that disagrees with what was booked. |
 | `PaymentDetail` | `trg_PaymentDetail_Immutable` | A recorded payment instrument cannot be edited after the fact. |
 | `PaymentHeader` | `trg_PaymentHeader_ImmutableAfterCapture` | Captured money is frozen. |

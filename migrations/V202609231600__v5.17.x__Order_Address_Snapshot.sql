@@ -13,10 +13,19 @@
 --   1. OrderHeader.BillToAddressSnapshot / ShipToAddressSnapshot and
 --      OrderLine.ShipToAddressSnapshot: the address as JSON, written by
 --      OrderEntityServer on the first transition to Confirmed. NULL until then.
---   2. trg_OrderHeader_AddressFrozenAfterConfirm (51015) and
---      trg_OrderLine_AddressFrozenAfterConfirm (51016): once the order is
---      Confirmed, neither the address references nor the snapshots may change,
---      and a snapshot that has been written may never change.
+--   2. Backfills the snapshots of orders that are already Confirmed.
+--   3. trg_OrderHeader_AddressFrozenAfterConfirm (51015) and
+--      trg_OrderLine_AddressFrozenAfterConfirm (51016). On a Confirmed order an
+--      address that is set cannot change, and an address that is empty may be
+--      filled once, together with its snapshot. A snapshot that has been
+--      written never changes, on any order.
+--
+-- SET-ONCE, NOT STRICTLY FROZEN, for the same reason as the bill-to party in
+-- trg_OrderHeader_ImmutableAfterConfirm: an order can be confirmed before its
+-- address is known, and recording where the sale went later does not rewrite
+-- it. A snapshot may likewise be written on a Confirmed order that has none,
+-- which is how an order confirmed before this migration, or created Confirmed
+-- by the data conversion and booked afterwards, gets one.
 --
 -- These are separate triggers rather than more clauses on
 -- trg_OrderHeader_ImmutableAfterConfirm and trg_OrderLine_ImmutableAfterConfirm,
@@ -67,12 +76,73 @@ EXEC sp_addextendedproperty
 GO
 
 -- -----------------------------------------------------------------------------
+-- Backfill: orders already Confirmed when this runs
+-- -----------------------------------------------------------------------------
+-- Written from the CURRENT Address row, which is the closest record there is:
+-- an edit made to that row before now is already lost. Same JSON shape as
+-- BuildAddressSnapshot (order-address-snapshot.ts), blank fields stored as NULL.
+-- Only rows with no snapshot are touched, and it runs before the triggers exist.
+UPDATE o
+   SET BillToAddressSnapshot = (
+           SELECT a.ID AS AddressID,
+                  NULLIF(LTRIM(RTRIM(a.Line1)), '') AS Line1,
+                  NULLIF(LTRIM(RTRIM(a.Line2)), '') AS Line2,
+                  NULLIF(LTRIM(RTRIM(a.Line3)), '') AS Line3,
+                  NULLIF(LTRIM(RTRIM(a.City)), '') AS City,
+                  NULLIF(LTRIM(RTRIM(a.StateProvince)), '') AS StateProvince,
+                  NULLIF(LTRIM(RTRIM(a.PostalCode)), '') AS PostalCode,
+                  NULLIF(LTRIM(RTRIM(a.Country)), '') AS Country
+           FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES)
+  FROM [${flyway:defaultSchema}].[OrderHeader] o
+  JOIN [__mj_BizAppsCommon].[Address] a ON a.ID = o.BillToAddressID
+ WHERE o.Status = 'Confirmed'
+   AND o.BillToAddressSnapshot IS NULL;
+GO
+
+UPDATE o
+   SET ShipToAddressSnapshot = (
+           SELECT a.ID AS AddressID,
+                  NULLIF(LTRIM(RTRIM(a.Line1)), '') AS Line1,
+                  NULLIF(LTRIM(RTRIM(a.Line2)), '') AS Line2,
+                  NULLIF(LTRIM(RTRIM(a.Line3)), '') AS Line3,
+                  NULLIF(LTRIM(RTRIM(a.City)), '') AS City,
+                  NULLIF(LTRIM(RTRIM(a.StateProvince)), '') AS StateProvince,
+                  NULLIF(LTRIM(RTRIM(a.PostalCode)), '') AS PostalCode,
+                  NULLIF(LTRIM(RTRIM(a.Country)), '') AS Country
+           FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES)
+  FROM [${flyway:defaultSchema}].[OrderHeader] o
+  JOIN [__mj_BizAppsCommon].[Address] a ON a.ID = o.ShipToAddressID
+ WHERE o.Status = 'Confirmed'
+   AND o.ShipToAddressSnapshot IS NULL;
+GO
+
+UPDATE l
+   SET ShipToAddressSnapshot = (
+           SELECT a.ID AS AddressID,
+                  NULLIF(LTRIM(RTRIM(a.Line1)), '') AS Line1,
+                  NULLIF(LTRIM(RTRIM(a.Line2)), '') AS Line2,
+                  NULLIF(LTRIM(RTRIM(a.Line3)), '') AS Line3,
+                  NULLIF(LTRIM(RTRIM(a.City)), '') AS City,
+                  NULLIF(LTRIM(RTRIM(a.StateProvince)), '') AS StateProvince,
+                  NULLIF(LTRIM(RTRIM(a.PostalCode)), '') AS PostalCode,
+                  NULLIF(LTRIM(RTRIM(a.Country)), '') AS Country
+           FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES)
+  FROM [${flyway:defaultSchema}].[OrderLine] l
+  JOIN [${flyway:defaultSchema}].[OrderHeader] o ON o.ID = l.OrderHeaderID
+  JOIN [__mj_BizAppsCommon].[Address] a ON a.ID = l.ShipToAddressID
+ WHERE o.Status = 'Confirmed'
+   AND l.ShipToAddressSnapshot IS NULL;
+GO
+
+-- -----------------------------------------------------------------------------
 -- trg_OrderHeader_AddressFrozenAfterConfirm
 -- -----------------------------------------------------------------------------
 -- Judged by the PRIOR status (deleted.Status), so the confirming UPDATE itself,
--- which writes the snapshots, passes.
---
--- The second condition does not depend on status: a snapshot that is already
+-- which writes the snapshots, passes. On a Confirmed order:
+--   · an address that is set may not be replaced or cleared;
+--   · an empty address may be filled only in the same write as its snapshot, so
+--     a confirmed order never names an address it has no record of.
+-- The last two conditions do not depend on status: a snapshot that is already
 -- written is final even if the order's status were moved by direct SQL.
 --
 -- Nullable columns are compared with EXISTS / EXCEPT, which treats two NULLs as
@@ -91,10 +161,14 @@ BEGIN
         WHERE (
                 d.Status = 'Confirmed'
                 AND (
-                    EXISTS (SELECT i.BillToAddressID EXCEPT SELECT d.BillToAddressID) OR
-                    EXISTS (SELECT i.ShipToAddressID EXCEPT SELECT d.ShipToAddressID) OR
-                    EXISTS (SELECT i.BillToAddressSnapshot EXCEPT SELECT d.BillToAddressSnapshot) OR
-                    EXISTS (SELECT i.ShipToAddressSnapshot EXCEPT SELECT d.ShipToAddressSnapshot)
+                    (d.BillToAddressID IS NOT NULL
+                        AND EXISTS (SELECT i.BillToAddressID EXCEPT SELECT d.BillToAddressID)) OR
+                    (d.ShipToAddressID IS NOT NULL
+                        AND EXISTS (SELECT i.ShipToAddressID EXCEPT SELECT d.ShipToAddressID)) OR
+                    (d.BillToAddressID IS NULL AND i.BillToAddressID IS NOT NULL
+                        AND i.BillToAddressSnapshot IS NULL) OR
+                    (d.ShipToAddressID IS NULL AND i.ShipToAddressID IS NOT NULL
+                        AND i.ShipToAddressSnapshot IS NULL)
                 )
               )
            OR (d.BillToAddressSnapshot IS NOT NULL
@@ -104,7 +178,7 @@ BEGIN
     )
     BEGIN
         ROLLBACK TRANSACTION;
-        THROW 51015, 'OrderHeader bill-to and ship-to addresses cannot be changed once the order is Confirmed; the order keeps the address it was sold to. Use a reversal order.', 1;
+        THROW 51015, 'OrderHeader bill-to and ship-to addresses cannot be replaced once the order is Confirmed, and an empty one can be filled only together with its snapshot; the order keeps the address it was sold to. Use a reversal order.', 1;
     END;
 END;
 GO
@@ -112,10 +186,10 @@ GO
 -- -----------------------------------------------------------------------------
 -- trg_OrderLine_AddressFrozenAfterConfirm
 -- -----------------------------------------------------------------------------
--- A line has no status of its own; the header's current status decides. The
--- confirm path writes a draft order's existing lines while the header is still
--- Draft, and inserts a new order's lines after the header, so neither write is
--- an UPDATE under a Confirmed header.
+-- The same rule for a line's own ship-to. A line has no status of its own; the
+-- header's current status decides. The confirm path writes a draft order's
+-- existing lines while the header is still Draft, and inserts a new order's
+-- lines after the header, so neither write is an UPDATE under a Confirmed header.
 CREATE TRIGGER [${flyway:defaultSchema}].[trg_OrderLine_AddressFrozenAfterConfirm]
 ON [${flyway:defaultSchema}].[OrderLine]
 AFTER UPDATE
@@ -131,8 +205,10 @@ BEGIN
         WHERE (
                 o.Status = 'Confirmed'
                 AND (
-                    EXISTS (SELECT i.ShipToAddressID EXCEPT SELECT d.ShipToAddressID) OR
-                    EXISTS (SELECT i.ShipToAddressSnapshot EXCEPT SELECT d.ShipToAddressSnapshot)
+                    (d.ShipToAddressID IS NOT NULL
+                        AND EXISTS (SELECT i.ShipToAddressID EXCEPT SELECT d.ShipToAddressID)) OR
+                    (d.ShipToAddressID IS NULL AND i.ShipToAddressID IS NOT NULL
+                        AND i.ShipToAddressSnapshot IS NULL)
                 )
               )
            OR (d.ShipToAddressSnapshot IS NOT NULL
@@ -140,7 +216,7 @@ BEGIN
     )
     BEGIN
         ROLLBACK TRANSACTION;
-        THROW 51016, 'OrderLine ship-to address cannot be changed once its order is Confirmed; the line keeps the address it was sold to. Use a reversal order.', 1;
+        THROW 51016, 'OrderLine ship-to address cannot be replaced once its order is Confirmed, and an empty one can be filled only together with its snapshot; the line keeps the address it was sold to. Use a reversal order.', 1;
     END;
 END;
 GO
@@ -406,18 +482,20 @@ GO
       END;
 
 /* Create IS-A parent field ShipToAddressSnapshot on MJ_BizApps_Orders: Event Order Lines */
-INSERT INTO [${mjSchema}].[EntityField] (
-                  [ID], [EntityID], [Name], [Type], [AllowsNull],
-                  [Length], [Precision], [Scale],
-                  [Sequence], [IsVirtual], [AllowUpdateAPI],
-                  [IsPrimaryKey], [IsUnique],
-                  [__mj_CreatedAt], [__mj_UpdatedAt])
-               VALUES (
-                  '06b78e89-798d-4e4e-a487-44f11885103a', '90A1060F-35D6-44A7-9076-A9053BBF60E6', 'ShipToAddressSnapshot',
-                  'nvarchar', 1,
-                  -1, 0, 0,
-                  (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '90A1060F-35D6-44A7-9076-A9053BBF60E6'), 1, 1, 0, 0,
-                  GETUTCDATE(), GETUTCDATE());
+IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '06b78e89-798d-4e4e-a487-44f11885103a' OR (EntityID = '90A1060F-35D6-44A7-9076-A9053BBF60E6' AND Name = 'ShipToAddressSnapshot')) BEGIN
+    INSERT INTO [${mjSchema}].[EntityField] (
+                      [ID], [EntityID], [Name], [Type], [AllowsNull],
+                      [Length], [Precision], [Scale],
+                      [Sequence], [IsVirtual], [AllowUpdateAPI],
+                      [IsPrimaryKey], [IsUnique],
+                      [__mj_CreatedAt], [__mj_UpdatedAt])
+                   VALUES (
+                      '06b78e89-798d-4e4e-a487-44f11885103a', '90A1060F-35D6-44A7-9076-A9053BBF60E6', 'ShipToAddressSnapshot',
+                      'nvarchar', 1,
+                      -1, 0, 0,
+                      (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '90A1060F-35D6-44A7-9076-A9053BBF60E6'), 1, 1, 0, 0,
+                      GETUTCDATE(), GETUTCDATE());
+END;
 
 /* Update entity timestamp for MJ_BizApps_Orders: Event Order Lines after IS-A field sync */
 UPDATE [${mjSchema}].[Entity] SET [__mj_UpdatedAt]=GETUTCDATE() WHERE ID='90A1060F-35D6-44A7-9076-A9053BBF60E6';

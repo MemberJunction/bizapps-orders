@@ -61,29 +61,36 @@ type AddressRuleOrder = {
     refuseBookedAddressEdits(result: ValidationResult): void;
 };
 
+/** Field state as BaseEntity reports it: which fields changed, and what each held before. */
+type FieldState = { dirty?: string[]; old?: Record<string, string | null> };
+
+function fieldsOf(state: FieldState) {
+    const dirty = state.dirty ?? [];
+    return (name: string) => ({ Dirty: dirty.includes(name), OldValue: state.old?.[name] ?? null });
+}
+
 interface FakeLine {
     IsSaved: boolean;
     LineNumber: number;
-    GetFieldByName(name: string): { Dirty: boolean };
+    GetFieldByName(name: string): { Dirty: boolean; OldValue: string | null };
 }
 
-function fakeLine(lineNumber: number, dirty: string[] = []): FakeLine {
-    return {
-        IsSaved: true,
-        LineNumber: lineNumber,
-        GetFieldByName: (name: string) => ({ Dirty: dirty.includes(name) }),
-    };
+function fakeLine(lineNumber: number, state: FieldState = {}): FakeLine {
+    return { IsSaved: true, LineNumber: lineNumber, GetFieldByName: fieldsOf(state) };
 }
 
-function order(opts: { booked: boolean; bookingInFlight?: boolean; dirty?: string[]; lines?: FakeLine[] }): AddressRuleOrder {
+const SET = { BillToAddressID: 'a-1', ShipToAddressID: 'a-2' };
+
+function order(opts: FieldState & { booked: boolean; stamped?: boolean; lines?: FakeLine[] }): AddressRuleOrder {
     const instance = Object.create(OrderHeaderEntity.prototype) as AddressRuleOrder;
     const dirty = opts.dirty ?? [];
     Object.defineProperty(instance, 'MoneyLocked', { value: opts.booked });
     Object.defineProperty(instance, 'OrderNumber', { value: 'ORD-000123' });
     Object.defineProperty(instance, 'Lines', { value: { Items: opts.lines ?? [] } });
     Object.assign(instance, {
-        bookingInFlight: opts.bookingInFlight ?? false,
+        addressSnapshotsStamped: opts.stamped ?? false,
         FieldIsDirty: (...names: string[]) => names.some((n) => dirty.includes(n)),
+        GetFieldByName: fieldsOf(opts),
     });
     return instance;
 }
@@ -96,37 +103,66 @@ function run(instance: AddressRuleOrder): ValidationResult {
 }
 
 describe('OrderHeaderEntity refuses address changes on a confirmed order', () => {
-    it('refuses a new bill-to or ship-to address', () => {
-        const result = run(order({ booked: true, dirty: ['BillToAddressID', 'ShipToAddressID'] }));
+    it('refuses replacing or clearing a bill-to or ship-to address that is set', () => {
+        const result = run(order({ booked: true, dirty: ['BillToAddressID', 'ShipToAddressID'], old: SET }));
 
         expect(result.Success).toBe(false);
         expect(result.Errors.map((e) => e.Source)).toEqual(['BillToAddressID', 'ShipToAddressID']);
-        expect(result.Errors[0].Message).toMatch(/ORD-000123 is confirmed.*bill-to address/);
+        expect(result.Errors[0].Message).toMatch(/ORD-000123 is confirmed.*bill-to address cannot be replaced or cleared/);
     });
 
-    it('refuses a new ship-to address on a saved line, attributed to the line', () => {
-        const result = run(order({ booked: true, lines: [fakeLine(1), fakeLine(2, ['ShipToAddressID'])] }));
+    it('lets an empty address be filled after confirm', () => {
+        const result = run(order({ booked: true, dirty: ['BillToAddressID', 'ShipToAddressID'], old: {} }));
+
+        expect(result.Success).toBe(true);
+    });
+
+    it('refuses replacing a saved line ship-to, attributed to the line', () => {
+        const result = run(order({
+            booked: true,
+            lines: [fakeLine(1), fakeLine(2, { dirty: ['ShipToAddressID'], old: { ShipToAddressID: 'a-3' } })],
+        }));
 
         expect(result.Success).toBe(false);
         expect(result.Errors.map((e) => e.Source)).toEqual(['Lines[1].ShipToAddressID']);
     });
 
+    it('lets an empty line ship-to be filled after confirm', () => {
+        const result = run(order({ booked: true, lines: [fakeLine(1, { dirty: ['ShipToAddressID'] })] }));
+
+        expect(result.Success).toBe(true);
+    });
+
     it('leaves a draft free to change its addresses', () => {
-        const result = run(order({ booked: false, dirty: ['BillToAddressID', 'ShipToAddressID'], lines: [fakeLine(1, ['ShipToAddressID'])] }));
+        const result = run(order({
+            booked: false,
+            dirty: ['BillToAddressID', 'ShipToAddressID'],
+            old: SET,
+            lines: [fakeLine(1, { dirty: ['ShipToAddressID'], old: { ShipToAddressID: 'a-3' } })],
+        }));
 
         expect(result.Success).toBe(true);
         expect(result.Errors).toHaveLength(0);
     });
 
-    it('refuses a snapshot written by anything but the booking save, on any order', () => {
-        const result = run(order({ booked: false, dirty: ['BillToAddressSnapshot'] }));
+    it('refuses a header or line snapshot the server did not write, on any order', () => {
+        const result = run(order({
+            booked: false,
+            dirty: ['BillToAddressSnapshot'],
+            lines: [fakeLine(1, { dirty: ['ShipToAddressSnapshot'] })],
+        }));
 
         expect(result.Success).toBe(false);
-        expect(result.Errors.map((e) => e.Source)).toEqual(['BillToAddressSnapshot']);
+        expect(result.Errors.map((e) => e.Source)).toEqual(['BillToAddressSnapshot', 'Lines[0].ShipToAddressSnapshot']);
     });
 
-    it('lets the booking save write the snapshots', () => {
-        const result = run(order({ booked: false, bookingInFlight: true, dirty: ['BillToAddressSnapshot', 'ShipToAddressSnapshot'] }));
+    it('lets the server write the snapshots', () => {
+        const result = run(order({
+            booked: true,
+            stamped: true,
+            dirty: ['BillToAddressSnapshot', 'ShipToAddressSnapshot'],
+            lines: [fakeLine(1, { dirty: ['ShipToAddressSnapshot'] })],
+        }));
 
         expect(result.Success).toBe(true);
     });

@@ -31,6 +31,7 @@ import { DispatchFormNavigation } from '../form-navigation-helper';
 import {
     ExpandedPartyFromPref,
     FormatPartyAddress,
+    FormatSoldAddress,
     NextExpandedParty,
     OrderHeaderExpandedFromPref,
     type OrderFormParty,
@@ -377,7 +378,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public get BillToDetail(): string {
-        const address = this.FormatEmbeddedAddress(this.record?.BillToAddressAsSold ?? this.record?.BillToAddressID_Object)
+        const address = FormatSoldAddress(() => this.record?.BillToAddressAsSold ?? null)
+            || this.FormatEmbeddedAddress(this.record?.BillToAddressID_Object)
             || this.record?.BillToAddress;
         const bits = [this.record?.BillToPerson, this.record?.PaymentTermsType, address]
             .filter((value): value is string => !!value);
@@ -390,7 +392,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public get ShipToDetail(): string {
-        return this.FormatEmbeddedAddress(this.record?.ShipToAddressAsSold ?? this.record?.ShipToAddressID_Object)
+        return FormatSoldAddress(() => this.record?.ShipToAddressAsSold ?? null)
+            || this.FormatEmbeddedAddress(this.record?.ShipToAddressID_Object)
             || this.record?.ShipToAddress
             || 'Header default — override when it ships elsewhere';
     }

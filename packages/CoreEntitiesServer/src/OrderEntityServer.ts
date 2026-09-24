@@ -428,7 +428,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // rollups this save sends are the rollups the row already holds, so the write is a no-op
             // on those four columns no matter what the caller believed about them.
             await this.refreshRolledUpTotals();
-            return super.Save(options);
+            try {
+                if (this.IsBookedOrder) await this.stampAddressSnapshots('fill');
+                return await super.Save(options);
+            } finally {
+                this.addressSnapshotsStamped = false;
+            }
         }
 
         // WHEN IT IS DUE, DECIDED ONCE AND STORED (D83) — AND RESOLVED BEFORE THE TRANSACTION OPENS.
@@ -546,7 +551,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // header is still Draft, and `trg_OrderLine_AddressFrozenAfterConfirm` refuses the line
             // snapshot once the header is Confirmed. Inside the transaction, so it reads the same
             // Address rows the tax resolution in `prepareLines` just read.
-            if (booking) await this.stampAddressSnapshots();
+            if (booking) await this.stampAddressSnapshots('confirm');
+            else if (this.IsBookedOrder) await this.stampAddressSnapshots('fill');
 
             // CONFIRM-AFTER-DRAFT: the lines already exist. `prepareLines` just prorated them
             // (membership qty 1 → 0.3836). If the header flips to Confirmed first, trigger 51003
@@ -662,6 +668,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             return false;
         } finally {
             this.bookingInFlight = false;
+            this.addressSnapshotsStamped = false;
         }
     }
 
@@ -1495,25 +1502,64 @@ export class OrderEntityServer extends OrderHeaderEntity {
     /**
      * Copy the bill-to and ship-to addresses onto the order and its lines (golive #263).
      *
+     * `confirm` — the booking save. Every address the order and its lines name is copied, replacing
+     * whatever the in-memory record carried.
+     *
+     * `fill` — any later save of a booked order. A snapshot that is already stored is kept, whatever
+     * the caller sent; one that is missing is written from its address. That covers an empty address
+     * filled after confirm, and an order confirmed before snapshots existed.
+     *
      * A line gets a snapshot only when it names a ship-to address of its own; a line without one
-     * ships to the header's. A reference with no Address row behind it refuses the confirm:
-     * `OrderLine.ShipToAddressID` has no foreign key, and confirming with no record of where the sale
-     * went is the defect this exists to prevent.
+     * ships to the header's. A reference with no Address row behind it refuses the save:
+     * `OrderLine.ShipToAddressID` has no foreign key, and a confirmed order with no record of where
+     * the sale went is the defect this exists to prevent.
      */
-    private async stampAddressSnapshots(): Promise<void> {
-        const ids = [
-            this.BillToAddressID,
-            this.ShipToAddressID,
-            ...this.Lines.Items.map((line) => line.ShipToAddressID),
-        ].filter((id): id is string => !!id);
+    private async stampAddressSnapshots(mode: 'confirm' | 'fill'): Promise<void> {
+        type Target = {
+            entity: BaseEntity;
+            snapshotField: string;
+            what: string;
+            addressID: () => string | null;
+            write: (snapshot: string | null) => void;
+        };
+        const targets: Target[] = [
+            {
+                entity: this,
+                snapshotField: 'BillToAddressSnapshot',
+                what: 'bill-to',
+                addressID: () => this.BillToAddressID,
+                write: (v) => { this.BillToAddressSnapshot = v; },
+            },
+            {
+                entity: this,
+                snapshotField: 'ShipToAddressSnapshot',
+                what: 'ship-to',
+                addressID: () => this.ShipToAddressID,
+                write: (v) => { this.ShipToAddressSnapshot = v; },
+            },
+            ...this.Lines.Items.map((line): Target => ({
+                entity: line,
+                snapshotField: 'ShipToAddressSnapshot',
+                what: `line ${line.LineNumber ?? ''} ship-to`,
+                addressID: () => line.ShipToAddressID,
+                write: (v) => { line.ShipToAddressSnapshot = v; },
+            })),
+        ];
+        const stored = (t: Target): string | null => {
+            const old = t.entity.GetFieldByName(t.snapshotField)?.OldValue;
+            return typeof old === 'string' && old ? old : null;
+        };
+        const addressID = (t: Target): string | null => t.addressID() ?? null;
+        const needsRead = (t: Target): boolean => !!addressID(t) && (mode === 'confirm' || !stored(t));
 
+        const ids = targets.filter(needsRead).map((t) => addressID(t) as string);
         const byID = new Map<string, AddressLike>();
         if (ids.length) {
             const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
             const result = await rv.RunView<AddressLike>(
                 {
                     EntityName: COMMON_ADDRESS_ENTITY,
-                    ExtraFilter: `ID IN (${RequireUUIDs(ids, 'AddressID').map((id) => `'${id}'`).join(',')})`,
+                    ExtraFilter: `ID IN (${RequireUUIDs([...new Set(ids)], 'AddressID').map((id) => `'${id}'`).join(',')})`,
                     Fields: [...ADDRESS_SNAPSHOT_FIELDS],
                     ResultType: 'simple',
                     BypassCache: true,
@@ -1526,23 +1572,24 @@ export class OrderEntityServer extends OrderHeaderEntity {
             for (const row of result.Results) byID.set(row.ID.toLowerCase(), row);
         }
 
-        const snapshot = (id: string | null, what: string): string | null => {
-            if (!id) return null;
-            const row = byID.get(id.toLowerCase());
-            if (!row) {
-                throw new Error(
-                    `Order ${this.OrderNumber ?? ''} cannot be confirmed: its ${what} address (${id}) no longer exists. ` +
-                        `Choose the address again and confirm.`,
-                );
+        for (const t of targets) {
+            let value: string | null;
+            if (!needsRead(t)) {
+                value = mode === 'confirm' ? null : stored(t);
+            } else {
+                const id = addressID(t) as string;
+                const row = byID.get(id.toLowerCase());
+                if (!row) {
+                    throw new Error(
+                        `Order ${this.OrderNumber ?? ''} cannot be saved: its ${t.what} address (${id}) does not exist ` +
+                            `or is not visible to you. Choose the address again and save.`,
+                    );
+                }
+                value = BuildAddressSnapshot(row);
             }
-            return BuildAddressSnapshot(row);
-        };
-
-        this.BillToAddressSnapshot = snapshot(this.BillToAddressID, 'bill-to');
-        this.ShipToAddressSnapshot = snapshot(this.ShipToAddressID, 'ship-to');
-        for (const line of this.Lines.Items) {
-            line.ShipToAddressSnapshot = snapshot(line.ShipToAddressID, `line ${line.LineNumber ?? ''} ship-to`);
+            t.write(value);
         }
+        this.addressSnapshotsStamped = true;
     }
 
     private async readBalanceFromRow(): Promise<ResolvedOrderRollups> {

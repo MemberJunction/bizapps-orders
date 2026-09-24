@@ -10,6 +10,9 @@
  * confirmed order reads that copy. Draft and Quoted orders have no snapshot and keep following the
  * live row. The database refuses to rewrite a snapshot once written (51015 / 51016).
  *
+ * An order that is already Confirmed without a snapshot — confirmed before snapshots existed, or
+ * created Confirmed by a data conversion — gets one the next time it is saved through the server.
+ *
  * @module @mj-biz-apps/orders-entities
  */
 
@@ -39,9 +42,6 @@ export interface AddressLike {
 
 /** The `Address` columns a snapshot copies, for a `Fields` list on a view read. */
 export const ADDRESS_SNAPSHOT_FIELDS = ['ID', 'Line1', 'Line2', 'Line3', 'City', 'StateProvince', 'PostalCode', 'Country'] as const;
-
-/** The line columns that must not change once the order is confirmed. */
-export const ORDER_LINE_ADDRESS_FIELDS = ['ShipToAddressID', 'ShipToAddressSnapshot'] as const;
 
 /** The snapshot JSON for an address row. Blank strings are stored as null. */
 export function BuildAddressSnapshot(address: AddressLike): string {
