@@ -55,6 +55,7 @@ import {
     mjBizAppsOrdersSubscriptionEntity,
     mjBizAppsOrdersSubscriptionEventEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
+    ToISODate,
 } from '@mj-biz-apps/orders-entities';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
@@ -81,7 +82,8 @@ import {
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
-import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
+import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import { AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
@@ -601,12 +603,23 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // per-company gross does not exist until the lines are written. Throwing rolls the
                 // whole confirm back: no journal entries, no subscription, no sequence number spent.
                 // An order with no schedule rows has nothing to check and books exactly as before.
-                await this.verifyScheduleTies(lines);
+                const scheduleRows = await this.verifyScheduleTies(lines);
 
                 // Subscriptions before booking: a term must exist so recognition entries can anchor
                 // to it (D46) and use its anchored/prorated window rather than raw line dates.
                 const subs = await this.materializeSubscriptions(lines, decisions, options);
-                await this.bookLines(lines, options, subs);
+                await this.bookLines(lines, options, subs, scheduleRows);
+
+                // ISSUE WHAT IS ALREADY DUE (D92). A company billed by instalment books no value at
+                // confirm — except the instalments whose due date has already arrived, usually the
+                // first. Those are billed now, through the SAME act a person triggers later, so the
+                // document number, the stamps and the entry are identical whichever route issued
+                // them. Inside this transaction: a confirm that fails must leave no invoiced row.
+                //
+                // AFTER bookLines, deliberately. Booking is what puts an up-front line's revenue on
+                // the ledger, and rule 1 reads BilledToDate, so issuing first would price the
+                // contra split against a total that the same confirm is about to change.
+                await this.issueDueInstalments(scheduleRows);
                 await this.createInitialPayment(options);
 
                 // ENTITLEMENTS LAST, and INSIDE this transaction (D27/D76).
@@ -2089,6 +2102,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         lines: mjBizAppsOrdersOrderLineEntity[],
         options?: EntitySaveOptions,
         subs?: SubscriptionMaterialization,
+        /** The schedule, already read for the tie check — it decides the Unbilled/AR split (D89). */
+        scheduleRows?: ScheduleTimingFacts[],
     ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
@@ -2105,7 +2120,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             user,
         );
 
-        const drafts = await factory.BuildDrafts(this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine);
+        const drafts = await factory.BuildDrafts(this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows);
         // An order can legitimately produce NO entries: every line fully comped, so nothing to
         // debit or credit. Accounting refuses an empty draft set, quite correctly, so the call is
         // skipped rather than the order being refused for having no ledger impact.
@@ -2129,6 +2144,35 @@ export class OrderEntityServer extends OrderHeaderEntity {
         }
 
         await this.stampJournalEntryIDs(drafts, result, options);
+
+        // ADVANCE BOTH TOTALS IN THIS TRANSACTION (D92) — the totals are the ledger's summary of
+        // itself, and a separate writer is how they drift from the journal lines they summarise.
+        //
+        // BilledToDate matters here for the ORDINARY order, the one with no schedule: booking IS
+        // its invoice, so nothing else will ever advance it. Left at zero, rule 2 would read "no
+        // deferred balance" and every monthly subscription release would debit Unbilled Receivable
+        // instead of relieving the Deferred that booking created — a contract asset invented on the
+        // commonest order in the system, with the entry balancing either way.
+        const billedAtBooking = factory.DrainBilled();
+        const recognizedAtBooking = factory.DrainRecognized();
+        for (const orderLineID of new Set([...billedAtBooking.keys(), ...recognizedAtBooking.keys()])) {
+            const billed = billedAtBooking.get(orderLineID) ?? 0;
+            const recognized = recognizedAtBooking.get(orderLineID) ?? 0;
+            if (billed === 0 && recognized === 0) continue;
+            const line = this.Lines.Items.find((l) => UUIDsEqual(l.ID, orderLineID));
+            const target = line ?? (await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user));
+            if (!line && !(await target.Load(orderLineID))) {
+                throw new Error(`Order line ${orderLineID} could not be loaded to advance its RecognizedToDate.`);
+            }
+            target.BilledToDate = Number(target.BilledToDate ?? 0) + billed;
+            target.RecognizedToDate = Number(target.RecognizedToDate ?? 0) + recognized;
+            if (!(await target.Save(options))) {
+                throw new Error(
+                    target.LatestResult?.CompleteMessage ??
+                        `The running totals could not be advanced on order line ${orderLineID}.`,
+                );
+            }
+        }
     }
 
     /**
@@ -3218,19 +3262,25 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
-     * Refuse a confirm whose payment schedule does not tie to its lines, naming the shortfall.
+     * Refuse a confirm whose payment schedule does not tie to its lines, naming the shortfall, and
+     * hand back the rows that survived the check.
      *
      * Treating an unscheduled remainder as "due on the header date" would silently under-bill —
      * the failure `InvoiceBehavior` already names. The check itself is `ScheduleShortfalls`, shared
      * with `Orders.IssueInstalmentInvoice` so both refuse for the same reason in the same words.
+     *
+     * The rows are RETURNED because booking needs them too (D89): which instalments are still
+     * future-dated is what decides how much of each line's debit is a contract asset rather than a
+     * receivable. One read, at the one place that already owns the transaction — the factory is
+     * handed the facts rather than querying for them.
      */
-    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
+    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<ScheduleTimingFacts[]> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const rows = await rv.RunView<{ CompanyID: string; Company?: string; Amount: number; Status: string }>(
+        const rows = await rv.RunView<ScheduleTimingFacts & { Company?: string }>(
             {
                 EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
                 ExtraFilter: `OrderHeaderID='${RequireUUID(this.ID, 'ID')}'`,
-                Fields: ['CompanyID', 'Company', 'Amount', 'Status'],
+                Fields: ['ID', 'CompanyID', 'Company', 'Amount', 'Status', 'DueDate', 'InstallmentNumber'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -3243,9 +3293,42 @@ export class OrderEntityServer extends OrderHeaderEntity {
             rows.Results ?? [],
             lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
         );
-        if (!shortfalls.length) return;
+        if (!shortfalls.length) return rows.Results ?? [];
         const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
         throw new Error(ExplainShortfalls(this.OrderNumber ?? '', shortfalls, (id) => String(names.get(id) ?? id)));
+    }
+
+    /**
+     * Bill every instalment already due on the order's effective date (D92).
+     *
+     * ORDER MATTERS AND IS STABLE: rows are issued in `InstallmentNumber` order, so a company with
+     * two instalments due on day one numbers them the way a person would and the slices are taken
+     * against the same sibling list in the same sequence every time.
+     *
+     * A refusal here THROWS. Confirm is all-or-none — the tie check above already refused a
+     * schedule that does not add up — so an instalment that cannot be issued must take the whole
+     * confirm down rather than leave an order booked with a bill it could not raise.
+     */
+    private async issueDueInstalments(scheduleRows: ScheduleTimingFacts[]): Promise<void> {
+        if (!scheduleRows.length) return;
+        const effectiveDate = (this.OrderDate ? new Date(this.OrderDate) : new Date()).toISOString().slice(0, 10);
+
+        const due = scheduleRows
+            .filter((r) => r.Status === 'Scheduled' && ToISODate(r.DueDate) !== null && ToISODate(r.DueDate)! <= effectiveDate)
+            .sort((a, b) => Number(a.InstallmentNumber ?? 0) - Number(b.InstallmentNumber ?? 0));
+        if (!due.length) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        for (const row of due) {
+            const outcome = await IssueInstalment(String(row.ID), provider, user);
+            if (!outcome.Success) {
+                throw new Error(
+                    `Order ${this.OrderNumber} could not issue instalment ${row.InstallmentNumber}, which is ` +
+                        `due on or before the order date: ${outcome.Message}`,
+                );
+            }
+        }
     }
 
     private async loadLinesForBooking(): Promise<mjBizAppsOrdersOrderLineEntity[]> {

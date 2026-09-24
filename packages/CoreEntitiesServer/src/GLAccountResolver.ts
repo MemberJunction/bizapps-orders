@@ -58,6 +58,25 @@ export const GL_ROLE = {
      * OrderJournalEntryFactory, which records that it fell back rather than doing it silently.
      */
     GiftCardLiability: 'Gift Card Liability',
+    /**
+     * The contract asset: revenue EARNED AHEAD OF BILLING — service delivered that the contract does
+     * not yet let us invoice. A live account under D92, resolved by both of its ordering rules.
+     *
+     * Recognising revenue debits Deferred down to what has been billed and then debits this account
+     * for the rest; invoicing an instalment credits this account down to zero before it opens any
+     * new Deferred. Both rules are {@link SplitContraLegs} in ContractBalance.ts.
+     *
+     * NOT seeded by accounting's starter roles — the role row travels with a release's
+     * Metadata_Sync — so callers must tolerate it failing to resolve, exactly as GiftCardLiability
+     * does. The fallback is Deferred Revenue: every entry still balances and no revenue is
+     * misstated, but the balance sheet then shows one number where there should be two. Orders logs
+     * the company by name rather than falling back silently.
+     *
+     * THE NAME IS A CROSS-REPO CONTRACT. Orders resolves roles by accounting's exact `Name` string,
+     * so this has to agree with bizapps-accounting's seeded row character for character; a
+     * one-character drift resolves nothing and every entry still balances.
+     */
+    UnbilledReceivable: 'Unbilled Receivable',
 } as const;
 
 export type GLRole = (typeof GL_ROLE)[keyof typeof GL_ROLE];
