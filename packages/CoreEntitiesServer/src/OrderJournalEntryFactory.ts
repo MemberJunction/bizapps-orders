@@ -72,7 +72,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
-import { BuildCreditMemoLines, SplitContraLegs } from './ContractBalance.js';
+import { BuildCreditMemoLines, ProratedCreditMemo, SplitContraLegs, type ReversalPosition } from './ContractBalance.js';
 import { ResolveInstalmentEntryType } from './InstalmentInvoiceEntry.js';
 import {
     GL_ROLE,
@@ -245,14 +245,18 @@ export interface ValueEntryAccounts {
  * those rules belong to the entry, not to its arithmetic.
  */
 /**
- * What a reversing line gives back, and what to call it (D92 §6).
+ * A reversing line whose ORIGIN is billed by instalment (D92 §6): the origin's position, and what
+ * to call it.
  *
- * The amount belongs to the ORIGIN line and the names belong to the origin ORDER, both of which sit
- * outside the order being booked — so the caller reads them and hands them in, the same bargain
- * `scheduleRows` strikes.
+ * Its presence is the "origin is scheduled" fact. Such a line books the credit memo or nothing,
+ * never the mirrored value entry — even when the memo is zero, because a customer who was never
+ * billed is owed nothing back. The position belongs to the ORIGIN line and the names to the origin
+ * ORDER, both outside the order being booked, so the caller reads them and hands them in, the same
+ * bargain `scheduleRows` strikes.
  */
-export interface CreditMemoForLine {
-    Amount: number;
+export interface CreditMemoForLine extends ReversalPosition {
+    /** The origin's net, which is what its staged releases were built from. */
+    OriginNet: number;
     OriginOrderNumber?: string | null;
     OriginLineNumber?: number | null;
 }
@@ -387,11 +391,9 @@ export class OrderJournalEntryFactory {
          */
         scheduleRows?: ScheduleTimingFacts[],
         /**
-         * The credit memo each REVERSING line gives back, keyed by the reversing line's ID (D92 §6).
-         * The amount is the ORIGIN line's billed-and-unearned balance, which lives on a different
-         * order and so cannot be read from `lines` — the caller already loads the reversal context
-         * and hands it in, the same bargain `scheduleRows` strikes. Absent for every order that
-         * reverses nothing, which is nearly all of them.
+         * Each REVERSING line whose origin is billed by instalment, keyed by the reversing line's ID
+         * (D92 §6). The origin lives on a different order and so cannot be read from `lines`. Absent
+         * for every order that reverses nothing, which is nearly all of them.
          */
         creditMemoByLine?: Map<string, CreditMemoForLine>,
     ): Promise<OrderLineDraft[]> {
@@ -510,7 +512,7 @@ export class OrderJournalEntryFactory {
         scheduledCompanies: Set<string>,
         term?: { ID: string; StartDate: Date; EndDate: Date; Amount: number },
         recognitionMonths?: number,
-        /** This reversing line's credit memo — the origin line's billed-and-unearned balance (D92 §6). */
+        /** Present when this line reverses a line billed by instalment (D92 §6). */
         creditMemo?: CreditMemoForLine,
     ): Promise<OrderLineDraft[]> {
         const product = products.get(line.ProductID.toLowerCase());
@@ -651,18 +653,27 @@ export class OrderJournalEntryFactory {
             );
         }
 
-        // A REVERSAL ON A SCHEDULED COMPANY CREDITS THE MEMO, NOT A MIRRORED BOOKING ENTRY (D92 §6).
-        // An ordinary reversal mirrors what booking posted, but a scheduled company never posted a
-        // value entry — its value reaches the ledger one instalment at a time — so mirroring nothing
-        // would give nothing back. What the customer is owed is what they were invoiced and have not
-        // consumed: the origin line's Deferred balance, computed by the caller and handed in.
-        // NOT gated on `isScheduled`: that describes THIS order, and a reversal is a separate order
-        // with no schedule of its own. The caller decided, from the ORIGIN's company, whether a memo
-        // is owed — its presence here is that decision.
-        const memo = isReversal ? (creditMemo?.Amount ?? 0) : 0;
+        // A REVERSAL OF A SCHEDULED ORIGIN CREDITS THE MEMO OR NOTHING, NEVER A MIRRORED BOOKING
+        // ENTRY (D92 §6). A scheduled company never posted a value entry — its value reaches the
+        // ledger one instalment at a time — so mirroring one would credit the customer for invoices
+        // they never received: 12,000 back on a contract cancelled before its first instalment.
+        // What they are owed is what they were invoiced and have not consumed, prorated to the
+        // quantity returned. NOT gated on `isScheduled`: that describes THIS order, and a reversal is
+        // a separate order with no schedule of its own. The caller read the ORIGIN's schedule.
+        const scheduledOrigin = isReversal ? creditMemo : undefined;
+        const stagesReleases = revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard;
+        const memo = scheduledOrigin
+            ? ProratedCreditMemo(
+                  scheduledOrigin,
+                  line.Quantity,
+                  stagesReleases ? this.stagedEarnedThrough(revRec, line, scheduledOrigin.OriginNet, effectiveDate, recognitionMonths) : 0,
+              )
+            : 0;
 
-        const bookingLines: JELineDraft[] = memo > 0
-            ? BuildCreditMemoLines(memo, { AR: arAccount, Deferred: await resolve(GL_ROLE.DeferredRevenue) }, product.Name, lineDims)
+        const bookingLines: JELineDraft[] = scheduledOrigin
+            ? memo > 0
+                ? BuildCreditMemoLines(memo, { AR: arAccount, Deferred: await resolve(GL_ROLE.DeferredRevenue) }, product.Name, lineDims)
+                : []
             : isScheduled
             ? []
             : BuildValueEntryLines(
@@ -681,7 +692,16 @@ export class OrderJournalEntryFactory {
         // BOOKING IS THE INVOICE for a company with no schedule, so its whole net is billed here
         // and nothing downstream will ever say so. Recorded on the revenue basis (net), matching
         // RecognizedToDate.
-        if (!isScheduled) {
+        //
+        // A MEMO UN-BILLS THE ORIGIN, not this line. The reversing line itself bills nothing — AR
+        // moved by the memo alone — and the origin's BilledToDate falls by it, so the next partial
+        // reversal prorates what is actually left and the totals still sum to the ledger.
+        if (scheduledOrigin) {
+            if (memo > 0) {
+                const origin = scheduledOrigin.OriginLineID;
+                this._billedByLine.set(origin, money((this._billedByLine.get(origin) ?? 0) - memo));
+            }
+        } else if (!isScheduled) {
             this._billedByLine.set(line.ID, isReversal ? money(-net) : net);
         }
 
@@ -767,7 +787,7 @@ export class OrderJournalEntryFactory {
         // the reversal's own entry, Dr Deferred / Cr AR, and mirroring it would credit the customer's
         // obligation and debit their receivable — the exact opposite of giving money back.
         const bookingEntryLines = mirrorIf(
-            isReversal && memo <= 0,
+            isReversal && !scheduledOrigin,
             bookingLines.filter((l) => money(l.DebitAmount ?? 0) !== 0 || money(l.CreditAmount ?? 0) !== 0),
         );
         // NOTHING TO BOOK is a legitimate outcome, not a failure. A fully-comped line — 100% off, or
@@ -824,7 +844,13 @@ export class OrderJournalEntryFactory {
                 PeriodMonths: recognitionMonths,
             });
 
-            for (const entry of schedule.Entries) {
+            // A SCHEDULED ORIGIN KEEPS WHAT IT HAS EARNED (Andrew, #237). The memo gave back only the
+            // unearned part, so only the releases still to come are mirrored; mirroring the whole
+            // term would also un-recognise the months already delivered and strand them in Deferred.
+            const releases = scheduledOrigin
+                ? schedule.Entries.filter((e) => isoDate(e.RecognitionDate) > effectiveDate)
+                : schedule.Entries;
+            for (const entry of releases) {
                 const releaseLines: JELineDraft[] = [
                     {
                         GLAccountID: bookingCreditAccount,
@@ -864,6 +890,32 @@ export class OrderJournalEntryFactory {
         }
 
         return out;
+    }
+
+    /**
+     * What the origin line has earned through `asOf` from its staged releases (D92 §6).
+     *
+     * Rebuilt from the same driver and the same window the origin staged, at the origin's net.
+     * The reversing line inherits the origin's window, so this is the origin's own schedule, not
+     * an estimate of it. Needed because `RecognizedToDate` does not count staged releases.
+     */
+    private stagedEarnedThrough(
+        revRec: RevRecTypeRow,
+        line: mjBizAppsOrdersOrderLineEntity,
+        originNet: number,
+        asOf: string,
+        recognitionMonths?: number,
+    ): number {
+        const schedule = this.driverFor(revRec).BuildSchedule({
+            Amount: originNet,
+            BookingDate: new Date(asOf),
+            ServicePeriodStart: line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null,
+            ServicePeriodEnd: line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null,
+            PeriodMonths: recognitionMonths,
+        });
+        return money(
+            schedule.Entries.filter((e) => isoDate(e.RecognitionDate) <= asOf).reduce((sum, e) => sum + e.Amount, 0),
+        );
     }
 
     /**

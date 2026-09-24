@@ -73,6 +73,8 @@ export interface ReversalOrigin {
      */
     BilledToDate?: number | null;
     RecognizedToDate?: number | null;
+    /** The origin's revenue-bearing net — what its staged releases were built from (D92 §6). */
+    LineTotalNet?: number | null;
 }
 
 /** The reversal being attempted. Quantity is negative, as the caller wrote it. */

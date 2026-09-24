@@ -130,22 +130,49 @@ export function InstalmentsToCancel(rows: ReversalScheduleRow[]): string[] {
     return rows.filter((r) => r.Status !== 'Canceled' && !r.DocumentNumber).map((r) => r.ID);
 }
 
+/** The origin line's contract position, as one reversing line sees it (D92 §6). */
+export interface ReversalPosition {
+    /** The ORIGIN line — the one whose BilledToDate the memo reduces. */
+    OriginLineID: string;
+    BilledToDate: number;
+    RecognizedToDate: number;
+    /**
+     * The origin quantity not yet taken back by a reversal on ANOTHER order. Earlier reversals have
+     * already reduced BilledToDate by their memos, so the balance left belongs to this many units.
+     */
+    RemainingQuantity: number;
+}
+
 /**
- * Per line, the billed-but-not-earned balance a reversal credits back.
+ * The credit memo one reversing line gives back: its share of the origin's billed-but-unearned
+ * balance.
  *
- * This is the credit memo: `Dr Deferred / Cr AR` for what the customer was invoiced and has not yet
- * consumed. Revenue already recognised STAYS recognised (Andrew) — the service was delivered and
- * unwinding the contract does not undeliver it — so the memo reaches only as far as the Deferred
- * balance and no further. Lines with nothing billed, or billed less than earned, contribute zero
- * and are omitted rather than returned as zeroes, so the caller's entry has no empty lines to filter.
+ * This is `Dr Deferred / Cr AR` for what the customer was invoiced and has not yet consumed. Revenue
+ * already recognised STAYS recognised (Andrew): unwinding the contract does not undeliver the service,
+ * so the memo reaches only as far as the Deferred balance and no further.
+ *
+ * PRORATED BY QUANTITY against what is still left, not against what was sold. The caller reduces the
+ * origin's BilledToDate by each memo, so after returning 4 of 10 the balance that remains belongs to
+ * the other 6. Measuring the next reversal against 10 would under-credit it; measuring against 6
+ * credits exactly what is left, and the memos of successive partial reversals sum to what one whole
+ * reversal would have given.
+ *
+ * @param stagedEarned revenue the origin has earned through staged releases dated on or before the
+ *   reversal. `RecognizedToDate` does not count those (D92 §8 is parked), so a subscription line
+ *   would otherwise look entirely unearned and get its whole billed amount back.
  */
-export function CreditMemoByLine(lines: ContractLineBalance[]): Map<string, number> {
-    const out = new Map<string, number>();
-    for (const line of lines) {
-        const deferred = money(Number(line.BilledToDate ?? 0) - Number(line.RecognizedToDate ?? 0));
-        if (deferred > 0) out.set(line.OrderLineID, deferred);
+export function ProratedCreditMemo(position: ReversalPosition, reversalQuantity: number, stagedEarned: number): number {
+    const quantity = Math.abs(Number(reversalQuantity));
+    const remaining = Number(position.RemainingQuantity);
+    if (!(remaining > 0) || quantity > remaining + 1e-9) {
+        throw new Error(
+            `Reversing ${quantity} of order line ${position.OriginLineID} leaves ${remaining} to take back ` +
+                `from — the reversal validation should have refused this before booking.`,
+        );
     }
-    return out;
+    const deferred = money(Number(position.BilledToDate ?? 0) - Number(position.RecognizedToDate ?? 0) - stagedEarned);
+    if (deferred <= 0) return 0;
+    return money((deferred * quantity) / remaining);
 }
 
 /**
@@ -217,7 +244,7 @@ export interface CreditMemoLine {
  * already recognised is not touched: the service was delivered and reversing the contract does not
  * undeliver it (Andrew).
  *
- * @param amount the line's `max(0, BilledToDate − RecognizedToDate)`, from {@link CreditMemoByLine}
+ * @param amount the reversing line's share of the origin's Deferred balance, from {@link ProratedCreditMemo}
  * @returns the two lines, or an empty array when there is nothing billed-and-unearned to give back
  */
 export function BuildCreditMemoLines(
