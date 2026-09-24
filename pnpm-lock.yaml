@@ -198,7 +198,7 @@ importers:
         specifier: '>=5.46.0'
         version: 5.46.0(@memberjunction/core@6.1.0-edge.5)(@memberjunction/global@6.1.0-edge.5)
       '@mj-biz-apps/common-ng':
-        specifier: '>=5.45.0'
+        specifier: '>=5.46.0'
         version: 5.46.0(f2e0e681d8ac0f6f66b57cfec74493aa)
       '@mj-biz-apps/orders-entities':
         specifier: 5.16.0

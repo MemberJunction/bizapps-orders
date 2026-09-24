@@ -58,8 +58,7 @@ import { MJOReturnPageComponent } from '../pages/orders/return.page';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { CompositeKey, Metadata } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { GetCatalogOptions, GetPaymentTypes, GetSellingCompanies, type MJOProductOption } from '../data/orders-queries';
-import { CommonSettings } from '@mj-biz-apps/common-ng';
+import { GetCatalogOptions, GetPaymentTypes, type MJOProductOption } from '../data/orders-queries';
 
 /**
  * An order and its lines, loaded together.
@@ -215,10 +214,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         try {
             // Load the shared inputs BEFORE constructing the page. A component
             // created imperatively runs `ngOnInit` on its first change detection,
-            // and fast entry builds its order there from `CompanyID` — so an
-            // input that arrives afterwards is an input that arrives too late. The
-            // draft was being built with an empty company, which made every
-            // preview fail validation and left the line "resolving…" forever.
+            // so an input that arrives afterwards is an input that arrives too late.
             const inputs = await this.sharedInputs();
 
             // A page opened FOR A RECORD needs that record, not a blank one.
@@ -327,13 +323,11 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
      * produce an answer already in memory.
      */
     private async sharedInputs(): Promise<Record<string, unknown>> {  // eslint-disable-line
-        const [Catalog, CompanyID, Tenders, Companies] = await Promise.all([
+        const [Catalog, Tenders] = await Promise.all([
             this.catalogOptions(),
-            this.defaultCompanyID(),
             this.tenderOptions(),
-            GetSellingCompanies(),
         ]);
-        return { Catalog, CompanyID, Tenders, Companies };
+        return { Catalog, Tenders };
     }
 
     private catalogCache: MJOProductOption[] | null = null;
@@ -344,29 +338,6 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             this.catalogCache = await GetCatalogOptions();
         }
         return this.catalogCache;
-    }
-
-    private companyCache: string | null = null;
-
-    /**
-     * The company a new order belongs to — the legal entity that books the revenue.
-     *
-     * This used to be the first product's company, on the reasoning that a company with no
-     * products cannot be sold from. That is true and still the wrong default: which entity
-     * books an order is a finance decision, not a consequence of how the catalogue happens to
-     * sort, and it was invisible to the person entering the order. It now comes from the
-     * configured Common setting, the same one the order form's selling-company field defaults
-     * to and confirms against, so fast entry and the form cannot disagree.
-     *
-     * An instance that has configured nothing gets an empty value, which is the pre-existing
-     * behaviour for an unconfigured picker rather than a guess.
-     */
-    private async defaultCompanyID(): Promise<string> {
-        if (this.companyCache !== null) return this.companyCache;
-        const md = new Metadata();
-        await CommonSettings.Load(Metadata.Provider, md.CurrentUser);
-        this.companyCache = CommonSettings.DefaultSellingCompanyID ?? '';
-        return this.companyCache;
     }
 
     private tenderCache: Array<Record<string, unknown>> | null = null;
