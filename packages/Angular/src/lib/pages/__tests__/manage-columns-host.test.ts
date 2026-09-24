@@ -48,8 +48,6 @@ const sources = new Map(pageFiles().map((p) => [p, readFileSync(join(PAGES, p), 
  */
 const MANAGE_COLUMNS_DEAD = [
     'orders/fulfillment.page.ts',
-    'orders/orders-dashboard.page.ts',
-    'orders/orders-list.page.ts',
     'payments/account-credit.page.ts',
     'payments/payments-dashboard.page.ts',
     'payments/payments-list.page.ts',

@@ -6,14 +6,22 @@ import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../..
 
 import { DaysSince, FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent, MJEmptyStateComponent, MJTabNavComponent, type TabConfig, type MJAlertVariant } from '@memberjunction/ng-ui-components';
-import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { GetOrders } from '../../data/orders-queries';
 import { OverdueFilter, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
-import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
+import { LoadOrdersWorkingView, NewPresetView } from '../../data/order-views';
+
+/**
+ * The payload `mj-view-workspace` emits from `OpenRecordRequested`.
+ *
+ * The workspace declares this shape inline rather than exporting a named type, so it is restated
+ * here instead of widening the handler to `any` — the compiler still checks the binding.
+ */
+type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> };
 
 /** A customer (organization or individual) ranked by lifetime order spend. */
 export interface MJOTopCustomerItem {
@@ -49,7 +57,7 @@ interface MJOAttentionItem {
  *
  * Provides a unified workspace with 3 tabs:
  * 1. Executive Overview & Action Queues
- * 2. Full-featured Orders Explorer (<mj-entity-viewer>)
+ * 2. Full-featured Orders Explorer (mj-view-workspace)
  * 3. Receivables & Aging Breakdown
  */
 @Component({
@@ -210,12 +218,15 @@ interface MJOAttentionItem {
                             </span>
                         </div>
                         <div class="mjo-dash__viewer-host">
-                            @if (OrderEntityInfo) {
-                                <mj-entity-viewer
+                            @if (ViewError) {
+                                <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" role="alert">{{ ViewError }}</mj-alert>
+                            } @else if (OrderEntityInfo && WorkingView) {
+                                <mj-view-workspace
                                     [Entity]="OrderEntityInfo"
-                                    [GridState]="OrderGridState"
-                                    (RecordOpened)="OnRecordOpened($event)">
-                                </mj-entity-viewer>
+                                    [SelectedView]="WorkingView"
+                                    [AutoSaveView]="true"
+                                    (OpenRecordRequested)="OnRecordOpened($event)">
+                                </mj-view-workspace>
                             } @else {
                                 <div class="small muted" style="padding: 24px;">Loading order metadata...</div>
                             }
@@ -245,13 +256,15 @@ interface MJOAttentionItem {
                 </div>
             } @else if (ActiveTab === 'explorer') {
                 <div class="mjo-explorer-wrapper">
-                    @if (OrderEntityInfo) {
-                        <mj-entity-viewer
+                    @if (ViewError) {
+                        <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" role="alert">{{ ViewError }}</mj-alert>
+                    } @else if (OrderEntityInfo && WorkingView) {
+                        <mj-view-workspace
                             [Entity]="OrderEntityInfo"
-                            [ViewEntity]="ExplorerView"
-                            [GridState]="OrderGridState"
-                            (RecordOpened)="OnRecordOpened($event)">
-                        </mj-entity-viewer>
+                            [SelectedView]="ExplorerView ?? WorkingView"
+                            [AutoSaveView]="true"
+                            (OpenRecordRequested)="OnRecordOpened($event)">
+                        </mj-view-workspace>
                     } @else {
                         <div class="small muted" style="padding: 24px;">Loading order metadata...</div>
                     }
@@ -263,12 +276,13 @@ interface MJOAttentionItem {
                         Order lines waiting to ship. Marking a line fulfilled updates shipping status only. It does not change the order's accounting.
                     </p>
                     <div class="mjo-explorer-wrapper">
-                        @if (OrderLineEntityInfo) {
-                            <mj-entity-viewer
+                        @if (OrderLineEntityInfo && FulfillmentQueueView) {
+                            <mj-view-workspace
                                 [Entity]="OrderLineEntityInfo"
-                                [ViewEntity]="FulfillmentQueueView"
-                                (RecordOpened)="OnRecordOpened($event)">
-                            </mj-entity-viewer>
+                                [SelectedView]="FulfillmentQueueView"
+                                [AutoSaveView]="true"
+                                (OpenRecordRequested)="OnRecordOpened($event)">
+                            </mj-view-workspace>
                         } @else {
                             <div class="small muted" style="padding: 24px;">Loading fulfillment queue...</div>
                         }
@@ -312,13 +326,15 @@ interface MJOAttentionItem {
                                 </span>
                             </div>
                             <div class="mjo-dash__viewer-host" style="min-height: 520px;">
-                                @if (OrderEntityInfo) {
-                                    <mj-entity-viewer
+                                @if (ViewError) {
+                                    <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" role="alert">{{ ViewError }}</mj-alert>
+                                } @else if (OrderEntityInfo && AgingOverdueView) {
+                                    <mj-view-workspace
                                         [Entity]="OrderEntityInfo"
-                                        [ViewEntity]="AgingOverdueView"
-                                        [GridState]="OrderGridState"
-                                        (RecordOpened)="OnRecordOpened($event)">
-                                    </mj-entity-viewer>
+                                        [SelectedView]="AgingOverdueView"
+                                        [AutoSaveView]="true"
+                                        (OpenRecordRequested)="OnRecordOpened($event)">
+                                    </mj-view-workspace>
                                 } @else {
                                     <div class="small muted" style="padding: 24px;">Loading order metadata...</div>
                                 }
@@ -390,7 +406,7 @@ interface MJOAttentionItem {
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -545,39 +561,49 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
 
     public OrderEntityInfo: EntityInfo | null = null;
     public OrderLineEntityInfo: EntityInfo | null = null;
+    /** The shared "Orders: Working" view — the unfiltered Order Headers grids open on it. */
+    public WorkingView: MJUserViewEntityExtended | null = null;
+    /** The Explorer's preset view; `null` shows {@link WorkingView}. */
     public ExplorerView: MJUserViewEntityExtended | null = null;
-    public readonly OrderGridState = MJO_ORDER_HEADER_GRID_STATE;
-
-    public get AgingOverdueView(): MJUserViewEntityExtended | null {
-        if (!this.OrderEntityInfo) return null;
-        const today = new Date().toISOString().slice(0, 10);
-        return {
-            EntityID: this.OrderEntityInfo.ID,
-            Entity: this.OrderEntityInfo.Name,
-            WhereClause: OverdueFilter(today),
-            ID: 'preset-aging-overdue',
-            Name: 'Overdue Collections'
-        } as unknown as MJUserViewEntityExtended;
-    }
-
-    public get FulfillmentQueueView(): MJUserViewEntityExtended | null {
-        if (!this.OrderLineEntityInfo) return null;
-        return {
-            EntityID: this.OrderLineEntityInfo.ID,
-            Entity: this.OrderLineEntityInfo.Name,
-            WhereClause: `FulfillmentStatus IN ('Pending', 'PartiallyFulfilled', 'Unfulfilled')`,
-            ID: 'preset-fulfillment-queue',
-            Name: 'Fulfillment Queue'
-        } as unknown as MJUserViewEntityExtended;
-    }
+    public AgingOverdueView: MJUserViewEntityExtended | null = null;
+    public FulfillmentQueueView: MJUserViewEntityExtended | null = null;
+    /** Set when the working view cannot be loaded; the Order Headers grids show it instead. */
+    public ViewError: string | null = null;
 
     private orders: mjBizAppsOrdersOrderHeaderEntity[] = [];
+    /** Bumped per preset request, so a slow earlier request cannot land after a later one. */
+    private presetRequest = 0;
 
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
         this.OrderEntityInfo = md.Entities.find(e => e.Name === 'MJ_BizApps_Orders: Order Headers') || null;
         this.OrderLineEntityInfo = md.Entities.find(e => e.Name === 'MJ_BizApps_Orders: Order Lines') || null;
+        await Promise.all([this.loadViews(), this.loadOrders()]);
+        this.cdr.detectChanges();
+    }
+
+    private async loadOrders(): Promise<void> {
         this.orders = await GetOrders({ Preset: 'all' });
+        this.cdr.detectChanges();
+    }
+
+    private async loadViews(): Promise<void> {
+        if (this.OrderLineEntityInfo) {
+            this.FulfillmentQueueView = await NewPresetView(
+                this.OrderLineEntityInfo,
+                'Fulfillment Queue',
+                `FulfillmentStatus IN ('Pending', 'PartiallyFulfilled', 'Unfulfilled')`,
+            );
+        }
+        try {
+            this.WorkingView = await LoadOrdersWorkingView();
+            if (this.OrderEntityInfo) {
+                const today = new Date().toISOString().slice(0, 10);
+                this.AgingOverdueView = await NewPresetView(this.OrderEntityInfo, 'Overdue Collections', OverdueFilter(today), this.WorkingView.GridState);
+            }
+        } catch (e) {
+            this.ViewError = e instanceof Error ? e.message : String(e);
+        }
         this.cdr.detectChanges();
     }
 
@@ -589,7 +615,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
-    public OpenExplorerPreset(preset: string): void {
+    public async OpenExplorerPreset(preset: string): Promise<void> {
         const today = new Date().toISOString().slice(0, 10);
         let whereClause: string | null = null;
         let presetName = 'All Orders';
@@ -615,24 +641,23 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
                 break;
         }
 
-        if (whereClause && this.OrderEntityInfo) {
-            this.ExplorerView = {
-                EntityID: this.OrderEntityInfo.ID,
-                Entity: this.OrderEntityInfo.Name,
-                WhereClause: whereClause,
-                ID: `preset-${preset}`,
-                Name: presetName
-            } as unknown as MJUserViewEntityExtended;
-        } else {
-            this.ExplorerView = null;
-        }
+        const request = ++this.presetRequest;
+        const view = whereClause && this.OrderEntityInfo && this.WorkingView
+            ? await NewPresetView(this.OrderEntityInfo, presetName, whereClause, this.WorkingView.GridState)
+            : null;
+        if (request !== this.presetRequest) return;
 
+        this.ExplorerView = view;
         this.ActiveTab = 'explorer';
         this.cdr.detectChanges();
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    /**
+     * The workspace hands back the row it opened, not a composite key — every grid here keys on
+     * `ID`, so the row carries it. A row without an `ID` is not openable and is dropped.
+     */
+    public OnRecordOpened(event: OpenRecordRequest): void {
+        const id = event.record['ID'] as string | undefined;
         if (id) {
             const match = this.orders.find(o => o.ID === id);
             if (match) {

@@ -15,8 +15,8 @@ export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './
 export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './GetBillingWorklistOperation.js';
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
-export { EmitInstalmentReclassEntry } from './InstalmentReclass.js';
-export type { InstalmentReclassContext } from './InstalmentReclass.js';
+export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
+export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
 export {
     AddMonths,
     BuildPaymentSchedule,
@@ -24,8 +24,16 @@ export {
     ExplainShortfalls,
     SCHEDULE_DEFAULTS,
     ScheduleShortfalls,
+    ScheduledCompanyIDs,
 } from './PaymentScheduleBehavior.js';
-export type { ScheduleCadence, ScheduleLineFacts, ScheduleRowDraft, ScheduleRowFacts, ScheduleShortfall } from './PaymentScheduleBehavior.js';
+export type {
+    ScheduleCadence,
+    ScheduleLineFacts,
+    ScheduleRowDraft,
+    ScheduleRowFacts,
+    ScheduleShortfall,
+    ScheduleTimingFacts,
+} from './PaymentScheduleBehavior.js';
 
 // Fulfilment (D15) — a logistics fact, deliberately disconnected from revenue.
 export {
@@ -48,8 +56,8 @@ export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_E
 export { MergeOrderRollups, ORDER_ROLLUP_FIELDS } from './OrderRollupBehavior.js';
 export type { OrderRollupField, OrderRollups, ResolvedOrderRollups } from './OrderRollupBehavior.js';
 
-export { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
-export type { JEDraft, JELineDraft, OrderLineDraft } from './OrderJournalEntryFactory.js';
+export { OrderJournalEntryFactory, BuildValueEntryLines, LineAmounts } from './OrderJournalEntryFactory.js';
+export type { JEDraft, JELineDraft, OrderLineDraft, ValueEntryAmounts, ValueEntryAccounts } from './OrderJournalEntryFactory.js';
 export { MergeLineDimensions, MergeDerivedTags } from './LineDimensionMerge.js';
 export { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 export type { DimensionDefaultEntityIDs, ResolvedDefault } from './DimensionDefaultResolver.js';
@@ -93,8 +101,9 @@ export {
     EntityIDFor,
     LoadAccountingEngine,
     ResolverEntities,
+    SubmitJournalEntryDrafts,
 } from './AccountingBridge.js';
-export type { AccountingEngineSurface } from './AccountingBridge.js';
+export type { AccountingEngineSurface, CreateJournalEntriesOutcome } from './AccountingBridge.js';
 
 export { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
 export type {
@@ -427,6 +436,7 @@ export type {
 export {
     AuthorizeManualDiscount,
     BasePromotionQualifier,
+    ManualDiscountAmount,
     LoadPromotionEngine,
     PromotionError,
     RunPromotions,

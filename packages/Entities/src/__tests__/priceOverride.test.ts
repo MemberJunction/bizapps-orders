@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
     PRICE_OVERRIDE_AUTH,
+    PRICE_OVERRIDE_REASON_REQUIRED,
     isEnginePrice,
     isNamedListPick,
     moneyEqual,
     priceOverrideCatalogInstalled,
+    priceOverrideReasonMissing,
     userPriceOverrideKind,
 } from '../pricing/priceOverride.js';
 
@@ -39,5 +41,38 @@ describe('price override helpers', () => {
     it('denies override when there is no user', () => {
         expect(userPriceOverrideKind(null, { Authorizations: [] })).toBe('none');
         expect(userPriceOverrideKind(undefined, { Authorizations: [] })).toBe('none');
+    });
+});
+
+/**
+ * golive #253 item 4 — a flagged line has to say why.
+ *
+ * The helper only answers "is a reason missing from a line that claims an override"; whether the
+ * flag is TRUE is the client's decision at pick time. Converted lines with a flag and no reason are
+ * flagged as missing here too — the server decides, from dirtiness, whether to act on that.
+ */
+describe('priceOverrideReasonMissing', () => {
+    it('is false for a line on its default price, reason or not', () => {
+        expect(priceOverrideReasonMissing({ PriceOverridden: false, PriceOverrideReason: null })).toBe(false);
+        expect(priceOverrideReasonMissing({ PriceOverridden: 0, PriceOverrideReason: 'stale note' })).toBe(false);
+        expect(priceOverrideReasonMissing({})).toBe(false);
+    });
+
+    it('is true for an overridden line with no reason, however the flag arrives', () => {
+        expect(priceOverrideReasonMissing({ PriceOverridden: true, PriceOverrideReason: null })).toBe(true);
+        expect(priceOverrideReasonMissing({ PriceOverridden: 1, PriceOverrideReason: '' })).toBe(true);
+        expect(priceOverrideReasonMissing({ PriceOverridden: '1', PriceOverrideReason: undefined })).toBe(true);
+    });
+
+    it('does not accept whitespace as a reason', () => {
+        expect(priceOverrideReasonMissing({ PriceOverridden: true, PriceOverrideReason: '   \n' })).toBe(true);
+    });
+
+    it('is false once a reason is given', () => {
+        expect(priceOverrideReasonMissing({ PriceOverridden: true, PriceOverrideReason: 'Board-approved rate' })).toBe(false);
+    });
+
+    it('phrases the refusal as an instruction, not a code', () => {
+        expect(PRICE_OVERRIDE_REASON_REQUIRED).toBe('Enter a reason for the price override');
     });
 });

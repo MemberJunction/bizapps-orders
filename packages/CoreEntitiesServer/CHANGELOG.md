@@ -1,5 +1,251 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.16.0
+
+### Minor Changes
+
+- 2e9e3dd: `V202609221500__DimensionDefault` could not apply on any host but the one it was generated from.
+
+  It seeds five `EntityFieldValue` rows for `OrderLine.FulfillmentStatus` against the hardcoded
+  `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
+  GUID exists only on the authoring database. Everywhere else:
+
+      The INSERT statement conflicted with the FOREIGN KEY constraint
+      "FK_EntityFieldValue_EntityField"
+
+  which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
+  and left the app registered `Error`.
+
+  **This is a regression of the 5.11.0 fix** — same GUID, same five values — which corrected the identical
+  defect in `V202609061900`. Regenerating a migration from the authoring database re-emitted the hardcoded
+  ID, and nothing in CI catches it.
+
+  The field is now resolved by natural key (`Entity.BaseTable = 'OrderLine'` + `EntityField.Name =
+'FulfillmentStatus'`), with a `THROW` if genuinely absent rather than a silent no-op. Each value is
+  guarded independently on `(EntityFieldID, Value)` and on its own row ID, so a host carrying some of them
+  already — which includes every host that ran the 5.11.0 fix — keeps its rows and gains only what is
+  missing.
+
+  Edited in place rather than superseded, because a later migration cannot rescue this one: it aborts the
+  run before anything after it executes. No host carries a checksum for it, since it cannot have applied
+  successfully anywhere but the authoring database.
+
+### Patch Changes
+
+- Updated dependencies [2e9e3dd]
+  - @mj-biz-apps/orders-entities@5.16.0
+
+## 5.15.0
+
+### Minor Changes
+
+- 09624cb: Derive an order line's GL dimensions instead of waiting for someone to type them.
+
+  An order line could already state ONE dimension tag by hand. The chart-of-accounts design needs five
+  axes on a revenue line and needs them with no human in the loop, which is what
+  MemberJunction/bc-aidp-next-golive#236 actually asks for. This adds the derivation.
+
+  `DimensionDefault` is the product half of the mapping: polymorphic over Product, ProductCategory,
+  ProductType and Company and date-effective, so it is resolved by the same precedence
+  `GLAccountResolver` already walks for accounts — product, its category and that category's
+  ancestors, its product type, then the line's company. Most specific wins **per dimension** rather
+  than per walk, so a category can supply Venture while the product supplies Product and both land on
+  the line. That is what lets a venture be stated once instead of copied onto every product.
+
+  Two axes cannot come from a mapping table, because they are facts about the line rather than the
+  product. ARR-Type reads the subscription decision the save already carries — `CreateNew` is New,
+  `ExtendExisting` and `Reactivate` are Renewal — rather than `SubscriptionTerm.TermNumber`, which is
+  not written until later in the same save. Vintage reads the event's own year, in UTC, so an event
+  starting just after midnight is not filed under the previous year by a server west of the venue.
+  Both resolve by CODE, because the ids are minted per environment by whatever pulls the dimensions
+  out of Business Central; a missing dimension or value yields no tag rather than a guess.
+
+  The derived values are written as `OrderLineDimension` child rows, so a line can carry all five
+  axes. `OrderLine.DimensionID` / `DimensionValueID` become the **human override**: `MergeLineDimensions`
+  already gives the column precedence over a child row naming the same axis, so setting a tag by hand
+  overrules what was derived for that one axis and nothing else. Where the product mapping and a
+  line-level rule name the same axis, the rule wins — it was computed from this line.
+
+  Stamping is diffed rather than delete-and-reinsert, so saving an unchanged order writes nothing to
+  the change log, and booked lines are skipped because their tags are what the journal entry already
+  carries. The whole pass leaves early when no `Dimension` rows exist at all, which is every
+  environment until the ERP sync has run — so this ships inert and starts working when the dimensions
+  arrive.
+
+  Nothing here refuses a booking. An unmapped product yields no tags and books untagged, which is the
+  state every line was in before this existed; refusing would turn a half-configured mapping into an
+  outage across every order.
+
+- 21167e2: Order Headers: stop emitting the geocoding columns, so the view and the generated types agree again.
+
+  `Entity.SupportsGeoCoding` was set on Order Headers at some point, so CodeGen emitted `__mj_Latitude` /
+  `__mj_Longitude` into `vwOrderHeadersGenerated` along with a join to `[__mj].[vwRecordGeoCodes]`. The
+  generated TypeScript was later regenerated with the flag off, dropping both fields from the entity and
+  GraphQL types — but **CodeGen only adds geo columns, it never removes them**, so the view kept them.
+
+  Between 5.13.0 and 5.14.0 the two halves diverged:
+
+  |                         | `__mj_Latitude` |
+  | ----------------------- | --------------- |
+  | 5.13.0 generated code   | present         |
+  | 5.14.0 generated code   | **gone**        |
+  | the view, both releases | present         |
+
+  A client builds its query from live `__mj.EntityField` metadata, which reflects the **view**, so it asks
+  for `_mj__Latitude` (GraphQL reserves a leading `__`). The API type, built from the generated code, has
+  no such field:
+
+      Cannot query field "_mj__Latitude" on type "mjBizAppsOrdersOrderHeader_"
+
+  Single-record load and save on Order Headers both fail. Grids keep working, because views do not go
+  through the generated type — which is what made it look like a deployment problem rather than a
+  packaging one. Reported as MemberJunction/bc-aidp-next-golive#251; root cause in #238.
+
+  **The view loses the columns rather than the generated code regaining them.** Order Headers has no use
+  for geocoding and the columns have never carried a value — 120 rows on the reporting host, none with a
+  latitude.
+
+  Both statements in the migration are required, and neither is sufficient alone: clearing the flag leaves
+  the existing columns in place, and recreating the view without also clearing the flag lets the next
+  CodeGen run add them straight back. `AutoUpdateSupportsGeoCoding` is cleared too, so the flag is not
+  re-derived.
+
+  The recreated view is the CodeGen output from `V202609061900` minus exactly the two select expressions
+  and the `vwRecordGeoCodes` join, so a later regeneration against a host with the flag off is a no-op.
+  `CREATE OR ALTER` because the view exists on every installed host.
+
+- 7ec08da: Payment schedules on the order header (golive #239, plan D85–D88, W1/W4–W8). New `OrderHeaderPaymentSchedule` table: one row per instalment with a stamped `CompanyID`, its own `AmountPaid`/`Balance` rollup, and invoice identity (`DocumentNumber`, `InvoicedAt`, `InvoicedByUserID`, `JournalEntryID`) frozen at invoicing; `ExternalSystem`/`ExternalInvoiceRef`/`SentAt` for the outbound integration to write. `PaymentLine.OrderHeaderPaymentScheduleID` aims a payment at one instalment; unnamed payments cascade oldest-due-first. `vwOrderHeaders` gains `NextDueDate` and `IsOverdue` ages on it. New operations `Orders.IssueInstalmentInvoice` (freeze number, stamp, advance; idempotent; calls the AR-reclass seam AIDP-25 fills) and `Orders.GetBillingWorklist` (instalments due with no invoice), with a Billing worklist page on the Receivables rail. Confirm refuses a schedule that does not tie to the lines, naming the shortfall. Per-instalment invoice documents via `PaymentScheduleID` on `Orders.GenerateInvoice`. An order with no schedule behaves exactly as before.
+- 5293c47: Make the order line price picker mean what it says, and require a reason for an override.
+
+  The picker behind the pencil had three faults in one control (MemberJunction/bc-aidp-next-golive#253).
+  Its Default row did nothing: the option's value was the empty string, and the `<select>`'s bound
+  value was applied before its conditional options existed, so the browser fell back to the first row
+  — Default — while the component still believed the line was on a custom amount. Choosing Default was
+  then choosing what the DOM already had, and no change event fired. Selection is now bound per option
+  and Default carries a real sentinel value.
+
+  The "overridden" badge stuck after a return to list price, because every named-rule pick set
+  `PriceOverridden` whether or not the pick differed from the default. The flag is now derived: a pick
+  or a typed amount that lands on the engine default restores the default and clears the flag, the
+  reason and any custom amount; only a price that actually deviates is flagged. A saved line put back
+  on Default is stamped with the rules' answer rather than its stored baseline, which may itself have
+  been the override.
+
+  To make that comparison exact, `Orders.PriceOrder` now reports, per line, the rule that produced the
+  price (`ProductPriceID`) and the engine's default (`Default`: unit price, rule id, rule name) — for
+  a pinned line too. `OrderPricingService` gains `IncludeDefaultsForStatedLines`, an opt-in that
+  resolves the rules for a stated line without stamping it and reports the answer in `EngineDefaults`;
+  the save path does not set it. With the default known by id, the picker no longer lists the rule the
+  engine already chose: Default is that rule, named and priced, and a product with one applicable rule
+  offers Default and Custom amount alone.
+
+  `PriceOverrideReason` is now required when `PriceOverridden` is set. The order line's `ValidateAsync`
+  refuses the save with "Enter a reason for the price override", and the panel marks the explanation
+  required and keeps Done disabled until it has text. The rule fires only when the override itself is
+  being written — a new line, or a saved one whose price or override fields changed — so lines
+  converted from the previous system, which carry overridden prices with no reason, stay loadable and
+  editable for everything else. No database constraint; the field's metadata description now says it
+  is required when the price is overridden.
+
+### Patch Changes
+
+- 426e730: A discount can be recorded on an order line.
+
+  `OrderLine` has carried `DiscountPct` and `DiscountAmount` since the baseline, the booking entry has
+  had a Sales Discounts leg driven by both since the baseline, and `SalesAuthority` has existed to gate
+  who may grant one. Nothing in the product could reach any of it: the only control on a line was the
+  price picker, and a price override is different economics. An override says the price was different;
+  a discount says the list price held and value was given away, and only the second is reportable as
+  discounting. The Sales Discounts account could therefore only ever hold figures the Business Central
+  conversion put there. That is MemberJunction/bc-aidp-next-golive#252.
+
+  The control is a Discount block inside the price editor, drawn apart from the price picker on
+  purpose. It takes a percentage or an amount — one concession expressed two ways, resolved to one
+  number by `ManualDiscountAmount` before anything judges it — a mandatory reason, and it shows what is
+  left to discount as you type. It writes no discount field. It stages an unsaved row on
+  `Order.Adjustments`, which is the channel `OrderEntityServer` already drains at save time, so the
+  concession goes through `AuthorizeManualDiscount` and leaves an adjustment row naming the line, the
+  reason, the authority that permitted it and any approver. A discount written straight onto the line
+  would produce the same number with none of that.
+
+  Four defects in the engine had to be fixed for that channel to work, none of which could surface
+  before something used it:
+
+  A discount aimed at ONE line silently became an order-level one. The pricing walk keys lines
+  positionally — an unsaved line has no key yet — so a caller naming a real `OrderLine.ID` matched
+  nothing, and an unmatched target fell through to the order-level branch and was allocated pro-rata
+  across every line on the order. `Orders.PriceOrder` had the same fault by a different route: its
+  input names a target by `LineIndex` and passed it through under a field the engine reads as an id.
+  Both spellings now resolve, and a line this order does not have is refused rather than widened.
+
+  The preview ignored `DiscountPct` outright. Both pricing paths computed a line's net as
+  `gross − DiscountAmount` while `OrderLineEntityServer` and the journal entry apply the percentage, so
+  a line carrying one was quoted at a figure the ledger would never book. Converted orders carry that
+  field today, so this was live before anything in the product could set it. Both paths now go through
+  `NetAfterDiscount`, which is the function the line itself uses.
+
+  A second discount replaced the first. The stamp assigns `DiscountAmount`, which is correct for a run
+  that decided every discount on the line and wrong for a manual one that knows only about the new
+  request — the stored figure was erased while the earlier adjustment rows survived describing money
+  the line no longer showed. The running total is now seeded with what the line already carries, so
+  concessions accumulate, and a second one is judged against what is LEFT rather than against the
+  original line value. Stacking to a free line one authorized slice at a time is no longer possible.
+
+  A discount larger than the thing it discounts was accepted. It floored the net at zero and, for a
+  zero or negative amount, failed at `CK_OrderAdjustment_Amount` — a constraint name, to someone who
+  had typed a number. Both are refused with a sentence now.
+
+  A fifth was the header-only shortcut in `OrderEntityServer.Save`, which asks whether the LINES are
+  dirty. Staging a request touches no line, so the flow a person actually runs — open a saved draft,
+  discount a line, save — skipped the drain, the authorization and the stamp, and handed the staged row
+  to the graph as an ordinary related record: an adjustment with no authority, no allocation and no
+  change to the line. The shortcut now also asks whether anything is staged. Staged CHARGES had the
+  same hole and are covered by the same clause; nothing caught either, because every existing check
+  composes an order and confirms it in one go, which always takes the full walk.
+
+  Two things are deliberately not here. Removing a discount that has already been saved needs reversal
+  semantics on the adjustment rows and is not in this change — the control removes a staged request
+  only. An over-cap discount is blocked on screen rather than escalated, because the approval routing
+  it would escalate into is MemberJunction/bc-aidp-next-golive#222 and does not exist yet.
+
+  **This ships inert without data.** `AuthorizeManualDiscount` refuses a user who holds no
+  `SalesAuthority`, on the rule that absence is not permission, so the control tells such a user what is
+  missing instead of offering a concession the save would refuse. Authority rows for the reps, and one
+  `SalesRule` of type `DiscountLimit`, are configuration someone has to create.
+
+- c869137: A confirmed order containing a subscription or membership line can be returned again.
+
+  Service-period inheritance for reversal lines landed separately and is already on `next`; this
+  carries the rest of what that defect needs.
+
+  The recognition CADENCE is now inherited too. The window says which months a reversal covers; it
+  does not say how they are cut, and that arrived separately through a map built only where terms are
+  created — a path a reversal never takes — so it fell back to one month. A quarterly or annual
+  subscription therefore unwound into more, smaller releases than it was sold with: the year netted to
+  zero while every month inside it was wrong, which no balance check can see. The cadence now comes
+  from the `SubscriptionTerm` the origin line bought rather than from the product's current rules, so
+  re-pointing a product at a different subscription type cannot restate an outstanding return. This
+  half also fixes `Orders.CancelSubscription`, whose reversal lines had the same gap.
+
+  Two further defects on the Return page, both found while tracing the first:
+
+  - Reversal lines were written with a POSITIVE quantity. The sign is the switch the journal entry
+    factory reads to decide whether to mirror an entry, so a return booked the sale's entry — debiting
+    the customer again for goods coming back — while the document was labelled a credit memo and the
+    entitlements were revoked. Every other caller writes it negative.
+  - The per-line maximum ignored prior returns, because the page hard-coded them to zero. It now asks
+    the new read-only `Orders.GetPriorReturns` operation, which answers from the same rule the server
+    refuses an over-return with: reversals sum across orders, and Draft and Voided returns do not
+    count. The server always enforced the real cap, so this was a display fault, not a hole.
+
+- Updated dependencies [09624cb]
+- Updated dependencies [426e730]
+- Updated dependencies [21167e2]
+- Updated dependencies [7ec08da]
+- Updated dependencies [5293c47]
+- Updated dependencies [c869137]
+  - @mj-biz-apps/orders-entities@5.15.0
+
 ## 5.14.0
 
 ### Minor Changes
