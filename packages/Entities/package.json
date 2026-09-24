@@ -23,7 +23,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@mj-biz-apps/common-entities": ">=5.43.0",
+    "@mj-biz-apps/common-entities": ">=5.46.0",
     "rxjs": "^7.8.2",
     "zod": "^3.25.28"
   },
