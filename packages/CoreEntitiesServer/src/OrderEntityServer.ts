@@ -1750,6 +1750,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 RecognizedToDate: Number(context.Origin.RecognizedToDate ?? 0),
                 RemainingQuantity: context.Origin.Quantity - context.AlreadyReversed,
                 OriginNet: Number(context.Origin.LineTotalNet ?? 0),
+                PriorReversals: context.PriorReversals,
                 OriginOrderNumber: context.Origin.OrderNumber ?? null,
                 OriginLineNumber: context.Origin.LineNumber ?? null,
             });
@@ -1933,7 +1934,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 },
             ],
             context.ScheduleRows,
-            Today(),
+            // Due as of the REVERSAL's date, not today: a return back-dated to November names the
+            // instalment that was due in November (Andrew, #237).
+            ToISODate(this.OrderDate) ?? Today(),
         );
         if (stranded) {
             throw new Error(`Order line ${line.LineNumber}: ${stranded}`);

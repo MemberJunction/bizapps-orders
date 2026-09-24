@@ -175,6 +175,31 @@ export function ProratedCreditMemo(position: ReversalPosition, reversalQuantity:
     return money((deferred * quantity) / remaining);
 }
 
+/** One staged release: when it recognises, and how much. `Date` is `YYYY-MM-DD`. */
+export interface DatedRelease {
+    Date: string;
+    Amount: number;
+}
+
+/**
+ * What the origin has earned through `asOf` from its staged releases, net of what earlier
+ * reversals already un-earned (Andrew, #237).
+ *
+ * An earlier partial reversal mirrored its share of every origin release dated after ITS date. When
+ * this reversal is later, some of those mirrors fall on or before this date too — months the origin
+ * staged as earned and the earlier reversal already took back. Counting them as earned again
+ * under-credits the customer: 4 of 10 reversed on 15 November, the other 6 on 15 February, owes 1,620
+ * and would credit 540. So those mirrors come off. Same date or earlier, none fall in range, and
+ * nothing changes.
+ *
+ * @param originReleases the origin's own staged releases, all of them
+ * @param priorMirrors   releases mirrored by earlier reversals of the same origin, as magnitudes
+ */
+export function StagedEarnedThrough(originReleases: DatedRelease[], priorMirrors: DatedRelease[], asOf: string): number {
+    const through = (rows: DatedRelease[]) => rows.filter((r) => r.Date <= asOf).reduce((s, r) => s + Number(r.Amount), 0);
+    return money(through(originReleases) - through(priorMirrors));
+}
+
 /**
  * Refuse a reversal that would strand an earned-but-unbilled balance, or `null` to proceed.
  *

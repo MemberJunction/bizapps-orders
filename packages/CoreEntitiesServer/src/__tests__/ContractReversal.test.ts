@@ -12,6 +12,8 @@ import {
     BuildCreditMemoLines,
     ProratedCreditMemo,
     RefuseEarnedNotBilled,
+    StagedEarnedThrough,
+    type DatedRelease,
     type ContractLineBalance,
     type ReversalPosition,
     type ReversalScheduleRow,
@@ -176,6 +178,30 @@ describe("Andrew's Scenario 1 — 12,000 billed quarterly in advance, reversed a
 
     it('credits back exactly the 1,000 of Deferred, leaving the 5,000 recognised', () => {
         expect(ProratedCreditMemo(position(6000, 5000), -1, 0)).toBe(1000);
+    });
+});
+
+describe('StagedEarnedThrough — a second partial reversal dated after the first', () => {
+    // 10 units, 10,800 net, 900 released on the 1st of each month from July.
+    const months = ['2026-07-01', '2026-08-01', '2026-09-01', '2026-10-01', '2026-11-01', '2026-12-01',
+        '2027-01-01', '2027-02-01', '2027-03-01', '2027-04-01', '2027-05-01', '2027-06-01'];
+    const origin: DatedRelease[] = months.map((Date) => ({ Date, Amount: 900 }));
+    // Reversing 4 on 15 November mirrored four tenths of every release after it.
+    const firstMirrors: DatedRelease[] = months.filter((d) => d > '2026-11-15').map((Date) => ({ Date, Amount: 360 }));
+
+    it('counts only the origin releases when there is no earlier reversal', () => {
+        expect(StagedEarnedThrough(origin, [], '2026-11-15')).toBe(4500);
+    });
+
+    it('subtracts nothing for an earlier reversal on the same date — its mirrors are all later', () => {
+        expect(StagedEarnedThrough(origin, firstMirrors, '2026-11-15')).toBe(4500);
+    });
+
+    it("subtracts the months the earlier reversal already took back, giving Andrew's 1,620", () => {
+        const earned = StagedEarnedThrough(origin, firstMirrors, '2027-02-15');
+        expect(earned).toBe(7200 - 1080);
+        // 5,400 billed less the 360 memo, plus instalment 3 on 1 January; the other 6 of 6 remain.
+        expect(ProratedCreditMemo(position(5040 + 2700, 0, 6), -6, earned)).toBe(1620);
     });
 });
 

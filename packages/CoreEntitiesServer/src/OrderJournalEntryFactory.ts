@@ -72,7 +72,15 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
-import { BuildCreditMemoLines, ProratedCreditMemo, SplitContraLegs, type ReversalPosition } from './ContractBalance.js';
+import {
+    BuildCreditMemoLines,
+    ProratedCreditMemo,
+    SplitContraLegs,
+    StagedEarnedThrough,
+    type DatedRelease,
+    type ReversalPosition,
+} from './ContractBalance.js';
+import type { PriorReversal } from './ReversalResolver.js';
 import { ResolveInstalmentEntryType } from './InstalmentInvoiceEntry.js';
 import {
     GL_ROLE,
@@ -257,6 +265,8 @@ export interface ValueEntryAccounts {
 export interface CreditMemoForLine extends ReversalPosition {
     /** The origin's net, which is what its staged releases were built from. */
     OriginNet: number;
+    /** Earlier reversals of the same origin, whose mirrored releases are no longer earned. */
+    PriorReversals: PriorReversal[];
     OriginOrderNumber?: string | null;
     OriginLineNumber?: number | null;
 }
@@ -666,7 +676,7 @@ export class OrderJournalEntryFactory {
             ? ProratedCreditMemo(
                   scheduledOrigin,
                   line.Quantity,
-                  stagesReleases ? this.stagedEarnedThrough(revRec, line, scheduledOrigin.OriginNet, effectiveDate, recognitionMonths) : 0,
+                  stagesReleases ? this.stagedEarnedThrough(revRec, line, scheduledOrigin, effectiveDate, recognitionMonths) : 0,
               )
             : 0;
 
@@ -893,29 +903,45 @@ export class OrderJournalEntryFactory {
     }
 
     /**
-     * What the origin line has earned through `asOf` from its staged releases (D92 §6).
+     * What the origin line has earned through `asOf` from its staged releases (D92 §6), net of the
+     * releases earlier reversals of it already mirrored back — see {@link StagedEarnedThrough}.
      *
-     * Rebuilt from the same driver and the same window the origin staged, at the origin's net.
-     * The reversing line inherits the origin's window, so this is the origin's own schedule, not
-     * an estimate of it. Needed because `RecognizedToDate` does not count staged releases.
+     * Both are rebuilt from the same driver and the same code the staging used: the origin at its
+     * net over the window this reversing line inherited, and each earlier reversal at its own net,
+     * window and date, keeping only the releases after that date exactly as its booking did. Needed
+     * because `RecognizedToDate` does not count staged releases.
      */
     private stagedEarnedThrough(
         revRec: RevRecTypeRow,
         line: mjBizAppsOrdersOrderLineEntity,
-        originNet: number,
+        origin: CreditMemoForLine,
         asOf: string,
         recognitionMonths?: number,
     ): number {
-        const schedule = this.driverFor(revRec).BuildSchedule({
-            Amount: originNet,
-            BookingDate: new Date(asOf),
-            ServicePeriodStart: line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null,
-            ServicePeriodEnd: line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null,
-            PeriodMonths: recognitionMonths,
+        const releases = (amount: number, booked: string, start?: Date | string | null, end?: Date | string | null): DatedRelease[] =>
+            this.driverFor(revRec)
+                .BuildSchedule({
+                    Amount: amount,
+                    BookingDate: new Date(booked),
+                    ServicePeriodStart: start ? new Date(start) : null,
+                    ServicePeriodEnd: end ? new Date(end) : null,
+                    PeriodMonths: recognitionMonths,
+                })
+                .Entries.map((e) => ({ Date: isoDate(e.RecognitionDate), Amount: Math.abs(Number(e.Amount)) }));
+
+        const priorMirrors = origin.PriorReversals.flatMap((prior) => {
+            if (!prior.OrderDate) {
+                throw new Error(
+                    `An earlier reversal (order line ${prior.ID}) of order line ${origin.OriginLineID} has no ` +
+                        `readable order date, so the releases it already took back cannot be counted and the ` +
+                        `credit memo cannot be worked out.`,
+                );
+            }
+            const after = prior.OrderDate;
+            return releases(prior.Net, after, prior.ServicePeriodStart, prior.ServicePeriodEnd).filter((r) => r.Date > after);
         });
-        return money(
-            schedule.Entries.filter((e) => isoDate(e.RecognitionDate) <= asOf).reduce((sum, e) => sum + e.Amount, 0),
-        );
+        const own = releases(origin.OriginNet, asOf, line.ServicePeriodStart, line.ServicePeriodEnd);
+        return StagedEarnedThrough(own, priorMirrors, asOf);
     }
 
     /**
