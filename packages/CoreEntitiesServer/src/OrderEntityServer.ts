@@ -65,10 +65,9 @@ import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
-import { CreditMemoByLine, InstalmentsToCancel, RefuseEarnedNotBilled } from './ContractBalance.js';
-import { ScheduledCompanyIDs } from './PaymentScheduleBehavior.js';
+import { InstalmentsToCancel, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
-import { LoadReversalContext } from './ReversalResolver.js';
+import { IsWholeOrderReversed, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
@@ -624,8 +623,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
                 // Subscriptions before booking: a term must exist so recognition entries can anchor
                 // to it (D46) and use its anchored/prorated window rather than raw line dates.
-                const subs = await this.materializeSubscriptions(lines, decisions, options);
-                await this.bookLines(lines, options, subs, scheduleRows);
+                // EACH REVERSING LINE'S ORIGIN, READ ONCE (Andrew, #237). Cadence, credit memo,
+                // entitlements and the schedule all need it, and four reads per line was four
+                // chances to see the origin in four different states.
+                const reversals = await this.loadReversalContexts(lines);
+                const subs = await this.materializeSubscriptions(lines, decisions, reversals, options);
+                await this.bookLines(lines, options, subs, scheduleRows, reversals);
 
                 // ISSUE WHAT IS ALREADY DUE (D92). A company billed by instalment books no value at
                 // confirm — except the instalments whose due date has already arrived, usually the
@@ -652,13 +655,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 await this.grantEntitlements(lines, subs, options);
 
                 // And the mirror: a returned line takes its access with it.
-                await this.revokeEntitlementsForReversals(lines, options);
+                await this.revokeEntitlementsForReversals(lines, reversals, options);
 
                 // A reversed order stops billing (D92 §6). Inside, for the same reason as the two
                 // above: an order that credits the customer back and keeps invoicing them every
                 // quarter has done half a reversal, and the half that is left is the half that
                 // takes money.
-                await this.cancelOriginInstalments(lines, options);
+                await this.cancelOriginInstalments(lines, reversals, options);
 
                 // GIFT CARDS, alongside entitlements and for the same reason. Selling a gift card
                 // that never mints an instrument has taken money for nothing, so a failure here
@@ -1703,65 +1706,53 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
-     * Take access away from what was sent back.
+     * Each reversing line's origin, keyed by the REVERSING line's id — loaded once per confirm.
      *
-     * A full return revokes; a partial return reduces the quantity proportionally. Uncountable grants
-     * — a Feature, an AccessLevel — survive a partial return, because the customer still holds some of
-     * the thing that conferred them.
-     *
-     * Runs on the REVERSAL order's lines, unwinding the grants that hang off each ORIGIN line. The
-     * origin's quantity is what the proportion is taken against, so it is read from the origin rather
-     * than inferred from the reversal.
+     * Every line on THIS order is excluded from "already reversed", so it counts only reversals
+     * booked on other orders. Those have already reduced the origin's BilledToDate by their memos;
+     * a sibling line on this order has not yet, and counting it would prorate the memo against
+     * units whose balance is still in the total.
      */
-    /**
-     * The credit memo each reversing line gives back, keyed by the REVERSING line's id (D92 §6).
-     *
-     * `CreditMemoByLine` decides the amount from the origin line's two totals; this only fetches
-     * them. A line whose origin has nothing billed-and-unearned is left out rather than mapped to
-     * zero, so the factory's lookup answers "no memo" by absence and the entry has no empty lines
-     * to filter.
-     */
-    private async creditMemosForReversals(
+    private async loadReversalContexts(
         lines: mjBizAppsOrdersOrderLineEntity[],
-    ): Promise<Map<string, CreditMemoForLine>> {
-        const memos = new Map<string, CreditMemoForLine>();
-        const reversals = lines.filter((l) => l.ReversesOrderLineID);
-        if (!reversals.length) return memos;
-
+    ): Promise<Map<string, ReversalContext>> {
+        const out = new Map<string, ReversalContext>();
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
+        const ownLineIDs = lines.map((l) => String(l.ID)).filter(Boolean);
 
-        for (const line of reversals) {
-            const context = await LoadReversalContext(line.ReversesOrderLineID, provider, user, [line.ID]);
-            if (!context) continue; // applyReversalOrigin already refused anything unresolvable
-
-            // ONLY A SCHEDULED ORIGIN GETS A MEMO, and "scheduled" is a fact about the ORIGIN's
-            // company — not about this order, which is a reversal and has no schedule of its own.
-            // A line sold without instalments booked its value at confirm and is unwound by the
-            // mirrored entry that has always handled it; giving it a memo as well would credit the
-            // customer twice. On a multi-company origin only the company that actually has rows
-            // qualifies, which is why the origin's CompanyID is carried rather than inferred.
-            const scheduled = ScheduledCompanyIDs(
-                context.ScheduleRows.map((r) => ({ CompanyID: r.CompanyID, DueDate: r.DueDate, Amount: 0, Status: r.Status })),
-            );
-            if (!scheduled.has(String(context.Origin.CompanyID ?? '').toLowerCase())) continue;
-
-            const byOrigin = CreditMemoByLine([
-                {
-                    OrderLineID: context.Origin.ID,
-                    LineNumber: context.Origin.LineNumber ?? null,
-                    BilledToDate: Number(context.Origin.BilledToDate ?? 0),
-                    RecognizedToDate: Number(context.Origin.RecognizedToDate ?? 0),
-                },
-            ]);
-            const memo = byOrigin.get(context.Origin.ID);
-            if (memo) {
-                memos.set(String(line.ID), {
-                    Amount: memo,
-                    OriginOrderNumber: context.Origin.OrderNumber ?? null,
-                    OriginLineNumber: context.Origin.LineNumber ?? null,
-                });
+        for (const line of lines.filter((l) => l.ReversesOrderLineID)) {
+            const context = await LoadReversalContext(line.ReversesOrderLineID, provider, user, ownLineIDs);
+            if (!context) {
+                // applyReversalOrigin refuses this at line save, so reaching here is a bug, not data.
+                throw new Error(`Order line ${line.LineNumber} reverses ${line.ReversesOrderLineID}, which no longer exists.`);
             }
+            out.set(uuidKey(line.ID), context);
+        }
+        return out;
+    }
+
+    /**
+     * The origin position for each reversing line whose origin is billed by instalment (D92 §6),
+     * keyed by the REVERSING line's id. Absence means an ordinary reversal: mirror the booking.
+     */
+    private creditMemosForReversals(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
+    ): Map<string, CreditMemoForLine> {
+        const memos = new Map<string, CreditMemoForLine>();
+        for (const line of lines) {
+            const context = reversals.get(uuidKey(line.ID));
+            if (!context?.OriginScheduled) continue;
+            memos.set(String(line.ID), {
+                OriginLineID: context.Origin.ID,
+                BilledToDate: Number(context.Origin.BilledToDate ?? 0),
+                RecognizedToDate: Number(context.Origin.RecognizedToDate ?? 0),
+                RemainingQuantity: context.Origin.Quantity - context.AlreadyReversed,
+                OriginNet: Number(context.Origin.LineTotalNet ?? 0),
+                OriginOrderNumber: context.Origin.OrderNumber ?? null,
+                OriginLineNumber: context.Origin.LineNumber ?? null,
+            });
         }
         return memos;
     }
@@ -1777,25 +1768,28 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * Reaches the ORIGIN order's schedule, not this one's: the reversal is a separate order and has
      * no schedule of its own. Idempotent, because a row already `Canceled` is not selected, so
      * re-saving a confirmed return is a no-op rather than an error.
+     *
+     * ONLY ONCE THE WHOLE ORDER IS TAKEN BACK (Andrew, #237). Returning one line of three, or 4 units
+     * of 10, leaves goods the schedule still bills for; withdrawing it then would stop billing for
+     * what the customer kept. A partial reversal leaves the schedule for a person to re-shape.
      */
     private async cancelOriginInstalments(
         lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
         options?: EntitySaveOptions,
     ): Promise<void> {
-        const reversals = lines.filter((l) => l.ReversesOrderLineID);
-        if (!reversals.length) return;
-
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
         // One origin order may own several reversed lines; its schedule is cancelled once.
         const seen = new Set<string>();
-        for (const line of reversals) {
-            const context = await LoadReversalContext(line.ReversesOrderLineID, provider, user, [line.ID]);
-            if (!context) continue; // applyReversalOrigin already refused anything unresolvable
+        for (const line of lines) {
+            const context = reversals.get(uuidKey(line.ID));
+            if (!context?.OriginScheduled) continue;
             const originOrder = uuidKey(context.Origin.OrderHeaderID ?? '');
             if (!originOrder || seen.has(originOrder)) continue;
             seen.add(originOrder);
+            if (!(await IsWholeOrderReversed(originOrder, provider, user))) continue;
 
             for (const scheduleID of InstalmentsToCancel(context.ScheduleRows)) {
                 const row = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(
@@ -1816,22 +1810,29 @@ export class OrderEntityServer extends OrderHeaderEntity {
         }
     }
 
+    /**
+     * Take access away from what was sent back.
+     *
+     * A full return revokes; a partial return reduces the quantity proportionally. Uncountable grants
+     * — a Feature, an AccessLevel — survive a partial return, because the customer still holds some of
+     * the thing that conferred them.
+     *
+     * Runs on the REVERSAL order's lines, unwinding the grants that hang off each ORIGIN line. The
+     * origin's quantity is what the proportion is taken against, so it is read from the origin rather
+     * than inferred from the reversal.
+     */
     private async revokeEntitlementsForReversals(
         lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
         options?: EntitySaveOptions,
     ): Promise<void> {
-        const reversals = lines.filter(
-            (l) => l.ReversesOrderLineID,
-        );
-        if (!reversals.length) return;
-
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
-        for (const line of reversals) {
+        for (const line of lines) {
+            const context = reversals.get(uuidKey(line.ID));
+            if (!context) continue;
             const reverses = line.ReversesOrderLineID;
-            const context = await LoadReversalContext(reverses, provider, user, [line.ID]);
-            if (!context) continue; // applyReversalOrigin already refused anything unresolvable
 
             await RevokeGrantsForReturn(
                 reverses,
@@ -2340,6 +2341,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         subs?: SubscriptionMaterialization,
         /** The schedule, already read for the tie check — it decides the Unbilled/AR split (D89). */
         scheduleRows?: ScheduleTimingFacts[],
+        reversals: Map<string, ReversalContext> = new Map(),
     ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
@@ -2356,10 +2358,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             user,
         );
 
-        // WHAT EACH REVERSING LINE GIVES BACK (D92 §6). Read here, not in the factory: the amount is
-        // the ORIGIN line's billed-and-unearned balance and the origin sits on a different order, so
-        // the factory would have to query for it. Empty for an order that reverses nothing.
-        const creditMemoByLine = await this.creditMemosForReversals(unbooked);
+        // WHICH REVERSING LINES UNWIND A SCHEDULED ORIGIN (D92 §6). Read here, not in the factory:
+        // the origin sits on a different order, so the factory would have to query for it. Empty
+        // for an order that reverses nothing.
+        const creditMemoByLine = this.creditMemosForReversals(unbooked, reversals);
         const drafts = await factory.BuildDrafts(
             this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows, creditMemoByLine,
         );
@@ -2403,6 +2405,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             if (billed === 0 && recognized === 0) continue;
             const line = this.Lines.Items.find((l) => UUIDsEqual(l.ID, orderLineID));
             const target = line ?? (await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user));
+            // Not on this order: a reversal's credit memo un-bills the ORIGIN line (D92 §6).
+            if (!line) MarkAsOrdersOwnWrite(target);
             if (!line && !(await target.Load(orderLineID))) {
                 throw new Error(`Order line ${orderLineID} could not be loaded to advance its RecognizedToDate.`);
             }
@@ -2563,6 +2567,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private async materializeSubscriptions(
         lines: mjBizAppsOrdersOrderLineEntity[],
         decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+        reversals: Map<string, ReversalContext>,
         options?: EntitySaveOptions,
     ): Promise<SubscriptionMaterialization> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
@@ -2572,7 +2577,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // REVERSALS FIRST, and OUTSIDE the early return below: a return order buys nothing, so it has
         // no decisions at all and every line of the loop that follows is skipped for it — but its
         // schedule still has to mirror the one it unwinds, and that needs a cadence.
-        await this.inheritReversalCadence(lines, out);
+        await this.inheritReversalCadence(lines, reversals, out);
 
         if (decisions.size === 0) return out;
 
@@ -3033,22 +3038,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async inheritReversalCadence(
         lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
         out: SubscriptionMaterialization,
     ): Promise<void> {
-        const reversals = lines.filter((l) => l.ReversesOrderLineID);
-        if (!reversals.length) return;
-
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
-        // Reuse the ONE loader. The already-reversed total it also computes is redundant here, but a
-        // second query shaped just for this would be a second place for the origin lookup to drift.
+        // The contexts the confirm already loaded, one per reversing line.
         const subscriptionIDByLine = new Map<string, string>();
-        for (const line of reversals) {
-            const context = await LoadReversalContext(line.ReversesOrderLineID!, provider, user, [line.ID]);
-            const subscriptionID = context?.Origin.SubscriptionID;
-            // Unresolvable origins are not this method's to refuse — `applyReversalOrigin` already
-            // threw on them long before booking, so anything reaching here has an origin.
+        for (const line of lines) {
+            const subscriptionID = reversals.get(uuidKey(line.ID))?.Origin.SubscriptionID;
             if (subscriptionID) subscriptionIDByLine.set(uuidKey(line.ID), subscriptionID);
         }
         if (!subscriptionIDByLine.size) return;
@@ -3070,7 +3069,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             if (row.SubscriptionTypeID) typeBySubscription.set(uuidKey(row.ID), row.SubscriptionTypeID);
         }
 
-        for (const line of reversals) {
+        for (const line of lines) {
             const subscriptionID = subscriptionIDByLine.get(uuidKey(line.ID));
             if (!subscriptionID) continue;
             const typeID = typeBySubscription.get(uuidKey(subscriptionID));

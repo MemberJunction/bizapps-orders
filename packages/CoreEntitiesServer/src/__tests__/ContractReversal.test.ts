@@ -8,11 +8,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-    CreditMemoByLine,
     InstalmentsToCancel,
     BuildCreditMemoLines,
+    ProratedCreditMemo,
     RefuseEarnedNotBilled,
     type ContractLineBalance,
+    type ReversalPosition,
     type ReversalScheduleRow,
 } from '../ContractBalance.js';
 
@@ -58,26 +59,53 @@ describe('InstalmentsToCancel', () => {
     });
 });
 
-describe('CreditMemoByLine', () => {
+const position = (b: number, r: number, remaining = 1): ReversalPosition => ({
+    OriginLineID: 'L1',
+    BilledToDate: b,
+    RecognizedToDate: r,
+    RemainingQuantity: remaining,
+});
+
+describe('ProratedCreditMemo', () => {
     it('credits back what was billed and not yet earned', () => {
-        expect(CreditMemoByLine([line('L1', 6000, 5000)])).toEqual(new Map([['L1', 1000]]));
+        expect(ProratedCreditMemo(position(6000, 5000), -1, 0)).toBe(1000);
     });
 
-    it('omits a line that has earned everything it billed', () => {
-        expect(CreditMemoByLine([line('L1', 5000, 5000)]).size).toBe(0);
+    it('is zero when the line has earned everything it billed', () => {
+        expect(ProratedCreditMemo(position(5000, 5000), -1, 0)).toBe(0);
     });
 
-    it('omits a line that earned MORE than it billed — that is the refusal case, not a credit', () => {
-        expect(CreditMemoByLine([line('L1', 4000, 5000)]).size).toBe(0);
+    it('is zero when the line earned MORE than it billed — that is the refusal case, not a credit', () => {
+        expect(ProratedCreditMemo(position(4000, 5000), -1, 0)).toBe(0);
     });
 
-    it('omits a line that billed nothing', () => {
-        expect(CreditMemoByLine([line('L1', 0, 0)]).size).toBe(0);
+    it('is zero when nothing was billed — a contract cancelled before its first invoice', () => {
+        expect(ProratedCreditMemo(position(0, 0), -1, 0)).toBe(0);
     });
 
-    it('handles several lines independently, to the penny', () => {
-        const memo = CreditMemoByLine([line('L1', 33.33, 11.11, 1), line('L2', 66.67, 66.67, 2), line('L3', 10, 0, 3)]);
-        expect([...memo.entries()]).toEqual([['L1', 22.22], ['L3', 10]]);
+    it('counts staged releases as earned, since RecognizedToDate does not', () => {
+        // A subscription line: 6,000 billed, RecognizedToDate still 0, five 1,000 releases dated
+        // before the reversal. Without the staged figure it would refund the whole 6,000.
+        expect(ProratedCreditMemo(position(6000, 0), -1, 5000)).toBe(1000);
+    });
+
+    it('prorates by the quantity still left, so two partial reversals sum to one whole one', () => {
+        // 10 units, 900 billed-and-unearned. Return 4: 360. The origin's billed total falls by the
+        // memo, so the next reversal sees 540 left against the 6 units that remain.
+        const first = ProratedCreditMemo(position(5400, 4500, 10), -4, 0);
+        expect(first).toBe(360);
+        const second = ProratedCreditMemo(position(5400 - first, 4500, 6), -6, 0);
+        expect(second).toBe(540);
+        expect(first + second).toBe(ProratedCreditMemo(position(5400, 4500, 10), -10, 0));
+    });
+
+    it('rounds to the penny', () => {
+        expect(ProratedCreditMemo(position(100, 0, 3), -1, 0)).toBe(33.33);
+    });
+
+    it('refuses to take back more than is left rather than inventing a balance', () => {
+        expect(() => ProratedCreditMemo(position(100, 0, 2), -3, 0)).toThrow(/leaves 2/);
+        expect(() => ProratedCreditMemo(position(100, 0, 0), -1, 0)).toThrow(/leaves 0/);
     });
 });
 
@@ -147,7 +175,7 @@ describe("Andrew's Scenario 1 — 12,000 billed quarterly in advance, reversed a
     });
 
     it('credits back exactly the 1,000 of Deferred, leaving the 5,000 recognised', () => {
-        expect(CreditMemoByLine(lines)).toEqual(new Map([['L1', 1000]]));
+        expect(ProratedCreditMemo(position(6000, 5000), -1, 0)).toBe(1000);
     });
 });
 

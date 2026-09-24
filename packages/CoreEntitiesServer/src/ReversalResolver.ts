@@ -32,10 +32,18 @@ export interface ReversalContext {
     Origin: ReversalOrigin;
     AlreadyReversed: number;
     /**
-     * The origin ORDER's live instalments (D92 §6). Empty for an order with no schedule, which is
-     * what the reversal rules expect, so callers need no "is this scheduled" branch.
+     * The origin ORDER's instalments, cancelled ones included (D92 §6). Empty for an order with no
+     * schedule. The rules that act on rows skip `Canceled` themselves.
      */
     ScheduleRows: ReversalScheduleRow[];
+    /**
+     * The origin line's company bills this order by instalment (D92 §6) — so the reversal books a
+     * credit memo, or nothing at all, and never the mirrored value entry. Read from the ORIGIN
+     * order's schedule, cancelled rows included: the reversal order has no schedule of its own, and
+     * a second reversal after the first withdrew every instalment is still reversing a scheduled
+     * order.
+     */
+    OriginScheduled: boolean;
 }
 
 /**
@@ -80,6 +88,7 @@ export async function LoadReversalContext(
         CompanyID?: string | null;
         BilledToDate?: number | null;
         RecognizedToDate?: number | null;
+        LineTotalNet?: number | null;
     };
 
     // The origin and every reversal already pointing at it, in ONE view. Splitting them costs a
@@ -136,6 +145,7 @@ export async function LoadReversalContext(
         user,
     );
     const subscriptionID = terms?.Results?.[0]?.SubscriptionID ?? origin.SubscriptionID ?? null;
+    const scheduleRows = await loadScheduleRows(rv, user, origin.OrderHeaderID);
 
     const excluded = new Set(excludeLineIDs.map((id) => id.toLowerCase()));
     let alreadyReversed = 0;
@@ -174,19 +184,22 @@ export async function LoadReversalContext(
             // which has neither yet.
             BilledToDate: Number(origin.BilledToDate ?? 0),
             RecognizedToDate: Number(origin.RecognizedToDate ?? 0),
+            LineTotalNet: Number(origin.LineTotalNet ?? 0),
         },
         AlreadyReversed: Math.round(alreadyReversed * 1e4) / 1e4,
-        ScheduleRows: await loadScheduleRows(rv, user, origin.OrderHeaderID),
+        ScheduleRows: scheduleRows,
+        OriginScheduled: scheduleRows.some(
+            (r) => r.CompanyID.toLowerCase() === String(origin.CompanyID ?? '').toLowerCase(),
+        ),
     };
 }
 
 /**
- * The origin order's live instalments, for the reversal rules in `ContractBalance`.
+ * The origin order's instalments, for the reversal rules in `ContractBalance`.
  *
  * Read for every reversal rather than only for scheduled orders: an order with no schedule returns
- * an empty array, which is what `InstalmentsToCancel` and `RefuseEarnedNotBilled` both expect, so
- * the caller has no "is this scheduled" branch to get wrong. One view, no join — the rules only
- * need status, due date and whether a document number was ever frozen.
+ * an empty array. Cancelled rows are kept, because "was this order billed by instalment" must
+ * still be true after an earlier reversal withdrew them all. One view, no join.
  */
 async function loadScheduleRows(
     rv: RunView,
@@ -196,7 +209,7 @@ async function loadScheduleRows(
     const res = await rv.RunView<ReversalScheduleRow & { DueDate: string }>(
         {
             EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
-            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND Status <> 'Canceled'`,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}'`,
             Fields: ['ID', 'CompanyID', 'InstallmentNumber', 'DueDate', 'Status', 'DocumentNumber'],
             OrderBy: 'DueDate, InstallmentNumber',
             ResultType: 'simple',
@@ -211,4 +224,39 @@ async function loadScheduleRows(
         Status: String(r.Status),
         DocumentNumber: r.DocumentNumber ? String(r.DocumentNumber) : null,
     }));
+}
+
+/**
+ * Every sale line on an order has been taken back in full, counting reversals already confirmed —
+ * which is when a reversal may withdraw the order's unissued instalments (Andrew, #237).
+ *
+ * A reversal of one line of three, or 4 units of 10, leaves lines that the schedule still bills
+ * for, so withdrawing the instalments would stop billing for goods the customer kept. Reads each
+ * line through {@link LoadReversalContext} so "already reversed" means exactly what the quantity
+ * guard means by it; the reversal being booked counts, because its header is already Confirmed.
+ */
+export async function IsWholeOrderReversed(
+    orderHeaderID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<boolean> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const sales = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND ReversesOrderLineID IS NULL AND Quantity > 0`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    if (!sales?.Success) {
+        throw new Error(`The lines of order ${orderHeaderID} could not be read: ${sales?.ErrorMessage ?? 'unknown error'}`);
+    }
+    for (const sale of sales.Results) {
+        const context = await LoadReversalContext(String(sale.ID), provider, user);
+        if (!context) throw new Error(`Order line ${sale.ID} vanished while its order was being reversed.`);
+        if (context.AlreadyReversed < context.Origin.Quantity) return false;
+    }
+    return sales.Results.length > 0;
 }
