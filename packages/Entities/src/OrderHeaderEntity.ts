@@ -43,6 +43,7 @@ import { AsDateValue, TodayAsDateValue } from './date-cell';
 import {
     BookedMoneyEditMessage,
     ORDER_HEADER_MONEY_FIELDS,
+    ORDER_HEADER_SET_ONCE_FIELDS,
     ORDER_LINE_MONEY_FIELDS,
 } from './booked-money';
 
@@ -358,6 +359,12 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         const dirtyHeaderMoney: string[] = [];
         for (const name of ORDER_HEADER_MONEY_FIELDS) {
             if (this.FieldIsDirty(name)) {
+                dirtyHeaderMoney.push(name);
+            }
+        }
+        for (const name of ORDER_HEADER_SET_ONCE_FIELDS) {
+            const field = this.GetFieldByName(name);
+            if (field?.Dirty && field.OldValue != null) {
                 dirtyHeaderMoney.push(name);
             }
         }

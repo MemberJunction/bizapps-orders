@@ -137,9 +137,12 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
         // an instant answers the UTC day, and an evening run would spawn tomorrow's renewals a day
         // early. Validated at the boundary like the id above, because a renewal pass silently run
         // for today when the caller named another day places real orders.
-        if (input.AsOfDate) {
+        // Only a STRING is checked: `AsOfDate` is `Date | string`, and `String(date)` is the long
+        // human form, which no ISO pattern matches — validating it would refuse a `Date` this
+        // interface promises to accept, and a refused renewal pass places no orders at all.
+        if (typeof input.AsOfDate === 'string' && input.AsOfDate) {
             try {
-                RequireDate(String(input.AsOfDate), 'AsOfDate');
+                RequireDate(input.AsOfDate, 'AsOfDate');
             } catch (e) {
                 return { Success: false, Message: String((e as Error).message), Candidates: [], Placed: 0, Skipped: 0 };
             }

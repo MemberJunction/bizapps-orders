@@ -93,9 +93,14 @@ export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceIn
         // `CalendarDayOrToday` normalises — an unreadable day quietly becomes today, and a quote
         // answered for the wrong day is wrong with nothing to notice. `RequireDate` also rejects
         // `2026-02-30`, which `Date.parse` used to roll forward to 2 March.
-        if (input.AsOf) {
+        //
+        // Only a STRING is checked. `AsOf` is `string | Date`, and an in-process caller handing
+        // over a real `Date` has nothing textual to validate: `String(date)` is the long human
+        // form, which no ISO pattern matches, so checking it would refuse the very type this
+        // interface promises to accept.
+        if (typeof input.AsOf === 'string' && input.AsOf) {
             try {
-                RequireDate(String(input.AsOf), 'AsOf');
+                RequireDate(input.AsOf, 'AsOf');
             } catch (e) {
                 return { Success: false, Message: String((e as Error).message) };
             }

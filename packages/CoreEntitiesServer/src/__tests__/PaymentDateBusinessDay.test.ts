@@ -80,7 +80,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     return {
         ...actual,
         LoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
-        OrdersEngine: { Instance: { PaymentTypeByCode: () => undefined } },
+        OrdersEngine: { Instance: { PaymentTypeByCode: () => undefined, ProductByID: () => undefined } },
     };
 });
 
@@ -521,6 +521,43 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             );
             expect(out.Success).toBe(false);
             expect(out.Message).toMatch(/not a real calendar day/);
+        });
+
+        it('PreviewPrice accepts a real Date, which its input type promises and has no text to check', async () => {
+            // `String(new Date(...))` is the long human form — `Wed Sep 30 2026 20:00:00 GMT-0400`
+            // — which matches no ISO pattern. Validating it would refuse the very type `AsOf`
+            // advertises. No caller in this repo passes one today; the exported interface does.
+            const op = new PreviewPriceOperation() as unknown as {
+                InternalExecute(i: unknown, p: IMetadataProvider, u: UserInfo): Promise<{ Success: boolean; Message?: string }>;
+            };
+            const out = await op
+                .InternalExecute(
+                    { ProductID: PRODUCT_ID, AsOf: new Date('2026-03-15T00:00:00.000Z') },
+                    {} as unknown as IMetadataProvider,
+                    { ID: 'user-1' } as unknown as UserInfo,
+                )
+                .catch((e: unknown) => ({ Success: false, Message: String(e) }));
+            // It gets past the date guard and stops later, on a fixture that knows no products.
+            // That is the proof: the refusal it used to give named `AsOf`, and this one does not.
+            expect(out.Message ?? '').not.toMatch(/AsOf/);
+            expect(out.Message ?? '').toMatch(/was not found/);
+        });
+
+        it('SpawnRenewals accepts a real Date too, rather than placing no orders at all', async () => {
+            const op = new SpawnRenewalsOperation() as unknown as {
+                InternalExecute(i: unknown, p: IMetadataProvider, u: UserInfo): Promise<{ Success: boolean; Message?: string }>;
+            };
+            const out = await op
+                .InternalExecute(
+                    { AsOfDate: new Date('2026-03-15T00:00:00.000Z') },
+                    {} as unknown as IMetadataProvider,
+                    { ID: 'user-1' } as unknown as UserInfo,
+                )
+                .catch((e: unknown) => ({ Success: false, Message: String(e) }));
+            // Same proof, and the stakes are higher here: the refusal it used to give returned
+            // `Placed: 0`, so a renewal pass handed a `Date` placed no orders and reported success
+            // at zero.
+            expect(out.Message ?? '').not.toMatch(/AsOfDate/);
         });
 
         it('SpawnRenewals refuses a day that does not exist', async () => {

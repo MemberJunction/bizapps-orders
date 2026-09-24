@@ -58,6 +58,26 @@ export const GL_ROLE = {
      * OrderJournalEntryFactory, which records that it fell back rather than doing it silently.
      */
     GiftCardLiability: 'Gift Card Liability',
+    /**
+     * The contract asset: revenue EARNED AHEAD OF BILLING — service delivered that the contract does
+     * not yet let us invoice. A live account under D92, resolved by both of its ordering rules.
+     *
+     * Recognising revenue debits Deferred down to what has been billed and then debits this account
+     * for the rest; invoicing an instalment credits this account down to zero before it opens any
+     * new Deferred. Both rules are {@link SplitContraLegs} in ContractBalance.ts.
+     *
+     * NOT seeded by accounting's starter roles — the role row travels with a release's
+     * Metadata_Sync — but unlike GiftCardLiability it has NO fallback. An entry that needs this leg
+     * and finds nothing linked is refused ({@link UnbilledReceivableNotLinkedError}): posting it to
+     * Deferred Revenue would put a contract asset in a liability account with nothing on screen to
+     * say so (golive #261). An entry with no Unbilled leg never resolves the role, so a company that
+     * bills in advance is unaffected.
+     *
+     * THE NAME IS A CROSS-REPO CONTRACT. Orders resolves roles by accounting's exact `Name` string,
+     * so this has to agree with bizapps-accounting's seeded row character for character; a
+     * one-character drift resolves nothing and every entry still balances.
+     */
+    UnbilledReceivable: 'Unbilled Receivable',
 } as const;
 
 export type GLRole = (typeof GL_ROLE)[keyof typeof GL_ROLE];
@@ -70,15 +90,65 @@ export interface ResolverEntityIDs {
     Company: string;
 }
 
+/**
+ * Why a role failed to resolve.
+ *
+ * - `NotLinked` — nothing in the walk links an account for the role. A caller may decide the role
+ *   is optional and fall back.
+ * - `CrossCompany` — an account is linked but belongs to another company (plan D6). Never
+ *   recoverable: the entry would book to the wrong legal entity, so no caller may fall back on it.
+ */
+export type GLAccountResolutionFailure = 'NotLinked' | 'CrossCompany';
+
 export class GLAccountResolutionError extends Error {
     constructor(
         public readonly Role: string,
         public readonly ProductID: string,
+        public readonly Failure: GLAccountResolutionFailure,
         message: string,
     ) {
         super(message);
         this.name = 'GLAccountResolutionError';
     }
+}
+
+/**
+ * True only when `err` says nothing is linked for the role. A caller that tolerates an unlinked
+ * role must test with this and rethrow everything else — a bare `catch` would also swallow the
+ * D6 cross-company refusal and any database error, and quietly book the fallback account.
+ */
+export function IsRoleNotLinked(err: unknown): err is GLAccountResolutionError {
+    return err instanceof GLAccountResolutionError && err.Failure === 'NotLinked';
+}
+
+/**
+ * The refusal for an entry that needs an Unbilled Receivable leg when no account is linked for the
+ * role (golive #261).
+ *
+ * Posting the leg to Deferred Revenue instead would balance and misstate no revenue, but it books a
+ * contract asset into a liability account and nothing on any screen would say so. A configuration
+ * gap stops the entry rather than changing what it means — the same answer as a missing Sales or
+ * AR link.
+ *
+ * @param where names the entry for the person reading the error, e.g. `Order 1042 line 2`
+ * @param cause the resolver's own `NotLinked` error; anything else is rethrown by the caller
+ */
+export function UnbilledReceivableNotLinkedError(
+    where: string,
+    companyID: string,
+    amount: number,
+    cause: GLAccountResolutionError,
+): GLAccountResolutionError {
+    return new GLAccountResolutionError(
+        cause.Role,
+        cause.ProductID,
+        'NotLinked',
+        `${where}: ${Math.abs(amount).toFixed(2)} of this entry is revenue earned ahead of billing and ` +
+            `belongs in '${GL_ROLE.UnbilledReceivable}', but no '${GL_ROLE.UnbilledReceivable}' GL ` +
+            `account is linked for company ${companyID}. Nothing was posted. Link the company's ` +
+            `'${GL_ROLE.UnbilledReceivable}' account in Accounting's Account Links (one per company; see ` +
+            `bizapps-accounting docs/unbilled-receivable-seeding.md), then try again.`,
+    );
 }
 
 interface CategoryRow {
@@ -114,7 +184,8 @@ export class GLAccountResolver {
      *
      * @param expectedCompanyID the order line's company; the resolved account must belong to it
      * @returns the resolved GL account UUID
-     * @throws GLAccountResolutionError when nothing resolves, or when the account's company differs
+     * @throws GLAccountResolutionError — `Failure: 'NotLinked'` when nothing resolves,
+     *   `'CrossCompany'` when the account's company differs
      */
     public async Resolve(
         role: GLRole,
@@ -142,6 +213,7 @@ export class GLAccountResolver {
             throw new GLAccountResolutionError(
                 role,
                 productID,
+                'NotLinked',
                 productID
                     ? `No GL account is linked for role '${role}'. Checked the product, its category ` +
                       `tree, its product type, and the company default for company ${expectedCompanyID}. ` +
@@ -157,6 +229,7 @@ export class GLAccountResolver {
             throw new GLAccountResolutionError(
                 role,
                 productID,
+                'CrossCompany',
                 `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ` +
                     `${hit.CompanyID}, but this books to company ${expectedCompanyID}. ` +
                     `Cross-company account mapping is refused — the journal entry would book revenue ` +
@@ -191,6 +264,7 @@ export class GLAccountResolver {
             throw new GLAccountResolutionError(
                 role,
                 recordID,
+                'CrossCompany',
                 `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ${hit.CompanyID}, ` +
                     `but this books to company ${expectedCompanyID}. Cross-company account mapping is refused.`,
             );

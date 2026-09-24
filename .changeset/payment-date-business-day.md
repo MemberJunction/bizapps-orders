@@ -36,9 +36,11 @@ fixtures — a test suite that dates its rows from the clock cannot measure this
 Caller-supplied days are refused rather than absorbed. `AsDateValue` answers `null` for a well-formed
 day that does not exist (`2026-02-30`) instead of throwing a `RangeError` its callers cannot defend
 against; `RequireDate` rejects such a day rather than letting `Date.parse` roll it forward to another
-one; and `Orders.CapturePayment`, `Orders.PreviewPrice`, `Orders.SpawnRenewals` and
-`Orders.CancelSubscription` each refuse it at their boundary, because a quote, a renewal pass or a
-payment silently answered for today is wrong with nothing to notice.
+one; and `Orders.CapturePayment`, `Orders.PreviewPrice`, `Orders.SpawnRenewals`,
+`Orders.CancelSubscription` and the invoice render boundary that `Orders.GenerateInvoice` and
+`Orders.SendDocument` share each refuse it, because a quote, a renewal pass, an invoice or a payment
+silently answered for today is wrong with nothing to notice. A day given as a real `Date` rather
+than a string is still accepted everywhere the interface promises one: only text is validated.
 
 Two source guards cover all five packages — core-entities-server, entities, orders-ng, orders-server
 and the integration harness. One fails if any file stamps a column the migrations declare as `DATE`

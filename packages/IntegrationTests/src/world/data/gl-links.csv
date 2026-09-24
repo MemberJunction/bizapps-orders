@@ -3,6 +3,7 @@ BCP,AR,Accounts Receivable,Company,
 BCP,Sales,Sales,Company,
 BCP,Deferred,Deferred Revenue,Company,
 BCP,Cash,Cash,Company,
+BCP,Unbilled,Unbilled Receivable,Company,
 BCP,Sales,Sales,ProductType,PhysicalGood
 BCP,Sales,Sales,ProductType,Event
 BCP,Sales,Sales,ProductType,Membership
@@ -11,6 +12,7 @@ BCP,Sales,Sales,ProductType,GiftCard
 BCP,Sales,Sales,ProductType,Bundle
 BCP,Sales,Sales,Category,EVENTS
 BCP,Sales,Sales,Product,STYLE-HB
+BCP,Discounts,Sales Discounts,Product,WORKSHOP
 HH,AR,Accounts Receivable,Company,
 HH,Sales,Sales,Company,
 HH,Deferred,Deferred Revenue,Company,
