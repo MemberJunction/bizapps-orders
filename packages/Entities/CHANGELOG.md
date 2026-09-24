@@ -1,5 +1,101 @@
 # @mj-biz-apps/orders-entities
 
+## 5.17.0
+
+### Minor Changes
+
+- d0489c4: Freeze the selling company, order date and parties on a confirmed order.
+
+  - A line on a Confirmed order keeps the company it was sold under. `OrderLineEntityServer` no
+    longer re-stamps `CompanyID` from the product once the order is booked, and trigger 51003 now
+    refuses a change to it. Draft and Quoted orders still re-stamp from the product.
+  - A booked header refuses changes to `OrderDate`, `OrderType` and `ReversesOrderHeaderID` (added to
+    `ORDER_HEADER_MONEY_FIELDS` alongside `CompanyID`) and to a bill-to party that is already set
+    (new `ORDER_HEADER_SET_ONCE_FIELDS`), from `Validate()`, with a message naming the field.
+  - New trigger `trg_OrderHeader_ImmutableAfterConfirm` backs that at the database: the same columns
+    (51013), and `Status` cannot leave Confirmed (51014).
+  - The order form shows Order Date and the bill-to party read-only on a booked order, as it already
+    did Company and Order Type, with a note saying why.
+  - The guest-order claim no longer re-points a booked order's bill-to. It fills an empty one, and
+    moves the ship-to on its own, so the claim succeeds.
+
+  Direct SQL that rewrote these columns on booked orders is now refused; stand the trigger down the
+  way the existing immutability triggers are for a data reset.
+
+- acb0405: Register the metadata `V202609191200` left behind for `OrderLine`'s dimension columns (golive #256).
+
+  `V202609191200` regenerated `vwOrderLines` with the two denormalized dimension name columns but registered `EntityField` rows for `DimensionID` and `DimensionValueID` only. On any database built from migrations alone the view has 51 columns against 49 registered fields, MJ's save-capture falls back to view column order, and every OrderLine INSERT fails with `Column name or number of supplied values does not match table definition`. `V202609230300` inserts the two rows, guarded on `(EntityID, Name)` and sequenced with the apply-time `MAX + 1` expression. Data only — no schema change and no CodeGen output.
+
+  The same run also left two `EntityRelationship` rows unregistered, `Dimension` and `DimensionValue` to Order Lines, so on a host built from migrations the accounting vocabulary is not reachable from an order line in the API or on its form. Both are healed in the same file, guarded on id and on their natural key.
+
+- b550e40: Every value that names a calendar day is derived from the business day rather than the clock instant
+  (#209).
+
+  A SQL `DATE` is a calendar day with no time. `new Date()` is an instant, and an instant serialises in
+  UTC — so a record stamped at 9 PM Eastern was dated tomorrow. A reversal fell in a different period
+  from the capture it reverses, a credit settled an order on a day that had not started, an invoice was
+  printed with tomorrow's date beside a due date counted from a different calendar, and the journal
+  entries followed the wrong day with them. Same defect shape as the order-date case
+  (bc-aidp-next-golive#168), fixed the same way.
+
+  Two helpers hold the rule so it is stated once rather than re-derived per site. `AsDateValue(cell)`
+  (orders-entities) gives the calendar day a value names, pinned to midnight UTC — which also stops a
+  supplied instant carrying its time into a `date` column. `CalendarDayOrToday(cell, provider, user)`
+  (core-entities-server) adds the fallback: today's business day when the value names no day, warming
+  `BusinessTimeZoneEngine` only on that path, so a metadata read never runs inside a write transaction
+  to compute a day that was supplied anyway. Where no provider exists — the browser, the entity layer —
+  the pairing is `AsDateValue(x) ?? TodayAsDateValue()`.
+
+  Converted, twenty-eight sites: the reversal factory and the applied-account-credit operation, the
+  capture operation, the initial payment, the entitlement grant's validity start, the subscription
+  booking day and the cancellation request day, the allocation and processing-fee journal entries, the
+  payment line's allocation entry, the order journal entry's effective date, the affiliation as-of day
+  on both sides, `PreviewPrice` and `SpawnRenewals`, the checkout service's pricing as-of day, the
+  pricing service's four `AsOf` values and the order-line and order-header ones, the order-lines
+  editor's dimension catalog and pricing context, the Angular payment form's cleared date field, the
+  invoice document's printed date and days-until-due countdown, and the integration harness's own
+  fixtures — a test suite that dates its rows from the clock cannot measure this defect.
+
+  Caller-supplied days are refused rather than absorbed. `AsDateValue` answers `null` for a well-formed
+  day that does not exist (`2026-02-30`) instead of throwing a `RangeError` its callers cannot defend
+  against; `RequireDate` rejects such a day rather than letting `Date.parse` roll it forward to another
+  one; and `Orders.CapturePayment`, `Orders.PreviewPrice`, `Orders.SpawnRenewals`,
+  `Orders.CancelSubscription` and the invoice render boundary that `Orders.GenerateInvoice` and
+  `Orders.SendDocument` share each refuse it, because a quote, a renewal pass, an invoice or a payment
+  silently answered for today is wrong with nothing to notice. A day given as a real `Date` rather
+  than a string is still accepted everywhere the interface promises one: only text is validated.
+
+  Two source guards cover all five packages — core-entities-server, entities, orders-ng, orders-server
+  and the integration harness. One fails if any file stamps a column the migrations declare as `DATE`
+  from a bare `new Date()`; the other fails on "a day in hand, else the clock" under any binding name,
+  which is the spelling that twice reached a date column through a differently-named variable. Sites
+  that cannot be driven in a unit test are pinned positively to the expression they must use.
+
+  No schema change: a `DATE` column is read from UTC parts and written as UTC midnight. The business
+  time zone decides only what "today" is.
+
+- 19983f5: A scheduled order books only what it has invoiced (D92, golive #240).
+
+  Confirming an order used to raise the whole contract value on the balance sheet the day it was signed. For a three-year contract billed annually that put three years of receivable there before anyone had billed a penny, and it made Deferred Revenue mean "contract value" rather than "billing ahead of performance". Now the order and its schedule stay in the subledger and the GL records what happened: billed, collected, earned.
+
+  A company billed by instalment books no value at confirm except the instalments already due on the order date, which confirm issues through the same act a person triggers later — `IssueInstalment`, one function, so the document number, the stamps and the entry are identical whichever route raised them. Each remaining instalment is booked when it is invoiced.
+
+  Every order line now carries `BilledToDate` and `RecognizedToDate` (migration `V202609230400`, with this app's CodeGen output folded below the banner). The gap between them is the line's balance-sheet position, and two ordering rules follow from it: invoicing credits **Unbilled Receivable first**, up to the line's `max(0, R − B)`, then Deferred; recognising debits **Deferred first**, up to `max(0, B − R)`, then Unbilled. That is `SplitContraLegs` in `ContractBalance.ts`, and its test walks all nine steps of Andrew's Scenario 4 including the backward slide from 45% to 40%. The totals are stored signed, so an origin line and its reversals net to zero, and they are advanced by the same transactions that book the entries — a separate writer is how a total drifts from the ledger it summarises.
+
+  Unbilled Receivable now means what the standard means by a contract asset: service delivered that the contract does not yet let us bill. That is a different thing from the future instalments the superseded D89 revision parked in the same account.
+
+  An order with no payment schedule — dues, events, and everything the go-live conversion brings in — books exactly what it booked before, asserted on the entry's shape rather than its totals. A gift card sold to a company billed by instalment is refused with an explanation rather than guessed at. An entry that needs an Unbilled Receivable leg is refused when the company has no Unbilled Receivable account linked, rather than posted to Deferred Revenue (golive #261), so a company billed by instalment cannot confirm an order with an up-front line, or issue an instalment against earned-but-unbilled revenue, until that link exists. And a cancelled instalment no longer gives its document number back (golive #242): Bill.com 422s on a duplicate and archiving keeps the number reserved, so the count includes cancelled rows and issuing refuses a number already held by a sibling.
+
+### Patch Changes
+
+- 5630121: Keep the order-line edit veto registry in MJ's global object store instead of a module-scoped
+  variable, so every copy of `orders-entities` loaded in one process shares one registry.
+
+  Before this, a host that resolved two copies of the package could register the veto into one and
+  look it up in the other, and the veto would never run. That forced cross-repo consumers to pin this
+  package exactly. They can now depend on it with a range. `RegisterOrderLineEditVeto` and
+  `HostOrderLineEditVeto` keep their signatures.
+
 ## 5.16.0
 
 ### Minor Changes
@@ -10,8 +106,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-      The INSERT statement conflicted with the FOREIGN KEY constraint
-      "FK_EntityFieldValue_EntityField"
+        The INSERT statement conflicted with the FOREIGN KEY constraint
+        "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
