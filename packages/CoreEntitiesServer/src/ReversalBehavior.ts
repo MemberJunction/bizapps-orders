@@ -27,6 +27,10 @@
  *      window reverses the right total in the wrong months, which every year-end total still
  *      agrees with.
  *
+ *   5. **WHAT TAX IT CHARGED, AND WHERE.** A refund gives back the tax the sale collected, in the
+ *      jurisdictions that collected it. Re-resolving it from the return's own address and date
+ *      taxes the refund wherever the customer is now, at today's rate — see `MirroredTaxCharges`.
+ *
  * THE SHAPE THIS SHARES WITH THE REST OF THE PACKAGE: every one of these produces a wrong answer
  * that looks exactly like a right one. Hence refusal rather than a best guess.
  *
@@ -59,6 +63,31 @@ export interface ReversalOrigin {
     SubscriptionID?: string | null;
     /** For the refusal message — an ID alone tells the reader nothing about what they mispointed at. */
     OrderNumber?: string | null;
+    /** The order the origin line is on — where a reversal that states no address takes its own. */
+    OrderHeaderID?: string | null;
+    /** The origin line's own ship-to, when it overrode its header's, and its snapshot as sold. */
+    ShipToAddressID?: string | null;
+    ShipToAddressSnapshot?: string | null;
+    /** The tax the origin line was charged — the fallback when it has no tax charge rows. */
+    LineTax?: number;
+}
+
+/** One tax charge's share of the origin line, as `OrderChargeAllocation` recorded it. */
+export interface OriginTaxCharge {
+    /** `ChargeType.Code` of a Tax-category charge. */
+    Code: string;
+    /** The amount allocated to the origin line. Positive — it was a sale. */
+    Amount: number;
+    TaxJurisdictionID: string | null;
+    TaxRateID: string | null;
+}
+
+/** A tax charge for the reversal line: negative, targeted at that line by the caller. */
+export interface MirroredTaxCharge {
+    Code: string;
+    Amount: number;
+    TaxJurisdictionID: string | null;
+    TaxRateID: string | null;
 }
 
 /** The reversal being attempted. Quantity is negative, as the caller wrote it. */
@@ -171,4 +200,52 @@ export function InheritedTerms(
         ServicePeriodStart: origin.ServicePeriodStart,
         ServicePeriodEnd: origin.ServicePeriodEnd,
     };
+}
+
+/**
+ * The tax a reversal line refunds: the origin line's own tax charges, one per jurisdiction, scaled
+ * by the quantity coming back and negated.
+ *
+ * NOT RE-RESOLVED. Resolving tax for a return reads the return's ship-to address and the return's
+ * date, so a customer who has moved since the sale is refunded at the new state's rate, a rate that
+ * changed since the sale refunds more or less than was collected, and a return with no address
+ * refunds no tax at all. The origin's charge rows already say what was collected and where; the
+ * refund gives that back, the same way `InheritedTerms` gives back the price paid.
+ *
+ * CUMULATIVE ROUNDING, so a series of partial returns refunds exactly what was collected. Each
+ * slice is the rounded share through the end of this return less the rounded share before it:
+ * 1.00 of tax on three units refunds 0.33, 0.34 and 0.33, not 0.33 three times. `reversedBefore` is
+ * everything already taken from the origin — prior returns and earlier lines of this one.
+ *
+ * FALLS BACK TO `LineTax` when the origin carries tax but no Tax charge rows, as one `SalesTax`
+ * charge with no jurisdiction. The total is still right; only the attribution is missing, because
+ * the origin never recorded one.
+ */
+export function MirroredTaxCharges(
+    origin: Pick<ReversalOrigin, 'Quantity' | 'LineTax'>,
+    charges: OriginTaxCharge[],
+    reversedBefore: number,
+    reversalQuantity: number,
+): MirroredTaxCharge[] {
+    const originQty = Math.abs(origin.Quantity);
+    if (originQty <= 0) return [];
+    const before = Math.min(originQty, Math.abs(reversedBefore));
+    const through = Math.min(originQty, before + Math.abs(reversalQuantity));
+    const slice = (total: number): number => {
+        const cents = (share: number): number => Math.round(total * (share / originQty) * 100);
+        return -(cents(through) - cents(before)) / 100;
+    };
+
+    const sources: OriginTaxCharge[] = charges.length
+        ? charges
+        : origin.LineTax
+          ? [{ Code: 'SalesTax', Amount: origin.LineTax, TaxJurisdictionID: null, TaxRateID: null }]
+          : [];
+    const out: MirroredTaxCharge[] = [];
+    for (const c of sources) {
+        const amount = slice(Number(c.Amount ?? 0));
+        if (amount === 0) continue;
+        out.push({ Code: c.Code, Amount: amount, TaxJurisdictionID: c.TaxJurisdictionID, TaxRateID: c.TaxRateID });
+    }
+    return out;
 }

@@ -18,11 +18,16 @@
  *   CALLER: OrderEntityServer.savePendingLines (before pricing — see there for why)
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
-import type { ReversalOrigin } from './ReversalBehavior.js';
+import type { OriginTaxCharge, ReversalOrigin } from './ReversalBehavior.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+const ORDER_CHARGE_ENTITY = 'MJ_BizApps_Orders: Order Charges';
+const ORDER_CHARGE_ALLOCATION_ENTITY = 'MJ_BizApps_Orders: Order Charge Allocations';
+const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
+
+const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 /** The origin line plus what prior reversals have already taken from it. */
 export interface ReversalContext {
@@ -48,7 +53,7 @@ export async function LoadReversalContext(
     // this is not the last line of defence against injection — but it is free, it turns a malformed
     // pointer into a clear refusal instead of a SQL syntax error from inside a booking transaction,
     // and it means the filter below cannot be built from arbitrary text. Raised by Marcelo on PR #17.
-    if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(reversesOrderLineID)) {
+    if (!UUID_PATTERN.test(reversesOrderLineID)) {
         throw new Error(
             `'${reversesOrderLineID}' is not a valid order line identifier, so the line it claims to ` +
                 `reverse cannot be looked up.`,
@@ -68,6 +73,9 @@ export async function LoadReversalContext(
         ServicePeriodStart?: Date | string | null;
         ServicePeriodEnd?: Date | string | null;
         SubscriptionID?: string | null;
+        LineTax?: number | null;
+        ShipToAddressID?: string | null;
+        ShipToAddressSnapshot?: string | null;
     };
 
     // The origin and every reversal already pointing at it, in ONE view. Splitting them costs a
@@ -143,6 +151,10 @@ export async function LoadReversalContext(
             DiscountPct: Number(origin.DiscountPct ?? 0),
             DiscountAmount: Number(origin.DiscountAmount ?? 0),
             OrderNumber: null,
+            OrderHeaderID: origin.OrderHeaderID,
+            ShipToAddressID: origin.ShipToAddressID ?? null,
+            ShipToAddressSnapshot: origin.ShipToAddressSnapshot ?? null,
+            LineTax: Number(origin.LineTax ?? 0),
             // The coverage window the origin actually sold — for a subscription that is the SETTLED
             // term, which `materializeSubscriptions` stamped back onto the line, so the anchoring and
             // proration the type applied are already baked in here and need no re-deriving.
@@ -152,4 +164,63 @@ export async function LoadReversalContext(
         },
         AlreadyReversed: Math.round(alreadyReversed * 1e4) / 1e4,
     };
+}
+
+/**
+ * The Tax-category charges allocated to an origin line — what the sale collected, per jurisdiction.
+ *
+ * A failed read THROWS rather than returning nothing: an empty list reads as "the sale charged no
+ * tax", and the return would then book without a tax refund and balance while doing it.
+ */
+export async function LoadOriginTaxCharges(
+    originLineID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<OriginTaxCharge[]> {
+    if (!UUID_PATTERN.test(originLineID)) {
+        throw new Error(`'${originLineID}' is not a valid order line identifier, so its tax cannot be looked up.`);
+    }
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const read = async <T>(entity: string, filter: string, fields: string[]): Promise<T[]> => {
+        const res = await rv.RunView<T>({ EntityName: entity, ExtraFilter: filter, Fields: fields, ResultType: 'simple' }, user);
+        if (!res?.Success) {
+            throw new Error(`Could not read the tax charged on order line ${originLineID}: ${res?.ErrorMessage ?? 'unknown error'}`);
+        }
+        return res.Results ?? [];
+    };
+
+    const allocations = await read<{ OrderChargeID: string; Amount: number }>(
+        ORDER_CHARGE_ALLOCATION_ENTITY,
+        `OrderLineID = '${originLineID}'`,
+        ['OrderChargeID', 'Amount'],
+    );
+    if (!allocations.length) return [];
+
+    const charges = await read<{ ID: string; ChargeTypeID: string; TaxJurisdictionID: string | null; TaxRateID: string | null }>(
+        ORDER_CHARGE_ENTITY,
+        `ID IN (${[...new Set(allocations.map((a) => `'${a.OrderChargeID}'`))].join(',')})`,
+        ['ID', 'ChargeTypeID', 'TaxJurisdictionID', 'TaxRateID'],
+    );
+    const types = await read<{ ID: string; Code: string; Category: string }>(
+        CHARGE_TYPE_ENTITY,
+        `ID IN (${[...new Set(charges.map((c) => `'${c.ChargeTypeID}'`))].join(',')})`,
+        ['ID', 'Code', 'Category'],
+    );
+
+    const key = (id: string): string => String(id).toLowerCase();
+    const typeByID = new Map(types.map((t) => [key(t.ID), t]));
+    const chargeByID = new Map(charges.map((c) => [key(c.ID), c]));
+    const out: OriginTaxCharge[] = [];
+    for (const a of allocations) {
+        const charge = chargeByID.get(key(a.OrderChargeID));
+        const type = charge ? typeByID.get(key(charge.ChargeTypeID)) : undefined;
+        if (!charge || type?.Category !== 'Tax') continue;
+        out.push({
+            Code: type.Code,
+            Amount: Number(a.Amount ?? 0),
+            TaxJurisdictionID: charge.TaxJurisdictionID ?? null,
+            TaxRateID: charge.TaxRateID ?? null,
+        });
+    }
+    return out;
 }

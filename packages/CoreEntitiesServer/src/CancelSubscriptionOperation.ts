@@ -350,6 +350,8 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         order.OrderType = 'Cancellation';
         order.OrderDate = decision.EffectiveDate;
         order.CompanyID = subscription.CompanyID;
+        // The order that sold the term. The booking save takes the reversal's addresses from it.
+        order.ReversesOrderHeaderID = original.OrderHeaderID;
         order.BillToOrganizationID = subscription.HolderOrganizationID;
         order.BillToPersonID = subscription.BeneficiaryPersonID;
         order.Notes = reason ? `Subscription cancellation: ${reason}` : 'Subscription cancellation';

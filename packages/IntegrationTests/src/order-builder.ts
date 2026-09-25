@@ -91,6 +91,8 @@ export interface OrderSpec {
     ShipToPersonID?: string;
     /** The ship-to ADDRESS — what tax jurisdiction resolution matches on (D73). */
     ShipToAddressID?: string;
+    /** The order this one reverses — a return names it, and takes its addresses from it. */
+    ReversesOrderHeaderID?: string;
     /** D42 initial-payment intent, captured at order entry and turned into a real payment at confirm. */
     InitialPaymentTypeID?: string;
     InitialPaymentAmount?: number;
@@ -179,6 +181,7 @@ export async function BuildOrder(
     if (spec.ShipToOrganizationID) order.ShipToOrganizationID = spec.ShipToOrganizationID;
     if (spec.ShipToPersonID) order.ShipToPersonID = spec.ShipToPersonID;
     if (spec.ShipToAddressID) order.ShipToAddressID = spec.ShipToAddressID;
+    if (spec.ReversesOrderHeaderID) order.ReversesOrderHeaderID = spec.ReversesOrderHeaderID;
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;
 
     // A REFERENCE-REQUIRING TENDER GETS AN INSTRUMENT, because a real one always would.
