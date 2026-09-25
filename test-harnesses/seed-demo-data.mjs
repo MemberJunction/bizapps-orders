@@ -284,8 +284,8 @@ async function createCompany(label) {
     await q(`INSERT INTO __mj.Company (ID, Name, Description)
              VALUES ('${id}','${name}','Demo data for hands-on review — safe to delete')`);
     await q(`INSERT INTO ${ACCT}.AccountingCompanyProfile
-                (ID, CompanyCode, FunctionalCurrencyCode, EntityType, OperatingTimeZone, IsActive)
-             VALUES ('${id}','${id.slice(0, 8).toUpperCase()}','${currency}','Subsidiary','UTC',1)`);
+                (ID, CompanyCode, FunctionalCurrencyCode, EntityType, IsActive)
+             VALUES ('${id}','${id.slice(0, 8).toUpperCase()}','${currency}','Subsidiary',1)`);
 
     const accounts = {};
     for (const a of COA) {
