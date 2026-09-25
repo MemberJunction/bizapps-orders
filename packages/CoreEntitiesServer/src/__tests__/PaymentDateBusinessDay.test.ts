@@ -42,6 +42,8 @@ import { fileURLToPath } from 'node:url';
 const mocks = vi.hoisted(() => ({
     /** Rows `RunView` should answer with, keyed by a fragment of the entity name. */
     runViewRows: new Map<string, unknown[]>(),
+    /** How many times any `RunView` has been run, so a test can prove it ran none. */
+    runViewCalls: 0,
 }));
 
 // Only `RunView` is swapped — the operations construct it with `new RunView(provider)`, and this
@@ -54,6 +56,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
         ...actual,
         RunView: class {
             RunView = vi.fn().mockImplementation((params: { EntityName: string; ExtraFilter?: string }) => {
+                mocks.runViewCalls++;
                 for (const [fragment, rows] of mocks.runViewRows) {
                     if (!params.EntityName.includes(fragment)) continue;
                     // Honour an `ID='…'` filter: `loadOrder` is called once per order, and a mock
@@ -496,17 +499,19 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
     });
 
     /**
-     * The two as-of operations, converted out of the deferred list.
+     * The as-of operations, and the request day of a cancellation.
      *
-     * Both judge "which rules were in force" against `EffectiveFrom`/`EffectiveTo` and the renewal
+     * PreviewPrice and SpawnRenewals judge "which rules were in force" against `EffectiveFrom`/`EffectiveTo` and the renewal
      * due dates — `date` columns — so their as-of value is a calendar day, and an instant answered
      * the UTC day: an evening preview quoted tomorrow's prices, and an evening renewal pass would
      * spawn tomorrow's renewals a day early.
      *
-     * Each also refuses an impossible day at its boundary rather than absorbing it.
+     * Each operation also refuses an impossible day at its boundary rather than absorbing it.
      * `CalendarDayOrToday` cannot refuse — it normalises, and today is a plausible wrong answer no
-     * caller can detect. Both refusals are driven here with an empty provider, which proves they
-     * happen before any database work: anything further in would throw on the missing provider.
+     * caller can detect. An empty provider does NOT prove the refusal comes first: `RunView` is
+     * mocked for this module and the time-zone engine is pinned, so provider work past the boundary
+     * can run and return normally. The refusal's message is what identifies it, and the invalid-
+     * `Date` cases below also assert that no `RunView` ran and the provider was never touched.
      */
     describe('the as-of operations (PreviewPrice, SpawnRenewals, CancelSubscription)', () => {
         const PRODUCT_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3331';
@@ -576,7 +581,9 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
 
         // An invalid `Date` is a day the caller named, not an absent one. `CalendarDayOrToday`
         // reads it as no day and falls back to today, so each operation refuses it first (#272).
-        // The empty provider proves the refusal comes before any provider work.
+        // The refusal must come before any provider work, so the test asserts that directly: no
+        // `RunView` ran, and nothing read a property of the provider (SpawnRenewals reaches it
+        // through `ExecuteSQL`, which the `RunView` count alone would miss).
         type DayOperation = {
             InternalExecute(i: unknown, p: IMetadataProvider, u: UserInfo): Promise<{ Success: boolean; Message?: string }>;
         };
@@ -585,9 +592,14 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             ['SpawnRenewals', () => new SpawnRenewalsOperation() as unknown as DayOperation, { AsOfDate: new Date('garbage') }, /AsOfDate is not a valid date/],
             ['CancelSubscription', () => new CancelSubscriptionOperation() as unknown as DayOperation, { SubscriptionID: '3f2504e0-4f89-41d3-9a0c-0305e82c3332', RequestDate: new Date('garbage') }, /RequestDate is not a valid date/],
         ])('%s refuses an invalid Date instead of running for today', async (_name, make, input, message) => {
-            const out = await make().InternalExecute(input, {} as unknown as IMetadataProvider, { ID: 'user-1' } as unknown as UserInfo);
+            const touched: PropertyKey[] = [];
+            const provider = new Proxy({}, { get: (_t, key) => void touched.push(key) }) as unknown as IMetadataProvider;
+            const runViewsBefore = mocks.runViewCalls;
+            const out = await make().InternalExecute(input, provider, { ID: 'user-1' } as unknown as UserInfo);
             expect(out.Success).toBe(false);
             expect(out.Message).toMatch(message);
+            expect(mocks.runViewCalls).toBe(runViewsBefore);
+            expect(touched).toEqual([]);
         });
     });
 
