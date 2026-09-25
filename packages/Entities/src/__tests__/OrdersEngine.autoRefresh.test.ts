@@ -9,7 +9,6 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BaseEngine, BaseEnginePropertyConfig, BaseEntity, BaseEntityEvent } from '@memberjunction/core';
-import type { BaseEnginePropertyConfig as ConfigShape } from '@memberjunction/core';
 import { MJEventType, MJGlobal } from '@memberjunction/global';
 import { OrdersEngine } from '../pricing/OrdersEngine.js';
 
@@ -17,13 +16,13 @@ type Row = Record<string, unknown>;
 
 /** The internals these tests seed; each is what `Load()` would have set. */
 type EngineInternals = {
-    _metadataConfigs: ConfigShape[];
+    _metadataConfigs: BaseEnginePropertyConfig[];
     _products: Row[];
     _productTypes: Row[];
     _revenueRecognitionTypes: Row[];
     SetProvider(provider: unknown): void;
     SetupGlobalEventListener(): Promise<boolean>;
-    canUseImmediateMutation(config: ConfigShape): boolean;
+    canUseImmediateMutation(config: BaseEnginePropertyConfig): boolean;
 };
 
 const PRODUCTS = 'MJ_BizApps_Orders: Products';
@@ -33,9 +32,9 @@ const REV_REC_TYPES = 'MJ_BizApps_Orders: Revenue Recognition Types';
 const engine = (): EngineInternals => OrdersEngine.Instance as unknown as EngineInternals;
 
 /** The configs `OrdersEngine.Config()` asks `BaseEngine` to load, upgraded the way `Load()` does. */
-async function capturedConfigs(): Promise<ConfigShape[]> {
+async function capturedConfigs(): Promise<BaseEnginePropertyConfig[]> {
     const load = vi
-        .spyOn(BaseEngine.prototype as unknown as { Load: (configs: Partial<ConfigShape>[]) => Promise<void> }, 'Load')
+        .spyOn(BaseEngine.prototype as unknown as { Load: (configs: Partial<BaseEnginePropertyConfig>[]) => Promise<void> }, 'Load')
         .mockResolvedValue(undefined);
     await OrdersEngine.Instance.Config(false, { ID: 'u-1' } as never, {} as never);
     const configs = load.mock.calls[0][0].map(
@@ -74,7 +73,7 @@ function raiseSave(saved: Row, saveSubType: 'create' | 'update'): void {
 }
 
 describe('OrdersEngine refreshes on entity saves (#179)', () => {
-    let configs: ConfigShape[];
+    let configs: BaseEnginePropertyConfig[];
 
     beforeEach(async () => {
         configs = await capturedConfigs();
@@ -99,14 +98,18 @@ describe('OrdersEngine refreshes on entity saves (#179)', () => {
         vi.restoreAllMocks();
     });
 
-    it('registers the configs booking reads for immediate, in-place refresh', () => {
-        for (const name of [PRODUCTS, PRODUCT_TYPES, REV_REC_TYPES]) {
-            const config = configs.find((c) => c.EntityName === name);
-            expect(config, name).toBeDefined();
-            expect(config!.AutoRefresh, name).toBe(true);
+    it('registers every config for immediate, in-place refresh', () => {
+        // Every config, not only the ones booking reads: pricing reads Product Prices and
+        // Product Categories from here too, and a config added later is covered without
+        // editing this test.
+        expect(configs.map((c) => c.EntityName)).toEqual(
+            expect.arrayContaining([PRODUCTS, PRODUCT_TYPES, REV_REC_TYPES]),
+        );
+        for (const config of configs) {
+            expect(config.AutoRefresh, config.EntityName).toBe(true);
             // A Filter, OrderBy, 'simple' result type or AdditionalLoading override would
             // turn this into a debounced full reload instead.
-            expect(engine().canUseImmediateMutation(config!), name).toBe(true);
+            expect(engine().canUseImmediateMutation(config), config.EntityName).toBe(true);
         }
     });
 
