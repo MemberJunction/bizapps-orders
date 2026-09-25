@@ -605,6 +605,14 @@ export const AchSettlementChecks: NamedCheck[] = [
                 SELECT ID FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE PaymentIntentID='${Intent.PaymentIntentID}')`,
         );
         AssertEqual(Number(reversals.N), 1, "exactly one reversal exists");
+
+        const source = await TxOne<{ ReversalSource: string | null }>(
+          ctx,
+          `SELECT ReversalSource FROM ${ORDERS_SCHEMA}.PaymentHeader
+            WHERE ReversesPaymentHeaderID IN (
+                SELECT ID FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE PaymentIntentID='${Intent.PaymentIntentID}')`,
+        );
+        AssertEqual(source.ReversalSource, "BankReturn", "the reversal records that the bank took the money back");
       }),
   },
 

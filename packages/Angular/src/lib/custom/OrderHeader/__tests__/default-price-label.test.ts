@@ -3,8 +3,7 @@
 // bootstraps Angular or instantiates the component.
 import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
-import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { MJOOrderLinesEditorComponent } from '../order-lines-editor.component';
+import { MJOLinePricePickerComponent } from '../../../panels/line-price-picker.component';
 
 /**
  * The `Default` row of the price-override dropdown (golive #194, the disclosure half).
@@ -13,19 +12,16 @@ import { MJOOrderLinesEditorComponent } from '../order-lines-editor.component';
  * one entry that is actually in force read `Default · 195.00` — no name, no symbol — so
  * the dropdown answered "what else could I pick" but not "what am I on now".
  *
- * Called off the prototype with a stand-in `this`: the two collaborators are methods on
- * the component, and binding them here keeps the test out of Angular's DI entirely.
+ * Called off the prototype with its inputs assigned, which keeps the test out of
+ * Angular's DI entirely.
  */
 function defaultLabel(defaultUnit: number | null, priceSource: string | null): string {
-    const stub = {
-        DefaultUnit: () => defaultUnit,
-        PricedLine: () => (priceSource === null ? undefined : { PriceSource: priceSource }),
-    } as unknown as MJOOrderLinesEditorComponent;
-    const line = {} as mjBizAppsOrdersOrderLineEntity;
-    return MJOOrderLinesEditorComponent.prototype.DefaultLabel.call(stub, line);
+    const picker = Object.create(MJOLinePricePickerComponent.prototype) as MJOLinePricePickerComponent;
+    Object.assign(picker as object, { DefaultUnit: defaultUnit, PriceSource: priceSource, EngineDefault: undefined });
+    return picker.DefaultLabel();
 }
 
-describe('MJOOrderLinesEditorComponent.DefaultLabel', () => {
+describe('MJOLinePricePickerComponent.DefaultLabel', () => {
     it('names the rule in force and carries the currency symbol', () => {
         expect(defaultLabel(195, 'Member 195')).toBe('Default (Member 195) · $195.00');
     });

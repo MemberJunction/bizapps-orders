@@ -20,6 +20,7 @@ import {
 } from './identityClaimContracts.js';
 import { mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
 import { resolvePersonID } from './claimDriverHelpers.js';
+import { IsPaymentSuspension } from './EntitlementBehavior.js';
 
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
 
@@ -81,8 +82,14 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
             grant.BeneficiaryPersonID = personID;
         }
 
-        grant.Status = 'Active';
-        grant.ProvisionedAt = new Date();
+        // A claim names WHO holds the grant; it does not pay for it. A grant held for payment stays
+        // held, and becomes Active when the payment arrives (PaymentGatedAccess).
+        if (!IsPaymentSuspension(grant)) {
+            grant.Status = 'Active';
+            grant.SuspendedAt = null;
+            grant.SuspensionReason = null;
+            grant.ProvisionedAt = new Date();
+        }
 
         const saved = await grant.Save();
         if (!saved) {

@@ -24,7 +24,9 @@ jobs:
       - name: Resolve current base branch tip
         id: base
         run: |
-          git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.ref }}
+          # Not --depth=1: that marks the fetched tip shallow, and if the base has moved since the
+          # merge ref was computed (or on a re-run of an old job) there is no merge base to diff against.
+          git fetch --no-tags origin ${{ github.event.pull_request.base.ref }}
           echo "sha=$(git rev-parse FETCH_HEAD)" >> $GITHUB_OUTPUT
 
       - name: Check for migration file changes
@@ -49,6 +51,11 @@ jobs:
           node ./.github/scripts/check-migration-entityfield-sequence.mjs --self-test
           node ./.github/scripts/check-migration-entityfield-sequence.mjs ${{ steps.base.outputs.sha }} ${{ github.sha }}
 
+      - name: Migrations already on the base branch are locked
+        run: |
+          node ./.github/scripts/check-migrations-locked.mjs --self-test
+          node ./.github/scripts/check-migrations-locked.mjs ${{ steps.base.outputs.sha }} ${{ github.sha }}
+
       - name: Versioned migrations must not contain spDeleteUnneededEntityFields
         run: |
           node ./.github/scripts/check-migration-no-prune.mjs --self-test
@@ -60,13 +67,6 @@ jobs:
           # Get max timestamp from existing migrations on base branch
           MAX_EXISTING=$(git show ${{ steps.base.outputs.sha }}:migrations/ 2>/dev/null | \
             grep -oE 'V[0-9]{12}' | sed 's/^V//' | sort -n | tail -1 || echo "0")
-
-          # Fail on any modified existing migration files (migrations are append-only)
-          MODIFIED_FILES=$(git diff --diff-filter=M --name-only ${{ steps.base.outputs.sha }} ${{ github.sha }} -- migrations/ | grep -E '\.sql$' || true)
-          if [ -n "$MODIFIED_FILES" ]; then
-            echo "::error::Existing migration files were modified in-place: $MODIFIED_FILES. Migrations must be append-only forward migrations."
-            exit 1
-          fi
 
           # Check only newly added migration files (not modified existing ones, not renames)
           NEW_FILES=$(git diff --diff-filter=A --name-only ${{ steps.base.outputs.sha }} ${{ github.sha }} -- migrations/ | grep -E '\.sql$' || true)

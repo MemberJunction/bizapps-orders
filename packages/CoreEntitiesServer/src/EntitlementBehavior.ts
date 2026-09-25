@@ -32,8 +32,11 @@
  *   DOC:    plans/archive/bizapps-orders-master.md D27, D76
  */
 
-/** When access begins. */
-export type GrantTiming = 'OnConfirm' | 'OnPaidInFull' | 'OnActivation';
+/** When access begins. See {@link DecideGrantStatus} for what each one means. */
+export type GrantTiming = 'OnConfirm' | 'OnPaidInFull' | 'OnFirstPayment' | 'OnActivation';
+
+/** Why a grant is suspended. The first two are payment facts, and lift themselves when cash arrives. */
+export type SuspensionReason = 'AwaitingPayment' | 'PastDue' | 'AwaitingActivation';
 
 /** How the template quantity relates to the line quantity. */
 export type QuantityMode = 'PerUnit' | 'Flat';
@@ -236,32 +239,182 @@ export function ResolveValidityWindow(mode: ValidityMode, ctx: ValidityContext):
 }
 
 /**
- * Should the grant be ACTIVE yet, given when access is supposed to begin?
+ * The order's payment position, as far as access cares. Every figure comes from the order row the
+ * rollup triggers maintain, so card, ACH and check resolve to the same answer: an ACH debit counts
+ * once it settles, because it is `Pending` until then and `AmountPaid` only sums settled payments.
+ */
+export interface OrderPaymentFacts {
+    TotalGross: number | null;
+    AmountPaid: number | null;
+    Balance: number | null;
+    /**
+     * Cash the seller chose to give back on this order (`ReversalSource = 'Refund'`), as a positive
+     * amount. `AmountPaid` and `Balance` already net it out; the access rule adds it back, because a
+     * refund is the seller's decision and does not take access away. A return revokes its own lines'
+     * grants; a refund with no return is a concession. Only a bank reversal counts against access.
+     * Absent means none.
+     */
+    RefundedBySeller?: number;
+    /** What has to be paid before a new purchase is live — see {@link FirstPaymentAmount}. */
+    FirstPaymentAmount: number;
+    /** Whole days the order is past due as of the business day; 0 when it is not overdue. */
+    DaysPastDue: number;
+}
+
+/** A payment schedule row, reduced to what the first-payment rule reads. */
+export interface FirstPaymentScheduleRow {
+    CompanyID: string;
+    InstallmentNumber: number;
+    Amount: number;
+    Status: string;
+}
+
+/**
+ * How much has to be paid before a new purchase counts as paid for its first payment.
+ *
+ * An order with no schedule is due in one amount, so its first payment is the whole order. An order
+ * with a schedule carries one schedule per selling company (D86), so its first payment is the first
+ * live instalment of EACH company's schedule, summed — the customer's first bill, however many
+ * companies it bills for. A cancelled instalment was never due and does not count.
+ */
+export function FirstPaymentAmount(totalGross: number | null, schedule: FirstPaymentScheduleRow[]): number {
+    const firstByCompany = new Map<string, FirstPaymentScheduleRow>();
+    for (const row of schedule) {
+        if (row.Status === 'Canceled') continue;
+        const company = row.CompanyID.toLowerCase();
+        const current = firstByCompany.get(company);
+        if (!current || row.InstallmentNumber < current.InstallmentNumber) firstByCompany.set(company, row);
+    }
+    if (!firstByCompany.size) return Number(totalGross ?? 0);
+    const sum = [...firstByCompany.values()].reduce((s, r) => s + Number(r.Amount ?? 0), 0);
+    return Math.round(sum * 100) / 100;
+}
+
+/** The status a grant should hold, and why, when it is not Active. */
+export interface GrantStatusDecision {
+    Status: 'Active' | 'Suspended';
+    Reason: SuspensionReason | null;
+}
+
+const ACTIVE: GrantStatusDecision = { Status: 'Active', Reason: null };
+const suspended = (Reason: SuspensionReason): GrantStatusDecision => ({ Status: 'Suspended', Reason });
+
+/**
+ * Should the grant be ACTIVE, given when access is supposed to begin and where the order's cash is?
  *
  * The grant row is written at confirm either way — downstream apps poll grants (D27), and a grant
  * that does not exist until payment clears cannot be seen coming. What timing changes is the STATUS:
  *
- *   OnConfirm     Active immediately. A confirmed order is a claim on the seller.
- *   OnPaidInFull  Suspended until the order's balance reaches zero. Access follows cash.
- *   OnActivation  Suspended until something explicitly activates it. Note that nothing does yet —
- *                 this exists because it was asked for, and a deployment choosing it is choosing to
- *                 grant nothing until it builds the caller.
+ *   OnConfirm       Active immediately. A confirmed order is a claim on the seller.
+ *   OnPaidInFull    Suspended until the order's balance reaches zero. Access follows cash.
+ *   OnFirstPayment  The payment-and-access rule (bc-aidp-next-golive#223), in two halves:
+ *                   · a NEW purchase is Suspended until its first payment has been received — the
+ *                     first instalment, or the whole order when there is no schedule;
+ *                   · a RENEWAL is Active, because the customer already has the service, and is
+ *                     suspended once the renewal order is `cutoffDaysPastDue` days past due.
+ *   OnActivation    Suspended until something explicitly activates it. Note that nothing does yet —
+ *                   this exists because it was asked for, and a deployment choosing it is choosing
+ *                   to grant nothing until it builds the caller.
+ *
+ * ONE function for confirm and for every later re-decision, so the status a grant is born with and
+ * the status it is moved to when cash arrives cannot follow different rules.
+ *
+ * A zero-value order is paid by definition — a free line should not leave the customer waiting for
+ * a payment that will never arrive.
+ *
+ * WHAT COUNTS AS PAID. A bank reversal (a returned debit) takes the cash back and access with it. A
+ * refund does not: the seller chose to give the money back, so it is added back before deciding. A
+ * paid order whose customer returns one line and is refunded for it keeps access on the other lines,
+ * and a goodwill refund on a paid order leaves every grant standing.
  *
  * `Suspended` rather than a missing row, and rather than `Revoked`: revoked means somebody took it
  * away, which is a different fact that an access dispute turns on.
+ *
+ * @param cutoffDaysPastDue - Days past due at which a renewal loses access; `null` never cuts off.
+ */
+export function DecideGrantStatus(
+    timing: GrantTiming,
+    isRenewal: boolean,
+    order: OrderPaymentFacts,
+    cutoffDaysPastDue: number | null,
+): GrantStatusDecision {
+    if (timing === 'OnConfirm') return ACTIVE;
+    if (timing === 'OnActivation') return suspended('AwaitingActivation');
+
+    const gross = Number(order.TotalGross ?? 0);
+    if (gross <= 0) return ACTIVE;
+    const refunded = Number(order.RefundedBySeller ?? 0);
+
+    if (timing === 'OnPaidInFull') {
+        return Math.round((Number(order.Balance ?? gross) - refunded) * 100) <= 0 ? ACTIVE : suspended('AwaitingPayment');
+    }
+
+    // OnFirstPayment. `DaysPastDue` is the caller's, measured on the balance net of seller refunds.
+    if (isRenewal) {
+        const cutOff = cutoffDaysPastDue != null && order.DaysPastDue > 0 && order.DaysPastDue >= cutoffDaysPastDue;
+        return cutOff ? suspended('PastDue') : ACTIVE;
+    }
+    // Compared in cents, so a first payment recorded as 333.33 against a 333.33 instalment is paid.
+    const paidCents = Math.round((Number(order.AmountPaid ?? 0) + refunded) * 100);
+    const dueCents = Math.round(Number(order.FirstPaymentAmount ?? gross) * 100);
+    return paidCents >= dueCents ? ACTIVE : suspended('AwaitingPayment');
+}
+
+/**
+ * The status a new purchase's grant starts in, from the balance alone.
+ *
+ * @deprecated Use {@link DecideGrantStatus}, which also knows about schedules, renewals and the
+ * past-due cutoff. Kept for existing callers, and delegates so the two cannot disagree.
  */
 export function InitialGrantStatus(
     timing: GrantTiming,
     order: { Balance: number | null; TotalGross: number | null },
 ): 'Active' | 'Suspended' {
-    if (timing === 'OnConfirm') return 'Active';
-    if (timing === 'OnActivation') return 'Suspended';
-
-    // OnPaidInFull. A zero-value order is paid by definition — a free line should not leave the
-    // customer waiting for a payment that will never arrive.
     const gross = Number(order.TotalGross ?? 0);
-    if (gross <= 0) return 'Active';
-    return Number(order.Balance ?? gross) <= 0 ? 'Active' : 'Suspended';
+    const balance = Number(order.Balance ?? gross);
+    return DecideGrantStatus(
+        timing,
+        false,
+        { TotalGross: gross, Balance: balance, AmountPaid: gross - balance, FirstPaymentAmount: gross, DaysPastDue: 0 },
+        null,
+    ).Status;
+}
+
+/** The timings whose status follows the order's cash, and so are re-decided when it moves. */
+export const PAYMENT_GATED_TIMINGS: readonly GrantTiming[] = ['OnPaidInFull', 'OnFirstPayment'];
+
+/** Suspensions this module imposed, and may therefore lift. Anything else belongs to a person. */
+const PAYMENT_SUSPENSIONS: ReadonlySet<string> = new Set<SuspensionReason>(['AwaitingPayment', 'PastDue']);
+
+/**
+ * True when a grant is suspended for a payment reason — held for its first payment, or cut off
+ * past due. Only a payment may lift one of these; anything else that activates grants (a claim, a
+ * person) must leave it alone, or access is handed out ahead of the cash the rule is waiting for.
+ */
+export function IsPaymentSuspension(grant: GrantStatusFacts): boolean {
+    return grant.Status === 'Suspended' && grant.SuspensionReason != null && PAYMENT_SUSPENSIONS.has(grant.SuspensionReason);
+}
+
+/** A grant as it stands, for {@link ReconcileGrantStatus}. */
+export interface GrantStatusFacts {
+    Status: string;
+    SuspensionReason: string | null;
+}
+
+/**
+ * Whether a standing grant should be moved to `decided`, or left alone.
+ *
+ * Only two kinds of grant are this rule's to move: an Active one, and one suspended FOR A PAYMENT
+ * REASON. A revoked or expired grant is history. A grant suspended for any other reason — awaiting
+ * activation, or by a person, or before suspensions carried a reason — was not suspended by cash,
+ * so cash arriving must not lift it.
+ *
+ * @returns The decision to apply, or `null` when the grant should not change.
+ */
+export function ReconcileGrantStatus(current: GrantStatusFacts, decided: GrantStatusDecision): GrantStatusDecision | null {
+    if (current.Status !== 'Active' && !IsPaymentSuspension(current)) return null;
+    if (current.Status === decided.Status && (current.SuspensionReason ?? null) === decided.Reason) return null;
+    return decided;
 }
 
 /**

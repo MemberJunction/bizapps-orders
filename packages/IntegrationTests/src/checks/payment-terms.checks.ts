@@ -28,7 +28,7 @@
  *   PT1   a stated DueDate survives confirm untouched
  *   PT2   stated terms derive the date from NetDays
  *   PT3   the buyer's CustomerPaymentTerms beat the company default
- *   PT4   the selling company's AccountingCompanyProfile default is used when nothing else applies
+ *   PT4   the selling company's OrderCompanyPolicy default is used when nothing else applies
  *   PT5   an order with nothing configured is due on receipt, with a real date
  *   PT6   a confirmed order past its due date reaches Orders.GetOverdueWorklist
  *   PT7   customer terms are effective on the ORDER date, not on today

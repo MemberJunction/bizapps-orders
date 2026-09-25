@@ -1,5 +1,14 @@
 # @mj-biz-apps/orders-ng
 
+## 5.18.0
+
+### Patch Changes
+
+- 5b5ebef: Share the order-line price picker. The rules behind it (`IsLinePriceOverridden`, `NamedPricesBesideDefault`, `RestoreLineDefault`, `PinLineToNamedPrice`, `PinLineToAmount` and the override-reason helpers) move to `@mj-biz-apps/orders-entities`, and the control becomes `<mjo-line-price-picker>` in `@mj-biz-apps/orders-ng`, with an `AllowCustomAmount` input for screens that offer named prices only. The order lines editor uses it with no change in behaviour, except that a line already on a typed amount now shows a disabled "Custom amount" row to a user who may not type one, instead of reading "Default".
+- Updated dependencies [b3ef9d2]
+- Updated dependencies [5b5ebef]
+  - @mj-biz-apps/orders-entities@5.18.0
+
 ## 5.17.0
 
 ### Minor Changes
@@ -167,8 +176,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-        The INSERT statement conflicted with the FOREIGN KEY constraint
-        "FK_EntityFieldValue_EntityField"
+          The INSERT statement conflicted with the FOREIGN KEY constraint
+          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

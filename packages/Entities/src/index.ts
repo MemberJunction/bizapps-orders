@@ -92,6 +92,7 @@ export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';
 export * from './pricing/inheritPrices';
 export * from './pricing/priceOverride';
+export * from './pricing/linePricePick';
 
 /**
  * `ToISODate` and friends — reading a date cell that may be a string or a `Date` and getting the
@@ -104,7 +105,7 @@ export * from './pricing/priceOverride';
 export * from './date-cell';
 
 /**
- * `IsOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.
+ * `IsOverdue` / `DaysOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.
  *
  * Three surfaces used to re-derive it and only one excluded a VOIDED order, so a voided order with a
  * stale balance appeared on collections lists as money owed. The rule now lives in one module, with
