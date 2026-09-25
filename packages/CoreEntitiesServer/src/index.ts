@@ -176,6 +176,11 @@ export {
     ResolveGrantQuantity,
     ResolveValidityWindow,
     InitialGrantStatus,
+    DecideGrantStatus,
+    FirstPaymentAmount,
+    ReconcileGrantStatus,
+    IsPaymentSuspension,
+    PAYMENT_GATED_TIMINGS,
     ReduceGrantForReturn,
     EvaluateGrantAccess,
     PickWinningAccess,
@@ -185,6 +190,11 @@ export {
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
+    SuspensionReason,
+    OrderPaymentFacts,
+    FirstPaymentScheduleRow,
+    GrantStatusDecision,
+    GrantStatusFacts,
     QuantityMode,
     ValidityMode,
     PolicyLevel,
@@ -207,6 +217,19 @@ export {
     RevokeGrantsForCanceledSubscription,
 } from './EntitlementEngine.js';
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
+// Payment-gated access (bc-aidp-next-golive#223) — grant status kept in step with the order's cash.
+export {
+    LoadOrderPaymentFacts,
+    ReconcilePaymentGatedGrants,
+    EnforcePaymentGatedAccess,
+} from './PaymentGatedAccess.js';
+export type {
+    OrderAccessFacts,
+    GrantStatusChange,
+    ReconcileOptions,
+    EnforcePaymentGatedAccessInput,
+    EnforcePaymentGatedAccessOutput,
+} from './PaymentGatedAccess.js';
 export { CheckEntitlementOperation, LoadCheckEntitlementOperation } from './CheckEntitlementOperation.js';
 export { ListEntitlementsOperation, LoadListEntitlementsOperation } from './ListEntitlementsOperation.js';
 export { CheckPersonEntitlement, ListPersonEntitlements, ASOF_FUTURE_TOLERANCE_MS } from './EntitlementRead.js';

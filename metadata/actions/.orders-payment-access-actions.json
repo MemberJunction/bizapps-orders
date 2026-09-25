@@ -1,0 +1,145 @@
+[
+  {
+    "_comments": [
+      "THE PAYMENT-GATED ACCESS ACTION (bc-aidp-next-golive#223). Its own dot-json so parallel work on",
+      "other actions conflicts on nothing.",
+      "",
+      "WHY AN ACTION. A renewal passes its cutoff with nothing being written, so the payment path cannot",
+      "catch it; MJ's scheduler dispatches Actions, and this row is how the nightly job reaches",
+      "EnforcePaymentGatedAccess. The class behind it holds no access logic.",
+      "",
+      "SAFE TO SHIP Active: nothing invokes it until the ScheduledJob in metadata/scheduled-jobs/ is",
+      "enabled, and that job ships Disabled and set to Preview."
+    ],
+    "fields": {
+      "Name": "Enforce Payment-Gated Access",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Suspend the OnFirstPayment grants of renewal orders that are past the configured cutoff (the RenewalAccessCutoffDaysPastDue setting), and restore any payment-suspended grant whose payment has since arrived. Preview reports what would change without writing anything.",
+      "Type": "Custom",
+      "DriverClass": "Orders.EnforcePaymentGatedAccess",
+      "IconClass": "fa-solid fa-lock",
+      "UserPrompt": "Suspend access on renewals past due beyond the cutoff and restore access that has since been paid, or preview what would change.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "F93098EC-6F6B-4B34-A29A-EBE61C40F29A"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AsOfDate",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Treat this date as today when measuring days past due (YYYY-MM-DD). Omit for the business day, which is what the schedule uses. An unreadable value is refused rather than replaced with today."
+          },
+          "primaryKey": {
+            "ID": "75AEC0A4-15D1-4373-8F70-E7A517FC2581"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Preview",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True reports what WOULD change and writes nothing; false (the default) writes the changes. A value that is neither is refused rather than guessed."
+          },
+          "primaryKey": {
+            "ID": "EB7BB6DE-F9CE-4591-B902-FBB52FA591EE"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxCount",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Cap on orders processed in one pass. Orders left over are processed on the next pass. A value that is not a whole number of at least 1 is refused."
+          },
+          "primaryKey": {
+            "ID": "5E68A0D8-37DC-4418-A24A-59D5455B009A"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Activated",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many grants this pass moved to Active (or would, on a preview)."
+          },
+          "primaryKey": {
+            "ID": "E338C6F9-B956-40BB-BD84-8CFDFCC96F2C"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Suspended",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many grants this pass moved to Suspended (or would, on a preview)."
+          },
+          "primaryKey": {
+            "ID": "02520450-C45D-48AB-8100-D314DEBFB429"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Changes",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every grant changed or to be changed: the order, the grant, the status and reason before and after, and the days past due."
+          },
+          "primaryKey": {
+            "ID": "3DEE0EB8-4F9D-44C5-99AF-9812E5174FB4"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Failures",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Orders whose re-decision failed, with the error. Each failed order was rolled back on its own; the rest of the pass stands."
+          },
+          "primaryKey": {
+            "ID": "F550B0A0-9C1E-4BA5-B4EA-BAD9EBD83472"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewedOnly",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when this pass reported its list and wrote nothing. Not named Preview, so the input's value is not overwritten."
+          },
+          "primaryKey": {
+            "ID": "D90C2940-E527-45F8-A1D3-FE27FE1EF110"
+          }
+        }
+      ]
+    }
+  }
+]

@@ -105,7 +105,7 @@ export * from './pricing/linePricePick';
 export * from './date-cell';
 
 /**
- * `IsOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.
+ * `IsOverdue` / `DaysOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.
  *
  * Three surfaces used to re-derive it and only one excluded a VOIDED order, so a voided order with a
  * stale balance appeared on collections lists as money owed. The rule now lives in one module, with

@@ -1857,6 +1857,17 @@ export class mjBizAppsOrdersEntitlementGrant_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `The grant timing that produced this grant (OnConfirm, OnPaidInFull, OnFirstPayment, OnActivation), resolved at confirm from product, category and product type. Access is re-decided from this when the order's payments change. NULL on grants written before the column existed.`}) 
+    @MaxLength(20)
+    GrantTimingApplied?: string;
+        
+    @Field({nullable: true, description: `When the grant was last suspended. Set together with SuspensionReason and cleared when the grant becomes Active again.`}) 
+    SuspendedAt?: Date;
+        
+    @Field({nullable: true, description: `Why the grant is suspended: AwaitingPayment (a new purchase whose first payment has not been received), PastDue (a renewal past the configured cutoff), or AwaitingActivation. AwaitingPayment and PastDue are lifted automatically when payment arrives.`}) 
+    @MaxLength(20)
+    SuspensionReason?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     ProductEntitlement?: string;
@@ -1928,6 +1939,15 @@ export class CreatemjBizAppsOrdersEntitlementGrantInput {
     @Field({ nullable: true })
     RevocationReason: string | null;
 
+    @Field({ nullable: true })
+    GrantTimingApplied: string | null;
+
+    @Field({ nullable: true })
+    SuspendedAt: Date | null;
+
+    @Field({ nullable: true })
+    SuspensionReason: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -1982,6 +2002,15 @@ export class UpdatemjBizAppsOrdersEntitlementGrantInput {
 
     @Field({ nullable: true })
     RevocationReason?: string | null;
+
+    @Field({ nullable: true })
+    GrantTimingApplied?: string | null;
+
+    @Field({ nullable: true })
+    SuspendedAt?: Date | null;
+
+    @Field({ nullable: true })
+    SuspensionReason?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -6456,6 +6485,10 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `Who took the money back on a reversal: Refund (the seller chose to, via Orders.RefundPayment) or BankReturn (the bank reversed a debit). Set on every reversal and on nothing else. A bank return removes payment-gated access; a refund does not.`}) 
+    @MaxLength(20)
+    ReversalSource?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     ReceivingCompany?: string;
@@ -6568,6 +6601,9 @@ export class CreatemjBizAppsOrdersPaymentHeaderInput {
     @Field({ nullable: true })
     IdempotencyKey: string | null;
 
+    @Field({ nullable: true })
+    ReversalSource: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6643,6 +6679,9 @@ export class UpdatemjBizAppsOrdersPaymentHeaderInput {
 
     @Field({ nullable: true })
     IdempotencyKey?: string | null;
+
+    @Field({ nullable: true })
+    ReversalSource?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

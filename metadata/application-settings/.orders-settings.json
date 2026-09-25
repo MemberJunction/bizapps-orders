@@ -28,5 +28,16 @@
       "lastModified": "2026-09-02T03:26:26.602Z",
       "checksum": "04d6ea30a0a2aae4816a7a7331db37a5d0ec670bd6c2fd08eb92cc1c8277c392"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "RenewalAccessCutoffDaysPastDue",
+      "Value": "14",
+      "Comments": "Days past due at which a renewal order's OnFirstPayment entitlement grants are suspended, applied by the nightly payment-gated access job and whenever a payment on the order changes. Paying the order restores access. A whole number of 0 or more; 'off' disables the cutoff. An unreadable value falls back to 14 rather than disabling it."
+    },
+    "primaryKey": {
+      "ID": "022F8FA8-D623-47BA-B9AE-FF41010868BF"
+    }
   }
 ]
