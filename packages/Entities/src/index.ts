@@ -92,6 +92,7 @@ export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';
 export * from './pricing/inheritPrices';
 export * from './pricing/priceOverride';
+export * from './pricing/linePricePick';
 
 /**
  * `ToISODate` and friends — reading a date cell that may be a string or a `Date` and getting the
