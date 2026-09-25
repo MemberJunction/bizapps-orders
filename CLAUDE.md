@@ -39,6 +39,20 @@ column never appears and nothing reports a problem — and flyway checksums the 
 existing database refuses to migrate until someone repairs it by hand. `scripts/rebuild-db.sh`
 remains only for standing up a brand-new empty database; it is not a development loop.
 
+**Once a migration is merged to `next` it is LOCKED — no edits, no renames, no deletions.** Fix it
+forward in a new file. Every database that ran it recorded its checksum, so a change makes those
+databases refuse to migrate while the ones that never ran it get different SQL; the two diverge and
+nothing reports it. A rename is not a lesser change: the runner keys on the twelve-digit version in
+the filename, so a renamed migration is one nobody has run, and it executes again against objects
+that already exist. Renumbering an **unmerged** migration is ordinary and stays allowed — that is the
+normal answer when `next` gains a higher timestamp while your branch is open.
+
+CI enforces this (`.github/scripts/check-migrations-locked.mjs`), and **reviewers should treat it as a
+blocking finding, not a nit.** It has been merged past: `V202609221500` was edited a PR after it
+landed, and `V202609061900` twice, with the check red. If a change to a merged migration is genuinely
+unavoidable, it needs saying explicitly in the PR description and a second reviewer — never a quiet
+merge over a failing gate.
+
 Write migrations idempotently (`IF NOT EXISTS`, `IF COL_LENGTH(...) IS NULL`) and assume the database
 already has data. A migration that reads `__mj.Entity` must skip cleanly when the row is absent —
 CodeGen runs *after* migrations — and if the change is really about metadata (field categories,
@@ -67,5 +81,6 @@ schema and runs `pnpm run mj:migrate`, do they get exactly the schema this branc
 **Never use plain inline regex like `.replace(/'/g, "''")` when constructing SQL `ExtraFilter` or `Where` clauses.**
 - For SQL string escaping, always use `EscapeSQLString` from `packages/CoreEntitiesServer/src/sql-guards.ts` (or `EscapeText` in the same file, for values that are already known non-null). **Import it from `sql-guards.ts`, not from `@memberjunction/global`** — no published `@memberjunction/global` exports `EscapeSQLString`, and importing it from there breaks the build for anyone not dev-linked to an MJ working tree. Re-point these imports at the package once MJ publishes it.
 - For boundary validation of IDs and dates from remote callers, use `RequireUUID`, `RequireUUIDs`, and `RequireDate` from `sql-guards.ts`.
+- For a caller-supplied day typed `Date | string` (an optional as-of or request day), use `RequireOptionalDay` from `sql-guards.ts`. It refuses an invalid `Date` as well as a malformed string; checking only the string form lets `new Date('garbage')` reach `CalendarDayOrToday`, which silently reads it as today.
 - Plain regex escaping is fragile, misses null-byte injection (`\0`), breaks on `null`/`undefined`, and creates divergent ad-hoc sanitization.
 

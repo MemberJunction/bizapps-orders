@@ -1857,6 +1857,17 @@ export class mjBizAppsOrdersEntitlementGrant_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `The grant timing that produced this grant (OnConfirm, OnPaidInFull, OnFirstPayment, OnActivation), resolved at confirm from product, category and product type. Access is re-decided from this when the order's payments change. NULL on grants written before the column existed.`}) 
+    @MaxLength(20)
+    GrantTimingApplied?: string;
+        
+    @Field({nullable: true, description: `When the grant was last suspended. Set together with SuspensionReason and cleared when the grant becomes Active again.`}) 
+    SuspendedAt?: Date;
+        
+    @Field({nullable: true, description: `Why the grant is suspended: AwaitingPayment (a new purchase whose first payment has not been received), PastDue (a renewal past the configured cutoff), or AwaitingActivation. AwaitingPayment and PastDue are lifted automatically when payment arrives.`}) 
+    @MaxLength(20)
+    SuspensionReason?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     ProductEntitlement?: string;
@@ -1928,6 +1939,15 @@ export class CreatemjBizAppsOrdersEntitlementGrantInput {
     @Field({ nullable: true })
     RevocationReason: string | null;
 
+    @Field({ nullable: true })
+    GrantTimingApplied: string | null;
+
+    @Field({ nullable: true })
+    SuspendedAt: Date | null;
+
+    @Field({ nullable: true })
+    SuspensionReason: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -1982,6 +2002,15 @@ export class UpdatemjBizAppsOrdersEntitlementGrantInput {
 
     @Field({ nullable: true })
     RevocationReason?: string | null;
+
+    @Field({ nullable: true })
+    GrantTimingApplied?: string | null;
+
+    @Field({ nullable: true })
+    SuspendedAt?: Date | null;
+
+    @Field({ nullable: true })
+    SuspensionReason?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -2259,6 +2288,9 @@ export class mjBizAppsOrdersEventOrderLine_ {
     DimensionValueID?: string;
         
     @Field({nullable: true}) 
+    ShipToAddressSnapshot?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
     @Field(() => Float) 
@@ -2422,6 +2454,10 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
 
     @Field(() => Float, { nullable: true })
     RecognizedToDate?: number;
+
+    @Field({ nullable: true })
+    ShipToAddressSnapshot: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -2578,6 +2614,10 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field(() => Float, { nullable: true })
     RecognizedToDate?: number;
+
+    @Field({ nullable: true })
+    ShipToAddressSnapshot?: string | null;
+
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
 
@@ -4877,6 +4917,12 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(20)
     FulfillmentStatus?: string;
         
+    @Field({nullable: true, description: `The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`}) 
+    BillToAddressSnapshot?: string;
+        
+    @Field({nullable: true, description: `The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`}) 
+    ShipToAddressSnapshot?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -5063,6 +5109,12 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     @Field({ nullable: true })
     FulfillmentStatus?: string;
 
+    @Field({ nullable: true })
+    BillToAddressSnapshot: string | null;
+
+    @Field({ nullable: true })
+    ShipToAddressSnapshot: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -5174,6 +5226,12 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     FulfillmentStatus?: string;
+
+    @Field({ nullable: true })
+    BillToAddressSnapshot?: string | null;
+
+    @Field({ nullable: true })
+    ShipToAddressSnapshot?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -5783,6 +5841,9 @@ export class mjBizAppsOrdersOrderLine_ {
     @MaxLength(36)
     DimensionValueID?: string;
         
+    @Field({nullable: true, description: `The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`}) 
+    ShipToAddressSnapshot?: string;
+        
     @Field({nullable: true}) 
     @Field(() => Float, {description: `Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
     BilledToDate: number;
@@ -5962,6 +6023,10 @@ export class CreatemjBizAppsOrdersOrderLineInput {
 
     @Field(() => Float, { nullable: true })
     RecognizedToDate?: number;
+
+    @Field({ nullable: true })
+    ShipToAddressSnapshot: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6076,6 +6141,10 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field(() => Float, { nullable: true })
     RecognizedToDate?: number;
+
+    @Field({ nullable: true })
+    ShipToAddressSnapshot?: string | null;
+
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
 
@@ -6757,6 +6826,10 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `Who took the money back on a reversal: Refund (the seller chose to, via Orders.RefundPayment) or BankReturn (the bank reversed a debit). Set on every reversal and on nothing else. A bank return removes payment-gated access; a refund does not.`}) 
+    @MaxLength(20)
+    ReversalSource?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     ReceivingCompany?: string;
@@ -6869,6 +6942,9 @@ export class CreatemjBizAppsOrdersPaymentHeaderInput {
     @Field({ nullable: true })
     IdempotencyKey: string | null;
 
+    @Field({ nullable: true })
+    ReversalSource: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6944,6 +7020,9 @@ export class UpdatemjBizAppsOrdersPaymentHeaderInput {
 
     @Field({ nullable: true })
     IdempotencyKey?: string | null;
+
+    @Field({ nullable: true })
+    ReversalSource?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

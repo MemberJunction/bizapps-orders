@@ -185,9 +185,9 @@ async function makeCompany(md, user, rv, name, currencyCode, pool) {
     // harness notes); the row is all the numbering sproc needs.
     await pool.request().query(
         `INSERT INTO ${ACCT}.AccountingCompanyProfile
-            (ID, CompanyCode, FunctionalCurrencyCode, EntityType, OperatingTimeZone, IsActive)
+            (ID, CompanyCode, FunctionalCurrencyCode, EntityType, IsActive)
          VALUES ('${companyID}','${RUN.slice(-6)}${Math.floor(Math.random() * 90 + 10)}',
-                 '${currencyCode}','Subsidiary','UTC',1)`,
+                 '${currencyCode}','Subsidiary',1)`,
     );
 
     const accounts = [

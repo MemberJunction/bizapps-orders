@@ -26,6 +26,25 @@ export function FormatPartyAddress(parts: {
     return [parts.Line1, city].filter(Boolean).join(' · ');
 }
 
+/** Shown in place of a stored address snapshot that cannot be read. */
+export const UNREADABLE_ADDRESS = 'Address record unreadable';
+
+/**
+ * The address a confirmed order was sold to, formatted for display; null when it has no snapshot.
+ *
+ * Reading a snapshot throws when the stored value is not one, which should only happen to a row
+ * altered by hand. A getter that throws takes the whole screen down with it, so the failure is
+ * shown in place of the address instead — never the live address, which may be somewhere else.
+ */
+export function FormatSoldAddress(snapshot: () => { Line1?: string | null; City?: string | null; StateProvince?: string | null; PostalCode?: string | null } | null): string | null {
+    try {
+        const sold = snapshot();
+        return sold ? FormatPartyAddress(sold) || null : null;
+    } catch {
+        return UNREADABLE_ADDRESS;
+    }
+}
+
 export function OrderHeaderExpandedFromPref(isSaved: boolean, raw: string | undefined): boolean {
     if (!isSaved) return true;
     return raw !== '0';

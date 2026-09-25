@@ -27,7 +27,7 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { LoadOrdersEngine, OrderPricingService, OrdersEngine, PriceResolutionError, ResolvePriceListForCustomer } from '@mj-biz-apps/orders-entities';
-import { RequireDate, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { RequireOptionalDay, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
@@ -91,19 +91,13 @@ export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceIn
 
         // A caller-supplied DAY is caller input too. Refused here rather than absorbed, because
         // `CalendarDayOrToday` normalises — an unreadable day quietly becomes today, and a quote
-        // answered for the wrong day is wrong with nothing to notice. `RequireDate` also rejects
-        // `2026-02-30`, which `Date.parse` used to roll forward to 2 March.
-        //
-        // Only a STRING is checked. `AsOf` is `string | Date`, and an in-process caller handing
-        // over a real `Date` has nothing textual to validate: `String(date)` is the long human
-        // form, which no ISO pattern matches, so checking it would refuse the very type this
-        // interface promises to accept.
-        if (typeof input.AsOf === 'string' && input.AsOf) {
-            try {
-                RequireDate(input.AsOf, 'AsOf');
-            } catch (e) {
-                return { Success: false, Message: String((e as Error).message) };
-            }
+        // answered for the wrong day is wrong with nothing to notice. The guard also rejects
+        // `2026-02-30`, which `Date.parse` used to roll forward to 2 March, and an invalid `Date`
+        // (#272), which `CalendarDayOrToday` would otherwise read as no day at all.
+        try {
+            RequireOptionalDay(input.AsOf, 'AsOf');
+        } catch (e) {
+            return { Success: false, Message: String((e as Error).message) };
         }
 
         const quantity = input.Quantity == null ? 1 : Number(input.Quantity);

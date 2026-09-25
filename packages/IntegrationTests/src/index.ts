@@ -32,7 +32,7 @@
  *   concurrency          CN1–CN6   document numbering under contention, on a second connection (D30)
  *   events               EV1–EV10  event products and one-time deferred revenue
  *   volume               VL1–VL13  populations, repeated purchases, and a SECOND MJ session
- *   entitlements         EN1–EN15  what a purchase confers, and for how long (D27/D76)
+ *   entitlements         EN1–EN20  what a purchase confers, for how long, and when payment gates it (D27/D76, #223)
  *   entitlement-read     ER1–ER7   Orders.CheckEntitlement / ListEntitlements in-process Execute
  *   payment-providers    PV1–PV12  the gateway seam against a real database (D19/D37)
  *   ach-settlement       AS1–AS17  money that arrives days late, and can leave again (D77/D78/D80)
