@@ -66,7 +66,7 @@ import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InheritedTerms, MirroredTaxCharges, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
-import { LoadOriginTaxCharges, LoadReversalContext } from './ReversalResolver.js';
+import { LoadOriginTaxCharges, LoadReversalContext, OriginBilledByInstalment } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
@@ -557,8 +557,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             await this.expandBundles();
             const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
                 booking ? await this.decideSubscriptions() : new Map();
-            await this.prepareLines(decisions);
+            // Ahead of pricing, so an ordinary line on a reversal order is taxed at the address the
+            // order will show. Reversal lines take their tax from their origin and ignore it.
             await this.inheritReversalAddresses();
+            await this.prepareLines(decisions);
 
             // THE ADDRESS AS SOLD, copied onto the order at the first confirm (golive #263).
             //
@@ -1875,10 +1877,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // THE TAX IT COLLECTED, in the jurisdictions that collected it. Resolved from the return's
         // own address and date instead, the refund was taxed wherever the customer is now, at
         // today's rate — or not at all, since a return names no address unless someone picks one.
-        const originTax = await LoadOriginTaxCharges(context.Origin.ID, provider, user);
+        //
+        // NONE for a line billed by instalment. Its tax reaches the ledger one instalment at a time,
+        // so the tax on the line is the whole contract's, and a share of it would debit Sales Tax
+        // Payable for tax that was never invoiced. The empty entry keeps the line from being
+        // resolved from the address instead.
+        const byInstalment = await OriginBilledByInstalment(context.Origin, provider, user);
+        const originTax = byInstalment ? [] : await LoadOriginTaxCharges(context.Origin.ID, provider, user);
         this._settledTax.set(
             line,
-            MirroredTaxCharges(context.Origin, originTax, context.AlreadyReversed + siblingsBefore, Number(line.Quantity ?? 0)),
+            byInstalment
+                ? []
+                : MirroredTaxCharges(context.Origin, originTax, context.AlreadyReversed + siblingsBefore, Number(line.Quantity ?? 0)),
         );
 
         // THE LINE'S SHIP-TO, when the origin line had its own. Filled only when blank and only

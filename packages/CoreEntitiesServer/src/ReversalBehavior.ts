@@ -65,6 +65,8 @@ export interface ReversalOrigin {
     OrderNumber?: string | null;
     /** The order the origin line is on — where a reversal that states no address takes its own. */
     OrderHeaderID?: string | null;
+    /** The company that booked the origin line — which decides whether it was billed by instalment. */
+    CompanyID?: string | null;
     /** The origin line's own ship-to, when it overrode its header's, and its snapshot as sold. */
     ShipToAddressID?: string | null;
     ShipToAddressSnapshot?: string | null;

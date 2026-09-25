@@ -297,6 +297,18 @@ describe('MirroredTaxCharges — a return refunds the tax the sale collected, wh
         expect(MirroredTaxCharges({ Quantity: 4, LineTax: 40 }, [STATE], 4, -1)).toEqual([]);
     });
 
+    it('refunds a series of partial returns exactly, in every jurisdiction', () => {
+        const state = { Code: 'SalesTax', Amount: 8.25, TaxJurisdictionID: 'jur-state', TaxRateID: null };
+        const city = { Code: 'SalesTax', Amount: 1, TaxJurisdictionID: 'jur-city', TaxRateID: null };
+        const slices = [0, 1, 2].map((before) => MirroredTaxCharges({ Quantity: 3, LineTax: 9.25 }, [state, city], before, -1));
+        expect(slices.map((s) => s.map((c) => c.Amount))).toEqual([
+            [-2.75, -0.33],
+            [-2.75, -0.34],
+            [-2.75, -0.33],
+        ]);
+        expect(slices.map((s) => s.map((c) => c.TaxJurisdictionID))).toEqual(Array(3).fill(['jur-state', 'jur-city']));
+    });
+
     it('falls back to the line tax, unattributed, when the origin has no tax charge rows', () => {
         expect(MirroredTaxCharges({ Quantity: 2, LineTax: 10 }, [], 0, -1)).toEqual([
             { Code: 'SalesTax', Amount: -5, TaxJurisdictionID: null, TaxRateID: null },

@@ -19,6 +19,8 @@
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import type { OriginTaxCharge, ReversalOrigin } from './ReversalBehavior.js';
+import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
@@ -65,6 +67,7 @@ export async function LoadReversalContext(
     type LineRow = {
         ID: string;
         OrderHeaderID: string;
+        CompanyID?: string | null;
         ProductID: string;
         Quantity: number;
         UnitPrice: number;
@@ -152,6 +155,7 @@ export async function LoadReversalContext(
             DiscountAmount: Number(origin.DiscountAmount ?? 0),
             OrderNumber: null,
             OrderHeaderID: origin.OrderHeaderID,
+            CompanyID: origin.CompanyID ?? null,
             ShipToAddressID: origin.ShipToAddressID ?? null,
             ShipToAddressSnapshot: origin.ShipToAddressSnapshot ?? null,
             LineTax: Number(origin.LineTax ?? 0),
@@ -223,4 +227,40 @@ export async function LoadOriginTaxCharges(
         });
     }
     return out;
+}
+
+/**
+ * Was the origin line's company billed by instalment on its order (D92)?
+ *
+ * A company on instalments credits Sales Tax Payable one slice at a time, as each instalment is
+ * invoiced, so the tax recorded on its lines is the whole contract's and not what reached the
+ * ledger. Refunding a share of it debits tax that was never credited. The test is the ledger's own,
+ * `ScheduledCompanyIDs`, so a return and the booking cannot disagree about which lines were billed
+ * this way. A failed read throws: guessing "not scheduled" refunds tax that was never invoiced.
+ */
+export async function OriginBilledByInstalment(
+    origin: Pick<ReversalOrigin, 'OrderHeaderID' | 'CompanyID'>,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<boolean> {
+    if (!origin.OrderHeaderID || !origin.CompanyID) return false;
+    if (!UUID_PATTERN.test(origin.OrderHeaderID)) {
+        throw new Error(`'${origin.OrderHeaderID}' is not a valid order identifier, so its payment schedule cannot be read.`);
+    }
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<ScheduleTimingFacts>(
+        {
+            EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${origin.OrderHeaderID}'`,
+            Fields: ['CompanyID', 'Status', 'DueDate', 'Amount'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    if (!res?.Success) {
+        throw new Error(
+            `Could not read the payment schedule of the order being reversed: ${res?.ErrorMessage ?? 'unknown error'}`,
+        );
+    }
+    return ScheduledCompanyIDs(res.Results ?? []).has(String(origin.CompanyID).toLowerCase());
 }
