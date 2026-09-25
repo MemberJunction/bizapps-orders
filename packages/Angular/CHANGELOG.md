@@ -1,5 +1,171 @@
 # @mj-biz-apps/orders-ng
 
+## 5.18.0
+
+### Patch Changes
+
+- 5b5ebef: Share the order-line price picker. The rules behind it (`IsLinePriceOverridden`, `NamedPricesBesideDefault`, `RestoreLineDefault`, `PinLineToNamedPrice`, `PinLineToAmount` and the override-reason helpers) move to `@mj-biz-apps/orders-entities`, and the control becomes `<mjo-line-price-picker>` in `@mj-biz-apps/orders-ng`, with an `AllowCustomAmount` input for screens that offer named prices only. The order lines editor uses it with no change in behaviour, except that a line already on a typed amount now shows a disabled "Custom amount" row to a user who may not type one, instead of reading "Default".
+- Updated dependencies [b3ef9d2]
+- Updated dependencies [5b5ebef]
+  - @mj-biz-apps/orders-entities@5.18.0
+
+## 5.17.0
+
+### Minor Changes
+
+- d0489c4: Freeze the selling company, order date and parties on a confirmed order.
+
+  - A line on a Confirmed order keeps the company it was sold under. `OrderLineEntityServer` no
+    longer re-stamps `CompanyID` from the product once the order is booked, and trigger 51003 now
+    refuses a change to it. Draft and Quoted orders still re-stamp from the product.
+  - A booked header refuses changes to `OrderDate`, `OrderType` and `ReversesOrderHeaderID` (added to
+    `ORDER_HEADER_MONEY_FIELDS` alongside `CompanyID`) and to a bill-to party that is already set
+    (new `ORDER_HEADER_SET_ONCE_FIELDS`), from `Validate()`, with a message naming the field.
+  - New trigger `trg_OrderHeader_ImmutableAfterConfirm` backs that at the database: the same columns
+    (51013), and `Status` cannot leave Confirmed (51014).
+  - The order form shows Order Date and the bill-to party read-only on a booked order, as it already
+    did Company and Order Type, with a note saying why.
+  - The guest-order claim no longer re-points a booked order's bill-to. It fills an empty one, and
+    moves the ship-to on its own, so the claim succeeds.
+
+  Direct SQL that rewrote these columns on booked orders is now refused; stand the trigger down the
+  way the existing immutability triggers are for a data reset.
+
+- 1390c46: A return can be started from the UI.
+
+  golive#250. The Returns page rendered its origin card only when `Origin` was set, and `Origin` came
+  only from `@Input() OriginOrderID` — which a repo-wide search finds in exactly one file, the page
+  itself. Nothing ever set it. So the page showed _"Select an order to return / Choose the original
+  order to start a return"_ and offered nothing to choose with, and a confirmed order could not be
+  returned from the app at all. O-US4 had no user-facing route.
+
+  The approved design had the answer: `mockups/orders/return.html` carries a block commented
+  `<!-- origin picker -->` with a "Change origin order" control. The origin DISPLAY was built and the
+  origin SELECTION was not. This finishes it — the picker in the empty state, the button on the origin
+  card — rather than inventing an affordance.
+
+  **Not fixed in the section shell**, which the issue offered as a lead. `orders-sections` hands a
+  cached page its record by name, and the suggestion was to add a case for `OriginOrderID` beside
+  `OrderID`/`RecordID`. But `PendingRecordID`'s only writer is `openRecord()`, which has **no callers**:
+  orders open as Explorer record tabs through `openEntity` now. A case added there would never execute,
+  and would read as a fix in review.
+
+  Only BOOKED orders are offered, because that is what a return reverses — `IsBooked` is _"journal
+  entries exist and the receivable is real"_, and `ReversalResolver` skips Draft and Voided on the
+  server. Offering anything else would offer a choice the server refuses. Filtered server-side:
+  `MJOGetOrdersOptions` records a real performance bug from fetching everything and filtering in the
+  browser.
+
+  Three things fixed on the way, all in the code this touches:
+
+  - **`ngOnChanges`**, because `ngOnInit` runs once. A page handed its order after construction kept
+    showing the previous origin for ever, which made the input-driven route broken by construction.
+  - The origin is loaded **by `OrderHeaderID`** instead of reading every order and `.find`-ing one —
+    the exact bug that options doc records against fast entry's customer picker.
+  - **`notposted` renamed to `booked`** — and this is why the bump is `minor` rather than `patch`.
+    It had no callers in this repo and named `Posted`, a status that has not existed since the order
+    lifecycle collapsed (KI-27). But `MJOOrderPreset` is PUBLIC API: `public-api.ts` re-exports
+    `lib/data/orders-queries`, and that file is the package's `main`/`types`. The type change alone
+    would be a compile error an external caller could see and fix. The runtime half would not be:
+    the preset `switch` ends `default: filters.push("Status <> 'Voided'")`, so a caller still passing
+    `'notposted'` does not error — it silently receives **Draft + Quoted + Confirmed** where it
+    previously received Confirmed only. A widened result set is not something to hand someone who
+    accepted a patch upgrade. The rename is still right; the bump has to say so.
+    `GetOrderSummary`'s `Counts.notposted` key and the preset docblock are renamed with it — the
+    first pass left both behind, and `Counts` is `Record<string, number>` so the compiler stayed quiet.
+
+- 98dd98a: The selling company on an order now comes from a configured default and asks before using any
+  other company.
+
+  The order's company is its owning company: it owns the receivable and receives the payment. Line
+  revenue still follows each product's own company. The picker behind it lists every company the
+  instance has, and the header form defaulted it to whichever company sorted first alphabetically —
+  a rule that was neither written down nor visible to the person entering the order. An order owned
+  by the wrong company looks entirely correct afterwards.
+
+  That default is gone. The header renders `bizapps-selling-company-field` from
+  `@mj-biz-apps/common-ng`, which defaults to the user's own company when they have one the instance
+  knows, else the Common `DefaultSellingCompanyID` setting, and holds any other choice for
+  confirmation before writing it. An instance that configures nothing gets a blank field rather than
+  a guess; the order cannot save until a company is chosen.
+
+  Raises the `@mj-biz-apps/common-ng` floor to `>=5.46.0`, matching the `common-entities` floors so
+  one copy of that package resolves.
+
+  The Bill To and Ship To pickers are not part of this: they need a platform lookup seam that is not
+  on the release line this app targets.
+
+### Patch Changes
+
+- d3217cd: Make "Manage columns" work on the All Orders page and the Orders dashboard grids (Active Orders,
+  Orders Explorer, Fulfillment Queue, Overdue Collections) by hosting them in `mj-view-workspace`, as
+  the Catalog grids already are.
+
+  The workspace takes no `GridState` input; it reads column state off the view it shows. So these
+  grids now open on a real `MJ: User Views` row instead of the in-code grid state:
+
+  - the unfiltered grids open on the shared "Orders: Working" view shipped in `metadata/user-views`,
+    which carries the same columns and money formatting;
+  - each preset (unpaid, overdue, credits, drafts, fulfillment queue) is a new, unsaved view owned by
+    the current user, with the preset's filter and the working view's columns. Saving one from the
+    workspace creates that user's own view rather than overwriting the shared one.
+
+  If the shared view cannot be loaded, the Order Headers grids show an error instead of silently
+  falling back to default columns.
+
+- b550e40: Every value that names a calendar day is derived from the business day rather than the clock instant
+  (#209).
+
+  A SQL `DATE` is a calendar day with no time. `new Date()` is an instant, and an instant serialises in
+  UTC — so a record stamped at 9 PM Eastern was dated tomorrow. A reversal fell in a different period
+  from the capture it reverses, a credit settled an order on a day that had not started, an invoice was
+  printed with tomorrow's date beside a due date counted from a different calendar, and the journal
+  entries followed the wrong day with them. Same defect shape as the order-date case
+  (bc-aidp-next-golive#168), fixed the same way.
+
+  Two helpers hold the rule so it is stated once rather than re-derived per site. `AsDateValue(cell)`
+  (orders-entities) gives the calendar day a value names, pinned to midnight UTC — which also stops a
+  supplied instant carrying its time into a `date` column. `CalendarDayOrToday(cell, provider, user)`
+  (core-entities-server) adds the fallback: today's business day when the value names no day, warming
+  `BusinessTimeZoneEngine` only on that path, so a metadata read never runs inside a write transaction
+  to compute a day that was supplied anyway. Where no provider exists — the browser, the entity layer —
+  the pairing is `AsDateValue(x) ?? TodayAsDateValue()`.
+
+  Converted, twenty-eight sites: the reversal factory and the applied-account-credit operation, the
+  capture operation, the initial payment, the entitlement grant's validity start, the subscription
+  booking day and the cancellation request day, the allocation and processing-fee journal entries, the
+  payment line's allocation entry, the order journal entry's effective date, the affiliation as-of day
+  on both sides, `PreviewPrice` and `SpawnRenewals`, the checkout service's pricing as-of day, the
+  pricing service's four `AsOf` values and the order-line and order-header ones, the order-lines
+  editor's dimension catalog and pricing context, the Angular payment form's cleared date field, the
+  invoice document's printed date and days-until-due countdown, and the integration harness's own
+  fixtures — a test suite that dates its rows from the clock cannot measure this defect.
+
+  Caller-supplied days are refused rather than absorbed. `AsDateValue` answers `null` for a well-formed
+  day that does not exist (`2026-02-30`) instead of throwing a `RangeError` its callers cannot defend
+  against; `RequireDate` rejects such a day rather than letting `Date.parse` roll it forward to another
+  one; and `Orders.CapturePayment`, `Orders.PreviewPrice`, `Orders.SpawnRenewals`,
+  `Orders.CancelSubscription` and the invoice render boundary that `Orders.GenerateInvoice` and
+  `Orders.SendDocument` share each refuse it, because a quote, a renewal pass, an invoice or a payment
+  silently answered for today is wrong with nothing to notice. A day given as a real `Date` rather
+  than a string is still accepted everywhere the interface promises one: only text is validated.
+
+  Two source guards cover all five packages — core-entities-server, entities, orders-ng, orders-server
+  and the integration harness. One fails if any file stamps a column the migrations declare as `DATE`
+  from a bare `new Date()`; the other fails on "a day in hand, else the clock" under any binding name,
+  which is the spelling that twice reached a date column through a differently-named variable. Sites
+  that cannot be driven in a unit test are pinned positively to the expression they must use.
+
+  No schema change: a `DATE` column is read from UTC parts and written as UTC midnight. The business
+  time zone decides only what "today" is.
+
+- Updated dependencies [d0489c4]
+- Updated dependencies [acb0405]
+- Updated dependencies [5630121]
+- Updated dependencies [b550e40]
+- Updated dependencies [19983f5]
+  - @mj-biz-apps/orders-entities@5.17.0
+
 ## 5.16.0
 
 ### Minor Changes
@@ -10,8 +176,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-      The INSERT statement conflicted with the FOREIGN KEY constraint
-      "FK_EntityFieldValue_EntityField"
+          The INSERT statement conflicted with the FOREIGN KEY constraint
+          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

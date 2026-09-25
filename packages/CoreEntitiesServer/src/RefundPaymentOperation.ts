@@ -168,6 +168,7 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
                 user,
                 payment,
                 {
+                    Source: 'Refund',
                     Amount: requested,
                     Reason: input.Reason ?? null,
                     ProviderRefundID: input.ProviderRefundID ?? null,

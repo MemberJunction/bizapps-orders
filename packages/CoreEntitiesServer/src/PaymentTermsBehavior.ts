@@ -18,7 +18,7 @@
  *     1. a STATED DueDate           the caller knows the answer; never recomputed
  *     2. a STATED PaymentTermsTypeID   derive OrderDate + NetDays
  *     3. the CUSTOMER's terms       CustomerPaymentTerms, date-effective, optionally per company
- *     4. the SELLING COMPANY's default  AccountingCompanyProfile.DefaultPaymentTermsTypeID
+ *     4. the SELLING COMPANY's default  OrderCompanyPolicy.DefaultPaymentTermsTypeID
  *     5. due on receipt             the terminal default
  *
  * WHERE CONTRACTS FIT. They do not — deliberately. A contracts app further down the graph populates

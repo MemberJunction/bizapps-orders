@@ -49,7 +49,8 @@ import {
     mjBizAppsOrdersSubscriptionEventEntity,
 } from '@mj-biz-apps/orders-entities';
 import type { OrderEntityServer } from './OrderEntityServer.js';
-import { RequireOptionalUUID } from './sql-guards.js';
+import { RequireOptionalDay, RequireOptionalUUID } from './sql-guards.js';
+import { CalendarDayOrToday } from './calendar-day.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
@@ -132,7 +133,17 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
         // at the boundary, so every frame below this one can trust them.
         RequireOptionalUUID(input.SubscriptionID, 'SubscriptionID');
 
-        const asOf = input.AsOfDate ? new Date(input.AsOfDate) : new Date();
+        // "Due" is decided against `date` columns, so the as-of value is a calendar day (#209):
+        // an instant answers the UTC day, and an evening run would spawn tomorrow's renewals a day
+        // early. Validated at the boundary like the id above, because a renewal pass silently run
+        // for today when the caller named another day places real orders. That covers an invalid
+        // `Date` as much as a malformed string (#272).
+        try {
+            RequireOptionalDay(input.AsOfDate, 'AsOfDate');
+        } catch (e) {
+            return { Success: false, Message: String((e as Error).message), Candidates: [], Placed: 0, Skipped: 0 };
+        }
+        const asOf = await CalendarDayOrToday(input.AsOfDate, provider, user);
         const candidates = await this.findDue(provider, user, asOf, input.SubscriptionID);
 
         const out: SpawnRenewalsOutput = { Success: true, Candidates: [], Placed: 0, Skipped: 0 };

@@ -44,7 +44,12 @@ import type { mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-ap
 
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, SubmitJournalEntryDrafts } from './AccountingBridge.js';
 import { SplitExactly } from './BundleBehavior.js';
-import { GL_ROLE, type GLAccountResolver } from './GLAccountResolver.js';
+import {
+    GL_ROLE,
+    IsRoleNotLinked,
+    UnbilledReceivableNotLinkedError,
+    type GLAccountResolver,
+} from './GLAccountResolver.js';
 import { SplitContraLegs } from './ContractBalance.js';
 import { BuildValueEntryLines, type JELineDraft } from './OrderJournalEntryFactory.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
@@ -162,20 +167,21 @@ const slice = (total: number, index: number, weights: number[]): number =>
     weights.length ? SplitExactly(Math.abs(total), weights)[index] : 0;
 
 /**
- * The company's Unbilled Receivable account, or null when nobody has linked one.
+ * The company's Unbilled Receivable account, or a refusal when nobody has linked one.
  *
- * NOT LINKED IS NOT A FAILURE (D92, and the same tolerance booking has always had for this role).
- * The entry credits Deferred for the whole amount instead: coarser, still balanced, and exactly
- * what this invoice would have done before the contract asset existed. Reported rather than
- * swallowed, because the difference is otherwise invisible — a contract asset simply never gets
- * relieved and nothing says so.
+ * NOT LINKED IS FATAL here (golive #261), as it is at booking. Crediting Deferred for the whole
+ * amount instead balanced and misstated no revenue, but the contract asset this line carries was
+ * never relieved and only a server log said so. Only `NotLinked` becomes the explanatory refusal;
+ * a cross-company link (D6) or any other failure propagates as it is. Throwing rolls the caller's
+ * transaction back, so no document number or `Invoiced` stamp survives the refusal.
  */
 async function resolveUnbilled(
     resolver: GLAccountResolver,
     context: InstalmentInvoiceContext,
     line: InstalmentLineFacts,
+    amount: number,
     asOf: Date,
-): Promise<string | null> {
+): Promise<string> {
     try {
         return await resolver.Resolve(
             GL_ROLE.UnbilledReceivable,
@@ -185,17 +191,14 @@ async function resolveUnbilled(
             asOf,
             line.ProductTypeID,
         );
-    } catch {
-        console.warn(
-            `Order ${context.OrderNumber} line ${line.LineNumber}: no '${GL_ROLE.UnbilledReceivable}' GL ` +
-                `account is linked for company ${context.CompanyID}, so instalment ` +
-                `${context.InstallmentNumber} credited Deferred Revenue for the whole amount instead of ` +
-                `relieving the contract asset this line carries. The entry balances and no revenue is ` +
-                `misstated, but the line's earned-ahead-of-billing balance stays in Deferred where a ` +
-                `reader cannot tell it apart from unearned billing. Link an ` +
-                `'${GL_ROLE.UnbilledReceivable}' account to the company.`,
+    } catch (err) {
+        if (!IsRoleNotLinked(err)) throw err;
+        throw UnbilledReceivableNotLinkedError(
+            `Order ${context.OrderNumber} line ${line.LineNumber}, instalment ${context.InstallmentNumber}`,
+            context.CompanyID,
+            amount,
+            err,
         );
-        return null;
     }
 }
 
@@ -314,19 +317,17 @@ export async function EmitInstalmentInvoiceEntry(
             'Invoice',
         );
         if (legs.Unbilled !== 0) {
-            const unbilledAccount = await resolveUnbilled(resolver, context, line, asOf);
-            if (unbilledAccount) {
-                for (const l of built) {
-                    if (l.GLAccountID !== deferredAccount) continue;
-                    l.CreditAmount = legs.Deferred;
-                }
-                built.push({
-                    GLAccountID: unbilledAccount,
-                    CreditAmount: legs.Unbilled,
-                    Description: `Unbilled receivable — ${line.ProductName}`,
-                    Dimensions: line.Dimensions,
-                });
+            const unbilledAccount = await resolveUnbilled(resolver, context, line, legs.Unbilled, asOf);
+            for (const l of built) {
+                if (l.GLAccountID !== deferredAccount) continue;
+                l.CreditAmount = legs.Deferred;
             }
+            built.push({
+                GLAccountID: unbilledAccount,
+                CreditAmount: legs.Unbilled,
+                Description: `Unbilled receivable — ${line.ProductName}`,
+                Dimensions: line.Dimensions,
+            });
         }
 
         // What this instalment BILLED of this line's revenue — its NET piece, not the AR debit.

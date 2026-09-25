@@ -176,6 +176,11 @@ export {
     ResolveGrantQuantity,
     ResolveValidityWindow,
     InitialGrantStatus,
+    DecideGrantStatus,
+    FirstPaymentAmount,
+    ReconcileGrantStatus,
+    IsPaymentSuspension,
+    PAYMENT_GATED_TIMINGS,
     ReduceGrantForReturn,
     EvaluateGrantAccess,
     PickWinningAccess,
@@ -185,6 +190,11 @@ export {
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
+    SuspensionReason,
+    OrderPaymentFacts,
+    FirstPaymentScheduleRow,
+    GrantStatusDecision,
+    GrantStatusFacts,
     QuantityMode,
     ValidityMode,
     PolicyLevel,
@@ -207,6 +217,19 @@ export {
     RevokeGrantsForCanceledSubscription,
 } from './EntitlementEngine.js';
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
+// Payment-gated access (bc-aidp-next-golive#223) — grant status kept in step with the order's cash.
+export {
+    LoadOrderPaymentFacts,
+    ReconcilePaymentGatedGrants,
+    EnforcePaymentGatedAccess,
+} from './PaymentGatedAccess.js';
+export type {
+    OrderAccessFacts,
+    GrantStatusChange,
+    ReconcileOptions,
+    EnforcePaymentGatedAccessInput,
+    EnforcePaymentGatedAccessOutput,
+} from './PaymentGatedAccess.js';
 export { CheckEntitlementOperation, LoadCheckEntitlementOperation } from './CheckEntitlementOperation.js';
 export { ListEntitlementsOperation, LoadListEntitlementsOperation } from './ListEntitlementsOperation.js';
 export { CheckPersonEntitlement, ListPersonEntitlements, ASOF_FUTURE_TOLERANCE_MS } from './EntitlementRead.js';
@@ -523,3 +546,7 @@ export type {
 // (see the repo CLAUDE.md "SQL Safety" rule). Exported so the Server package's edge can use
 // the same audited helpers rather than hand-rolling its own.
 export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';
+
+// The calendar-day rule for records that carry a `date` column (#209). Exported for the same
+// reason as the guards above: the edge should reach for the audited helper, not re-derive it.
+export { CalendarDayOrToday } from './calendar-day.js';

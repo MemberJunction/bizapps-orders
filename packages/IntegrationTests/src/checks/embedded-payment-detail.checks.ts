@@ -26,6 +26,7 @@ import {
 } from '@memberjunction/testing-integration';
 import type { CustomerPaymentMethodEntity, PaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import type { mjBizAppsOrdersPaymentDetailEntity } from '@mj-biz-apps/orders-entities';
+import { TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 import {
     CreateOrdersFixture,
     Fx,
@@ -83,7 +84,7 @@ async function newPendingPayment(ctx: IntegrationCheckContext): Promise<PaymentH
     payment.PaymentTypeID = cashType();
     payment.Amount = 10;
     payment.Status = 'Pending';
-    payment.PaymentDate = new Date();
+    payment.PaymentDate = TodayAsDateValue();
     return payment;
 }
 

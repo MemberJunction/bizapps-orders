@@ -20,12 +20,15 @@ import {
     OrderHeaderEntity,
     OrderLineEntity,
     ClampLineQuantity,
+    CanRestoreLineDefault,
+    IsLinePriceOverridden,
+    LineNeedsOverrideReason,
+    LinePriceOverrideReason,
     ListApplicablePrices,
     LoadOrdersEngine,
     OrdersEngine,
-    isEnginePrice,
+    RestoreLineDefault,
     loadApplicabilityContext,
-    moneyEqual,
     priceOverrideCatalogInstalled,
     userPriceOverrideKind,
     type ApplicablePrice,
@@ -34,6 +37,7 @@ import {
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
+import { MJOLinePricePickerComponent } from '../../panels/line-price-picker.component';
 import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import {
@@ -50,24 +54,12 @@ import {
 import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
 import { MJOPricingScheduler, type MJOEngineDefault, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 
-/**
- * The picker's option values that are not ProductPrice ids.
- *
- * `Default` used to be the empty string, and that is what golive #253 item 1 was: a `<select>`
- * whose bound value names an option that is not in the DOM yet falls back to its first option, and
- * an option whose value is `""` is indistinguishable from "nothing selected". The DOM then showed
- * Default while the component believed the line was on a custom amount, so choosing Default fired
- * no change event and nothing ran. A real sentinel cannot be mistaken for absence.
- */
-export const PRICE_PICK_DEFAULT = '__default__';
-export const PRICE_PICK_CUSTOM = '__custom__';
-
 import {
     ExtensionCollapsedHint,
     ExtensionToggleLabel,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
-import { anyFieldIsDirty } from '@mj-biz-apps/orders-entities';
+import { AsDateValue, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 
 /**
  * Just enough of an RxJS subscription to release one.
@@ -132,6 +124,7 @@ const PICKER_RESULT_LIMIT = 12;
         BaseFormsModule,
         MJOConsequenceChipComponent,
         MJOPriceSourceBadgeComponent,
+        MJOLinePricePickerComponent,
         MJOMoneyPipe,
         MJOOrderLineDetailsPanelComponent,
     ],
@@ -177,7 +170,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public OverrideKind: PriceOverrideKind = 'none';
     private readonly applicableByLine = new Map<string, ApplicablePrice[]>();
     private readonly overrideEditorLineIds = new Set<string>();
-    private readonly customAmountLineIds = new Set<string>();
     private readonly defaultUnitByLine = new Map<string, number | null>();
     /** The authority the signed-in user discounts under; null once looked up and none was found. */
     public DiscountAuthority: MJODiscountAuthority | null = null;
@@ -452,7 +444,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!this.EditMode) return;
         this.expandedLineIds.delete(line.ID);
         this.overrideEditorLineIds.delete(line.ID);
-        this.customAmountLineIds.delete(line.ID);
         this._order?.Lines.Remove(line);
         this.schedulePricing();
     }
@@ -485,7 +476,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public PricedLine(line: mjBizAppsOrdersOrderLineEntity): MJOLinePrice | undefined {
-        return this.Pricing.Result?.Lines.find((priced) => UUIDsEqual(priced.ClientKey, line.ID));
+        return this.Pricing?.Result?.Lines.find((priced) => UUIDsEqual(priced.ClientKey, line.ID));
     }
 
     public get CanOverride(): boolean {
@@ -496,62 +487,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return this.applicableByLine.get(line.ID) ?? [];
     }
 
-    public SelectedPriceID(line: mjBizAppsOrdersOrderLineEntity): string {
-        if (this.customAmountLineIds.has(line.ID)) return PRICE_PICK_CUSTOM;
-        if (!this.IsOverridden(line)) return PRICE_PICK_DEFAULT;
-        if (line.ProductPriceID) return String(line.ProductPriceID);
-        return this.OverrideKind === 'any' ? PRICE_PICK_CUSTOM : PRICE_PICK_DEFAULT;
-    }
-
-    /**
-     * Whether this option is the one in force — bound per option rather than as `[value]` on the
-     * select. The select's value is applied before its `@if`/`@for` options exist, so a value naming
-     * one of them lands on nothing and the browser falls back to the first row (see
-     * {@link PRICE_PICK_DEFAULT}). An option knows whether it is selected as soon as it is created.
-     */
-    public IsPicked(line: mjBizAppsOrdersOrderLineEntity, value: string): boolean {
-        return this.SelectedPriceID(line) === value;
-    }
-
     public DisplayUnit(line: mjBizAppsOrdersOrderLineEntity): number | null {
         if (this.IsOverridden(line)) return Number(line.UnitPrice ?? 0);
         return this.PricedLine(line)?.UnitPrice ?? null;
-    }
-
-    /**
-     * The `Default` row of the price picker — which rule is in force, and for how much.
-     *
-     * It read `Default · 195.00`, which answered neither question a user opening this
-     * dropdown has: every other option names its rule and carries a currency symbol, so
-     * the one entry that is ACTUALLY APPLIED was the only one that said nothing about
-     * itself. The name comes from `PriceSource`, which is the same `priceLabel()` output
-     * `ApplicablePrice.Name` carries, so the default and its twin in the list below read
-     * identically. `FormatMoney` rather than `toFixed` for the symbol and the separators.
-     */
-    public DefaultLabel(line: mjBizAppsOrdersOrderLineEntity): string {
-        const unit = this.DefaultUnit(line);
-        if (unit == null) return 'Default price';
-        const priced = this.PricedLine(line);
-        // The engine default names its own rule even while the line is pinned; `PriceSource` says
-        // 'stated' for a pinned line, which is not the rule's name.
-        const rule = priced?.Default?.PriceName ?? priced?.PriceSource;
-        const amount = FormatMoney(unit);
-        // 'stated' is not a rule name — it means the user typed this price, and saying
-        // "Default (stated)" would present their own entry back to them as a resolution.
-        return rule && rule !== 'stated' ? `Default (${rule}) · ${amount}` : `Default · ${amount}`;
-    }
-
-    public ShowCustomAmount(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return this.OverrideKind === 'any' && this.SelectedPriceID(line) === PRICE_PICK_CUSTOM;
-    }
-
-    /**
-     * The explanation is for a line that actually left its default — which, now that every pick
-     * and typed amount is compared against the engine default before the flag is set, is exactly
-     * what {@link IsOverridden} says.
-     */
-    public CanExplainOverride(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return this.IsOverridden(line);
     }
 
     /**
@@ -560,7 +498,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * editor another way does not get around it.
      */
     public NeedsOverrideReason(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return this.IsOverridden(line) && this.OverrideReasonText(line).trim() === '';
+        return LineNeedsOverrideReason(line, this.EngineDefault(line));
     }
 
     /**
@@ -582,71 +520,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return this.PricedLine(line)?.Default ?? null;
     }
 
-    /**
-     * The named rules the picker offers BESIDES the default (golive #253 item 3).
-     *
-     * The rule the engine already chose is not listed: the Default row is that rule, named and
-     * priced, and a second option that means the same thing is what made the picker ambiguous. A
-     * product with one applicable rule therefore offers Default (and Custom amount) alone.
-     */
-    public NamedPricesFor(line: mjBizAppsOrdersOrderLineEntity): ApplicablePrice[] {
-        const applicable = this.ApplicableFor(line);
-        const engine = this.EngineDefault(line);
-        if (!engine?.ProductPriceID) return applicable;
-        return applicable.filter((p) => !UUIDsEqual(p.ID, engine.ProductPriceID ?? ''));
-    }
-
-    public PickNamedPrice(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
-        if (!this.CanOverride) return;
-        const target = event.target;
-        if (!(target instanceof HTMLSelectElement)) return;
-        const id = target.value;
-        if (id === PRICE_PICK_DEFAULT) {
-            this.restoreDefault(line);
-            return;
-        }
-        if (id === PRICE_PICK_CUSTOM) {
-            // Choosing the row is not yet an override: nothing has been typed, so the amount box
-            // opens on the default and the flag waits for an amount that differs from it.
-            this.customAmountLineIds.add(line.ID);
-            this.cdr.detectChanges();
-            return;
-        }
-        this.customAmountLineIds.delete(line.ID);
-        const hit = this.ApplicableFor(line).find((p) => UUIDsEqual(p.ID, id));
-        if (!hit) return;
-        const engine = this.EngineDefault(line);
-        // A named rule that IS the default restates the rules rather than overriding them (item 2).
-        if (engine && isEnginePrice({ UnitPrice: hit.UnitPrice, ProductPriceID: hit.ID }, engine)) {
-            this.restoreDefault(line);
-            return;
-        }
-        this.stamp(line, 'ProductPriceID', hit.ID);
-        this.stamp(line, 'UnitPrice', hit.UnitPrice);
-        this.markOverridden(line);
+    /** A pick in the price picker changed the line's price, so the order is priced again. */
+    public OnLinePriceChanged(): void {
         this.schedulePricing();
         this.cdr.detectChanges();
-    }
-
-    public TypeAmount(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
-        if (!this.CanOverride || this.OverrideKind !== 'any') return;
-        const target = event.target;
-        if (!(target instanceof HTMLInputElement)) return;
-        const amount = Number.parseFloat(target.value);
-        if (!Number.isFinite(amount) || amount < 0) return;
-        this.customAmountLineIds.add(line.ID);
-        const def = this.DefaultUnit(line);
-        // Typing the default back in is a return to the rules, not an override of them (item 2).
-        // Through `restoreDefault`, NOT `clearOverride`: on a saved line the baseline is the
-        // stored override, so clearing would keep the old price while dropping its flag and reason.
-        if (def != null && moneyEqual(amount, def)) {
-            this.restoreDefault(line);
-            return;
-        }
-        this.stamp(line, 'ProductPriceID', null);
-        this.stamp(line, 'UnitPrice', amount);
-        this.markOverridden(line);
-        this.schedulePricing();
     }
 
     public IsOverrideEditorOpen(line: mjBizAppsOrdersOrderLineEntity): boolean {
@@ -662,9 +539,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             return;
         }
         this.overrideEditorLineIds.add(line.ID);
-        if (this.OverrideKind === 'any' && this.IsOverridden(line) && !line.ProductPriceID) {
-            this.customAmountLineIds.add(line.ID);
-        }
         void this.refreshApplicable(line);
     }
 
@@ -680,72 +554,31 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     /**
-     * Whether "back to the rules" is an answer this line can be given right now.
-     *
-     * An unsaved line always can: its baseline is "unpriced" and the engine fills it at save. A
-     * saved line's baseline is whatever was stored — possibly the override itself — so it can only
-     * be put back on the default once the pricing pass has said what that default IS. Until then
-     * the Default row and the reset button are offered disabled rather than acting on a guess.
+     * Whether "back to the rules" is an answer this line can be given right now — see
+     * `CanRestoreLineDefault`. Until it is, the reset button is offered disabled rather than acting
+     * on a guess.
      */
     public CanRestoreDefault(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return !line.IsSaved || this.EngineDefault(line) != null;
+        return CanRestoreLineDefault(line, this.EngineDefault(line));
     }
 
     /**
-     * Back to whatever the rules say, with the editor left open — the Default row of the picker.
-     * The override, its reason and any custom amount all go; the flag is cleared because the price
-     * is no longer a deviation, not merely hidden.
-     *
-     * A saved line whose default is not known is left exactly as it is, flag included: clearing the
-     * flag on a price that did not change would keep the concession and erase its audit trail.
+     * Back to whatever the rules say. A saved line whose default is not known is left exactly as it
+     * is, flag included — see `RestoreLineDefault`.
      */
     private restoreDefault(line: mjBizAppsOrdersOrderLineEntity): void {
-        const engine = this.EngineDefault(line);
-        if (line.IsSaved) {
-            if (!engine) return;
-            // A saved line's baseline is whatever was stored, which may itself be the override; the
-            // rules' answer is what Default promises, so that is what is written.
-            this.stamp(line, 'UnitPrice', engine.UnitPrice);
-            this.stamp(line, 'ProductPriceID', engine.ProductPriceID);
-            this.stamp(line, 'PriceOverridden', false);
-            this.stamp(line, 'PriceOverrideReason', null);
-        } else {
-            // An unsaved line's baseline is "unpriced", which the engine fills at save — the purest
-            // form of "whatever the rules say".
-            this.clearOverride(line);
-        }
-        this.customAmountLineIds.delete(line.ID);
+        if (!RestoreLineDefault(line, this.EngineDefault(line))) return;
         this.schedulePricing();
         this.cdr.detectChanges();
     }
 
-    /**
-     * Whether the line's price is a deviation from the rules.
-     *
-     * The flag settles it when set. Otherwise a dirty price counts only when it differs from the
-     * engine default — a saved line put back on its default carries a changed value that is not an
-     * override, and saying "overridden" of it is the false statement golive #253 item 2 reported.
-     */
+    /** Whether the line's price is a deviation from the rules — see `IsLinePriceOverridden`. */
     public IsOverridden(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        const flag = line.GetFieldByName('PriceOverridden');
-        if (flag && (flag.Value === true || flag.Value === 1 || flag.Value === '1')) return true;
-        if (!anyFieldIsDirty(line, ['UnitPrice', 'ProductPriceID'])) return false;
-        const engine = this.EngineDefault(line);
-        return engine ? !isEnginePrice(line, engine) : true;
+        return IsLinePriceOverridden(line, this.EngineDefault(line));
     }
 
     public OverrideReasonText(line: mjBizAppsOrdersOrderLineEntity): string {
-        const field = line.GetFieldByName('PriceOverrideReason');
-        return field?.Value == null ? '' : String(field.Value);
-    }
-
-    public SetOverrideReason(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
-        if (!this.CanExplainOverride(line)) return;
-        const target = event.target;
-        if (!(target instanceof HTMLTextAreaElement)) return;
-        const reason = target.value.trim();
-        this.stamp(line, 'PriceOverridden', true);
-        this.stamp(line, 'PriceOverrideReason', reason === '' ? null : reason);
+        return LinePriceOverrideReason(line);
     }
 
     // ── LINE DISCOUNTS ────────────────────────────────────────────────────────
@@ -1120,7 +953,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * exist".
      */
     private async loadDimensionCatalog(): Promise<void> {
-        const asOf = this._order?.OrderDate ? new Date(this._order.OrderDate) : new Date();
+        // A calendar day (#209): `DimensionValue` is effective-dated against `date` columns, and
+        // `new Date()` is an instant the viewer's evening reads back as tomorrow.
+        const asOf = AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue();
         this.DimensionCatalog = await GetDimensionOptions(asOf);
     }
 
@@ -1173,7 +1008,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.continuationStarts.clear();
         this.applicableByLine.clear();
         this.overrideEditorLineIds.clear();
-        this.customAmountLineIds.clear();
         this.defaultUnitByLine.clear();
         this.OverrideKind = 'none';
     }
@@ -1276,27 +1110,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         });
     }
 
-    private stamp(line: mjBizAppsOrdersOrderLineEntity, fieldName: string, value: unknown): void {
-        const field = line.GetFieldByName(fieldName);
-        if (!field) return;
-        const baseline = field.OldValue;
-        field.Value = value;
-        if (!field.Dirty) field.RestoreOldValue(baseline);
-    }
-
-    private clearOverride(line: mjBizAppsOrdersOrderLineEntity): void {
-        const unit = line.GetFieldByName('UnitPrice');
-        const named = line.GetFieldByName('ProductPriceID');
-        if (unit) unit.Value = unit.OldValue;
-        if (named) named.Value = named.OldValue;
-        this.stamp(line, 'PriceOverridden', false);
-        this.stamp(line, 'PriceOverrideReason', null);
-    }
-
-    private markOverridden(line: mjBizAppsOrdersOrderLineEntity): void {
-        this.stamp(line, 'PriceOverridden', true);
-    }
-
     private async resolveOverrideKind(): Promise<void> {
         const user = this.metadata.CurrentUser as UserInfo | null;
         this.OverrideKind = userPriceOverrideKind(user, this.metadata);
@@ -1348,7 +1161,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
                 ProductCategoryID: product?.ProductCategoryID ?? null,
                 CompanyID: companyID,
                 Quantity: Number(line.Quantity ?? 0),
-                AsOf: this._order.OrderDate ? new Date(this._order.OrderDate) : new Date(),
+                // A calendar day, as above (#209) — price applicability is bounded by
+                // `EffectiveFrom`/`EffectiveTo`, both `date` columns.
+                AsOf: AsDateValue(this._order.OrderDate) ?? TodayAsDateValue(),
                 OrganizationID: this._order.BillToOrganizationID ?? null,
                 PersonID: this._order.BillToPersonID ?? null,
                 ApplicabilityContext: await loadApplicabilityContext(

@@ -14,7 +14,6 @@ import {
     ExcludedEntriesLabel,
     GetOrderJournalOrigins,
     GetPaymentTypes,
-    GetSellingCompanies,
     LoadOrderJournalData,
     LoadRevRecJournalEntries,
     SubscriptionViewParams,
@@ -128,9 +127,10 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     /**
-     * Money composition (lines, tender, selling company) is editable only while
-     * the order is still a draft/quote. After Confirm the ledger owns those
-     * figures; the form Edit toggle may still open notes and parties.
+     * Money composition (lines, tender) and the sale's identity (selling company,
+     * order type, order date, bill-to) are editable only while the order is still
+     * a draft/quote. After Confirm the ledger owns them (golive #262); the form Edit
+     * toggle may still open notes, ship-to and the other party details.
      */
     public get ComposeMode(): boolean {
         return this.EditMode && !this.record?.MoneyLocked;
@@ -164,7 +164,6 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             await this.record.Lines.Load();
         }
         this.updateLineBadge();
-        await this.defaultSellingCompany();
         await this.loadPaymentTypes();
         await this.refreshAccountingIfNeeded();
 
@@ -682,13 +681,6 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public OnJournalEntrySelected(je: mjBizAppsAccountingJournalEntryEntity): void {
         this.OnJournalRowSelected(String(je.ID ?? ''));
-    }
-
-    private async defaultSellingCompany(): Promise<void> {
-        if (this.record?.IsSaved || this.record?.CompanyID) return;
-        const companies = await GetSellingCompanies();
-        if (companies.length === 0) return;
-        this.record.CompanyID = companies[0].ID;
     }
 
     private openRecord(entityName: string, id: string): void {

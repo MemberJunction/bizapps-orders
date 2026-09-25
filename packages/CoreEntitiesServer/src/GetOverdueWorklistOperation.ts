@@ -31,7 +31,8 @@ import {
     type OverdueWorklistRow,
 } from '@mj-biz-apps/orders-entities';
 
-import { ORDER_HEADER_ENTITY } from './entity-names.js';
+import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { OrdersSettings } from './OrdersSettings.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
@@ -161,6 +162,7 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
             .filter(({ days }) => days >= minDays);
 
         const credits = await this.creditsByCustomer(aged.map((a) => a.row), provider, user);
+        const grace = await this.graceByOrder(aged, asOf, provider, user);
 
         const worklist: OverdueWorklistRow[] = aged.map(({ row, days }) => {
             const customerKey = row.BillToOrganizationID ?? row.BillToPersonID ?? '';
@@ -183,6 +185,7 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
                 SalesRepName: null,
                 OriginChannel: (row['OriginChannel'] as string) ?? null,
                 AvailableCredit: credits.get(customerKey) ?? 0,
+                GraceThroughDate: grace.get(row.ID.toLowerCase()) ?? null,
             };
         });
 
@@ -203,6 +206,53 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
             Truncated: truncated,
             Buckets: buckets,
         };
+    }
+
+    /**
+     * The last day a past-due renewal keeps its access, per order — only while that day is still ahead.
+     *
+     * A renewal whose grants follow `OnFirstPayment` is suspended once it is
+     * `RenewalAccessCutoffDaysPastDue` days past due (bc-aidp-next-golive#223), so the day before
+     * that is the collector's deadline. Orders with no such grant have no grace, and an order already
+     * past the cutoff has none left; both are omitted. ONE query for the whole worklist.
+     */
+    private async graceByOrder(
+        aged: Array<{ row: OrderShape; days: number }>,
+        asOf: string,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<Map<string, string>> {
+        const grace = new Map<string, string>();
+        if (!aged.length) return grace;
+        await OrdersSettings.Load(provider, user);
+        const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+        if (cutoff == null) return grace;
+
+        const ids = aged.map((a) => `'${RequireUUID(a.row.ID, 'OrderHeaderID')}'`).join(',');
+        const rv = RunView.FromMetadataProvider(provider);
+        const lines = await rv.RunView<{ OrderHeaderID: string }>(
+            {
+                EntityName: ORDER_LINE_ENTITY,
+                ExtraFilter:
+                    `OrderHeaderID IN (${ids}) AND RenewsSubscriptionID IS NOT NULL AND ID IN (` +
+                    `SELECT g.OrderLineID FROM __mj_BizAppsOrders.EntitlementGrant g ` +
+                    `WHERE g.GrantTimingApplied = 'OnFirstPayment' AND g.Status = 'Active')`,
+                Fields: ['OrderHeaderID'],
+                ResultType: 'simple',
+            },
+            user,
+        );
+        const renewals = new Set((lines.Results ?? []).map((l) => l.OrderHeaderID.toLowerCase()));
+
+        for (const { row, days } of aged) {
+            if (!renewals.has(row.ID.toLowerCase())) continue;
+            const daysLeft = cutoff - days - 1;
+            if (daysLeft < 0) continue;
+            const through = new Date(`${asOf}T00:00:00Z`);
+            through.setUTCDate(through.getUTCDate() + daysLeft);
+            grace.set(row.ID.toLowerCase(), through.toISOString().slice(0, 10));
+        }
+        return grace;
     }
 
     /**

@@ -84,7 +84,42 @@ export function RequireDate(value: string, field: string): string {
     if ((!isDateOnly && !isDateTime) || Number.isNaN(Date.parse(whole))) {
         throw new InvalidOperationInputError(`${field} must be an ISO date (YYYY-MM-DD).`);
     }
-    return whole.slice(0, 10);
+    // `Date.parse` is not enough: it ROLLS OVER, so `2026-02-30` parses happily as 2 March and
+    // `2026-06-31` as 1 July. A day that does not exist is a typo in the caller's input, and
+    // silently moving it is the worst of the three options — the caller is never told, and the
+    // row is filed on a day they did not name. Round-tripping the day part catches exactly that.
+    const day = whole.slice(0, 10);
+    const roundTrip = new Date(`${day}T00:00:00.000Z`);
+    if (Number.isNaN(roundTrip.getTime()) || roundTrip.toISOString().slice(0, 10) !== day) {
+        throw new InvalidOperationInputError(`${field} is not a real calendar day: ${day}.`);
+    }
+    return day;
+}
+
+/**
+ * Require a caller-supplied day in either form an operation input accepts, or throw.
+ *
+ * Operations type a caller's day as `Date | string`, and `CalendarDayOrToday` cannot refuse: an
+ * unreadable value simply becomes today. So both forms are refused here, at the boundary. A string
+ * goes through `RequireDate`. A `Date` has no text to check — `String(date)` is the long human
+ * form, which no ISO pattern matches — so it is refused only when it names no instant at all
+ * (`new Date('garbage')`). Checking one form and passing the other through is how the two drift.
+ *
+ * @param value The caller-supplied day, or nothing.
+ * @param field Field name, used in the error so the caller can find their mistake.
+ * @returns `null` when no day was named, so the caller's fallback to today stays explicit;
+ *   otherwise the validated day, as a `YYYY-MM-DD` string or the `Date` unchanged.
+ * @throws {InvalidOperationInputError} If a day was named and is not a valid one.
+ */
+export function RequireOptionalDay(value: Date | string | null | undefined, field: string): Date | string | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) {
+            throw new InvalidOperationInputError(`${field} is not a valid date.`);
+        }
+        return value;
+    }
+    return RequireDate(value, field);
 }
 
 /**

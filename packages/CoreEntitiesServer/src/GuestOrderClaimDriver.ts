@@ -21,10 +21,12 @@ import {
     type ClaimResult,
 } from './identityClaimContracts.js';
 import {
+    IsBooked,
     mjBizAppsOrdersOrderHeaderEntity,
     mjBizAppsOrdersEntitlementGrantEntity,
 } from '@mj-biz-apps/orders-entities';
 import { resolvePersonID } from './claimDriverHelpers.js';
+import { IsPaymentSuspension } from './EntitlementBehavior.js';
 
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
@@ -91,9 +93,16 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
             };
         }
 
-        // Link Order Header parties to the redeeming person if unset or different
+        // Link Order Header parties to the redeeming person if unset or different.
+        //
+        // A BOOKED ORDER KEEPS ITS BILL-TO (golive #262). Checkout resolves the payer Person and
+        // stamps it as the bill-to before it confirms, so a claimed guest order already records who
+        // paid, and trigger 51013 refuses re-pointing it: the sale is history. On a booked order the
+        // claim fills an empty bill-to only and moves the ship-to (not frozen) on its own, so the
+        // claim still succeeds and the grants below still cascade.
+        const booked = IsBooked(order.Status);
         let orderModified = false;
-        if (!order.BillToPersonID || order.BillToPersonID !== personID) {
+        if (!order.BillToPersonID || (!booked && order.BillToPersonID !== personID)) {
             order.BillToPersonID = personID;
             orderModified = true;
         }
@@ -132,8 +141,12 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
                     );
                     if (await grant.Load(row.ID)) {
                         grant.BeneficiaryPersonID = personID;
-                        if (grant.Status !== 'Active') {
+                        // Claiming an order does not pay for it: a grant held for payment stays
+                        // held until the payment arrives (PaymentGatedAccess).
+                        if (grant.Status !== 'Active' && !IsPaymentSuspension(grant)) {
                             grant.Status = 'Active';
+                            grant.SuspendedAt = null;
+                            grant.SuspensionReason = null;
                             grant.ProvisionedAt = new Date();
                         }
                         if (await grant.Save()) {

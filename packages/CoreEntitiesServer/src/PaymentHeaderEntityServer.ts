@@ -67,6 +67,7 @@ import {
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
+import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
@@ -74,6 +75,7 @@ import { PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
+import { ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -203,6 +205,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 if (Number(this.ProcessingFeeAmount ?? 0) > 0 && (await this.feeBooksInline())) {
                     await this.bookProcessingFee(options);
                 }
+                await this.reconcileAccess(options);
             }
 
             await dbProvider.CommitTransaction();
@@ -219,6 +222,36 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             this.RegisterResultHistoryEntry(this.buildFailureResult(err));
             return false;
         }
+    }
+
+    /**
+     * Move payment-gated grants on the orders this payment touched (bc-aidp-next-golive#223).
+     *
+     * Here, inside the booking transaction, because this is the one point every capture and every
+     * reversal passes — card, ACH on settlement, check, a refund, a returned debit — and the rollup
+     * triggers have already moved each order's `AmountPaid`. A refund passes through here too, but
+     * leaves access where it was: the decision adds seller refunds back (`ReversalSource`). A payment that clears a first
+     * instalment and a grant that stays suspended must not both be committed.
+     */
+    private async reconcileAccess(options?: EntitySaveOptions): Promise<void> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const lines = await rv.RunView<{ OrderHeaderID: string | null }>(
+            {
+                EntityName: PAYMENT_LINE_ENTITY,
+                ExtraFilter: `PaymentHeaderID='${this.ID}'`,
+                Fields: ['OrderHeaderID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        const orderIDs = (lines.Results ?? []).map((l) => l.OrderHeaderID).filter((id): id is string => !!id);
+        await ReconcilePaymentGatedGrants(
+            orderIDs,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+            { SaveOptions: options },
+        );
     }
 
     /**
@@ -389,7 +422,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 ReceivingCompanyID: this.ReceivingCompanyID,
                 OrderLines: orderLines,
                 TargetOrderLineID: line.OrderLineID ?? null,
-                PaymentDate: this.PaymentDate ? new Date(this.PaymentDate) : new Date(),
+                // The allocation entry's `EffectiveDate` comes from this (#209): a day, so the
+                // fallback has to be a day too, not the instant the booking happened to run at.
+                PaymentDate: await CalendarDayOrToday(this.PaymentDate, provider, user),
                 IsReversal: this.Status === 'Refunded' || (line.Amount ?? 0) < 0,
             });
 
@@ -662,7 +697,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             CompanyID: this.ReceivingCompanyID,
             Amount: this.Amount ?? 0,
             ProcessingFeeAmount: this.ProcessingFeeAmount ?? 0,
-            PaymentDate: this.PaymentDate ? new Date(this.PaymentDate) : new Date(),
+            // As in `bookAllocations`: the fee entry's `EffectiveDate` is this day (#209).
+            PaymentDate: await CalendarDayOrToday(this.PaymentDate, provider, user),
             IsReversal: this.Status === 'Refunded',
         });
 

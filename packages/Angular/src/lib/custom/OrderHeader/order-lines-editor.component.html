@@ -89,48 +89,15 @@
             @if (IsOverrideEditorOpen(line)) {
                 <div class="mjo-ol-override" role="region" [attr.aria-label]="'Price and discount for ' + (ProductFor(line)?.Name ?? 'line')">
                     @if (CanOverride) {
-                        <div class="mjo-ol-override__row">
-                            <!--
-                                Selection is bound PER OPTION, not as [value] on the select: the select's
-                                value is applied before its @if/@for options exist, so a value naming one
-                                of them fell through to the first row — Default — while the component
-                                still thought the line was on a custom amount. Choosing Default then
-                                changed nothing, because it was already the DOM's choice (golive #253).
-                            -->
-                            <select
-                                class="mjo-ol-price__pick"
-                                (change)="PickNamedPrice(line, $event)"
-                                aria-label="Named price">
-                                <option value="__default__" [selected]="IsPicked(line, '__default__')" [disabled]="!CanRestoreDefault(line)">{{ DefaultLabel(line) }}</option>
-                                @if (OverrideKind === 'any') {
-                                    <option value="__custom__" [selected]="IsPicked(line, '__custom__')">Custom amount</option>
-                                }
-                                @for (price of NamedPricesFor(line); track price.ID) {
-                                    <option [value]="price.ID" [selected]="IsPicked(line, price.ID)">{{ price.Name }} · {{ price.UnitPrice | mjoMoney }}</option>
-                                }
-                            </select>
-                            @if (ShowCustomAmount(line)) {
-                                <input
-                                    class="mjo-ol-price__amt"
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    [value]="DisplayUnit(line)"
-                                    (change)="TypeAmount(line, $event)"
-                                    aria-label="Custom unit price">
-                            }
-                        </div>
-                        <label class="mjo-ol-override__reason" [class.is-off]="!CanExplainOverride(line)" [class.is-required]="NeedsOverrideReason(line)">
-                            <span>Override Explanation @if (CanExplainOverride(line)) {<em class="mjo-ol-override__req" aria-hidden="true">*</em>}</span>
-                            <textarea
-                                rows="2"
-                                [disabled]="!CanExplainOverride(line)"
-                                [required]="CanExplainOverride(line)"
-                                [attr.aria-required]="CanExplainOverride(line)"
-                                [value]="OverrideReasonText(line)"
-                                (input)="SetOverrideReason(line, $event)"
-                                placeholder="Required — why this price differs from the default"></textarea>
-                        </label>
+                        <mjo-line-price-picker
+                            [Line]="line"
+                            [OverrideKind]="OverrideKind"
+                            [Applicable]="ApplicableFor(line)"
+                            [EngineDefault]="PricedLine(line)?.Default"
+                            [DefaultUnit]="DefaultUnit(line)"
+                            [PriceSource]="PricedLine(line)?.PriceSource ?? null"
+                            [PricedUnit]="PricedLine(line)?.UnitPrice ?? null"
+                            (PriceChanged)="OnLinePriceChanged()"></mjo-line-price-picker>
                     }
 
                     <!--
