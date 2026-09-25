@@ -32,7 +32,7 @@
  * a change that satisfies either alone is wrong.
  *
  * CONNECTS TO:
- *   SQL:    spRecalcOrderHeaderPaymentSchedule (V202609251000 — billed rows first)
+ *   SQL:    spRecalcOrderHeaderPaymentSchedule (V202609252100 — billed rows first)
  *   CODE:   PlanLineDeposits · DepositReleasedByCompany · PaymentAllocationFactory
  *           EmitInstalmentInvoiceEntry (deposit application) · OrderHeaderPaymentScheduleEntityServer
  *
