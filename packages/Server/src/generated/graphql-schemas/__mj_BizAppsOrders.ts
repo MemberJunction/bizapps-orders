@@ -6485,6 +6485,10 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `Who took the money back on a reversal: Refund (the seller chose to, via Orders.RefundPayment) or BankReturn (the bank reversed a debit). Set on every reversal and on nothing else. A bank return removes payment-gated access; a refund does not.`}) 
+    @MaxLength(20)
+    ReversalSource?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     ReceivingCompany?: string;
@@ -6597,6 +6601,9 @@ export class CreatemjBizAppsOrdersPaymentHeaderInput {
     @Field({ nullable: true })
     IdempotencyKey: string | null;
 
+    @Field({ nullable: true })
+    ReversalSource: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6672,6 +6679,9 @@ export class UpdatemjBizAppsOrdersPaymentHeaderInput {
 
     @Field({ nullable: true })
     IdempotencyKey?: string | null;
+
+    @Field({ nullable: true })
+    ReversalSource?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

@@ -14,10 +14,14 @@ product, category or product type like the other timings:
   `RenewalAccessCutoffDaysPastDue` days past due. The setting defaults to 14, and `off` disables it.
 
 Grants are re-decided inside every payment capture and reversal, so card, settled ACH, check,
-refunds and returned debits all resolve through the order's `AmountPaid`. A new nightly job,
+refunds and returned debits all resolve through the order's `AmountPaid`. A refund the seller issues
+is added back before deciding, so it never takes access away; only a returned debit does. A renewal
+counts days past due from its next unpaid due date, so a part-payment that leaves that date unpaid
+does not delay the cutoff. A new nightly job,
 `Orders — Enforce Payment-Gated Access (daily)`, applies the renewal cutoff. It ships `Disabled` and
 set to Preview. `OnPaidInFull` grants now also become `Active` when the balance clears after confirm.
 
 Schema: `EntitlementGrant` gains `GrantTimingApplied`, `SuspendedAt` and `SuspensionReason`, and the
-three grant-timing columns accept `OnFirstPayment`. The overdue worklist fills `GraceThroughDate`
+three grant-timing columns accept `OnFirstPayment`. `PaymentHeader` gains `ReversalSource`
+(`Refund` or `BankReturn`), required on every reversal and backfilled on existing ones. The overdue worklist fills `GraceThroughDate`
 for renewals that still have access. Identity claims no longer lift a payment hold.

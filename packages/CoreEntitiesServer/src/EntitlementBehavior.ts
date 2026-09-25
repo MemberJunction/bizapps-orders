@@ -247,6 +247,14 @@ export interface OrderPaymentFacts {
     TotalGross: number | null;
     AmountPaid: number | null;
     Balance: number | null;
+    /**
+     * Cash the seller chose to give back on this order (`ReversalSource = 'Refund'`), as a positive
+     * amount. `AmountPaid` and `Balance` already net it out; the access rule adds it back, because a
+     * refund is the seller's decision and does not take access away. A return revokes its own lines'
+     * grants; a refund with no return is a concession. Only a bank reversal counts against access.
+     * Absent means none.
+     */
+    RefundedBySeller?: number;
     /** What has to be paid before a new purchase is live — see {@link FirstPaymentAmount}. */
     FirstPaymentAmount: number;
     /** Whole days the order is past due as of the business day; 0 when it is not overdue. */
@@ -314,6 +322,11 @@ const suspended = (Reason: SuspensionReason): GrantStatusDecision => ({ Status: 
  * A zero-value order is paid by definition — a free line should not leave the customer waiting for
  * a payment that will never arrive.
  *
+ * WHAT COUNTS AS PAID. A bank reversal (a returned debit) takes the cash back and access with it. A
+ * refund does not: the seller chose to give the money back, so it is added back before deciding. A
+ * paid order whose customer returns one line and is refunded for it keeps access on the other lines,
+ * and a goodwill refund on a paid order leaves every grant standing.
+ *
  * `Suspended` rather than a missing row, and rather than `Revoked`: revoked means somebody took it
  * away, which is a different fact that an access dispute turns on.
  *
@@ -330,18 +343,19 @@ export function DecideGrantStatus(
 
     const gross = Number(order.TotalGross ?? 0);
     if (gross <= 0) return ACTIVE;
+    const refunded = Number(order.RefundedBySeller ?? 0);
 
     if (timing === 'OnPaidInFull') {
-        return Number(order.Balance ?? gross) <= 0 ? ACTIVE : suspended('AwaitingPayment');
+        return Math.round((Number(order.Balance ?? gross) - refunded) * 100) <= 0 ? ACTIVE : suspended('AwaitingPayment');
     }
 
-    // OnFirstPayment.
+    // OnFirstPayment. `DaysPastDue` is the caller's, measured on the balance net of seller refunds.
     if (isRenewal) {
         const cutOff = cutoffDaysPastDue != null && order.DaysPastDue > 0 && order.DaysPastDue >= cutoffDaysPastDue;
         return cutOff ? suspended('PastDue') : ACTIVE;
     }
     // Compared in cents, so a first payment recorded as 333.33 against a 333.33 instalment is paid.
-    const paidCents = Math.round(Number(order.AmountPaid ?? 0) * 100);
+    const paidCents = Math.round((Number(order.AmountPaid ?? 0) + refunded) * 100);
     const dueCents = Math.round(Number(order.FirstPaymentAmount ?? gross) * 100);
     return paidCents >= dueCents ? ACTIVE : suspended('AwaitingPayment');
 }

@@ -2611,6 +2611,15 @@ export const mjBizAppsOrdersPaymentHeaderSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    ReversalSource: z.union([z.literal('BankReturn'), z.literal('Refund')]).nullable().describe(`
+        * * Field Name: ReversalSource
+        * * Display Name: Reversal Source
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * BankReturn
+    *   * Refund
+        * * Description: Who took the money back on a reversal: Refund (the seller chose to, via Orders.RefundPayment) or BankReturn (the bank reversed a debit). Set on every reversal and on nothing else. A bank return removes payment-gated access; a refund does not.`),
     ReceivingCompany: z.string().describe(`
         * * Field Name: ReceivingCompany
         * * Display Name: Receiving Company Name
@@ -12897,6 +12906,23 @@ export class mjBizAppsOrdersPaymentHeaderEntity extends BaseEntity<mjBizAppsOrde
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ReversalSource
+    * * Display Name: Reversal Source
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * BankReturn
+    *   * Refund
+    * * Description: Who took the money back on a reversal: Refund (the seller chose to, via Orders.RefundPayment) or BankReturn (the bank reversed a debit). Set on every reversal and on nothing else. A bank return removes payment-gated access; a refund does not.
+    */
+    get ReversalSource(): 'BankReturn' | 'Refund' | null {
+        return this.Get('ReversalSource');
+    }
+    set ReversalSource(value: 'BankReturn' | 'Refund' | null) {
+        this.Set('ReversalSource', value);
     }
 
     /**

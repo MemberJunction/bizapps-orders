@@ -122,6 +122,39 @@ describe('DecideGrantStatus — OnFirstPayment, renewal', () => {
     });
 });
 
+describe('DecideGrantStatus — a refund is the seller\'s choice, a bank return is not', () => {
+    // A paid 1,200 order; one 400 line returned and refunded, leaving 800 paid against 1,200 gross.
+    const refundedReturn = order({ AmountPaid: 800, Balance: 400, RefundedBySeller: 400 });
+
+    it('keeps a new purchase live after a line is returned and refunded', () => {
+        expect(DecideGrantStatus('OnFirstPayment', false, refundedReturn, 14)).toEqual({ Status: 'Active', Reason: null });
+    });
+
+    it('keeps OnPaidInFull live after a line is returned and refunded', () => {
+        expect(DecideGrantStatus('OnPaidInFull', false, refundedReturn, 14).Status).toBe('Active');
+    });
+
+    it('keeps access through a goodwill refund on a paid order', () => {
+        const o = order({ AmountPaid: 1150, Balance: 50, RefundedBySeller: 50 });
+        expect(DecideGrantStatus('OnFirstPayment', false, o, 14).Status).toBe('Active');
+        expect(DecideGrantStatus('OnPaidInFull', false, o, 14).Status).toBe('Active');
+    });
+
+    it('suspends when the bank takes the payment back', () => {
+        const o = order({ AmountPaid: 0, Balance: 1200, RefundedBySeller: 0 });
+        expect(DecideGrantStatus('OnFirstPayment', false, o, 14)).toEqual({ Status: 'Suspended', Reason: 'AwaitingPayment' });
+        expect(DecideGrantStatus('OnPaidInFull', false, o, 14).Reason).toBe('AwaitingPayment');
+    });
+
+    it('counts only the bank return when both happen', () => {
+        // Paid as two 600s: 200 of one refunded, the other returned by the bank. Counted paid: 600.
+        const o = order({ AmountPaid: 400, Balance: 800, RefundedBySeller: 200 });
+        expect(DecideGrantStatus('OnFirstPayment', false, o, 14).Status).toBe('Suspended');
+        expect(DecideGrantStatus('OnFirstPayment', false, { ...o, FirstPaymentAmount: 600 }, 14).Status).toBe('Active');
+        expect(DecideGrantStatus('OnPaidInFull', false, o, 14).Status).toBe('Suspended');
+    });
+});
+
 describe('DecideGrantStatus — the other timings are unchanged by renewal or cutoff', () => {
     it('OnConfirm is always Active', () => {
         expect(DecideGrantStatus('OnConfirm', true, order({ DaysPastDue: 90 }), 14).Status).toBe('Active');

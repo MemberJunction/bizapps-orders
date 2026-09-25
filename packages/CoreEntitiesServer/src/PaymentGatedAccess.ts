@@ -8,8 +8,8 @@
  *   · PAYMENTS. `PaymentHeaderEntityServer` calls {@link ReconcilePaymentGatedGrants} inside the
  *     transaction that captures or reverses a payment, after the rollup triggers have moved the
  *     order's `AmountPaid`. A new purchase goes live on the payment that clears its first
- *     instalment; a returned debit or a refund takes it back; a renewal that was cut off comes back
- *     on the payment that brings it inside the cutoff.
+ *     instalment; a returned debit takes it back (a refund does not — the seller chose it); a
+ *     renewal that was cut off comes back on the payment that brings it inside the cutoff.
  *   · THE CLOCK. A renewal goes past its cutoff with nothing being written — only a day passing — so
  *     {@link EnforcePaymentGatedAccess} runs nightly from a scheduled job. It also re-checks every
  *     payment-suspended grant, so a payment written by a path that did not call the hook is caught
@@ -58,6 +58,7 @@ import { OrdersSettings } from './OrdersSettings.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
+const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 
 const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 const quote = (ids: string[], label: string): string =>
@@ -86,10 +87,15 @@ export interface GrantStatusChange {
 }
 
 /**
- * Read the payment facts for a set of orders — two queries however many orders.
+ * Read the payment facts for a set of orders — three queries however many orders.
  *
  * `BypassCache` because the callers are inside a transaction that has just moved the figures, and a
  * cached row would decide from the balance before the payment.
+ *
+ * SELLER REFUNDS are read alongside, from the un-apply lines of reversals stamped
+ * `ReversalSource = 'Refund'`, because the access rule adds them back (see `DecideGrantStatus`).
+ * `DaysPastDue` is measured on the balance net of them for the same reason: a renewal refunded by
+ * the seller is not a renewal the customer has failed to pay.
  */
 export async function LoadOrderPaymentFacts(
     orderIDs: string[],
@@ -132,8 +138,27 @@ export async function LoadOrderPaymentFacts(
         },
         user,
     );
+    const refundLines = await rv.RunView<{ OrderHeaderID: string; Amount: number }>(
+        {
+            EntityName: PAYMENT_LINE_ENTITY,
+            ExtraFilter:
+                `OrderHeaderID IN (${ids}) AND PaymentHeaderID IN (` +
+                `SELECT ID FROM __mj_BizAppsOrders.PaymentHeader WHERE Status = 'Refunded' AND ReversalSource = 'Refund')`,
+            Fields: ['OrderHeaderID', 'Amount'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
     if (!orders.Success) throw new Error(`Could not read orders for access decisions: ${orders.ErrorMessage}`);
     if (!schedule.Success) throw new Error(`Could not read payment schedules for access decisions: ${schedule.ErrorMessage}`);
+    if (!refundLines.Success) throw new Error(`Could not read refunds for access decisions: ${refundLines.ErrorMessage}`);
+
+    // Un-apply lines are negative; the refunded amount is their magnitude.
+    const refundedByOrder = new Map<string, number>();
+    for (const row of refundLines.Results ?? []) {
+        refundedByOrder.set(key(row.OrderHeaderID), (refundedByOrder.get(key(row.OrderHeaderID)) ?? 0) - Number(row.Amount ?? 0));
+    }
 
     const scheduleByOrder = new Map<string, FirstPaymentScheduleRow[]>();
     for (const row of schedule.Results ?? []) {
@@ -144,6 +169,8 @@ export async function LoadOrderPaymentFacts(
 
     for (const o of orders.Results ?? []) {
         const nextDue = ToISODate(o.NextDueDate ?? o.DueDate);
+        const refunded = Math.round((refundedByOrder.get(key(o.ID)) ?? 0) * 100) / 100;
+        const accessBalance = o.Balance == null ? null : Number(o.Balance) - refunded;
         out.set(key(o.ID), {
             OrderID: o.ID,
             OrderNumber: o.OrderNumber,
@@ -151,8 +178,9 @@ export async function LoadOrderPaymentFacts(
             TotalGross: o.TotalGross,
             AmountPaid: o.AmountPaid,
             Balance: o.Balance,
+            RefundedBySeller: refunded,
             FirstPaymentAmount: FirstPaymentAmount(o.TotalGross, scheduleByOrder.get(key(o.ID)) ?? []),
-            DaysPastDue: DaysOverdue({ Status: o.Status, Balance: o.Balance, DueDateISO: nextDue }, asOfDay),
+            DaysPastDue: DaysOverdue({ Status: o.Status, Balance: accessBalance, DueDateISO: nextDue }, asOfDay),
         });
     }
     return out;

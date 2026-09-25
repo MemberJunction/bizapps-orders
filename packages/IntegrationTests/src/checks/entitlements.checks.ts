@@ -833,6 +833,69 @@ export const EntitlementsChecks: NamedCheck[] = [
         );
       }),
   },
+  {
+    Id: "entitlements.EN20",
+    Name: "EN20: returning and refunding one line of a paid order leaves the other line's access standing",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.WidgetA, "OnFirstPayment", async () => {
+          await addPrice(ctx, f.Products.WidgetA, 100);
+          const sale = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            BillToOrganizationID: f.Customers.OrganizationID,
+            Lines: [
+              { ProductID: f.Products.WidgetA, Quantity: 1 },
+              { ProductID: f.Products.WidgetA, Quantity: 1 },
+            ],
+          });
+          Assert(sale.Saved, `confirm failed: ${sale.Message}`);
+          const orderID = sale.Order.ID as string;
+          const [kept, returned] = sale.Lines.map((l) => l.ID as string);
+          const gross = Number((await TxOne<{ TotalGross: number }>(ctx,
+            `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).TotalGross);
+          await payOrder(ctx, orderID, gross);
+          Assert((await gatesFor(ctx, orderID)).every((g) => g.Status === "Active"), "paid in full, both lines live");
+
+          const ret = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            OrderType: "Return",
+            BillToOrganizationID: f.Customers.OrganizationID,
+            Lines: [{ ProductID: f.Products.WidgetA, Quantity: -1, ReversesOrderLineID: returned }],
+          });
+          Assert(ret.Saved, `the return must confirm: ${ret.Message}`);
+          Assert((await grantsForLine(ctx, returned)).every((g) => g.Status === "Revoked"), "the returned line's access goes");
+
+          const payment = await TxOne<{ ID: string }>(ctx,
+            `SELECT ph.ID FROM ${ORDERS_SCHEMA}.PaymentHeader ph
+               JOIN ${ORDERS_SCHEMA}.PaymentLine pl ON pl.PaymentHeaderID = ph.ID
+              WHERE pl.OrderHeaderID = '${orderID}' AND ph.Status = 'Captured'`);
+          const returnedGross = Number((await TxOne<{ LineTotalGross: number }>(ctx,
+            `SELECT LineTotalGross FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${returned}'`)).LineTotalGross);
+          const op = MJGlobal.Instance.ClassFactory.CreateInstance<
+            BaseRemotableOperation<Record<string, unknown>, { Success: boolean; Message?: string; RefundPaymentHeaderID?: string }>
+          >(BaseRemotableOperation, "Orders.RefundPayment");
+          Assert(op != null, "'Orders.RefundPayment' is not registered");
+          const refund = await op!.Execute(
+            { PaymentHeaderID: payment.ID, Amount: returnedGross, Reason: "Returned line" },
+            { provider: ctx.Provider, user: ctx.User },
+          );
+          Assert(refund.Success && refund.Output?.Success, `refund failed: ${refund.ErrorMessage ?? refund.Output?.Message}`);
+
+          const source = await TxOne<{ ReversalSource: string | null }>(ctx,
+            `SELECT ReversalSource FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE ID = '${refund.Output!.RefundPaymentHeaderID}'`);
+          AssertEqual(source.ReversalSource, "Refund", "the refund records that the seller chose it");
+
+          const standing = await grantsForLine(ctx, kept);
+          Assert(standing.length > 0, "the kept line granted something");
+          Assert(
+            standing.every((g) => g.Status === "Active"),
+            "a refund the seller chose does not take away access the customer paid for",
+          );
+        });
+      }),
+  },
 ];
 
 for (const check of EntitlementsChecks) {

@@ -6,8 +6,10 @@
  *   `Orders.RefundPayment`   somebody DECIDED to give the money back
  *   `PaymentSettlement`      the BANK took it back, days after we booked it as received
  *
- * They differ entirely in why they happen and not at all in what they must write. Both produce a new
- * `PaymentHeader` with `Status='Refunded'` and `ReversesPaymentHeaderID` pointing at the original,
+ * They differ entirely in why they happen and in one column of what they write — `ReversalSource`,
+ * which payment-gated access reads, because a bank return takes access away and a refund does not.
+ * Otherwise the shape is the same. Both produce a new `PaymentHeader` with `Status='Refunded'` and
+ * `ReversesPaymentHeaderID` pointing at the original,
  * carrying negative `PaymentLine`s that un-apply the cash from the orders the original settled. That
  * shape is not incidental — `Status='Refunded'` is precisely what makes `PaymentHeaderEntityServer`
  * book the MIRROR of the capture entry (D53), and the negative lines are what move each order's
@@ -68,8 +70,16 @@ export interface AppliedAllocation {
     Amount: number;
 }
 
+/** Who took the money back: the seller deciding to (`Refund`), or the bank (`BankReturn`). */
+export type ReversalSource = 'Refund' | 'BankReturn';
+
 /** Why this reversal is being written, and what to stamp on it. */
 export interface PaymentReversalRequest {
+    /**
+     * Stamped on the reversal as `ReversalSource`. Required, because access reads it: a bank return
+     * takes access away with the cash, a refund does not (`EntitlementBehavior.DecideGrantStatus`).
+     */
+    Source: ReversalSource;
     /** Positive magnitude, as `Amount` is stored on both a capture and a reversal. */
     Amount: number;
     Reason: string | null;
@@ -246,6 +256,7 @@ export async function CreateReversingPayment(
     reversal.ProcessingFeeAmount = 0;
     reversal.ReversesPaymentHeaderID = original.ID;
     reversal.ReversalReason = request.Reason ?? null;
+    reversal.ReversalSource = request.Source;
     reversal.ProviderRefundID = request.ProviderRefundID ?? null;
     reversal.Status = 'Refunded';
     reversal.Description = request.Description ?? `Refund of ${original.PaymentNumber}`;

@@ -20,6 +20,12 @@
 --                       support question it answers. The reason also tells the re-decision which
 --                       suspensions are its own to lift — a PastDue or AwaitingPayment grant clears
 --                       when the cash arrives; anything else is left for a person.
+--
+-- ONE COLUMN ON PaymentHeader: ReversalSource. A refund the seller decides on (Orders.RefundPayment)
+-- and a debit the bank takes back (ACH settlement) write the same reversal, and access has to tell
+-- them apart: a bank return takes access away with the cash, a refund does not. Without this, a
+-- customer who returned one line of a paid order and was refunded for it lost access to the rest.
+-- Existing reversals are backfilled from the description settlement writes ("Return of ...").
 
 ALTER TABLE __mj_BizAppsOrders.ProductType DROP CONSTRAINT CK_ProductType_EntGrantTiming;
 ALTER TABLE __mj_BizAppsOrders.ProductType ADD CONSTRAINT CK_ProductType_EntGrantTiming
@@ -69,6 +75,30 @@ EXEC sp_addextendedproperty
     @level0type = N'SCHEMA', @level0name = N'__mj_BizAppsOrders',
     @level1type = N'TABLE',  @level1name = N'EntitlementGrant',
     @level2type = N'COLUMN', @level2name = N'SuspensionReason';
+GO
+
+-- The pairing CHECK is added after the backfill, since existing reversals carry no source until then.
+ALTER TABLE __mj_BizAppsOrders.PaymentHeader ADD
+    ReversalSource NVARCHAR(20) NULL,
+    CONSTRAINT CK_PaymentHeader_ReversalSource CHECK (ReversalSource IS NULL OR ReversalSource IN ('Refund','BankReturn'));
+GO
+
+UPDATE __mj_BizAppsOrders.PaymentHeader
+SET ReversalSource = CASE WHEN Description LIKE 'Return of %' THEN 'BankReturn' ELSE 'Refund' END
+WHERE ReversesPaymentHeaderID IS NOT NULL;
+GO
+
+-- Every reversal says who took the money back, and nothing else carries a source.
+ALTER TABLE __mj_BizAppsOrders.PaymentHeader ADD CONSTRAINT CK_PaymentHeader_ReversalSourcePaired
+    CHECK ((ReversesPaymentHeaderID IS NULL AND ReversalSource IS NULL) OR (ReversesPaymentHeaderID IS NOT NULL AND ReversalSource IS NOT NULL));
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Who took the money back on a reversal: Refund (the seller chose to, via Orders.RefundPayment) or BankReturn (the bank reversed a debit). Set on every reversal and on nothing else. A bank return removes payment-gated access; a refund does not.',
+    @level0type = N'SCHEMA', @level0name = N'__mj_BizAppsOrders',
+    @level1type = N'TABLE',  @level1name = N'PaymentHeader',
+    @level2type = N'COLUMN', @level2name = N'ReversalSource';
 GO
 
 
@@ -129,8 +159,10 @@ GO
 --
 --   Only the sections for this change: the three new MJ_BizApps_Orders: Entitlement
 --   Grants fields and their value lists, OnFirstPayment added to the three grant-timing
---   value lists, and the regenerated vwEntitlementGrants and its CRUD procedures. A
---   CodeGen run re-emits objects this change never touched; those are left out.
+--   value lists, and the regenerated vwEntitlementGrants and its CRUD procedures; then
+--   PaymentHeader.ReversalSource with its value list, and the regenerated vwPaymentHeaders
+--   and its CRUD procedures. A CodeGen run re-emits objects this change never touched;
+--   those are left out.
 --
 --   Each EntityField Sequence is an apply-time MAX(Sequence) + 1 rather than the literal
 --   CodeGen emits, and CodeGen's +100000 renumbering block is removed with it (MJ's
@@ -787,3 +819,529 @@ GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteEntitlementGrant] TO [cdp_De
 /* spDelete Permissions for MJ_BizApps_Orders: Entitlement Grants */
 
 GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteEntitlementGrant] TO [cdp_Developer], [cdp_Integration];
+
+/* SQL text to insert 1 new entity field(s) */
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'bcc208d2-c19a-4221-b430-01f60417374d' OR (EntityID = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD' AND Name = 'ReversalSource')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'bcc208d2-c19a-4221-b430-01f60417374d',
+            'CE97BF15-F7C6-4C50-A744-A89C714A4DDD', -- Entity: MJ_BizApps_Orders: Payment Headers
+            (SELECT COALESCE(MAX([Sequence]), 0) FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD') + 1,
+            'ReversalSource',
+            'Reversal Source',
+            'Who took the money back on a reversal: Refund (the seller chose to, via Orders.RefundPayment) or BankReturn (the bank reversed a debit). Set on every reversal and on nothing else. A bank return removes payment-gated access; a refund does not.',
+            'nvarchar',
+            40,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            1,
+            0,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+
+/* SQL text to insert entity field value with ID 1b86595a-a79c-4954-b1bc-9a155484fa6d */
+INSERT INTO [${mjSchema}].[EntityFieldValue]
+                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+                                    VALUES
+                                       ('1b86595a-a79c-4954-b1bc-9a155484fa6d', 'BCC208D2-C19A-4221-B430-01F60417374D', 1, 'BankReturn', 'BankReturn', GETUTCDATE(), GETUTCDATE());
+
+/* SQL text to insert entity field value with ID c478e3d6-ce18-468c-b59c-d74b61aa43fe */
+INSERT INTO [${mjSchema}].[EntityFieldValue]
+                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+                                    VALUES
+                                       ('c478e3d6-ce18-468c-b59c-d74b61aa43fe', 'BCC208D2-C19A-4221-B430-01F60417374D', 2, 'Refund', 'Refund', GETUTCDATE(), GETUTCDATE());
+
+/* SQL text to update ValueListType for entity field ID BCC208D2-C19A-4221-B430-01F60417374D */
+UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='BCC208D2-C19A-4221-B430-01F60417374D';
+
+
+/* Base View SQL for MJ_BizApps_Orders: Payment Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: vwPaymentHeaders
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Payment Headers
+-----               SCHEMA:      ${flyway:defaultSchema}
+-----               BASE TABLE:  PaymentHeader
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwPaymentHeaders]', 'V') IS NOT NULL
+    DROP VIEW [${flyway:defaultSchema}].[vwPaymentHeaders];
+GO
+
+CREATE VIEW [${flyway:defaultSchema}].[vwPaymentHeaders]
+AS
+SELECT
+    p.*,
+    MJCompany_ReceivingCompanyID.[Name] AS [ReceivingCompany],
+    mjBizAppsCommonPerson_BillToPersonID.[DisplayName] AS [BillToPerson],
+    mjBizAppsCommonOrganization_BillToOrganizationID.[Name] AS [BillToOrganization],
+    mjBizAppsOrdersPaymentType_PaymentTypeID.[Name] AS [PaymentType],
+    mjBizAppsOrdersPaymentProvider_PaymentProviderID.[Name] AS [PaymentProvider],
+    mjBizAppsOrdersPaymentIntent_PaymentIntentID.[ProviderIntentID] AS [PaymentIntent],
+    mjBizAppsOrdersPaymentDetail_PaymentDetailID.[Last4] AS [PaymentDetail],
+    mjBizAppsOrdersPaymentHeader_ReversesPaymentHeaderID.[PaymentNumber] AS [ReversesPaymentHeader],
+    mjBizAppsAccountingJournalEntry_JournalEntryID.[EntryNumber] AS [JournalEntry]
+FROM
+    [${flyway:defaultSchema}].[PaymentHeader] AS p
+INNER JOIN
+    [${mjSchema}].[Company] AS MJCompany_ReceivingCompanyID
+  ON
+    [p].[ReceivingCompanyID] = MJCompany_ReceivingCompanyID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_BillToPersonID
+  ON
+    [p].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsCommon].[Organization] AS mjBizAppsCommonOrganization_BillToOrganizationID
+  ON
+    [p].[BillToOrganizationID] = mjBizAppsCommonOrganization_BillToOrganizationID.[ID]
+INNER JOIN
+    [${flyway:defaultSchema}].[PaymentType] AS mjBizAppsOrdersPaymentType_PaymentTypeID
+  ON
+    [p].[PaymentTypeID] = mjBizAppsOrdersPaymentType_PaymentTypeID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentProvider] AS mjBizAppsOrdersPaymentProvider_PaymentProviderID
+  ON
+    [p].[PaymentProviderID] = mjBizAppsOrdersPaymentProvider_PaymentProviderID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentIntent] AS mjBizAppsOrdersPaymentIntent_PaymentIntentID
+  ON
+    [p].[PaymentIntentID] = mjBizAppsOrdersPaymentIntent_PaymentIntentID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentDetail] AS mjBizAppsOrdersPaymentDetail_PaymentDetailID
+  ON
+    [p].[PaymentDetailID] = mjBizAppsOrdersPaymentDetail_PaymentDetailID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[PaymentHeader] AS mjBizAppsOrdersPaymentHeader_ReversesPaymentHeaderID
+  ON
+    [p].[ReversesPaymentHeaderID] = mjBizAppsOrdersPaymentHeader_ReversesPaymentHeaderID.[ID]
+LEFT OUTER JOIN
+    [${mjSchema}_BizAppsAccounting].[JournalEntry] AS mjBizAppsAccountingJournalEntry_JournalEntryID
+  ON
+    [p].[JournalEntryID] = mjBizAppsAccountingJournalEntry_JournalEntryID.[ID]
+GO
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPaymentHeaders] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* Base View Permissions SQL for MJ_BizApps_Orders: Payment Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: Permissions for vwPaymentHeaders
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+GRANT SELECT ON [${flyway:defaultSchema}].[vwPaymentHeaders] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+
+/* spCreate SQL for MJ_BizApps_Orders: Payment Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: spCreatePaymentHeader
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR PaymentHeader
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spCreatePaymentHeader]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spCreatePaymentHeader];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spCreatePaymentHeader]
+    @ID uniqueidentifier = NULL,
+    @PaymentNumber nvarchar(40),
+    @ReceivingCompanyID uniqueidentifier,
+    @BillToPersonID_Clear bit = 0,
+    @BillToPersonID uniqueidentifier = NULL,
+    @BillToOrganizationID_Clear bit = 0,
+    @BillToOrganizationID uniqueidentifier = NULL,
+    @PaymentDate date,
+    @PaymentTypeID uniqueidentifier,
+    @Amount decimal(18, 2),
+    @ProcessingFeeAmount decimal(18, 2) = NULL,
+    @NetAmount_Clear bit = 0,
+    @NetAmount decimal(18, 2) = NULL,
+    @PaymentProviderID_Clear bit = 0,
+    @PaymentProviderID uniqueidentifier = NULL,
+    @PaymentIntentID_Clear bit = 0,
+    @PaymentIntentID uniqueidentifier = NULL,
+    @PaymentDetailID_Clear bit = 0,
+    @PaymentDetailID uniqueidentifier = NULL,
+    @ProviderChargeID_Clear bit = 0,
+    @ProviderChargeID nvarchar(100) = NULL,
+    @ProviderRefundID_Clear bit = 0,
+    @ProviderRefundID nvarchar(100) = NULL,
+    @ReversesPaymentHeaderID_Clear bit = 0,
+    @ReversesPaymentHeaderID uniqueidentifier = NULL,
+    @ReversalReason_Clear bit = 0,
+    @ReversalReason nvarchar(MAX) = NULL,
+    @Status nvarchar(20) = NULL,
+    @JournalEntryID_Clear bit = 0,
+    @JournalEntryID uniqueidentifier = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(MAX) = NULL,
+    @Notes_Clear bit = 0,
+    @Notes nvarchar(MAX) = NULL,
+    @IdempotencyKey_Clear bit = 0,
+    @IdempotencyKey nvarchar(200) = NULL,
+    @ReversalSource_Clear bit = 0,
+    @ReversalSource nvarchar(20) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @InsertedRow TABLE ([ID] UNIQUEIDENTIFIER)
+
+    IF @ID IS NOT NULL
+    BEGIN
+        -- User provided a value, use it
+        INSERT INTO [${flyway:defaultSchema}].[PaymentHeader]
+            (
+                [ID],
+                [PaymentNumber],
+                [ReceivingCompanyID],
+                [BillToPersonID],
+                [BillToOrganizationID],
+                [PaymentDate],
+                [PaymentTypeID],
+                [Amount],
+                [ProcessingFeeAmount],
+                [NetAmount],
+                [PaymentProviderID],
+                [PaymentIntentID],
+                [PaymentDetailID],
+                [ProviderChargeID],
+                [ProviderRefundID],
+                [ReversesPaymentHeaderID],
+                [ReversalReason],
+                [Status],
+                [JournalEntryID],
+                [Description],
+                [Notes],
+                [IdempotencyKey],
+                [ReversalSource]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @ID,
+                @PaymentNumber,
+                @ReceivingCompanyID,
+                CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, NULL) END,
+                CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, NULL) END,
+                @PaymentDate,
+                @PaymentTypeID,
+                @Amount,
+                ISNULL(@ProcessingFeeAmount, 0),
+                CASE WHEN @NetAmount_Clear = 1 THEN NULL ELSE ISNULL(@NetAmount, NULL) END,
+                CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, NULL) END,
+                CASE WHEN @PaymentIntentID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentIntentID, NULL) END,
+                CASE WHEN @PaymentDetailID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentDetailID, NULL) END,
+                CASE WHEN @ProviderChargeID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderChargeID, NULL) END,
+                CASE WHEN @ProviderRefundID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderRefundID, NULL) END,
+                CASE WHEN @ReversesPaymentHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesPaymentHeaderID, NULL) END,
+                CASE WHEN @ReversalReason_Clear = 1 THEN NULL ELSE ISNULL(@ReversalReason, NULL) END,
+                ISNULL(@Status, 'Pending'),
+                CASE WHEN @JournalEntryID_Clear = 1 THEN NULL ELSE ISNULL(@JournalEntryID, NULL) END,
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, NULL) END,
+                CASE WHEN @IdempotencyKey_Clear = 1 THEN NULL ELSE ISNULL(@IdempotencyKey, NULL) END,
+                CASE WHEN @ReversalSource_Clear = 1 THEN NULL ELSE ISNULL(@ReversalSource, NULL) END
+            )
+    END
+    ELSE
+    BEGIN
+        -- No value provided, let database use its default (e.g., NEWSEQUENTIALID())
+        INSERT INTO [${flyway:defaultSchema}].[PaymentHeader]
+            (
+                [PaymentNumber],
+                [ReceivingCompanyID],
+                [BillToPersonID],
+                [BillToOrganizationID],
+                [PaymentDate],
+                [PaymentTypeID],
+                [Amount],
+                [ProcessingFeeAmount],
+                [NetAmount],
+                [PaymentProviderID],
+                [PaymentIntentID],
+                [PaymentDetailID],
+                [ProviderChargeID],
+                [ProviderRefundID],
+                [ReversesPaymentHeaderID],
+                [ReversalReason],
+                [Status],
+                [JournalEntryID],
+                [Description],
+                [Notes],
+                [IdempotencyKey],
+                [ReversalSource]
+            )
+        OUTPUT INSERTED.[ID] INTO @InsertedRow
+        VALUES
+            (
+                @PaymentNumber,
+                @ReceivingCompanyID,
+                CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, NULL) END,
+                CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, NULL) END,
+                @PaymentDate,
+                @PaymentTypeID,
+                @Amount,
+                ISNULL(@ProcessingFeeAmount, 0),
+                CASE WHEN @NetAmount_Clear = 1 THEN NULL ELSE ISNULL(@NetAmount, NULL) END,
+                CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, NULL) END,
+                CASE WHEN @PaymentIntentID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentIntentID, NULL) END,
+                CASE WHEN @PaymentDetailID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentDetailID, NULL) END,
+                CASE WHEN @ProviderChargeID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderChargeID, NULL) END,
+                CASE WHEN @ProviderRefundID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderRefundID, NULL) END,
+                CASE WHEN @ReversesPaymentHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesPaymentHeaderID, NULL) END,
+                CASE WHEN @ReversalReason_Clear = 1 THEN NULL ELSE ISNULL(@ReversalReason, NULL) END,
+                ISNULL(@Status, 'Pending'),
+                CASE WHEN @JournalEntryID_Clear = 1 THEN NULL ELSE ISNULL(@JournalEntryID, NULL) END,
+                CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, NULL) END,
+                CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, NULL) END,
+                CASE WHEN @IdempotencyKey_Clear = 1 THEN NULL ELSE ISNULL(@IdempotencyKey, NULL) END,
+                CASE WHEN @ReversalSource_Clear = 1 THEN NULL ELSE ISNULL(@ReversalSource, NULL) END
+            )
+    END
+    -- return the new record from the base view, which might have some calculated fields
+    SELECT * FROM [${flyway:defaultSchema}].[vwPaymentHeaders] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePaymentHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Payment Headers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreatePaymentHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spUpdate SQL for MJ_BizApps_Orders: Payment Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: spUpdatePaymentHeader
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR PaymentHeader
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spUpdatePaymentHeader]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spUpdatePaymentHeader];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdatePaymentHeader]
+    @ID uniqueidentifier,
+    @PaymentNumber nvarchar(40) = NULL,
+    @ReceivingCompanyID uniqueidentifier = NULL,
+    @BillToPersonID_Clear bit = 0,
+    @BillToPersonID uniqueidentifier = NULL,
+    @BillToOrganizationID_Clear bit = 0,
+    @BillToOrganizationID uniqueidentifier = NULL,
+    @PaymentDate date = NULL,
+    @PaymentTypeID uniqueidentifier = NULL,
+    @Amount decimal(18, 2) = NULL,
+    @ProcessingFeeAmount decimal(18, 2) = NULL,
+    @NetAmount_Clear bit = 0,
+    @NetAmount decimal(18, 2) = NULL,
+    @PaymentProviderID_Clear bit = 0,
+    @PaymentProviderID uniqueidentifier = NULL,
+    @PaymentIntentID_Clear bit = 0,
+    @PaymentIntentID uniqueidentifier = NULL,
+    @PaymentDetailID_Clear bit = 0,
+    @PaymentDetailID uniqueidentifier = NULL,
+    @ProviderChargeID_Clear bit = 0,
+    @ProviderChargeID nvarchar(100) = NULL,
+    @ProviderRefundID_Clear bit = 0,
+    @ProviderRefundID nvarchar(100) = NULL,
+    @ReversesPaymentHeaderID_Clear bit = 0,
+    @ReversesPaymentHeaderID uniqueidentifier = NULL,
+    @ReversalReason_Clear bit = 0,
+    @ReversalReason nvarchar(MAX) = NULL,
+    @Status nvarchar(20) = NULL,
+    @JournalEntryID_Clear bit = 0,
+    @JournalEntryID uniqueidentifier = NULL,
+    @Description_Clear bit = 0,
+    @Description nvarchar(MAX) = NULL,
+    @Notes_Clear bit = 0,
+    @Notes nvarchar(MAX) = NULL,
+    @IdempotencyKey_Clear bit = 0,
+    @IdempotencyKey nvarchar(200) = NULL,
+    @ReversalSource_Clear bit = 0,
+    @ReversalSource nvarchar(20) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PaymentHeader]
+    SET
+        [PaymentNumber] = ISNULL(@PaymentNumber, [PaymentNumber]),
+        [ReceivingCompanyID] = ISNULL(@ReceivingCompanyID, [ReceivingCompanyID]),
+        [BillToPersonID] = CASE WHEN @BillToPersonID_Clear = 1 THEN NULL ELSE ISNULL(@BillToPersonID, [BillToPersonID]) END,
+        [BillToOrganizationID] = CASE WHEN @BillToOrganizationID_Clear = 1 THEN NULL ELSE ISNULL(@BillToOrganizationID, [BillToOrganizationID]) END,
+        [PaymentDate] = ISNULL(@PaymentDate, [PaymentDate]),
+        [PaymentTypeID] = ISNULL(@PaymentTypeID, [PaymentTypeID]),
+        [Amount] = ISNULL(@Amount, [Amount]),
+        [ProcessingFeeAmount] = ISNULL(@ProcessingFeeAmount, [ProcessingFeeAmount]),
+        [NetAmount] = CASE WHEN @NetAmount_Clear = 1 THEN NULL ELSE ISNULL(@NetAmount, [NetAmount]) END,
+        [PaymentProviderID] = CASE WHEN @PaymentProviderID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentProviderID, [PaymentProviderID]) END,
+        [PaymentIntentID] = CASE WHEN @PaymentIntentID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentIntentID, [PaymentIntentID]) END,
+        [PaymentDetailID] = CASE WHEN @PaymentDetailID_Clear = 1 THEN NULL ELSE ISNULL(@PaymentDetailID, [PaymentDetailID]) END,
+        [ProviderChargeID] = CASE WHEN @ProviderChargeID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderChargeID, [ProviderChargeID]) END,
+        [ProviderRefundID] = CASE WHEN @ProviderRefundID_Clear = 1 THEN NULL ELSE ISNULL(@ProviderRefundID, [ProviderRefundID]) END,
+        [ReversesPaymentHeaderID] = CASE WHEN @ReversesPaymentHeaderID_Clear = 1 THEN NULL ELSE ISNULL(@ReversesPaymentHeaderID, [ReversesPaymentHeaderID]) END,
+        [ReversalReason] = CASE WHEN @ReversalReason_Clear = 1 THEN NULL ELSE ISNULL(@ReversalReason, [ReversalReason]) END,
+        [Status] = ISNULL(@Status, [Status]),
+        [JournalEntryID] = CASE WHEN @JournalEntryID_Clear = 1 THEN NULL ELSE ISNULL(@JournalEntryID, [JournalEntryID]) END,
+        [Description] = CASE WHEN @Description_Clear = 1 THEN NULL ELSE ISNULL(@Description, [Description]) END,
+        [Notes] = CASE WHEN @Notes_Clear = 1 THEN NULL ELSE ISNULL(@Notes, [Notes]) END,
+        [IdempotencyKey] = CASE WHEN @IdempotencyKey_Clear = 1 THEN NULL ELSE ISNULL(@IdempotencyKey, [IdempotencyKey]) END,
+        [ReversalSource] = CASE WHEN @ReversalSource_Clear = 1 THEN NULL ELSE ISNULL(@ReversalSource, [ReversalSource]) END
+    WHERE
+        [ID] = @ID
+
+    -- Check if the update was successful
+    IF @@ROWCOUNT = 0
+        -- Nothing was updated, return no rows, but column structure from base view intact, semantically correct this way.
+        SELECT TOP 0 * FROM [${flyway:defaultSchema}].[vwPaymentHeaders] WHERE 1=0
+    ELSE
+        -- Return the updated record so the caller can see the updated values and any calculated fields
+        SELECT
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwPaymentHeaders]
+                                    WHERE
+                                        [ID] = @ID
+                                    
+END
+GO
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePaymentHeader] TO [cdp_Developer], [cdp_Integration]
+GO
+
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the PaymentHeader table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdatePaymentHeader]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdatePaymentHeader];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdatePaymentHeader
+ON [${flyway:defaultSchema}].[PaymentHeader]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[PaymentHeader]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[PaymentHeader] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Payment Headers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdatePaymentHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Payment Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Payment Headers
+-- Item: spDeletePaymentHeader
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR PaymentHeader
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeletePaymentHeader]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeletePaymentHeader];
+GO
+
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeletePaymentHeader]
+    @ID uniqueidentifier
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DELETE FROM
+        [${flyway:defaultSchema}].[PaymentHeader]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
+GO
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePaymentHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Payment Headers */
+
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePaymentHeader] TO [cdp_Developer], [cdp_Integration];

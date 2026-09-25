@@ -229,7 +229,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      *
      * Here, inside the booking transaction, because this is the one point every capture and every
      * reversal passes — card, ACH on settlement, check, a refund, a returned debit — and the rollup
-     * triggers have already moved each order's `AmountPaid`. A payment that clears a first
+     * triggers have already moved each order's `AmountPaid`. A refund passes through here too, but
+     * leaves access where it was: the decision adds seller refunds back (`ReversalSource`). A payment that clears a first
      * instalment and a grant that stays suspended must not both be committed.
      */
     private async reconcileAccess(options?: EntitySaveOptions): Promise<void> {
