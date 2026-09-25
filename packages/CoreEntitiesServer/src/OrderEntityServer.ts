@@ -46,8 +46,11 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
+    ADDRESS_SNAPSHOT_FIELDS,
+    BuildAddressSnapshot,
     OrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
+    type AddressLike,
     mjBizAppsOrdersOrderLinePriceComponentEntity,
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersPaymentLineEntity,
@@ -429,7 +432,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // rollups this save sends are the rollups the row already holds, so the write is a no-op
             // on those four columns no matter what the caller believed about them.
             await this.refreshRolledUpTotals();
-            return super.Save(options);
+            try {
+                if (this.IsBookedOrder) await this.stampAddressSnapshots('fill');
+                return await super.Save(options);
+            } finally {
+                this.addressSnapshotsStamped = false;
+            }
         }
 
         // WHEN IT IS DUE, DECIDED ONCE AND STORED (D83) — AND RESOLVED BEFORE THE TRANSACTION OPENS.
@@ -540,6 +548,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
                 booking ? await this.decideSubscriptions() : new Map();
             await this.prepareLines(decisions);
+
+            // THE ADDRESS AS SOLD, copied onto the order at the first confirm (golive #263).
+            //
+            // HERE, before either line write below: a draft's existing lines are written while the
+            // header is still Draft, and `trg_OrderLine_AddressFrozenAfterConfirm` refuses the line
+            // snapshot once the header is Confirmed. Inside the transaction, so it reads the same
+            // Address rows the tax resolution in `prepareLines` just read.
+            if (booking) await this.stampAddressSnapshots('confirm');
+            else if (this.IsBookedOrder) await this.stampAddressSnapshots('fill');
 
             // CONFIRM-AFTER-DRAFT: the lines already exist. `prepareLines` just prorated them
             // (membership qty 1 → 0.3836). If the header flips to Confirmed first, trigger 51003
@@ -666,6 +683,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             return false;
         } finally {
             this.bookingInFlight = false;
+            this.addressSnapshotsStamped = false;
         }
     }
 
@@ -1502,6 +1520,118 @@ export class OrderEntityServer extends OrderHeaderEntity {
             user,
             options,
         );
+    }
+
+    /**
+     * Copy the bill-to and ship-to addresses onto the order and its lines (golive #263).
+     *
+     * `confirm` — the booking save. Every address the order and its lines name is copied, replacing
+     * whatever the in-memory record carried.
+     *
+     * `fill` — any later save of a booked order. A snapshot that is already stored is kept, whatever
+     * the caller sent; one that is missing is written from its address. That covers an empty address
+     * filled after confirm, and an order confirmed before snapshots existed.
+     *
+     * A line gets a snapshot only when it names a ship-to address of its own; a line without one
+     * ships to the header's.
+     *
+     * A reference with no Address row behind it (deleted, or hidden from this user by row-level
+     * security) refuses the save when the address is being recorded now: on confirm, or when an
+     * empty address is filled on this save. `OrderLine.ShipToAddressID` has no foreign key, and a
+     * confirmed order with no record of where the sale went is the defect this exists to prevent.
+     *
+     * An address that was already on a booked order and has since lost its row is left without a
+     * snapshot, and the save goes ahead. Refusing it would lock the order: the save fails for a row
+     * nobody can bring back, and the ID cannot be replaced or cleared because the order is booked.
+     */
+    private async stampAddressSnapshots(mode: 'confirm' | 'fill'): Promise<void> {
+        type Target = {
+            entity: BaseEntity;
+            idField: string;
+            snapshotField: string;
+            what: string;
+            addressID: () => string | null;
+            write: (snapshot: string | null) => void;
+        };
+        const targets: Target[] = [
+            {
+                entity: this,
+                idField: 'BillToAddressID',
+                snapshotField: 'BillToAddressSnapshot',
+                what: 'bill-to',
+                addressID: () => this.BillToAddressID,
+                write: (v) => { this.BillToAddressSnapshot = v; },
+            },
+            {
+                entity: this,
+                idField: 'ShipToAddressID',
+                snapshotField: 'ShipToAddressSnapshot',
+                what: 'ship-to',
+                addressID: () => this.ShipToAddressID,
+                write: (v) => { this.ShipToAddressSnapshot = v; },
+            },
+            ...this.Lines.Items.map((line): Target => ({
+                entity: line,
+                idField: 'ShipToAddressID',
+                snapshotField: 'ShipToAddressSnapshot',
+                what: `line ${line.LineNumber ?? ''} ship-to`,
+                addressID: () => line.ShipToAddressID,
+                write: (v) => { line.ShipToAddressSnapshot = v; },
+            })),
+        ];
+        const stored = (t: Target): string | null => {
+            const old = t.entity.GetFieldByName(t.snapshotField)?.OldValue;
+            return typeof old === 'string' && old ? old : null;
+        };
+        const addressID = (t: Target): string | null => t.addressID() ?? null;
+        /** The address was set before this save and is still the same one. */
+        const unchanged = (t: Target): boolean => {
+            const old = t.entity.GetFieldByName(t.idField)?.OldValue;
+            return typeof old === 'string' && UUIDsEqual(old, addressID(t));
+        };
+        const needsRead = (t: Target): boolean => !!addressID(t) && (mode === 'confirm' || !stored(t));
+
+        const ids = targets.filter(needsRead).map((t) => addressID(t) as string);
+        const byID = new Map<string, AddressLike>();
+        if (ids.length) {
+            const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+            const result = await rv.RunView<AddressLike>(
+                {
+                    EntityName: COMMON_ADDRESS_ENTITY,
+                    ExtraFilter: `ID IN (${RequireUUIDs([...new Set(ids)], 'AddressID').map((id) => `'${id}'`).join(',')})`,
+                    Fields: [...ADDRESS_SNAPSHOT_FIELDS],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                this.ContextCurrentUser as UserInfo,
+            );
+            if (!result.Success) {
+                throw new Error(`Could not read the order's addresses to keep with it: ${result.ErrorMessage}`);
+            }
+            for (const row of result.Results) byID.set(row.ID.toLowerCase(), row);
+        }
+
+        for (const t of targets) {
+            let value: string | null;
+            if (!needsRead(t)) {
+                value = mode === 'confirm' ? null : stored(t);
+            } else {
+                const id = addressID(t) as string;
+                const row = byID.get(id.toLowerCase());
+                if (row) {
+                    value = BuildAddressSnapshot(row);
+                } else if (mode === 'fill' && unchanged(t)) {
+                    value = null;
+                } else {
+                    throw new Error(
+                        `Order ${this.OrderNumber ?? ''} cannot be saved: its ${t.what} address (${id}) does not exist ` +
+                            `or is not visible to you. Choose the address again and save.`,
+                    );
+                }
+            }
+            t.write(value);
+        }
+        this.addressSnapshotsStamped = true;
     }
 
     /** The header's rollup columns as the DATABASE now holds them, after the payment triggers ran. */

@@ -25,7 +25,7 @@
         </div>
     }
 
-    @if (ShowSelected && !Custom) {
+    @if (ShowSelected && (!Custom || !ShowPicker)) {
         <div class="mjo-addr__preview">{{ SelectedAddressText }}</div>
     }
 
