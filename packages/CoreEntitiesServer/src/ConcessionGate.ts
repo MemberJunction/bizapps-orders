@@ -15,6 +15,11 @@
  * flag is set by the order-lines editor; a line priced through the API, an import or an integration
  * need not carry it, and the gate must not depend on who set it.
  *
+ * A bundle component — a line with a `ParentOrderLineID` — is not re-priced. Expansion writes it at
+ * its share of the bundle price, which is below its own engine price whenever the bundle sells for
+ * less than its parts, and nothing the rep can record or change would clear it. The bundle line
+ * itself keeps the bundle's price and is checked like any other.
+ *
  * Confirmed orders are checked for (1) only. Their lines' prices were settled at booking, and lines
  * converted from the previous system carry overrides nobody recorded a concession for.
  *
@@ -82,6 +87,8 @@ export async function FindConcessionLimitRule(
 export interface ConcessionLineFacts extends PricedLineFacts {
     ID: string | null;
     LineNumber: number | null;
+    /** Set on a bundle component, whose price is its allocation rather than a concession. */
+    ParentOrderLineID: string | null;
     /**
      * Whether `UnitPrice` holds a price rather than a blank the engine fills at confirm. A saved line
      * always does; an unsaved one does when `UnitPrice` is dirty or above zero — the same test
@@ -208,14 +215,17 @@ async function loadConcessions(
     return res?.Results ?? [];
 }
 
-/** Lines with a stated price: the caller's, plus persisted ones the caller does not hold. */
+/**
+ * Lines with a stated price: the caller's, plus persisted ones the caller does not hold. Bundle
+ * components are left out.
+ */
 async function statedPriceLines(
     orderHeaderID: string | null,
     inMemoryLines: readonly ConcessionLineFacts[],
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<ConcessionLineFacts[]> {
-    const lines = inMemoryLines.filter((l) => l.PriceStated && !!l.ProductID);
+    const lines = inMemoryLines.filter((l) => l.PriceStated && !!l.ProductID && !l.ParentOrderLineID);
     if (!orderHeaderID) return lines;
 
     const held = new Set(inMemoryLines.map((l) => (l.ID ?? '').toLowerCase()).filter(Boolean));
@@ -224,7 +234,16 @@ async function statedPriceLines(
         {
             EntityName: ORDER_LINE_ENTITY,
             ExtraFilter: `OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
-            Fields: ['ID', 'LineNumber', 'ProductID', 'OrderHeaderID', 'Quantity', 'UnitPrice', 'ProductPriceID'],
+            Fields: [
+                'ID',
+                'LineNumber',
+                'ParentOrderLineID',
+                'ProductID',
+                'OrderHeaderID',
+                'Quantity',
+                'UnitPrice',
+                'ProductPriceID',
+            ],
             ResultType: 'simple',
             BypassCache: true,
         },
@@ -232,7 +251,7 @@ async function statedPriceLines(
     );
     for (const row of res?.Results ?? []) {
         const key = (row.ID ?? '').toLowerCase();
-        if (held.has(key)) continue;
+        if (held.has(key) || row.ParentOrderLineID) continue;
         lines.push({ ...row, PriceStated: true });
     }
     return lines;

@@ -11,6 +11,9 @@
  *   CS6       a typed price below the engine's holds the confirm until a concession covers it
  *   CS7       a Pending concession holds the confirm; withdrawing it releases the order
  *   CS8       a manual discount inside its percentage cap still escalates on absolute value
+ *   CS9       a line priced through the API without PriceOverridden still holds the confirm
+ *   CS10      removing a draft line removes its concession, even an approved one
+ *   CS11      a bundle's components are priced at their allocation, which is not a concession
  *
  * CONNECTS TO:
  *   CODE: ConcessionBehavior · ConcessionGate · OrderConcessionEntityServer · SubscriptionTermEntity
@@ -31,6 +34,7 @@ import type {
   mjBizAppsOrdersSubscriptionTermEntity,
 } from "@mj-biz-apps/orders-entities";
 import {
+  CreateBundleItem,
   CreateOrdersFixture,
   CreateProductPrice,
   createViaEntity,
@@ -39,6 +43,7 @@ import {
   ORDERS_SCHEMA,
   TeardownOrdersFixture,
   TxOne,
+  TxQuery,
 } from "../fixture.js";
 import {
   ORDER_CONCESSION_ENTITY,
@@ -376,6 +381,41 @@ export const ConcessionChecks: NamedCheck[] = [
           `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID = '${c.Entity.ID}'`,
         );
         AssertEqual(Number(left.N), 0, "the concession went with its line");
+      }),
+  },
+  {
+    Id: "concessions.CS11",
+    Name: "CS11: a bundle saved as a draft confirms — its components are priced at their allocation",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // A draft save expands the bundle and writes each component at its share of the bundle price,
+        // below the component's own price whenever the bundle sells for less than its parts. A one-shot
+        // confirm never showed it, because the gate runs before expansion.
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.BundleA, 80);
+        await CreateProductPrice(ctx, f.Products.BundlePartX, 75);
+        await CreateProductPrice(ctx, f.Products.BundlePartY, 25);
+        await CreateBundleItem(ctx, f.Products.BundleA, f.Products.BundlePartX, { SortOrder: 10 });
+        await CreateBundleItem(ctx, f.Products.BundleA, f.Products.BundlePartY, { SortOrder: 20 });
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.BundleA, Quantity: 1, UnitPrice: 80 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const components = await TxQuery<{ UnitPrice: number }>(
+          ctx,
+          `SELECT UnitPrice FROM ${ORDERS_SCHEMA}.OrderLine
+            WHERE OrderHeaderID = '${built.Order.ID}' AND ParentOrderLineID IS NOT NULL ORDER BY LineNumber`,
+        );
+        AssertEqual(components.map((c) => Number(c.UnitPrice)).join(","), "60,20",
+          "80 across parts of 75 and 25 puts each component below its own price");
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(),
+          `a component's allocation must not hold the confirm: ${built.Order.LatestResult?.CompleteMessage}`);
       }),
   },
 ];

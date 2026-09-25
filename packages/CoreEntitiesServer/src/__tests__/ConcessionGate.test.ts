@@ -45,6 +45,7 @@ const engineAt100 = { EngineUnitPrice: 100, IsEnginePrice: false, IsNamedListPic
 const apiLine = {
     ID: LINE_ID,
     LineNumber: 1,
+    ParentOrderLineID: null as string | null,
     ProductID: 'product-1',
     OrderHeaderID: ORDER_ID,
     Quantity: 2,
@@ -90,6 +91,17 @@ describe('FindUnapprovedConcessions — line prices', () => {
 
         expect(problems).toEqual([expect.stringMatching(/Save the order without confirming it first/)]);
         expect(mockRunView).not.toHaveBeenCalled();
+    });
+
+    it('skips a bundle component, whose price is its share of the bundle price', async () => {
+        // A bundle at 250 of A (100) and B (200) writes A at 83.33 and B at 166.67.
+        const bundleID = '3f2504e0-4f89-41d3-9a0c-0305e82c3303';
+        const component = { ...apiLine, ParentOrderLineID: bundleID, UnitPrice: 83.33, Quantity: 1 };
+        database([], [component]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+        expect(await FindUnapprovedConcessions(ORDER_ID, [{ ...component, PriceStated: true }], true, provider, user)).toEqual([]);
+        expect(mockStanding).not.toHaveBeenCalled();
     });
 
     it('leaves the engine price alone', async () => {
