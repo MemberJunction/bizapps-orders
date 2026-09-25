@@ -4595,7 +4595,7 @@ export const mjBizAppsOrdersSalesAuthoritySchema = z.object({
         * * Field Name: MaxTermExtensionDays
         * * Display Name: Max Term Extension Days
         * * SQL Data Type: int
-        * * Description: Longest term extension, in days, this rep may grant at no charge unaided. NULL means no authority to extend, so every extension goes to approval.`),
+        * * Description: Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.`),
     SalesRepUser: z.string().describe(`
         * * Field Name: SalesRepUser
         * * Display Name: Sales Rep
@@ -18813,7 +18813,7 @@ export class mjBizAppsOrdersSalesAuthorityEntity extends BaseEntity<mjBizAppsOrd
     * * Field Name: MaxTermExtensionDays
     * * Display Name: Max Term Extension Days
     * * SQL Data Type: int
-    * * Description: Longest term extension, in days, this rep may grant at no charge unaided. NULL means no authority to extend, so every extension goes to approval.
+    * * Description: Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.
     */
     get MaxTermExtensionDays(): number | null {
         return this.Get('MaxTermExtensionDays');

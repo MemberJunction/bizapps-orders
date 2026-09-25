@@ -143,6 +143,7 @@ const BOOKED_STATUSES = new Set(['Confirmed']);
  * an allocation points at its adjustment. See `deleteLineDependents` for why the list stops here.
  */
 const REMOVED_LINE_DEPENDENT_ENTITIES = [
+    'MJ_BizApps_Orders: Order Concessions',
     'MJ_BizApps_Orders: Order Line Price Components',
     'MJ_BizApps_Orders: Order Charge Allocations',
     'MJ_BizApps_Orders: Order Adjustment Allocations',
@@ -884,7 +885,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             Quantity: line.Quantity,
             UnitPrice: line.UnitPrice,
             ProductPriceID: line.ProductPriceID,
-            PriceOverridden: line.PriceOverridden === true,
+            PriceStated:
+                line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0,
         }));
         const problems = await FindUnapprovedConcessions(
             this.IsSaved ? this.ID : null,
@@ -1157,6 +1159,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
             for (const row of rows) {
+                // A concession on a draft line goes with the line, decided or not: the line it priced
+                // no longer exists, and the order has committed no customer to it.
+                if ('WithdrawWithDraftLine' in row) row.WithdrawWithDraftLine = true;
                 if (!(await row.Delete())) {
                     throw new Error(
                         `Failed to delete ${entityName} for removed order line ${line.LineNumber}: ` +

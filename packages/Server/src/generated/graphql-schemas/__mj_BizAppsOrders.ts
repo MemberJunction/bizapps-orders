@@ -11968,7 +11968,7 @@ export class mjBizAppsOrdersSalesAuthority_ {
     @Field(() => Float, {nullable: true, description: `Largest concession value, in currency, this rep may grant unaided, whatever form it takes. For a manual discount NULL leaves only MaxDiscountPct in force; for a concession delivered as duration, seats or scope NULL means no authority, so it goes to approval.`}) 
     MaxConcessionValue?: number;
         
-    @Field(() => Int, {nullable: true, description: `Longest term extension, in days, this rep may grant at no charge unaided. NULL means no authority to extend, so every extension goes to approval.`}) 
+    @Field(() => Int, {nullable: true, description: `Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.`}) 
     MaxTermExtensionDays?: number;
         
     @Field({nullable: true}) 

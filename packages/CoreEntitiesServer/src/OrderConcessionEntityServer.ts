@@ -90,8 +90,14 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return super.Save(options);
     }
 
+    /**
+     * Set only by `OrderEntityServer` when it deletes a removed DRAFT line's dependents. A booked order
+     * refuses line removals outright, so this never reaches a concession a customer was committed to.
+     */
+    public WithdrawWithDraftLine = false;
+
     public override async Delete(options?: EntityDeleteOptions): Promise<boolean> {
-        if (this.Status !== 'Pending') {
+        if (this.Status !== 'Pending' && !this.WithdrawWithDraftLine) {
             this.RegisterResultHistoryEntry(
                 this.buildRejection(
                     `This concession is ${this.Status}. A decided concession is the record of that decision and ` +

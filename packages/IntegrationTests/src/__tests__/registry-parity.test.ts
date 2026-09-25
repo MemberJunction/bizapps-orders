@@ -114,7 +114,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'embedded-payment-detail': 14,
     'payment-schedule': 22,
     'party-roster': 2,
-    concessions: 8,
+    concessions: 10,
 };
 
 /**

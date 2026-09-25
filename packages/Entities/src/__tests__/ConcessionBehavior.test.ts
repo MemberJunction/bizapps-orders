@@ -66,12 +66,22 @@ describe('AssessConcession', () => {
         expect(result.WithinAuthority).toBe(false);
         expect(result.Breaches).toHaveLength(2);
         expect(result.Breaches.join(' ')).toMatch(/concession limit/);
-        expect(result.Breaches.join(' ')).toMatch(/90-day extension exceeds the 31-day limit/);
+        expect(result.Breaches.join(' ')).toMatch(/90-day extension is at or above the 31-day limit/);
     });
 
     it('lets a rep grant an extension inside both limits', () => {
         const small = ConcessionValue({ Form: 'Duration', TermAmount: 12000, TermDays: 365, AddedDays: 14 });
         expect(AssessConcession('Duration', small, authority(), 14)).toEqual({ WithinAuthority: true, Breaches: [] });
+    });
+
+    it('escalates an extension at the day limit, and passes one a day short of it', () => {
+        const limit = authority({ MaxTermExtensionDays: 30 });
+        const at = ConcessionValue({ Form: 'Duration', TermAmount: 1200, TermDays: 365, AddedDays: 30 });
+        const under = ConcessionValue({ Form: 'Duration', TermAmount: 1200, TermDays: 365, AddedDays: 29 });
+        expect(AssessConcession('Duration', at, limit, 30).Breaches).toEqual([
+            'a 30-day extension is at or above the 30-day limit',
+        ]);
+        expect(AssessConcession('Duration', under, limit, 29).WithinAuthority).toBe(true);
     });
 
     it('treats an unset extension or value limit as no authority, not as unlimited', () => {

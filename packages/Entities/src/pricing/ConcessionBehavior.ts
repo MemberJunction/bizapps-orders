@@ -158,8 +158,9 @@ export function AssessConcession(
         const days = Math.max(0, Number(addedDays ?? 0));
         if (authority.MaxTermExtensionDays == null) {
             breaches.push('the SalesAuthority sets no MaxTermExtensionDays, so it grants no authority to extend a term');
-        } else if (days > Number(authority.MaxTermExtensionDays)) {
-            breaches.push(`a ${days}-day extension exceeds the ${authority.MaxTermExtensionDays}-day limit`);
+        } else if (days >= Number(authority.MaxTermExtensionDays)) {
+            // At or above: the limit is the length that needs approval, so it reads as the policy does.
+            breaches.push(`a ${days}-day extension is at or above the ${authority.MaxTermExtensionDays}-day limit`);
         }
     }
 

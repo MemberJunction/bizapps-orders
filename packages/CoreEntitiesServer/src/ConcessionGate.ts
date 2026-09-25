@@ -7,9 +7,13 @@
  * documents may not be sent, until every concession on it is decided. Two things hold it back:
  *
  *   1. an `OrderConcession` on the order that is still Pending; and
- *   2. on an order not yet confirmed, a line whose typed price is below its engine price with no
+ *   2. on an order not yet confirmed, a line whose stated price is below its engine price with no
  *      Approved concession covering that value. A named list pick is a configured price, not a
  *      concession, and is left alone.
+ *
+ * Every line with a stated price is re-priced here, not only those flagged `PriceOverridden`. The
+ * flag is set by the order-lines editor; a line priced through the API, an import or an integration
+ * need not carry it, and the gate must not depend on who set it.
  *
  * Confirmed orders are checked for (1) only. Their lines' prices were settled at booking, and lines
  * converted from the previous system carry overrides nobody recorded a concession for.
@@ -78,7 +82,12 @@ export async function FindConcessionLimitRule(
 export interface ConcessionLineFacts extends PricedLineFacts {
     ID: string | null;
     LineNumber: number | null;
-    PriceOverridden: boolean;
+    /**
+     * Whether `UnitPrice` holds a price rather than a blank the engine fills at confirm. A saved line
+     * always does; an unsaved one does when `UnitPrice` is dirty or above zero — the same test
+     * `OrderPricingService.applyResolvedPrice` uses, since 0 is a legitimate price for a free line.
+     */
+    PriceStated: boolean;
 }
 
 /** What a line's typed price gives away, when it gives anything away. */
@@ -120,7 +129,7 @@ export async function LinePriceConcessionFor(
  *
  * @param orderHeaderID  null for an order not yet saved — it can have no concession rows yet.
  * @param inMemoryLines  lines the caller holds, which win over their persisted copies.
- * @param includeLinePrices  check typed prices too (orders not yet confirmed).
+ * @param includeLinePrices  check stated prices too (orders not yet confirmed).
  */
 export async function FindUnapprovedConcessions(
     orderHeaderID: string | null,
@@ -141,13 +150,23 @@ export async function FindUnapprovedConcessions(
 
     if (!includeLinePrices) return problems;
 
-    for (const line of await overriddenLines(orderHeaderID, inMemoryLines, provider, user)) {
+    for (const line of await statedPriceLines(orderHeaderID, inMemoryLines, provider, user)) {
         const concession = await LinePriceConcessionFor(line, provider, user);
         if (!concession) continue;
+        // A concession is recorded against a saved line, so a line not yet saved cannot have one —
+        // tell the rep how to get one rather than that none is recorded.
+        if (!orderHeaderID || !line.ID) {
+            problems.push(
+                `line ${line.LineNumber ?? '?'} is priced at ${Number(line.UnitPrice ?? 0).toFixed(2)} against an engine ` +
+                    `price of ${concession.EngineUnitPrice.toFixed(2)}, a concession worth ` +
+                    `${concession.Valuation.Value.toFixed(2)}. Save the order without confirming it first, then record ` +
+                    `the ${concession.Form} concession against the line and confirm once it is approved`,
+            );
+            continue;
+        }
         const approved = rows.some(
             (r) =>
                 r.Status === 'Approved' &&
-                !!line.ID &&
                 sameID(r.OrderLineID, line.ID) &&
                 (r.DeliveryForm === 'Price' || r.DeliveryForm === 'Scope') &&
                 Number(r.ComputedValue) + MONEY_TOLERANCE >= concession.Valuation.Value,
@@ -189,14 +208,14 @@ async function loadConcessions(
     return res?.Results ?? [];
 }
 
-/** Overridden lines: the caller's, plus persisted ones the caller does not hold. */
-async function overriddenLines(
+/** Lines with a stated price: the caller's, plus persisted ones the caller does not hold. */
+async function statedPriceLines(
     orderHeaderID: string | null,
     inMemoryLines: readonly ConcessionLineFacts[],
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<ConcessionLineFacts[]> {
-    const lines = inMemoryLines.filter((l) => l.PriceOverridden && !!l.ProductID);
+    const lines = inMemoryLines.filter((l) => l.PriceStated && !!l.ProductID);
     if (!orderHeaderID) return lines;
 
     const held = new Set(inMemoryLines.map((l) => (l.ID ?? '').toLowerCase()).filter(Boolean));
@@ -204,8 +223,8 @@ async function overriddenLines(
     const res = await rv.RunView<ConcessionLineFacts>(
         {
             EntityName: ORDER_LINE_ENTITY,
-            ExtraFilter: `OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}' AND PriceOverridden = 1`,
-            Fields: ['ID', 'LineNumber', 'ProductID', 'OrderHeaderID', 'Quantity', 'UnitPrice', 'ProductPriceID', 'PriceOverridden'],
+            ExtraFilter: `OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
+            Fields: ['ID', 'LineNumber', 'ProductID', 'OrderHeaderID', 'Quantity', 'UnitPrice', 'ProductPriceID'],
             ResultType: 'simple',
             BypassCache: true,
         },
@@ -214,7 +233,7 @@ async function overriddenLines(
     for (const row of res?.Results ?? []) {
         const key = (row.ID ?? '').toLowerCase();
         if (held.has(key)) continue;
-        lines.push({ ...row, PriceOverridden: true });
+        lines.push({ ...row, PriceStated: true });
     }
     return lines;
 }

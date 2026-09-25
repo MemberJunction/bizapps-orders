@@ -157,7 +157,7 @@ export const ConcessionChecks: NamedCheck[] = [
   },
   {
     Id: "concessions.CS2",
-    Name: "CS2: a no-charge extension is valued at the term's own rate and escalates past the limits",
+    Name: "CS2: a no-charge extension is valued at the term's own rate and escalates at the day limit",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -165,10 +165,12 @@ export const ConcessionChecks: NamedCheck[] = [
         await grantAuthority(ctx, { maxPct: 0.1, maxValue: 100, maxDays: 30 });
         const ruleID = await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
 
-        const c = await recordConcession(ctx, { DeliveryForm: "Duration", SubscriptionTermID: Term.ID, AddedDays: 90 });
+        // 30 days against a 30-day limit: at the limit is outside it. The value stays under the value
+        // limit, so the day limit alone decides it.
+        const c = await recordConcession(ctx, { DeliveryForm: "Duration", SubscriptionTermID: Term.ID, AddedDays: 30 });
         Assert(c.Saved, `recording failed: ${c.Message}`);
-        AssertEqual(c.Entity.Status, "Pending", "outside authority, the concession waits for approval");
-        const expected = Math.round((Number(Term.Amount) * 90 / termDays(Term)) * 100) / 100;
+        AssertEqual(c.Entity.Status, "Pending", "an extension at the day limit waits for approval");
+        const expected = Math.round((Number(Term.Amount) * 30 / termDays(Term)) * 100) / 100;
         AssertEqual(Number(c.Entity.ComputedValue), expected, "valued at the term's amount over its length");
         Assert(Number(c.Entity.ComputedValue) > 0, "a free extension is not worth zero");
         AssertEqual(String(c.Entity.OrderHeaderID).toLowerCase(), OrderID.toLowerCase(), "stamped to the order that bought the term");
@@ -318,6 +320,62 @@ export const ConcessionChecks: NamedCheck[] = [
         });
         Assert(!result.Saved, "10% is inside the cap, but 100 is over the 50 limit — it must escalate");
         Assert(/concession limit/.test(result.Message), `the refusal should name the value limit, got: ${result.Message}`);
+      }),
+  },
+  {
+    Id: "concessions.CS9",
+    Name: "CS9: a line priced through the API without PriceOverridden still holds the confirm",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // The order-lines editor sets PriceOverridden when a rep types a price; an API caller, an import
+        // or an integration need not. The gate re-prices every line with a stated price, so the flag is
+        // not what decides it.
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxPct: 0.5, maxValue: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2, UnitPrice: 60 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        Assert(built.Lines[0].PriceOverridden !== true, "the line must reach the gate unflagged");
+
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "an unflagged price below the engine's must hold the confirm");
+        Assert(/line 1 is priced at 60\.00/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should name the line, got: ${built.Order.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS10",
+    Name: "CS10: removing a draft line removes its concession, even an approved one",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxPct: 0.5, maxValue: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2, UnitPrice: 60 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID });
+        Assert(c.Saved && c.Entity.Status === "Approved", `expected an Approved concession: ${c.Message}`);
+
+        built.Order.Lines.Remove(built.Order.Lines.Items[0]);
+        Assert(await built.Order.Save(), `removing the line must save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const left = await TxOne<{ N: number }>(
+          ctx,
+          `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID = '${c.Entity.ID}'`,
+        );
+        AssertEqual(Number(left.N), 0, "the concession went with its line");
       }),
   },
 ];

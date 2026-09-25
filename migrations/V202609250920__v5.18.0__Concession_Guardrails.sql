@@ -38,7 +38,7 @@ GO
 
 EXEC sp_addextendedproperty
     @name = N'MS_Description',
-    @value = N'Longest term extension, in days, this rep may grant at no charge unaided. NULL means no authority to extend, so every extension goes to approval.',
+    @value = N'Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'SalesAuthority',
     @level2type = N'COLUMN', @level2name = N'MaxTermExtensionDays';
@@ -515,7 +515,7 @@ GO
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '29E748BF-E356-4AC1-BCE5-71E05279BAF8'),
             'MaxTermExtensionDays',
             'Max Term Extension Days',
-            'Longest term extension, in days, this rep may grant at no charge unaided. NULL means no authority to extend, so every extension goes to approval.',
+            'Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.',
             'int',
             4,
             10,
