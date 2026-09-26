@@ -197,6 +197,7 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
         deleteLineDependents: vi.fn().mockResolvedValue(undefined),
         expandBundles: vi.fn().mockResolvedValue(undefined),
         prepareLines: vi.fn().mockResolvedValue(undefined),
+        inheritReversalAddresses: vi.fn().mockResolvedValue(undefined),
         saveTaxReasons: vi.fn().mockResolvedValue(undefined),
         // Deriving a line's GL dimensions runs after the line loop and reaches for accounting's
         // vocabulary. The removal ORDER is what this file pins; the tagging is its own subject.

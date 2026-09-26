@@ -40,6 +40,12 @@ interface FakeLine {
 
 type SnapshotOrder = {
     stampAddressSnapshots(mode: 'confirm' | 'fill'): Promise<void>;
+    inheritReversalAddresses(): Promise<void>;
+    recordInheritedAddress(entity: unknown, snapshotField: string, addressID: string, snapshot: string | null): void;
+    BillToAddressID: string | null;
+    ShipToAddressID: string | null;
+    ReversesOrderHeaderID: string | null;
+    MoneyLocked: boolean;
     BillToAddressSnapshot: string | null;
     ShipToAddressSnapshot: string | null;
     addressSnapshotsStamped: boolean;
@@ -61,6 +67,9 @@ function orderWith(
         BillToAddressSnapshot: stored.BillToAddressSnapshot ?? null,
         ShipToAddressSnapshot: stored.ShipToAddressSnapshot ?? null,
         OrderNumber: 'ORD-000200',
+        ReversesOrderHeaderID: null,
+        MoneyLocked: false,
+        _inheritedAddresses: new Map(),
         GetFieldByName: (name: string) => ({ OldValue: stored[name as keyof typeof stored] ?? null }),
     })) {
         Object.defineProperty(instance, name, { value, writable: true });
@@ -222,5 +231,90 @@ describe('OrderEntityServer.stampAddressSnapshots — fill, on a booked order', 
         await expect(orderWith(BILL, null, [], { BillToAddressID: BILL }).stampAddressSnapshots('confirm')).rejects.toThrow(
             /does not exist or is not visible to you/,
         );
+    });
+});
+
+describe('OrderEntityServer — a reversal takes its addresses from the order it reverses', () => {
+    const ORIGIN = '55555555-5555-4555-8555-555555555555';
+    const soldBill = JSON.stringify({ AddressID: BILL, Line1: 'as sold', Line2: null, Line3: null, City: 'Columbus', StateProvince: 'OH', PostalCode: '43004', Country: 'US' });
+    const soldLine = JSON.stringify({ AddressID: LINE_SHIP, Line1: 'venue as sold', Line2: null, Line3: null, City: 'Boise', StateProvince: 'ID', PostalCode: '83702', Country: 'US' });
+    const originHeader = (over: Record<string, string | null> = {}) => ({
+        BillToAddressID: BILL,
+        ShipToAddressID: SHIP,
+        BillToAddressSnapshot: soldBill,
+        ShipToAddressSnapshot: null,
+        ...over,
+    });
+
+    it('fills blank addresses from the origin, and confirm keeps the origin snapshot instead of re-reading the row', async () => {
+        const order = orderWith(null, null, []);
+        order.ReversesOrderHeaderID = ORIGIN;
+        mockRunView.mockResolvedValueOnce({ Success: true, Results: [originHeader()] });
+
+        await order.inheritReversalAddresses();
+        expect(order.BillToAddressID).toBe(BILL);
+        expect(order.ShipToAddressID).toBe(SHIP);
+
+        mockRunView.mockResolvedValueOnce({ Success: true, Results: ROWS });
+        await order.stampAddressSnapshots('confirm');
+
+        // The bill-to came with a snapshot: the sale's, not the edited row's.
+        expect(ParseAddressSnapshot(order.BillToAddressSnapshot)?.StateProvince).toBe('OH');
+        // The origin had no ship-to snapshot, so that one is read from its row.
+        expect(ParseAddressSnapshot(order.ShipToAddressSnapshot)?.StateProvince).toBe('TX');
+        const read = mockRunView.mock.calls[1][0] as { ExtraFilter: string };
+        expect(read.ExtraFilter).not.toContain(BILL);
+        expect(read.ExtraFilter).toContain(SHIP);
+    });
+
+    it('keeps an address the reversal states itself', async () => {
+        const order = orderWith(LINE_SHIP, null, []);
+        order.ReversesOrderHeaderID = ORIGIN;
+        mockRunView.mockResolvedValueOnce({ Success: true, Results: [originHeader()] });
+
+        await order.inheritReversalAddresses();
+
+        expect(order.BillToAddressID).toBe(LINE_SHIP);
+        expect(order.ShipToAddressID).toBe(SHIP);
+    });
+
+    it('reads nothing for an order that reverses nothing, or one already booked', async () => {
+        await orderWith(null, null, []).inheritReversalAddresses();
+        const booked = orderWith(null, null, []);
+        booked.ReversesOrderHeaderID = ORIGIN;
+        booked.MoneyLocked = true;
+        await booked.inheritReversalAddresses();
+
+        expect(mockRunView).not.toHaveBeenCalled();
+        expect(booked.BillToAddressID).toBeNull();
+    });
+
+    it('refuses when the origin order cannot be read', async () => {
+        const order = orderWith(null, null, []);
+        order.ReversesOrderHeaderID = ORIGIN;
+        mockRunView.mockResolvedValueOnce({ Success: false, Results: [], ErrorMessage: 'timeout' });
+
+        await expect(order.inheritReversalAddresses()).rejects.toThrow(/order this one reverses: timeout/);
+    });
+
+    it("gives a reversal line its origin line's snapshot", async () => {
+        const reversal = line(1, LINE_SHIP);
+        const order = orderWith(null, null, [reversal]);
+        order.recordInheritedAddress(reversal, 'ShipToAddressSnapshot', LINE_SHIP, soldLine);
+
+        await order.stampAddressSnapshots('confirm');
+
+        expect(mockRunView).not.toHaveBeenCalled();
+        expect(ParseAddressSnapshot(reversal.ShipToAddressSnapshot)?.StateProvince).toBe('ID');
+    });
+
+    it('reads the row when the address was changed after it was inherited', async () => {
+        const reversal = line(1, LINE_SHIP);
+        const order = orderWith(null, null, [reversal]);
+        order.recordInheritedAddress(reversal, 'ShipToAddressSnapshot', SHIP, soldLine);
+
+        await order.stampAddressSnapshots('confirm');
+
+        expect(ParseAddressSnapshot(reversal.ShipToAddressSnapshot)?.StateProvince).toBe('CO');
     });
 });

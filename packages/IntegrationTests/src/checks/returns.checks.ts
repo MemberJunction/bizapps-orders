@@ -91,6 +91,7 @@ function returnAgainst(
     discountPct?: number;
     addressKey?: string;
     servicePeriod?: { Start: string; End: string };
+    reversesOrderHeaderID?: string;
   },
 ) {
   const f = Fx();
@@ -99,6 +100,7 @@ function returnAgainst(
     OrderType: "Return",
     BillToOrganizationID: f.Customers.OrganizationID,
     ShipToAddressID: opts.addressKey ? f.Tax.AddressIDs.get(opts.addressKey) : undefined,
+    ReversesOrderHeaderID: opts.reversesOrderHeaderID,
     Lines: [
       {
         ProductID: opts.productID,
@@ -652,6 +654,87 @@ export const ReturnsChecks: NamedCheck[] = [
           back.map((r) => r.On).join(","),
           sold.map((r) => r.On).join(","),
           "on the same dates — a monthly cut would put twelve entries here, on dates the sale never used",
+        );
+      }),
+  },
+  {
+    Id: "returns.RT15",
+    Name: "RT15: a return that names no address refunds the sale's tax and takes the sale's address",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await grantNexus(ctx, ["CA", "CA-SANTACLARA"]);
+        const sale = await sell(ctx, { price: 100, quantity: 4, addressKey: "SantaClara" });
+        const sold = await lineTotals(ctx, sale.Order.ID as string);
+        Assert(Number(sold.Tax) > 0, "the sale must actually be taxed, or this check proves nothing");
+
+        // Built the way the return page builds one: the customer and the origin order, no address.
+        const ret = await returnAgainst(ctx, sale.Lines[0].ID as string, {
+          productID: f.Products.WidgetA,
+          quantity: 4,
+          reversesOrderHeaderID: sale.Order.ID as string,
+        });
+        Assert(ret.Saved, `confirm failed: ${ret.Message}`);
+
+        const back = await lineTotals(ctx, ret.Order.ID as string);
+        AssertEqual(Number(back.Tax), -Number(sold.Tax), "no address on the return, and still the full tax back");
+        const header = await TxOne<{ Ship: string | null; Snapshot: string | null; OriginSnapshot: string | null }>(
+          ctx,
+          `SELECT r.ShipToAddressID AS Ship, r.ShipToAddressSnapshot AS Snapshot, o.ShipToAddressSnapshot AS OriginSnapshot
+             FROM ${ORDERS_SCHEMA}.OrderHeader r
+             JOIN ${ORDERS_SCHEMA}.OrderHeader o ON o.ID = '${sale.Order.ID}'
+            WHERE r.ID = '${ret.Order.ID}'`,
+        );
+        AssertEqual(
+          String(header.Ship ?? "").toLowerCase(),
+          String(f.Tax.AddressIDs.get("SantaClara")).toLowerCase(),
+          "the return ships to the sale's address",
+        );
+        AssertEqual(header.Snapshot, header.OriginSnapshot, "and keeps the sale's snapshot of it");
+      }),
+  },
+  {
+    Id: "returns.RT16",
+    Name: "RT16: a return shipping elsewhere refunds the tax the SALE collected, in the sale's jurisdictions",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await grantNexus(ctx, ["CA", "CA-SANTACLARA", "MD"]);
+        const sale = await sell(ctx, { price: 100, quantity: 4, addressKey: "SantaClara" });
+        const sold = await lineTotals(ctx, sale.Order.ID as string);
+
+        // Maryland taxes at 6%; Santa Clara at 9.125%. Re-resolving would refund Maryland's rate.
+        const ret = await returnAgainst(ctx, sale.Lines[0].ID as string, {
+          productID: f.Products.WidgetA,
+          quantity: 1,
+          addressKey: "Maryland",
+        });
+        Assert(ret.Saved, `confirm failed: ${ret.Message}`);
+
+        const back = await lineTotals(ctx, ret.Order.ID as string);
+        AssertEqual(
+          Math.round(Number(back.Tax) * 100) / 100,
+          Math.round(-Number(sold.Tax) / 4 * 100) / 100,
+          "a quarter of the tax the sale collected, not a quarter of Maryland's",
+        );
+        const byJurisdiction = (orderID: string) =>
+          TxQuery<{ J: string; Amount: number }>(
+            ctx,
+            `SELECT LOWER(CONVERT(varchar(36), c.TaxJurisdictionID)) AS J, SUM(c.Amount) AS Amount
+               FROM ${ORDERS_SCHEMA}.OrderCharge c
+               JOIN ${ORDERS_SCHEMA}.ChargeType t ON t.ID = c.ChargeTypeID
+              WHERE c.OrderHeaderID = '${orderID}' AND t.Category = 'Tax'
+              GROUP BY c.TaxJurisdictionID
+              ORDER BY 1`,
+          );
+        const soldJ = await byJurisdiction(sale.Order.ID as string);
+        const backJ = await byJurisdiction(ret.Order.ID as string);
+        AssertEqual(
+          backJ.map((r) => r.J).join(","),
+          soldJ.map((r) => r.J).join(","),
+          "the refund is recorded against the jurisdictions that collected the tax",
         );
       }),
   },

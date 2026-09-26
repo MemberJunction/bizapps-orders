@@ -65,8 +65,8 @@ import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
-import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
-import { LoadReversalContext } from './ReversalResolver.js';
+import { InheritedTerms, MirroredTaxCharges, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
+import { LoadOriginTaxCharges, LoadReversalContext, OriginBilledByInstalment } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
@@ -258,6 +258,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
     /** Codes that resolved to nothing usable, so the caller can tell the customer WHY. */
     private _unusableCodes: Array<{ Code: string; Reason: string }> = [];
+
+    /** Each reversal line's tax, mirrored from its origin by `applyReversalOrigin` (D16). */
+    private _settledTax = new Map<mjBizAppsOrdersOrderLineEntity, MirroredTaxCharge[]>();
+
+    /**
+     * Addresses a reversal took from the order it reverses, with the origin's snapshot of each, keyed
+     * by the record and its snapshot field. `stampAddressSnapshots` copies the origin's snapshot
+     * rather than re-reading an Address row that may have been edited since the sale.
+     */
+    private _inheritedAddresses = new Map<BaseEntity, Map<string, { AddressID: string; Snapshot: string | null }>>();
 
     // `PromotionCodes` is not declared here any more. It is a COMPANION on the shared subclass, so
     // the browser has it too — which is the entire point: a code typed on screen used to be priced
@@ -547,6 +557,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
             await this.expandBundles();
             const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
                 booking ? await this.decideSubscriptions() : new Map();
+            // Ahead of pricing, so an ordinary line on a reversal order is taxed at the address the
+            // order will show. Reversal lines take their tax from their origin and ignore it.
+            await this.inheritReversalAddresses();
             await this.prepareLines(decisions);
 
             // THE ADDRESS AS SOLD, copied onto the order at the first confirm (golive #263).
@@ -908,6 +921,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // Lines whose money came from the line they reverse (D16) rather than from the price table.
         // The pricing service is told to leave these alone.
         const settledFromOrigin = new Set<mjBizAppsOrdersOrderLineEntity>();
+        this._settledTax = new Map();
 
         for (const line of this.Lines.Items) {
             // Scale the QUANTITY, not DiscountPct: a short first period is not a concession, and
@@ -982,6 +996,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 PromotionCodes: this.PromotionCodes.Codes,
                 ManualDiscounts: this._manualDiscounts,
                 Charges: this._charges,
+                SettledTax: this._settledTax,
             },
             settledFromOrigin,
         );
@@ -1589,7 +1604,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const old = t.entity.GetFieldByName(t.idField)?.OldValue;
             return typeof old === 'string' && UUIDsEqual(old, addressID(t));
         };
-        const needsRead = (t: Target): boolean => !!addressID(t) && (mode === 'confirm' || !stored(t));
+        /** The origin's snapshot, when this address was taken from the order a reversal reverses. */
+        const inherited = (t: Target): string | null => {
+            const from = this._inheritedAddresses.get(t.entity)?.get(t.snapshotField);
+            return from?.Snapshot && UUIDsEqual(from.AddressID, addressID(t)) ? from.Snapshot : null;
+        };
+        const needsRead = (t: Target): boolean =>
+            !!addressID(t) && (mode === 'confirm' ? !inherited(t) : !stored(t));
 
         const ids = targets.filter(needsRead).map((t) => addressID(t) as string);
         const byID = new Map<string, AddressLike>();
@@ -1614,7 +1635,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         for (const t of targets) {
             let value: string | null;
             if (!needsRead(t)) {
-                value = mode === 'confirm' ? null : stored(t);
+                value = mode === 'confirm' ? inherited(t) : stored(t);
             } else {
                 const id = addressID(t) as string;
                 const row = byID.get(id.toLowerCase());
@@ -1632,6 +1653,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             t.write(value);
         }
         this.addressSnapshotsStamped = true;
+        this._inheritedAddresses = new Map();
     }
 
     /** The header's rollup columns as the DATABASE now holds them, after the payment triggers ran. */
@@ -1786,11 +1808,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // together, are each within the original while their sum is not — and neither is in the
         // database yet for `LoadReversalContext` to have seen.
         let siblingReversed = 0;
+        // The siblings AHEAD of this line, which the tax refund's cumulative rounding counts as
+        // already taken — see `MirroredTaxCharges`.
+        let siblingsBefore = 0;
+        let ahead = true;
         for (const other of this.Lines.Items) {
-            if (other === line) continue;
+            if (other === line) {
+                ahead = false;
+                continue;
+            }
             const otherReverses = other.ReversesOrderLineID;
             if (otherReverses && uuidKey(otherReverses) === uuidKey(reverses)) {
                 siblingReversed += Math.abs(Number(other.Quantity ?? 0));
+                if (ahead) siblingsBefore += Math.abs(Number(other.Quantity ?? 0));
             }
         }
 
@@ -1843,7 +1873,79 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (!line.ServicePeriodEnd && terms.ServicePeriodEnd) {
             line.ServicePeriodEnd = new Date(terms.ServicePeriodEnd);
         }
+
+        // THE TAX IT COLLECTED, in the jurisdictions that collected it. Resolved from the return's
+        // own address and date instead, the refund was taxed wherever the customer is now, at
+        // today's rate — or not at all, since a return names no address unless someone picks one.
+        //
+        // NONE for a line billed by instalment. Its tax reaches the ledger one instalment at a time,
+        // so the tax on the line is the whole contract's, and a share of it would debit Sales Tax
+        // Payable for tax that was never invoiced. The empty entry keeps the line from being
+        // resolved from the address instead.
+        const byInstalment = await OriginBilledByInstalment(context.Origin, provider, user);
+        const originTax = byInstalment ? [] : await LoadOriginTaxCharges(context.Origin.ID, provider, user);
+        this._settledTax.set(
+            line,
+            byInstalment
+                ? []
+                : MirroredTaxCharges(context.Origin, originTax, context.AlreadyReversed + siblingsBefore, Number(line.Quantity ?? 0)),
+        );
+
+        // THE LINE'S SHIP-TO, when the origin line had its own. Filled only when blank and only
+        // before the order is booked — a booked line's address is set once.
+        if (!this.MoneyLocked && !line.ShipToAddressID && context.Origin.ShipToAddressID) {
+            line.ShipToAddressID = context.Origin.ShipToAddressID;
+            this.recordInheritedAddress(line, 'ShipToAddressSnapshot', context.Origin.ShipToAddressID, context.Origin.ShipToAddressSnapshot ?? null);
+        }
         return true;
+    }
+
+    private recordInheritedAddress(entity: BaseEntity, snapshotField: string, addressID: string, snapshot: string | null): void {
+        const fields = this._inheritedAddresses.get(entity) ?? new Map();
+        fields.set(snapshotField, { AddressID: addressID, Snapshot: snapshot });
+        this._inheritedAddresses.set(entity, fields);
+    }
+
+    /**
+     * A reversal order takes its bill-to and ship-to addresses from the order it reverses, when it
+     * states none of its own. Only before the order is booked: a booked order's addresses are set
+     * once, and the snapshot that goes with them is taken at confirm.
+     */
+    private async inheritReversalAddresses(): Promise<void> {
+        const originID = this.ReversesOrderHeaderID;
+        if (!originID || this.MoneyLocked) return;
+        if (this.BillToAddressID && this.ShipToAddressID) return;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<{
+            BillToAddressID: string | null;
+            ShipToAddressID: string | null;
+            BillToAddressSnapshot: string | null;
+            ShipToAddressSnapshot: string | null;
+        }>(
+            {
+                EntityName: ORDER_ENTITY,
+                ExtraFilter: `ID = '${RequireUUID(originID, 'ReversesOrderHeaderID')}'`,
+                Fields: ['BillToAddressID', 'ShipToAddressID', 'BillToAddressSnapshot', 'ShipToAddressSnapshot'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser as UserInfo,
+        );
+        if (!result.Success) {
+            throw new Error(`Could not read the addresses of the order this one reverses: ${result.ErrorMessage}`);
+        }
+        const origin = result.Results[0];
+        if (!origin) return;
+
+        if (!this.BillToAddressID && origin.BillToAddressID) {
+            this.BillToAddressID = origin.BillToAddressID;
+            this.recordInheritedAddress(this, 'BillToAddressSnapshot', origin.BillToAddressID, origin.BillToAddressSnapshot);
+        }
+        if (!this.ShipToAddressID && origin.ShipToAddressID) {
+            this.ShipToAddressID = origin.ShipToAddressID;
+            this.recordInheritedAddress(this, 'ShipToAddressSnapshot', origin.ShipToAddressID, origin.ShipToAddressSnapshot);
+        }
     }
 
 
