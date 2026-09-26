@@ -1,5 +1,26 @@
 # @mj-biz-apps/orders-entities
 
+## 5.19.0
+
+### Minor Changes
+
+- 8ee3f8d: Register the metadata `V202609221500` left behind for `DimensionDefault`'s name fields (golive #236 follow-up).
+
+  `V202609221500` created `vwDimensionDefaults` with three denormalized name columns — `Entity`, `Dimension` and `DimensionValue` — but registered `EntityField` rows for the table's eleven columns only. On any database built from migrations alone the view has 14 columns against 11 registered fields, and every `DimensionDefault` INSERT fails with `Column name or number of supplied values does not match table definition`, so no product can carry a default dimension. `V202609252100` inserts the three rows, guarded on `(EntityID, Name)` and sequenced with the apply-time `MAX + 1` expression. Data only — no schema change and no CodeGen output.
+
+- e7680ea: Keep each order's customer address as it was at the time of sale.
+
+  Confirming an order now copies its bill-to and ship-to addresses, and each line's own ship-to, onto
+  the order as JSON (`OrderHeader.BillToAddressSnapshot`, `ShipToAddressSnapshot`,
+  `OrderLine.ShipToAddressSnapshot`). The invoice, the order form and the order document read the
+  snapshot on a confirmed order, so editing a customer's address no longer moves their earlier sales.
+
+  Once an order is confirmed, an address it names cannot be replaced or cleared; an empty one can be
+  filled once, and the server snapshots it on that save. The entity refuses the edit, and triggers
+  51015 (header) and 51016 (line) refuse it at the database. Draft and Quoted orders keep following
+  the live address. The migration backfills snapshots for orders that are already Confirmed, from
+  their current Address rows.
+
 ## 5.18.0
 
 ### Minor Changes
@@ -136,8 +157,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-          The INSERT statement conflicted with the FOREIGN KEY constraint
-          "FK_EntityFieldValue_EntityField"
+            The INSERT statement conflicted with the FOREIGN KEY constraint
+            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
