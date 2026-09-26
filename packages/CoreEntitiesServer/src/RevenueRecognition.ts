@@ -23,6 +23,7 @@
  *   CALLER: OrderJournalEntryFactory (./OrderJournalEntryFactory.ts)
  */
 import { RegisterClass } from '@memberjunction/global';
+import type { mjBizAppsOrdersOrderLineProgressMeasurementEntity } from '@mj-biz-apps/orders-entities';
 
 /** What a driver is given. Deliberately plain data — no entities, no provider, no I/O. */
 export interface RevRecContext {
@@ -157,7 +158,104 @@ export class AllBackEndDriver extends RevenueRecognitionDriver {
     }
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Percentage-of-completion — a SECOND family, not a fourth driver (plan §9.1, D90).
+ *
+ * The drivers above answer "given what we know at booking, when is this earned?" and run once.
+ * Percentage-of-completion answers "given what we now know about progress, how much should be
+ * earned TO DATE?" — which is not knowable at booking and cannot be expressed as
+ * `BuildSchedule(context) → entries` without the method lying about its contract. A POC type is
+ * `IsDeferred = 1` + `ScheduleBasis = 'OnMeasurement'`: it books to Deferred Revenue and stages NO
+ * release entries; `Orders.RecordProgress` posts the catch-up as observations arrive.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * One observation, as the driver sees it: the three measurement columns of the row it came from.
+ *
+ * TAKEN FROM THE GENERATED ENTITY rather than restated. A hand-written interface mirroring entity
+ * columns is an MJ anti-pattern (Amith): it compiles happily after the schema moves underneath it,
+ * so the first sign of drift is a wrong number rather than a build error. `Pick` keeps the
+ * compiler's opinion authoritative — rename or retype one of these columns and every driver that
+ * reads it stops building.
+ *
+ * `Partial`, because a driver is given whatever the attestation supplied: `ManualAttestation` needs
+ * only `PercentComplete`, a cost-to-cost driver would need only the other two, and requiring all
+ * three would make every caller pass nulls it has no opinion about. The entity's own nullability is
+ * preserved underneath — this widens optionality, it does not restate the types.
+ */
+export type ProgressMeasurement = Partial<
+    Pick<mjBizAppsOrdersOrderLineProgressMeasurementEntity, 'PercentComplete' | 'MeasureNumerator' | 'MeasureDenominator'>
+>;
+
+/**
+ * Base progress driver. Subclass and register under a `MethodCode`:
+ *
+ *     @RegisterClass(ProgressRecognitionDriver, 'CostToCost')
+ *     export class CostToCostDriver extends ProgressRecognitionDriver { ... }
+ *
+ * Only `ManualAttestation` ships: nothing in this system holds cost or units today (plan §9.4).
+ */
+export abstract class ProgressRecognitionDriver {
+    /** Cumulative fraction earned, from one observation. Pure: no I/O. Throws on an unusable input. */
+    public abstract PercentComplete(m: ProgressMeasurement): number;
+}
+
+/**
+ * ManualAttestation — a named person states the cumulative percent and signs it. The number may
+ * have been derived anywhere; what posts is the attestation (D90).
+ */
+@RegisterClass(ProgressRecognitionDriver, 'ManualAttestation')
+export class ManualAttestationDriver extends ProgressRecognitionDriver {
+    public PercentComplete(m: ProgressMeasurement): number {
+        const p = Number(m.PercentComplete);
+        if (!Number.isFinite(p) || p < 0 || p > 1) {
+            throw new Error(`PercentComplete must be a fraction between 0 and 1 (got ${String(m.PercentComplete)}).`);
+        }
+        return p;
+    }
+}
+
+/** What one observation should post (plan §9.2). */
+export interface CatchUp {
+    /** LineTotalNet × percent, to the cent. At 100% it IS the line amount. */
+    Target: number;
+    /** Target − recognisedToDate. Negative on a backward slide; zero means "write nothing". */
+    Delta: number;
+}
+
+/**
+ * Cumulative catch-up: the entry is the difference between what the observation says should be
+ * earned to date and what already is. The backward-slide case is not a feature — it is what the
+ * subtraction does. Same `money()` rounding as OrderJournalEntryFactory, so the final catch-up at
+ * 100% lands the remaining cent regardless of rounding history.
+ */
+export function ComputeCatchUp(lineNet: number, percentComplete: number, recognizedToDate: number): CatchUp {
+    const target = money(lineNet * percentComplete);
+    return { Target: target, Delta: money(target - recognizedToDate) };
+}
+
+/**
+ * Does a recognition entry post mirrored — debit and credit swapped — for this line and this delta?
+ *
+ * TWO SIGNS, AND THEY ARE DIFFERENT THINGS. A line's own sign says which direction its revenue runs:
+ * a reversal line (`Quantity < 0`) unwinds revenue, so its ORDINARY forward progress posts as an
+ * unrecognition. The event's sign says which way this particular observation moved: a backward slide
+ * takes revenue back out. Each one alone flips the entry; both together flip it twice, which is not
+ * a flip at all — un-un-recognising is recognising.
+ *
+ * So the rule is exclusive-or, and every other combination gets one of the four cases wrong. Taking
+ * the delta alone — which is what this did before — makes a reversal line's forward catch-up post as
+ * a RECOGNITION of revenue on a line whose whole purpose is to remove it. It balances, and nothing
+ * downstream reports it.
+ *
+ * A pure function rather than an expression inside the factory because it is the one piece of that
+ * method with four cases and no I/O, which is exactly the part worth pinning in a test.
+ */
+export function RecognitionMirrors(lineQuantity: number, delta: number): boolean {
+    return Number(lineQuantity) < 0 !== delta < 0;
+}
+
 /** Tree-shaking anchor — the shipped drivers must be registered before booking runs. */
 export function LoadRevenueRecognitionDrivers(): void {
-    // intentionally empty
+    void ManualAttestationDriver;
 }

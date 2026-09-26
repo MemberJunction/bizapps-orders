@@ -81,7 +81,7 @@ import {
     UnbilledReceivableNotLinkedError,
     type GLRole,
 } from './GLAccountResolver.js';
-import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
+import { RecognitionMirrors, RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
 import { MergeLineDimensions } from './LineDimensionMerge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
@@ -133,6 +133,8 @@ interface RevRecTypeRow {
     Code: string;
     DriverClass: string;
     IsDeferred: boolean;
+    /** 'AtBooking' stages the whole schedule here; 'OnMeasurement' (POC) stages nothing (D90). */
+    ScheduleBasis: string;
 }
 
 interface LineDimensionRow {
@@ -757,7 +759,10 @@ export class OrderJournalEntryFactory {
             : [];
 
         // ── the forward-dated releases (D14/D43) ──
-        if (revRec.IsDeferred && !isGiftCard) {
+        // A percentage-of-completion type (ScheduleBasis 'OnMeasurement', D90) is deferred but its
+        // schedule is not knowable at booking: the credit parks in Deferred Revenue above and
+        // Orders.RecordProgress releases it as progress is attested. Nothing is staged here.
+        if (revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard) {
             // A subscription line's coverage window comes from its TERM (which applied anchoring,
             // deferral and proration); a non-subscription deferred line uses the line's own dates.
             const schedule = this.driverFor(revRec).BuildSchedule({
@@ -838,6 +843,148 @@ export class OrderJournalEntryFactory {
                 err,
             );
         }
+    }
+
+    /**
+     * The catch-up entry for one progress observation on a percentage-of-completion line (D90):
+     * The catch-up entry for one progress observation on a percentage-of-completion line (D90),
+     * under RULE 2 (D92):
+     *
+     *     Cr  Sales                |delta| + this catch-up's share of the discount   (gross share)
+     *         Dr  Deferred Revenue     the line's deferred balance, max(0, B − R), up to |delta|
+     *         Dr  Unbilled Receivable  whatever is left — revenue earned ahead of billing
+     *         Dr  Sales Discounts      this catch-up's share of the discount, when an account links
+     *
+     * WHICH CONTRA ACCOUNT IS NOT THIS LINE'S CHOICE. It follows from the gap between what the line
+     * has been billed and what it has earned, which is the same question `SplitContraLegs` answers
+     * for invoicing and for an up-front line at confirm. A project billed quarterly in advance
+     * relieves Deferred and never touches Unbilled; one attested ahead of its instalments opens the
+     * contract asset, and the next invoice closes it again under rule 1.
+     *
+     * THE TOTALS ARE STORED SIGNED, the rule reads magnitudes. `BilledToDate` and `RecognizedToDate`
+     * are negative on a reversal line so an origin and its reversals net to zero for reporting, so
+     * both are read here as absolutes — exactly as confirm's rule-2 site reads them.
+     *
+     * TWO SIGNS, TWO MECHANISMS, AND THEY ARE NOT INTERCHANGEABLE. The EVENT's sign — this catch-up's
+     * direction — belongs INSIDE the rule, as a movement of the line's (Deferred, Unbilled) position,
+     * so the delta is passed through signed and never abs'd before the split. The LINE's sign
+     * (`Quantity < 0`, a reversal) is the one handled by mirroring the finished entry once (D16).
+     * Flattening the first into the second looks harmless and is not: with billing and recognition
+     * exactly level, abs-then-mirror would book a backward slide against Unbilled Receivable when it
+     * must come back out of Deferred. Month 7 of Andrew's Scenario 4 is that case — 45% back to 40%
+     * against a line billed 75,000 and earning 45,000 — and `SplitContraLegs` gets it right only
+     * because it is given the negative amount. Same accounts, same dimensions and
+     * same balance check as every other entry here, so the paths cannot drift apart. The caller owns
+     * the transaction and the arithmetic; this only shapes the draft.
+     */
+    public async BuildProgressDraft(
+        order: mjBizAppsOrdersOrderHeaderEntity,
+        line: mjBizAppsOrdersOrderLineEntity,
+        delta: number,
+        measurementDate: string,
+        note: string,
+    ): Promise<JEDraft> {
+        if (money(delta) === 0) {
+            throw new Error(`Order line ${line.ID}: a zero delta has no entry to build.`);
+        }
+        const product = (await this.loadProducts([line.ProductID])).get(line.ProductID.toLowerCase());
+        if (!product) {
+            throw new Error(`Order line ${line.ID} references product ${line.ProductID}, which was not found.`);
+        }
+        const companyID = line.CompanyID ?? product.CompanyID;
+        const asOf = new Date(measurementDate);
+        const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
+            this._resolver.Resolve(role, product.ID, product.ProductCategoryID, companyID, asOf, product.ProductTypeID);
+        const lineDims = MergeLineDimensions(
+            { DimensionID: line.DimensionID, DimensionValueID: line.DimensionValueID },
+            (await this.loadLineDimensions([line.ID])).get(line.ID) ?? [],
+        );
+
+        const amount = money(Math.abs(delta));
+        const recognizedBefore = Math.abs(Number(line.RecognizedToDate ?? 0));
+        const legs = SplitContraLegs(
+            Math.abs(Number(line.BilledToDate ?? 0)),
+            recognizedBefore,
+            delta,
+            'Recognize',
+        );
+
+        // ── THE DISCOUNT'S SHARE OF THIS CATCH-UP (D11, Andrew on #227) ──
+        //
+        // A discounted line is sold for `gross` and earns `net`; the difference is a contra-revenue
+        // debit, and under #225 it is booked ONCE, at recognition, never on the invoice. So every
+        // recognition entry has to carry its own slice of it: credit Sales the GROSS share, debit
+        // Sales Discounts the discount share, and leave the contra legs on net. Omitting it would
+        // leave the whole discount sitting in Deferred Revenue after the project reached 100%.
+        //
+        // SLICED CUMULATIVELY, not proportionally, for the reason the catch-up itself is cumulative:
+        // attestations arrive in any order and any size, and independently rounding `discount ×
+        // delta / net` each time would strand a cent that nothing later corrects. Taking the
+        // difference between two rounded running totals makes the last attestation land whatever is
+        // left, so the discount debits sum to exactly `discount` at 100% however the percents moved.
+        const { Discount: discount, Net: lineNet } = LineAmounts(line);
+        const discountThrough = (recognized: number) =>
+            lineNet === 0 ? 0 : money((discount * recognized) / lineNet);
+        const discountShare = money(discountThrough(money(recognizedBefore + delta)) - discountThrough(recognizedBefore));
+
+        const debits: JELineDraft[] = [];
+        if (legs.Deferred !== 0) {
+            debits.push({
+                GLAccountID: await resolve(GL_ROLE.DeferredRevenue),
+                DebitAmount: Math.abs(legs.Deferred),
+                Description: `Release deferred — ${product.Name}`,
+                Dimensions: lineDims,
+            });
+        }
+        if (legs.Unbilled !== 0) {
+            debits.push({
+                GLAccountID: await this.resolveUnbilledReceivable(resolve, legs.Unbilled, {
+                    OrderNumber: order.OrderNumber ?? '',
+                    LineNumber: line.LineNumber,
+                    CompanyID: companyID,
+                }),
+                DebitAmount: Math.abs(legs.Unbilled),
+                Description: `Unbilled receivable — ${product.Name}`,
+                Dimensions: lineDims,
+            });
+        }
+        // Same tolerance the booking entry has (D11): with no contra account linked, the discount
+        // nets into the sales credit instead of standing as its own line. The entry balances either
+        // way; what changes is whether a reader can see gross revenue and the discount separately.
+        let discountAccount: string | null = null;
+        if (discountShare !== 0) {
+            try {
+                discountAccount = await resolve(GL_ROLE.SalesDiscounts);
+            } catch {
+                discountAccount = null;
+            }
+        }
+        if (discountAccount) {
+            debits.push({
+                GLAccountID: discountAccount,
+                DebitAmount: Math.abs(discountShare),
+                Description: `Discount — ${product.Name}`,
+                Dimensions: lineDims,
+            });
+        }
+        const salesCredit = discountAccount ? money(amount + Math.abs(discountShare)) : amount;
+
+        const lines = mirrorIf(RecognitionMirrors(line.Quantity, delta), [
+            ...debits,
+            { GLAccountID: await resolve(GL_ROLE.Sales), CreditAmount: salesCredit, Description: `Revenue — ${product.Name}`, Dimensions: lineDims },
+        ]);
+        this.assertBalanced(lines, order, line, 'progress recognition');
+
+        return {
+            EffectiveDate: measurementDate,
+            EntryType: 'RevenueRecognition',
+            Description:
+                `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                `${delta < 0 ? 'unrecognize' : 'recognize'} ${product.Name} ${note}`,
+            LinkedEntityID: this._orderLineEntityID,
+            LinkedRecordID: line.ID,
+            Lines: lines,
+        };
     }
 
     /** Resolve the driver through MJ's ClassFactory so subclasses registered on the same key win. */
@@ -927,6 +1074,7 @@ export class OrderJournalEntryFactory {
                         Code: t.Code,
                         DriverClass: t.DriverClass,
                         IsDeferred: !!t.IsDeferred,
+                        ScheduleBasis: t.ScheduleBasis,
                     },
                 ]),
             );
@@ -935,7 +1083,7 @@ export class OrderJournalEntryFactory {
         const result = await rv.RunView<RevRecTypeRow>(
             {
                 EntityName: 'MJ_BizApps_Orders: Revenue Recognition Types',
-                Fields: ['ID', 'Code', 'DriverClass', 'IsDeferred'],
+                Fields: ['ID', 'Code', 'DriverClass', 'IsDeferred', 'ScheduleBasis'],
                 ResultType: 'simple',
             },
             this._contextUser,
