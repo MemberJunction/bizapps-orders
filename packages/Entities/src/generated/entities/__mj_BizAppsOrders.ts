@@ -991,6 +991,10 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: RecognizedToDate
         * * Display Name: Recognized To Date
         * * SQL Data Type: decimal(18, 2)`),
+    ShipToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: ShipToAddressSnapshot
+        * * Display Name: Ship To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)`),
     Person: z.string().describe(`
         * * Field Name: Person
         * * Display Name: Person
@@ -1830,6 +1834,16 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
     *   * Pending
     *   * Returned
         * * Description: Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`),
+    BillToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: BillToAddressSnapshot
+        * * Display Name: Bill To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
+    ShipToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: ShipToAddressSnapshot
+        * * Display Name: Ship To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -2242,6 +2256,11 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: decimal(18, 2)
         * * Default Value: 0
         * * Description: Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. ADVANCED FOR UP-FRONT AND ATTESTED LINES ONLY. A deferred driver stages its monthly releases as forward-dated entries at confirm; those credit Sales on their own dates without passing through rule 2, so they leave this total untouched. A subscription line therefore depends on its instalments being invoiced on time for the gap between the two totals to mean anything. Routing the staged releases through rule 2 is orders #241, parked. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`),
+    ShipToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: ShipToAddressSnapshot
+        * * Display Name: Ship To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header Display
@@ -8117,6 +8136,19 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
+    * * Field Name: ShipToAddressSnapshot
+    * * Display Name: Ship To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ShipToAddressSnapshot(): string | null {
+        return this.Get('ShipToAddressSnapshot');
+    }
+    set ShipToAddressSnapshot(value: string | null) {
+        this.Set('ShipToAddressSnapshot', value);
+    }
+
+    /**
     * * Field Name: Person
     * * Display Name: Person
     * * SQL Data Type: nvarchar(201)
@@ -10608,6 +10640,32 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: BillToAddressSnapshot
+    * * Display Name: Bill To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.
+    */
+    get BillToAddressSnapshot(): string | null {
+        return this.Get('BillToAddressSnapshot');
+    }
+    set BillToAddressSnapshot(value: string | null) {
+        this.Set('BillToAddressSnapshot', value);
+    }
+
+    /**
+    * * Field Name: ShipToAddressSnapshot
+    * * Display Name: Ship To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.
+    */
+    get ShipToAddressSnapshot(): string | null {
+        return this.Get('ShipToAddressSnapshot');
+    }
+    set ShipToAddressSnapshot(value: string | null) {
+        this.Set('ShipToAddressSnapshot', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
@@ -11842,6 +11900,19 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set RecognizedToDate(value: number) {
         this.Set('RecognizedToDate', value);
+    }
+
+    /**
+    * * Field Name: ShipToAddressSnapshot
+    * * Display Name: Ship To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).
+    */
+    get ShipToAddressSnapshot(): string | null {
+        return this.Get('ShipToAddressSnapshot');
+    }
+    set ShipToAddressSnapshot(value: string | null) {
+        this.Set('ShipToAddressSnapshot', value);
     }
 
     /**
