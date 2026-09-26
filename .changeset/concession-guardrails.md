@@ -24,7 +24,8 @@ check.
 - An order cannot be confirmed, and its documents cannot be sent, while a concession on it is Pending,
   or while a line on an unconfirmed order carries a stated price below its engine price with no
   approved concession covering it. Every line with a stated price is checked, whether it was typed in
-  the editor or set through the API. The order itself still saves.
+  the editor or set through the API, except a bundle component, priced at its share of the bundle,
+  and a reversal, priced from the line it unwinds. The order itself still saves.
 - A removed draft line takes its concessions with it, including decided ones.
 - A saved `SubscriptionTerm`'s `StartDate`, `EndDate` and `Amount` can no longer be edited. Extend a
   term by recording a Duration concession.

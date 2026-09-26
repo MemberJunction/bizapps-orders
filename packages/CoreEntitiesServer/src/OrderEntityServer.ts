@@ -900,6 +900,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ID: line.IsSaved ? line.ID : null,
             LineNumber: line.LineNumber ?? null,
             ParentOrderLineID: line.ParentOrderLineID ?? null,
+            ReversesOrderLineID: line.ReversesOrderLineID ?? null,
             ProductID: line.ProductID,
             OrderHeaderID: this.IsSaved ? this.ID : null,
             Quantity: line.Quantity,

@@ -384,6 +384,8 @@ export const EntitlementsChecks: NamedCheck[] = [
         // DeferredA's template states no ValidityMode, and its type is the Subscription type — whose
         // default is SubscriptionTerm. But a plain deferred line has no term, so the engine cannot
         // honour that and falls back to Perpetual. The fallback is correct; ADMITTING it is the point.
+        // DeferredA's engine price, so the stated 240 is not a concession the confirm gate holds.
+        await CreateProductPrice(ctx, f.Products.DeferredA, 240);
         const order = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,

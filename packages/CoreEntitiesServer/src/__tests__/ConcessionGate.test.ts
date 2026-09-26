@@ -46,6 +46,7 @@ const apiLine = {
     ID: LINE_ID,
     LineNumber: 1,
     ParentOrderLineID: null as string | null,
+    ReversesOrderLineID: null as string | null,
     ProductID: 'product-1',
     OrderHeaderID: ORDER_ID,
     Quantity: 2,
@@ -101,6 +102,16 @@ describe('FindUnapprovedConcessions — line prices', () => {
 
         expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
         expect(await FindUnapprovedConcessions(ORDER_ID, [{ ...component, PriceStated: true }], true, provider, user)).toEqual([]);
+        expect(mockStanding).not.toHaveBeenCalled();
+    });
+
+    it('skips a reversal, whose price is the line it unwinds', async () => {
+        const origin = '3f2504e0-4f89-41d3-9a0c-0305e82c3304';
+        const reversal = { ...apiLine, ReversesOrderLineID: origin, Quantity: -0.2493, UnitPrice: 900 };
+        database([], [reversal]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+        expect(await FindUnapprovedConcessions(ORDER_ID, [{ ...reversal, PriceStated: true }], true, provider, user)).toEqual([]);
         expect(mockStanding).not.toHaveBeenCalled();
     });
 

@@ -31,7 +31,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/core';
-import type { mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
+import { OrdersEngine, type mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
 import { LoadWorld } from './world/load-world.js';
@@ -239,6 +239,12 @@ const provider = (ctx: IntegrationCheckContext) =>
  * A check that fails still rolls back (the rollback is in `finally`), so one failure never poisons
  * the checks after it. The body's own error propagates so the driver reports the real failure and
  * not a teardown artifact.
+ *
+ * The rollback restores the database but not `OrdersEngine`, which caught every price a check
+ * saved and still holds it afterwards. So the engine's prices are reloaded after each rollback:
+ * without that, a price one check set for itself becomes the engine price every later check is
+ * judged against. Only the prices — reloading the whole engine per check multiplies the suite's
+ * run time many times over.
  */
 export async function InRolledBackTransaction(
     ctx: IntegrationCheckContext,
@@ -264,6 +270,7 @@ export async function InRolledBackTransaction(
             if (!aborted) throw e;
             resetTransactionState(p);
         }
+        await OrdersEngine.Instance.RefreshItem('_productPrices');
     }
 }
 

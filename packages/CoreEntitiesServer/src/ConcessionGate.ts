@@ -20,6 +20,9 @@
  * less than its parts, and nothing the rep can record or change would clear it. The bundle line
  * itself keeps the bundle's price and is checked like any other.
  *
+ * Nor is a reversal — a line with a `ReversesOrderLineID` or a negative quantity. Its price is the
+ * origin line's, which was settled when that line was sold, and pricing refuses a negative quantity.
+ *
  * Confirmed orders are checked for (1) only. Their lines' prices were settled at booking, and lines
  * converted from the previous system carry overrides nobody recorded a concession for.
  *
@@ -89,6 +92,8 @@ export interface ConcessionLineFacts extends PricedLineFacts {
     LineNumber: number | null;
     /** Set on a bundle component, whose price is its allocation rather than a concession. */
     ParentOrderLineID: string | null;
+    /** Set on a reversal, whose price is the origin line's. */
+    ReversesOrderLineID: string | null;
     /**
      * Whether `UnitPrice` holds a price rather than a blank the engine fills at confirm. A saved line
      * always does; an unsaved one does when `UnitPrice` is dirty or above zero — the same test
@@ -217,7 +222,7 @@ async function loadConcessions(
 
 /**
  * Lines with a stated price: the caller's, plus persisted ones the caller does not hold. Bundle
- * components are left out.
+ * components and reversals are left out.
  */
 async function statedPriceLines(
     orderHeaderID: string | null,
@@ -225,7 +230,7 @@ async function statedPriceLines(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<ConcessionLineFacts[]> {
-    const lines = inMemoryLines.filter((l) => l.PriceStated && !!l.ProductID && !l.ParentOrderLineID);
+    const lines = inMemoryLines.filter((l) => l.PriceStated && !!l.ProductID && !isComponentOrReversal(l));
     if (!orderHeaderID) return lines;
 
     const held = new Set(inMemoryLines.map((l) => (l.ID ?? '').toLowerCase()).filter(Boolean));
@@ -238,6 +243,7 @@ async function statedPriceLines(
                 'ID',
                 'LineNumber',
                 'ParentOrderLineID',
+                'ReversesOrderLineID',
                 'ProductID',
                 'OrderHeaderID',
                 'Quantity',
@@ -251,10 +257,14 @@ async function statedPriceLines(
     );
     for (const row of res?.Results ?? []) {
         const key = (row.ID ?? '').toLowerCase();
-        if (held.has(key) || row.ParentOrderLineID) continue;
+        if (held.has(key) || isComponentOrReversal(row)) continue;
         lines.push({ ...row, PriceStated: true });
     }
     return lines;
+}
+
+function isComponentOrReversal(line: ConcessionLineFacts): boolean {
+    return !!line.ParentOrderLineID || !!line.ReversesOrderLineID || Number(line.Quantity ?? 0) < 0;
 }
 
 function sameID(a: string | null | undefined, b: string | null | undefined): boolean {

@@ -29,6 +29,7 @@ import type { mjBizAppsOrdersPaymentDetailEntity } from '@mj-biz-apps/orders-ent
 import { TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 import {
     CreateOrdersFixture,
+    CreateProductPrice,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
@@ -318,6 +319,8 @@ export const EmbeddedPaymentDetailChecks: NamedCheck[] = [
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
                 const f = Fx();
+                // WidgetA's engine price, so the stated 40 is not a concession the confirm gate holds.
+                await CreateProductPrice(ctx, f.Products['WidgetA'], 40);
                 const built = await BuildOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     InitialPaymentTypeID: cashType(),
