@@ -60,8 +60,9 @@ import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
-import { LoadOrderLineShares } from './PaymentAllocationInputs.js';
-import { PaymentAllocationFactory } from './PaymentAllocationFactory.js';
+import { LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { DepositReleasedByCompany, PlanLineDeposits, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
+import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { RequireUUID } from './sql-guards.js';
 
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -128,12 +129,20 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
+            // BEFORE the row lands, not after: saving it fires the rollup that moves AmountPaid on
+            // these very instalments, and a split read afterwards would treat this payment's own
+            // money as already-settled billing (D91).
+            const scheduleFacts = await LoadInstalmentCashFacts(
+                this.ProviderToUse as unknown as IRunViewProvider,
+                this.ContextCurrentUser as UserInfo,
+                this.OrderHeaderID,
+            );
             if (!(await super.Save(options))) {
                 throw new Error(
                     `Failed to save the payment allocation: ${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
-            await this.bookAllocation(payment, options);
+            await this.bookAllocation(payment, scheduleFacts, options);
             await dbProvider.CommitTransaction();
             return true;
         } catch (err) {
@@ -156,7 +165,11 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
      * Single-company orders produce exactly one entry — the shape the ledger had before — so this
      * is a generalisation of the old behaviour rather than a parallel path.
      */
-    private async bookAllocation(payment: PaymentContext, options?: EntitySaveOptions): Promise<void> {
+    private async bookAllocation(
+        payment: PaymentContext,
+        scheduleFacts: InstalmentCashFacts[],
+        options?: EntitySaveOptions,
+    ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
@@ -172,6 +185,23 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             );
         }
         const order = await this.loadOrderNumber();
+
+        // The deposit part of each company's share (D91, #234 review). Taking cash back is sized from
+        // what the rollup just took out of the rows' deposits — this row is saved by now — so the
+        // entry says what the schedule says.
+        const isReversal = payment.Status === 'Refunded' || (this.Amount ?? 0) < 0;
+        const released = isReversal && scheduleFacts.length
+            ? DepositReleasedByCompany(
+                  scheduleFacts,
+                  await LoadInstalmentCashFacts(provider as unknown as IRunViewProvider, user, this.OrderHeaderID),
+              )
+            : new Map<string, number>();
+        const plan = PlanLineDeposits(
+            AllocateByCompany(Math.abs(this.Amount ?? 0), orderLines, this.OrderLineID ?? null),
+            isReversal,
+            this.OrderHeaderPaymentScheduleID ?? null,
+            { Facts: scheduleFacts, Released: released },
+        );
 
         // The intercompany lookup is accounting's (BA-D26), read from its cache — both builders
         // below configure the engine on the way in, so the pair stays current when one is added
@@ -190,9 +220,10 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             ReceivingCompanyID: payment.ReceivingCompanyID,
             OrderLines: orderLines,
             TargetOrderLineID: this.OrderLineID ?? null,
+            Deposits: plan.Deposits,
             PaymentDate: payment.PaymentDate,
             // A negative allocation un-applies cash, and a refunded payment reverses: both mirror.
-            IsReversal: payment.Status === 'Refunded' || (this.Amount ?? 0) < 0,
+            IsReversal: isReversal,
         });
 
         const result = await this.createJournalEntries(Drafts, provider, user);

@@ -55,6 +55,10 @@ linked at each selling company so a confirm can book without per-product wiring.
 linked at the product-type level (and a couple of category / product overrides) so the walk has
 something to inherit.
 
+Customer Deposits is linked at Blue Cypress Press only (`21400`), with a product override on
+`EDIT-COURSE` (`21410`) so a deposit on that product proves the role resolves per line, the way the
+invoice entry resolves every role. Harbor House has no link on purpose: a deposit there is refused.
+
 Dimensions (`DEPT`, `LOC`) and their values are world data. They are **not** attached to the links
 yet — attaching a required dimension without a matching order-line tag would refuse the confirm.
 

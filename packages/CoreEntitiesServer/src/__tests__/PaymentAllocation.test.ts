@@ -300,3 +300,97 @@ describe('BuildAllocationDrafts — a missing intercompany pair is fatal', () =>
         await expect(factory().BuildAllocationDrafts(ctx({ Amount: 0 }) as never)).rejects.toThrow(/nothing/i);
     });
 });
+
+describe('PaymentAllocationFactory — customer deposits (#234 review)', () => {
+    /** Customer Deposits linked on product p-own; everything else resolves at company level. */
+    const depositResolver = {
+        Resolve: async (role: string, productID: string | null, _c: unknown, companyID: string) => {
+            if (role === GL_ROLE.CustomerDeposits && productID === 'p-own') return `deposits-own@${companyID}`;
+            return acct(role, companyID);
+        },
+    } as never;
+    const withProduct = (id: string, amount: number, productID: string): OrderLineShare => ({
+        ...line(id, A, amount),
+        Product: { ProductID: productID, ProductCategoryID: null, ProductTypeID: null },
+    });
+
+    it('credits the deposit part to Customer Deposits and the rest to AR', async () => {
+        const f = new PaymentAllocationFactory(depositResolver, intercompany, 'ple');
+        const { Drafts } = await f.BuildAllocationDrafts(
+            ctx({ Amount: 150, OrderLines: [withProduct('l1', 300, 'p-plain')], Deposits: new Map([[A, 50]]) }) as never,
+        );
+        const lines = Drafts[0].Lines;
+        expect(creditOn(lines, acct(GL_ROLE.AccountsReceivable, A))).toBe(100);
+        expect(creditOn(lines, acct(GL_ROLE.CustomerDeposits, A))).toBe(50);
+        expect(debitOn(lines, acct(GL_ROLE.Cash, A))).toBe(150);
+    });
+
+    it('resolves the deposit per line through the product, splitting by line weight', async () => {
+        const f = new PaymentAllocationFactory(depositResolver, intercompany, 'ple');
+        const { Drafts } = await f.BuildAllocationDrafts(
+            ctx({
+                Amount: 90,
+                OrderLines: [withProduct('l1', 100, 'p-own'), withProduct('l2', 200, 'p-plain')],
+                Deposits: new Map([[A, 90]]),
+            }) as never,
+        );
+        const lines = Drafts[0].Lines;
+        expect(creditOn(lines, `deposits-own@${A}`)).toBe(30);
+        expect(creditOn(lines, acct(GL_ROLE.CustomerDeposits, A))).toBe(60);
+        expect(creditOn(lines, acct(GL_ROLE.AccountsReceivable, A))).toBeUndefined();
+    });
+
+    it('a refund mirrors: Dr AR / Dr Customer Deposits / Cr Cash', async () => {
+        const f = new PaymentAllocationFactory(depositResolver, intercompany, 'ple');
+        const { Drafts } = await f.BuildAllocationDrafts(
+            ctx({ Amount: 150, OrderLines: [withProduct('l1', 300, 'p-plain')], Deposits: new Map([[A, 50]]), IsReversal: true }) as never,
+        );
+        const lines = Drafts[0].Lines;
+        expect(debitOn(lines, acct(GL_ROLE.AccountsReceivable, A))).toBe(100);
+        expect(debitOn(lines, acct(GL_ROLE.CustomerDeposits, A))).toBe(50);
+        expect(creditOn(lines, acct(GL_ROLE.Cash, A))).toBe(150);
+    });
+
+    it('refuses a deposit larger than the share', async () => {
+        const f = new PaymentAllocationFactory(depositResolver, intercompany, 'ple');
+        await expect(
+            f.BuildAllocationDrafts(ctx({ Amount: 50, OrderLines: [line('l1', A, 300)], Deposits: new Map([[A, 60]]) }) as never),
+        ).rejects.toThrow(/cannot come out of/);
+    });
+
+    it('refuses an unlinked Customer Deposits role, naming the role and the company', async () => {
+        const { GLAccountResolutionError } = await import('../GLAccountResolver.js');
+        const unlinked = {
+            Resolve: async (role: string, _p: unknown, _c: unknown, companyID: string) => {
+                if (role === GL_ROLE.CustomerDeposits) {
+                    throw new GLAccountResolutionError(role, '', 'NotLinked', `No GL account is linked for role '${role}' at the company level for company ${companyID}.`);
+                }
+                return acct(role, companyID);
+            },
+        } as never;
+        const f = new PaymentAllocationFactory(unlinked, intercompany, 'ple');
+        await expect(
+            f.BuildAllocationDrafts(ctx({ Amount: 50, OrderLines: [line('l1', A, 300)], Deposits: new Map([[A, 50]]) }) as never),
+        ).rejects.toThrow(new RegExp(`'${GL_ROLE.CustomerDeposits}'.*company ${A}.*Nothing was posted`));
+    });
+
+    it('a cross-company refusal is not rewritten as "not linked"', async () => {
+        const { GLAccountResolutionError } = await import('../GLAccountResolver.js');
+        const cross = {
+            Resolve: async (role: string, _p: unknown, _c: unknown, companyID: string) => {
+                if (role === GL_ROLE.CustomerDeposits) throw new GLAccountResolutionError(role, '', 'CrossCompany', 'GL account X resolved for role belongs to company Z');
+                return acct(role, companyID);
+            },
+        } as never;
+        const f = new PaymentAllocationFactory(cross, intercompany, 'ple');
+        await expect(
+            f.BuildAllocationDrafts(ctx({ Amount: 50, OrderLines: [line('l1', A, 300)], Deposits: new Map([[A, 50]]) }) as never),
+        ).rejects.toThrow(/belongs to company Z/);
+    });
+
+    it('no deposit never resolves the role — an unscheduled order is untouched', async () => {
+        const f = new PaymentAllocationFactory(resolver, intercompany, 'ple');
+        const { Drafts } = await f.BuildAllocationDrafts(ctx({ Amount: 100, OrderLines: [line('l1', A, 100)] }) as never);
+        expect(Drafts[0].Lines.map((l) => l.GLAccountID).sort()).toEqual([acct(GL_ROLE.AccountsReceivable, A), acct(GL_ROLE.Cash, A)].sort());
+    });
+});

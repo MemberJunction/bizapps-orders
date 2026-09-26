@@ -215,3 +215,198 @@ export function ExplainShortfalls(orderNumber: string, shortfalls: ScheduleShort
     });
     return `The payment schedule for order ${orderNumber} does not tie to its lines — ${parts.join('; ')}. Fix the schedule, or remove it to bill the order as one instalment.`;
 }
+
+/* ── Cash against a scheduled order (D91) ───────────────────────────────────────────────────── */
+
+/**
+ * What the payment side needs to know about one instalment. Read by the entity server that owns the
+ * transaction and passed in, the way booking passes schedule rows to `OrderJournalEntryFactory` —
+ * nothing here queries.
+ */
+export interface InstalmentCashFacts {
+    ID: string;
+    CompanyID: string;
+    Status: string;
+    Amount: number;
+    /** As of BEFORE the payment being booked. The rollup has already moved it by the time the
+     *  allocation books, so the caller must read these rows before it saves the payment line. */
+    AmountPaid: number;
+    /** Frozen at invoicing and never cleared, so it — not `Status` — is the record of being billed. */
+    DocumentNumber: string | null;
+}
+
+/** How one company's share of a payment divides between settling a receivable and sitting as cash held. */
+export interface CashSplit {
+    /** Cr Accounts Receivable: the part that settles instalments the customer has actually been billed for. */
+    Receivable: number;
+    /** Cr Customer Deposits: the rest. Money in hand for something not yet billed is a customer deposit. */
+    Deposit: number;
+}
+
+const LIVE_FOR_CASH = (r: InstalmentCashFacts): boolean => r.Status !== 'Canceled';
+
+/** What a row can still absorb against an invoice the customer holds. Zero for a row never billed. */
+function billedUnpaid(row: InstalmentCashFacts): number {
+    if (!row.DocumentNumber) return 0;
+    return Math.max(0, Money(Number(row.Amount) - Number(row.AmountPaid)));
+}
+
+/**
+ * Divide one company's share of a payment into the receivable it settles and the deposit it leaves.
+ *
+ * Under D91 a scheduled company books nothing at confirm, so until an instalment is invoiced there
+ * is no receivable for cash to clear. Crediting AR anyway would drive it negative and misstate both
+ * sides: the customer would appear to be owed money and the obligation to deliver would disappear.
+ * Cash ahead of billing is a liability — a deposit — so it credits the Customer Deposits role, and
+ * issuing the instalment later clears it against the receivable the invoice raises (#234 review).
+ *
+ * THE UNSCHEDULED CASE IS NOT A BRANCH. A company with no live rows has unlimited receivable
+ * capacity, so the whole share is `Receivable` and `Deposit` is zero — byte-identical to the entry
+ * every order books today.
+ *
+ * @param amount     This company's share of the payment line, always positive.
+ * @param companyID  Whose books this entry is.
+ * @param rows       Every schedule row on the order, any company; filtered here.
+ * @param namedRowID `PaymentLine.OrderHeaderPaymentScheduleID` when the payer named an instalment.
+ *                   Then that row alone bounds the receivable: naming a Scheduled instalment is a
+ *                   deposit however much the customer owes elsewhere, because they said what the
+ *                   money was for.
+ */
+export function SplitCashForCompany(
+    amount: number,
+    companyID: string,
+    rows: InstalmentCashFacts[],
+    namedRowID?: string | null,
+): CashSplit {
+    const share = Money(amount);
+    const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
+    const mine = rows.filter((r) => LIVE_FOR_CASH(r) && key(r.CompanyID) === key(companyID));
+    if (!mine.length) return { Receivable: share, Deposit: 0 };
+
+    const named = namedRowID ? mine.find((r) => key(r.ID) === key(namedRowID)) : undefined;
+    const capacity = named ? billedUnpaid(named) : Money(mine.reduce((sum, r) => sum + billedUnpaid(r), 0));
+
+    const receivable = Money(Math.min(share, capacity));
+    return { Receivable: receivable, Deposit: Money(share - receivable) };
+}
+
+/* ── Consuming, holding and releasing deposits (#234 review) ────────────────────────────────── */
+
+/**
+ * Charge a receivable amount against the facts, so the next line of the same payment sees what the
+ * previous one used.
+ *
+ * A payment can carry several allocations against one order, and they book in a loop before any of
+ * them is in the database. Without this, two lines would each see the same unpaid invoice and each
+ * credit AR for it.
+ *
+ * A NAMED ROW IS CONSUMED BY NAME. `SplitCashForCompany` bounds a named line's receivable by that
+ * row alone, so the consumption has to come off that row too. Charging it billed-rows-first instead
+ * would drain a different invoice, and the next line naming THAT invoice would then find no room
+ * and turn a real receivable into a deposit. Unnamed cash is charged billed-rows-first in the order
+ * the rows came back, which is the database cascade's own order.
+ */
+export function ConsumeReceivable(
+    facts: InstalmentCashFacts[],
+    companyID: string,
+    amount: number,
+    namedRowID?: string | null,
+): InstalmentCashFacts[] {
+    const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
+    const named = namedRowID
+        ? facts.find((r) => key(r.ID) === key(namedRowID) && key(r.CompanyID) === key(companyID))
+        : undefined;
+    let left = Money(amount);
+    return facts.map((row) => {
+        if (left <= 0 || !row.DocumentNumber || key(row.CompanyID) !== key(companyID)) return row;
+        if (named && row !== named) return row;
+        const used = Math.min(left, billedUnpaid(row));
+        left = Money(left - used);
+        return used > 0 ? { ...row, AmountPaid: Money(row.AmountPaid + used) } : row;
+    });
+}
+
+/**
+ * The customer deposits a company's rows hold: cash on a row beyond what that row has billed.
+ *
+ * An unbilled row's whole `AmountPaid` is a deposit, since nothing was invoiced for it; a billed row
+ * holds a deposit only where it has been overpaid. This is the schedule's side of the Customer
+ * Deposits balance, and every entry that moves that balance is sized from how this figure moved.
+ */
+export function HeldDeposit(rows: InstalmentCashFacts[], companyID: string): number {
+    const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
+    return Money(
+        rows
+            .filter((r) => LIVE_FOR_CASH(r) && key(r.CompanyID) === key(companyID))
+            .reduce((sum, r) => sum + Math.max(0, Number(r.AmountPaid) - (r.DocumentNumber ? Number(r.Amount) : 0)), 0),
+    );
+}
+
+/**
+ * How much deposit an event released for each company: held before it, less held after it.
+ *
+ * Used for the two events that take cash OUT of deposits — a refund, and issuing an instalment the
+ * customer had prepaid. Both are sized from what the database cascade actually did to the rows
+ * rather than from a rule re-derived here, so the ledger and the schedule cannot tell different
+ * stories: a refund that the cascade takes out of instalment 2's prepayment debits Customer
+ * Deposits, one that it takes out of instalment 1's settled invoice debits AR.
+ *
+ * ponytail: unnamed cash beyond every row's room is placed on no row, so a refund of an overpayment
+ * of the WHOLE order sees only what the rows held. Size such a refund from the original payment's
+ * entry if it ever matters.
+ */
+export function DepositReleasedByCompany(before: InstalmentCashFacts[], after: InstalmentCashFacts[]): Map<string, number> {
+    const companies = new Set([...before, ...after].map((r) => r.CompanyID.toLowerCase()));
+    const out = new Map<string, number>();
+    for (const company of companies) {
+        out.set(company, Math.max(0, Money(HeldDeposit(before, company) - HeldDeposit(after, company))));
+    }
+    return out;
+}
+
+/** One company's share of a payment line, as the allocation factory divides it. */
+export interface ShareAmount {
+    CompanyID: string;
+    Amount: number;
+}
+
+/** What is left to hand out while a payment's lines are planned one after another. */
+export interface DepositWorking {
+    /** Capture: the schedule as the lines planned so far have left it. */
+    Facts: InstalmentCashFacts[];
+    /** Reversal: deposit the refund released and no earlier line has claimed, per company. */
+    Released: Map<string, number>;
+}
+
+/**
+ * The deposit part of each company's share of ONE payment line, keyed by lower-cased company id.
+ *
+ * Capture: whatever `SplitCashForCompany` leaves beyond billed-unpaid, then the receivable is
+ * consumed so the next line sees it. Reversal: the share draws on what the refund released,
+ * deposit first, and only the rest un-clears AR. A company with no schedule rows gets no entry in
+ * the map, which the factory reads as zero deposit — the entry every unscheduled order books.
+ */
+export function PlanLineDeposits(
+    shares: ShareAmount[],
+    isReversal: boolean,
+    namedRowID: string | null,
+    working: DepositWorking,
+): { Deposits: Map<string, number>; Working: DepositWorking } {
+    const deposits = new Map<string, number>();
+    let facts = working.Facts;
+    const released = new Map(working.Released);
+    for (const share of shares) {
+        const company = share.CompanyID.toLowerCase();
+        const amount = Money(Math.abs(share.Amount));
+        if (isReversal) {
+            const deposit = Math.min(amount, released.get(company) ?? 0);
+            released.set(company, Money((released.get(company) ?? 0) - deposit));
+            if (deposit > 0) deposits.set(company, Money(deposit));
+            continue;
+        }
+        const split = SplitCashForCompany(amount, share.CompanyID, facts, namedRowID);
+        facts = ConsumeReceivable(facts, share.CompanyID, split.Receivable, namedRowID);
+        if (split.Deposit > 0) deposits.set(company, split.Deposit);
+    }
+    return { Deposits: deposits, Working: { Facts: facts, Released: released } };
+}
