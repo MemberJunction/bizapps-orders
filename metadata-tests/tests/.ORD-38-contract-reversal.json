@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-38 - Contract Reversal",
+    "Description": "Reversing a scheduled order (golive #240, D92 section 6). A company billed by instalment never posts a value entry at confirm, so a reversal of its order books a credit memo or nothing, never a mirrored value entry: what was billed and not yet earned is credited back, prorated to the quantity returned, as a memo debiting Deferred Revenue and crediting Accounts Receivable; only the releases dated after the reversal are mirrored, so revenue already earned stays earned; instalments nobody was billed for are withdrawn once the whole order is reversed; and a line that earned more than it billed refuses the reversal rather than stranding a contract asset in Unbilled Receivable.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Andrew's Scenario 1 at a tenth off, reversed at month five, credits the 900 billed and unearned on net, mirrors only the seven releases still to come on the origin's own dates, withdraws the two unissued instalments and reduces the origin's billed total by the memo; an order with no schedule reverses as it always did; an up-front line that earned more than it billed refuses the reversal; a contract cancelled before its first invoice withdraws all four instalments and books no entry; a fully delivered, fully billed line reverses with no entry; and reversing 4 of 10 units then the other 6 credits 360 then 540, leaving the schedule alone until the whole order is reversed; and the same two reversals in November and February, with an instalment issued between, credit 360 then 1,620, because the months the first reversal already mirrored back are not counted as earned again."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "contract-reversal"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C470"
+  }
+}

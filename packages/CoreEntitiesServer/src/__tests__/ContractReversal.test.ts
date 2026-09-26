@@ -1,0 +1,234 @@
+/**
+ * Reversing a scheduled order (D92 §6).
+ *
+ * Three rules, and the order they apply in is the whole design: withdraw what was never billed,
+ * credit back what was billed and not earned, and refuse rather than strand what was earned and
+ * not billed. Andrew's worked Scenario 1 — a 12,000 contract billed quarterly in advance, reversed
+ * after five months — is the case these were written against and is asserted at the end.
+ */
+import { describe, expect, it } from 'vitest';
+import {
+    InstalmentsToCancel,
+    BuildCreditMemoLines,
+    ProratedCreditMemo,
+    RefuseEarnedNotBilled,
+    StagedEarnedThrough,
+    type DatedRelease,
+    type ContractLineBalance,
+    type ReversalPosition,
+    type ReversalScheduleRow,
+} from '../ContractBalance.js';
+
+const CO = '11111111-1111-1111-1111-111111111111';
+
+const row = (over: Partial<ReversalScheduleRow> & { ID: string; InstallmentNumber: number }): ReversalScheduleRow => ({
+    CompanyID: CO,
+    DueDate: '2026-07-01',
+    Status: 'Scheduled',
+    DocumentNumber: null,
+    ...over,
+});
+
+const billed = (id: string, n: number, due: string): ReversalScheduleRow =>
+    row({ ID: id, InstallmentNumber: n, DueDate: due, Status: 'Invoiced', DocumentNumber: `ORD-1-${n}` });
+
+const line = (id: string, b: number, r: number, num?: number): ContractLineBalance => ({
+    OrderLineID: id,
+    LineNumber: num ?? 1,
+    BilledToDate: b,
+    RecognizedToDate: r,
+});
+
+describe('InstalmentsToCancel', () => {
+    it('withdraws the instalments nobody has been billed for', () => {
+        const rows = [billed('a', 1, '2026-07-01'), row({ ID: 'b', InstallmentNumber: 2, DueDate: '2026-10-01' })];
+        expect(InstalmentsToCancel(rows)).toEqual(['b']);
+    });
+
+    it('never withdraws a row the customer holds an invoice for, whatever its status says', () => {
+        // A fully paid instalment reads 'Paid', not 'Invoiced' — the document number is the test.
+        const rows = [row({ ID: 'a', InstallmentNumber: 1, Status: 'Paid', DocumentNumber: 'ORD-1-1' })];
+        expect(InstalmentsToCancel(rows)).toEqual([]);
+    });
+
+    it('is a no-op on rows already cancelled, so reversing twice does not error', () => {
+        const rows = [row({ ID: 'a', InstallmentNumber: 1, Status: 'Canceled' })];
+        expect(InstalmentsToCancel(rows)).toEqual([]);
+    });
+
+    it('returns nothing for an order with no schedule at all', () => {
+        expect(InstalmentsToCancel([])).toEqual([]);
+    });
+});
+
+const position = (b: number, r: number, remaining = 1): ReversalPosition => ({
+    OriginLineID: 'L1',
+    BilledToDate: b,
+    RecognizedToDate: r,
+    RemainingQuantity: remaining,
+});
+
+describe('ProratedCreditMemo', () => {
+    it('credits back what was billed and not yet earned', () => {
+        expect(ProratedCreditMemo(position(6000, 5000), -1, 0)).toBe(1000);
+    });
+
+    it('is zero when the line has earned everything it billed', () => {
+        expect(ProratedCreditMemo(position(5000, 5000), -1, 0)).toBe(0);
+    });
+
+    it('is zero when the line earned MORE than it billed — that is the refusal case, not a credit', () => {
+        expect(ProratedCreditMemo(position(4000, 5000), -1, 0)).toBe(0);
+    });
+
+    it('is zero when nothing was billed — a contract cancelled before its first invoice', () => {
+        expect(ProratedCreditMemo(position(0, 0), -1, 0)).toBe(0);
+    });
+
+    it('counts staged releases as earned, since RecognizedToDate does not', () => {
+        // A subscription line: 6,000 billed, RecognizedToDate still 0, five 1,000 releases dated
+        // before the reversal. Without the staged figure it would refund the whole 6,000.
+        expect(ProratedCreditMemo(position(6000, 0), -1, 5000)).toBe(1000);
+    });
+
+    it('prorates by the quantity still left, so two partial reversals sum to one whole one', () => {
+        // 10 units, 900 billed-and-unearned. Return 4: 360. The origin's billed total falls by the
+        // memo, so the next reversal sees 540 left against the 6 units that remain.
+        const first = ProratedCreditMemo(position(5400, 4500, 10), -4, 0);
+        expect(first).toBe(360);
+        const second = ProratedCreditMemo(position(5400 - first, 4500, 6), -6, 0);
+        expect(second).toBe(540);
+        expect(first + second).toBe(ProratedCreditMemo(position(5400, 4500, 10), -10, 0));
+    });
+
+    it('rounds to the penny', () => {
+        expect(ProratedCreditMemo(position(100, 0, 3), -1, 0)).toBe(33.33);
+    });
+
+    it('refuses to take back more than is left rather than inventing a balance', () => {
+        expect(() => ProratedCreditMemo(position(100, 0, 2), -3, 0)).toThrow(/leaves 2/);
+        expect(() => ProratedCreditMemo(position(100, 0, 0), -1, 0)).toThrow(/leaves 0/);
+    });
+});
+
+describe('RefuseEarnedNotBilled', () => {
+    const AS_OF = '2026-12-01';
+
+    it('lets an advance-billed order through — Deferred, not Unbilled', () => {
+        expect(RefuseEarnedNotBilled([line('L1', 6000, 5000)], [], AS_OF)).toBeNull();
+    });
+
+    it('lets a fully settled line through', () => {
+        expect(RefuseEarnedNotBilled([line('L1', 5000, 5000)], [], AS_OF)).toBeNull();
+    });
+
+    it('refuses when a line earned more than it billed, and names the instalment to issue', () => {
+        const rows = [billed('a', 1, '2026-07-01'), row({ ID: 'b', InstallmentNumber: 2, DueDate: '2026-10-01' })];
+        const message = RefuseEarnedNotBilled([line('L1', 4000, 5000, 2)], rows, AS_OF);
+        expect(message).toContain('line 2 (1000.00)');
+        expect(message).toContain('Issue instalment 2');
+        expect(message).toContain('2026-10-01');
+    });
+
+    it('picks the EARLIEST due-but-unissued instalment when several are overdue', () => {
+        const rows = [
+            row({ ID: 'c', InstallmentNumber: 3, DueDate: '2026-11-01' }),
+            row({ ID: 'b', InstallmentNumber: 2, DueDate: '2026-10-01' }),
+        ];
+        expect(RefuseEarnedNotBilled([line('L1', 4000, 5000)], rows, AS_OF)).toContain('Issue instalment 2');
+    });
+
+    it('ignores an instalment that is not due yet — it cannot be the answer', () => {
+        const rows = [row({ ID: 'b', InstallmentNumber: 2, DueDate: '2027-01-01' })];
+        const message = RefuseEarnedNotBilled([line('L1', 4000, 5000)], rows, AS_OF);
+        expect(message).toContain('no instalment is due to bill it with');
+        expect(message).not.toContain('Issue instalment');
+    });
+
+    it('says so plainly when the schedule cannot cover what was delivered', () => {
+        expect(RefuseEarnedNotBilled([line('L1', 0, 500)], [], AS_OF)).toContain('correct the schedule');
+    });
+
+    it('names every stranded line, not just the first', () => {
+        const message = RefuseEarnedNotBilled([line('L1', 0, 100, 1), line('L2', 0, 250, 2)], [], AS_OF);
+        expect(message).toContain('line 1 (100.00)');
+        expect(message).toContain('line 2 (250.00)');
+    });
+});
+
+describe("Andrew's Scenario 1 — 12,000 billed quarterly in advance, reversed at month five", () => {
+    // Two instalments of 3,000 issued (months 1 and 4), two still scheduled. Five months of a
+    // 12-month service recognised at 1,000 a month.
+    const rows = [
+        billed('q1', 1, '2026-01-01'),
+        billed('q2', 2, '2026-04-01'),
+        row({ ID: 'q3', InstallmentNumber: 3, DueDate: '2026-07-01' }),
+        row({ ID: 'q4', InstallmentNumber: 4, DueDate: '2026-10-01' }),
+    ];
+    const lines = [line('L1', 6000, 5000)];
+    const asOf = '2026-05-31';
+
+    it('is not refused: billing ran ahead of recognition, which is the ordinary state', () => {
+        expect(RefuseEarnedNotBilled(lines, rows, asOf)).toBeNull();
+    });
+
+    it('withdraws the two unissued instalments and leaves the two issued ones alone', () => {
+        expect(InstalmentsToCancel(rows)).toEqual(['q3', 'q4']);
+    });
+
+    it('credits back exactly the 1,000 of Deferred, leaving the 5,000 recognised', () => {
+        expect(ProratedCreditMemo(position(6000, 5000), -1, 0)).toBe(1000);
+    });
+});
+
+describe('StagedEarnedThrough — a second partial reversal dated after the first', () => {
+    // 10 units, 10,800 net, 900 released on the 1st of each month from July.
+    const months = ['2026-07-01', '2026-08-01', '2026-09-01', '2026-10-01', '2026-11-01', '2026-12-01',
+        '2027-01-01', '2027-02-01', '2027-03-01', '2027-04-01', '2027-05-01', '2027-06-01'];
+    const origin: DatedRelease[] = months.map((Date) => ({ Date, Amount: 900 }));
+    // Reversing 4 on 15 November mirrored four tenths of every release after it.
+    const firstMirrors: DatedRelease[] = months.filter((d) => d > '2026-11-15').map((Date) => ({ Date, Amount: 360 }));
+
+    it('counts only the origin releases when there is no earlier reversal', () => {
+        expect(StagedEarnedThrough(origin, [], '2026-11-15')).toBe(4500);
+    });
+
+    it('subtracts nothing for an earlier reversal on the same date — its mirrors are all later', () => {
+        expect(StagedEarnedThrough(origin, firstMirrors, '2026-11-15')).toBe(4500);
+    });
+
+    it("subtracts the months the earlier reversal already took back, giving Andrew's 1,620", () => {
+        const earned = StagedEarnedThrough(origin, firstMirrors, '2027-02-15');
+        expect(earned).toBe(7200 - 1080);
+        // 5,400 billed less the 360 memo, plus instalment 3 on 1 January; the other 6 of 6 remain.
+        expect(ProratedCreditMemo(position(5040 + 2700, 0, 6), -6, earned)).toBe(1620);
+    });
+});
+
+describe('BuildCreditMemoLines', () => {
+    const ACCOUNTS = { AR: 'ar-account', Deferred: 'deferred-account' };
+    const DIMS = [{ DimensionID: 'd1', DimensionValueID: 'v1' }];
+
+    it('gives back the deferred balance on both legs, so the entry balances by construction', () => {
+        const lines = BuildCreditMemoLines(1000, ACCOUNTS, 'Widget A', DIMS);
+        expect(lines).toEqual([
+            { GLAccountID: 'deferred-account', DebitAmount: 1000, Description: 'Deferred Revenue — credit memo, Widget A', Dimensions: DIMS },
+            { GLAccountID: 'ar-account', CreditAmount: 1000, Description: 'AR — credit memo, Widget A', Dimensions: DIMS },
+        ]);
+    });
+
+    it('posts nothing when the line has no billed-and-unearned balance', () => {
+        expect(BuildCreditMemoLines(0, ACCOUNTS, 'Widget A', DIMS)).toEqual([]);
+        expect(BuildCreditMemoLines(-50, ACCOUNTS, 'Widget A', DIMS)).toEqual([]);
+    });
+
+    it('carries the line dimensions onto both legs', () => {
+        for (const l of BuildCreditMemoLines(10, ACCOUNTS, 'x', DIMS)) expect(l.Dimensions).toBe(DIMS);
+    });
+
+    it('rounds to the penny', () => {
+        const [debit, credit] = BuildCreditMemoLines(33.335, ACCOUNTS, 'x', DIMS);
+        expect(debit.DebitAmount).toBe(33.34);
+        expect(credit.CreditAmount).toBe(33.34);
+    });
+});

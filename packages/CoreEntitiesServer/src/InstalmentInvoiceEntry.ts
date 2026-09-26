@@ -82,8 +82,14 @@ import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 const INVOICE_ENTRY_TYPE = 'InstalmentInvoice';
 const INVOICE_ENTRY_TYPE_FALLBACK = 'OrderBooking';
 
-/** The entry type to name on the draft, given what this database actually has seeded. */
-async function resolveEntryType(provider: IMetadataProvider, user: UserInfo): Promise<string> {
+/**
+ * The entry type to name on the draft, given what this database actually has seeded.
+ *
+ * Exported because the reversal's credit memo classifies itself the same way (D92 §6): it is the
+ * other half of an instalment's life, and a second copy of this lookup is how the two would drift
+ * into disagreeing about which database has the type seeded.
+ */
+export async function ResolveInstalmentEntryType(provider: IMetadataProvider, user: UserInfo): Promise<string> {
     const engine = await LoadAccountingEngine(provider, user);
     if (engine.JournalEntryTypeByCode(INVOICE_ENTRY_TYPE)) return INVOICE_ENTRY_TYPE;
     console.warn(
@@ -387,7 +393,7 @@ export async function EmitInstalmentInvoiceEntry(
         [
             {
                 EffectiveDate: asOf.toISOString().slice(0, 10),
-                EntryType: await resolveEntryType(provider, user),
+                EntryType: await ResolveInstalmentEntryType(provider, user),
                 Description:
                     `Order ${context.OrderNumber} instalment ${context.InstallmentNumber} invoiced as ` +
                     `${context.DocumentNumber} — billing entry`,
