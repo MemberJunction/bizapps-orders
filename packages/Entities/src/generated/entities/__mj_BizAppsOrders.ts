@@ -1492,6 +1492,149 @@ export const mjBizAppsOrdersOrderCompanyPolicySchema = z.object({
 export type mjBizAppsOrdersOrderCompanyPolicyEntityType = z.infer<typeof mjBizAppsOrdersOrderCompanyPolicySchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Order Concessions
+ */
+export const mjBizAppsOrdersOrderConcessionSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderHeaderID: z.string().describe(`
+        * * Field Name: OrderHeaderID
+        * * Display Name: Order Header ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+        * * Description: The order the concession is granted on. For a term extension, the order whose line bought the term.`),
+    OrderLineID: z.string().nullable().describe(`
+        * * Field Name: OrderLineID
+        * * Display Name: Order Line ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+        * * Description: The line a Price, Scope or Seats concession applies to.`),
+    SubscriptionTermID: z.string().nullable().describe(`
+        * * Field Name: SubscriptionTermID
+        * * Display Name: Subscription Term ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscription Terms (vwSubscriptionTerms.ID)
+        * * Description: The subscription term a Duration concession extends.`),
+    DeliveryForm: z.union([z.literal('Duration'), z.literal('Price'), z.literal('Scope'), z.literal('Seats')]).describe(`
+        * * Field Name: DeliveryForm
+        * * Display Name: Delivery Form
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Duration
+    *   * Price
+    *   * Scope
+    *   * Seats
+        * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge).`),
+    ReasonCategory: z.union([z.literal('Other'), z.literal('Referral'), z.literal('Retention')]).describe(`
+        * * Field Name: ReasonCategory
+        * * Display Name: Reason Category
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Other
+    *   * Referral
+    *   * Retention
+        * * Description: Why it was granted: Retention, Referral or Other. Retention concessions and referral credits have different economics and are reported separately.`),
+    Reason: z.string().describe(`
+        * * Field Name: Reason
+        * * Display Name: Reason
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The requester's explanation of the concession.`),
+    AddedDays: z.number().nullable().describe(`
+        * * Field Name: AddedDays
+        * * Display Name: Added Days
+        * * SQL Data Type: int
+        * * Description: Days added to the term at no charge. Required for Duration.`),
+    AddedQuantity: z.number().nullable().describe(`
+        * * Field Name: AddedQuantity
+        * * Display Name: Added Quantity
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Quantity added to the line at no charge. Required for Seats.`),
+    ComputedValue: z.number().describe(`
+        * * Field Name: ComputedValue
+        * * Display Name: Computed Value
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: What the concession is worth, in currency, at the arrangement's own rate. Computed on save from the line or term; never authored.`),
+    Status: z.union([z.literal('Approved'), z.literal('Pending'), z.literal('Rejected')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Approved
+    *   * Pending
+    *   * Rejected
+        * * Description: Pending | Approved | Rejected. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role.`),
+    RequestedByUserID: z.string().describe(`
+        * * Field Name: RequestedByUserID
+        * * Display Name: Requested By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user who recorded the concession. Their SalesAuthority is what it is checked against.`),
+    AuthorizedBySalesAuthorityID: z.string().nullable().describe(`
+        * * Field Name: AuthorizedBySalesAuthorityID
+        * * Display Name: Authorized By Sales Authority ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Sales Authorities (vwSalesAuthorities.ID)
+        * * Description: The SalesAuthority that covered the concession when it was approved without escalation. Stamped so a later change to the limit does not change how past concessions read.`),
+    SalesRuleID: z.string().nullable().describe(`
+        * * Field Name: SalesRuleID
+        * * Display Name: Sales Rule ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Sales Rules (vwSalesRules.ID)
+        * * Description: The ConcessionLimit rule whose role must decide this concession. Set when it exceeded the requester's authority.`),
+    DecidedByUserID: z.string().nullable().describe(`
+        * * Field Name: DecidedByUserID
+        * * Display Name: Decided By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: Who approved or rejected it. For a concession within the requester's authority, the requester.`),
+    DecidedAt: z.date().nullable().describe(`
+        * * Field Name: DecidedAt
+        * * Display Name: Decided At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When it was approved or rejected.`),
+    DecisionNotes: z.string().nullable().describe(`
+        * * Field Name: DecisionNotes
+        * * Display Name: Decision Notes
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The approver's note on the decision.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    OrderHeader: z.string().describe(`
+        * * Field Name: OrderHeader
+        * * Display Name: Order Header
+        * * SQL Data Type: nvarchar(40)`),
+    RequestedByUser: z.string().describe(`
+        * * Field Name: RequestedByUser
+        * * Display Name: Requested By User
+        * * SQL Data Type: nvarchar(100)`),
+    SalesRule: z.string().nullable().describe(`
+        * * Field Name: SalesRule
+        * * Display Name: Sales Rule
+        * * SQL Data Type: nvarchar(200)`),
+    DecidedByUser: z.string().nullable().describe(`
+        * * Field Name: DecidedByUser
+        * * Display Name: Decided By User
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersOrderConcessionEntityType = z.infer<typeof mjBizAppsOrdersOrderConcessionSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Header Payment Schedules
  */
 export const mjBizAppsOrdersOrderHeaderPaymentScheduleSchema = z.object({
@@ -4500,6 +4643,16 @@ export const mjBizAppsOrdersSalesAuthoritySchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    MaxConcessionValue: z.number().nullable().describe(`
+        * * Field Name: MaxConcessionValue
+        * * Display Name: Max Concession Value
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Largest concession value, in currency, this rep may grant unaided, whatever form it takes. For a manual discount NULL leaves only MaxDiscountPct in force; for a concession delivered as duration, seats or scope NULL means no authority, so it goes to approval.`),
+    MaxTermExtensionDays: z.number().nullable().describe(`
+        * * Field Name: MaxTermExtensionDays
+        * * Display Name: Max Term Extension Days
+        * * SQL Data Type: int
+        * * Description: Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.`),
     SalesRepUser: z.string().describe(`
         * * Field Name: SalesRepUser
         * * Display Name: Sales Rep
@@ -4522,18 +4675,19 @@ export const mjBizAppsOrdersSalesRuleSchema = z.object({
         * * Display Name: Rule Name
         * * SQL Data Type: nvarchar(200)
         * * Description: Display name of the rule.`),
-    RuleType: z.union([z.literal('CreditLimit'), z.literal('Custom'), z.literal('DiscountLimit'), z.literal('PaymentTermsRequired'), z.literal('ProductAuthorization')]).describe(`
+    RuleType: z.union([z.literal('ConcessionLimit'), z.literal('CreditLimit'), z.literal('Custom'), z.literal('DiscountLimit'), z.literal('PaymentTermsRequired'), z.literal('ProductAuthorization')]).describe(`
         * * Field Name: RuleType
         * * Display Name: Rule Type
         * * SQL Data Type: nvarchar(40)
     * * Value List Type: List
     * * Possible Values 
+    *   * ConcessionLimit
     *   * CreditLimit
     *   * Custom
     *   * DiscountLimit
     *   * PaymentTermsRequired
     *   * ProductAuthorization
-        * * Description: DiscountLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom.`),
+        * * Description: DiscountLimit | ConcessionLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom. ConcessionLimit names the role that approves a concession outside a rep's SalesAuthority.`),
     Scope: z.union([z.literal('Global'), z.literal('PerCustomer'), z.literal('PerProduct'), z.literal('PerSalesRep')]).describe(`
         * * Field Name: Scope
         * * Display Name: Scope
@@ -9633,6 +9787,339 @@ export class mjBizAppsOrdersOrderCompanyPolicyEntity extends BaseEntity<mjBizApp
     */
     get DefaultPriceList(): string | null {
         return this.Get('DefaultPriceList');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Order Concessions - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OrderConcession
+ * * Base View: vwOrderConcessions
+ * * @description A concession granted on an order, valued the same way whatever form it takes: a price reduction, a term extended at no charge, seats or a product added at no charge. Within the requester's SalesAuthority it is Approved on save; outside it, Pending until a holder of the ConcessionLimit rule's role decides it. An order with a Pending concession cannot be confirmed and its documents cannot be sent.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Concessions')
+export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOrdersOrderConcessionEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Order Concessions record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Concessions record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOrderConcessionEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderID
+    * * Display Name: Order Header ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+    * * Description: The order the concession is granted on. For a term extension, the order whose line bought the term.
+    */
+    get OrderHeaderID(): string {
+        return this.Get('OrderHeaderID');
+    }
+    set OrderHeaderID(value: string) {
+        this.Set('OrderHeaderID', value);
+    }
+
+    /**
+    * * Field Name: OrderLineID
+    * * Display Name: Order Line ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    * * Description: The line a Price, Scope or Seats concession applies to.
+    */
+    get OrderLineID(): string | null {
+        return this.Get('OrderLineID');
+    }
+    set OrderLineID(value: string | null) {
+        this.Set('OrderLineID', value);
+    }
+
+    /**
+    * * Field Name: SubscriptionTermID
+    * * Display Name: Subscription Term ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscription Terms (vwSubscriptionTerms.ID)
+    * * Description: The subscription term a Duration concession extends.
+    */
+    get SubscriptionTermID(): string | null {
+        return this.Get('SubscriptionTermID');
+    }
+    set SubscriptionTermID(value: string | null) {
+        this.Set('SubscriptionTermID', value);
+    }
+
+    /**
+    * * Field Name: DeliveryForm
+    * * Display Name: Delivery Form
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Duration
+    *   * Price
+    *   * Scope
+    *   * Seats
+    * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge).
+    */
+    get DeliveryForm(): 'Duration' | 'Price' | 'Scope' | 'Seats' {
+        return this.Get('DeliveryForm');
+    }
+    set DeliveryForm(value: 'Duration' | 'Price' | 'Scope' | 'Seats') {
+        this.Set('DeliveryForm', value);
+    }
+
+    /**
+    * * Field Name: ReasonCategory
+    * * Display Name: Reason Category
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Other
+    *   * Referral
+    *   * Retention
+    * * Description: Why it was granted: Retention, Referral or Other. Retention concessions and referral credits have different economics and are reported separately.
+    */
+    get ReasonCategory(): 'Other' | 'Referral' | 'Retention' {
+        return this.Get('ReasonCategory');
+    }
+    set ReasonCategory(value: 'Other' | 'Referral' | 'Retention') {
+        this.Set('ReasonCategory', value);
+    }
+
+    /**
+    * * Field Name: Reason
+    * * Display Name: Reason
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The requester's explanation of the concession.
+    */
+    get Reason(): string {
+        return this.Get('Reason');
+    }
+    set Reason(value: string) {
+        this.Set('Reason', value);
+    }
+
+    /**
+    * * Field Name: AddedDays
+    * * Display Name: Added Days
+    * * SQL Data Type: int
+    * * Description: Days added to the term at no charge. Required for Duration.
+    */
+    get AddedDays(): number | null {
+        return this.Get('AddedDays');
+    }
+    set AddedDays(value: number | null) {
+        this.Set('AddedDays', value);
+    }
+
+    /**
+    * * Field Name: AddedQuantity
+    * * Display Name: Added Quantity
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Quantity added to the line at no charge. Required for Seats.
+    */
+    get AddedQuantity(): number | null {
+        return this.Get('AddedQuantity');
+    }
+    set AddedQuantity(value: number | null) {
+        this.Set('AddedQuantity', value);
+    }
+
+    /**
+    * * Field Name: ComputedValue
+    * * Display Name: Computed Value
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: What the concession is worth, in currency, at the arrangement's own rate. Computed on save from the line or term; never authored.
+    */
+    get ComputedValue(): number {
+        return this.Get('ComputedValue');
+    }
+    set ComputedValue(value: number) {
+        this.Set('ComputedValue', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Approved
+    *   * Pending
+    *   * Rejected
+    * * Description: Pending | Approved | Rejected. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role.
+    */
+    get Status(): 'Approved' | 'Pending' | 'Rejected' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Approved' | 'Pending' | 'Rejected') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: RequestedByUserID
+    * * Display Name: Requested By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user who recorded the concession. Their SalesAuthority is what it is checked against.
+    */
+    get RequestedByUserID(): string {
+        return this.Get('RequestedByUserID');
+    }
+    set RequestedByUserID(value: string) {
+        this.Set('RequestedByUserID', value);
+    }
+
+    /**
+    * * Field Name: AuthorizedBySalesAuthorityID
+    * * Display Name: Authorized By Sales Authority ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Sales Authorities (vwSalesAuthorities.ID)
+    * * Description: The SalesAuthority that covered the concession when it was approved without escalation. Stamped so a later change to the limit does not change how past concessions read.
+    */
+    get AuthorizedBySalesAuthorityID(): string | null {
+        return this.Get('AuthorizedBySalesAuthorityID');
+    }
+    set AuthorizedBySalesAuthorityID(value: string | null) {
+        this.Set('AuthorizedBySalesAuthorityID', value);
+    }
+
+    /**
+    * * Field Name: SalesRuleID
+    * * Display Name: Sales Rule ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Sales Rules (vwSalesRules.ID)
+    * * Description: The ConcessionLimit rule whose role must decide this concession. Set when it exceeded the requester's authority.
+    */
+    get SalesRuleID(): string | null {
+        return this.Get('SalesRuleID');
+    }
+    set SalesRuleID(value: string | null) {
+        this.Set('SalesRuleID', value);
+    }
+
+    /**
+    * * Field Name: DecidedByUserID
+    * * Display Name: Decided By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: Who approved or rejected it. For a concession within the requester's authority, the requester.
+    */
+    get DecidedByUserID(): string | null {
+        return this.Get('DecidedByUserID');
+    }
+    set DecidedByUserID(value: string | null) {
+        this.Set('DecidedByUserID', value);
+    }
+
+    /**
+    * * Field Name: DecidedAt
+    * * Display Name: Decided At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When it was approved or rejected.
+    */
+    get DecidedAt(): Date | null {
+        return this.Get('DecidedAt');
+    }
+    set DecidedAt(value: Date | null) {
+        this.Set('DecidedAt', value);
+    }
+
+    /**
+    * * Field Name: DecisionNotes
+    * * Display Name: Decision Notes
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The approver's note on the decision.
+    */
+    get DecisionNotes(): string | null {
+        return this.Get('DecisionNotes');
+    }
+    set DecisionNotes(value: string | null) {
+        this.Set('DecisionNotes', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: OrderHeader
+    * * Display Name: Order Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get OrderHeader(): string {
+        return this.Get('OrderHeader');
+    }
+
+    /**
+    * * Field Name: RequestedByUser
+    * * Display Name: Requested By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get RequestedByUser(): string {
+        return this.Get('RequestedByUser');
+    }
+
+    /**
+    * * Field Name: SalesRule
+    * * Display Name: Sales Rule
+    * * SQL Data Type: nvarchar(200)
+    */
+    get SalesRule(): string | null {
+        return this.Get('SalesRule');
+    }
+
+    /**
+    * * Field Name: DecidedByUser
+    * * Display Name: Decided By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get DecidedByUser(): string | null {
+        return this.Get('DecidedByUser');
     }
 }
 
@@ -18489,6 +18976,32 @@ export class mjBizAppsOrdersSalesAuthorityEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
+    * * Field Name: MaxConcessionValue
+    * * Display Name: Max Concession Value
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Largest concession value, in currency, this rep may grant unaided, whatever form it takes. For a manual discount NULL leaves only MaxDiscountPct in force; for a concession delivered as duration, seats or scope NULL means no authority, so it goes to approval.
+    */
+    get MaxConcessionValue(): number | null {
+        return this.Get('MaxConcessionValue');
+    }
+    set MaxConcessionValue(value: number | null) {
+        this.Set('MaxConcessionValue', value);
+    }
+
+    /**
+    * * Field Name: MaxTermExtensionDays
+    * * Display Name: Max Term Extension Days
+    * * SQL Data Type: int
+    * * Description: Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.
+    */
+    get MaxTermExtensionDays(): number | null {
+        return this.Get('MaxTermExtensionDays');
+    }
+    set MaxTermExtensionDays(value: number | null) {
+        this.Set('MaxTermExtensionDays', value);
+    }
+
+    /**
     * * Field Name: SalesRepUser
     * * Display Name: Sales Rep
     * * SQL Data Type: nvarchar(100)
@@ -18561,17 +19074,18 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
     * * SQL Data Type: nvarchar(40)
     * * Value List Type: List
     * * Possible Values 
+    *   * ConcessionLimit
     *   * CreditLimit
     *   * Custom
     *   * DiscountLimit
     *   * PaymentTermsRequired
     *   * ProductAuthorization
-    * * Description: DiscountLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom.
+    * * Description: DiscountLimit | ConcessionLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom. ConcessionLimit names the role that approves a concession outside a rep's SalesAuthority.
     */
-    get RuleType(): 'CreditLimit' | 'Custom' | 'DiscountLimit' | 'PaymentTermsRequired' | 'ProductAuthorization' {
+    get RuleType(): 'ConcessionLimit' | 'CreditLimit' | 'Custom' | 'DiscountLimit' | 'PaymentTermsRequired' | 'ProductAuthorization' {
         return this.Get('RuleType');
     }
-    set RuleType(value: 'CreditLimit' | 'Custom' | 'DiscountLimit' | 'PaymentTermsRequired' | 'ProductAuthorization') {
+    set RuleType(value: 'ConcessionLimit' | 'CreditLimit' | 'Custom' | 'DiscountLimit' | 'PaymentTermsRequired' | 'ProductAuthorization') {
         this.Set('RuleType', value);
     }
 

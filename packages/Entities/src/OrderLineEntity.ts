@@ -6,12 +6,10 @@
 import {
     BaseEntity,
     Metadata,
-    RunView,
     ValidationErrorInfo,
     ValidationErrorType,
     ValidationResult,
     type IMetadataProvider,
-    type IRunViewProvider,
     type UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
@@ -19,8 +17,7 @@ import { mjBizAppsOrdersOrderLineEntity } from './generated/entity_subclasses';
 import { OrderLineExtensionCompanion } from './OrderLineExtensionCompanion';
 import { ORDER_LINE_MONEY_FIELDS } from './booked-money';
 import { anyFieldIsDirty } from './field-dirty';
-import { loadApplicabilityContext } from './pricing/applicability';
-import { AsDateValue, TodayAsDateValue } from './date-cell';
+import { BuildLinePriceContext } from './pricing/linePriceContext';
 import {
     isEnginePrice,
     isNamedListPick,
@@ -28,7 +25,6 @@ import {
     userPriceOverrideKind,
 } from './pricing/priceOverride';
 import { ListApplicablePrices, PriceResolutionError, ResolvePrice } from './pricing/PriceResolver';
-import { LoadOrdersEngine, OrdersEngine } from './pricing/OrdersEngine';
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Lines')
 export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
@@ -83,34 +79,8 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
         if (!stated && !this.ProductPriceID) return;
 
         try {
-            const product = await this.loadProductForOverride();
-            const header = await this.loadHeaderForOverride();
-            const ctx = {
-                ProductID: this.ProductID,
-                ProductCategoryID: product?.ProductCategoryID ?? null,
-                CompanyID: product?.CompanyID ?? header?.CompanyID ?? '',
-                Quantity: Number(this.Quantity ?? 0),
-                // A calendar day: price applicability is bounded by `EffectiveFrom`/`EffectiveTo`,
-                // both `date` columns, and an instant answers the UTC day (#209).
-                AsOf: AsDateValue(header?.OrderDate) ?? TodayAsDateValue(),
-                OrganizationID: header?.BillToOrganizationID ?? null,
-                PersonID: header?.BillToPersonID ?? null,
-                ApplicabilityContext: await loadApplicabilityContext(
-                    {
-                        OrderHeaderID: this.OrderHeaderID,
-                        ProductID: this.ProductID,
-                        BillToPersonID: header?.BillToPersonID ?? null,
-                        BillToOrganizationID: header?.BillToOrganizationID ?? null,
-                        ShipToPersonID: header?.ShipToPersonID ?? null,
-                        ShipToOrganizationID: header?.ShipToOrganizationID ?? null,
-                        BillToAddressID: header?.BillToAddressID ?? null,
-                        ShipToAddressID: header?.ShipToAddressID ?? null,
-                    },
-                    provider,
-                    user,
-                ),
-            };
-            if (!ctx.CompanyID) return;
+            const ctx = await BuildLinePriceContext(this, provider, user);
+            if (!ctx) return;
 
             const engine = await ResolvePrice(ctx, provider, user);
             if (engine && isEnginePrice(this, engine)) return;
@@ -157,54 +127,6 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
             }
             // Unreadable provider / missing metadata: leave the line to the confirm-path resolver.
         }
-    }
-
-    private async loadProductForOverride(): Promise<{ ProductCategoryID: string | null; CompanyID: string } | null> {
-        await LoadOrdersEngine(this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
-        const p = OrdersEngine.Instance.ProductByID(this.ProductID);
-        return p ? { ProductCategoryID: p.ProductCategoryID ?? null, CompanyID: p.CompanyID } : null;
-    }
-
-    private async loadHeaderForOverride(): Promise<{
-        CompanyID: string;
-        OrderDate: Date | string | null;
-        BillToPersonID: string | null;
-        BillToOrganizationID: string | null;
-        ShipToPersonID: string | null;
-        ShipToOrganizationID: string | null;
-        BillToAddressID: string | null;
-        ShipToAddressID: string | null;
-    } | null> {
-        if (!this.OrderHeaderID) return null;
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{
-            CompanyID: string;
-            OrderDate: Date | string | null;
-            BillToPersonID: string | null;
-            BillToOrganizationID: string | null;
-            ShipToPersonID: string | null;
-            ShipToOrganizationID: string | null;
-            BillToAddressID: string | null;
-            ShipToAddressID: string | null;
-        }>(
-            {
-                EntityName: 'MJ_BizApps_Orders: Order Headers',
-                ExtraFilter: `ID = '${this.OrderHeaderID}'`,
-                Fields: [
-                    'CompanyID',
-                    'OrderDate',
-                    'BillToPersonID',
-                    'BillToOrganizationID',
-                    'ShipToPersonID',
-                    'ShipToOrganizationID',
-                    'BillToAddressID',
-                    'ShipToAddressID',
-                ],
-                ResultType: 'simple',
-            },
-            this.ContextCurrentUser,
-        );
-        return res?.Results?.[0] ?? null;
     }
 
     /**

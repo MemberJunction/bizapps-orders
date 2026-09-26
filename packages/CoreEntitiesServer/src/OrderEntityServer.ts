@@ -74,6 +74,7 @@ import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
@@ -146,6 +147,7 @@ const BOOKED_STATUSES = new Set(['Confirmed']);
  * an allocation points at its adjustment. See `deleteLineDependents` for why the list stops here.
  */
 const REMOVED_LINE_DEPENDENT_ENTITIES = [
+    'MJ_BizApps_Orders: Order Concessions',
     'MJ_BizApps_Orders: Order Line Price Components',
     'MJ_BizApps_Orders: Order Charge Allocations',
     'MJ_BizApps_Orders: Order Adjustment Allocations',
@@ -397,6 +399,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         await this.ApplyPersonPartyDefaults();
 
         const booking = this.willBookOnThisSave();
+
+        // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
+        // for the same reason as the status move above: a refused confirm must change nothing.
+        if (booking && !(await this.passesConcessionGate())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
         //
@@ -882,6 +888,47 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
 
+    /**
+     * Refuse the confirm while a concession on this order awaits a decision, or a line's typed price
+     * gives away value no approved concession covers (golive #222). The order itself saves; only
+     * the move to Confirmed waits, so the work is kept and the concession stays visible as a queue.
+     */
+    private async passesConcessionGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        const lines: ConcessionLineFacts[] = this.Lines.Items.map((line) => ({
+            ID: line.IsSaved ? line.ID : null,
+            LineNumber: line.LineNumber ?? null,
+            ParentOrderLineID: line.ParentOrderLineID ?? null,
+            ReversesOrderLineID: line.ReversesOrderLineID ?? null,
+            ProductID: line.ProductID,
+            OrderHeaderID: this.IsSaved ? this.ID : null,
+            Quantity: line.Quantity,
+            UnitPrice: line.UnitPrice,
+            ProductPriceID: line.ProductPriceID,
+            PriceStated:
+                line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0,
+        }));
+        const problems = await FindUnapprovedConcessions(
+            this.IsSaved ? this.ID : null,
+            lines,
+            true,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            user,
+        );
+        if (problems.length === 0) return true;
+
+        this.RegisterResultHistoryEntry(
+            this.buildFailureResult(
+                new Error(
+                    `Order ${this.OrderNumber ?? ''} cannot be confirmed yet: ${problems.join('; ')}. A concession ` +
+                        `must be approved before the customer is committed to it.`,
+                ),
+            ),
+        );
+        return false;
+    }
+
     // ─── Booking ───────────────────────────────────────────────────────────────
 
     // `bookingInFlight` and `willBookOnThisSave()` moved to OrderHeaderEntity (both `protected`),
@@ -1133,6 +1180,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
             for (const row of rows) {
+                // A concession on a draft line goes with the line, decided or not: the line it priced
+                // no longer exists, and the order has committed no customer to it.
+                if ('WithdrawWithDraftLine' in row) row.WithdrawWithDraftLine = true;
                 if (!(await row.Delete())) {
                     throw new Error(
                         `Failed to delete ${entityName} for removed order line ${line.LineNumber}: ` +

@@ -379,6 +379,8 @@ export const ReturnsChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        // SubRolling's engine price, so the stated 120 is not a concession the confirm gate holds.
+        await CreateProductPrice(ctx, f.Products.SubRolling, 120);
         const sale = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,

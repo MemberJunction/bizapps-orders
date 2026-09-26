@@ -586,7 +586,11 @@ async function withContention(
   }
 }
 
-/** Confirm a trivial CoA order through a given session. Priced inline so no committed rule is needed. */
+/**
+ * Confirm a trivial order through a given session. Priced inline so no committed rule is needed, and
+ * above the world catalog's price for either widget so the stated price is not a concession the
+ * confirm gate would hold.
+ */
 async function confirmVia(
   s: Session,
   user: UserInfo,
@@ -599,7 +603,7 @@ async function confirmVia(
     {
       CompanyID: companyID,
       BillToOrganizationID: f.Customers.OrganizationID,
-      Lines: [{ ProductID: productID, Quantity: 2, UnitPrice: 25 }],
+      Lines: [{ ProductID: productID, Quantity: 2, UnitPrice: 250 }],
     },
     s,
   );

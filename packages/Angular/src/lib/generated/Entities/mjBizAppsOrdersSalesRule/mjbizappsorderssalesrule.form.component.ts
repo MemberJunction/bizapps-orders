@@ -18,7 +18,8 @@ export class mjBizAppsOrdersSalesRuleFormComponent extends BaseFormComponent {
             { sectionKey: 'ruleConfiguration', sectionName: 'Rule Configuration', isExpanded: true },
             { sectionKey: 'scopeAndTargeting', sectionName: 'Scope and Targeting', isExpanded: true },
             { sectionKey: 'logicAndApproval', sectionName: 'Logic and Approval', isExpanded: true },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderConcessions', sectionName: 'Order Concessions', isExpanded: false }
         ]);
     }
 }

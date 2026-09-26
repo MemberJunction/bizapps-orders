@@ -1,0 +1,29 @@
+[
+  {
+    "_comments": [
+      "The non-percentage concession limits sit with MaxDiscountPct: together they are what a rep may grant unaided."
+    ],
+    "fields": {
+      "Category": "Authority Limits"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Authorities&Name=MaxConcessionValue"
+    },
+    "sync": {
+      "lastModified": "2026-09-24T11:01:28.523Z",
+      "checksum": "9035d02fb521cb9d7b0cf151dc2cb9747410a60b1a71b0deaa716aa4b9a21ae3"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Authority Limits"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Authorities&Name=MaxTermExtensionDays"
+    },
+    "sync": {
+      "lastModified": "2026-09-24T11:01:28.540Z",
+      "checksum": "9035d02fb521cb9d7b0cf151dc2cb9747410a60b1a71b0deaa716aa4b9a21ae3"
+    }
+  }
+]

@@ -146,6 +146,36 @@ describe('DecideDelivery — what may be sent', () => {
         });
         expect(d.Verdict).toBe('Send');
     });
+
+    // golive #222: a concession the customer has been told about cannot be withdrawn.
+    it('holds back a quote carrying a concession that is not yet approved', () => {
+        const d = DecideDelivery({
+            Document: facts({ SourceStatus: 'Quoted', Kind: 'Quote' }),
+            Recipients: [billing('ap@contoso.com')],
+            UnapprovedConcessions: ['a duration concession worth 13808.22 (retention) is awaiting approval'],
+        });
+        expect(d.Verdict).toBe('Refuse');
+        expect(d.Code).toBe('CONCESSION_PENDING');
+        expect(d.Reason).toContain('awaiting approval');
+    });
+
+    it('sends once nothing is awaiting approval', () => {
+        const d = DecideDelivery({
+            Document: facts({ SourceStatus: 'Quoted', Kind: 'Quote' }),
+            Recipients: [billing('ap@contoso.com')],
+            UnapprovedConcessions: [],
+        });
+        expect(d.Verdict).toBe('Send');
+    });
+
+    it('still names a draft order before a pending concession', () => {
+        const d = DecideDelivery({
+            Document: facts({ SourceStatus: 'Draft' }),
+            Recipients: [billing('ap@contoso.com')],
+            UnapprovedConcessions: ['a price concession worth 10.00 (other) is awaiting approval'],
+        });
+        expect(d.Code).toBe('NOT_DELIVERABLE');
+    });
 });
 
 // ─── The subject ───────────────────────────────────────────────────────────────────────────────

@@ -15,6 +15,15 @@ export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './
 export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './GetBillingWorklistOperation.js';
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
+export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
+export {
+    FindConcessionLimitRule,
+    FindUnapprovedConcessions,
+    LinePriceConcessionFor,
+    LoadConcessionAuthority,
+    type ConcessionLineFacts,
+    type LinePriceConcession,
+} from './ConcessionGate.js';
 export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
 export {

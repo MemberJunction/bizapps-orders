@@ -91,7 +91,7 @@ export interface DeliveryDecision {
     /** Why not, when not — written for the person who has to fix it. */
     Reason: string;
     /** A stable code so a caller can branch without parsing prose. */
-    Code: 'OK' | 'NOT_DELIVERABLE' | 'NO_RECIPIENT' | 'NO_DOCUMENT';
+    Code: 'OK' | 'NOT_DELIVERABLE' | 'CONCESSION_PENDING' | 'NO_RECIPIENT' | 'NO_DOCUMENT';
 }
 
 /**
@@ -104,6 +104,11 @@ export interface DeliveryDecision {
 export function DecideDelivery(input: {
     Document: DeliverableFacts | null | undefined;
     Recipients: readonly DeliveryContact[];
+    /**
+     * Concessions on the order not yet approved, as `FindUnapprovedConcessions` words them. A document
+     * that tells the customer about a concession before it is approved commits the business to it.
+     */
+    UnapprovedConcessions?: readonly string[];
 }): DeliveryDecision {
     if (!input.Document) {
         return { Verdict: 'Refuse', Code: 'NO_DOCUMENT', Reason: 'there is no document to deliver' };
@@ -117,6 +122,16 @@ export function DecideDelivery(input: {
             Reason:
                 `${input.Document.DocumentNumber} comes from a ${status.toLowerCase()} order, so it is not a bill. ` +
                 `Sending it would put a document that looks exactly like a real invoice in a customer's inbox.`,
+        };
+    }
+
+    if (input.UnapprovedConcessions?.length) {
+        return {
+            Verdict: 'Refuse',
+            Code: 'CONCESSION_PENDING',
+            Reason:
+                `${input.Document.DocumentNumber} cannot be sent yet: ${input.UnapprovedConcessions.join('; ')}. ` +
+                `Once the customer has been told about a concession it cannot be withdrawn, so it is approved first.`,
         };
     }
 

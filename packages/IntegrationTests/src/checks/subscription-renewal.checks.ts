@@ -41,6 +41,7 @@ import {
 import {
     ACCT_SCHEMA,
     CreateOrdersFixture,
+    CreateProductPrice,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
@@ -356,6 +357,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 // subscriber hold a SECOND concurrent subscription?" — a renewal is not a second
                 // one, it is this one continuing. Without the IsRenewal bypass the type would
                 // refuse to renew itself, every cycle, silently.
+                // SubFiscal's engine price, so the stated 900 is not a concession the confirm gate holds.
+                await CreateProductPrice(ctx, Fx().Products.SubFiscal, 900);
                 const { SubscriptionID, Term } = await buySubscription(ctx, 'SubFiscal', 900);
 
                 const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });

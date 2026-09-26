@@ -36,6 +36,7 @@ import {
 import {
     ACCT_SCHEMA,
     CreateOrdersFixture,
+    CreateProductPrice,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
@@ -282,6 +283,8 @@ export const SubscriptionChecks: NamedCheck[] = [
             InRolledBackTransaction(ctx, async () => {
                 // Fiscal-year type: Jul 1 anchor, ChargeFull, organization-only.
                 // Bought ON the anchor date, so the next anchor is a year out and the term is full.
+                // SubFiscal's engine price, so the stated 900 is not a concession the confirm gate holds.
+                await CreateProductPrice(ctx, Fx().Products.SubFiscal, 900);
                 const result = await buySubscription(ctx, 'SubFiscal', 900);
                 Assert(result.Saved, `confirm failed: ${result.Message}`);
                 const [term] = await termsForOrder(ctx, result.Order.ID as string);
@@ -330,6 +333,8 @@ export const SubscriptionChecks: NamedCheck[] = [
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
                 const f = Fx();
+                // SubFiscal's engine price, so the stated 900 is not a concession the confirm gate holds.
+                await CreateProductPrice(ctx, Fx().Products.SubFiscal, 900);
                 const first = await buySubscription(ctx, 'SubFiscal', 900);
                 Assert(first.Saved, `first confirm failed: ${first.Message}`);
 
@@ -366,6 +371,8 @@ export const SubscriptionChecks: NamedCheck[] = [
             InRolledBackTransaction(ctx, async () => {
                 const f = Fx();
                 // SubFiscal is SubscriberScope=Organization; buy it for a PERSON instead.
+                // SubFiscal's engine price, so the stated 900 is not a concession the confirm gate holds.
+                await CreateProductPrice(ctx, Fx().Products.SubFiscal, 900);
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     OrderDate: JULY_1,
@@ -423,6 +430,8 @@ export const SubscriptionChecks: NamedCheck[] = [
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
                 // SubFiscal recognizes Quarterly over a 12-month term.
+                // SubFiscal's engine price, so the stated 900 is not a concession the confirm gate holds.
+                await CreateProductPrice(ctx, Fx().Products.SubFiscal, 900);
                 const result = await buySubscription(ctx, 'SubFiscal', 900);
                 Assert(result.Saved, `confirm failed: ${result.Message}`);
                 const [term] = await termsForOrder(ctx, result.Order.ID as string);
@@ -566,6 +575,8 @@ export const SubscriptionChecks: NamedCheck[] = [
                 // different dates, and a rule keyed to the order date cannot express that at all.
                 // The third line states nothing and must still derive from the order date, so this
                 // also proves the default and an override coexist on one confirm.
+                // SubFiscal's engine price, so the stated 900 is not a concession the confirm gate holds.
+                await CreateProductPrice(ctx, Fx().Products.SubFiscal, 900);
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     OrderDate: BOOKED_AUG_27,

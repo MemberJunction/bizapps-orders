@@ -34,6 +34,7 @@ import { mjBizAppsOrdersOrderCompanyPolicyFormComponent } from "./Entities/mjBiz
 import { mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent } from "./Entities/mjBizAppsOrdersOrderHeaderPaymentSchedule/mjbizappsordersorderheaderpaymentschedule.form.component";
 import { mjBizAppsOrdersOrderHeaderFormComponent } from "./Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component";
 import { mjBizAppsOrdersOrderLineDimensionFormComponent } from "./Entities/mjBizAppsOrdersOrderLineDimension/mjbizappsordersorderlinedimension.form.component";
+import { mjBizAppsOrdersOrderConcessionFormComponent } from "./Entities/mjBizAppsOrdersOrderConcession/mjbizappsordersorderconcession.form.component";
 import { mjBizAppsOrdersOrderLineFormComponent } from "./Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component";
 import { mjBizAppsOrdersOrderLinePriceComponentFormComponent } from "./Entities/mjBizAppsOrdersOrderLinePriceComponent/mjbizappsordersorderlinepricecomponent.form.component";
 import { mjBizAppsOrdersOrderSequenceFormComponent } from "./Entities/mjBizAppsOrdersOrderSequence/mjbizappsordersordersequence.form.component";
@@ -568,7 +569,8 @@ export class GeneratedForms_SubModule_30 { }
 declarations: [
     mjBizAppsOrdersCustomerTaxExemptionFormComponent,
     mjBizAppsOrdersPaymentIntentFormComponent,
-    mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent
+    mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent,
+    mjBizAppsOrdersOrderConcessionFormComponent
 ],
 imports: [
     CommonModule,
