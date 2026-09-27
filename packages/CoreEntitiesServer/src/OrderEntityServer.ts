@@ -731,8 +731,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * A failure here does not fail the confirm. Booking is the irreversible step and money has
      * already moved in the ledger; refusing it because a lookup could not be read would be a far
      * worse outcome than an order that falls back to due-on-receipt and says so in the log.
+     *
+     * Public so `Orders.SpawnRenewals` can settle the terms on its draft before writing the renewal's
+     * schedule row, which is due on the invoice day plus these same terms (#305).
      */
-    private async resolveDueDate(): Promise<void> {
+    public async resolveDueDate(): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         const orderDate = this.OrderDate ? new Date(this.OrderDate).toISOString().slice(0, 10) : null;

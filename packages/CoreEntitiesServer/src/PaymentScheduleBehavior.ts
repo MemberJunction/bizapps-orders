@@ -15,7 +15,9 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 
+import { ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
 import { SplitExactly } from './BundleBehavior.js';
+import { AddDays } from './PaymentTermsBehavior.js';
 
 const Money = (n: number): number => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
@@ -108,9 +110,8 @@ export function BuildPaymentSchedule(input: {
 
 /**
  * A spawned renewal's schedule (orders #305): one instalment per company for that company's whole
- * gross, due on the day the renewal pass ran — the renewal invoice date, which is what the lead
- * time exists for. Under D92 confirm then issues it at once, so the receivable is dated the day the
- * invoice goes out rather than the first day of the new term.
+ * gross, due on `dueDate` ({@link RenewalDueDate}). Under D92 confirm then issues it at once, so the
+ * receivable is dated the day the invoice goes out rather than the first day of the new term.
  *
  * A company whose lines come to nothing gets no row: there is nothing to bill, and an absent row
  * still ties (a zero-gross company is never a shortfall).
@@ -125,6 +126,26 @@ export function RenewalScheduleRows(lines: ScheduleLineFacts[], dueDate: string)
         out.push({ ...row, CompanyID: companyID });
     }
     return out;
+}
+
+/**
+ * When a spawned renewal's instalment is due (orders #305 review): the invoice day plus the
+ * customer's payment terms, never later than the order date (the new term's start).
+ *
+ * The terms are the ones `resolveDueDate` already settled for the order, read back as the gap
+ * between its `OrderDate` and `DueDate`, so there is one terms lookup, not two. Capping at the order
+ * date keeps the row due on or before it, which is what makes confirm issue it (D92).
+ */
+export function RenewalDueDate(invoiceDay: string, orderDate: DateCell, orderDueDate: DateCell): string {
+    const orderDay = ToISODate(orderDate);
+    const termsDue = ToISODate(orderDueDate);
+    if (!orderDay || !termsDue) {
+        throw new Error(`A renewal needs its order date and resolved due date to date its instalment (got ${orderDay}, ${termsDue}).`);
+    }
+    const netDays = Math.round((Date.parse(termsDue) - Date.parse(orderDay)) / 86_400_000);
+    const due = AddDays(invoiceDay, netDays);
+    if (!due) throw new Error(`The renewal invoice day '${invoiceDay}' is not a date.`);
+    return due < orderDay ? due : orderDay;
 }
 
 /** A schedule row as the tie check reads it. */
