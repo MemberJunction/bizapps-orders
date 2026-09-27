@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB15).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB20).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -23,6 +23,11 @@
  *   SB13  a stated start in the future defers the term and every recognition entry with it
  *   SB14  each subscription line on one order carries its own term start
  *   SB15  a renewal ignores a stated start and continues where existing coverage ends
+ *   SB16  a different band of the same family is refused while the holder has coverage (golive #276)
+ *   SB17  …unless the line acknowledges it, which books a second subscription alongside
+ *   SB18  cancelling the existing band first clears the way, with no acknowledgment
+ *   SB19  two bands on ONE order are checked against each other
+ *   SB20  Orders.CheckCoverageOverlap reports what confirm will do, and writes nothing
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -44,7 +49,9 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
-import { ConfirmOrder, type OrderSpec } from '../order-builder.js';
+import { BaseRemotableOperation } from '@memberjunction/core';
+import { MJGlobal } from '@memberjunction/global';
+import { BuildOrder, ConfirmOrder, type OrderSpec } from '../order-builder.js';
 
 /** Mid-year on purpose: every anchored type must then produce a PARTIAL first term. */
 const JULY_1 = new Date('2026-07-01T00:00:00');
@@ -122,6 +129,39 @@ async function entriesForOrder(ctx: IntegrationCheckContext, orderID: string): P
                  WHERE ol.OrderHeaderID = '${orderID}')
          ORDER BY je.EffectiveDate`,
     );
+}
+
+/** Subscriptions this organization holds to a product, live or not. */
+async function subscriptionsFor(ctx: IntegrationCheckContext, productKey: string) {
+    const f = Fx();
+    return TxQuery<{ ID: string; Status: string }>(
+        ctx,
+        `SELECT ID, Status FROM ${ORDERS_SCHEMA}.Subscription
+         WHERE ProductID = '${f.Products[productKey]}'
+           AND HolderOrganizationID = '${f.Customers.OrganizationID}'`,
+    );
+}
+
+/** Run a remote operation the way the client does, returning its payload. */
+async function runOperation<TOut>(ctx: IntegrationCheckContext, key: string, input: Record<string, unknown>): Promise<TOut> {
+    const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<Record<string, unknown>, TOut>>(
+        BaseRemotableOperation,
+        key,
+    );
+    Assert(op != null, `'${key}' is not registered`);
+    const result = await op!.Execute(input, { provider: ctx.Provider, user: ctx.User });
+    Assert(result.Success, `${key} did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown'}`);
+    Assert(result.Output != null, `${key} returned no payload`);
+    return result.Output as TOut;
+}
+
+interface OverlapPreview {
+    Lines: {
+        OrderLineID: string;
+        Outcome: string;
+        Message: string;
+        Overlaps: { SubscriptionID: string | null; CoverageStart: string; CoverageEnd: string }[];
+    }[];
 }
 
 export const SubscriptionChecks: NamedCheck[] = [
@@ -644,6 +684,130 @@ export const SubscriptionChecks: NamedCheck[] = [
                 Assert(SameID(term2.SubscriptionID, term1.SubscriptionID), 'same subscription');
                 AssertEqual(isoDate(term2.StartDate), '2027-07-01', 'the day after existing coverage ends');
                 AssertEqual(isoDate(term2.EndDate), '2028-06-30', 'a full term from there');
+            }),
+    },
+    {
+        Id: 'subscriptions.SB16',
+        Name: 'SB16: a different band of the same family is refused while the holder has coverage',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const first = await buySubscription(ctx, 'SubTierStandard', 300);
+                Assert(first.Saved, `first confirm failed: ${first.Message}`);
+
+                // The bands are different products, so the product-keyed lookup finds nothing and
+                // ExtendExisting never engages. The family is what connects them.
+                const second = await buySubscription(ctx, 'SubTierPremium', 500);
+                Assert(!second.Saved, 'a second band overlapping live coverage must be REFUSED under ExtendExisting');
+                Assert(/family MEM-TIER/.test(second.Message), `the refusal should name the family, got: ${second.Message}`);
+                Assert(
+                    /2026-07-01 to 2027-06-30/.test(second.Message),
+                    `the refusal should name the overlapping coverage, got: ${second.Message}`,
+                );
+                Assert(/Cancel the existing subscription/.test(second.Message), `the refusal should say how to proceed, got: ${second.Message}`);
+
+                AssertEqual((await subscriptionsFor(ctx, 'SubTierPremium')).length, 0, 'no second subscription left behind');
+                AssertEqual((await subscriptionsFor(ctx, 'SubTierStandard')).length, 1, 'the existing band is untouched');
+            }),
+    },
+    {
+        Id: 'subscriptions.SB17',
+        Name: 'SB17: an acknowledged overlap books a second subscription alongside the first',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const first = await buySubscription(ctx, 'SubTierStandard', 300);
+                Assert(first.Saved, `first confirm failed: ${first.Message}`);
+
+                const second = await buySubscription(ctx, 'SubTierPremium', 500, {
+                    Lines: [{ ProductID: f.Products.SubTierPremium, Quantity: 1, UnitPrice: 500, AcknowledgesCoverageOverlap: true }],
+                });
+                Assert(second.Saved, `an acknowledged overlap must confirm: ${second.Message}`);
+
+                const [term] = await termsForOrder(ctx, second.Order.ID as string);
+                AssertEqual(Number(term.TermNumber), 1, 'a different band starts its own subscription');
+                AssertEqual(isoDate(term.StartDate), '2026-07-01', 'the new band covers the same dates');
+                AssertEqual((await subscriptionsFor(ctx, 'SubTierStandard')).length, 1, 'the first band stays live');
+            }),
+    },
+    {
+        Id: 'subscriptions.SB18',
+        Name: 'SB18: cancelling the existing band first lets the new band confirm without acknowledgment',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const first = await buySubscription(ctx, 'SubTierStandard', 300);
+                Assert(first.Saved, `first confirm failed: ${first.Message}`);
+                const [term1] = await termsForOrder(ctx, first.Order.ID as string);
+
+                const cancelled = await runOperation<{ Success: boolean; Message?: string }>(ctx, 'Orders.CancelSubscription', {
+                    SubscriptionID: term1.SubscriptionID,
+                    RequestDate: '2026-07-01',
+                });
+                Assert(cancelled.Success, `cancel failed: ${cancelled.Message}`);
+
+                const second = await buySubscription(ctx, 'SubTierPremium', 500);
+                Assert(second.Saved, `a band whose sibling was cancelled must confirm: ${second.Message}`);
+            }),
+    },
+    {
+        Id: 'subscriptions.SB19',
+        Name: 'SB19: two bands of one family on the same order are checked against each other',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const both = await buySubscription(ctx, 'SubTierStandard', 300, {
+                    Lines: [
+                        { ProductID: f.Products.SubTierStandard, Quantity: 1, UnitPrice: 300 },
+                        { ProductID: f.Products.SubTierPremium, Quantity: 1, UnitPrice: 500 },
+                    ],
+                });
+                Assert(!both.Saved, 'two overlapping bands on one order must be refused');
+                Assert(
+                    /another line of this order/.test(both.Message),
+                    `the refusal should name the sibling line, got: ${both.Message}`,
+                );
+                AssertEqual((await subscriptionsFor(ctx, 'SubTierStandard')).length, 0, 'the refused confirm leaves no subscription');
+            }),
+    },
+    {
+        Id: 'subscriptions.SB20',
+        Name: 'SB20: Orders.CheckCoverageOverlap reports what confirm will do, and writes nothing',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const first = await buySubscription(ctx, 'SubTierStandard', 300);
+                Assert(first.Saved, `first confirm failed: ${first.Message}`);
+                const [term1] = await termsForOrder(ctx, first.Order.ID as string);
+
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.SubTierPremium, Quantity: 1, UnitPrice: 500 }],
+                });
+                Assert(await draft.Order.Save(), `draft save failed: ${draft.Order.LatestResult?.CompleteMessage}`);
+
+                const preview = await runOperation<OverlapPreview>(ctx, 'Orders.CheckCoverageOverlap', {
+                    OrderHeaderID: draft.Order.ID,
+                });
+                AssertEqual(preview.Lines.length, 1, 'one overlapping line');
+                const [row] = preview.Lines;
+                Assert(SameID(row.OrderLineID, draft.Lines[0].ID), 'the row names the line');
+                AssertEqual(row.Outcome, 'NeedsAck', 'ExtendExisting refuses unless acknowledged');
+                Assert(SameID(row.Overlaps[0].SubscriptionID ?? '', term1.SubscriptionID), 'the overlap names the existing subscription');
+                AssertEqual(row.Overlaps[0].CoverageStart, '2026-07-01', 'overlap start');
+                AssertEqual(row.Overlaps[0].CoverageEnd, '2027-06-30', 'overlap end');
+
+                AssertEqual((await subscriptionsFor(ctx, 'SubTierPremium')).length, 0, 'the preview created nothing');
+                const status = await TxOne<{ Status: string }>(
+                    ctx,
+                    `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${draft.Order.ID}'`,
+                );
+                AssertEqual(status?.Status, 'Draft', 'the preview did not confirm the order');
             }),
     },
 ];

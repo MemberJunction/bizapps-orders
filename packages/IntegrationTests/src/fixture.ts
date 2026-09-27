@@ -372,6 +372,9 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             SubFiscal: requireProduct('SubFiscal'),
             SubSeat: requireProduct('SubSeat'),
             SubMonthly: requireProduct('SubMonthly'),
+            /** Two bands of one offering (`SubscriptionFamily` MEM-TIER) on an ExtendExisting type. */
+            SubTierStandard: requireProduct('SubTierStandard'),
+            SubTierPremium: requireProduct('SubTierPremium'),
             EventTicket: requireProduct('EventTicket'),
             EventTicketB: requireProduct('EventTicketB'),
         },

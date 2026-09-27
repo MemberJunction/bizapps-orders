@@ -8,7 +8,15 @@
  * ever drifts back to local-time construction.
  */
 import { describe, expect, it } from 'vitest';
-import { SubscriptionBehavior, ResolveSubscriptionTypeID, ResolveRevenueRecognitionTypeID, SubscriptionTypeRulesFrom, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
+import {
+    SubscriptionBehavior,
+    ResolveSubscriptionTypeID,
+    ResolveRevenueRecognitionTypeID,
+    SubscriptionTypeRulesFrom,
+    OverlappingCoverage,
+    type CoverageOverlap,
+    type SubscriptionTypeRules,
+} from '../SubscriptionBehavior.js';
 
 /** Baseline rules; each test overrides only what it is about. */
 function rules(overrides: Partial<SubscriptionTypeRules> = {}): SubscriptionTypeRules {
@@ -617,5 +625,103 @@ describe('SubscriptionTypeRulesFrom', () => {
         expect(mapped.TrialDays).toBe(0);
         expect(mapped.GracePeriodDays).toBe(0);
         expect(mapped.DefaultTermMonths).toBeNull();
+    });
+});
+
+describe('coverage overlap with another band of the family (golive #276)', () => {
+    const day = (s: string) => new Date(`${s}T00:00:00Z`);
+    const existing: CoverageOverlap = {
+        SubscriptionID: 'sub-1',
+        SubscriptionNumber: 'SUB-000001',
+        ProductName: 'Tier Two',
+        CoverageStart: day('2026-09-26'),
+        CoverageEnd: day('2027-09-25'),
+    };
+    const overlapFor = (mode: SubscriptionTypeRules['ConcurrencyMode'], acknowledged: boolean, overlaps = [existing]) =>
+        new SubscriptionBehavior().DecideCoverageOverlap({
+            Rules: rules({ ConcurrencyMode: mode }),
+            Family: 'TIERED',
+            ProductName: 'Tier One',
+            Overlaps: overlaps,
+            Acknowledged: acknowledged,
+        });
+
+    it('does nothing when nothing overlaps, whatever the mode', () => {
+        for (const mode of ['AllowMultiple', 'ExtendExisting', 'RejectDuplicate'] as const) {
+            expect(overlapFor(mode, false, [])).toEqual({ Outcome: 'None', Message: null });
+        }
+    });
+
+    it('refuses an unacknowledged overlap under ExtendExisting, naming the coverage and the way out', () => {
+        const d = overlapFor('ExtendExisting', false);
+        expect(d.Outcome).toBe('NeedsAck');
+        expect(d.Message).toContain('SUB-000001 (Tier Two, 2026-09-26 to 2027-09-25)');
+        expect(d.Message).toContain('family TIERED');
+        expect(d.Message).toContain('Cancel the existing subscription');
+    });
+
+    it('lets an acknowledged overlap through under ExtendExisting', () => {
+        expect(overlapFor('ExtendExisting', true).Outcome).toBe('Acknowledged');
+    });
+
+    it('refuses under RejectDuplicate even when the line acknowledges it', () => {
+        expect(overlapFor('RejectDuplicate', true).Outcome).toBe('Refused');
+        expect(overlapFor('RejectDuplicate', false).Outcome).toBe('Refused');
+    });
+
+    it('allows it under AllowMultiple and says both will be billed', () => {
+        const d = overlapFor('AllowMultiple', false);
+        expect(d.Outcome).toBe('Allowed');
+        expect(d.Message).toContain('both will be billed');
+    });
+
+    it('names a sibling line of the same order when there is no subscription yet', () => {
+        const d = overlapFor('ExtendExisting', false, [{ ...existing, SubscriptionID: null, SubscriptionNumber: null }]);
+        expect(d.Message).toContain('another line of this order (Tier Two');
+    });
+
+    describe('OverlappingCoverage', () => {
+        const term = (id: string | null, start: string, end: string) => ({
+            SubscriptionID: id,
+            SubscriptionNumber: id ? `N-${id}` : null,
+            ProductName: 'Tier Two',
+            StartDate: day(start),
+            EndDate: day(end),
+        });
+
+        it('clips each overlap to the new term', () => {
+            const out = OverlappingCoverage([term('a', '2026-01-01', '2026-12-31')], day('2026-07-01'), day('2027-06-30'));
+            expect(out).toHaveLength(1);
+            expect(iso(out[0].CoverageStart)).toBe('2026-07-01');
+            expect(iso(out[0].CoverageEnd)).toBe('2026-12-31');
+        });
+
+        it('treats a term ending the day before as contiguous, not overlapping', () => {
+            expect(OverlappingCoverage([term('a', '2025-07-01', '2026-06-30')], day('2026-07-01'), day('2027-06-30'))).toEqual([]);
+        });
+
+        it('counts a single shared day as an overlap', () => {
+            expect(OverlappingCoverage([term('a', '2025-07-01', '2026-07-01')], day('2026-07-01'), day('2027-06-30'))).toHaveLength(1);
+        });
+
+        it('merges several terms of one subscription into one window', () => {
+            const out = OverlappingCoverage(
+                [term('a', '2026-09-26', '2027-09-25'), term('a', '2027-09-26', '2028-09-25')],
+                day('2026-09-26'),
+                day('2029-09-25'),
+            );
+            expect(out).toHaveLength(1);
+            expect(iso(out[0].CoverageStart)).toBe('2026-09-26');
+            expect(iso(out[0].CoverageEnd)).toBe('2028-09-25');
+        });
+
+        it('keeps separate subscriptions and separate sibling lines apart', () => {
+            const out = OverlappingCoverage(
+                [term('a', '2026-01-01', '2026-12-31'), term('b', '2026-01-01', '2026-12-31'), term(null, '2026-01-01', '2026-12-31'), term(null, '2026-01-01', '2026-12-31')],
+                day('2026-06-01'),
+                day('2026-06-30'),
+            );
+            expect(out).toHaveLength(4);
+        });
     });
 });

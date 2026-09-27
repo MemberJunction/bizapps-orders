@@ -1,4 +1,7 @@
 <div class="mjo-ol">
+    @if (CoverageCheckError) {
+        <div class="mjo-ol-overlap-err" role="status">{{ CoverageCheckError }}</div>
+    }
     @for (line of Lines; track line.ID) {
         <div class="mjo-ol-card">
             <div class="mjo-ol-card__top">
@@ -302,6 +305,30 @@
                             Needed to confirm: revenue on this line is recognized against these dates.
                         </span>
                     }
+                </div>
+            }
+
+            <!--
+                COVERAGE OVERLAP — another band of the same subscription family (golive #276).
+                The text is the server's own confirm check (Orders.CheckCoverageOverlap), so what
+                this says is what confirm will do. Checked after each save.
+            -->
+            @if (CoverageOverlapFor(line); as overlap) {
+                <div class="mjo-ol-overlap" [class.is-blocking]="OverlapBlocksConfirm(line)" role="status">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    <div class="mjo-ol-overlap__body">
+                        <span>{{ overlap.Message }}</span>
+                        @if (CanAcknowledgeOverlap(line)) {
+                            <label class="mjo-ol-overlap__ack">
+                                <input
+                                    type="checkbox"
+                                    [checked]="line.AcknowledgesCoverageOverlap"
+                                    [disabled]="!EditMode"
+                                    (change)="SetOverlapAcknowledged(line, $event)">
+                                Run alongside the existing coverage — both will be billed
+                            </label>
+                        }
+                    </div>
                 </div>
             }
 

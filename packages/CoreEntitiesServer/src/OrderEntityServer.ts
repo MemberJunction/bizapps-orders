@@ -103,6 +103,10 @@ import {
     type ExistingSubscription,
     type SubscriptionDecision,
     type SubscriptionTypeRules,
+    OverlappingCoverage,
+    type CoverageOverlap,
+    type CoverageOverlapDecision,
+    type FamilyCoverageTerm,
 } from './SubscriptionBehavior.js';
 
 interface ProductRow {
@@ -111,6 +115,15 @@ interface ProductRow {
     SubscriptionTypeID?: string | null;
     ProductTypeID?: string | null;
     RevenueRecognitionTypeID: string;
+    /** `Product.SubscriptionFamily` — the bands of one offering share it (golive #276). */
+    SubscriptionFamily?: string | null;
+}
+
+/** A subscription line whose term overlaps coverage in its family, as a preview reports it. */
+export interface LineCoverageOverlap {
+    Line: mjBizAppsOrdersOrderLineEntity;
+    Decision: CoverageOverlapDecision;
+    Overlaps: CoverageOverlap[];
 }
 
 /** Terms created during a confirm, and the recognition cadence each line inherits from its type. */
@@ -2751,13 +2764,33 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * The subscription lines of this draft whose terms overlap coverage in their family, and what
+     * confirm will do with each (golive #276). Writes nothing.
+     *
+     * Runs the same decision pass confirm runs, over the SAVED lines. Lines a bundle would add at
+     * confirm are not expanded here, so a band sold inside a bundle is caught at confirm only.
+     */
+    public async PreviewCoverageOverlaps(): Promise<LineCoverageOverlap[]> {
+        if (this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+        const out: LineCoverageOverlap[] = [];
+        await this.decideSubscriptions(out);
+        return out;
+    }
+
+    /**
      * Evaluate the subscription rules for every pending line, BEFORE any of them is inserted.
      *
      * Pure with respect to this app's tables — it reads the catalog and any existing subscription,
      * then asks the behaviour what to do. Nothing is written, so a rules rejection aborts the
      * confirm before a single line exists.
+     *
+     * `preview` turns refusals into answers: a line the rules reject is skipped, and every line
+     * whose term overlaps coverage in its family is collected there instead of throwing. That is
+     * how `Orders.CheckCoverageOverlap` asks the same question confirm does without confirming.
      */
-    private async decideSubscriptions(): Promise<Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>> {
+    private async decideSubscriptions(
+        preview?: LineCoverageOverlap[],
+    ): Promise<Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>> {
         const out = new Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>();
         const subLines = await this.subscriptionLines([...this.Lines.Items]);
         if (subLines.length === 0) return out;
@@ -2771,6 +2804,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // ever see the database, so two lines for one subscription both decide
         // "create" — see PENDING_SIBLING_ID.
         const pendingSiblings = new Map<string, ExistingSubscription>();
+        // The same, for other BANDS: terms earlier lines of this order will create, keyed by
+        // family and holder, so two bands on one order are checked against each other too.
+        const pendingFamily = new Map<string, Array<FamilyCoverageTerm & { ProductID: string }>>();
 
         // The order's booking day, as a calendar day (#209). `Decide` reduces it with `utcDay` and
         // the settled term reaches `SubscriptionTerm.StartDate`/`EndDate`, both `DATE NOT NULL`, so
@@ -2838,6 +2874,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             });
 
             if (decision.Action === 'Reject') {
+                if (preview) continue;
                 // A rules violation fails the WHOLE confirm — booking is all-or-none, and a
                 // silently-dropped subscription would leave a paid-for line with no coverage.
                 throw new Error(
@@ -2845,12 +2882,51 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
 
+            // ANOTHER BAND of the same offering (golive #276). The lookup above matches on the
+            // product, so a holder with coverage under a sibling band found nothing and a second
+            // subscription for the same dates was created and billed. A renewal names its target
+            // outright, so it continues that subscription and is not checked.
+            if (decision.Term && product.SubscriptionFamily && !line.RenewsSubscriptionID) {
+                const familyKey = `${product.SubscriptionFamily.trim().toLowerCase()}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
+                const siblings = (pendingFamily.get(familyKey) ?? []).filter((s) => !UUIDsEqual(s.ProductID, product.ID));
+                const overlaps = OverlappingCoverage(
+                    [...siblings, ...(await this.loadFamilyCoverage(product, identity, decision.Term.StartDate, decision.Term.EndDate))],
+                    decision.Term.StartDate,
+                    decision.Term.EndDate,
+                );
+                const verdict = behavior.DecideCoverageOverlap({
+                    Rules: rules,
+                    Family: product.SubscriptionFamily,
+                    ProductName: product.Name,
+                    Overlaps: overlaps,
+                    Acknowledged: !!line.AcknowledgesCoverageOverlap,
+                });
+                if (preview) {
+                    if (verdict.Outcome !== 'None') preview.push({ Line: line, Decision: verdict, Overlaps: overlaps });
+                } else if (verdict.Outcome === 'Refused' || verdict.Outcome === 'NeedsAck') {
+                    throw new Error(`Order line ${line.LineNumber} (${product.Name}) cannot be confirmed: ${verdict.Message}`);
+                } else if (verdict.Outcome !== 'None') {
+                    LogStatus(`Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber}: ${verdict.Message}`);
+                }
+                pendingFamily.set(familyKey, [
+                    ...(pendingFamily.get(familyKey) ?? []),
+                    {
+                        ProductID: product.ID,
+                        SubscriptionID: null,
+                        SubscriptionNumber: null,
+                        ProductName: product.Name,
+                        StartDate: decision.Term.StartDate,
+                        EndDate: decision.Term.EndDate,
+                    },
+                ]);
+            }
+
             // A stated start that existing coverage displaced. NOT an error: extending a
             // subscription mid-term and stating where the new term begins are both reasonable,
             // and only one of them can win — coverage cannot overlap or gap. Reported rather than
             // swallowed so the date's disappearance is traceable to a rule instead of looking
             // like the field was never saved.
-            if (decision.StartOverrideIgnored && decision.Term && requestedStart) {
+            if (!preview && decision.StartOverrideIgnored && decision.Term && requestedStart) {
                 LogStatus(
                     `Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber} (${product.Name}): the term start ` +
                         `${requestedStart.toISOString().slice(0, 10)} stated on the line was not used. This line ` +
@@ -3002,6 +3078,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 SubscriptionTypeID: p.SubscriptionTypeID,
                 ProductTypeID: p.ProductTypeID,
                 RevenueRecognitionTypeID: p.RevenueRecognitionTypeID,
+                SubscriptionFamily: p.SubscriptionFamily,
             });
         }
         if (products.size === 0) return [];
@@ -3133,21 +3210,102 @@ export class OrderEntityServer extends OrderHeaderEntity {
         productID: string,
         identity: SubscriberIdentity,
     ): Promise<ExistingSubscription | null> {
-        // Match on exactly the axes the BenefitModel says define a duplicate. An org-members type
-        // ignores the person entirely (one company membership, however many employees); a seat type
-        // matches BOTH, so two seats for two people never collide.
-        const clauses: string[] = [];
-        clauses.push(
-            identity.OrganizationID
-                ? `HolderOrganizationID='${identity.OrganizationID}'`
-                : `HolderOrganizationID IS NULL`,
-        );
-        clauses.push(
-            identity.PersonID ? `BeneficiaryPersonID='${identity.PersonID}'` : `BeneficiaryPersonID IS NULL`,
-        );
-        if (!identity.OrganizationID && !identity.PersonID) return null;
+        const holder = this.holderFilter(identity);
+        if (!holder) return null;
+        return this.loadSubscriptionState(`ProductID='${productID}' AND ${holder}`);
+    }
 
-        return this.loadSubscriptionState(`ProductID='${productID}' AND ${clauses.join(' AND ')}`);
+    /**
+     * The subscription filter for a dedupe identity, or null when it names nobody.
+     *
+     * Match on exactly the axes the BenefitModel says define a duplicate. An org-members type
+     * ignores the person entirely (one company membership, however many employees); a seat type
+     * matches BOTH, so two seats for two people never collide.
+     */
+    private holderFilter(identity: SubscriberIdentity): string | null {
+        if (!identity.OrganizationID && !identity.PersonID) return null;
+        const org = identity.OrganizationID
+            ? `HolderOrganizationID='${RequireUUID(identity.OrganizationID, 'HolderOrganizationID')}'`
+            : `HolderOrganizationID IS NULL`;
+        const person = identity.PersonID
+            ? `BeneficiaryPersonID='${RequireUUID(identity.PersonID, 'BeneficiaryPersonID')}'`
+            : `BeneficiaryPersonID IS NULL`;
+        return `${org} AND ${person}`;
+    }
+
+    /**
+     * Terms of this holder's live subscriptions to OTHER bands of the product's family that touch
+     * `[start, end]` (golive #276).
+     *
+     * Live means what the `Overlapping Subscriptions` query counts: a subscription that is not
+     * Canceled or Migrated, and a term that is not Canceled or Lapsed. A subscription cancelled
+     * through `Orders.CancelSubscription` is `Canceled` even while it rides out its term, so
+     * cancelling the old band first is what clears the way for the new one.
+     */
+    private async loadFamilyCoverage(
+        product: ProductRow,
+        identity: SubscriberIdentity,
+        start: Date,
+        end: Date,
+    ): Promise<FamilyCoverageTerm[]> {
+        const holder = this.holderFilter(identity);
+        const family = product.SubscriptionFamily?.trim().toLowerCase();
+        if (!holder || !family) return [];
+
+        // The engine caches every product, active or not — a discontinued band still has holders.
+        const bands = new Map(
+            OrdersEngine.Instance.Products.filter(
+                (p) => p.SubscriptionFamily?.trim().toLowerCase() === family && !UUIDsEqual(p.ID, product.ID),
+            ).map((p) => [uuidKey(p.ID), p.Name]),
+        );
+        if (bands.size === 0) return [];
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const bandIDs = RequireUUIDs([...bands.keys()], 'ProductID').map((id) => `'${id}'`).join(',');
+        const subs = await rv.RunView<{ ID: string; SubscriptionNumber: string; ProductID: string }>(
+            {
+                EntityName: SUBSCRIPTION_ENTITY,
+                ExtraFilter: `ProductID IN (${bandIDs}) AND ${holder} AND Status NOT IN ('Canceled','Migrated')`,
+                Fields: ['ID', 'SubscriptionNumber', 'ProductID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        if (!subs?.Success) {
+            throw new Error(`Could not read this holder's other subscriptions in family ${product.SubscriptionFamily}: ${subs?.ErrorMessage}`);
+        }
+        if (subs.Results.length === 0) return [];
+
+        const byID = new Map(subs.Results.map((s) => [uuidKey(s.ID), s]));
+        const subIDs = RequireUUIDs(subs.Results.map((s) => s.ID), 'SubscriptionID').map((id) => `'${id}'`).join(',');
+        const day = (d: Date) => d.toISOString().slice(0, 10);
+        const terms = await rv.RunView<{ SubscriptionID: string; StartDate: string; EndDate: string }>(
+            {
+                EntityName: SUBSCRIPTION_TERM_ENTITY,
+                ExtraFilter:
+                    `SubscriptionID IN (${subIDs}) AND Status NOT IN ('Canceled','Lapsed') ` +
+                    `AND StartDate <= '${day(end)}' AND EndDate >= '${day(start)}'`,
+                Fields: ['SubscriptionID', 'StartDate', 'EndDate'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        if (!terms?.Success) {
+            throw new Error(`Could not read the terms of this holder's other subscriptions in family ${product.SubscriptionFamily}: ${terms?.ErrorMessage}`);
+        }
+
+        return terms.Results.map((t) => {
+            const sub = byID.get(uuidKey(t.SubscriptionID));
+            return {
+                SubscriptionID: t.SubscriptionID,
+                SubscriptionNumber: sub?.SubscriptionNumber ?? null,
+                ProductName: bands.get(uuidKey(sub?.ProductID)) ?? 'another band',
+                StartDate: new Date(t.StartDate),
+                EndDate: new Date(t.EndDate),
+            };
+        });
     }
 
     /** Load a subscription plus the end and number of its latest term, by whatever filter. */

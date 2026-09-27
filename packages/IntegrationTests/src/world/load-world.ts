@@ -554,6 +554,7 @@ async function loadProducts(ctx: IntegrationCheckContext, world: WorldState): Pr
             Status: 'Active',
             RevenueRecognitionTypeID: rr,
             SubscriptionTypeID: sub ?? null,
+            SubscriptionFamily: row.SubscriptionFamily || null,
             Description: WORLD_TAG,
         });
         world.Products[row.SKU] = id;
