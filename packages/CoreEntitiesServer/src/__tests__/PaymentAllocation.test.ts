@@ -396,7 +396,8 @@ describe('PaymentAllocationFactory — customer deposits (#234 review)', () => {
 });
 
 describe('BuildAllocationDrafts — gift card redemption (issue #300)', () => {
-    const single = { ReceivingCompanyID: A, OrderLines: [line('l1', A, 300)], GiftCardIssuingCompanyID: A };
+    const sale = (companyID: string) => ({ CompanyID: companyID, ProductID: 'gc-product', ProductCategoryID: 'gc-cat', ProductTypeID: 'gc-type' });
+    const single = { ReceivingCompanyID: A, OrderLines: [line('l1', A, 300)], GiftCardSale: sale(A) };
 
     /** A resolver whose Gift Card Liability role fails with `failure`; every other role resolves. */
     const failingLiability = (failure: 'NotLinked' | 'CrossCompany') =>
@@ -440,17 +441,37 @@ describe('BuildAllocationDrafts — gift card redemption (issue #300)', () => {
     });
 
     it('books on the issuer’s books when another company received it, with the intercompany pair', async () => {
-        // Card issued by A, payment recorded against B's order by B.
+        // Card sold on A's line, payment recorded against B's order by B.
         const { Drafts } = await factory().BuildAllocationDrafts(
-            ctx({ ReceivingCompanyID: B, OrderLines: [line('l1', B, 300)], GiftCardIssuingCompanyID: A }) as never,
+            ctx({ ReceivingCompanyID: B, OrderLines: [line('l1', B, 300)], GiftCardSale: sale(A) }) as never,
         );
         expect(debitOn(Drafts[0].Lines, acct(GL_ROLE.GiftCardLiability, A))).toBe(300);
         expect(creditOn(Drafts[0].Lines, `dueTo:${A}->${B}`)).toBe(300);
         expect(creditOn(Drafts[1].Lines, acct(GL_ROLE.AccountsReceivable, B))).toBe(300);
     });
 
+    it('walks the selling line’s product, category and type, as the sale did', async () => {
+        // The sale's deferral account is linked on the gift card product type (2410); the company
+        // default (2400) must not be what the redemption clears.
+        const walked = new PaymentAllocationFactory(
+            {
+                Resolve: async (role: string, p: string | null, c: string | null, companyID: string, _d: Date, t?: string | null) => {
+                    if (role === GL_ROLE.GiftCardLiability) throw new GLAccountResolutionError(role, '', 'NotLinked', 'none');
+                    if (role === GL_ROLE.DeferredRevenue && p === 'gc-product' && c === 'gc-cat' && t === 'gc-type') return '2410';
+                    return acct(role, companyID);
+                },
+            } as never,
+            intercompany,
+            'payment-line-entity',
+        );
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const { Drafts } = await walked.BuildAllocationDrafts(ctx(single) as never);
+        warn.mockRestore();
+        expect(debitOn(Drafts[0].Lines, '2410')).toBe(300);
+    });
+
     it('a non-gift-card tender still debits Cash', async () => {
-        const { Drafts } = await factory().BuildAllocationDrafts(ctx({ ...single, GiftCardIssuingCompanyID: null }) as never);
+        const { Drafts } = await factory().BuildAllocationDrafts(ctx({ ...single, GiftCardSale: null }) as never);
         expect(debitOn(Drafts[0].Lines, acct(GL_ROLE.Cash, A))).toBe(300);
     });
 });

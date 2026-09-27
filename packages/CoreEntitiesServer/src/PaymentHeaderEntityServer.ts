@@ -72,7 +72,7 @@ import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
-import { LoadGiftCardIssuingCompanyID, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import {
     DepositReleasedByCompany,
     PlanLineDeposits,
@@ -474,7 +474,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         // Per order: what the lines planned so far have left, so a second allocation on the same
         // payment and order neither credits AR for the same invoice nor returns the same deposit twice.
         const workingByOrder = new Map<string, DepositWorking>();
-        const giftCardIssuingCompanyID = await LoadGiftCardIssuingCompanyID(
+        const giftCardSale = await LoadGiftCardSale(
             provider as unknown as IRunViewProvider,
             user,
             this.PaymentDetailID,
@@ -525,7 +525,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 // fallback has to be a day too, not the instant the booking happened to run at.
                 PaymentDate: await CalendarDayOrToday(this.PaymentDate, provider, user),
                 IsReversal: isReversal,
-                GiftCardIssuingCompanyID: giftCardIssuingCompanyID,
+                GiftCardSale: giftCardSale,
             });
 
             allDrafts.push(...Drafts);

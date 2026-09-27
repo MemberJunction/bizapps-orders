@@ -94,9 +94,9 @@ const ledgerOf = (ctx: IntegrationCheckContext, cardID: string) =>
 
 /** The ledger lines an order's booking produced, by account code. */
 const bookingLines = (ctx: IntegrationCheckContext, orderID: string) =>
-  TxQuery<{ Code: string; Name: string; DebitAmount: number; CreditAmount: number; EntryType: string; EffectiveDate: string | null }>(
+  TxQuery<{ GLAccountID: string; Code: string; Name: string; DebitAmount: number; CreditAmount: number; EntryType: string; EffectiveDate: string | null }>(
     ctx,
-    `SELECT gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount, je.EffectiveDate,
+    `SELECT jel.GLAccountID, gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount, je.EffectiveDate,
             (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType
        FROM ${ACCT_SCHEMA}.vwJournalEntries je
        JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
@@ -510,9 +510,9 @@ export const GiftCardChecks: NamedCheck[] = [
         });
         Assert(paid.Saved, `the gift card payment failed: ${paid.Message}`);
 
-        const lines = await TxQuery<{ Code: string; Name: string; DebitAmount: number; CreditAmount: number }>(
+        const lines = await TxQuery<{ GLAccountID: string; Code: string; Name: string; DebitAmount: number; CreditAmount: number }>(
           ctx,
-          `SELECT gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount
+          `SELECT jel.GLAccountID, gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount
              FROM ${ORDERS_SCHEMA}.PaymentLine pl
              JOIN ${ACCT_SCHEMA}.vwJournalEntries je
                ON LOWER(je.LinkedRecordID) = LOWER(CAST(pl.ID AS NVARCHAR(400)))
@@ -530,12 +530,23 @@ export const GiftCardChecks: NamedCheck[] = [
           .reduce((s, l) => s + Number(l.DebitAmount ?? 0), 0);
         AssertEqual(cashDebit, 0, `a gift card redemption debits no Cash: ${JSON.stringify(lines)}`);
 
-        // The debit relieves the account GC4's sale credited: the dedicated liability, or Deferred
-        // Revenue where accounting has not linked one.
+        // The debit relieves an obligation account: the dedicated liability, or Deferred Revenue
+        // where accounting has not linked one.
         const obligationDebit = lines
           .filter((l) => /liability|deferred/i.test(l.Name))
           .reduce((s, l) => s + Number(l.DebitAmount ?? 0), 0);
         AssertEqual(obligationDebit, 40, `the liability is relieved by the face value: ${JSON.stringify(lines)}`);
+
+        // And it is the SAME account, found by the same product walk: a per-category or per-type
+        // deferral link would otherwise be credited at sale and never cleared (#301 review).
+        const saleCredits = (await bookingLines(ctx, sale.Order.ID as string)).filter(
+          (l) => /liability|deferred/i.test(l.Name) && Number(l.CreditAmount ?? 0) > 0,
+        );
+        AssertEqual(saleCredits.length, 1, `the sale credited one obligation account: ${JSON.stringify(saleCredits)}`);
+        const sameAccountDebit = lines
+          .filter((l) => l.GLAccountID.toLowerCase() === saleCredits[0].GLAccountID.toLowerCase())
+          .reduce((s, l) => s + Number(l.DebitAmount ?? 0), 0);
+        AssertEqual(sameAccountDebit, 40, `the redemption debits the account the sale credited: ${JSON.stringify(lines)}`);
       }),
   },
 ];

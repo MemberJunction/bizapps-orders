@@ -60,7 +60,7 @@ import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
-import { LoadGiftCardIssuingCompanyID, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import { DepositReleasedByCompany, PlanLineDeposits, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { RequireUUID } from './sql-guards.js';
@@ -225,7 +225,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             PaymentDate: payment.PaymentDate,
             // A negative allocation un-applies cash, and a refunded payment reverses: both mirror.
             IsReversal: isReversal,
-            GiftCardIssuingCompanyID: await LoadGiftCardIssuingCompanyID(
+            GiftCardSale: await LoadGiftCardSale(
                 provider as unknown as IRunViewProvider,
                 user,
                 payment.PaymentDetailID,

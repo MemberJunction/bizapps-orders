@@ -144,12 +144,20 @@ export interface PaymentLineAllocationContext {
      */
     Deposits?: ReadonlyMap<string, number>;
     /**
-     * Set when the tender is a GIFT CARD (`PaymentDetail.StoredValueAccountID`): the card's
-     * `StoredValueAccount.IssuingCompanyID`. No cash arrives at redemption, so the debit relieves
-     * the issuer's Gift Card Liability instead of debiting Cash (issue #300). Account credit and
-     * every other tender leave it unset.
+     * Set when the tender is a GIFT CARD (`PaymentDetail.StoredValueAccountID`): the product and
+     * company of the order line that sold the card. No cash arrives at redemption, so the debit
+     * relieves Gift Card Liability instead of debiting Cash (issue #300), resolved by the same
+     * product walk the sale used. Account credit and every other tender leave it unset.
      */
-    GiftCardIssuingCompanyID?: string | null;
+    GiftCardSale?: GiftCardSaleLine | null;
+}
+
+/** What the sale's Gift Card Liability lookup walked from: the selling line's product and company. */
+export interface GiftCardSaleLine {
+    CompanyID: string;
+    ProductID: string | null;
+    ProductCategoryID: string | null;
+    ProductTypeID: string | null;
 }
 
 export interface PaymentAllocationResult {
@@ -413,11 +421,11 @@ export class PaymentAllocationFactory {
 
         const shares = AllocateByCompany(total, ctx.OrderLines, ctx.TargetOrderLineID);
         const asOf = new Date(ctx.PaymentDate);
-        // A gift card is relieved on the books of the company that sold it, so the issuer stands in
-        // for the collector: it owns the debit, and any other company's share goes through the same
-        // Due To / Due From pair a cash collection would use. Equal to ReceivingCompanyID in the
-        // ordinary single-company case.
-        const receiving = ctx.GiftCardIssuingCompanyID || ctx.ReceivingCompanyID;
+        // A gift card is relieved on the books of the company whose line sold it, so that company
+        // stands in for the collector: it owns the debit, and any other company's share goes through
+        // the same Due To / Due From pair a cash collection would use. Equal to ReceivingCompanyID in
+        // the ordinary single-company case.
+        const receiving = ctx.GiftCardSale?.CompanyID || ctx.ReceivingCompanyID;
         const label = ctx.IsReversal ? 'Refund' : 'Payment';
 
         const ownShare = shares.find((s) => key(s.CompanyID) === key(receiving));
@@ -426,10 +434,10 @@ export class PaymentAllocationFactory {
         // ── The receiving company's entry ────────────────────────────────────
         // Payments are company-level: there is no product to walk from, so the company default is
         // both the start and the end of resolution (D12).
-        const debitAccount = ctx.GiftCardIssuingCompanyID
-            ? await this.resolveGiftCardLiability(receiving, asOf, ctx)
+        const debitAccount = ctx.GiftCardSale
+            ? await this.resolveGiftCardLiability(ctx.GiftCardSale, asOf, ctx)
             : await this._resolver.Resolve(GL_ROLE.Cash, null, null, receiving, asOf);
-        const debitWhat = ctx.GiftCardIssuingCompanyID ? 'gift card redeemed' : 'cash';
+        const debitWhat = ctx.GiftCardSale ? 'gift card redeemed' : 'cash';
 
         // Every share, split again by the tags of the lines it settles (issue #238). An order whose
         // lines carry no dimensions yields one slice per company, and the entries below are then
@@ -576,26 +584,28 @@ export class PaymentAllocationFactory {
     }
 
     /**
-     * The account a gift card sale credited, resolved the same way `OrderJournalEntryFactory` did at
-     * sale: Gift Card Liability, or Deferred Revenue when none is linked, so a card sold before the
-     * account existed is relieved from the account it was booked to. Only "nothing linked" falls
-     * back; a cross-company refusal or any other failure is rethrown.
+     * Gift Card Liability, or Deferred Revenue when none is linked, resolved exactly as
+     * `OrderJournalEntryFactory` did at sale: product → category → product type → company, from the
+     * line that sold the card. That is the sale's account unless links changed in between. Only
+     * "nothing linked" falls back; a cross-company refusal or any other failure is rethrown.
      */
     private async resolveGiftCardLiability(
-        companyID: string,
+        sale: GiftCardSaleLine,
         asOf: Date,
         ctx: PaymentLineAllocationContext,
     ): Promise<string> {
+        const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
+            this._resolver.Resolve(role, sale.ProductID, sale.ProductCategoryID, sale.CompanyID, asOf, sale.ProductTypeID);
         try {
-            return await this._resolver.Resolve(GL_ROLE.GiftCardLiability, null, null, companyID, asOf);
+            return await resolve(GL_ROLE.GiftCardLiability);
         } catch (err) {
             if (!IsRoleNotLinked(err)) throw err;
             console.warn(
                 `Payment ${ctx.PaymentNumber}: no 'Gift Card Liability' GL account is linked for company ` +
-                    `${companyID}, so the gift card redemption relieves Deferred Revenue instead — the ` +
+                    `${sale.CompanyID}, so the gift card redemption relieves Deferred Revenue instead — the ` +
                     `account the sale fell back to. Link a Gift Card Liability account.`,
             );
-            return this._resolver.Resolve(GL_ROLE.DeferredRevenue, null, null, companyID, asOf);
+            return resolve(GL_ROLE.DeferredRevenue);
         }
     }
 
