@@ -4,6 +4,7 @@ import {
     BuildPaymentSchedule,
     DefaultScheduleWeights,
     ExplainShortfalls,
+    RenewalScheduleRows,
     ScheduleShortfalls,
     ScheduledCompanyIDs,
     type ScheduleTimingFacts,
@@ -141,5 +142,26 @@ describe('ScheduledCompanyIDs', () => {
         const rows = [row({ Status: 'Canceled' })];
         expect(ScheduleShortfalls(rows, [{ CompanyID: CO_A, LineTotalGross: 0 }])).toEqual([]);
         expect(ScheduledCompanyIDs(rows).size).toBe(0);
+    });
+});
+
+describe('RenewalScheduleRows (#305)', () => {
+    it('writes one row per company for its whole gross, due on the invoice day, and ties', () => {
+        const lines = [
+            { CompanyID: CO_A, LineTotalGross: 1000.01 },
+            { CompanyID: CO_B, LineTotalGross: 40 },
+            { CompanyID: CO_A, LineTotalGross: 199.99 },
+        ];
+        const rows = RenewalScheduleRows(lines, '2026-12-21');
+        expect(rows).toEqual([
+            { CompanyID: CO_A, InstallmentNumber: 1, DueDate: '2026-12-21', Amount: 1200 },
+            { CompanyID: CO_B, InstallmentNumber: 1, DueDate: '2026-12-21', Amount: 40 },
+        ]);
+        expect(ScheduleShortfalls(rows.map((r) => ({ ...r, Status: 'Scheduled' })), lines)).toEqual([]);
+    });
+
+    it('gives a zero-gross company no row, and that still ties', () => {
+        const lines = [{ CompanyID: CO_A, LineTotalGross: 0 }];
+        expect(RenewalScheduleRows(lines, '2026-12-21')).toEqual([]);
     });
 });

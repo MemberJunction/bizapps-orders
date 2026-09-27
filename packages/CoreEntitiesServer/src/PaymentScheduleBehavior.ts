@@ -48,8 +48,6 @@ export const SCHEDULE_DEFAULTS = {
     /** Recurring annual fees: the full term at signature. Semi-annual only above 100k AND on request. */
     Recurring: [{ MinGross: 0, Weights: [1] }],
     RecurringSemiAnnualMinGross: 100_000,
-    /** Renewals invoice this many days before the renewal date. */
-    RenewalLeadDays: 90,
 } as const;
 
 /**
@@ -106,6 +104,27 @@ export function BuildPaymentSchedule(input: {
         DueDate: AddMonths(input.FirstDueDate, step * i),
         Amount: amount,
     }));
+}
+
+/**
+ * A spawned renewal's schedule (orders #305): one instalment per company for that company's whole
+ * gross, due on the day the renewal pass ran — the renewal invoice date, which is what the lead
+ * time exists for. Under D92 confirm then issues it at once, so the receivable is dated the day the
+ * invoice goes out rather than the first day of the new term.
+ *
+ * A company whose lines come to nothing gets no row: there is nothing to bill, and an absent row
+ * still ties (a zero-gross company is never a shortfall).
+ */
+export function RenewalScheduleRows(lines: ScheduleLineFacts[], dueDate: string): Array<ScheduleRowDraft & { CompanyID: string }> {
+    const gross = new Map<string, number>();
+    for (const l of lines) gross.set(l.CompanyID, Money((gross.get(l.CompanyID) ?? 0) + Number(l.LineTotalGross ?? 0)));
+    const out: Array<ScheduleRowDraft & { CompanyID: string }> = [];
+    for (const [companyID, total] of gross) {
+        if (total <= 0) continue;
+        const [row] = BuildPaymentSchedule({ Total: total, Count: 1, Cadence: 'Annual', FirstDueDate: dueDate });
+        out.push({ ...row, CompanyID: companyID });
+    }
+    return out;
 }
 
 /** A schedule row as the tie check reads it. */

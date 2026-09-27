@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR14).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR15).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -24,6 +24,8 @@
  *   SR12  the Action the scheduler dispatches reaches the operation and places the renewal
  *   SR13  Preview arrives from a scheduler as the STRING "true" and still writes nothing
  *   SR14  the schedule points at this Action, and ships disabled and set to preview
+ *   SR15  the renewal carries one Invoiced schedule row per company, and AR is dated when it was
+ *         invoiced, never on the new term's first day (#305)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -51,6 +53,10 @@ import {
     TxQuery,
 } from '../fixture.js';
 import { ConfirmOrder } from '../order-builder.js';
+
+/** Chart of accounts the fixture books against (same codes as payment-schedule.checks.ts). */
+const AR_CODE = '11201';
+const DEFERRED_CODE = '21301';
 
 /** Bought Jan 1 so an annual term ends Dec 31 — every date below reads off that. */
 const JAN_1 = new Date('2026-01-01T00:00:00Z');
@@ -231,16 +237,18 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual(out.Placed, 1, `expected one renewal: ${out.Message}`);
                 const renewalOrderID = out.Candidates[0].OrderID!;
 
-                const booking = await TxOne<{ EntryType: string; D: number }>(
+                // Billed by its one-row schedule (#305, D92): the value entry is the instalment's
+                // invoice, raised inside the confirm, not a booking entry on the line.
+                const billing = await TxOne<{ EntryType: string; D: number }>(
                     ctx,
                     `SELECT (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType,
                             (SELECT SUM(DebitAmount) FROM ${ACCT_SCHEMA}.JournalEntryLine WHERE JournalEntryID = je.ID) AS D
-                     FROM ${ORDERS_SCHEMA}.OrderLine ol
-                     JOIN ${ACCT_SCHEMA}.vwJournalEntries je ON je.ID = ol.JournalEntryID
-                     WHERE ol.OrderHeaderID = '${renewalOrderID}'`,
+                     FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule ps
+                     JOIN ${ACCT_SCHEMA}.vwJournalEntries je ON je.ID = ps.JournalEntryID
+                     WHERE ps.OrderHeaderID = '${renewalOrderID}'`,
                 );
-                AssertEqual(booking.EntryType, 'OrderBooking', 'the renewal books like any other sale');
-                AssertEqual(Number(booking.D), 1200, 'booked amount');
+                AssertEqual(billing.EntryType, 'InstalmentInvoice', 'the renewal is billed by its instalment invoice');
+                AssertEqual(Number(billing.D), 1200, 'billed amount');
 
                 // Recognition anchors to the NEW term and is dated into its window (D14/D46) —
                 // invoicing ahead of the period must not recognize ahead of it.
@@ -555,6 +563,72 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 Assert(previewParam != null, 'the Preview parameter is declared');
                 const configured = config.Params?.find((p) => SameID(p.ActionParamID, previewParam!.ID));
                 AssertEqual(String(configured?.Value), 'true', `and the job is configured for preview: ${job!.Configuration}`);
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR15',
+        Name: 'SR15: the renewal is invoiced on the pass day through a one-row schedule, and AR is not dated on the term start',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                const asOf = daysBefore(Term.EndDate, 10);
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: asOf });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Message}`);
+                const orderID = out.Candidates[0].OrderID!;
+
+                const companies = await TxQuery<{ CompanyID: string }>(
+                    ctx,
+                    `SELECT DISTINCT CompanyID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`,
+                );
+                const rows = await TxQuery<{ CompanyID: string; InstallmentNumber: number; DueDate: string; Amount: number; Status: string; DocumentNumber: string | null; InvoicedAt: string | null }>(
+                    ctx,
+                    `SELECT CompanyID, InstallmentNumber, CONVERT(varchar(10), DueDate, 23) AS DueDate, Amount, Status,
+                            DocumentNumber, CONVERT(varchar(40), InvoicedAt, 127) AS InvoicedAt
+                     FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE OrderHeaderID = '${orderID}'`,
+                );
+                AssertEqual(rows.length, companies.length, 'exactly one schedule row per company on the renewal');
+                const row = rows[0];
+                Assert(SameID(row.CompanyID, companies[0].CompanyID), 'the row bills the line company');
+                AssertEqual(Number(row.InstallmentNumber), 1, 'a single instalment');
+                AssertEqual(Number(row.Amount), 1200, 'for the whole renewal');
+                AssertEqual(row.DueDate, asOf, 'due on the day the pass ran');
+                AssertEqual(row.Status, 'Invoiced', 'issued inside the confirm');
+                Assert(!!row.DocumentNumber, 'with an invoice number');
+                Assert(row.InvoicedAt != null, 'and an invoice timestamp');
+
+                // Every AR line the order raised, from confirm (line entries) and from the instalment.
+                const ar = await TxQuery<{ EffectiveDate: string; DebitAmount: number; CreditAmount: number }>(
+                    ctx,
+                    `SELECT CONVERT(varchar(10), je.EffectiveDate, 23) AS EffectiveDate, jel.DebitAmount, jel.CreditAmount
+                     FROM ${ACCT_SCHEMA}.vwJournalEntries je
+                     JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+                     JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                     WHERE gl.Code = '${AR_CODE}'
+                       AND (je.ID IN (SELECT JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}')
+                         OR je.ID IN (SELECT JournalEntryID FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE OrderHeaderID = '${orderID}'))`,
+                );
+                const invoiceDay = isoDate(row.InvoicedAt!);
+                const orderDay = isoDate(daysBefore(Term.EndDate, -1));
+                AssertEqual(
+                    Math.round(ar.reduce((t, l) => t + Number(l.DebitAmount ?? 0) - Number(l.CreditAmount ?? 0), 0) * 100) / 100,
+                    1200,
+                    `the renewal is a receivable of its whole value: ${JSON.stringify(ar)}`,
+                );
+                Assert(ar.every((l) => l.EffectiveDate === invoiceDay), `all AR is dated the invoice day ${invoiceDay}: ${JSON.stringify(ar)}`);
+                Assert(invoiceDay !== orderDay, `the check needs the invoice day and the order date apart (${invoiceDay})`);
+                Assert(!ar.some((l) => l.EffectiveDate === orderDay), `no AR on the order date ${orderDay}`);
+
+                // D92 rule 1: nothing is recognised yet, so the invoice credits Deferred for all of it.
+                const deferred = await TxOne<{ C: number }>(
+                    ctx,
+                    `SELECT SUM(ISNULL(jel.CreditAmount, 0) - ISNULL(jel.DebitAmount, 0)) AS C
+                     FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule ps
+                     JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ps.JournalEntryID
+                     JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                     WHERE ps.OrderHeaderID = '${orderID}' AND gl.Code = '${DEFERRED_CODE}'`,
+                );
+                AssertEqual(Number(deferred.C), 1200, 'the invoice credits Deferred Revenue for the whole renewal');
             }),
     },
 ];
