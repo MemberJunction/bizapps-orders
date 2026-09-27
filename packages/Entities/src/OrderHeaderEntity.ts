@@ -30,7 +30,7 @@
  * @module @mj-biz-apps/orders-entities
  */
 import { BaseEntity, EmbeddedRecord, ValidationErrorInfo, ValidationErrorType, ValidationResult, RunView, type FieldValueCollection, type IRunViewProvider } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import type { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentDetailEntity } from './generated/entity_subclasses';
 import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
@@ -606,30 +606,94 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
 
     /**
+     * Party fields {@link ApplyPersonPartyDefaults} filled in during this edit, keyed by field
+     * name, with the person each fill came from. It is what lets {@link ClearPersonParty} take
+     * a copy away with the person it was copied from without touching a value the user chose.
+     * In memory only: an order loaded later has no record of what was filled in.
+     */
+    private readonly partyFills = new Map<string, { Value: string; FromPersonID: string }>();
+
+    /**
      * Person-level party defaults after a bill-to / ship-to person is set.
      *
      * 1. Copy person bill-to ↔ ship-to when the other side's person is null.
      * 2. For each side that has a person and no org, stamp the longest-lasting
      *    active Employee relationship's organization.
      *
-     * Does not overwrite an org the user already chose. Skips booked/voided orders.
+     * Does not overwrite an org the user already chose, and does not refill a party field the
+     * user emptied in this save. Skips booked/voided orders.
      */
     public async ApplyPersonPartyDefaults(changed: 'BillTo' | 'ShipTo' | 'Both' = 'Both'): Promise<void> {
         if (this.Status === 'Voided' || this.IsBookedOrder) return;
 
         if (changed === 'BillTo' || changed === 'Both') {
-            if (this.BillToPersonID && !this.ShipToPersonID) {
+            if (this.BillToPersonID && !this.ShipToPersonID && !this.wasClearedThisSave('ShipToPersonID')) {
                 this.ShipToPersonID = this.BillToPersonID;
+                this.partyFills.set('ShipToPersonID', { Value: this.BillToPersonID, FromPersonID: this.BillToPersonID });
             }
         }
         if (changed === 'ShipTo' || changed === 'Both') {
-            if (this.ShipToPersonID && !this.BillToPersonID) {
+            if (this.ShipToPersonID && !this.BillToPersonID && !this.wasClearedThisSave('BillToPersonID')) {
                 this.BillToPersonID = this.ShipToPersonID;
+                this.partyFills.set('BillToPersonID', { Value: this.ShipToPersonID, FromPersonID: this.ShipToPersonID });
             }
         }
 
         await this.AutoPopulateEmployerOrganization('BillTo');
         await this.AutoPopulateEmployerOrganization('ShipTo');
+    }
+
+    /**
+     * Undo the party defaults a person brought with them, after that person is cleared from
+     * one side or replaced on it.
+     *
+     * - The other side's person clears when it was copied from `clearedPersonID` in this edit.
+     *   Clearing the bill-to also clears a ship-to that still holds the same person, since the
+     *   ship-to follows the bill-to even on an order loaded later.
+     * - An organization clears when it was stamped from `clearedPersonID`'s employer in this
+     *   edit and that side no longer holds the person.
+     *
+     * Values the user set are never touched. Skips booked/voided orders.
+     */
+    public ClearPersonParty(side: 'BillTo' | 'ShipTo', clearedPersonID: string | null): void {
+        if (!clearedPersonID || this.Status === 'Voided' || this.IsBookedOrder) return;
+
+        const other = side === 'BillTo' ? 'ShipTo' : 'BillTo';
+        const otherPersonField = `${other}PersonID`;
+        // When the cleared person was itself the copy, the other side holds the original.
+        const clearedFill = this.partyFills.get(`${side}PersonID`);
+        const clearedWasCopy = !!clearedFill && UUIDsEqual(clearedFill.Value, clearedPersonID);
+        this.partyFills.delete(`${side}PersonID`);
+        const otherIsCopy = !clearedWasCopy && (this.wasFilledFrom(otherPersonField, clearedPersonID)
+            || (side === 'BillTo' && UUIDsEqual(this.Get(otherPersonField) as string | null, clearedPersonID)));
+        if (otherIsCopy) this.clearPartyField(otherPersonField, `${other}Person`);
+
+        for (const s of ['BillTo', 'ShipTo'] as const) {
+            const orgField = `${s}OrganizationID`;
+            const stillHoldsPerson = UUIDsEqual(this.Get(`${s}PersonID`) as string | null, clearedPersonID);
+            if (!stillHoldsPerson && this.wasFilledFrom(orgField, clearedPersonID)) {
+                this.clearPartyField(orgField, `${s}Organization`);
+            }
+        }
+    }
+
+    /** True when `field` still holds the value {@link ApplyPersonPartyDefaults} filled in from `personID`. */
+    private wasFilledFrom(field: string, personID: string): boolean {
+        const fill = this.partyFills.get(field);
+        return !!fill && UUIDsEqual(fill.FromPersonID, personID) && UUIDsEqual(this.Get(field) as string | null, fill.Value);
+    }
+
+    /** Empty a party foreign key and the view's name field that displays it. */
+    private clearPartyField(idField: string, nameField: string): void {
+        this.Set(idField, null);
+        this.Set(nameField, null);
+        this.partyFills.delete(idField);
+    }
+
+    /** True when `field` had a value on disk and this save empties it — the user cleared it. */
+    private wasClearedThisSave(field: string): boolean {
+        const f = this.GetFieldByName(field);
+        return !!f && f.Dirty && f.Value == null && f.OldValue != null;
     }
 
     /**
@@ -645,6 +709,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
         const currentOrgID = partyRole === 'ShipTo' ? this.ShipToOrganizationID : this.BillToOrganizationID;
         if (currentOrgID) return currentOrgID;
+        if (this.wasClearedThisSave(`${partyRole}OrganizationID`)) return null;
 
         const provider = this.ProviderToUse as unknown as IRunViewProvider;
         if (!provider) return null;
@@ -656,10 +721,10 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         const orgId = await ResolveActiveEmployerOrganization(provider, targetPersonID, asOf, this.ContextCurrentUser);
         if (!orgId) return null;
 
-        if (partyRole === 'ShipTo') {
-            if (!this.ShipToOrganizationID) this.ShipToOrganizationID = orgId;
-        } else if (!this.BillToOrganizationID) {
-            this.BillToOrganizationID = orgId;
+        const orgField = `${partyRole}OrganizationID`;
+        if (!this.Get(orgField)) {
+            this.Set(orgField, orgId);
+            this.partyFills.set(orgField, { Value: orgId, FromPersonID: targetPersonID });
         }
         return orgId;
     }

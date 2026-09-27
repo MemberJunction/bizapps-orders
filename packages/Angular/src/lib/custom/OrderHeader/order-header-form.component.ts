@@ -406,9 +406,12 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return !this.record.ShipToOrganizationID && !this.record.ShipToPersonID && !this.record.ShipToAddressID;
     }
 
-    public async OnPartyPersonChange(side: 'BillTo' | 'ShipTo'): Promise<void> {
+    public async OnPartyPersonChange(side: 'BillTo' | 'ShipTo', change: { OldValue: unknown; NewValue: unknown }): Promise<void> {
         if (!this.record || !this.EditMode) return;
-        await this.record.ApplyPersonPartyDefaults(side);
+        // The defaults the previous person brought with them go first, so a replacement person
+        // brings their own instead of inheriting the old copies.
+        this.record.ClearPersonParty(side, (change.OldValue as string | null) || null);
+        if (change.NewValue) await this.record.ApplyPersonPartyDefaults(side);
         this.cdr.detectChanges();
     }
 
