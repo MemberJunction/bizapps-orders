@@ -12,17 +12,24 @@
  * holder of the rule's role, with an optional note. A different concession is a new record: withdraw
  * a Pending one (delete it) and record again.
  *
+ * ITS APPROVERS ARE TOLD (golive #274). A Pending concession joins the order's approval task in the tasks
+ * app, assigned to the rule's role holders, in the same transaction as the row. Deciding or withdrawing
+ * the last Pending concession on the order closes that task.
+ *
  * CONNECTS TO:
  *   PURE:   @mj-biz-apps/orders-entities ConcessionBehavior
  *   READS:  ./ConcessionGate.ts (authority, rule, line price) · Subscription Terms · Order Lines
+ *   TASKS:  ./ConcessionApprovalTask.ts (raise, close) · ./ConcessionApprovalListener.ts (decide from task)
  *   GATE:   OrderEntityServer (confirm) and the send-document action refuse while one is Pending
  */
 import {
     BaseEntity,
     BaseEntityResult,
+    DatabaseProviderBase,
     EntityDeleteOptions,
     EntitySaveOptions,
     IRunViewProvider,
+    LogError,
     RunView,
     type IMetadataProvider,
     type UserInfo,
@@ -36,6 +43,12 @@ import {
     mjBizAppsOrdersOrderConcessionEntity,
     type ConcessionValuation,
 } from '@mj-biz-apps/orders-entities';
+import {
+    RouteConcessionToApproval,
+    SettleApprovalTask,
+    UnlinkConcession,
+    type ApprovalTaskContext,
+} from './ConcessionApprovalTask.js';
 import { FindConcessionLimitRule, LinePriceConcessionFor, LoadConcessionAuthority } from './ConcessionGate.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
@@ -82,13 +95,32 @@ interface TermRow {
 @RegisterClass(BaseEntity, ORDER_CONCESSION_ENTITY)
 export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionEntity {
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
-        const problem = this.IsSaved ? await this.applyDecision() : await this.prepareNew();
+        const recording = !this.IsSaved;
+        const problem = recording ? await this.prepareNew() : await this.applyDecision();
         if (problem) {
             this.RegisterResultHistoryEntry(this.buildRejection(problem));
             return false;
         }
+
+        if (recording && this.Status === 'Pending' && this.approvingRole) {
+            const roleID = this.approvingRole;
+            return this.withApprovalTask('create', () => super.Save(options), async (ctx) => {
+                await RouteConcessionToApproval(this.OrderHeaderID, roleID, ctx);
+            });
+        }
+        // A decision made through the task leaves the task to the tasks app, which closes it itself.
+        const deciding = !recording && this.GetFieldByName('Status')?.Dirty === true;
+        if (deciding && !this.DecidedThroughTask) {
+            return this.withApprovalTask('update', () => super.Save(options), (ctx) => SettleApprovalTask(this.OrderHeaderID, ctx));
+        }
         return super.Save(options);
     }
+
+    /** Set only by ConcessionApprovalListener, when the decision was recorded on the order's approval task. */
+    public DecidedThroughTask = false;
+
+    /** The ConcessionLimit rule's role, kept by `prepareNew` for routing a Pending concession. */
+    private approvingRole: string | null = null;
 
     /**
      * Set only by `OrderEntityServer` when it deletes a removed DRAFT line's dependents. A booked order
@@ -107,7 +139,47 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             );
             return false;
         }
-        return super.Delete(options);
+        const id = this.ID;
+        const orderHeaderID = this.OrderHeaderID;
+        const pending = this.Status === 'Pending';
+        return this.withApprovalTask('delete', () => super.Delete(options), async (ctx) => {
+            await UnlinkConcession(id, ctx);
+            if (pending) await SettleApprovalTask(orderHeaderID, ctx);
+        });
+    }
+
+    /**
+     * Write the row and its approval-task follow-up in one transaction: the task work fails, the row is
+     * not written. Joins the caller's transaction when there is one, as a draft-line removal is.
+     */
+    private async withApprovalTask(
+        type: 'create' | 'update' | 'delete',
+        write: () => Promise<boolean>,
+        follow: (ctx: ApprovalTaskContext) => Promise<void>,
+    ): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user?.ID) {
+            this.RegisterResultHistoryEntry(this.buildRejection('A concession change must be attributable to a user, and no user was supplied.', type));
+            return false;
+        }
+        const scope = await (this.ProviderToUse as unknown as DatabaseProviderBase).BeginEntityTransaction();
+        try {
+            if (!(await write())) {
+                await scope.Rollback();
+                return false;
+            }
+            await follow({ Provider: this.provider(), User: user });
+            await scope.Commit();
+            return true;
+        } catch (err) {
+            try {
+                await scope.Rollback();
+            } catch (rollbackErr) {
+                LogError(`OrderConcessionEntityServer: rollback failed after an approval-task error: ${rollbackErr}`);
+            }
+            this.RegisterResultHistoryEntry(this.buildRejection(err instanceof Error ? err.message : String(err), type));
+            return false;
+        }
     }
 
     // ─── Recording ────────────────────────────────────────────────────────────
@@ -126,6 +198,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.SalesRuleID = null;
         this.DecidedByUserID = null;
         this.DecidedAt = null;
+        this.approvingRole = null;
 
         const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
         const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.AddedDays);
@@ -148,6 +221,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             this.decide('Approved', user);
         } else {
             this.Status = 'Pending';
+            this.approvingRole = rule.ApprovalRequiredRoleID;
         }
         return null;
     }

@@ -16,6 +16,25 @@ export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
+// A Pending concession is routed to its approvers as a tasks-app approval task (golive #274).
+export {
+    APPROVAL_TASK_TYPE_CODE,
+    ClosingStatusFor,
+    ConcessionStatusForOutcome,
+    IsOpenApprovalTask,
+    LinkedConcessionIDs,
+    RouteConcessionToApproval,
+    SettleApprovalTask,
+    UnlinkConcession,
+    type ApprovalTaskClosingStatus,
+    type ApprovalTaskContext,
+    type ConcessionDecision,
+} from './ConcessionApprovalTask.js';
+export {
+    ApplyTaskDecisionToConcessions,
+    InitConcessionApprovalListener,
+    type ConcessionDecisionResult,
+} from './ConcessionApprovalListener.js';
 export {
     FindConcessionLimitRule,
     FindUnapprovedConcessions,

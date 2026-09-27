@@ -15,9 +15,17 @@
  *   CS10      removing a draft line removes its concession, even an approved one
  *   CS11      a bundle's components are priced at their allocation, which is not a concession
  *
+ * A Pending concession is routed to its approvers through the tasks app (golive #274):
+ *
+ *   CS12      one approval task per order, linking each Pending concession, assigned to the role's holders
+ *   CS13      an approval recorded on the task approves every Pending concession, as its decider
+ *   CS14      withdrawing a Pending concession unlinks it; withdrawing the last one cancels the task
+ *   CS15      deciding the concession on its record closes the task
+ *
  * CONNECTS TO:
  *   CODE: ConcessionBehavior · ConcessionGate · OrderConcessionEntityServer · SubscriptionTermEntity
  *         · OrderEntityServer.passesConcessionGate · PromotionEngine.AuthorizeManualDiscount
+ *         · ConcessionApprovalTask · ConcessionApprovalListener
  */
 import {
   Assert,
@@ -26,7 +34,7 @@ import {
   type IntegrationCheckContext,
   type NamedCheck,
 } from "@memberjunction/testing-integration";
-import { Metadata } from "@memberjunction/core";
+import { BaseEntity, Metadata } from "@memberjunction/core";
 import { FindUnapprovedConcessions } from "@mj-biz-apps/orders-core-entities-server";
 import type {
   mjBizAppsOrdersOrderConcessionEntity,
@@ -50,6 +58,7 @@ import {
   SALES_AUTHORITY_ENTITY,
   SALES_RULE_ENTITY,
   SUBSCRIPTION_TERM_ENTITY,
+  TASK_DECISION_ENTITY,
 } from "../entity-names.js";
 import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 
@@ -80,12 +89,25 @@ async function addRule(ctx: IntegrationCheckContext, ruleType: string, roleID: s
   });
 }
 
+/**
+ * A role this user lacks and some other active user holds. A Pending concession is assigned to the rule
+ * role's active holders, and one nobody holds is refused, so the role is given a holder when it has none.
+ */
 async function roleTheUserLacks(ctx: IntegrationCheckContext): Promise<string> {
-  const row = await TxOne<{ ID: string }>(ctx,
+  const held = await TxQuery<{ RoleID: string }>(ctx,
+    `SELECT TOP 1 ur.RoleID FROM __mj.UserRole ur
+       JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1
+      WHERE ur.UserID <> '${ctx.User.ID}'
+        AND NOT EXISTS (SELECT 1 FROM __mj.UserRole mine WHERE mine.RoleID = ur.RoleID AND mine.UserID = '${ctx.User.ID}')`);
+  if (held[0]?.RoleID) return held[0].RoleID;
+
+  const role = await TxOne<{ ID: string }>(ctx,
     `SELECT TOP 1 r.ID FROM __mj.Role r
       WHERE NOT EXISTS (SELECT 1 FROM __mj.UserRole ur WHERE ur.RoleID = r.ID AND ur.UserID = '${ctx.User.ID}')`);
-  Assert(row?.ID != null, "no role exists that this user lacks");
-  return row.ID;
+  const other = await TxOne<{ ID: string }>(ctx,
+    `SELECT TOP 1 ID FROM __mj.[User] WHERE IsActive = 1 AND ID <> '${ctx.User.ID}'`);
+  await createViaEntity(ctx, "MJ: User Roles", { UserID: other.ID, RoleID: role.ID });
+  return role.ID;
 }
 
 async function roleTheUserHolds(ctx: IntegrationCheckContext): Promise<string> {
@@ -93,6 +115,57 @@ async function roleTheUserHolds(ctx: IntegrationCheckContext): Promise<string> {
     `SELECT TOP 1 RoleID FROM __mj.UserRole WHERE UserID = '${ctx.User.ID}'`);
   Assert(row?.RoleID != null, "this user holds no roles");
   return row.RoleID;
+}
+
+/** The order's approval task and what it links and is assigned to. */
+async function approvalTaskOf(ctx: IntegrationCheckContext, orderID: string) {
+  const order = await TxOne<{ ApprovalTaskID: string | null }>(ctx,
+    `SELECT ApprovalTaskID FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`);
+  Assert(order.ApprovalTaskID != null, "the order points at no approval task");
+  const task = await TxOne<{ ID: string; Status: string; TypeCode: string }>(ctx,
+    `SELECT t.ID, t.Status, tt.Code AS TypeCode
+       FROM __mj_BizAppsTasks.Task t JOIN __mj_BizAppsTasks.TaskType tt ON tt.ID = t.TypeID
+      WHERE t.ID = '${order.ApprovalTaskID}'`);
+  const links = await TxQuery<{ RecordID: string }>(ctx,
+    `SELECT RecordID FROM __mj_BizAppsTasks.TaskLink WHERE TaskID = '${task.ID}'`);
+  const assignees = await TxQuery<{ AssigneeRecordID: string }>(ctx,
+    `SELECT AssigneeRecordID FROM __mj_BizAppsTasks.TaskAssignment WHERE TaskID = '${task.ID}'`);
+  const has = (ids: { RecordID: string }[], id: string) => ids.some((l) => l.RecordID.toLowerCase() === id.toLowerCase());
+  return { Task: task, Links: links, Assignees: assignees, IsLinked: (id: string) => has(links, id) };
+}
+
+/** Point the rule at a role this user holds, so the user can decide what it recorded as Pending. */
+async function letTheUserDecide(ctx: IntegrationCheckContext, ruleID: string): Promise<void> {
+  const rule = await new Metadata().GetEntityObject<mjBizAppsOrdersSalesRuleEntity>(SALES_RULE_ENTITY, ctx.User);
+  Assert(await rule.Load(ruleID), "rule did not load");
+  rule.ApprovalRequiredRoleID = await roleTheUserHolds(ctx);
+  Assert(await rule.Save(), "rule update failed");
+}
+
+/** Record a decision on a task the way the tasks app's approve/reject panel does: a Task Decision row. */
+async function decideTask(ctx: IntegrationCheckContext, taskID: string, outcomeCode: string, notes: string): Promise<void> {
+  const outcome = await TxOne<{ ID: string }>(ctx,
+    `SELECT ID FROM __mj_BizAppsTasks.TaskDecisionOutcome WHERE Code = '${outcomeCode}'`);
+  const decision = await new Metadata().GetEntityObject<BaseEntity>(TASK_DECISION_ENTITY, ctx.User);
+  decision.NewRecord();
+  // Generic by design: the check writes the row the tasks app writes, through the entity, and carries no
+  // dependency on the tasks app's typed classes.
+  decision.Set("TaskID", taskID);
+  decision.Set("OutcomeID", outcome.ID);
+  decision.Set("DecisionNotes", notes);
+  Assert(await decision.Save(), `the task decision did not save: ${decision.LatestResult?.CompleteMessage}`);
+}
+
+/** The listener applies a decision after it is saved; wait for the concessions to show it. */
+async function waitForStatuses(ctx: IntegrationCheckContext, ids: string[], status: string): Promise<void> {
+  const list = ids.map((id) => `'${id}'`).join(", ");
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const rows = await TxQuery<{ Status: string }>(ctx,
+      `SELECT Status FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID IN (${list})`);
+    if (rows.length === ids.length && rows.every((r) => r.Status === status)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  Assert(false, `the concessions did not become ${status} after the task was decided`);
 }
 
 /** Confirm a one-year SubRolling subscription at `price`; returns the order and its term. */
@@ -416,6 +489,131 @@ export const ConcessionChecks: NamedCheck[] = [
         built.Order.Status = "Confirmed";
         Assert(await built.Order.Save(),
           `a component's allocation must not hold the confirm: ${built.Order.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS12",
+    Name: "CS12: Pending concessions raise one approval task per order, assigned to the role's holders",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxValue: 50 });
+        const roleID = await roleTheUserLacks(ctx);
+        await addRule(ctx, "ConcessionLimit", roleID);
+
+        const built = await BuildOrder(ctx.User, { CompanyID: f.CoA.ID, Lines: [{ ProductID: f.Products.WidgetA, Quantity: 5 }] });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const first = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: built.Lines[0].ID, AddedQuantity: 3 });
+        Assert(first.Saved && first.Entity.Status === "Pending", `expected a Pending concession: ${first.Message}`);
+        const second = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: built.Lines[0].ID, AddedQuantity: 2 });
+        Assert(second.Saved && second.Entity.Status === "Pending", `expected a second Pending concession: ${second.Message}`);
+
+        const { Task, Links, Assignees, IsLinked } = await approvalTaskOf(ctx, built.Order.ID);
+        AssertEqual(Task.TypeCode, "APPROVAL_REQUEST", "the task is the tasks app's approval type");
+        AssertEqual(Task.Status, "Open", "the task is waiting on a decision");
+        AssertEqual(Links.length, 3, "one task links the order and both concessions");
+        Assert(IsLinked(built.Order.ID) && IsLinked(first.Entity.ID) && IsLinked(second.Entity.ID),
+          "the links name the order and each concession");
+
+        const holders = await TxQuery<{ UserID: string }>(ctx,
+          `SELECT ur.UserID FROM __mj.UserRole ur JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1
+            WHERE ur.RoleID = '${roleID}'`);
+        AssertEqual(Assignees.length, holders.length, "one assignment per active holder of the rule's role");
+        Assert(holders.every((h) => Assignees.some((a) => a.AssigneeRecordID.toLowerCase() === h.UserID.toLowerCase())),
+          "every holder is assigned");
+      }),
+  },
+  {
+    Id: "concessions.CS13",
+    Name: "CS13: an approval recorded on the task approves every Pending concession, as its decider",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxValue: 50 });
+        const ruleID = await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, { CompanyID: f.CoA.ID, Lines: [{ ProductID: f.Products.WidgetA, Quantity: 5 }] });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const first = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: built.Lines[0].ID, AddedQuantity: 3 });
+        const second = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: built.Lines[0].ID, AddedQuantity: 2 });
+        Assert(first.Saved && second.Saved, `recording failed: ${first.Message} ${second.Message}`);
+
+        await letTheUserDecide(ctx, ruleID);
+        const { Task } = await approvalTaskOf(ctx, built.Order.ID);
+        await decideTask(ctx, Task.ID, "Approved", "approved on the task");
+        await waitForStatuses(ctx, [first.Entity.ID, second.Entity.ID], "Approved");
+
+        const rows = await TxQuery<{ DecidedByUserID: string; DecisionNotes: string | null }>(ctx,
+          `SELECT DecidedByUserID, DecisionNotes FROM ${ORDERS_SCHEMA}.OrderConcession
+            WHERE ID IN ('${first.Entity.ID}', '${second.Entity.ID}')`);
+        Assert(rows.every((r) => r.DecidedByUserID.toLowerCase() === String(ctx.User.ID).toLowerCase()),
+          "the user who decided the task decided each concession");
+        Assert(rows.every((r) => r.DecisionNotes === "approved on the task"), "with the task decision's note");
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `with every concession approved, confirm should pass: ${built.Order.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS14",
+    Name: "CS14: withdrawing a Pending concession unlinks it; withdrawing the last one cancels the task",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxValue: 50 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, { CompanyID: f.CoA.ID, Lines: [{ ProductID: f.Products.WidgetA, Quantity: 5 }] });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const first = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: built.Lines[0].ID, AddedQuantity: 3 });
+        const second = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: built.Lines[0].ID, AddedQuantity: 2 });
+        Assert(first.Saved && second.Saved, `recording failed: ${first.Message} ${second.Message}`);
+
+        Assert(await first.Entity.Delete(), `withdrawing failed: ${first.Entity.LatestResult?.CompleteMessage}`);
+        let state = await approvalTaskOf(ctx, built.Order.ID);
+        AssertEqual(state.Task.Status, "Open", "a concession is still waiting, so the task stays open");
+        Assert(!state.IsLinked(first.Entity.ID), "the withdrawn concession is no longer linked");
+
+        Assert(await second.Entity.Delete(), `withdrawing failed: ${second.Entity.LatestResult?.CompleteMessage}`);
+        state = await approvalTaskOf(ctx, built.Order.ID);
+        AssertEqual(state.Task.Status, "Cancelled", "nothing is waiting any more, so the task is cancelled");
+
+        // The order's task has closed, so the next Pending concession opens a new one.
+        const third = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: built.Lines[0].ID, AddedQuantity: 3 });
+        Assert(third.Saved && third.Entity.Status === "Pending", `expected a Pending concession: ${third.Message}`);
+        const reopened = await approvalTaskOf(ctx, built.Order.ID);
+        Assert(reopened.Task.ID.toLowerCase() !== state.Task.ID.toLowerCase(), "a closed task is not reused");
+        AssertEqual(reopened.Task.Status, "Open", "the new task is waiting on a decision");
+      }),
+  },
+  {
+    Id: "concessions.CS15",
+    Name: "CS15: deciding a Pending concession on its record closes the order's task",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxValue: 50 });
+        const ruleID = await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, { CompanyID: f.CoA.ID, Lines: [{ ProductID: f.Products.WidgetA, Quantity: 5 }] });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const c = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: built.Lines[0].ID, AddedQuantity: 3 });
+        Assert(c.Saved && c.Entity.Status === "Pending", `expected a Pending concession: ${c.Message}`);
+
+        await letTheUserDecide(ctx, ruleID);
+        c.Entity.Status = "Approved";
+        Assert(await c.Entity.Save(), `a role holder's approval failed: ${c.Entity.LatestResult?.CompleteMessage}`);
+
+        const { Task } = await approvalTaskOf(ctx, built.Order.ID);
+        AssertEqual(Task.Status, "Completed", "the only concession was approved on its record, so the task is complete");
       }),
   },
 ];

@@ -38,7 +38,7 @@
  *   ach-settlement       AS1–AS17  money that arrives days late, and can leave again (D77/D78/D80)
  *   embedded-payment-detail PD1–PD14  PaymentDetail as an owner-held 1:1 embed (D38/D39)
  *   payment-schedule     PS1–PS13  instalments on the order: tie, issue, per-instalment rollup and ageing (D85–D88)
- *   concessions          CS1–CS8   concessions valued in any form, approved before the customer sees them
+ *   concessions          CS1–CS15  concessions valued in any form, approved before the customer sees them
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
  *
  * Note that `events` and `line-subscriber` are listed out of order above because that is the order
