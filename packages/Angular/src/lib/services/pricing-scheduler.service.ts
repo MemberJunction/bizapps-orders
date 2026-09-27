@@ -1,8 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Metadata, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { CanPriceOrderLocally, NetAfterDiscount, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { anyFieldIsDirty } from '@mj-biz-apps/orders-entities';
+import { CanPriceOrderLocally, NetAfterDiscount, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, StatedLineUnitPrice, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
 
@@ -243,9 +242,9 @@ export class MJOPricingScheduler {
                 Lines: order.Lines.Items.map((l) => ({
                     ProductID: l.ProductID,
                     Quantity: Number(l.Quantity ?? 0),
-                    // A STATED price is passed through and PINS the line. An absent one is what
-                    // tells the engine to resolve — sending 0 would read as a deliberate free line.
-                    UnitPrice: anyFieldIsDirty(l, ['UnitPrice']) ? Number(l.UnitPrice) : null,
+                    // A STATED price — being edited, or saved as an override — PINS the line. An
+                    // absent one tells the engine to resolve; 0 would read as a deliberate free line.
+                    UnitPrice: StatedLineUnitPrice(l),
                     DiscountPct: Number(l.DiscountPct ?? 0),
                 })),
                 PromotionCodes: order.PromotionCodes.Codes,
@@ -320,9 +319,10 @@ export class MJOPricingScheduler {
             line.NewRecord();
             line.ProductID = source.ProductID;
             line.Quantity = Number(source.Quantity ?? 0);
-            // A STATED price PINS the line; an absent one is what tells the engine to resolve.
-            // Assigning 0 would read as a deliberate free line.
-            if (anyFieldIsDirty(source, ['UnitPrice'])) line.UnitPrice = Number(source.UnitPrice);
+            // A STATED price — being edited, or saved as an override — PINS the line; an absent one
+            // is what tells the engine to resolve. Assigning 0 would read as a deliberate free line.
+            const stated = StatedLineUnitPrice(source);
+            if (stated != null) line.UnitPrice = stated;
             line.DiscountPct = Number(source.DiscountPct ?? 0);
             // The discount the line ALREADY carries comes across too. Without it a saved order
             // reopened on screen priced as though its concessions had never been granted, and a new
@@ -421,10 +421,8 @@ export class MJOPricingScheduler {
     ): MJOPricingResult {
         const lines: MJOLinePrice[] = out.Lines.map((priced, i) => {
             const line = order.Lines.Items[i];
-            const stated =
-                (line ? anyFieldIsDirty(line, ['UnitPrice']) : false) ||
-                line?.GetFieldByName('PriceOverridden')?.Value === true ||
-                line?.GetFieldByName('PriceOverridden')?.Value === 1;
+            // The same test that decided whether the engine was told to hold the price.
+            const stated = line ? StatedLineUnitPrice(line) != null : false;
             const extended = round(Number(priced.UnitPrice) * Number(line?.Quantity ?? 0));
             return {
                 // Positional: an unsaved line has no id, and the engine answers by position.

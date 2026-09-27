@@ -13,6 +13,7 @@ import {
     PRICE_PICK_DEFAULT,
     RestoreLineDefault,
     SetLinePriceOverrideReason,
+    StatedLineUnitPrice,
 } from '../pricing/linePricePick.js';
 
 /**
@@ -115,6 +116,35 @@ describe('IsLinePriceOverridden', () => {
         const { line, fields } = lineOf(UNPRICED, false);
         fields.UnitPrice.Value = 1100;
         expect(IsLinePriceOverridden(line, null)).toBe(true);
+    });
+});
+
+describe('StatedLineUnitPrice', () => {
+    // golive #275: a saved override reopened with nothing dirty must still hold its price.
+    it('holds a saved override that has not been edited since', () => {
+        const { line, fields } = lineOf(CONCESSION, true);
+        expect(fields.UnitPrice.Dirty).toBe(false);
+        expect(StatedLineUnitPrice(line)).toBe(1100);
+    });
+
+    it('holds a price being edited', () => {
+        const { line, fields } = lineOf(UNPRICED, false);
+        fields.UnitPrice.Value = 1100;
+        expect(StatedLineUnitPrice(line)).toBe(1100);
+    });
+
+    it('lets the engine resolve a clean, unflagged line', () => {
+        expect(StatedLineUnitPrice(lineOf({ ...UNPRICED, UnitPrice: 1200 }, true).line)).toBeNull();
+    });
+
+    it('lets the engine resolve an unsaved line nobody priced, rather than pinning it at zero', () => {
+        expect(StatedLineUnitPrice(lineOf(UNPRICED, false).line)).toBeNull();
+    });
+
+    it('holds a saved line put back on its default until the save lands', () => {
+        const { line } = lineOf(CONCESSION, true);
+        RestoreLineDefault(line, engine);
+        expect(StatedLineUnitPrice(line)).toBe(1200);
     });
 });
 
