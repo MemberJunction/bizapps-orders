@@ -41,6 +41,7 @@ import {
     type GiftCardLineFacts,
     type GiftCardOrderFacts,
 } from './GiftCardBehavior.js';
+import { RequireUUID } from './sql-guards.js';
 
 const STORED_VALUE_ACCOUNT_ENTITY = 'MJ_BizApps_Orders: Stored Value Accounts';
 const STORED_VALUE_TRANSACTION_ENTITY = 'MJ_BizApps_Orders: Stored Value Transactions';
@@ -266,12 +267,14 @@ export async function IssueGiftCards(
  * balance and its ledger row move together, so `CurrentBalance` always equals the last `BalanceAfter`
  * (the GC3 invariant). Called by `PaymentHeaderEntityServer` inside the payment's transaction (#302).
  *
- * Throws rather than overdraw or spend a card that is not Active — this also covers a gift-card
- * payment recorded without the stored-value driver, which never ran the driver's own check. A card
- * spent to zero becomes `Depleted`; a refund onto a `Depleted` card makes it `Active` again.
+ * Throws rather than overdraw or spend a card that is not Active or past `ExpiresAt` — this also
+ * covers a gift-card payment recorded without the stored-value driver, which never ran the driver's
+ * own checks. A card spent to zero becomes `Depleted`; a refund onto a `Depleted` card makes it
+ * `Active` again.
  *
- * ponytail: read-then-write with no row lock, so two concurrent spends of one card can both pass the
- * check. Same window the driver already documents; add UPDLOCK on the read if that ever matters.
+ * The balance is read under `UPDLOCK, ROWLOCK`, which the caller's transaction holds until it ends,
+ * so two spends of one card serialize: the second waits here, then reads what the first left.
+ * `relatedPaymentID` is the payment that moved it, so it must already be saved.
  */
 export async function MoveGiftCardBalance(
     provider: IMetadataProvider,
@@ -279,12 +282,24 @@ export async function MoveGiftCardBalance(
     storedValueAccountID: string,
     type: 'Redeem' | 'Refund',
     amount: number,
+    relatedPaymentID: string,
     relatedOrderHeaderID: string | null,
     options?: EntitySaveOptions,
 ): Promise<number> {
     if (amount === 0 || (type === 'Redeem') !== amount < 0) {
         throw new Error(`A ${type} of ${amount} is the wrong sign: Redeem is negative, Refund positive.`);
     }
+    RequireUUID(relatedPaymentID, 'RelatedPaymentID');
+    const sql = provider as unknown as { ExecuteSQL: (sql: string) => Promise<unknown> };
+    const rows = (await sql.ExecuteSQL(
+        `SELECT CurrentBalance FROM __mj_BizAppsOrders.StoredValueAccount WITH (UPDLOCK, ROWLOCK)
+          WHERE ID = '${RequireUUID(storedValueAccountID, 'StoredValueAccountID')}'`,
+    )) as Array<{ CurrentBalance?: number }> | { Results?: Array<{ CurrentBalance?: number }> } | undefined;
+    const lockedRow = (Array.isArray(rows) ? rows : (rows?.Results ?? []))[0];
+    if (!lockedRow) {
+        throw new Error(`Gift card ${storedValueAccountID} could not be read, so its balance cannot move.`);
+    }
+
     const account = await provider.GetEntityObject<mjBizAppsOrdersStoredValueAccountEntity>(STORED_VALUE_ACCOUNT_ENTITY, user);
     if (!(await account.Load(storedValueAccountID))) {
         throw new Error(`Gift card ${storedValueAccountID} could not be loaded, so its balance cannot move.`);
@@ -293,7 +308,11 @@ export async function MoveGiftCardBalance(
     if (type === 'Redeem' && account.Status !== 'Active') {
         throw new Error(`${label} is ${account.Status}, so it cannot be spent.`);
     }
-    const before = Number(account.CurrentBalance ?? 0);
+    if (type === 'Redeem' && account.ExpiresAt && new Date(account.ExpiresAt) < new Date()) {
+        throw new Error(`${label} expired on ${new Date(account.ExpiresAt).toISOString().slice(0, 10)}, so it cannot be spent.`);
+    }
+    // The locked read, not the entity's copy: it is the value no other spend can move before commit.
+    const before = Number(lockedRow.CurrentBalance ?? 0);
     const after = Math.round((before + amount) * 100) / 100;
     if (after < 0) {
         throw new Error(
@@ -309,7 +328,7 @@ export async function MoveGiftCardBalance(
             `Could not update the balance of ${label}: ${account.LatestResult?.CompleteMessage ?? 'no reason given'}`,
         );
     }
-    await writeTransaction(provider, user, storedValueAccountID, type, amount, after, relatedOrderHeaderID, options);
+    await writeTransaction(provider, user, storedValueAccountID, type, amount, after, relatedOrderHeaderID, options, relatedPaymentID);
     return after;
 }
 
@@ -323,6 +342,7 @@ async function writeTransaction(
     balanceAfter: number,
     relatedOrderHeaderID: string | null,
     options?: EntitySaveOptions,
+    relatedPaymentID: string | null = null,
 ): Promise<void> {
     const txn = await provider.GetEntityObject<mjBizAppsOrdersStoredValueTransactionEntity>(STORED_VALUE_TRANSACTION_ENTITY, user);
     txn.NewRecord();
@@ -331,6 +351,7 @@ async function writeTransaction(
     txn.Amount = amount;
     txn.BalanceAfter = balanceAfter;
     if (relatedOrderHeaderID) txn.RelatedOrderHeaderID = relatedOrderHeaderID;
+    if (relatedPaymentID) txn.RelatedPaymentID = relatedPaymentID;
     txn.OccurredAt = new Date();
     if (!(await txn.Save(options))) {
         throw new Error(

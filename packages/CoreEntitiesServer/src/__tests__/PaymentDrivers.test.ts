@@ -446,11 +446,16 @@ describe('StoredValuePaymentProvider', () => {
 });
 
 describe('MoveGiftCardBalance — the capture/refund write behind a gift-card payment (#302)', () => {
+    const CARD = '33333333-3333-3333-3333-333333333333';
+    const PAY = '44444444-4444-4444-4444-444444444444';
     /** A card plus whatever ledger rows get written, behind a provider that hands out both. */
-    const fakeCard = (balance: number, status = 'Active') => {
-        const card = { Code: 'GC-TEST', CurrentBalance: balance, Status: status, Saves: 0 };
+    const fakeCard = (balance: number, status = 'Active', expiresAt: Date | null = null) => {
+        const card = { Code: 'GC-TEST', CurrentBalance: balance, Status: status, ExpiresAt: expiresAt, Saves: 0 };
         const txns: Array<Record<string, unknown>> = [];
+        const sql: string[] = [];
         const provider = {
+            // The locked read returns whatever the card holds now, as the database would.
+            ExecuteSQL: async (q: string) => (sql.push(q), [{ CurrentBalance: card.CurrentBalance }]),
             GetEntityObject: async (name: string) =>
                 name.endsWith('Stored Value Accounts')
                     ? Object.assign(card, { Load: async () => true, Save: async () => ++card.Saves > 0 })
@@ -460,23 +465,29 @@ describe('MoveGiftCardBalance — the capture/refund write behind a gift-card pa
                           return t;
                       })(),
         };
-        return { card, txns, provider: provider as never };
+        return { card, txns, sql, provider: provider as never };
     };
 
     it('redeems: lowers the balance and writes a signed Redeem row that agrees with it', async () => {
         const { card, txns, provider } = fakeCard(90);
-        expect(await MoveGiftCardBalance(provider, {} as never, 'c1', 'Redeem', -60, 'o1')).toBe(30);
+        expect(await MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -60, PAY, 'o1')).toBe(30);
         expect(card.CurrentBalance).toBe(30);
         expect(card.Status).toBe('Active');
         expect(txns).toHaveLength(1);
-        expect(txns[0]).toMatchObject({ TransactionType: 'Redeem', Amount: -60, BalanceAfter: 30, RelatedOrderHeaderID: 'o1' });
+        expect(txns[0]).toMatchObject({
+            TransactionType: 'Redeem',
+            Amount: -60,
+            BalanceAfter: 30,
+            RelatedOrderHeaderID: 'o1',
+            RelatedPaymentID: PAY,
+        });
     });
 
     it('spending to zero depletes the card; a refund makes it Active again', async () => {
         const { card, txns, provider } = fakeCard(40);
-        await MoveGiftCardBalance(provider, {} as never, 'c1', 'Redeem', -40, null);
+        await MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -40, PAY, null);
         expect(card.Status).toBe('Depleted');
-        await MoveGiftCardBalance(provider, {} as never, 'c1', 'Refund', 25, null);
+        await MoveGiftCardBalance(provider, {} as never, CARD, 'Refund', 25, PAY, null);
         expect(card.CurrentBalance).toBe(25);
         expect(card.Status).toBe('Active');
         expect(txns.map((t) => [t.TransactionType, t.Amount, t.BalanceAfter])).toEqual([
@@ -487,7 +498,7 @@ describe('MoveGiftCardBalance — the capture/refund write behind a gift-card pa
 
     it('refuses an overdraw and writes nothing', async () => {
         const { card, txns, provider } = fakeCard(30);
-        await expect(MoveGiftCardBalance(provider, {} as never, 'c1', 'Redeem', -50, null)).rejects.toThrow(
+        await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -50, PAY, null)).rejects.toThrow(
             /holds 30\.00, which does not cover 50\.00/,
         );
         expect(card.Saves).toBe(0);
@@ -496,13 +507,27 @@ describe('MoveGiftCardBalance — the capture/refund write behind a gift-card pa
 
     it('refuses to spend a card that is not Active', async () => {
         const { txns, provider } = fakeCard(50, 'Voided');
-        await expect(MoveGiftCardBalance(provider, {} as never, 'c1', 'Redeem', -10, null)).rejects.toThrow(/Voided/);
+        await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -10, PAY, null)).rejects.toThrow(/Voided/);
+        expect(txns).toHaveLength(0);
+    });
+
+    it('reads the balance under UPDLOCK, ROWLOCK, so concurrent spends of one card serialize', async () => {
+        const { sql, provider } = fakeCard(90);
+        await MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -60, PAY, null);
+        expect(sql).toHaveLength(1);
+        expect(sql[0]).toMatch(/FROM __mj_BizAppsOrders\.StoredValueAccount WITH \(UPDLOCK, ROWLOCK\)/);
+        expect(sql[0]).toContain(CARD);
+    });
+
+    it('refuses to spend a card past its expiry, even with no provider in the way', async () => {
+        const { txns, provider } = fakeCard(50, 'Active', new Date('2026-01-01'));
+        await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -10, PAY, null)).rejects.toThrow(/expired on 2026-01-01/);
         expect(txns).toHaveLength(0);
     });
 
     it('refuses a movement signed the wrong way for its type', async () => {
         const { provider } = fakeCard(50);
-        await expect(MoveGiftCardBalance(provider, {} as never, 'c1', 'Redeem', 10, null)).rejects.toThrow(/wrong sign/);
-        await expect(MoveGiftCardBalance(provider, {} as never, 'c1', 'Refund', -10, null)).rejects.toThrow(/wrong sign/);
+        await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', 10, PAY, null)).rejects.toThrow(/wrong sign/);
+        await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Refund', -10, PAY, null)).rejects.toThrow(/wrong sign/);
     });
 });

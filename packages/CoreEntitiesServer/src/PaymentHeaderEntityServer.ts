@@ -168,8 +168,6 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                   )
                 : null;
             if (capturing) await this.settleWithProvider(giftCardID);
-            // Spend the card (or put a refund back on it) once the driver has settled `Amount`.
-            if (giftCardID) await this.moveGiftCardBalance(giftCardID, options);
 
             // COMPLETE THE ALLOCATIONS BEFORE THE HEADER SAVE, because `Lines` is a companion and MJ
             // validates companions from the PARENT's save — before any line's own Save() runs.
@@ -211,6 +209,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                         `${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
+            // Spend the card (or put a refund back on it) now the driver has settled `Amount` and the
+            // header exists, so the card's ledger row can name this payment.
+            if (giftCardID) await this.moveGiftCardBalance(giftCardID, options);
 
             // The lines go down BEFORE the invariant is checked, because the check reads what is
             // actually persisted rather than what this object happens to be holding — a line that
@@ -320,6 +321,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             giftCardID,
             refund ? 'Refund' : 'Redeem',
             refund ? amount : -amount,
+            this.ID,
             orders.size === 1 ? [...orders][0] : null,
             options,
         );
