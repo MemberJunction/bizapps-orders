@@ -251,6 +251,49 @@ export const RevenueRecognitionChecks: NamedCheck[] = [
                 AssertEqual(Number(credit.CreditAmount), 250, 'credit amount');
             }),
     },
+    {
+        Id: 'revenue-recognition.RR8',
+        Name: 'RR8: a deferred line nothing dates is refused at confirm, and confirms once its service period is set',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // EventA is an AllBackEnd SERVICE product: not an event, not a subscription, so
+                // neither the event nor a term can supply its window. The screen now asks for it;
+                // this pins the other half, that confirm writes nothing without it.
+                const f = Fx();
+                const spec = (dated: boolean) => ({
+                    CompanyID: f.CoA.ID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [
+                        {
+                            ProductID: f.Products.EventA,
+                            Quantity: 1,
+                            UnitPrice: 500,
+                            ...(dated ? { ServicePeriodStart: '2026-07-01', ServicePeriodEnd: '2026-09-30' } : {}),
+                        },
+                    ],
+                });
+
+                const refused = await ConfirmOrder(ctx.User, spec(false) as Parameters<typeof ConfirmOrder>[1]);
+                AssertEqual(refused.Saved, false, 'an undated deferred line does not confirm');
+                Assert(
+                    /needs a service period/.test(refused.Message),
+                    `the refusal names the missing service period: ${refused.Message}`,
+                );
+
+                const dated = await ConfirmOrder(ctx.User, spec(true) as Parameters<typeof ConfirmOrder>[1]);
+                Assert(dated.Saved, `with the window set it confirms: ${dated.Message}`);
+                AssertEqual(
+                    (await entriesForOrder(ctx, dated.Order.ID as string)).filter((e) => e.EntryType === 'OrderBooking').length,
+                    1,
+                    'and books',
+                );
+                const releases = (await entriesForOrder(ctx, dated.Order.ID as string)).filter(
+                    (e) => e.EntryType === 'RevenueRecognition',
+                );
+                AssertEqual(releases.length, 1, 'AllBackEnd stages one release, on the period end');
+            }),
+    },
 ];
 
 for (const check of RevenueRecognitionChecks) {
