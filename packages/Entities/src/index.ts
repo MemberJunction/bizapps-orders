@@ -38,6 +38,7 @@ export * from './order-line-edit-veto';
 export * from './OrderHeaderEntity';
 export * from './OrderLineEntity';
 export * from './ProductPriceEntity';
+export * from './ProductEntity';
 export * from './OrderLineExtensionCompanion';
 export * from './CustomerPaymentMethodEntity';
 export * from './PaymentHeaderEntity';
