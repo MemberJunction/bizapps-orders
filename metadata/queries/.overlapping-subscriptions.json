@@ -1,0 +1,20 @@
+[
+  {
+    "fields": {
+      "Name": "Overlapping Subscriptions",
+      "CategoryID": "@lookup:MJ: Query Categories.Name=Orders",
+      "UserQuestion": "Which holders have two live subscriptions covering the same product, or a band of it, over the same dates?",
+      "Description": "Finance exception review (golive #279, type 5): pairs of live subscriptions for one holder whose terms overlap, for the same product or for products in the same category with the same subscription type (how bands of one product are recognised). Each overlap is billed and recognized twice unless one is cancelled. A review list: an overlap can be intended. Run at month end until the nightly exception check replaces it.",
+      "SQL": "@file:SQL/overlapping-subscriptions.sql",
+      "TechnicalDescription": "Grain: subscription pair, ordered by creation so the later one is the subscription the overlap created. Coverage is SubscriptionTerm (excluding Canceled and Lapsed terms) over subscriptions that are not Canceled or Migrated. Holder is HolderOrganizationID when both have one, else BeneficiaryPersonID when neither does. MatchBasis is SameProduct or SameCategory (same ProductCategoryID and SubscriptionTypeID, different ProductID). Date dimension: the overlap; optional PeriodStart/PeriodEnd keep pairs whose overlap touches the window. Optional CompanyID.",
+      "Status": "Approved",
+      "QualityRank": 8,
+      "ExecutionCostRank": 3,
+      "UsesTemplate": true
+    },
+    "relatedEntities": {},
+    "primaryKey": {
+      "ID": "8DF27980-FE2C-4555-A481-27DD1C3285D3"
+    }
+  }
+]
