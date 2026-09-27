@@ -666,13 +666,13 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         this.partyFills.delete(`${side}PersonID`);
         const otherIsCopy = !clearedWasCopy && (this.wasFilledFrom(otherPersonField, clearedPersonID)
             || (side === 'BillTo' && UUIDsEqual(this.Get(otherPersonField) as string | null, clearedPersonID)));
-        if (otherIsCopy) this.clearPartyField(otherPersonField, `${other}Person`);
+        if (otherIsCopy) this.clearPartyField(otherPersonField);
 
         for (const s of ['BillTo', 'ShipTo'] as const) {
             const orgField = `${s}OrganizationID`;
             const stillHoldsPerson = UUIDsEqual(this.Get(`${s}PersonID`) as string | null, clearedPersonID);
             if (!stillHoldsPerson && this.wasFilledFrom(orgField, clearedPersonID)) {
-                this.clearPartyField(orgField, `${s}Organization`);
+                this.clearPartyField(orgField);
             }
         }
     }
@@ -683,10 +683,9 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return !!fill && UUIDsEqual(fill.FromPersonID, personID) && UUIDsEqual(this.Get(field) as string | null, fill.Value);
     }
 
-    /** Empty a party foreign key and the view's name field that displays it. */
-    private clearPartyField(idField: string, nameField: string): void {
+    /** Empty a party foreign key and forget that it was filled in. */
+    private clearPartyField(idField: string): void {
         this.Set(idField, null);
-        this.Set(nameField, null);
         this.partyFills.delete(idField);
     }
 

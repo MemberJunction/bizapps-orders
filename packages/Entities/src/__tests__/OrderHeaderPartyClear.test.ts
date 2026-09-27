@@ -82,11 +82,7 @@ describe('clearing the bill-to person on a new order', () => {
 
         await changePerson(o, 'BillTo', null);
 
-        expect(values).toMatchObject({
-            ShipToPersonID: null, ShipToPerson: null,
-            BillToOrganizationID: null, BillToOrganization: null,
-            ShipToOrganizationID: null, ShipToOrganization: null,
-        });
+        expect(values).toMatchObject({ ShipToPersonID: null, BillToOrganizationID: null, ShipToOrganizationID: null });
     });
 
     it('keeps an organization the user chose before picking the person', async () => {
