@@ -99,6 +99,8 @@ export interface CaptureRequest {
     /** Omit for the full authorised amount. Major units. */
     Amount?: number;
     CurrencyCode: string;
+    /** The gift card being spent, when the tender is one. Only the stored-value driver reads it. */
+    StoredValueAccountID?: string | null;
 }
 
 export interface RetrieveIntentRequest {

@@ -261,6 +261,58 @@ export async function IssueGiftCards(
     return out;
 }
 
+/**
+ * Spend from a gift card (`Redeem`, negative) or put a refund back on it (`Refund`, positive): the
+ * balance and its ledger row move together, so `CurrentBalance` always equals the last `BalanceAfter`
+ * (the GC3 invariant). Called by `PaymentHeaderEntityServer` inside the payment's transaction (#302).
+ *
+ * Throws rather than overdraw or spend a card that is not Active — this also covers a gift-card
+ * payment recorded without the stored-value driver, which never ran the driver's own check. A card
+ * spent to zero becomes `Depleted`; a refund onto a `Depleted` card makes it `Active` again.
+ *
+ * ponytail: read-then-write with no row lock, so two concurrent spends of one card can both pass the
+ * check. Same window the driver already documents; add UPDLOCK on the read if that ever matters.
+ */
+export async function MoveGiftCardBalance(
+    provider: IMetadataProvider,
+    user: UserInfo,
+    storedValueAccountID: string,
+    type: 'Redeem' | 'Refund',
+    amount: number,
+    relatedOrderHeaderID: string | null,
+    options?: EntitySaveOptions,
+): Promise<number> {
+    if (amount === 0 || (type === 'Redeem') !== amount < 0) {
+        throw new Error(`A ${type} of ${amount} is the wrong sign: Redeem is negative, Refund positive.`);
+    }
+    const account = await provider.GetEntityObject<mjBizAppsOrdersStoredValueAccountEntity>(STORED_VALUE_ACCOUNT_ENTITY, user);
+    if (!(await account.Load(storedValueAccountID))) {
+        throw new Error(`Gift card ${storedValueAccountID} could not be loaded, so its balance cannot move.`);
+    }
+    const label = `Gift card ${account.Code}`;
+    if (type === 'Redeem' && account.Status !== 'Active') {
+        throw new Error(`${label} is ${account.Status}, so it cannot be spent.`);
+    }
+    const before = Number(account.CurrentBalance ?? 0);
+    const after = Math.round((before + amount) * 100) / 100;
+    if (after < 0) {
+        throw new Error(
+            `${label} holds ${before.toFixed(2)}, which does not cover ${(-amount).toFixed(2)}. Nothing was spent.`,
+        );
+    }
+
+    account.CurrentBalance = after;
+    if (after === 0) account.Status = 'Depleted';
+    else if (account.Status === 'Depleted') account.Status = 'Active';
+    if (!(await account.Save(options))) {
+        throw new Error(
+            `Could not update the balance of ${label}: ${account.LatestResult?.CompleteMessage ?? 'no reason given'}`,
+        );
+    }
+    await writeTransaction(provider, user, storedValueAccountID, type, amount, after, relatedOrderHeaderID, options);
+    return after;
+}
+
 /** One signed movement on a card's ledger. */
 async function writeTransaction(
     provider: IMetadataProvider,

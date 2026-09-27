@@ -72,13 +72,14 @@ import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
-import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { LoadGiftCardAccountID, LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import {
     DepositReleasedByCompany,
     PlanLineDeposits,
     type DepositWorking,
     type InstalmentCashFacts,
 } from './PaymentScheduleBehavior.js';
+import { MoveGiftCardBalance } from './GiftCardEngine.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
@@ -136,6 +137,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         await this.deferCaptureWhenSettlementIsLate();
 
         const capturing = this.willBookOnThisSave();
+        // Only the transition moves a gift card's balance. A re-save that books a late line is still
+        // `capturing`, and spending the card again there would charge it twice (#302).
+        const entering = this.entersBookedStatus();
 
         // A Pending payment with no new lines is an ordinary row save — nothing to co-ordinate.
         if (!capturing && !this.Lines.Dirty) {
@@ -156,7 +160,16 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             // they have to be set before `super.Save()` persists it. Calling this afterwards computed
             // the right fee and threw it away — the row kept its zero, and the only reason anyone
             // noticed was that PV4 asserted the fee rather than just the status.
-            if (capturing) await this.settleWithProvider();
+            const giftCardID = entering
+                ? await LoadGiftCardAccountID(
+                      this.ProviderToUse as unknown as IRunViewProvider,
+                      this.ContextCurrentUser as UserInfo,
+                      this.PaymentDetailID,
+                  )
+                : null;
+            if (capturing) await this.settleWithProvider(giftCardID);
+            // Spend the card (or put a refund back on it) once the driver has settled `Amount`.
+            if (giftCardID) await this.moveGiftCardBalance(giftCardID, options);
 
             // COMPLETE THE ALLOCATIONS BEFORE THE HEADER SAVE, because `Lines` is a companion and MJ
             // validates companions from the PARENT's save — before any line's own Save() runs.
@@ -279,11 +292,37 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      */
     private willBookOnThisSave(): boolean {
         if (!BOOKED_STATUSES.has(this.Status)) return false;
+        if (this.entersBookedStatus()) return true;
+        return this.Lines.Items.some((l) => !l.BookedAt);
+    }
+
+    /** True when this save moves the payment INTO Captured/Refunded: a new row, or a status change. */
+    private entersBookedStatus(): boolean {
+        if (!BOOKED_STATUSES.has(this.Status)) return false;
         if (!this.IsSaved) return true;
         const previousStatus = this.GetFieldByName('Status')?.OldValue as string | undefined;
-        if (previousStatus !== this.Status) return true;
-        if (this.Lines.Items.some((l) => !l.BookedAt)) return true;
-        return false;
+        return previousStatus !== this.Status;
+    }
+
+    /**
+     * A capture spends the gift card it was tendered with (`Redeem`); a refund puts it back (`Refund`).
+     * `Amount` is a positive magnitude on both, so the sign comes from the status, as the booking's
+     * mirror does (D53). Account credit needs nothing here: it lives on the order's balance (#302).
+     */
+    private async moveGiftCardBalance(giftCardID: string, options?: EntitySaveOptions): Promise<void> {
+        const amount = Math.round(Number(this.Amount ?? 0) * 100) / 100;
+        const refund = this.Status === 'Refunded';
+        // The order the card was spent on, when the payment settles exactly one; null for a split.
+        const orders = new Set(this.Lines.Items.map((l) => l.OrderHeaderID).filter((id): id is string => !!id));
+        await MoveGiftCardBalance(
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+            giftCardID,
+            refund ? 'Refund' : 'Redeem',
+            refund ? amount : -amount,
+            orders.size === 1 ? [...orders][0] : null,
+            options,
+        );
     }
 
     /**
@@ -641,7 +680,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      * before the fee leg is built, so a nonsensical fee is refused here rather than producing an entry
      * that will not balance three calls later.
      */
-    private async settleWithProvider(): Promise<void> {
+    private async settleWithProvider(giftCardID: string | null): Promise<void> {
         const providerID = this.PaymentProviderID;
         if (!providerID) return;
 
@@ -671,6 +710,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             ProviderIntentID: intent,
             Amount: this.Amount ?? 0,
             CurrencyCode: await this.functionalCurrency(),
+            // The card being spent, so the stored-value driver checks ITS balance. Other drivers ignore it.
+            StoredValueAccountID: giftCardID,
         });
 
         if (!capture.Success) {

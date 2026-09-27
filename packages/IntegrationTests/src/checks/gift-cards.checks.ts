@@ -26,6 +26,8 @@
  *   GC11  an ordinary product issues nothing at all
  *   GC12  the issued card is spendable — it round-trips into a redemption
  *   GC13  spending the card relieves the LIABILITY, not Cash — no cash arrived at redemption (#300)
+ *   GC14  spending the card through the stored-value driver lowers its balance and writes a Redeem;
+ *         a second spend past what is left is refused with nothing spent; a refund puts it back (#302)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -43,6 +45,8 @@ import {
   type NamedCheck,
 } from "@memberjunction/testing-integration";
 import { randomUUID } from "node:crypto";
+import { BaseRemotableOperation } from "@memberjunction/core";
+import { MJGlobal } from "@memberjunction/global";
 import {
   ACCT_SCHEMA,
   createViaEntity,
@@ -57,7 +61,7 @@ import {
 } from "../fixture.js";
 import { ConfirmOrder } from "../order-builder.js";
 import { CreatePayment } from "../payment-builder.js";
-import { PAYMENT_DETAIL_ENTITY } from "../entity-names.js";
+import { PAYMENT_DETAIL_ENTITY, PAYMENT_INTENT_ENTITY, PAYMENT_PROVIDER_ENTITY } from "../entity-names.js";
 
 interface CardRow {
   ID: string;
@@ -547,6 +551,111 @@ export const GiftCardChecks: NamedCheck[] = [
           .filter((l) => l.GLAccountID.toLowerCase() === saleCredits[0].GLAccountID.toLowerCase())
           .reduce((s, l) => s + Number(l.DebitAmount ?? 0), 0);
         AssertEqual(sameAccountDebit, 40, `the redemption debits the account the sale credited: ${JSON.stringify(lines)}`);
+      }),
+  },
+  {
+    Id: "gift-cards.GC14",
+    Name: "GC14: spending a card lowers its balance, an overspend is refused, and a refund restores it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const sale = await sellGiftCards(ctx, 1, 90);
+        const [card] = await cardsOf(ctx, sale.Order.ID as string);
+
+        const spend = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 200 }],
+        });
+        Assert(spend.Saved, `confirm failed: ${spend.Message}`);
+
+        // Through the stored-value DRIVER, so the capture's own balance check has to see this card.
+        const giftCardType = f.PaymentTypeIDs.get("GiftCard");
+        Assert(!!giftCardType, "PaymentType 'GiftCard' missing — push the orders app metadata");
+        const svType = await TxMaybeOne<{ ID: string }>(
+          ctx,
+          `SELECT ID FROM ${ORDERS_SCHEMA}.PaymentProviderType WHERE Code='StoredValue'`,
+        );
+        Assert(!!svType, "PaymentProviderType 'StoredValue' missing — push the orders app metadata");
+        const providerID = await createViaEntity(ctx, PAYMENT_PROVIDER_ENTITY, {
+          PaymentProviderTypeID: svType!.ID,
+          CompanyID: f.CoA.ID,
+          Name: "IT StoredValue",
+          CredentialsRef: null,
+          IsLiveMode: 0,
+          IsActive: 1,
+        });
+
+        const payWithCard = async (amount: number) => {
+          const detailID = await createViaEntity(ctx, PAYMENT_DETAIL_ENTITY, {
+            CompanyID: f.CoA.ID,
+            PaymentTypeID: giftCardType,
+            StoredValueAccountID: card.ID,
+          });
+          const intentID = await createViaEntity(ctx, PAYMENT_INTENT_ENTITY, {
+            PaymentProviderID: providerID,
+            ProviderIntentID: `sv_it_${randomUUID()}`,
+            Status: "RequiresPayment",
+            Amount: amount,
+            OrderHeaderID: spend.Order.ID as string,
+          });
+          return CreatePayment(ctx.User, {
+            PaymentNumber: `IT-${randomUUID().slice(0, 8).toUpperCase()}`,
+            ReceivingCompanyID: f.CoA.ID,
+            PaymentTypeID: giftCardType!,
+            Amount: amount,
+            PaymentDetailID: detailID,
+            PaymentProviderID: providerID,
+            PaymentIntentID: intentID,
+            Allocations: [{ OrderHeaderID: spend.Order.ID as string, Amount: amount }],
+          });
+        };
+        const balanceOf = async () =>
+          Number(
+            (
+              await TxOne<{ CurrentBalance: number }>(
+                ctx,
+                `SELECT CurrentBalance FROM ${ORDERS_SCHEMA}.StoredValueAccount WHERE ID='${card.ID}'`,
+              )
+            ).CurrentBalance,
+          );
+
+        const first = await payWithCard(60);
+        Assert(first.Saved, `the 60 gift card payment failed: ${first.Message}`);
+        AssertEqual(await balanceOf(), 30, "90 less the 60 spent");
+        const ledger = await ledgerOf(ctx, card.ID);
+        const redeems = ledger.filter((t) => t.TransactionType === "Redeem");
+        AssertEqual(redeems.length, 1, `one Redeem row: ${JSON.stringify(ledger)}`);
+        AssertEqual(Number(redeems[0].Amount), -60, "for the 60 spent, signed as money leaving");
+        AssertEqual(Number(redeems[0].BalanceAfter), 30, "and the ledger agrees with the account");
+
+        // Before #302 the driver never learned which card it was spending, and the balance never moved,
+        // so a 90 card could be spent for 90 on any number of orders.
+        const second = await payWithCard(50);
+        Assert(!second.Saved, "a 50 spend against 30 left must be refused");
+        Assert(
+          /now holds only 30\.00/.test(second.Message),
+          `refused by the driver's check on THIS card: ${second.Message}`,
+        );
+        AssertEqual(await balanceOf(), 30, "nothing was spent by the refused payment");
+        AssertEqual((await ledgerOf(ctx, card.ID)).length, 2, "and no row was added: Issue + one Redeem");
+
+        // A partial refund of the 60 payment puts that much back on the card.
+        const op = MJGlobal.Instance.ClassFactory.CreateInstance<
+          BaseRemotableOperation<Record<string, unknown>, { Success: boolean; Message?: string }>
+        >(BaseRemotableOperation, "Orders.RefundPayment");
+        Assert(op != null, "'Orders.RefundPayment' is not registered");
+        const refund = await op!.Execute(
+          { PaymentHeaderID: first.Payment.ID, Amount: 20, Reason: "returned one item" },
+          { provider: ctx.Provider, user: ctx.User },
+        );
+        Assert(refund.Success && refund.Output?.Success, `refund failed: ${refund.ErrorMessage ?? refund.Output?.Message}`);
+        AssertEqual(await balanceOf(), 50, "30 left plus the 20 refunded");
+        const refunds = (await ledgerOf(ctx, card.ID)).filter((t) => t.TransactionType === "Refund");
+        AssertEqual(refunds.length, 1, "one Refund row");
+        AssertEqual(Number(refunds[0].Amount), 20, "signed as money coming back");
+        AssertEqual(Number(refunds[0].BalanceAfter), 50, "and the ledger agrees with the account");
       }),
   },
 ];
