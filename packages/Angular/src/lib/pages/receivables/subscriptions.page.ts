@@ -2,11 +2,18 @@ import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
-import { MJOMoneyPipe, FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
+import { FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { RunView, Metadata, type EntityInfo } from '@memberjunction/core';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
-import { GetSubscriptionEvents, GetSubscriptionTerms } from '../../data/orders-queries';
+import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
+import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
+import {
+    GetSubscriptionEvents,
+    GetSubscriptionTerms,
+    LoadSubscriptionRevRec,
+    type SubscriptionTermLookup,
+} from '../../data/orders-queries';
 import {
     ToISODate,
     Today,
@@ -25,16 +32,10 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
     StartDate: DateCell;
     EndDate: DateCell;
     AutoRenew: boolean;
+    OrderLineID?: string | null;
     Product?: string | null;
     HolderOrganization?: string | null;
     BeneficiaryPerson?: string | null;
-}
-
-/** One period of the recognition waterfall. */
-interface MJORecognitionPeriod {
-    Label: string;
-    Amount: number;
-    Released: boolean;
 }
 
 /**
@@ -64,7 +65,7 @@ interface MJORecognitionPeriod {
 @Component({
     selector: 'mjo-subscriptions-page',
     standalone: true,
-    imports: [CommonModule, EntityViewerModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
+    imports: [CommonModule, EntityViewerModule, DeferredRevenueWaterfallModule, MJOStatedValueComponent, MJAlertComponent],
     template: `
         <div class="mjo-sub__split">
             <div class="mjo-sub__left">
@@ -193,16 +194,11 @@ interface MJORecognitionPeriod {
                             <h3>Revenue recognition</h3>
                         </div>
                         <div class="mj-card-pad">
-                            <div class="mjo-sub__waterfall">
-                                @for (period of Recognition; track period.Label) {
-                                    <div class="mjo-sub__period" [class.is-released]="period.Released">
-                                        <div class="tiny muted">{{ period.Label }}</div>
-                                        <div class="mj-num small strong">{{ period.Amount | mjoMoney }}</div>
-                                    </div>
-                                } @empty {
-                                    <div class="small muted">No recognition schedule for this subscription.</div>
-                                }
-                            </div>
+                            <mj-deferred-revenue-waterfall
+                                [JournalEntries]="RecognitionEntries"
+                                [Title]="'Subscription deferred revenue'"
+                                [TermLookup]="RecognitionTermLookup">
+                            </mj-deferred-revenue-waterfall>
 
                             <div class="small muted mjo-sub__note">
                                 Recognition entries are created at booking with future dates and post when their
@@ -253,21 +249,6 @@ interface MJORecognitionPeriod {
             }
             .mjo-sub__event:last-child { border-bottom: none; }
             tr.is-current { background: var(--mj-status-success-bg); }
-            .mjo-sub__waterfall {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
-                gap: 5px;
-            }
-            .mjo-sub__period {
-                border: 1px solid var(--mj-border-default);
-                border-radius: var(--mj-radius-sm);
-                padding: 5px 6px;
-                text-align: center;
-            }
-            .mjo-sub__period.is-released {
-                background: var(--mj-status-success-bg);
-                border-color: color-mix(in srgb, var(--mj-status-success) 35%, transparent);
-            }
 
             @media (max-width: 1100px) {
                 .mjo-sub__split { flex-direction: column; }
@@ -327,6 +308,8 @@ export class MJOSubscriptionsPageComponent implements OnInit {
 
     public Terms: mjBizAppsOrdersSubscriptionTermEntity[] = [];
     public Events: mjBizAppsOrdersSubscriptionEventEntity[] = [];
+    public RecognitionEntries: mjBizAppsAccountingJournalEntryEntity[] = [];
+    public RecognitionTermLookup: SubscriptionTermLookup = {};
 
     public async Select(row: MJOSubscriptionRow): Promise<void> {
         this.SelectedID = row.ID;
@@ -335,18 +318,25 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     }
 
     /**
-     * Terms and history for one subscription.
+     * Terms, history and recognition entries for one subscription.
      *
-     * Fetched on selection, and both awaits settle before either is assigned —
-     * assigning between awaits is what puts the view into the NG0100 freeze.
+     * Fetched on selection, and every await settles before anything is assigned —
+     * assigning between awaits is what puts the view into the NG0100 freeze. A
+     * result that lands after the user has selected another subscription is
+     * dropped, so one subscription's schedule never renders under another's header.
      */
     private async loadDetail(subscriptionID: string): Promise<void> {
-        const [terms, events] = await Promise.all([
+        const row = this.AllRows.find((r) => r.ID === subscriptionID);
+        const [terms, events, recognition] = await Promise.all([
             GetSubscriptionTerms(subscriptionID),
             GetSubscriptionEvents(subscriptionID),
+            LoadSubscriptionRevRec({ ID: subscriptionID, OrderLineID: row?.OrderLineID ?? null }, Metadata.Provider),
         ]);
+        if (this.SelectedID !== subscriptionID) return;
         this.Terms = terms;
         this.Events = events;
+        this.RecognitionEntries = recognition.Entries;
+        this.RecognitionTermLookup = recognition.TermLookup;
         this.cdr.detectChanges();
     }
 
@@ -371,13 +361,18 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     /**
      * Dates and amounts arrive as `unknown` off a loosely-typed row.
      *
+     * The value goes to `FormatDate` as it is. Terms and events are entity objects,
+     * so their dates are `Date`, and `String(date)` is 'Mon Aug 10 2026 …', which
+     * no ISO reader parses — every term window and history row rendered '—'.
+     *
      * TERM WINDOWS SHOW THE YEAR. Consecutive terms differ only by it — a renewal
      * of an annual subscription runs Jul 31 → Jul 30 exactly like the term before
      * it — so the short format rendered two different years as the same window and
      * made an appended renewal look like a duplicate.
      */
     protected dateOf(value: unknown): string {
-        return value ? FormatDate(String(value)) : '—';
+        if (value instanceof Date || typeof value === 'string') return FormatDate(value);
+        return '—';
     }
 
     /**
@@ -389,12 +384,17 @@ export class MJOSubscriptionsPageComponent implements OnInit {
      * covered for another year.
      */
     public get CoveredThrough(): string {
+        const furthest = this.latestTermEnd ?? this.Selected?.EndDate ?? null;
+        return furthest ? FormatDate(furthest) : '—';
+    }
+
+    /** `YYYY-MM-DD` of the furthest term end, or null when no term has one. */
+    private get latestTermEnd(): string | null {
         const ends = this.Terms
             .map((t) => ToISODate(t.EndDate))
             .filter((d): d is string => !!d)
             .sort();
-        const furthest = ends[ends.length - 1] ?? this.Selected?.EndDate ?? null;
-        return furthest ? FormatDate(furthest) : '—';
+        return ends[ends.length - 1] ?? null;
     }
 
     protected moneyOf(value: unknown): string {
@@ -410,48 +410,22 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         return this.AllRows.find((r) => r.ID === this.SelectedID);
     }
 
+    /**
+     * Days until the latest term ends, which is when a renewal takes effect.
+     *
+     * Not `Subscription.EndDate`: that column is the final service date, set only
+     * after a cancellation or migration, so it is empty on every subscription that
+     * could still renew.
+     */
     public get DaysToRenewal(): number {
-        if (!this.Selected) return 0;
-        return -DaysSince(this.Selected.EndDate, Today());
+        const end = this.latestTermEnd;
+        if (!this.Selected || !end) return 0;
+        return -DaysSince(end, Today());
     }
 
     /** Within the lead window, and consented to. */
     public get RenewalDue(): boolean {
         return !!this.Selected?.AutoRenew && this.DaysToRenewal > 0 && this.DaysToRenewal <= 45;
-    }
-
-    /**
-     * The recognition waterfall.
-     *
-     * Twelve monthly periods across the term. Released periods are the ones whose
-     * date has passed — the entry already existed, so "released" is a statement
-     * about the calendar rather than about anything the system did.
-     */
-    public get Recognition(): MJORecognitionPeriod[] {
-        const subscription = this.Selected;
-        if (!subscription) return [];
-
-        const amount = Number(subscription['AmountPerTerm'] ?? 0);
-        if (!amount) return [];
-
-        const periods = 12;
-        const perPeriod = Math.round((amount / periods) * 100) / 100;
-        // Through the helper, not `new Date(String(date).slice(0, 10))` — on a `Date` that inner
-        // expression is 'Mon Aug 10', and `new Date('Mon Aug 10')` is Invalid Date, which makes
-        // every month label below read 'Invalid Date'.
-        const startISO = ToISODate(subscription.StartDate);
-        if (!startISO) return [];
-        const start = new Date(`${startISO}T00:00:00`);
-        const today = new Date();
-
-        return Array.from({ length: periods }, (_, index) => {
-            const date = new Date(start.getFullYear(), start.getMonth() + index, 1);
-            return {
-                Label: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-                Amount: perPeriod,
-                Released: date <= today,
-            };
-        });
     }
 
     protected statusClass(row: MJOSubscriptionRow): string {

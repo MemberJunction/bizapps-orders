@@ -42,7 +42,7 @@
  *
  * @module @mj-biz-apps/orders-ng
  */
-import { Metadata, RunView, type RunViewParams, type UserInfo } from '@memberjunction/core';
+import { Metadata, RunView, type IMetadataProvider, type RunViewParams, type UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
 import { IsBefore, LoadOrdersEngine, OrdersEngine, OverdueFilter, Today, ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
@@ -1711,6 +1711,87 @@ export async function GetSubscriptionEvents(
         undefined,
         user,
     );
+}
+
+/** Subscription term id (either case) → the label the recognition waterfall colours it by. */
+export type SubscriptionTermLookup = Record<string, { TermNumber: number; Label: string }>;
+
+/**
+ * A subscription's revenue recognition journal entries, with their lines loaded.
+ *
+ * A recognition entry points at the TERM it recognizes (`LinkedRecordID`, D25), so the search runs
+ * over the subscription's terms as well as the subscription and its originating order line. The
+ * subscription form and the Receivables subscription panel both read the schedule through here, so
+ * the two cannot disagree about what is scheduled.
+ */
+export async function LoadSubscriptionRevRec(
+    record: { ID: string; OrderLineID?: string | null },
+    provider: IMetadataProvider,
+): Promise<{
+    Entries: mjBizAppsAccountingJournalEntryEntity[];
+    TermLookup: SubscriptionTermLookup;
+    TermIDs: string[];
+}> {
+    const rv = RunView.FromMetadataProvider(provider);
+    const user = provider.CurrentUser;
+    const termsRes = await rv.RunView<{ ID: string; TermNumber?: number }>({
+        EntityName: MJO_ENTITIES.SubscriptionTerm,
+        ExtraFilter: `SubscriptionID = '${record.ID}'`,
+        OrderBy: 'TermNumber ASC',
+        Fields: ['ID', 'TermNumber'],
+        ResultType: 'simple',
+        MaxRows: 200,
+    }, user);
+    const terms = termsRes.Success && termsRes.Results ? termsRes.Results : [];
+    const termIds = terms.map((t) => t.ID);
+    const lookup: SubscriptionTermLookup = {};
+    terms.forEach((term, index) => {
+        const num = term.TermNumber ?? index + 1;
+        const label = `Term ${num}`;
+        lookup[term.ID.toLowerCase()] = { TermNumber: num, Label: label };
+        lookup[term.ID.toUpperCase()] = { TermNumber: num, Label: label };
+    });
+
+    const targets = [...termIds, record.ID];
+    if (record.OrderLineID) targets.push(record.OrderLineID);
+    const quoted = targets.map((id) => `'${id}'`).join(',');
+    const jeRes = await rv.RunView<mjBizAppsAccountingJournalEntryEntity>({
+        EntityName: MJO_ACCOUNTING_ENTITIES.JournalEntry,
+        ExtraFilter: `LinkedRecordID IN (${quoted})`,
+        OrderBy: 'EffectiveDate ASC',
+        ResultType: 'entity_object',
+        MaxRows: 500,
+    }, user);
+    const all = jeRes.Success && jeRes.Results ? jeRes.Results : [];
+    await Promise.all(all.map((je) => LoadJournalLines(je)));
+    const recognized = FilterRecognitionEntries(all, termIds);
+    return {
+        Entries: recognized.length > 0 ? recognized : all,
+        TermLookup: lookup,
+        TermIDs: termIds,
+    };
+}
+
+async function LoadJournalLines(entry: mjBizAppsAccountingJournalEntryEntity): Promise<void> {
+    try {
+        if (entry.Lines && typeof entry.Lines.Load === 'function') {
+            await entry.Lines.Load();
+        }
+    } catch {
+        // Waterfall still renders the header without lines.
+    }
+}
+
+function FilterRecognitionEntries(
+    entries: mjBizAppsAccountingJournalEntryEntity[],
+    termIds: string[],
+): mjBizAppsAccountingJournalEntryEntity[] {
+    return entries.filter((je) => {
+        const desc = (je.Description || '').toLowerCase();
+        const type = (je.EntryType || '').toLowerCase();
+        const isTerm = termIds.some((id) => id.toLowerCase() === String(je.LinkedRecordID).toLowerCase());
+        return isTerm || desc.includes('recognize') || type.includes('recognition');
+    });
 }
 
 /* ── Catalog ─────────────────────────────────────────────────────────────────── */
