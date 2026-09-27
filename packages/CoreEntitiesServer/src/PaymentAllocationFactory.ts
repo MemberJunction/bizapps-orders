@@ -54,7 +54,7 @@
  *   CALLER:   PaymentLineEntityServer (./PaymentLineEntityServer.ts)
  *   DOC:      plans/archive/intercompany-balancing.md
  */
-import { GL_ROLE, RefuseUnlinkedCustomerDeposits, type GLAccountResolver } from './GLAccountResolver.js';
+import { GL_ROLE, IsRoleNotLinked, RefuseUnlinkedCustomerDeposits, type GLAccountResolver } from './GLAccountResolver.js';
 import { SplitExactly } from './BundleBehavior.js';
 import type { PaymentJEDraft, PaymentJELine, PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 
@@ -143,6 +143,13 @@ export interface PaymentLineAllocationContext {
      * credit is the single AR credit it has always been.
      */
     Deposits?: ReadonlyMap<string, number>;
+    /**
+     * Set when the tender is a GIFT CARD (`PaymentDetail.StoredValueAccountID`): the card's
+     * `StoredValueAccount.IssuingCompanyID`. No cash arrives at redemption, so the debit relieves
+     * the issuer's Gift Card Liability instead of debiting Cash (issue #300). Account credit and
+     * every other tender leave it unset.
+     */
+    GiftCardIssuingCompanyID?: string | null;
 }
 
 export interface PaymentAllocationResult {
@@ -406,7 +413,11 @@ export class PaymentAllocationFactory {
 
         const shares = AllocateByCompany(total, ctx.OrderLines, ctx.TargetOrderLineID);
         const asOf = new Date(ctx.PaymentDate);
-        const receiving = ctx.ReceivingCompanyID;
+        // A gift card is relieved on the books of the company that sold it, so the issuer stands in
+        // for the collector: it owns the debit, and any other company's share goes through the same
+        // Due To / Due From pair a cash collection would use. Equal to ReceivingCompanyID in the
+        // ordinary single-company case.
+        const receiving = ctx.GiftCardIssuingCompanyID || ctx.ReceivingCompanyID;
         const label = ctx.IsReversal ? 'Refund' : 'Payment';
 
         const ownShare = shares.find((s) => key(s.CompanyID) === key(receiving));
@@ -415,7 +426,10 @@ export class PaymentAllocationFactory {
         // ── The receiving company's entry ────────────────────────────────────
         // Payments are company-level: there is no product to walk from, so the company default is
         // both the start and the end of resolution (D12).
-        const cashAccount = await this._resolver.Resolve(GL_ROLE.Cash, null, null, receiving, asOf);
+        const debitAccount = ctx.GiftCardIssuingCompanyID
+            ? await this.resolveGiftCardLiability(receiving, asOf, ctx)
+            : await this._resolver.Resolve(GL_ROLE.Cash, null, null, receiving, asOf);
+        const debitWhat = ctx.GiftCardIssuingCompanyID ? 'gift card redeemed' : 'cash';
 
         // Every share, split again by the tags of the lines it settles (issue #238). An order whose
         // lines carry no dimensions yields one slice per company, and the entries below are then
@@ -493,9 +507,9 @@ export class PaymentAllocationFactory {
         // bare while the credits are tagged would unbalance every dimension-filtered trial balance
         // the tags exist to produce.
         const receivingLines: PaymentJELine[] = groupSlices(shares.flatMap(slicesFor)).map((slice) => ({
-            GLAccountID: cashAccount,
+            GLAccountID: debitAccount,
             DebitAmount: slice.Amount,
-            Description: `${label} ${ctx.PaymentNumber} — cash for order ${ctx.OrderNumber}`,
+            Description: `${label} ${ctx.PaymentNumber} — ${debitWhat} for order ${ctx.OrderNumber}`,
             ...dims(slice.Dimensions),
         }));
 
@@ -559,6 +573,30 @@ export class PaymentAllocationFactory {
 
         for (const draft of drafts) this.assertBalanced(draft, ctx);
         return { Drafts: drafts, Shares: shares };
+    }
+
+    /**
+     * The account a gift card sale credited, resolved the same way `OrderJournalEntryFactory` did at
+     * sale: Gift Card Liability, or Deferred Revenue when none is linked, so a card sold before the
+     * account existed is relieved from the account it was booked to. Only "nothing linked" falls
+     * back; a cross-company refusal or any other failure is rethrown.
+     */
+    private async resolveGiftCardLiability(
+        companyID: string,
+        asOf: Date,
+        ctx: PaymentLineAllocationContext,
+    ): Promise<string> {
+        try {
+            return await this._resolver.Resolve(GL_ROLE.GiftCardLiability, null, null, companyID, asOf);
+        } catch (err) {
+            if (!IsRoleNotLinked(err)) throw err;
+            console.warn(
+                `Payment ${ctx.PaymentNumber}: no 'Gift Card Liability' GL account is linked for company ` +
+                    `${companyID}, so the gift card redemption relieves Deferred Revenue instead — the ` +
+                    `account the sale fell back to. Link a Gift Card Liability account.`,
+            );
+            return this._resolver.Resolve(GL_ROLE.DeferredRevenue, null, null, companyID, asOf);
+        }
     }
 
     private toDraft(ctx: PaymentLineAllocationContext, lines: PaymentJELine[], companyID: string): PaymentJEDraft {

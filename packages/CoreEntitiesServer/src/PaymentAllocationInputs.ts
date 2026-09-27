@@ -22,6 +22,9 @@ import type { InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_DIMENSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 
+const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
+const STORED_VALUE_ACCOUNT_ENTITY = 'MJ_BizApps_Orders: Stored Value Accounts';
+
 interface OrderLineRow {
     ID: string;
     CompanyID: string;
@@ -174,4 +177,55 @@ export async function LoadInstalmentCashFacts(
         AmountPaid: Number(r.AmountPaid ?? 0),
         DocumentNumber: r.DocumentNumber ? String(r.DocumentNumber) : null,
     }));
+}
+
+/**
+ * The issuing company of the gift card a payment was tendered with, or null when the payment's
+ * instrument is not a gift card (issue #300).
+ *
+ * A gift card is a `PaymentDetail` carrying `StoredValueAccountID` — the same split
+ * `StoredValuePaymentProvider` makes. Account credit (`SourceOrderHeaderID`) and every other tender
+ * come back null and book exactly as before.
+ */
+export async function LoadGiftCardIssuingCompanyID(
+    provider: IRunViewProvider,
+    user: UserInfo,
+    paymentDetailID: string | null | undefined,
+): Promise<string | null> {
+    if (!paymentDetailID) return null;
+    const rv = new RunView(provider);
+    const detail = await rv.RunView<{ StoredValueAccountID: string | null }>(
+        {
+            EntityName: PAYMENT_DETAIL_ENTITY,
+            ExtraFilter: `ID='${paymentDetailID}'`,
+            Fields: ['StoredValueAccountID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!detail?.Success) {
+        throw new Error(`Could not read the payment's instrument to allocate it: ${detail?.ErrorMessage ?? 'unknown error'}`);
+    }
+    const cardID = detail.Results?.[0]?.StoredValueAccountID;
+    if (!cardID) return null;
+
+    const card = await rv.RunView<{ IssuingCompanyID: string }>(
+        {
+            EntityName: STORED_VALUE_ACCOUNT_ENTITY,
+            ExtraFilter: `ID='${cardID}'`,
+            Fields: ['IssuingCompanyID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    const issuer = card?.Success ? card.Results?.[0]?.IssuingCompanyID : undefined;
+    if (!issuer) {
+        throw new Error(
+            `Could not read the issuing company of gift card ${cardID}: ${card?.ErrorMessage ?? 'no such card'}. ` +
+                `Booking it as cash would overstate Cash and leave the card's liability open.`,
+        );
+    }
+    return issuer;
 }
