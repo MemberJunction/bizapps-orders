@@ -27,7 +27,7 @@ import BodyParser from 'body-parser';
 import type { Application, Request, Response } from 'express';
 import { LogError, LogStatus, Metadata, type IMetadataProvider, type UserInfo, RunView, type IRunViewProvider } from '@memberjunction/core';
 import { UserCache } from '@memberjunction/generic-database-provider';
-import { RegisterClass } from '@memberjunction/global';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseServerExtension, type ExtensionHealthResult, type ExtensionInitResult, type ServerExtensionConfig } from '@memberjunction/server-extensions-core';
 import { OrdersPollExternalPaymentsOperation } from '@mj-biz-apps/orders-entities';
 import { IsPaymentRelevant, ResolvePaymentProvider } from '@mj-biz-apps/orders-core-entities-server';
@@ -128,7 +128,40 @@ export async function HandleBillComWebhook(
 
 /** The Action behind `Orders — Poll External Payments`, whose scheduled job governs this route. */
 const POLL_ACTION_ID = 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B11';
+/** That Action's `Preview` input param. Seeded by V202609272103; the job's Configuration names it. */
+const POLL_PREVIEW_PARAM_ID = 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B13';
 const SCHEDULED_JOB_ENTITY = 'MJ: Scheduled Jobs';
+
+/**
+ * Is this job's `Preview` param set to something the action will read as true?
+ *
+ * MUST AGREE WITH `boolParam` (packages/Server/src/custom/action-params.ts), which is what actually
+ * decides whether the scheduled run previews. It accepts a real boolean as well as 'true', '1', 'yes'
+ * and 'y', and every one of those is a spelling a person can put in the Configuration JSON. This used
+ * to be a regex for `"Value": "true"` over the whole blob, which disagreed with `boolParam` on three
+ * of them — each disagreement a job that previews while this route records cash — and matched ANY
+ * param's value rather than Preview's, so a MaxCount of "true" would have blocked a live job.
+ *
+ * ABSENT MEANS NOT PREVIEWING, which is the action's own default (`preview = !!input?.Preview`);
+ * the two have to answer the same way or the gate is worse than no gate.
+ */
+function previewParamIsTrue(configuration: string | null): boolean {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(configuration ?? '');
+    } catch {
+        // Unreadable configuration is not permission to record money.
+        return true;
+    }
+    const params = (parsed as { Params?: unknown })?.Params;
+    if (!Array.isArray(params)) return false;
+    const preview = params.find((x) => typeof (x as { ActionParamID?: unknown })?.ActionParamID === 'string' && UUIDsEqual((x as { ActionParamID: string }).ActionParamID, POLL_PREVIEW_PARAM_ID));
+    if (!preview) return false;
+    const raw = (preview as { Value?: unknown }).Value;
+    if (raw == null || raw === '') return false;
+    if (typeof raw === 'boolean') return raw;
+    return ['true', '1', 'yes', 'y'].includes(String(raw).trim().toLowerCase());
+}
 
 /**
  * A NOTIFICATION MUST NOT RECORD CASH THE SCHEDULED JOB IS NOT YET ALLOWED TO RECORD.
@@ -146,20 +179,31 @@ const SCHEDULED_JOB_ENTITY = 'MJ: Scheduled Jobs';
 export function PollJobIsLive(job: { Status: string | null; Configuration: string | null } | null | undefined): { Live: boolean; Why: string } {
     if (!job) return { Live: false, Why: 'no scheduled poll job is installed' };
     if ((job.Status ?? '').trim().toLowerCase() !== 'active') return { Live: false, Why: `the scheduled poll job is ${job.Status?.trim() || 'not active'}` };
-    // Preview is a Static param on the job, and the scheduler stores every parameter as TEXT — so the
-    // flag arrives as the STRING "true", which is why this reads the text rather than a boolean.
-    const preview = /"Value"\s*:\s*"true"/i.test(job.Configuration ?? '');
-    if (preview) return { Live: false, Why: 'the scheduled poll job is still in Preview' };
+    if (previewParamIsTrue(job.Configuration)) return { Live: false, Why: 'the scheduled poll job is still in Preview' };
     return { Live: true, Why: 'the scheduled poll job is live' };
 }
 
+/**
+ * THE MOST RESTRICTIVE POLL JOB WINS, not whichever row the database happened to return first.
+ *
+ * One job covers every provider today (the shipped row names no `PaymentProviderID`), but the poll
+ * takes one and this route is per-provider, so a site that splits the job per provider is an ordinary
+ * configuration. Reading `Results[0]` of an unordered view then answered with an arbitrary job's
+ * state — provider A live would have let a notification for provider B record cash while B's own job
+ * was still in Preview. With no way to tell from here which job governs which provider, every
+ * installed poll job has to agree before this route writes anything.
+ */
 async function pollIsLive(provider: IMetadataProvider, user: UserInfo): Promise<{ Live: boolean; Why: string }> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const r = await rv.RunView<{ Status: string | null; Configuration: string | null }>(
-        { EntityName: SCHEDULED_JOB_ENTITY, ExtraFilter: `Configuration LIKE '%${POLL_ACTION_ID}%'`, Fields: ['Status', 'Configuration'], ResultType: 'simple' },
+        { EntityName: SCHEDULED_JOB_ENTITY, ExtraFilter: `Configuration LIKE '%${POLL_ACTION_ID}%'`, Fields: ['Status', 'Configuration'], OrderBy: 'Name', ResultType: 'simple' },
         user,
     );
-    return PollJobIsLive(r.Results?.[0]);
+    const jobs = r.Results ?? [];
+    if (!jobs.length) return PollJobIsLive(null);
+    const verdicts = jobs.map((j) => PollJobIsLive(j));
+    const blocked = verdicts.find((v) => !v.Live);
+    return blocked ?? verdicts[0];
 }
 
 async function defaultRunPoll(providerId: string, provider: IMetadataProvider, user: UserInfo): Promise<void> {

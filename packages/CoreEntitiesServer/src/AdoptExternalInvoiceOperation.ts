@@ -10,13 +10,20 @@
  * Until this operation existed only the first answer was implementable; the second was a hand edit in
  * Explorer, which the claimed row's own message nonetheless told people to perform.
  *
- * IT READS THE INVOICE BACK AND REFUSES A MISMATCH. Adopting a reference whose total is not this
- * unit's amount would tie our receivable to a customer document for a different figure — the same
- * failure the send path's tie check exists to prevent, arrived at from the other direction.
+ * IT READS THE INVOICE BACK AND REFUSES THREE WAYS, because a person is typing a reference off a
+ * screen and every one of these is a plausible slip:
+ *   · ARCHIVED — an invoice the rail has withdrawn is not one the customer holds. This is the slip
+ *     the total check cannot catch: a previously cancelled invoice for THIS unit ties exactly, by
+ *     construction, so adopting it would mark the unit Sent for ever against a document nobody has.
+ *     The unit would then be skipped by the sweep, refused by `CanSend`, and never billed.
+ *   · A DIFFERENT DOCUMENT — the rail carries our own `DocumentNumber` as its invoice number (the
+ *     send sets it), so a reference belonging to some other invoice is identifiable without guessing.
+ *     Compared only when the rail reports one; a rail that does not is left to the total check.
+ *   · A TOTAL THAT DOES NOT TIE — the same figure the send path proves, from the other direction.
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
-import { BaseRemotableOperation, LogError, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { BaseRemotableOperation, LogError, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
     OrdersAdoptExternalInvoiceOperation as OrdersAdoptExternalInvoiceOperationBase,
@@ -24,13 +31,17 @@ import {
     type OrdersAdoptExternalInvoiceOutput,
 } from '@mj-biz-apps/orders-entities';
 
-import { money } from './ExternalInvoiceBehavior.js';
+import { DecideAdoption, money } from './ExternalInvoiceBehavior.js';
 import { ResolveInvoiceRail } from './InvoiceRailResolver.js';
-import { LoadExternalInvoiceByID, updateExternalInvoice } from './IssueExternalInvoiceOperation.js';
+import { ORDER_HEADER_ENTITY } from './entity-names.js';
+import {
+    LoadExternalInvoiceByID,
+    stampHeaderDocumentNumber,
+    stampScheduleRow,
+    updateExternalInvoice,
+    type HeaderStampTarget,
+} from './IssueExternalInvoiceOperation.js';
 import { RequireUUID } from './sql-guards.js';
-
-/** Our tolerance everywhere money is compared: half a cent. */
-const TIE_TOLERANCE = 0.005;
 
 @RegisterClass(BaseRemotableOperation, 'Orders.AdoptExternalInvoice')
 export class AdoptExternalInvoiceOperation extends OrdersAdoptExternalInvoiceOperationBase {
@@ -92,13 +103,24 @@ export class AdoptExternalInvoiceOperation extends OrdersAdoptExternalInvoiceOpe
 
             const total = money(snap.Value.Total);
             const amount = money(Number(row.Amount ?? 0));
-            if (Math.abs(total - amount) > TIE_TOLERANCE) {
+            const verdict = DecideAdoption({
+                ExternalInvoiceRef: ref,
+                DocumentNumber: row.DocumentNumber,
+                UnitAmount: amount,
+                RailArchived: snap.Value.Archived,
+                RailInvoiceNumber: snap.Value.InvoiceNumber,
+                RailTotal: total,
+            });
+            if (!verdict.OK) {
                 return {
                     Success: false,
-                    ResultCode: 'TIE_FAILED',
+                    // An archived invoice is the rail holding nothing LIVE for this unit, which is the
+                    // re-issue answer; the other two are the tie check refusing a mismatch.
+                    ResultCode: verdict.Code === 'ARCHIVED' ? 'NOT_FOUND_ON_RAIL' : 'TIE_FAILED',
                     Message:
-                        `${rail.Config.Name} totals ${ref} at ${total.toFixed(2)} but ${row.DocumentNumber} is ${amount.toFixed(2)}. ` +
-                        `Refusing rather than tying this receivable to a customer document for a different figure.`,
+                        verdict.Code === 'ARCHIVED'
+                            ? `${verdict.Reason} Send it again with AllowReissue.`
+                            : verdict.Reason.replace('the rail', rail.Config.Name),
                     ExternalInvoiceID: row.ID,
                     ExternalInvoiceRef: ref,
                     DocumentNumber: row.DocumentNumber,
@@ -133,6 +155,20 @@ export class AdoptExternalInvoiceOperation extends OrdersAdoptExternalInvoiceOpe
                 LastError: null,
             });
 
+            // THE SAME DENORMALISATION A SEND PERFORMS (step 9 of the issue path, the #239/#242
+            // contract). Without it an adopted instalment reads as never sent on its own row and on
+            // the order header, which is where a person looks — the worklist is unaffected either way
+            // because it keys off this table, so the inconsistency would have been silent.
+            if (row.OrderHeaderPaymentScheduleID) {
+                await stampScheduleRow(provider, user, String(row.OrderHeaderPaymentScheduleID), {
+                    ExternalSystem: rail.Config.TypeCode,
+                    ExternalInvoiceRef: ref,
+                    SentAt: row.SentAt ? new Date(row.SentAt as unknown as string) : now,
+                });
+            }
+            const header = await loadHeaderStampTarget(String(row.OrderHeaderID), provider, user);
+            if (header) await stampHeaderDocumentNumber(provider, user, header, rail.Config.PaymentProviderID, String(row.DocumentNumber));
+
             return {
                 Success: true,
                 ResultCode: 'ADOPTED',
@@ -148,6 +184,21 @@ export class AdoptExternalInvoiceOperation extends OrdersAdoptExternalInvoiceOpe
             return { Success: false, ResultCode: 'ERROR', Message: err instanceof Error ? err.message : String(err) };
         }
     }
+}
+
+/** Just enough of the order for the display-only header stamp; a miss skips the stamp, never the adopt. */
+async function loadHeaderStampTarget(orderID: string, provider: IMetadataProvider, user: UserInfo): Promise<HeaderStampTarget | null> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<HeaderStampTarget>(
+        {
+            EntityName: ORDER_HEADER_ENTITY,
+            ExtraFilter: `ID = '${RequireUUID(orderID, 'OrderHeaderID')}'`,
+            Fields: ['ID', 'OrderNumber', 'ExternalDocumentNumber'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    return r.Results?.[0] ?? null;
 }
 
 /** Registers {@link AdoptExternalInvoiceOperation}. Called from the server bootstrap. */

@@ -108,15 +108,26 @@ describe('HandleBillComWebhook', () => {
  * posted Dr Cash / Cr A/R before anyone had read a preview run.
  */
 describe('PollJobIsLive', () => {
-    const live = { Status: 'Active', Configuration: '{"Params":[{"Value":"false"}]}' };
+    // The real shape: the poll Action and its Preview param, as V202609272103 seeds them.
+    const PREVIEW = 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B13';
+    const MAXCOUNT = 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B14';
+    const config = (preview: unknown, maxCount: unknown = '100') =>
+        JSON.stringify({
+            ActionID: 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B11',
+            Params: [
+                ...(preview === undefined ? [] : [{ ActionParamID: PREVIEW, ValueType: 'Static', Value: preview }]),
+                { ActionParamID: MAXCOUNT, ValueType: 'Static', Value: maxCount },
+            ],
+        });
+    const live = { Status: 'Active', Configuration: config('false') };
 
     it('polls only when the scheduled job is Active and out of Preview', () => {
         expect(PollJobIsLive(live).Live).toBe(true);
     });
 
     it('refuses while the job is in Preview, however it is cased', () => {
-        expect(PollJobIsLive({ ...live, Configuration: '{"Params":[{"Value":"true"}]}' }).Live).toBe(false);
-        expect(PollJobIsLive({ ...live, Configuration: '{"Params":[{"Value":"TRUE"}]}' }).Live).toBe(false);
+        expect(PollJobIsLive({ ...live, Configuration: config('true') }).Live).toBe(false);
+        expect(PollJobIsLive({ ...live, Configuration: config('TRUE') }).Live).toBe(false);
     });
 
     it('refuses while the job is Disabled — the shipping posture', () => {
@@ -131,8 +142,44 @@ describe('PollJobIsLive', () => {
     });
 
     it('says WHY, because the notification is otherwise silently dropped', () => {
-        for (const j of [null, { ...live, Status: 'Disabled' }, { ...live, Configuration: '{"Params":[{"Value":"true"}]}' }]) {
+        for (const j of [null, { ...live, Status: 'Disabled' }, { ...live, Configuration: config('true') }]) {
             expect(PollJobIsLive(j).Why.length).toBeGreaterThan(0);
         }
+    });
+});
+
+describe('PollJobIsLive reads the Preview PARAM, not the blob', () => {
+    const PREVIEW = 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B13';
+    const MAXCOUNT = 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B14';
+    const job = (params: unknown[]) => ({ Status: 'Active', Configuration: JSON.stringify({ ActionID: 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B11', Params: params }) });
+    const previewValue = (v: unknown) => job([{ ActionParamID: PREVIEW, ValueType: 'Static', Value: v }]);
+
+    // MUST AGREE WITH `boolParam`, which is what decides whether the scheduled run previews. Each of
+    // these was read as LIVE by the regex this replaced, so the webhook would have recorded cash while
+    // the job it claims to follow was previewing.
+    it.each([[true], ['true'], ['TRUE'], ['1'], ['yes'], ['y'], [' True ']])('treats %p as still previewing', (v) => {
+        expect(PollJobIsLive(previewValue(v)).Live).toBe(false);
+    });
+
+    it.each([[false], ['false'], ['0'], ['no'], ['n'], [''], [null]])('treats %p as out of preview', (v) => {
+        expect(PollJobIsLive(previewValue(v)).Live).toBe(true);
+    });
+
+    it('is not fooled by another param whose value happens to be true', () => {
+        // MaxCount "true" is nonsense, but it must not block a job that is genuinely live.
+        expect(PollJobIsLive(job([{ ActionParamID: PREVIEW, Value: 'false' }, { ActionParamID: MAXCOUNT, Value: 'true' }])).Live).toBe(true);
+    });
+
+    it('matches the param id however it is cased in the JSON', () => {
+        expect(PollJobIsLive(job([{ ActionParamID: PREVIEW.toLowerCase(), Value: 'true' }])).Live).toBe(false);
+    });
+
+    it('is live when Preview is absent — the action defaults the same way', () => {
+        expect(PollJobIsLive(job([{ ActionParamID: MAXCOUNT, Value: '100' }])).Live).toBe(true);
+    });
+
+    it('refuses configuration it cannot read, rather than assuming permission', () => {
+        expect(PollJobIsLive({ Status: 'Active', Configuration: 'not json' }).Live).toBe(false);
+        expect(PollJobIsLive({ Status: 'Active', Configuration: null }).Live).toBe(false);
     });
 });

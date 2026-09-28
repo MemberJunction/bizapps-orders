@@ -9,6 +9,7 @@ import type { InvoiceDocument, InvoiceRow } from '../InvoiceBehavior.js';
 import {
     BuildExternalInvoicePayload,
     ClassifyIssueFailure,
+    DecideAdoption,
     DecideCancel,
     DecideInvoiceable,
     type ExternalInvoiceUnitFacts,
@@ -233,5 +234,55 @@ describe('ClassifyIssueFailure', () => {
         expect(ClassifyIssueFailure('INV-500 lines total 499.99, which does not tie to the unit amount 500.00.')).toBe('Permanent');
         expect(ClassifyIssueFailure('Bill.com refused the invoice (HTTP 503).')).toBe('Transient');
         expect(ClassifyIssueFailure('Request failed with status 429')).toBe('Transient');
+    });
+});
+
+describe('DecideAdoption', () => {
+    // A person is typing a reference off a Bill.com screen. These are the slips.
+    const base = {
+        ExternalInvoiceRef: '00e01ABC',
+        DocumentNumber: 'ORD-1234-A',
+        UnitAmount: 600,
+        RailArchived: false,
+        RailInvoiceNumber: 'ORD-1234-A',
+        RailTotal: 600,
+    };
+
+    it('accepts the invoice this unit actually raised', () => {
+        expect(DecideAdoption(base).OK).toBe(true);
+    });
+
+    it('REFUSES AN ARCHIVED INVOICE — the slip the total cannot catch', () => {
+        // A previously cancelled invoice for this very unit ties to the penny by construction, so the
+        // tie check waves it through. Adopting it marks the unit Sent against a withdrawn document and
+        // the order is never billed.
+        const d = DecideAdoption({ ...base, RailArchived: true });
+        expect(d.OK).toBe(false);
+        expect(d.Code).toBe('ARCHIVED');
+        expect(d.Reason).toMatch(/never be billed/i);
+    });
+
+    it('refuses a reference belonging to a different document, even when the figure matches', () => {
+        const d = DecideAdoption({ ...base, RailInvoiceNumber: 'ORD-9999' });
+        expect(d.OK).toBe(false);
+        expect(d.Code).toBe('WRONG_DOCUMENT');
+    });
+
+    it('does not mind how the rail cases or pads the number', () => {
+        expect(DecideAdoption({ ...base, RailInvoiceNumber: '  ord-1234-a ' }).OK).toBe(true);
+    });
+
+    it('falls back to the total when the rail reports no invoice number', () => {
+        expect(DecideAdoption({ ...base, RailInvoiceNumber: null }).OK).toBe(true);
+        expect(DecideAdoption({ ...base, RailInvoiceNumber: '', RailTotal: 599 }).Code).toBe('TIE_FAILED');
+    });
+
+    it('still refuses a total that does not tie', () => {
+        expect(DecideAdoption({ ...base, RailTotal: 600.02 }).Code).toBe('TIE_FAILED');
+        expect(DecideAdoption({ ...base, RailTotal: 600.004 }).OK).toBe(true); // half a cent, as everywhere else
+    });
+
+    it('reports the archive before the figure — it is the reason the figure is unhelpful', () => {
+        expect(DecideAdoption({ ...base, RailArchived: true, RailTotal: 1 }).Code).toBe('ARCHIVED');
     });
 });

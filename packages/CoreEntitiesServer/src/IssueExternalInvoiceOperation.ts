@@ -503,7 +503,6 @@ function echoOf(row: ExternalInvoiceRow): Partial<OrdersIssueExternalInvoiceOutp
     };
 }
 
-/** The unit's most relevant row: a live one if any, else the most recent of any status. */
 /** One external-invoice row by its own id. Used where a person names the row rather than the unit. */
 export async function LoadExternalInvoiceByID(id: string, provider: IMetadataProvider, user: UserInfo): Promise<ExternalInvoiceRow | null> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
@@ -514,6 +513,7 @@ export async function LoadExternalInvoiceByID(id: string, provider: IMetadataPro
     return r.Results?.[0] ?? null;
 }
 
+/** The unit's most relevant row: a live one if any, else the most recent of any status. */
 export async function LoadExternalInvoiceForUnit(
     paymentProviderID: string,
     unit: BillingUnitKey,
@@ -622,7 +622,15 @@ export async function stampScheduleRow(
  * D-B3: `OrderHeader.ExternalDocumentNumber` gets the rail's invoice number when the order has exactly
  * one live external invoice. Display only, best effort — a refusal here is logged, never fatal.
  */
-async function stampHeaderDocumentNumber(provider: IMetadataProvider, user: UserInfo, order: OrderRow, paymentProviderID: string, documentNumber: string | null): Promise<void> {
+export type HeaderStampTarget = Pick<OrderRow, 'ID' | 'OrderNumber' | 'ExternalDocumentNumber'>;
+
+export async function stampHeaderDocumentNumber(
+    provider: IMetadataProvider,
+    user: UserInfo,
+    order: HeaderStampTarget,
+    paymentProviderID: string,
+    documentNumber: string | null,
+): Promise<void> {
     try {
         const rv = new RunView(provider as unknown as IRunViewProvider);
         const live = await rv.RunView<{ ID: string; DocumentNumber: string }>(

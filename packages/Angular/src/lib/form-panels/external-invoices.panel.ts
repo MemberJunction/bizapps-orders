@@ -94,7 +94,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
                         </thead>
                         <tbody>
                             @for (row of Rows; track row.ID) {
-                                <tr [class.is-selected]="Selected?.ID === row.ID" (click)="Selected = row">
+                                <tr [class.is-selected]="Selected?.ID === row.ID" (click)="Select(row)">
                                     <td class="mono">{{ row.DocumentNumber }}</td>
                                     <td class="num">{{ money(row.Amount) }}</td>
                                     <td>
@@ -225,6 +225,12 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         return CanResolveInFlight(this.Selected, this.Visible);
     }
 
+    /** Selecting a different row drops a half-typed reference: it was meant for the row it was typed against. */
+    public Select(row: ExternalInvoiceRow): void {
+        if (this.Selected?.ID !== row.ID) this.AdoptRef = '';
+        this.Selected = row;
+    }
+
     public StateLabel(row: ExternalInvoiceLike): string {
         return StateLabel(row);
     }
@@ -326,7 +332,17 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         this.Notice = null;
         this.cdr.detectChanges();
         try {
-            const result = await new OrdersIssueExternalInvoiceOperation().Execute({ OrderHeaderID: this.Record.ID, AllowReissue: true });
+            // THE SELECTED ROW'S UNIT, NOT THE ORDER'S. A re-issue that names only the order resolves to
+            // the whole-order unit, which is a different billing unit from the one whose claim is stuck:
+            // on a scheduled order it is refused with "name the instalment", on a split-company order
+            // with "name the company", and the stuck row is never superseded either way. The copy above
+            // names this document, so the call has to mean it.
+            const result = await new OrdersIssueExternalInvoiceOperation().Execute({
+                OrderHeaderID: this.Record.ID,
+                CompanyID: row.CompanyID,
+                OrderHeaderPaymentScheduleID: row.OrderHeaderPaymentScheduleID,
+                AllowReissue: true,
+            });
             const out = result.Output;
             if (!result.Success || !out?.Success) {
                 this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The invoice could not be re-issued.' };

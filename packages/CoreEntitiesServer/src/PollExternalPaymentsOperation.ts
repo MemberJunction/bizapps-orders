@@ -260,9 +260,12 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
     ): Promise<ExternalPaymentOutcome> {
         const providerID = rail.Config.PaymentProviderID;
         const base = { PaymentProviderID: providerID, ExternalPaymentRef: p.ExternalPaymentRef, Amount: money(p.Amount), ExternalStatus: p.Status };
-        // Only a captured payment can have been re-applied, so the ledger read is skipped otherwise.
+        // Only a payment with cash recorded against it can have been re-applied, so the ledger read is
+        // skipped otherwise. `Reapplied` is included as well as `Captured`: the comparison is what
+        // lets a raised exception CLEAR itself once a person has corrected the allocation, and
+        // without it the row would report a difference that no longer exists for ever.
         const applicationsChanged =
-            prior?.Disposition === 'Captured' && prior.PaymentHeaderID
+            (prior?.Disposition === 'Captured' || prior?.Disposition === 'Reapplied') && prior.PaymentHeaderID
                 ? await applicationsDiffer(String(prior.PaymentHeaderID), p, providerID, provider, user)
                 : undefined;
         const decision = DecideExternalPayment({
@@ -478,10 +481,15 @@ async function loadOrders(orderIDs: readonly string[], provider: IMetadataProvid
  * so every later poll saw "already captured" and did nothing, while Orders showed the wrong invoices
  * settled and nothing anywhere said so.
  *
- * Compared as a set of (order, amount) pairs rather than by invoice: our PaymentLines record the
- * ORDER an amount landed on, which is what a person would have to re-allocate. A rail invoice we
- * cannot map to an order is treated as a difference — it means the money now points somewhere we did
- * not send.
+ * Compared as a set of (order, instalment, amount) triples rather than by invoice: our PaymentLines
+ * record the ORDER and, where the order is billed on a schedule, the INSTALMENT an amount landed on —
+ * which is what a person would have to re-allocate. A rail invoice we cannot map to a unit is treated
+ * as a difference: it means the money now points somewhere we did not send.
+ *
+ * THE INSTALMENT IS PART OF THE KEY, not decoration. Under #220/#242 the instalment is the billing
+ * unit, so money moved from instalment 1 to instalment 2 of the same order is a real re-application —
+ * one instalment reads settled here and open on the rail, and the other the reverse. Keyed on the
+ * order alone the two sides compared equal and the move was invisible.
  */
 async function applicationsDiffer(
     paymentHeaderID: string,
@@ -492,28 +500,38 @@ async function applicationsDiffer(
 ): Promise<boolean> {
     try {
         const rv = new RunView(provider as unknown as IRunViewProvider);
-        const lines = await rv.RunView<{ OrderHeaderID: string; Amount: number }>(
+        const lines = await rv.RunView<{ OrderHeaderID: string; OrderHeaderPaymentScheduleID: string | null; Amount: number }>(
             {
                 EntityName: PAYMENT_LINE_ENTITY,
                 ExtraFilter: `PaymentHeaderID = '${RequireUUID(paymentHeaderID, 'PaymentHeaderID')}'`,
-                Fields: ['OrderHeaderID', 'Amount'],
+                Fields: ['OrderHeaderID', 'OrderHeaderPaymentScheduleID', 'Amount'],
                 ResultType: 'simple',
             },
             user,
         );
         const refs = p.InvoicePayments.map((ip) => ip.ExternalInvoiceRef).filter(Boolean);
         const invoices = await LoadExternalInvoicesByRef(providerID, refs, provider, user);
-        const orderByRef = new Map(invoices.map((i) => [String(i.ExternalInvoiceRef).toLowerCase(), String(i.OrderHeaderID).toLowerCase()]));
+        const unitByRef = new Map(
+            invoices.map((i) => [
+                String(i.ExternalInvoiceRef).toLowerCase(),
+                `${String(i.OrderHeaderID).toLowerCase()}/${i.OrderHeaderPaymentScheduleID ? String(i.OrderHeaderPaymentScheduleID).toLowerCase() : '-'}`,
+            ]),
+        );
 
-        const key = (pairs: Array<[string, number]>) =>
-            pairs
-                .map(([order, amount]) => `${order}:${money(amount).toFixed(2)}`)
+        const key = (triples: Array<[string, number]>) =>
+            triples
+                .map(([unit, amount]) => `${unit}:${money(amount).toFixed(2)}`)
                 .sort()
                 .join('|');
 
-        const ours = key((lines.Results ?? []).map((l) => [String(l.OrderHeaderID).toLowerCase(), Number(l.Amount)]));
+        const ours = key(
+            (lines.Results ?? []).map((l) => [
+                `${String(l.OrderHeaderID).toLowerCase()}/${l.OrderHeaderPaymentScheduleID ? String(l.OrderHeaderPaymentScheduleID).toLowerCase() : '-'}`,
+                Number(l.Amount),
+            ]),
+        );
         const theirs = key(
-            p.InvoicePayments.map((ip) => [orderByRef.get(String(ip.ExternalInvoiceRef).toLowerCase()) ?? `unmapped:${ip.ExternalInvoiceRef}`, ip.Amount]),
+            p.InvoicePayments.map((ip) => [unitByRef.get(String(ip.ExternalInvoiceRef).toLowerCase()) ?? `unmapped:${ip.ExternalInvoiceRef}`, ip.Amount]),
         );
         return ours !== theirs;
     } catch (err) {

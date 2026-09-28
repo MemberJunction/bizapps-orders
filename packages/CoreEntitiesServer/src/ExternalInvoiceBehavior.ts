@@ -315,3 +315,66 @@ export function ClassifyIssueFailure(reason: string | null | undefined): 'Transi
 
 /** The reasons `BuildExternalInvoicePayload` and the rail emit for facts about the unit itself. */
 const PERMANENT_REFUSAL = /does not tie|already has .* applied|has nothing owed|not an invoice|no frozen document number|requires a customer email|no bill-to party/i;
+
+export type AdoptCode = 'OK' | 'ARCHIVED' | 'WRONG_DOCUMENT' | 'TIE_FAILED';
+
+/**
+ * May this rail invoice be adopted onto the claimed unit? The three ways a typed reference goes wrong.
+ *
+ * A person resolving a send that never confirmed is reading a list of invoices on the rail and copying
+ * an id. Every check here exists because the total alone cannot catch the mistake:
+ *
+ *   · ARCHIVED — and this is the one the total is BLIND to. A previously cancelled invoice for this
+ *     very unit ties to the penny by construction, so a total check waves it through; adopting it
+ *     marks the unit Sent against a document the customer does not hold, after which the sweep skips
+ *     it, `CanSend` refuses it, and the order is never billed with nothing reporting why.
+ *   · WRONG_DOCUMENT — the rail carries OUR document number on the invoice we send, so a reference
+ *     belonging to somebody else's invoice identifies itself. Only applied when the rail reports a
+ *     number; a rail that does not falls back to the total.
+ *   · TIE_FAILED — the figure, which is the send path's own check arrived at from the other direction.
+ */
+export function DecideAdoption(i: {
+    ExternalInvoiceRef: string;
+    DocumentNumber: string | null;
+    UnitAmount: number;
+    RailArchived: boolean;
+    RailInvoiceNumber: string | null;
+    RailTotal: number;
+}): { OK: boolean; Code: AdoptCode; Reason: string } {
+    const ref = i.ExternalInvoiceRef;
+    const doc = (i.DocumentNumber ?? '').trim();
+
+    if (i.RailArchived) {
+        return {
+            OK: false,
+            Code: 'ARCHIVED',
+            Reason:
+                `${ref} is archived on the rail — the customer does not hold it. Adopting it would mark ${doc || 'this unit'} sent ` +
+                `against a withdrawn document, and the unit would never be billed. If the rail holds nothing live for this unit, re-issue it instead.`,
+        };
+    }
+
+    const railNumber = (i.RailInvoiceNumber ?? '').trim();
+    if (railNumber && doc && railNumber.toUpperCase() !== doc.toUpperCase()) {
+        return {
+            OK: false,
+            Code: 'WRONG_DOCUMENT',
+            Reason:
+                `${ref} is numbered ${railNumber} on the rail, not ${doc}. That is a different document — adopting it would point this ` +
+                `receivable at somebody else's invoice, and the payment against it would be captured onto this order.`,
+        };
+    }
+
+    const total = money(i.RailTotal);
+    const amount = money(i.UnitAmount);
+    if (Math.abs(total - amount) > TIE_TOLERANCE) {
+        return {
+            OK: false,
+            Code: 'TIE_FAILED',
+            Reason:
+                `The rail totals ${ref} at ${total.toFixed(2)} but ${doc || 'this unit'} is ${amount.toFixed(2)}. ` +
+                `Refusing rather than tying this receivable to a customer document for a different figure.`,
+        };
+    }
+    return { OK: true, Code: 'OK', Reason: `${ref} is live on the rail, numbered ${railNumber || doc}, and ties at ${total.toFixed(2)}.` };
+}

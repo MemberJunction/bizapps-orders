@@ -10,6 +10,7 @@ import {
     DecideExternalPayment,
     ExternalPaymentIdempotencyKey,
     TenderFor,
+    type PaymentSeen,
     type UnitRef,
 } from '../ExternalPaymentBehavior.js';
 
@@ -194,5 +195,43 @@ describe('idempotency key and tender', () => {
 
     it('tolerates case and padding, since the value is echoed vendor text', () => {
         expect(TenderFor({ OnlinePayment: false, ReceivablesType: ' check ' })).toBe('Check');
+    });
+});
+
+describe('a Reapplied payment on a LATER pass', () => {
+    // The defect this covers: `Reapplied` is deliberately not in the poller's FINAL set, so every pass
+    // re-decides it. With no branch for it here the decision fell through to the status switch and
+    // answered Capture; the capture returned WasRetry on the idempotency key and the poller wrote
+    // `Captured` back over the row, so the exception disappeared an hour after it was raised.
+    const seen = (over: Partial<PaymentSeen> = {}): PaymentSeen => ({
+        ExternalPaymentRef: '0rp01',
+        Status: 'PAID',
+        PriorDisposition: 'Reapplied',
+        ...over,
+    });
+
+    it('is never captured again — the cash is already recorded', () => {
+        expect(DecideExternalPayment(seen()).Action).not.toBe('Capture');
+        expect(DecideExternalPayment(seen({ ApplicationsChanged: true })).Action).not.toBe('Capture');
+        expect(DecideExternalPayment(seen({ ApplicationsChanged: false })).Action).not.toBe('Capture');
+    });
+
+    it('keeps reporting while the allocation is still wrong', () => {
+        expect(DecideExternalPayment(seen({ ApplicationsChanged: true })).Action).toBe('Reapplied');
+    });
+
+    it('holds the flag when the comparison could not be made, rather than retiring it', () => {
+        // undefined = not compared. Silence here would clear an exception nobody has acted on.
+        expect(DecideExternalPayment(seen()).Action).toBe('Reapplied');
+    });
+
+    it('clears itself once a person has re-allocated and the two sides match again', () => {
+        const d = DecideExternalPayment(seen({ ApplicationsChanged: false }));
+        expect(d.Action).toBe('Ignore');
+        expect(d.Reason).toMatch(/matches again/i);
+    });
+
+    it('still reports a reversal ahead of the allocation, which is the worse fact', () => {
+        expect(DecideExternalPayment(seen({ Status: 'VOID', ApplicationsChanged: true })).Action).toBe('ReversalNeeded');
     });
 });

@@ -72,7 +72,14 @@ export function DecideExternalPayment(p: PaymentSeen): { Action: ExternalPayment
     const cls = ClassifyPaymentStatus(p.Status);
     const ref = p.ExternalPaymentRef;
 
-    if (p.PriorDisposition === 'Captured') {
+    // A CAPTURED PAYMENT AND A RE-APPLIED ONE ARE THE SAME QUESTION, asked a poll apart. Both have
+    // cash recorded against them, so both are re-examined the same way — and `Reapplied` is NOT a
+    // terminal disposition (it is deliberately absent from the poller's FINAL set, so every pass
+    // re-decides it). Falling through to the status switch, as this used to, answered `Capture` for a
+    // cleared payment: the capture returned `WasRetry` on the idempotency key, the poller wrote
+    // `Captured` back over the row, and the exception a person was supposed to act on vanished an
+    // hour after it was raised — leaving the wrong allocation in place with nothing flagging it.
+    if (p.PriorDisposition === 'Captured' || p.PriorDisposition === 'Reapplied') {
         if (cls === 'Reversed') {
             return { Action: 'ReversalNeeded', Reason: `${ref} was captured and Bill.com now reports it '${p.Status}'. The cash has to be reversed (bank-return path, O-US13); nothing is changed automatically.` };
         }
@@ -89,7 +96,21 @@ export function DecideExternalPayment(p: PaymentSeen): { Action: ExternalPayment
                 Reason: `${ref} was captured, and Bill.com has since applied it to different invoices. The cash is right; the allocation here is not. Re-allocate it by hand — nothing is changed automatically.`,
             };
         }
-        return { Action: 'Ignore', Reason: `${ref} is already captured.` };
+        // THE EXCEPTION CLEARS ITSELF once the allocation matches again. `ApplicationsChanged` is
+        // recomputed on every pass for both dispositions, so a person who re-allocates by hand sees
+        // the row return to `Captured` at the next poll rather than having to clear it themselves.
+        // `undefined` means the comparison was not made or could not be made; that must not silently
+        // retire a raised exception, so the flag is kept until a comparison actually succeeds.
+        if (p.PriorDisposition === 'Reapplied' && p.ApplicationsChanged !== false) {
+            return { Action: 'Reapplied', Reason: `${ref} is still applied differently on Bill.com from the payment lines held here; the allocation has not been corrected.` };
+        }
+        return {
+            Action: 'Ignore',
+            Reason:
+                p.PriorDisposition === 'Reapplied'
+                    ? `${ref} was re-applied on Bill.com and the allocation here now matches again.`
+                    : `${ref} is already captured.`,
+        };
     }
     if (p.PriorDisposition === 'ReversalNeeded') {
         return { Action: 'Ignore', Reason: `${ref} is already flagged for reversal.` };

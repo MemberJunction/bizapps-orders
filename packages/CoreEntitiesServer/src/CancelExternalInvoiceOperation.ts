@@ -6,9 +6,15 @@
  * longer holds. The check reads our `PaymentLine`s for the unit AND the rail's own view — a payment
  * applied on Bill.com that the poller has not seen yet is refused with "run the poll".
  *
- * NO ACCOUNTING EVENT. The order and the instalment are untouched; the instalment's `SentAt` and
- * `ExternalInvoiceRef` return to NULL (the immutability trigger allows exactly those), so it reads as
- * unsent again. Re-issuing is a deliberate act (`AllowReissue`, design D-B7), never the sweep's.
+ * NO ACCOUNTING EVENT. The order and the instalment are untouched.
+ *
+ * AN INSTALMENT'S RAIL FACTS STAY AS HISTORY. This used to clear the instalment's `SentAt` and
+ * `ExternalInvoiceRef` so it read as unsent and could be re-issued. Craig ruled otherwise on golive
+ * #242 and Jeremy agreed: an issued instalment is never re-issued — cancelling it raises a credit
+ * memo and a REPLACEMENT row under the next number. The old behaviour could not have worked anyway,
+ * because Bill.com keeps the number on the archived invoice and refuses the duplicate. A unit billed
+ * as a whole has no replacement row, so it does read as unsent again, and re-issuing it is a
+ * deliberate act (`AllowReissue`, design D-B7), never the sweep's.
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
