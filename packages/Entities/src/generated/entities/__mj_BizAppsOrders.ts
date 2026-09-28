@@ -1844,6 +1844,12 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Ship To Address Snapshot
         * * SQL Data Type: nvarchar(MAX)
         * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
+    ConfirmedByUserID: z.string().nullable().describe(`
+        * * Field Name: ConfirmedByUserID
+        * * Display Name: Confirmed By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ConfirmedByFrozenAfterBooking, 51017).`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -1899,6 +1905,10 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
     SourceCheckoutWidget: z.string().nullable().describe(`
         * * Field Name: SourceCheckoutWidget
         * * Display Name: Source Checkout Widget
+        * * SQL Data Type: nvarchar(100)`),
+    ConfirmedByUser: z.string().nullable().describe(`
+        * * Field Name: ConfirmedByUser
+        * * Display Name: Confirmed By User
         * * SQL Data Type: nvarchar(100)`),
     __mj_Latitude_BillToAddressID: z.number().nullable().describe(`
         * * Field Name: __mj_Latitude_BillToAddressID
@@ -10790,6 +10800,20 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: ConfirmedByUserID
+    * * Display Name: Confirmed By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ConfirmedByFrozenAfterBooking, 51017).
+    */
+    get ConfirmedByUserID(): string | null {
+        return this.Get('ConfirmedByUserID');
+    }
+    set ConfirmedByUserID(value: string | null) {
+        this.Set('ConfirmedByUserID', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
@@ -10913,6 +10937,15 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     */
     get SourceCheckoutWidget(): string | null {
         return this.Get('SourceCheckoutWidget');
+    }
+
+    /**
+    * * Field Name: ConfirmedByUser
+    * * Display Name: Confirmed By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get ConfirmedByUser(): string | null {
+        return this.Get('ConfirmedByUser');
     }
 
     /**

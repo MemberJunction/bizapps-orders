@@ -4622,6 +4622,10 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field({nullable: true, description: `The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`}) 
     ShipToAddressSnapshot?: string;
         
+    @Field({nullable: true, description: `The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ConfirmedByFrozenAfterBooking, 51017).`}) 
+    @MaxLength(36)
+    ConfirmedByUserID?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -4677,6 +4681,10 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field({nullable: true}) 
     @MaxLength(100)
     SourceCheckoutWidget?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    ConfirmedByUser?: string;
         
     @Field(() => Float, {nullable: true}) 
     _mj__Latitude_BillToAddressID?: number;
@@ -4814,6 +4822,9 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     @Field({ nullable: true })
     ShipToAddressSnapshot: string | null;
 
+    @Field({ nullable: true })
+    ConfirmedByUserID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -4931,6 +4942,9 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     ShipToAddressSnapshot?: string | null;
+
+    @Field({ nullable: true })
+    ConfirmedByUserID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
