@@ -25,6 +25,8 @@ import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-ga
 import '@mj-biz-apps/orders-core-entities-server';
 import {
     LoadCancelSubscriptionOperation,
+    LoadAmendArrangementOperation,
+    LoadSubscriptionTermEntityServer,
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
     LoadOrderEntityServer,
@@ -116,6 +118,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
     LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
     LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
+    LoadSubscriptionTermEntityServer();    // a booked term's dates change only through an approved extension
     InitConcessionApprovalListener();      // a decision on an order's approval task decides its concessions (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
@@ -128,6 +131,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadRevenueRecognitionDrivers();   // the three shipped rev-rec drivers (D43)
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
+    LoadAmendArrangementOperation();   // 'Orders.AmendArrangement' — extend a booked term, previewed and approved
     LoadSpawnRenewalsOperation();      // the 'Orders.SpawnRenewals' remote operation (D55)
     LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
     LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator

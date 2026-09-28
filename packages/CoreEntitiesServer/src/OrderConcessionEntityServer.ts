@@ -12,6 +12,10 @@
  * holder of the rule's role, with an optional note. A different concession is a new record: withdraw
  * a Pending one (delete it) and record again.
  *
+ * AN APPROVED DURATION CONCESSION EXTENDS ITS TERM (golive #221). It is checked when recorded and applied in
+ * the approval's own transaction by ./TermExtension.ts: the term's end, the recognition schedule, access and an
+ * acknowledgment task for accounting. If the extension cannot be applied, the approval does not happen.
+ *
  * ITS APPROVERS ARE TOLD (golive #274). A Pending concession joins the order's approval task in the tasks
  * app, assigned to the rule's role holders, in the same transaction as the row. Deciding or withdrawing
  * the last Pending concession on the order closes that task.
@@ -20,6 +24,7 @@
  *   PURE:   @mj-biz-apps/orders-entities ConcessionBehavior
  *   READS:  ./ConcessionGate.ts (authority, rule, line price) · Subscription Terms · Order Lines
  *   TASKS:  ./ConcessionApprovalTask.ts (raise, close) · ./ConcessionApprovalListener.ts (decide from task)
+ *   APPLY:  ./TermExtension.ts (a Duration concession reaching Approved)
  *   GATE:   OrderEntityServer (confirm) and the send-document action refuse while one is Pending
  */
 import {
@@ -52,6 +57,7 @@ import {
 import { FindConcessionLimitRule, LinePriceConcessionFor, LoadConcessionAuthority } from './ConcessionGate.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
+import { ApplyTermExtension, CheckTermExtension, type ApprovedDurationConcession } from './TermExtension.js';
 
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
@@ -108,12 +114,31 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
                 await RouteConcessionToApproval(this.OrderHeaderID, roleID, ctx);
             });
         }
-        // A decision made through the task leaves the task to the tasks app, which closes it itself.
+        // An approved Duration concession IS the term extension (golive #221): it applies in the same
+        // transaction as the approval, so a concession is never Approved on a term it did not extend.
         const deciding = !recording && this.GetFieldByName('Status')?.Dirty === true;
-        if (deciding && !this.DecidedThroughTask) {
-            return this.withApprovalTask('update', () => super.Save(options), (ctx) => SettleApprovalTask(this.OrderHeaderID, ctx));
+        const extending = this.DeliveryForm === 'Duration' && this.Status === 'Approved' && (recording || deciding);
+        // A decision made through the task leaves the task to the tasks app, which closes it itself.
+        const settling = deciding && !this.DecidedThroughTask;
+        if (extending || settling) {
+            return this.withApprovalTask(recording ? 'create' : 'update', () => super.Save(options), async (ctx) => {
+                if (settling) await SettleApprovalTask(this.OrderHeaderID, ctx);
+                if (extending) await ApplyTermExtension(this.asApprovedExtension(), ctx);
+            });
         }
         return super.Save(options);
+    }
+
+    private asApprovedExtension(): ApprovedDurationConcession {
+        return {
+            ID: this.ID,
+            SubscriptionTermID: this.SubscriptionTermID!,
+            AddedDays: Number(this.AddedDays),
+            RequestedByUserID: this.RequestedByUserID,
+            ReasonCategory: this.ReasonCategory,
+            Reason: this.Reason,
+            ComputedValue: Number(this.ComputedValue),
+        };
     }
 
     /** Set only by ConcessionApprovalListener, when the decision was recorded on the order's approval task. */
@@ -258,6 +283,14 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         const line = await this.loadLine(term.OrderLineID, user);
         if (!line) return `The order line that bought term ${this.SubscriptionTermID} was not found.`;
+
+        // Refuse now what could never be applied — a placed renewal, a batched entry, nobody to acknowledge it —
+        // rather than route it for approval and refuse the approval.
+        const applicable = await CheckTermExtension(
+            { SubscriptionTermID: this.SubscriptionTermID, AddedDays: days, RequestedByUserID: user.ID },
+            { Provider: this.provider(), User: user },
+        );
+        if (typeof applicable === 'string') return applicable;
 
         this.OrderHeaderID = line.OrderHeaderID;
         this.OrderLineID = line.ID;

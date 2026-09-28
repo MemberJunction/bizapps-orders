@@ -39,5 +39,16 @@
     "primaryKey": {
       "ID": "022F8FA8-D623-47BA-B9AE-FF41010868BF"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "AmendmentAcknowledgmentRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose active holders acknowledge an amendment to a booked arrangement (bc-aidp-next-golive#221). When an amendment takes effect, every active holder except the user who requested it is assigned a task carrying the old and new recognition schedules; the re-cut counts as confirmed when that task is completed. Empty refuses every amendment, so no change to a booked arrangement takes effect without someone in accounting being told."
+    },
+    "primaryKey": {
+      "ID": "D67B8DE9-CE80-4FC7-B249-46F8D3152B10"
+    }
   }
 ]

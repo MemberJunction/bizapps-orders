@@ -107,7 +107,7 @@ export async function RouteConcessionToApproval(
     ctx: ApprovalTaskContext,
 ): Promise<string> {
     requireTasksApp(ctx);
-    const approverIDs = await activeRoleHolderIDs(roleID, ctx);
+    const approverIDs = await ActiveRoleHolderIDs(roleID, ctx);
     if (approverIDs.length === 0) {
         throw new Error(
             'This concession is outside the requester\'s authority, and no active user holds the role the ' +
@@ -118,15 +118,15 @@ export async function RouteConcessionToApproval(
     const order = await loadOrder(orderHeaderID, ctx);
     const task = (await openTask(order.ApprovalTaskID, ctx)) ?? (await createTask(order, ctx));
 
-    await ensureLink(task.ID, entityID(ORDER_HEADER_ENTITY, ctx), order.ID, ctx);
-    const concessionEntityID = entityID(ORDER_CONCESSION_ENTITY, ctx);
+    await EnsureTaskLink(task.ID, EntityIDByName(ORDER_HEADER_ENTITY, ctx), order.ID, ctx);
+    const concessionEntityID = EntityIDByName(ORDER_CONCESSION_ENTITY, ctx);
     for (const concessionID of await pendingConcessionIDs(order.ID, ctx)) {
-        await ensureLink(task.ID, concessionEntityID, concessionID, ctx);
+        await EnsureTaskLink(task.ID, concessionEntityID, concessionID, ctx);
     }
 
-    const userEntityID = entityID(USER_ENTITY, ctx);
+    const userEntityID = EntityIDByName(USER_ENTITY, ctx);
     for (const userID of approverIDs) {
-        await ensureAssignment(task.ID, userEntityID, userID, ctx);
+        await EnsureTaskAssignment(task.ID, userEntityID, userID, ctx);
     }
 
     if (!UUIDsEqual(order.ApprovalTaskID, task.ID)) {
@@ -167,7 +167,7 @@ export async function UnlinkConcession(concessionID: string, ctx: ApprovalTaskCo
     const links = await view<mjBizAppsTasksTaskLinkEntity>(ctx, {
         EntityName: TASK_LINK_ENTITY,
         ExtraFilter:
-            `EntityID = '${entityID(ORDER_CONCESSION_ENTITY, ctx)}' AND RecordID = '${RequireUUID(concessionID, 'ConcessionID')}'`,
+            `EntityID = '${EntityIDByName(ORDER_CONCESSION_ENTITY, ctx)}' AND RecordID = '${RequireUUID(concessionID, 'ConcessionID')}'`,
         ResultType: 'entity_object',
     });
     for (const link of links) {
@@ -181,7 +181,7 @@ export async function UnlinkConcession(concessionID: string, ctx: ApprovalTaskCo
 export async function LinkedConcessionIDs(taskID: string, ctx: ApprovalTaskContext): Promise<string[]> {
     const links = await view<{ RecordID: string }>(ctx, {
         EntityName: TASK_LINK_ENTITY,
-        ExtraFilter: `TaskID = '${RequireUUID(taskID, 'TaskID')}' AND EntityID = '${entityID(ORDER_CONCESSION_ENTITY, ctx)}'`,
+        ExtraFilter: `TaskID = '${RequireUUID(taskID, 'TaskID')}' AND EntityID = '${EntityIDByName(ORDER_CONCESSION_ENTITY, ctx)}'`,
         Fields: ['RecordID'],
         ResultType: 'simple',
     });
@@ -199,13 +199,14 @@ function requireTasksApp(ctx: ApprovalTaskContext): void {
     }
 }
 
-function entityID(name: string, ctx: ApprovalTaskContext): string {
+export function EntityIDByName(name: string, ctx: ApprovalTaskContext): string {
     const entity = ctx.Provider.EntityByName(name);
     if (!entity) throw new Error(`Entity '${name}' is not in metadata.`);
     return entity.ID;
 }
 
-async function activeRoleHolderIDs(roleID: string, ctx: ApprovalTaskContext): Promise<string[]> {
+/** Every active user holding the role, by name order. The tasks app has no group assignee, so a role is expanded to these. */
+export async function ActiveRoleHolderIDs(roleID: string, ctx: ApprovalTaskContext): Promise<string[]> {
     const holders = await view<{ UserID: string }>(ctx, {
         EntityName: USER_ROLE_ENTITY,
         ExtraFilter: `RoleID = '${RequireUUID(roleID, 'RoleID')}'`,
@@ -261,7 +262,7 @@ async function createTask(order: mjBizAppsOrdersOrderHeaderEntity, ctx: Approval
     return task;
 }
 
-async function ensureLink(taskID: string, linkEntityID: string, recordID: string, ctx: ApprovalTaskContext): Promise<void> {
+export async function EnsureTaskLink(taskID: string, linkEntityID: string, recordID: string, ctx: ApprovalTaskContext): Promise<void> {
     const existing = await view<{ ID: string }>(ctx, {
         EntityName: TASK_LINK_ENTITY,
         ExtraFilter:
@@ -283,7 +284,7 @@ async function ensureLink(taskID: string, linkEntityID: string, recordID: string
     }
 }
 
-async function ensureAssignment(taskID: string, userEntityID: string, userID: string, ctx: ApprovalTaskContext): Promise<void> {
+export async function EnsureTaskAssignment(taskID: string, userEntityID: string, userID: string, ctx: ApprovalTaskContext): Promise<void> {
     const existing = await view<{ ID: string }>(ctx, {
         EntityName: TASK_ASSIGNMENT_ENTITY,
         ExtraFilter:

@@ -7,7 +7,9 @@
  * how a term was extended at no charge with no value recorded and no approval sought.
  *
  * So a saved term's dates and amount are fixed. Extending one is a concession: record it as a
- * Duration `OrderConcession`, which values it at the term's own rate and routes it for approval.
+ * Duration `OrderConcession`, which values it at the term's own rate and routes it for approval. The
+ * approved concession applies the extension, and that server-side write is the only one this admits
+ * (`BookedTermEditSanctioned`).
  *
  * @module @mj-biz-apps/orders-entities
  */
@@ -26,8 +28,16 @@ export class SubscriptionTermEntity extends mjBizAppsOrdersSubscriptionTermEntit
         return result;
     }
 
+    /**
+     * True only for the server's own amendment write. The server subclass overrides it; here, where
+     * any caller could set a flag, nothing is sanctioned.
+     */
+    protected BookedTermEditSanctioned(): boolean {
+        return false;
+    }
+
     private refuseBookedTermEdits(result: ValidationResult): void {
-        if (!this.IsSaved) return;
+        if (!this.IsSaved || this.BookedTermEditSanctioned()) return;
         const dirty = SUBSCRIPTION_TERM_BOOKED_FIELDS.filter((name) => this.GetFieldByName(name)?.Dirty === true);
         if (dirty.length === 0) return;
         result.Success = false;
@@ -36,7 +46,7 @@ export class SubscriptionTermEntity extends mjBizAppsOrdersSubscriptionTermEntit
                 dirty[0],
                 `A booked term cannot change ${dirty.join(', ')}: the order's journal entries and the ` +
                     `recognition schedule were built from them. To extend a term at no charge, record a ` +
-                    `Duration concession against it so it is valued and approved.`,
+                    `Duration concession against it; approving it applies the extension.`,
                 this.GetFieldByName(dirty[0])?.Value,
                 ValidationErrorType.Failure,
             ),

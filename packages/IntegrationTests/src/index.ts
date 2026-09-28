@@ -39,6 +39,7 @@
  *   embedded-payment-detail PD1–PD14  PaymentDetail as an owner-held 1:1 embed (D38/D39)
  *   payment-schedule     PS1–PS13  instalments on the order: tie, issue, per-instalment rollup and ageing (D85–D88)
  *   concessions          CS1–CS15  concessions valued in any form, approved before the customer sees them
+ *   term-extension       TX1–TX9   a booked term extended at no charge, with recognition, access and renewal following
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
  *
  * Note that `events` and `line-subscriber` are listed out of order above because that is the order
@@ -109,6 +110,7 @@ export * from './checks/embedded-payment-detail.checks.js';
 export * from './checks/payment-schedule.checks.js';
 export * from './checks/party-roster.checks.js';
 export * from './checks/concessions.checks.js';
+export * from './checks/term-extension.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

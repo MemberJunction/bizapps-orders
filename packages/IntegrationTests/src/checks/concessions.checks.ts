@@ -22,6 +22,9 @@
  *   CS14      withdrawing a Pending concession unlinks it; withdrawing the last one cancels the task
  *   CS15      deciding the concession on its record closes the task
  *
+ * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
+ * checks that record one first configure who acknowledges it.
+ *
  * CONNECTS TO:
  *   CODE: ConcessionBehavior · ConcessionGate · OrderConcessionEntityServer · SubscriptionTermEntity
  *         · OrderEntityServer.passesConcessionGate · PromotionEngine.AuthorizeManualDiscount
@@ -35,13 +38,14 @@ import {
   type NamedCheck,
 } from "@memberjunction/testing-integration";
 import { BaseEntity, Metadata } from "@memberjunction/core";
-import { FindUnapprovedConcessions } from "@mj-biz-apps/orders-core-entities-server";
+import { FindUnapprovedConcessions, ORDERS_SETTING, OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
 import type {
   mjBizAppsOrdersOrderConcessionEntity,
   mjBizAppsOrdersSalesRuleEntity,
   mjBizAppsOrdersSubscriptionTermEntity,
 } from "@mj-biz-apps/orders-entities";
 import {
+  AcknowledgeAmendmentsWith,
   CreateBundleItem,
   CreateOrdersFixture,
   CreateProductPrice,
@@ -239,6 +243,7 @@ export const ConcessionChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
+        await AcknowledgeAmendmentsWith(ctx);
         const { OrderID, Term } = await bookTerm(ctx, 1200);
         await grantAuthority(ctx, { maxPct: 0.1, maxValue: 100, maxDays: 30 });
         const ruleID = await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
@@ -264,6 +269,7 @@ export const ConcessionChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
+        await AcknowledgeAmendmentsWith(ctx);
         const { Term } = await bookTerm(ctx, 1200);
         const authorityID = await grantAuthority(ctx, { maxValue: 1000, maxDays: 30 });
 
@@ -280,6 +286,7 @@ export const ConcessionChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
+        await AcknowledgeAmendmentsWith(ctx);
         const { Term } = await bookTerm(ctx, 1200);
         await grantAuthority(ctx, { maxValue: 10, maxDays: 1 });
         const ruleID = await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
@@ -314,6 +321,7 @@ export const ConcessionChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
+        await AcknowledgeAmendmentsWith(ctx);
         const { Term } = await bookTerm(ctx, 1200);
         await grantAuthority(ctx, { maxValue: 10, maxDays: 1 });
 
@@ -626,5 +634,8 @@ IntegrationCheckRegistry.Instance.RegisterLifecycle("concessions", {
   Setup: async (ctx) => {
     await CreateOrdersFixture(ctx);
   },
-  Teardown: TeardownOrdersFixture,
+  Teardown: async (ctx) => {
+    OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
+    await TeardownOrdersFixture(ctx);
+  },
 });

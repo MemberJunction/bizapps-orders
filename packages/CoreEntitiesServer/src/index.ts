@@ -16,6 +16,11 @@ export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
+export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
+export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
+export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
+export { NetRelease, PlanTermExtension } from './TermExtensionPlan.js';
+export type { StagedEntry, StagedLine, TermExtensionInput, TermExtensionPlan } from './TermExtensionPlan.js';
 // A Pending concession is routed to its approvers as a tasks-app approval task (golive #274).
 export {
     APPROVAL_TASK_TYPE_CODE,
@@ -119,6 +124,8 @@ export type {
 } from './SubscriptionBehavior.js';
 
 export { CancelSubscriptionOperation, LoadCancelSubscriptionOperation } from './CancelSubscriptionOperation.js';
+export { AmendArrangementOperation, LoadAmendArrangementOperation } from './AmendArrangementOperation.js';
+export type { AmendArrangementInput, AmendArrangementOutput } from './AmendArrangementOperation.js';
 export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './CancelSubscriptionOperation.js';
 
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
