@@ -25,6 +25,24 @@ export {
     LoadOrderLineProgressMeasurementEntityServer,
 } from './OrderLineProgressMeasurementEntityServer.js';
 export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from './GetProgressWorklistOperation.js';
+// Finance exception review for progress (golive #279): the judgment call raised at attestation, and
+// the nightly pass for lines left unattested.
+export {
+    JudgmentCallReasons,
+    PROGRESS_JUDGMENT_CALL,
+    RaiseProgressJudgmentCall,
+    ReadJudgmentCallConfig,
+} from './ProgressJudgmentCall.js';
+export type { JudgmentCallConfig, JudgmentCallFacts, JudgmentCallOutcome, PostedObservation } from './ProgressJudgmentCall.js';
+export {
+    DetectUnattestedProgressOperation,
+    LoadDetectUnattestedProgressOperation,
+    PROGRESS_UNATTESTED,
+    ReadMaxDaysWithoutAttestation,
+    SelectUnattestedLines,
+    UnattestedDedupeKey,
+    UnattestedException,
+} from './DetectUnattestedProgressOperation.js';
 export {
     AddMonths,
     BuildPaymentSchedule,
@@ -113,8 +131,16 @@ export {
     LoadAccountingEngine,
     ResolverEntities,
     SubmitJournalEntryDrafts,
+    GetActiveFinanceExceptionType,
+    RaiseFinanceExceptions,
 } from './AccountingBridge.js';
-export type { AccountingEngineSurface, CreateJournalEntriesOutcome } from './AccountingBridge.js';
+export type {
+    AccountingEngineSurface,
+    CreateJournalEntriesOutcome,
+    FinanceExceptionToRaise,
+    FinanceExceptionTypeInfo,
+    RaiseFinanceExceptionsOutcome,
+} from './AccountingBridge.js';
 
 export { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
 export type {
