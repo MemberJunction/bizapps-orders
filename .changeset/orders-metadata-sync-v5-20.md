@@ -1,0 +1,5 @@
+---
+'@mj-biz-apps/orders-entities': minor
+---
+
+The 5.20 Metadata_Sync ships the metadata that releases since 5.3 declared but never seeded, so it now reaches every host rather than only a developer's own database: the payment-gated-access and renewal actions with their daily jobs (installed Disabled), the Party Customer Roster query, the renewal access cutoff setting, the Instalment Invoice journal entry type, the progress-attestation remote operations, the Percentage of Completion recognition type and Project product type, the Engagement Lead role with its grant and permissions, and Account Director on the price-override grant. It also applies the curated user-search settings on 19 entities. The seed is idempotent and attaches to rows a host already created under its own IDs. It needs bizapps-common 5.47.0 or later, because the roster query sits in common's Party Signals category; mj-app.json now requires it. The ML models, training pipelines, scoring bindings and scoring record processes under metadata/ are not included.
