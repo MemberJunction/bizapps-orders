@@ -21,9 +21,12 @@
 --                  are recognised. It can also pair two unrelated products that share both, which
 --                  is why it is labelled rather than merged into SameProduct.
 --
--- WHAT COUNTS AS THE SAME HOLDER: the same HolderOrganizationID when both have one; otherwise, when
--- neither has an organization, the same BeneficiaryPersonID. Two people at one organization are one
--- holder here, because the organization is the party billed.
+-- WHAT COUNTS AS THE SAME HOLDER: the same HolderOrganizationID when both have one, and then either
+-- the same BeneficiaryPersonID or no named person on one side; when neither has an organization, the
+-- same BeneficiaryPersonID. Two DIFFERENT named people at one organization are two holders: an
+-- organization buying the same membership for several staff gets one subscription per person on
+-- purpose, and pairing them would report every seat against every other. An organization-held
+-- subscription next to one held by the same organization for a named person is still a pair.
 --
 -- COVERAGE IS SubscriptionTerm, not Subscription.StartDate/EndDate. A term counts unless it is
 -- Canceled or Lapsed; Completed terms count, because a past overlap was still billed twice. A
@@ -32,6 +35,10 @@
 -- ONE ROW PER PAIR. The pair is ordered by creation, so LaterSubscription is the one the overlap
 -- created and LaterOrderNumber is the order that booked it. OverlapStart/OverlapEnd span every
 -- overlapping term of the pair.
+--
+-- LaterOverlappingTermsAmount IS AN UPPER BOUND: the full amount of every later term that overlaps,
+-- not the overlapping part. A 1,200 annual term that overlaps by one month reports 1,200 at stake,
+-- of which roughly 100 was billed twice.
 --
 -- DATE DIMENSION: the overlap. PeriodStart/PeriodEnd keep a pair whose overlap touches the window.
 WITH live AS (
@@ -69,7 +76,9 @@ pairs AS (
             ON b.ID <> a.ID
            AND (a.__mj_CreatedAt < b.__mj_CreatedAt
                 OR (a.__mj_CreatedAt = b.__mj_CreatedAt AND a.ID < b.ID))
-           AND (   (a.HolderOrganizationID IS NOT NULL AND a.HolderOrganizationID = b.HolderOrganizationID)
+           AND (   (a.HolderOrganizationID IS NOT NULL AND a.HolderOrganizationID = b.HolderOrganizationID
+                    AND (a.BeneficiaryPersonID IS NULL OR b.BeneficiaryPersonID IS NULL
+                         OR a.BeneficiaryPersonID = b.BeneficiaryPersonID))
                 OR (a.HolderOrganizationID IS NULL AND b.HolderOrganizationID IS NULL
                     AND a.BeneficiaryPersonID = b.BeneficiaryPersonID))
            AND (   a.ProductID = b.ProductID
