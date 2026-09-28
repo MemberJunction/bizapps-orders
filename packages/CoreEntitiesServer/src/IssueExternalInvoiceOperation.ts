@@ -51,7 +51,7 @@ import {
     type ExternalInvoiceUnitFacts,
 } from './ExternalInvoiceBehavior.js';
 import { FindInvoiceRailForCompany } from './InvoiceRailResolver.js';
-import { DocumentNumber as CompanyDocumentNumber } from './InvoiceBehavior.js';
+import { DocumentNumber as CompanyDocumentNumber, MAX_DOCUMENT_NUMBER_LENGTH, ReissueDocumentNumber } from './InvoiceBehavior.js';
 import { BuildInvoiceDocuments } from './InvoiceBuilder.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
@@ -309,6 +309,25 @@ export async function IssueOneUnit(
         return refuse('ERROR', built.Message ?? `Order ${order.OrderNumber} produced no document for company ${companyID}.`);
     }
     const doc = built.Documents[0];
+    // A WHOLE-ORDER RE-ISSUE CANNOT REUSE THE NUMBER. Bill.com keeps it on the archived invoice and
+    // refuses the duplicate (spike S4), so without a suffix a cancelled order could never be invoiced
+    // through the rail again — the send was allowed by the rules and then refused by the rail, for ever.
+    const wholeOrderNumber = row
+        ? null
+        : ReissueDocumentNumber(
+              CompanyDocumentNumber(order.OrderNumber, companySuffixIndex(lineCompanies, companyID), Math.max(1, lineCompanies.length)),
+              await CountRailNumbersSpent(rail.Config.PaymentProviderID, unitKey, provider, user),
+          );
+    if (wholeOrderNumber && wholeOrderNumber.length > MAX_DOCUMENT_NUMBER_LENGTH) {
+        // Refused rather than truncated: a truncated number is either a duplicate the rail rejects or a
+        // different document's number, and both are worse than saying so.
+        return refuse(
+            'ERROR',
+            `The document number for this re-issue would be '${wholeOrderNumber}' (${wholeOrderNumber.length} characters), longer than the ${MAX_DOCUMENT_NUMBER_LENGTH} this app stores. ` +
+                `Shorten the order number or invoice this unit outside the rail.`,
+        );
+    }
+
     const unitFacts: ExternalInvoiceUnitFacts = row
         ? {
               CompanyID: companyID,
@@ -324,7 +343,7 @@ export async function IssueOneUnit(
               InstallmentCount: 1,
               DueDate: doc.DueDate,
               Amount: doc.Gross,
-              DocumentNumber: CompanyDocumentNumber(order.OrderNumber, companySuffixIndex(lineCompanies, companyID), Math.max(1, lineCompanies.length)),
+              DocumentNumber: wholeOrderNumber!,
           };
     const invoiceDate = isoDate(row?.InvoicedAt ?? order.ConfirmedAt) ?? Today();
     const payload = BuildExternalInvoicePayload(
@@ -537,6 +556,39 @@ export async function LoadExternalInvoiceForUnit(
     );
     const rows = r.Results ?? [];
     return rows.find((x) => x.Status === 'Sent' || x.Status === 'Sending') ?? rows[0] ?? null;
+}
+
+/**
+ * How many rail invoice numbers this unit has already SPENT — rows that reached the rail and were
+ * given an `ExternalInvoiceRef`, whatever became of them afterwards.
+ *
+ * Bill.com keeps an archived invoice's number and refuses a duplicate, so this is the count a re-issue
+ * has to step over. A row that never reached the rail (a refusal, a claim that was superseded) carries
+ * no reference and is deliberately not counted: its number was never taken, so re-issuing reuses it
+ * rather than skipping to `-R1` for a document nobody has ever seen.
+ */
+export async function CountRailNumbersSpent(
+    paymentProviderID: string,
+    unit: BillingUnitKey,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<number> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const sched = unit.OrderHeaderPaymentScheduleID
+        ? `OrderHeaderPaymentScheduleID = '${RequireUUID(unit.OrderHeaderPaymentScheduleID, 'OrderHeaderPaymentScheduleID')}'`
+        : 'OrderHeaderPaymentScheduleID IS NULL';
+    const r = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: EXTERNAL_INVOICE_ENTITY,
+            ExtraFilter:
+                `PaymentProviderID = '${RequireUUID(paymentProviderID, 'PaymentProviderID')}' AND OrderHeaderID = '${RequireUUID(unit.OrderHeaderID, 'OrderHeaderID')}' ` +
+                `AND CompanyID = '${RequireUUID(unit.CompanyID, 'CompanyID')}' AND ${sched} AND ExternalInvoiceRef IS NOT NULL`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    return (r.Results ?? []).length;
 }
 
 /** `ExternalInvoice` rows by the rail's invoice ids, for the poller's matching. */

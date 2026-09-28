@@ -10,7 +10,7 @@ import {
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { FormatDate, FormatMoney } from '../panels/money-format';
-import { CanCancel, CanResolveInFlight, CanSend, StateChipClass, StateLabel, type ExternalInvoiceLike } from '../panels/external-invoice-view';
+import { BilledOnScheduleFromRows, CanCancel, CanResolveInFlight, CanSend, StateChipClass, StateLabel, type ExternalInvoiceLike } from '../panels/external-invoice-view';
 
 /** One `ExternalInvoice` row as this panel needs it. Read by name; the panel never writes one. */
 interface ExternalInvoiceRow {
@@ -30,6 +30,7 @@ interface ExternalInvoiceRow {
 const EXTERNAL_INVOICE_ENTITY = 'MJ_BizApps_Orders: External Invoices';
 const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
 const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
+const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
 
 /** Provider type codes that invoice through an external rail. Mirrors `INVOICE_RAIL_TYPE_CODES`. */
 const RAIL_TYPE_CODES = ['BillCom'];
@@ -200,6 +201,8 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     public AdoptRef = '';
     /** Read from the provider row, so a second rail needs no change here. */
     public ProviderName = 'the invoicing rail';
+    /** True when the order bills in instalments; the whole-order Send does not apply to it. */
+    public BilledOnSchedule = false;
 
     public readonly money = (n: number): string => FormatMoney(n);
     public readonly date = (iso: string): string => FormatDate(iso, { Short: true });
@@ -212,7 +215,7 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /* ── What a person may do ───────────────────────────────────────────── */
 
     public get Sendable(): boolean {
-        return CanSend(this.Record?.Status, this.Rows, this.Visible);
+        return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
     }
 
     /** Only a live invoice can be withdrawn, and only the selected one. */
@@ -426,6 +429,29 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         // app is zoneless, so an assignment across a check boundary aborts the update and freezes the
         // panel — showing an empty list, which reads as "nothing was sent" rather than as a fault.
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Whether this order bills in instalments.
+     *
+     * Wrapped because the schedule table arrived in PR #220 and a host that has not taken it yet would
+     * answer with an error rather than a row; not knowing is the same as "not scheduled" here, and the
+     * server refuses a whole-order send on a scheduled order anyway.
+     */
+    private async hasPaymentSchedule(): Promise<boolean> {
+        try {
+            const rv = new RunView();
+            const r = await rv.RunView<{ ID: string }>({
+                EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+                ExtraFilter: `OrderHeaderID = '${this.Record.ID}' AND Status <> 'Canceled'`,
+                Fields: ['ID'],
+                MaxRows: 1,
+                ResultType: 'simple',
+            });
+            return !!r.Success && !!r.Results?.length;
+        } catch {
+            return false;
+        }
     }
 
     /**

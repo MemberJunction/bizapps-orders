@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+    BilledOnScheduleFromRows,
     CanCancel,
     CanResolveInFlight,
     CanSend,
@@ -140,5 +141,33 @@ describe('CanResolveInFlight', () => {
         expect(CanResolveInFlight(null, true)).toBe(false);
         expect(CanResolveInFlight(undefined, true)).toBe(false);
         expect(CanResolveInFlight({ Status: 'Sending' }, false)).toBe(false);
+    });
+});
+
+describe('CanSend on an order billed in instalments', () => {
+    // The whole-order Send has no unit to act on when the order bills on a schedule: the server
+    // refuses it with "name the instalment". The case that made it visible is an order whose only
+    // rail invoice was a CANCELLED instalment — no Sent or Sending row, so every other test passed.
+    it('is refused when the order bills on a schedule', () => {
+        expect(CanSend('Confirmed', [{ Status: 'Canceled' }], true, true)).toBe(false);
+        expect(CanSend('Confirmed', [], true, true)).toBe(false);
+    });
+
+    it('is still offered for an order billed as a whole', () => {
+        expect(CanSend('Confirmed', [{ Status: 'Canceled' }], true, false)).toBe(true);
+        expect(CanSend('Confirmed', [], true)).toBe(true);
+    });
+});
+
+describe('BilledOnScheduleFromRows', () => {
+    it('reads an instalment row as proof the order bills on a schedule', () => {
+        expect(BilledOnScheduleFromRows([{ Status: 'Canceled', OrderHeaderPaymentScheduleID: 'sched-1' }])).toBe(true);
+    });
+
+    it('does not claim the opposite from rows that name no instalment', () => {
+        // Absence is not proof — a scheduled order that has never been sent has no rail row at all,
+        // which is why the panel also asks the schedule table.
+        expect(BilledOnScheduleFromRows([{ Status: 'Sent', OrderHeaderPaymentScheduleID: null }])).toBe(false);
+        expect(BilledOnScheduleFromRows([])).toBe(false);
     });
 });

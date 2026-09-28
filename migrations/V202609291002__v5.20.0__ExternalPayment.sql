@@ -68,7 +68,7 @@ EXEC sp_addextendedproperty N'MS_Description', N'The part the rail has not appli
 EXEC sp_addextendedproperty N'MS_Description', N'When the rail says funds moved.', N'SCHEMA', N'${flyway:defaultSchema}', N'TABLE', N'ExternalPayment', N'COLUMN', N'PaymentDate';
 EXEC sp_addextendedproperty N'MS_Description', N'The rail''s status string, verbatim, as last seen.', N'SCHEMA', N'${flyway:defaultSchema}', N'TABLE', N'ExternalPayment', N'COLUMN', N'ExternalStatus';
 EXEC sp_addextendedproperty N'MS_Description', N'The rail''s updatedTime as last seen — the watermark candidate.', N'SCHEMA', N'${flyway:defaultSchema}', N'TABLE', N'ExternalPayment', N'COLUMN', N'ExternalUpdatedAt';
-EXEC sp_addextendedproperty N'MS_Description', N'Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), ReversalNeeded (captured, and the rail now reports it reversed).', N'SCHEMA', N'${flyway:defaultSchema}', N'TABLE', N'ExternalPayment', N'COLUMN', N'Disposition';
+EXEC sp_addextendedproperty N'MS_Description', N'Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), Reapplied (captured, and the rail has since applied it to different invoices), ReversalNeeded (captured, and the rail now reports it reversed).', N'SCHEMA', N'${flyway:defaultSchema}', N'TABLE', N'ExternalPayment', N'COLUMN', N'Disposition';
 EXEC sp_addextendedproperty N'MS_Description', N'Why, in words a person can act on.', N'SCHEMA', N'${flyway:defaultSchema}', N'TABLE', N'ExternalPayment', N'COLUMN', N'DispositionReason';
 EXEC sp_addextendedproperty N'MS_Description', N'The Orders payment created for a Captured row.', N'SCHEMA', N'${flyway:defaultSchema}', N'TABLE', N'ExternalPayment', N'COLUMN', N'PaymentHeaderID';
 EXEC sp_addextendedproperty N'MS_Description', N'The rail''s record as received, JSON, for the audit trail.', N'SCHEMA', N'${flyway:defaultSchema}', N'TABLE', N'ExternalPayment', N'COLUMN', N'Payload';
@@ -940,7 +940,7 @@ UPDATE [${mjSchema}].[EntityField]
               WHERE [EntityID] = 'BF3B92DA-2C31-4C81-87BA-6CE08FC5B85D'),
             'Disposition',
             'Disposition',
-            'Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), ReversalNeeded (captured, and the rail now reports it reversed).',
+            'Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), Reapplied (captured, and the rail has since applied it to different invoices), ReversalNeeded (captured, and the rail now reports it reversed).',
             'nvarchar',
             40,
             0,

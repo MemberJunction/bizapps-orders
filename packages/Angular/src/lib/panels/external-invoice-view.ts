@@ -21,6 +21,18 @@ export type ExternalInvoiceState = 'Sending' | 'Sent' | 'Canceled' | 'Failed';
 export interface ExternalInvoiceLike {
     Status: ExternalInvoiceState;
     ExternalStatus?: string | null;
+    /** Set when this row bills one instalment rather than the order as a whole. */
+    OrderHeaderPaymentScheduleID?: string | null;
+}
+
+/**
+ * Whether this order is billed in instalments, as far as the rail rows can tell.
+ *
+ * A rail row naming a schedule row is proof; the absence of one is not, which is why the panel also
+ * asks the schedule table and passes the stronger answer when it has one.
+ */
+export function BilledOnScheduleFromRows(rows: readonly ExternalInvoiceLike[]): boolean {
+    return rows.some((r) => !!r.OrderHeaderPaymentScheduleID);
 }
 
 /** What the poller left for a person. `Captured` and `Ignored` are finished and never appear. */
@@ -34,8 +46,19 @@ export type PaymentExceptionDisposition = 'Held' | 'Unmatched' | 'Refused' | 'Re
  * button's. `Failed` and `Canceled` do not block, because re-issuing after those is the deliberate act
  * the operation already asks to be told about.
  */
-export function CanSend(orderStatus: string | null | undefined, rows: readonly ExternalInvoiceLike[], hasRail: boolean): boolean {
+export function CanSend(
+    orderStatus: string | null | undefined,
+    rows: readonly ExternalInvoiceLike[],
+    hasRail: boolean,
+    billedOnSchedule = false,
+): boolean {
     if (!hasRail || orderStatus !== 'Confirmed') return false;
+    // AN ORDER BILLED IN INSTALMENTS IS NEVER SENT FROM HERE. This button sends the WHOLE-ORDER unit,
+    // and a scheduled order has none — the server refuses it with "name the instalment", correctly,
+    // after the person has clicked. The case that made this visible: an order whose only rail invoice
+    // was a cancelled instalment has no Sent or Sending row, so every other test here passed and the
+    // button appeared, leading nowhere. Instalments are issued from the Billing worklist.
+    if (billedOnSchedule) return false;
     return !rows.some((r) => r.Status === 'Sent' || r.Status === 'Sending');
 }
 

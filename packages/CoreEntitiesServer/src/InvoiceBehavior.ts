@@ -377,6 +377,32 @@ export function DocumentNumber(orderNumber: string, index: number, total: number
     return `${orderNumber}-${String.fromCharCode(65 + index)}`;
 }
 
+/** What `ExternalInvoice.DocumentNumber` and `OrderHeader.ExternalDocumentNumber` can hold. */
+export const MAX_DOCUMENT_NUMBER_LENGTH = 40;
+
+/**
+ * The number a RE-ISSUE carries after a cancel — `ORD-1234-R1`, then `-R2`, `ORD-1234-A-R1` when the
+ * order is also split by company.
+ *
+ * THE OLD NUMBER CANNOT COME BACK. Bill.com keeps an archived invoice's `invoiceNumber` and refuses a
+ * duplicate with 422 (spike S4), so a whole-order unit cancelled before any money was recorded could
+ * be re-issued by the rules and then never actually sent — the customer could not be invoiced through
+ * the rail at all. Craig ruled the suffix on golive #242; the cancelled invoice stays on file as
+ * history, exactly as a cancelled instalment does, and the number has no ledger effect because the
+ * receivable was booked when the order was confirmed.
+ *
+ * `attempts` counts rail invoices this unit has ALREADY SPENT A NUMBER ON — rows carrying an
+ * `ExternalInvoiceRef` — not rows that merely failed. A send the rail refused outright created nothing
+ * and consumed nothing, so its number is still free and re-issuing reuses it; a send that was created
+ * and then archived (a cancel, or a tie check that withdrew it) did consume one.
+ *
+ * INSTALMENTS NEVER COME HERE. They are refused a re-issue outright (`DecideInvoiceable`): a cancelled
+ * instalment is replaced by a new schedule row under the next instalment number, not renumbered.
+ */
+export function ReissueDocumentNumber(baseNumber: string, attempts: number): string {
+    return attempts > 0 ? `${baseNumber}-R${attempts}` : baseNumber;
+}
+
 /**
  * The instalment's document number, derived from position — `ORD-1234-2`, or `ORD-1234-B2` when the
  * order is also split by company. A one-instalment schedule prints the plain order number, so an order

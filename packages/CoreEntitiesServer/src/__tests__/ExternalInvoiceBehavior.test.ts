@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { InvoiceDocument, InvoiceRow } from '../InvoiceBehavior.js';
+import { MAX_DOCUMENT_NUMBER_LENGTH, ReissueDocumentNumber } from '../InvoiceBehavior.js';
 import {
     BuildExternalInvoicePayload,
     ClassifyIssueFailure,
@@ -284,5 +285,35 @@ describe('DecideAdoption', () => {
 
     it('reports the archive before the figure — it is the reason the figure is unhelpful', () => {
         expect(DecideAdoption({ ...base, RailArchived: true, RailTotal: 1 }).Code).toBe('ARCHIVED');
+    });
+});
+
+describe('ReissueDocumentNumber', () => {
+    // Craig's ruling on golive #242, and the only way a cancelled whole-order unit can be billed at
+    // all: Bill.com keeps the archived invoice's number and refuses the duplicate with 422 (spike S4).
+    it('leaves a first send alone', () => {
+        expect(ReissueDocumentNumber('ORD-1234', 0)).toBe('ORD-1234');
+    });
+
+    it('suffixes the re-issue, and counts up if it happens again', () => {
+        expect(ReissueDocumentNumber('ORD-1234', 1)).toBe('ORD-1234-R1');
+        expect(ReissueDocumentNumber('ORD-1234', 2)).toBe('ORD-1234-R2');
+    });
+
+    it('sits after the company suffix on a split order', () => {
+        expect(ReissueDocumentNumber('ORD-1234-A', 1)).toBe('ORD-1234-A-R1');
+        expect(ReissueDocumentNumber('ORD-1234-B', 3)).toBe('ORD-1234-B-R3');
+    });
+
+    it('treats a negative count as a first send rather than emitting nonsense', () => {
+        expect(ReissueDocumentNumber('ORD-1234', -1)).toBe('ORD-1234');
+    });
+
+    it('keeps the longest realistic form inside what this app can store', () => {
+        // The binding constraint is our own column; ExternalInvoice.DocumentNumber is NVARCHAR(40).
+        // A 30-character order number is already far beyond anything this app generates.
+        const longest = ReissueDocumentNumber(`${'O'.repeat(30)}-A`, 9);
+        expect(longest.length).toBeLessThanOrEqual(MAX_DOCUMENT_NUMBER_LENGTH);
+        expect(ReissueDocumentNumber('ORD-1234-A', 1).length).toBe(13);
     });
 });

@@ -282,7 +282,14 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         if (decision.Action === 'Ignore') {
             // A person's reason for setting a row aside outlives our automatic one.
             const reason = prior?.Disposition === 'Ignored' && prior.DispositionReason ? prior.DispositionReason : decision.Reason;
-            await record(prior?.Disposition ?? 'Ignored', reason);
+            // WHAT THE ROW SHOULD READ AS, which is not always what it already says. Keeping the prior
+            // disposition is right for a row a person set aside and for one that is simply still
+            // captured — but a `Reapplied` row whose allocation has been corrected has to stop reading
+            // as an exception, or it sits on the queue page for ever saying nothing is wrong.
+            // `Captured` is only honoured with a header to point at, because the CHECK constraint
+            // requires one and a disagreement here would fail the write rather than the row.
+            const resolved = decision.Disposition && (decision.Disposition !== 'Captured' || prior?.PaymentHeaderID) ? decision.Disposition : undefined;
+            await record(resolved ?? prior?.Disposition ?? 'Ignored', reason);
             return { ...base, Disposition: 'Ignored', Reason: reason, PaymentHeaderID: prior?.PaymentHeaderID ?? null };
         }
         if (decision.Action === 'Hold') {
@@ -290,8 +297,11 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             return { ...base, Disposition: 'Held', Reason: decision.Reason };
         }
         if (decision.Action === 'Reapplied') {
-            await record('Reapplied', decision.Reason);
-            return { ...base, Disposition: 'Reapplied', Reason: decision.Reason, PaymentHeaderID: prior?.PaymentHeaderID ?? null };
+            // When the answer rests on a comparison that could not be made, the words already on the
+            // row describe a real difference; this pass has nothing better to say than that.
+            const reason = decision.KeepPriorReason && prior?.DispositionReason ? prior.DispositionReason : decision.Reason;
+            await record('Reapplied', reason);
+            return { ...base, Disposition: 'Reapplied', Reason: reason, PaymentHeaderID: prior?.PaymentHeaderID ?? null };
         }
         if (decision.Action === 'ReversalNeeded') {
             await record('ReversalNeeded', decision.Reason);
@@ -497,7 +507,7 @@ async function applicationsDiffer(
     providerID: string,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<boolean> {
+): Promise<boolean | undefined> {
     try {
         const rv = new RunView(provider as unknown as IRunViewProvider);
         const lines = await rv.RunView<{ OrderHeaderID: string; OrderHeaderPaymentScheduleID: string | null; Amount: number }>(
@@ -535,9 +545,12 @@ async function applicationsDiffer(
         );
         return ours !== theirs;
     } catch (err) {
-        // A failure to compare must not invent a difference, which would park a correct payment.
+        // COULD NOT TELL — not "no difference". Answering false would invent a clean bill of health:
+        // for a payment already flagged `Reapplied` it would retire a live exception on one bad read,
+        // with the wrong allocation still in place and nothing left saying so. `undefined` holds
+        // whatever the row already says, and a payment merely `Captured` is unaffected either way.
         LogError(`Could not compare Bill.com applications for payment ${p.ExternalPaymentRef}: ${err}`);
-        return false;
+        return undefined;
     }
 }
 

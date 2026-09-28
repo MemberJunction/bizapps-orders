@@ -375,6 +375,20 @@
         {
           "fields": {
             "ActionID": "@parent:ID",
+            "Name": "Reapplied",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many payments were already captured but have since been applied to different invoices on the rail. The cash is right and nothing is re-captured; the allocation held here is stale and a person has to move it. Counted as attention, like Unmatched."
+          },
+          "primaryKey": {
+            "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B1F"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
             "Name": "Ignored",
             "Type": "Output",
             "ValueType": "Scalar",

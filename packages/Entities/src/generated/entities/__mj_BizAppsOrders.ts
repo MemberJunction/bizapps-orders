@@ -1423,7 +1423,7 @@ export const mjBizAppsOrdersExternalPaymentSchema = z.object({
         * * Display Name: External Updated At
         * * SQL Data Type: datetimeoffset
         * * Description: The rail's updatedTime as last seen — the watermark candidate.`),
-    Disposition: z.union([z.literal('Captured'), z.literal('Held'), z.literal('Ignored'), z.literal('Refused'), z.literal('ReversalNeeded'), z.literal('Unmatched')]).describe(`
+    Disposition: z.union([z.literal('Captured'), z.literal('Held'), z.literal('Ignored'), z.literal('Reapplied'), z.literal('Refused'), z.literal('ReversalNeeded'), z.literal('Unmatched')]).describe(`
         * * Field Name: Disposition
         * * Display Name: Disposition
         * * SQL Data Type: nvarchar(20)
@@ -1432,10 +1432,11 @@ export const mjBizAppsOrdersExternalPaymentSchema = z.object({
     *   * Captured
     *   * Held
     *   * Ignored
+    *   * Reapplied
     *   * Refused
     *   * ReversalNeeded
     *   * Unmatched
-        * * Description: Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), ReversalNeeded (captured, and the rail now reports it reversed).`),
+        * * Description: Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), Reapplied (captured, and the rail has since applied it to different invoices), ReversalNeeded (captured, and the rail now reports it reversed).`),
     DispositionReason: z.string().nullable().describe(`
         * * Field Name: DispositionReason
         * * Display Name: Disposition Reason
@@ -9878,6 +9879,7 @@ export class mjBizAppsOrdersExternalPaymentEntity extends BaseEntity<mjBizAppsOr
     *   * Captured
     *   * Held
     *   * Ignored
+    *   * Reapplied
     *   * Refused
     *   * ReversalNeeded
     *   * Unmatched

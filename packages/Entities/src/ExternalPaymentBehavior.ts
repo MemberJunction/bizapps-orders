@@ -59,7 +59,12 @@ export interface PaymentSeen {
     Status: string | null;
     /**
      * True when the rail's current `invoicePayments[]` no longer match the payment lines we hold for
-     * this payment. Computed by the caller (it needs the ledger); undefined means "not checked".
+     * this payment; false when they do. Computed by the caller, which needs the ledger.
+     *
+     * `undefined` means COULD NOT TELL — not checked, or the read behind the comparison failed. It is
+     * deliberately distinct from `false`: on a payment already flagged `Reapplied`, treating "could not
+     * tell" as "no difference" would retire a live exception on one bad database read, with the wrong
+     * allocation still in place.
      */
     ApplicationsChanged?: boolean;
     /** What the last pass did with this payment, or null when it has never been seen. */
@@ -68,7 +73,27 @@ export interface PaymentSeen {
 
 export type ExternalPaymentAction = 'Capture' | 'Hold' | 'Ignore' | 'Reapplied' | 'ReversalNeeded';
 
-export function DecideExternalPayment(p: PaymentSeen): { Action: ExternalPaymentAction; Reason: string } {
+export interface ExternalPaymentDecision {
+    Action: ExternalPaymentAction;
+    Reason: string;
+    /**
+     * What the `ExternalPayment` row should now READ AS, when that differs from keeping what it says.
+     *
+     * `Action` is what to do; this is what to store, and the two part company in exactly one place: a
+     * payment flagged `Reapplied` whose allocation has since been corrected needs no action but must
+     * stop reading as an exception. Without it the poller's `Ignore` branch wrote the prior
+     * disposition straight back, so the row sat on the queue page for ever, labelled an exception with
+     * a reason saying there was nothing wrong.
+     */
+    Disposition?: ExternalPaymentDisposition;
+    /**
+     * True when this answer rests on a comparison that could not be made, so the reason already on the
+     * row — which described a difference somebody can act on — is worth more than this one.
+     */
+    KeepPriorReason?: boolean;
+}
+
+export function DecideExternalPayment(p: PaymentSeen): ExternalPaymentDecision {
     const cls = ClassifyPaymentStatus(p.Status);
     const ref = p.ExternalPaymentRef;
 
@@ -90,27 +115,38 @@ export function DecideExternalPayment(p: PaymentSeen): { Action: ExternalPayment
         // shows it paid, and no amount of re-polling notices because the payment is "already
         // captured". Reported for a person rather than silently ignored, the same posture a void
         // after capture takes.
+        const alreadyFlagged = p.PriorDisposition === 'Reapplied';
         if (p.ApplicationsChanged === true) {
             return {
                 Action: 'Reapplied',
-                Reason: `${ref} was captured, and Bill.com has since applied it to different invoices. The cash is right; the allocation here is not. Re-allocate it by hand — nothing is changed automatically.`,
+                Reason: alreadyFlagged
+                    ? `${ref} is still applied differently on Bill.com from the payment lines held here; the allocation has not been corrected.`
+                    : `${ref} was captured, and Bill.com has since applied it to different invoices. The cash is right; the allocation here is not. Re-allocate it by hand — nothing is changed automatically.`,
             };
         }
-        // THE EXCEPTION CLEARS ITSELF once the allocation matches again. `ApplicationsChanged` is
-        // recomputed on every pass for both dispositions, so a person who re-allocates by hand sees
-        // the row return to `Captured` at the next poll rather than having to clear it themselves.
-        // `undefined` means the comparison was not made or could not be made; that must not silently
-        // retire a raised exception, so the flag is kept until a comparison actually succeeds.
-        if (p.PriorDisposition === 'Reapplied' && p.ApplicationsChanged !== false) {
-            return { Action: 'Reapplied', Reason: `${ref} is still applied differently on Bill.com from the payment lines held here; the allocation has not been corrected.` };
+        // COULD NOT TELL is not ALL CLEAR. `undefined` means the comparison was not made, or the read
+        // behind it failed. On a row already flagged that must hold the flag AND the words on it: they
+        // describe a real difference somebody can act on, and one bad database read must not retire it.
+        // A merely captured row is unaffected — there is nothing to hold.
+        if (alreadyFlagged && p.ApplicationsChanged === undefined) {
+            return {
+                Action: 'Reapplied',
+                Reason: `${ref} is flagged re-applied and the applications could not be compared on this pass; the flag stands until they can be.`,
+                KeepPriorReason: true,
+            };
         }
-        return {
-            Action: 'Ignore',
-            Reason:
-                p.PriorDisposition === 'Reapplied'
-                    ? `${ref} was re-applied on Bill.com and the allocation here now matches again.`
-                    : `${ref} is already captured.`,
-        };
+        // THE EXCEPTION CLEARS ITSELF once the allocation matches again, so a person who re-allocates
+        // by hand does not also have to come back and retire the flag. Storing `Captured` is the point:
+        // leaving `Reapplied` on the row kept it on the queue page for ever, labelled an exception,
+        // under a reason saying there was nothing wrong.
+        if (alreadyFlagged) {
+            return {
+                Action: 'Ignore',
+                Disposition: 'Captured',
+                Reason: `${ref} was re-applied on Bill.com and the allocation here now matches again; the exception is cleared.`,
+            };
+        }
+        return { Action: 'Ignore', Reason: `${ref} is already captured.` };
     }
     if (p.PriorDisposition === 'ReversalNeeded') {
         return { Action: 'Ignore', Reason: `${ref} is already flagged for reversal.` };
