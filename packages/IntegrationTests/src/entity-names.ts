@@ -58,6 +58,7 @@ export const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 export const PAYMENT_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Types';
 export const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
+export const ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY = 'MJ_BizApps_Orders: Order Line Progress Measurements';
 export const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 export const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
 export const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
@@ -123,6 +124,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PAYMENT_TYPE_ENTITY,
     PAYMENT_LINE_ENTITY,
     ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+    ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY,
     PAYMENT_DETAIL_ENTITY,
     PAYMENT_PROVIDER_ENTITY,
     PAYMENT_PROVIDER_TYPE_ENTITY,

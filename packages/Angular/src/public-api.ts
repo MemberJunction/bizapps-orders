@@ -116,6 +116,7 @@ export * from './lib/pages/receivables/billing.page';
 export * from './lib/pages/receivables/external-invoicing-queue.page';
 export * from './lib/form-panels/external-invoices.panel';
 export * from './lib/panels/external-invoice-view';
+export * from './lib/pages/receivables/progress.page';
 export * from './lib/pages/receivables/customer-ar.page';
 export * from './lib/pages/receivables/subscriptions.page';
 export * from './lib/pages/catalog/products.page';

@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-37 - Progress Measurement",
+    "Description": "Percentage-of-completion revenue recognition by attested catch-up (AIDP-26, golive #241, plan Part F, D90). Proves the cumulative arithmetic ties exactly at 100% with a backward slide posting a negative delta through the mirrored entry, that a POC line books to Deferred Revenue and stages no recognition at booking, that Preview writes nothing, that a posted observation is immutable, that an unchanged percent is a success with no entry, and that a non-POC line or a backdated observation is refused.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "40/70/55/100 posts four entries summing to the line with the third negative and the last landing the odd cent, and RecognizedToDateAfter agrees with the ledger at each step; a POC line books Dr AR / Cr Deferred with no releases; Preview leaves observation rows and journal entries unchanged; a posted observation refuses update (trigger); an unchanged percent writes an observation but no entry; a straight-line line and an observation dated before the last posted one are refused with a reason."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "progress-measurement"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F30"
+  }
+}

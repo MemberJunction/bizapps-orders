@@ -8,6 +8,7 @@ import {
     priceOverrideCatalogInstalled,
     priceOverrideReasonMissing,
     userPriceOverrideKind,
+    UserHasAuthorization,
 } from '../pricing/priceOverride.js';
 
 describe('price override helpers', () => {
@@ -41,6 +42,12 @@ describe('price override helpers', () => {
     it('denies override when there is no user', () => {
         expect(userPriceOverrideKind(null, { Authorizations: [] })).toBe('none');
         expect(userPriceOverrideKind(undefined, { Authorizations: [] })).toBe('none');
+    });
+
+    it('UserHasAuthorization fails closed: no user, or an authorization not in the catalog, holds nothing', () => {
+        const user = { ID: 'u1', UserRoles: [{ RoleID: 'r1' }] } as never;
+        expect(UserHasAuthorization('MJ.BizApps.Orders.Progress.Attest', null, { Authorizations: [] })).toBe(false);
+        expect(UserHasAuthorization('MJ.BizApps.Orders.Progress.Attest', user, { Authorizations: [] })).toBe(false);
     });
 });
 
