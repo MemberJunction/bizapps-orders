@@ -102,7 +102,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'advance-order-state': 11,
     invoicing: 15,
     'order-status': 8,
-    'payment-terms': 12,
+    'payment-terms': 14,
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,
