@@ -56,7 +56,7 @@
  *   CODE: RecordProgressOperation · OrderJournalEntryFactory.BuildProgressDraft · RevenueRecognition.ComputeCatchUp
  *         ProgressSupersede
  *   DB:   V202609260200__v5.13.0__OrderLineProgressMeasurement.sql
- *         V202609231200__v5.13.0__OrderLineProgressMeasurement_Supersede.sql
+ *         V202609260400__v5.13.0__OrderLineProgressMeasurement_Supersede.sql
  */
 import { BaseRemotableOperation, UserInfo, UserRoleInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';

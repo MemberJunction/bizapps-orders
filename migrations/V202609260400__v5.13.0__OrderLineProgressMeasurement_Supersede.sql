@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609231200 — a posted progress observation can be SUPERSEDED (golive #260)
+-- V202609260400 — a posted progress observation can be SUPERSEDED (golive #260)
 -- =============================================================================
 -- Two rules on OrderLineProgressMeasurement combine into a trap. Orders.
 -- RecordProgress refuses any observation dated on or before the last posted
