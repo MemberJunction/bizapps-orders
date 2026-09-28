@@ -16,6 +16,7 @@ import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 
 // Import Generated Components
 import { mjBizAppsOrdersChargeTypeFormComponent } from "./Entities/mjBizAppsOrdersChargeType/mjbizappsorderschargetype.form.component";
+import { mjBizAppsOrdersCheckoutSessionStepFormComponent } from "./Entities/mjBizAppsOrdersCheckoutSessionStep/mjbizappsorderscheckoutsessionstep.form.component";
 import { mjBizAppsOrdersCheckoutSessionFormComponent } from "./Entities/mjBizAppsOrdersCheckoutSession/mjbizappsorderscheckoutsession.form.component";
 import { mjBizAppsOrdersCheckoutWidgetDistributionFormComponent } from "./Entities/mjBizAppsOrdersCheckoutWidgetDistribution/mjbizappsorderscheckoutwidgetdistribution.form.component";
 import { mjBizAppsOrdersCheckoutWidgetFormComponent } from "./Entities/mjBizAppsOrdersCheckoutWidget/mjbizappsorderscheckoutwidget.form.component";
@@ -133,6 +134,7 @@ export class GeneratedForms_SubModule_2 { }
 @NgModule({
 declarations: [
     mjBizAppsOrdersCheckoutSessionFormComponent,
+    mjBizAppsOrdersCheckoutSessionStepFormComponent,
     mjBizAppsOrdersPromotionCodeFormComponent
 ],
 imports: [
