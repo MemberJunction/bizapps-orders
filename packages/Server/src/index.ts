@@ -38,7 +38,10 @@ import {
     LoadGetOverdueWorklistOperation,
     LoadGetBillingWorklistOperation,
     LoadIssueInstalmentInvoiceOperation,
+    LoadRecordProgressOperation,
+    LoadGetProgressWorklistOperation,
     LoadOrderHeaderPaymentScheduleEntityServer,
+    LoadOrderLineProgressMeasurementEntityServer,
     LoadOrderConcessionEntityServer,
     InitConcessionApprovalListener,
     LoadGetFulfillmentQueueOperation,
@@ -114,7 +117,10 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGetOverdueWorklistOperation(); // 'Orders.GetOverdueWorklist' — overdue is computed, not stored
     LoadGetBillingWorklistOperation(); // 'Orders.GetBillingWorklist' — instalments due with no invoice behind them (AIDP-24)
     LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
+    LoadRecordProgressOperation(); // 'Orders.RecordProgress' — one attested POC observation and its catch-up entry (AIDP-26)
+    LoadGetProgressWorklistOperation(); // 'Orders.GetProgressWorklist' — open POC lines with their last observation
     LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
+    LoadOrderLineProgressMeasurementEntityServer(); // refuses a Posted observation the operation did not write
     LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
     InitConcessionApprovalListener();      // a decision on an order's approval task decides its concessions (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
