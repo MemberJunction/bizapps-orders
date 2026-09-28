@@ -502,3 +502,113 @@ describe('BizAppsPaymentHeaderFormComponent PaymentDate field (#209)', () => {
         expect(instance.PaymentDateInput).toBe('2026-03-15');
     });
 });
+
+/**
+ * A new payment could not be captured (golive #283): Receiving Company was required but nothing
+ * filled it, a refused capture left the header reading CAPTURED, Wire opened the check panel, and
+ * an over-applied order read a $0.00 balance instead of the credit it creates.
+ */
+describe('BizAppsPaymentHeaderFormComponent capture (golive #283)', () => {
+    const CO_A = 'AAAAAAAA-0000-0000-0000-000000000001';
+    const CO_B = 'BBBBBBBB-0000-0000-0000-000000000002';
+
+    function form(orders: Array<{ ID: string; CompanyID: string; Balance: number }>) {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        const fields: Record<string, unknown> = { ReceivingCompanyID: null };
+        const record = {
+            IsSaved: false,
+            Status: 'Pending',
+            Amount: 0,
+            ProcessingFeeAmount: 0,
+            NetAmount: 0,
+            BillToOrganizationID: 'org-1',
+            BillToPersonID: null,
+            PaymentTypeID: 'pt-cash',
+            Lines: { Items: [], IsLoaded: true, Load: vi.fn(), Remove: vi.fn(), Create: vi.fn(async () => ({})) },
+            LatestResult: { Message: 'Receiving Company cannot be null.' },
+            Save: vi.fn(async () => false),
+            async SaveStatus(status: string) {
+                const previous = this.Status;
+                this.Status = status;
+                const saved = await this.Save();
+                if (!saved) this.Status = previous;
+                return saved;
+            },
+            Set(name: string, value: unknown) {
+                fields[name] = value;
+            },
+            get ReceivingCompanyID() {
+                return fields.ReceivingCompanyID as string;
+            },
+            set ReceivingCompanyID(value: string) {
+                fields.ReceivingCompanyID = value;
+            },
+        };
+        instance.record = record as unknown as mjBizAppsOrdersPaymentHeaderEntity;
+        (instance as any).EditMode = false;
+        instance.AmountManuallySet = false;
+        instance.OpenOrders = orders as unknown as mjBizAppsOrdersOrderHeaderEntity[];
+        instance.OrderLinesMap = new Map();
+        instance.OrderAllocations = {};
+        instance.LineAllocations = {};
+        return { instance, record };
+    }
+
+    it('fills Receiving Company from the allocated orders when they share one company', () => {
+        const { instance, record } = form([
+            { ID: 'ord-1', CompanyID: CO_A, Balance: 500 },
+            { ID: 'ord-2', CompanyID: CO_A, Balance: 300 },
+        ]);
+        instance.SetOrderAllocation('ord-1', 500);
+        expect(record.ReceivingCompanyID).toBe(CO_A);
+        instance.SetOrderAllocation('ord-2', 300);
+        expect(record.ReceivingCompanyID).toBe(CO_A);
+    });
+
+    it('clears a filled Receiving Company when the allocations span companies, and refuses capture', async () => {
+        const { instance, record } = form([
+            { ID: 'ord-1', CompanyID: CO_A, Balance: 500 },
+            { ID: 'ord-2', CompanyID: CO_B, Balance: 300 },
+        ]);
+        instance.SetOrderAllocation('ord-1', 500);
+        expect(record.ReceivingCompanyID).toBe(CO_A);
+        instance.SetOrderAllocation('ord-2', 300);
+        expect(record.ReceivingCompanyID).toBeNull();
+
+        await instance.CapturePayment();
+        expect(record.Save).not.toHaveBeenCalled();
+        expect(instance.ReceivingCompanyMissing).toBe(true);
+        expect(instance.CaptureError).toContain('different companies');
+        expect(record.Status).toBe('Pending');
+    });
+
+    it('keeps a Receiving Company the user picked', () => {
+        const { instance, record } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 500 }]);
+        record.ReceivingCompanyID = CO_B;
+        instance.SetOrderAllocation('ord-1', 500);
+        expect(record.ReceivingCompanyID).toBe(CO_B);
+    });
+
+    it('restores the status when the save is refused, so the header does not read CAPTURED', async () => {
+        const { instance, record } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 500 }]);
+        instance.SetOrderAllocation('ord-1', 500);
+
+        await instance.CapturePayment();
+        expect(record.Save).toHaveBeenCalledOnce();
+        expect(record.Status).toBe('Pending');
+        expect(instance.IsCaptured).toBe(false);
+        expect(instance.CaptureError).toContain('Receiving Company cannot be null');
+    });
+
+    it('shows an over-applied order as a negative balance and the credit it creates', () => {
+        const { instance } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 5000 }]);
+        const order = instance.OpenOrders[0];
+        instance.SetOrderAllocation('ord-1', 6000);
+        expect(instance.CalculateLeavesBalance(order)).toBe(-1000);
+        expect(instance.FormatLeavesBalance(order)).toBe('−$1,000.00');
+        expect(instance.FormatLeavesCredit(order)).toBe('$1,000.00');
+
+        instance.SetOrderAllocation('ord-1', 4000);
+        expect(instance.FormatLeavesCredit(order)).toBe('');
+    });
+});
