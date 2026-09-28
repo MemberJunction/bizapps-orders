@@ -27,6 +27,7 @@ import {
     LogError,
     RunView,
     type IMetadataProvider,
+    type IRunViewProvider,
     type UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
@@ -42,6 +43,9 @@ import {
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { EmitInstalmentInvoiceEntry, type InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
+import { BeginInstalmentIssue, EndInstalmentIssue } from './instalmentIssueGuard.js';
+import { LoadInstalmentCashFacts } from './PaymentAllocationInputs.js';
+import { DepositReleasedByCompany } from './PaymentScheduleBehavior.js';
 import { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 import { InstalmentDocumentNumber } from './InvoiceBehavior.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
@@ -235,16 +239,33 @@ export async function IssueInstalment(
             return refuse(`Order ${order.OrderNumber} has no lines for the company this instalment bills, so there is nothing to invoice.`, echo);
         }
 
-        {
+        // The entity refuses an issue it did not send (D91). Held across EVERY save below, since the
+        // later ones stamp a row that is by then already Invoiced, and released in the `finally`
+        // whichever way this ends. The caller owns the transaction; this owns only the signal.
+        BeginInstalmentIssue(row.ID);
+        try {
             const entity = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, user);
             if (!(await entity.Load(row.ID))) throw new Error(`Instalment ${row.ID} could not be loaded for update.`);
             entity.DocumentNumber = documentNumber;
             entity.InvoicedAt = invoicedAt;
             entity.InvoicedByUserID = user.ID;
             entity.Status = 'Invoiced';
+
+            // WHAT THE CUSTOMER HAD ALREADY PAID AHEAD OF THIS BILL (#234 review, item 7), sized from
+            // what the cascade does when this row becomes billed: it moves unnamed cash onto billed
+            // rows first, so a deposit sitting on a LATER instalment can land on this one. Reading
+            // this row's own AmountPaid would miss that and leave AR and the schedule disagreeing.
+            // The schedule rows are read on both sides of the save that stamps the row, inside the
+            // caller's transaction; the difference in held deposits is what this issue applies.
+            const runView = provider as unknown as IRunViewProvider;
+            const depositsBefore = await LoadInstalmentCashFacts(runView, user, order.ID);
             if (!(await entity.Save())) {
                 throw new Error(entity.LatestResult?.CompleteMessage ?? 'The instalment could not be updated.');
             }
+            const depositApplied =
+                DepositReleasedByCompany(depositsBefore, await LoadInstalmentCashFacts(runView, user, order.ID)).get(
+                    String(row.CompanyID).toLowerCase(),
+                ) ?? 0;
 
             const { JournalEntryID: journalEntryID, BilledByLine } = await EmitInstalmentInvoiceEntry(
                 {
@@ -256,7 +277,7 @@ export async function IssueInstalment(
                     DocumentNumber: documentNumber,
                     Amount: Number(row.Amount),
                     InvoicedAt: invoicedAt,
-                    AmountPaid: Number(row.AmountPaid ?? 0),
+                    DepositApplied: depositApplied,
                     // `live` is this company's non-Canceled rows; the billing slice is taken
                     // against them in InstallmentNumber order so every instalment's pieces of a
                     // line sum to that line's full amount.
@@ -274,6 +295,10 @@ export async function IssueInstalment(
                 user,
             );
             if (journalEntryID) {
+                // Reloaded first: the rollup rewrote AmountPaid and Status when the row became
+                // billed (a fully prepaid row is Paid by now), and saving the stale copy would write
+                // them back.
+                if (!(await entity.Load(row.ID))) throw new Error(`Instalment ${row.ID} could not be reloaded to record its billing entry.`);
                 entity.JournalEntryID = journalEntryID;
                 if (!(await entity.Save())) {
                     throw new Error(entity.LatestResult?.CompleteMessage ?? 'The billing entry could not be recorded on the instalment.');
@@ -310,6 +335,8 @@ export async function IssueInstalment(
                 JournalEntryID: journalEntryID,
                 ...echo,
             };
+        } finally {
+            EndInstalmentIssue(row.ID);
         }
     }
 }

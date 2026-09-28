@@ -1,7 +1,7 @@
 {
   "fields": {
     "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
-    "Name": "ORD-36 - Concessions",
+    "Name": "ORD-39 - Concessions",
     "Description": "Concessions valued however they are delivered, and approved before the customer sees them (CS1-CS11). The sales guardrails used to value a concession only as a percentage off price, so a term extended at no charge computed to 0% and cleared every check. A booked term's dates are fixed, so an extension is recorded as a Duration concession, valued at the term's amount over its length and judged on both value and length. Outside a rep's SalesAuthority a concession waits for a holder of the ConcessionLimit rule's role; an order carrying one, or a stated price below the engine's that no approved concession covers, cannot be confirmed until it is decided, whether or not the line is flagged PriceOverridden. Removing a draft line removes its concessions. A bundle's components are priced at their share of the bundle price, which is not a concession. A manual discount inside its percentage cap still escalates on its absolute value.",
     "InputDefinition": {},
     "ExpectedOutcomes": {

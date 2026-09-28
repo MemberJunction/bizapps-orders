@@ -109,8 +109,12 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
     public AmountManuallySet = false;
     /** True once a capture was attempted without a Payment Type — drives the field's error state. */
     public PaymentTypeMissing = false;
+    /** True once a save was refused for want of a Receiving Company — drives the field's error state. */
+    public ReceivingCompanyMissing = false;
 
     private lastLoadedCustomerKey: string | null = null;
+    /** The Receiving Company last filled from the allocated orders; any other value is the user's pick. */
+    private derivedReceivingCompanyID: string | null = null;
 
     public get ContextTabs(): TabConfig[] {
         if (!this.record?.IsSaved || !this.IsCaptured) {
@@ -618,9 +622,53 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
     // ── GL Books Impact Breakdown ───────────────────────────────────────────
 
     public get ReceivingCompanyName(): string {
-        if (!this.record?.ReceivingCompanyID) return 'Primary Company';
+        if (!this.record?.ReceivingCompanyID) return '—';
         const found = this.SellingCompanies.find(c => UUIDsEqual(c.ID, this.record.ReceivingCompanyID));
         return found?.Name || this.record.ReceivingCompanyID;
+    }
+
+    /** The distinct selling companies of the orders the allocations currently touch. */
+    public get AllocatedOrderCompanyIDs(): string[] {
+        const companies: string[] = [];
+        for (const order of this.OpenOrders || []) {
+            if (!order.ID || !order.CompanyID) continue;
+            if (this.GetEffectiveOrderAllocation(order.ID) <= 0) continue;
+            if (!companies.some(c => UUIDsEqual(c, order.CompanyID))) companies.push(order.CompanyID);
+        }
+        return companies;
+    }
+
+    /**
+     * Fill Receiving Company from the allocated orders when they all belong to one company
+     * (golive #283). A value the user picked is left alone; a value this method filled follows the
+     * allocations and is cleared when they span several companies, because which company's bank
+     * received the money is then a choice, not something the orders can answer.
+     */
+    public SyncReceivingCompany(): void {
+        if (!this.record || !this.ComposeMode) return;
+        const current = this.record.ReceivingCompanyID || null;
+        if (current && !UUIDsEqual(current, this.derivedReceivingCompanyID)) return;
+
+        const companies = this.AllocatedOrderCompanyIDs;
+        const derived = companies.length === 1 ? companies[0] : null;
+        if (!UUIDsEqual(current, derived)) this.record.Set('ReceivingCompanyID', derived);
+        this.derivedReceivingCompanyID = derived;
+        if (derived) this.ReceivingCompanyMissing = false;
+    }
+
+    /** Refuse a save with no Receiving Company here, with a message that says what to do. */
+    private requireReceivingCompany(): void {
+        this.SyncReceivingCompany();
+        if (this.record.ReceivingCompanyID) {
+            this.ReceivingCompanyMissing = false;
+            return;
+        }
+        this.ReceivingCompanyMissing = true;
+        throw new Error(
+            this.AllocatedOrderCompanyIDs.length > 1
+                ? 'The allocated orders belong to different companies. Choose the Receiving Company, the company whose bank account received this payment.'
+                : 'Choose the Receiving Company, the company whose bank account received this payment.'
+        );
     }
 
     // ── Allocation Matrix & Workbench Methods ───────────────────────────────
@@ -759,6 +807,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
             this.record.NetAmount = Math.max(0, (this.record.Amount || 0) - (this.record.ProcessingFeeAmount || 0));
         }
 
+        this.SyncReceivingCompany();
         this.cdr?.detectChanges?.();
     }
 
@@ -795,6 +844,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
             this.record.NetAmount = Math.max(0, (this.record.Amount || 0) - (this.record.ProcessingFeeAmount || 0));
         }
 
+        this.SyncReceivingCompany();
         this.cdr?.detectChanges?.();
     }
 
@@ -887,6 +937,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
             this.OrderAllocations[firstKey] = Math.round((current + remainingCash) * 100) / 100;
         }
 
+        this.SyncReceivingCompany();
         this.cdr?.detectChanges?.();
     }
 
@@ -897,13 +948,29 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
             this.record.Amount = 0;
             this.record.NetAmount = 0;
         }
+        this.SyncReceivingCompany();
         this.cdr?.detectChanges?.();
     }
 
+    /**
+     * The order's balance after this payment. Negative when over-applied: a negative balance IS
+     * the customer's credit (see `panels/allocation-math.ts`), so clamping it to zero hid the
+     * credit the capture would create (golive #283).
+     */
     public CalculateLeavesBalance(order: mjBizAppsOrdersOrderHeaderEntity): number {
         const baseBal = order.Balance ?? order.TotalGross ?? 0;
         const applied = this.GetEffectiveOrderAllocation(order.ID || '');
-        return Math.max(0, Math.round((baseBal - applied) * 100) / 100);
+        return Math.round((baseBal - applied) * 100) / 100;
+    }
+
+    public FormatLeavesBalance(order: mjBizAppsOrdersOrderHeaderEntity): string {
+        return FormatMoney(this.CalculateLeavesBalance(order));
+    }
+
+    /** The credit an over-application creates, as a positive amount; empty when there is none. */
+    public FormatLeavesCredit(order: mjBizAppsOrdersOrderHeaderEntity): string {
+        const balance = this.CalculateLeavesBalance(order);
+        return balance < 0 ? FormatMoney(-balance) : '';
     }
 
     public FormatOrderDueDate(order: mjBizAppsOrdersOrderHeaderEntity): string {
@@ -1007,6 +1074,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
         this.CaptureError = null;
         try {
             this.record.Status = 'Pending';
+            this.requireReceivingCompany();
             await this.SyncAllocationsToRecord();
             await this.SaveRecord(false);
         } catch (err) {
@@ -1042,12 +1110,11 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
                     `Allocations must exactly match payment amount. Remainder: $${this.UnallocatedRemainder.toFixed(2)}`
                 );
             }
+            this.requireReceivingCompany();
 
             await this.SyncAllocationsToRecord();
-            this.record.Status = 'Captured';
 
-            const saved = await this.record.Save();
-            if (!saved) {
+            if (!(await this.record.SaveStatus('Captured'))) {
                 throw new Error(uniqueErrorLines(this.record.LatestResult?.Message) || 'Failed to capture and book payment.');
             }
 

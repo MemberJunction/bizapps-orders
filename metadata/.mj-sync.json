@@ -26,9 +26,13 @@
     "queries",
     "template-categories",
     "templates",
+    "authorizations",
+    "roles",
     "entities",
     "entity-fields",
     "entity-relationships",
+    "entity-permissions",
+    "authorization-roles",
     "user-views"
   ],
   "sqlLogging": {
