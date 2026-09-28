@@ -26,6 +26,8 @@
  *    `allowedOrigins`, a browser request from any other origin is refused AND receives no
  *    CORS grant (so the browser blocks the response either way). With no allowlist
  *    configured, any origin is allowed — the distribution slug remains the access control.
+ *    The element bundle (`GET {RootPath}/element/main.js`) is the exception: it is public
+ *    static code, served to every origin (`setElementAssetCorsHeaders`).
  * 4. TURNSTILE — when the widget sets `requireTurnstile`, session initialization and
  *    completion demand a Cloudflare Turnstile token, verified server-side against the secret
  *    named by `Settings.TurnstileSecretEnvVar`. Required-but-unconfigured verifies as a 503,
@@ -104,6 +106,19 @@ function resolveCheckoutElementDir(): string | null {
     }
     return null;
 }
+
+/**
+ * Hosts load the element from their own origin with `<script type="module">`, and a
+ * cross-origin module script is refused by the browser without `Access-Control-Allow-Origin`.
+ * The bundle is public, static and carries no credentials, so any origin may read it. This is
+ * deliberately not the widget's `allowedOrigins`: the script is fetched before the page names
+ * a widget, and the POST routes still apply each widget's origin policy.
+ */
+export function setElementAssetCorsHeaders(res: Pick<Response, 'setHeader'>): void {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+}
+
 /** Bounded size of the rate-limit map — oldest windows evict first. */
 const RATE_CACHE_MAX = 50_000;
 
@@ -177,10 +192,12 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const elementDir = resolveCheckoutElementDir();
         if (elementDir) {
             app.get(`${root}/element/main.js`, (_req, res) => {
+                setElementAssetCorsHeaders(res);
                 res.type('application/javascript').sendFile(path.join(elementDir, 'main.js'));
             });
             if (shouldServeCheckoutElementSourceMap(this.settings)) {
                 app.get(`${root}/element/main.js.map`, (_req, res) => {
+                    setElementAssetCorsHeaders(res);
                     res.type('application/json').sendFile(path.join(elementDir, 'main.js.map'));
                 });
             }

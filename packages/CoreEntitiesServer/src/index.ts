@@ -43,6 +43,9 @@ export {
     UnattestedDedupeKey,
     UnattestedException,
 } from './DetectUnattestedProgressOperation.js';
+
+export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
+export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
     AddMonths,
     BuildPaymentSchedule,
@@ -205,7 +208,7 @@ export type { PriceRule, PriceTierRule, PriceContext, PricingModel, Inapplicable
 export { RemainingReturnable, ValidateReversal, InheritedTerms } from './ReversalBehavior.js';
 export type { ReversalOrigin, ReversalRequest } from './ReversalBehavior.js';
 export { LoadReversalContext } from './ReversalResolver.js';
-export type { ReversalContext } from './ReversalResolver.js';
+export type { PriorReversal, ReversalContext } from './ReversalResolver.js';
 
 // Entitlements (D27/D76) — the pure policy resolution and the engine that applies it.
 export {
