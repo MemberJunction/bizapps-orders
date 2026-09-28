@@ -95,6 +95,7 @@ import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from 
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
+import { CheckOrderBillToName, LoadBillToName } from './RailCustomerNameLimit.js';
 import { Today, AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
@@ -387,7 +388,40 @@ export class OrderEntityServer extends OrderHeaderEntity {
             );
         }
 
+        for (const message of await this.checkBillToNameFitsRails()) {
+            result.Success = false;
+            const field = this.BillToOrganizationID ? 'BillToOrganizationID' : 'BillToPersonID';
+            result.Errors.push(new ValidationErrorInfo(field, message, this.BillToOrganizationID ?? this.BillToPersonID, ValidationErrorType.Failure));
+        }
+
         return result;
+    }
+
+    /**
+     * The bill-to name must fit the customer fields of every invoice rail a selling company on
+     * this order invoices through (bc-aidp-next-golive#280). The rail creates its customer from
+     * that name, so a name it cannot hold would otherwise fail at send time, days later.
+     *
+     * Checked when the payer is set or changed and when the order books, so an existing draft
+     * edited for any other reason is not refused. The send checks again for anything saved before.
+     */
+    private async checkBillToNameFitsRails(): Promise<string[]> {
+        const payerChanged = !this.IsSaved || !!this.GetFieldByName('BillToOrganizationID')?.Dirty || !!this.GetFieldByName('BillToPersonID')?.Dirty;
+        if (!payerChanged && !this.willBookOnThisSave()) return [];
+        const companyIDs = this.sellingCompanyIDs();
+        if (companyIDs.length === 0) return [];
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const billTo = await LoadBillToName(this.BillToOrganizationID, this.BillToOrganizationID ? null : this.BillToPersonID, provider, this.ContextCurrentUser);
+        return billTo ? CheckOrderBillToName(companyIDs, billTo, provider, this.ContextCurrentUser) : [];
+    }
+
+    /** The header's company and every company a line in memory sells for, without duplicates. */
+    private sellingCompanyIDs(): string[] {
+        const byKey = new Map<string, string>();
+        for (const id of [this.CompanyID, ...this.Lines.Items.map((line) => line.CompanyID)]) {
+            if (id && !byKey.has(id.toLowerCase())) byKey.set(id.toLowerCase(), id);
+        }
+        return [...byKey.values()];
     }
 
     // ─── Save Override ─────────────────────────────────────────────────────────
