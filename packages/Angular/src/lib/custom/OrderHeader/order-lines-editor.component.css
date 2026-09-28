@@ -309,6 +309,10 @@
     color: var(--mj-text-muted);
 }
 
+.mjo-ol-term__hint.is-error {
+    color: var(--mj-status-error-text);
+}
+
 .mjo-ol-card__why {
     margin-top: 6px;
     font-size: var(--mj-text-xs);

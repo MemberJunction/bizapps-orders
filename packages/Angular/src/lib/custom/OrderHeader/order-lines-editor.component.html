@@ -293,9 +293,13 @@
                             {{ ServicePeriodValue(line, 'Start') || '—' }} to {{ ServicePeriodValue(line, 'End') || '—' }}
                         </span>
                     }
-                    @if (ServicePeriodMissing(line)) {
+                    @if (ServicePeriodBackwards(line)) {
+                        <span class="mjo-ol-term__hint is-error" role="alert">
+                            End date must be on or after the start date.
+                        </span>
+                    } @else if (ServicePeriodMissing(line)) {
                         <span class="mjo-ol-term__hint">
-                            Needed to confirm: revenue on this line is recognised against these dates.
+                            Needed to confirm: revenue on this line is recognized against these dates.
                         </span>
                     }
                 </div>
