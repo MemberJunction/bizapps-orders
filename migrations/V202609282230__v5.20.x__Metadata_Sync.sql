@@ -2631,7 +2631,7 @@ SELECT
     h.BillToOrganizationID AS PartyID,
     COUNT(*) AS [Count],
     MAX(h.OrderDate) AS LastActivityAt
-FROM [${flyway:defaultSchema}].vwOrderHeaders h
+FROM [__mj_BizAppsOrders].vwOrderHeaders h
 WHERE h.Status <> N''Voided''
   AND h.BillToOrganizationID IS NOT NULL
 GROUP BY h.BillToOrganizationID
@@ -2643,7 +2643,7 @@ SELECT
     h.BillToPersonID AS PartyID,
     COUNT(*) AS [Count],
     MAX(h.OrderDate) AS LastActivityAt
-FROM [${flyway:defaultSchema}].vwOrderHeaders h
+FROM [__mj_BizAppsOrders].vwOrderHeaders h
 WHERE h.Status <> N''Voided''
   AND h.BillToPersonID IS NOT NULL
 GROUP BY h.BillToPersonID;
