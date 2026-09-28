@@ -13,8 +13,10 @@
  *   Amount          the later subscription's overlapping term amount
  *   creator         the user who confirmed the order that booked the later subscription. When that
  *                   is not recorded — the order was confirmed before `ConfirmedByUserID` existed, or
- *                   the subscription has no order — the exception is raised with CreatorUnresolved,
- *                   which is what keeps anyone from clearing it without that being settled first.
+ *                   the subscription has no order — the exception has NO creator restriction, the
+ *                   same as a never-attested progress line or a deal with no owner. It is not raised
+ *                   as unresolved: a booked order's confirmer can never be filled in afterwards, so
+ *                   an unresolved row could never be cleared and its month never close.
  *
  * SETTINGS COME FROM THE EXCEPTION TYPE and nowhere else. A missing or inactive
  * OVERLAPPING_SUBSCRIPTION type means the check does not run; a configuration without a boolean
@@ -140,7 +142,7 @@ export function OverlapDedupeKey(row: Pick<OverlappingSubscriptionRow, 'EarlierS
  *
  * @param confirmedBy - `ConfirmedByUserID` of each later order that has one, keyed by order id
  *                      (upper-cased). A pair whose later order is absent from it — or that has no
- *                      order — is raised with CreatorUnresolved.
+ *                      order — is raised with no creator restriction.
  */
 export function BuildOverlapException(
     row: OverlappingSubscriptionRow,
@@ -164,7 +166,7 @@ export function BuildOverlapException(
             `${basis}, so the overlap is billed and recognized twice unless one is cancelled.`,
         DedupeKey: OverlapDedupeKey(row),
         SourceCreatedByUserID: creator,
-        CreatorUnresolved: creator === null,
+        CreatorUnresolved: false,
     };
 }
 

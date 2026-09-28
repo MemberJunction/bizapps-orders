@@ -188,10 +188,11 @@ describe('with accounting loaded', () => {
         expect(confirmed.Summary).toContain('SUB-L1');
         expect(confirmed.Summary).toContain('SUB-E1');
         expect(confirmed.Summary).toContain('2026-01-01 to 2026-06-30');
-        // Confirmed before the column existed: the creator is not known.
-        expect(beforeColumn).toMatchObject({ SourceCreatedByUserID: null, CreatorUnresolved: true, Amount: null });
+        // Confirmed before the column existed: no creator restriction, never unresolved, because a
+        // booked order's confirmer cannot be filled in later and the row could never be cleared.
+        expect(beforeColumn).toMatchObject({ SourceCreatedByUserID: null, CreatorUnresolved: false, Amount: null });
         // No order behind the later subscription at all: the same.
-        expect(noOrder).toMatchObject({ SourceCreatedByUserID: null, CreatorUnresolved: true });
+        expect(noOrder).toMatchObject({ SourceCreatedByUserID: null, CreatorUnresolved: false });
     });
 
     it('matches the confirmer whatever the case of the order id', async () => {
