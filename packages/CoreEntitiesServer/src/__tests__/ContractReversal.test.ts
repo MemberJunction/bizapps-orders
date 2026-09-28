@@ -11,6 +11,7 @@ import {
     InstalmentsToCancel,
     BuildCreditMemoLines,
     ProratedCreditMemo,
+    RefuseEarlierThanPriorReversal,
     RefuseEarnedNotBilled,
     StagedEarnedThrough,
     type DatedRelease,
@@ -153,6 +154,27 @@ describe('RefuseEarnedNotBilled', () => {
         const message = RefuseEarnedNotBilled([line('L1', 0, 100, 1), line('L2', 0, 250, 2)], [], AS_OF);
         expect(message).toContain('line 1 (100.00)');
         expect(message).toContain('line 2 (250.00)');
+    });
+});
+
+describe('RefuseEarlierThanPriorReversal — a reversal dated before a confirmed one of the same line', () => {
+    const FEB = { OrderNumber: 'ORD-2', OrderDate: '2027-02-15' };
+
+    it('refuses, naming the confirmed reversal and its date', () => {
+        const message = RefuseEarlierThanPriorReversal([FEB], '2026-11-15');
+        expect(message).toContain('order ORD-2, dated 2027-02-15');
+        expect(message).toContain('2026-11-15');
+    });
+
+    it('lets the same date and a later date through', () => {
+        expect(RefuseEarlierThanPriorReversal([FEB], '2027-02-15')).toBeNull();
+        expect(RefuseEarlierThanPriorReversal([FEB], '2027-03-01')).toBeNull();
+        expect(RefuseEarlierThanPriorReversal([], '2026-11-15')).toBeNull();
+    });
+
+    it('names the latest of several later reversals, the date this one must reach', () => {
+        const message = RefuseEarlierThanPriorReversal([FEB, { OrderNumber: 'ORD-3', OrderDate: '2027-03-15' }], '2026-11-15');
+        expect(message).toContain('on or after 2027-03-15');
     });
 });
 

@@ -54,6 +54,8 @@ export interface ReversalContext {
 /** An earlier, counted reversal of the same origin line. */
 export interface PriorReversal {
     ID: string;
+    /** For the refusal of an earlier-dated reversal. */
+    OrderNumber: string | null;
     Net: number;
     /**
      * `YYYY-MM-DD` — the reversal's order date, which its mirrored releases start after. `null` when
@@ -182,6 +184,7 @@ export async function LoadReversalContext(
         alreadyReversed += Math.abs(Number(prior.Quantity ?? 0));
         priorReversals.push({
             ID: String(prior.ID),
+            OrderNumber: numberByOrder.get(String(prior.OrderHeaderID).toLowerCase()) ?? null,
             Net: Math.abs(Number(prior.LineTotalNet ?? 0)),
             OrderDate: dateByOrder.get(String(prior.OrderHeaderID).toLowerCase()) ?? null,
             ServicePeriodStart: prior.ServicePeriodStart ? new Date(prior.ServicePeriodStart) : null,

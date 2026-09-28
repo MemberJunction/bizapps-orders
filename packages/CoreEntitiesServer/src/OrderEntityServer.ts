@@ -65,7 +65,7 @@ import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
-import { InstalmentsToCancel, RefuseEarnedNotBilled } from './ContractBalance.js';
+import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
@@ -1751,6 +1751,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 RemainingQuantity: context.Origin.Quantity - context.AlreadyReversed,
                 OriginNet: Number(context.Origin.LineTotalNet ?? 0),
                 PriorReversals: context.PriorReversals,
+                ScheduleRows: context.ScheduleRows,
                 OriginOrderNumber: context.Origin.OrderNumber ?? null,
                 OriginLineNumber: context.Origin.LineNumber ?? null,
             });
@@ -1917,6 +1918,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
             throw new Error(`Order line ${line.LineNumber}: ${refusal}`);
         }
 
+        // Due as of the REVERSAL's date, not today: a return back-dated to November names the
+        // instalment that was due in November (Andrew, #237).
+        const asOfDay = ToISODate(this.OrderDate) ?? Today();
+
+        // NOT DATED BEFORE A CONFIRMED REVERSAL OF THE SAME LINE (Andrew, #237 third pass). That
+        // reversal kept as earned the months up to its own date; one dated earlier would credit them
+        // back again. Scheduled origins only — the memo is where it over-credits.
+        const earlier = context.OriginScheduled ? RefuseEarlierThanPriorReversal(context.PriorReversals, asOfDay) : null;
+        if (earlier) {
+            throw new Error(`Order line ${line.LineNumber}: ${earlier}`);
+        }
+
         // EARNED BUT NOT BILLED IS REFUSED, NOT REVERSED AROUND (D92 §6). The origin line's
         // RecognizedToDate running ahead of its BilledToDate is a contract asset sitting in Unbilled
         // Receivable; crediting the customer while it stands would leave that balance with no
@@ -1934,9 +1947,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 },
             ],
             context.ScheduleRows,
-            // Due as of the REVERSAL's date, not today: a return back-dated to November names the
-            // instalment that was due in November (Andrew, #237).
-            ToISODate(this.OrderDate) ?? Today(),
+            asOfDay,
         );
         if (stranded) {
             throw new Error(`Order line ${line.LineNumber}: ${stranded}`);

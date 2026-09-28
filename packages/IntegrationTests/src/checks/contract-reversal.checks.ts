@@ -1,5 +1,5 @@
 /**
- * contract-reversal.checks.ts — the `contract-reversal` bundle (RV1–RV6).
+ * contract-reversal.checks.ts — the `contract-reversal` bundle (RV1–RV9).
  *
  * REVERSING A SCHEDULED ORDER IS NOT MIRRORING ITS BOOKING ENTRY (D92 §6). A company billed by
  * instalment never posted one — its value reaches the ledger an instalment at a time — so a
@@ -21,6 +21,10 @@
  *   RV6  4 of 10 then the other 6: memos of 360 and 540, the schedule withdrawn only by the second
  *   RV7  the same two reversals on different dates, with instalment 3 issued between: the second
  *        memo is 1,620, because the months the first one already mirrored back are not earned twice
+ *   RV8  a reversal dated BEFORE a confirmed reversal of the same line is refused, naming it; the
+ *        same two in date order credit 2,160 then 360 and the origin's billed ties to its revenue
+ *   RV9  a subscription line earned ahead of billing (instalment 3 skipped) is refused on the staged
+ *        earned figure, naming instalment 3; nothing is cancelled and nothing is booked
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -501,6 +505,87 @@ export const ContractReversalChecks: NamedCheck[] = [
                     'Invoiced,Invoiced,Invoiced,Canceled',
                     'the whole order is reversed, so the one unissued instalment is withdrawn',
                 );
+            }),
+    },
+    {
+        Id: 'contract-reversal.RV8',
+        Name: 'RV8: a reversal dated before a confirmed reversal of the same line is refused; in date order the two credit 2,160 then 360',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // Andrew's third pass, item 1. Instalments 1 to 3 issued for 8,100. The February
+                // reversal keeps December to February of its four units as earned; a November one
+                // for the other six would credit those three months back again (3,240, not 2,160).
+                const window = SCENARIO_1().servicePeriod;
+                const ar = await accountCodeForRole(ctx, 'Accounts Receivable', f.CoA.ID);
+                const memoOf = async (id: string) =>
+                    cents((await valueLines(ctx, id)).filter((l) => l.Code === ar).reduce((s, l) => s + Number(l.Credit ?? 0), 0));
+                const threeIssued = async () => {
+                    const sale = await scenarioOneAtMonthFive(ctx, 10);
+                    Assert((await issue(ctx, sale.ids[2])).Success, 'issue instalment 3');
+                    AssertEqual(Number((await lineTotals(ctx, sale.orderID))[0].BilledToDate), 8100, 'three instalments billed');
+                    return sale;
+                };
+
+                // Out of order: refused, nothing booked.
+                const a = await threeIssued();
+                const feb = await reverse(ctx, a.originLineID, f.Products.DeferredA, { orderDate: '2027-02-15', servicePeriod: window, quantity: 4 });
+                Assert(feb.Saved, `the February reversal must confirm: ${feb.Message}`);
+                AssertEqual(await memoOf(feb.Order.ID as string), 360, '8,100 less 7,200 earned, four tenths');
+                const nov = await reverse(ctx, a.originLineID, f.Products.DeferredA, { orderDate: MONTH_FIVE, servicePeriod: window, quantity: 6 });
+                Assert(!nov.Saved, 'a reversal dated before a confirmed one of the same line must be refused');
+                Assert(nov.Message.includes(`order ${feb.Order.OrderNumber}, dated 2027-02-15`), `naming the February reversal, got: ${nov.Message}`);
+                AssertEqual(Number((await lineTotals(ctx, a.orderID))[0].BilledToDate), 7740, 'the origin is un-billed by the first memo only');
+                AssertEqual(
+                    (await schedule(ctx, a.orderID)).map((r) => r.Status).join(','),
+                    'Invoiced,Invoiced,Invoiced,Scheduled',
+                    'nothing was withdrawn',
+                );
+
+                // In date order on a fresh origin: 2,160 then 360, and the ledger ties.
+                const b = await threeIssued();
+                const six = await reverse(ctx, b.originLineID, f.Products.DeferredA, { orderDate: MONTH_FIVE, servicePeriod: window, quantity: 6 });
+                Assert(six.Saved, `the November reversal must confirm: ${six.Message}`);
+                AssertEqual(await memoOf(six.Order.ID as string), 2160, '8,100 less 4,500 earned, six tenths');
+                const four = await reverse(ctx, b.originLineID, f.Products.DeferredA, { orderDate: '2027-02-15', servicePeriod: window, quantity: 4 });
+                Assert(four.Saved, `the February reversal must confirm: ${four.Message}`);
+                AssertEqual(await memoOf(four.Order.ID as string), 360, 'what is left of the four');
+
+                // Billed ties to revenue: the origin's releases less both reversals' mirrors.
+                const billed = Number((await lineTotals(ctx, b.orderID))[0].BilledToDate);
+                const revenue = cents(
+                    sum(await releases(ctx, b.orderID)) - sum(await releases(ctx, six.Order.ID as string)) - sum(await releases(ctx, four.Order.ID as string)),
+                );
+                AssertEqual(billed, 5580, 'the origin ends billed at 8,100 less 2,520 of memos');
+                AssertEqual(revenue, billed, 'and its revenue ties to what it was billed, so Deferred ends at zero');
+            }),
+    },
+    {
+        Id: 'contract-reversal.RV9',
+        Name: 'RV9: a subscription line earned ahead of billing refuses the cancel, naming the skipped instalment',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // Andrew's third pass, item 2. Stored RecognizedToDate is zero on a staged line, so
+                // only the staged-earned figure shows 7,200 earned against 5,400 billed. Without the
+                // refusal the memo clamps to zero and the whole-order cancel withdraws instalment 3,
+                // leaving 1,800 of delivered service never billed.
+                const { orderID, originLineID } = await scenarioOneAtMonthFive(ctx);
+                const back = await reverse(ctx, originLineID, f.Products.DeferredA, {
+                    orderDate: '2027-02-15',
+                    servicePeriod: SCENARIO_1().servicePeriod,
+                });
+                Assert(!back.Saved, 'a reversal that would strand earned-but-unbilled revenue must be refused');
+                Assert(back.Message.includes('1800.00'), `naming the amount, got: ${back.Message}`);
+                Assert(back.Message.includes('Issue instalment 3, which was due on 2027-01-01'), `and the instalment, got: ${back.Message}`);
+                AssertEqual(
+                    (await schedule(ctx, orderID)).map((r) => r.Status).join(','),
+                    'Invoiced,Invoiced,Scheduled,Scheduled',
+                    'nothing was cancelled',
+                );
+                AssertEqual(Number((await lineTotals(ctx, orderID))[0].BilledToDate), 5400, 'and nothing was booked against the origin');
             }),
     },
 ];

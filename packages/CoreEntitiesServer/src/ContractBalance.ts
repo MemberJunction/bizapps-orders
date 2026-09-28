@@ -246,6 +246,32 @@ export function RefuseEarnedNotBilled(
           `schedule before this order can be reversed.`;
 }
 
+/**
+ * Refuse a reversal dated before an already-confirmed reversal of the same line, or `null` to
+ * proceed (Andrew, #237 third pass).
+ *
+ * The earlier-confirmed reversal kept as earned every month up to ITS date. A new reversal dated
+ * before it would count those months as unearned and credit them back a second time: 4 of 10
+ * reversed on 15 February, then the other 6 dated 15 November, credits 3,240 where 2,160 is owed.
+ * Re-cutting the confirmed reversal's months is not attempted; the reversal is refused and names
+ * the one in the way. Same date is fine — nothing falls between them.
+ *
+ * @param priors  confirmed reversals of the same origin line, with their order number and date
+ * @param asOfDay `YYYY-MM-DD`, the new reversal's order date
+ */
+export function RefuseEarlierThanPriorReversal(
+    priors: Array<{ OrderNumber: string | null; OrderDate: string | null }>,
+    asOfDay: string,
+): string | null {
+    const later = priors.filter((p) => p.OrderDate != null && p.OrderDate > asOfDay).sort((a, b) => (a.OrderDate! < b.OrderDate! ? 1 : -1))[0];
+    if (!later) return null;
+    return (
+        `this line was already reversed on order ${later.OrderNumber ?? 'unknown'}, dated ${later.OrderDate}. ` +
+        `A reversal dated ${asOfDay}, before that one, would credit back months it kept as earned. Date this ` +
+        `reversal on or after ${later.OrderDate}, or void order ${later.OrderNumber ?? 'unknown'} first.`
+    );
+}
+
 /** One journal line, in the shape both entry builders here produce. */
 export interface CreditMemoLine {
     GLAccountID: string;

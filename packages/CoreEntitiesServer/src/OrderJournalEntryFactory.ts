@@ -75,10 +75,12 @@ import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentSchedule
 import {
     BuildCreditMemoLines,
     ProratedCreditMemo,
+    RefuseEarnedNotBilled,
     SplitContraLegs,
     StagedEarnedThrough,
     type DatedRelease,
     type ReversalPosition,
+    type ReversalScheduleRow,
 } from './ContractBalance.js';
 import type { PriorReversal } from './ReversalResolver.js';
 import { ResolveInstalmentEntryType } from './InstalmentInvoiceEntry.js';
@@ -267,6 +269,8 @@ export interface CreditMemoForLine extends ReversalPosition {
     OriginNet: number;
     /** Earlier reversals of the same origin, whose mirrored releases are no longer earned. */
     PriorReversals: PriorReversal[];
+    /** The origin order's instalments, so an earned-ahead refusal can name the one to issue. */
+    ScheduleRows: ReversalScheduleRow[];
     OriginOrderNumber?: string | null;
     OriginLineNumber?: number | null;
 }
@@ -672,13 +676,33 @@ export class OrderJournalEntryFactory {
         // a separate order with no schedule of its own. The caller read the ORIGIN's schedule.
         const scheduledOrigin = isReversal ? creditMemo : undefined;
         const stagesReleases = revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard;
-        const memo = scheduledOrigin
-            ? ProratedCreditMemo(
-                  scheduledOrigin,
-                  line.Quantity,
-                  stagesReleases ? this.stagedEarnedThrough(revRec, line, scheduledOrigin, effectiveDate, recognitionMonths) : 0,
+        const stagedEarned =
+            scheduledOrigin && stagesReleases
+                ? this.stagedEarnedThrough(revRec, line, scheduledOrigin, effectiveDate, recognitionMonths)
+                : 0;
+        // EARNED AHEAD OF BILLED IS REFUSED HERE TOO (Andrew, #237 third pass). The line-save refusal
+        // reads stored RecognizedToDate, which staged releases do not advance, so on a subscription
+        // it always sees zero. Counting the staged-earned figure catches a skipped due instalment
+        // before the memo clamps to zero and the whole-order cancel withdraws the instalment that
+        // would have billed it.
+        const stranded = scheduledOrigin
+            ? RefuseEarnedNotBilled(
+                  [
+                      {
+                          OrderLineID: scheduledOrigin.OriginLineID,
+                          LineNumber: scheduledOrigin.OriginLineNumber ?? null,
+                          BilledToDate: scheduledOrigin.BilledToDate,
+                          RecognizedToDate: Number(scheduledOrigin.RecognizedToDate) + stagedEarned,
+                      },
+                  ],
+                  scheduledOrigin.ScheduleRows,
+                  effectiveDate,
               )
-            : 0;
+            : null;
+        if (stranded) {
+            throw new Error(`Order line ${line.LineNumber}: ${stranded}`);
+        }
+        const memo = scheduledOrigin ? ProratedCreditMemo(scheduledOrigin, line.Quantity, stagedEarned) : 0;
 
         const bookingLines: JELineDraft[] = scheduledOrigin
             ? memo > 0
