@@ -112,6 +112,7 @@ const mocks = vi.hoisted(() => {
         Status = 'Succeeded';
         Amount = 100;
         PaymentProviderID = 'pp-1';
+        ProviderIntentID = 'pi_gw_1';
         OrderHeaderID: string | null = null;
         BillToPersonID: string | null = null;
         BillToOrganizationID: string | null = null;
@@ -309,6 +310,31 @@ vi.mock('../CheckoutStepLog.js', () => ({
 vi.mock('../checkoutCaptureAlert.js', () => ({
     raiseCheckoutCaptureTerminalAlert: (...args: unknown[]) => stepMocks.Alert(...args),
 }));
+
+const renewalMocks = vi.hoisted(() => ({
+    sellsSubscription: vi.fn().mockResolvedValue(false),
+    findCustomer: vi.fn().mockResolvedValue(null),
+    saveInstrument: vi.fn().mockResolvedValue({ Saved: false }),
+    ensureCustomer: vi.fn().mockResolvedValue({ Success: true, ProviderCustomerRef: 'cus_new', WasExisting: false }),
+    resolveProvider: null as null | ((...args: unknown[]) => unknown),
+}));
+
+vi.mock('../CheckoutSavedInstrument.js', () => ({
+    OrderSellsSubscription: (...args: unknown[]) => renewalMocks.sellsSubscription(...args),
+    FindReusableProviderCustomerRef: (...args: unknown[]) => renewalMocks.findCustomer(...args),
+    SaveCheckoutInstrumentForRenewals: (...args: unknown[]) => renewalMocks.saveInstrument(...args),
+}));
+
+vi.mock('../PaymentProviderResolver.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../PaymentProviderResolver.js')>();
+    return {
+        ...actual,
+        ResolvePaymentProvider: (...args: unknown[]) =>
+            renewalMocks.resolveProvider
+                ? renewalMocks.resolveProvider(...args)
+                : (actual.ResolvePaymentProvider as (...a: unknown[]) => unknown)(...args),
+    };
+});
 
 vi.mock('../CapturePaymentOperation.js', () => ({
     CapturePaymentOperation: class {
@@ -910,6 +936,112 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('OpenPaymentIntentForSession — automatic renewal', () => {
+        const CONSENT = 'I agree this plan renews automatically every year until I cancel.';
+
+        beforeEach(() => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 599 });
+            renewalMocks.sellsSubscription.mockResolvedValue(false);
+            renewalMocks.findCustomer.mockResolvedValue(null);
+            renewalMocks.ensureCustomer.mockResolvedValue({ Success: true, ProviderCustomerRef: 'cus_new', WasExisting: false });
+            renewalMocks.resolveProvider = async () => ({ EnsureCustomer: renewalMocks.ensureCustomer });
+            (mocks.mockSessionInstance as unknown as Record<string, unknown>).AutoRenewConsentAt = null;
+            (mocks.mockSessionInstance as unknown as Record<string, unknown>).AutoRenewConsentText = null;
+        });
+
+        afterEach(() => {
+            renewalMocks.resolveProvider = null;
+        });
+
+        it('refuses to open an intent when the widget asks for the renewal agreement and the buyer did not give it', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', autoRenewConsentText: CONSENT });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser, { AutoRenewConsent: false });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('automatic renewal');
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('records the widget’s own wording and the time when the buyer agrees', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', autoRenewConsentText: `  ${CONSENT}  ` });
+            const before = Date.now();
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser, { AutoRenewConsent: true });
+            expect(res.Success).toBe(true);
+            const session = mocks.mockSessionInstance as unknown as { AutoRenewConsentText: string; AutoRenewConsentAt: Date };
+            expect(session.AutoRenewConsentText).toBe(CONSENT);
+            expect(session.AutoRenewConsentAt.getTime()).toBeGreaterThanOrEqual(before);
+        });
+
+        it('asks for no agreement when the widget sets no wording', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1' });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect((mocks.mockSessionInstance as unknown as { AutoRenewConsentAt: Date | null }).AutoRenewConsentAt).toBeNull();
+        });
+
+        it('keeps the card for a subscription, creating a gateway customer when the buyer has none', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.DraftOrderID = 'order-1';
+            mocks.mockSessionInstance.PersonID = 'person-1';
+            mocks.mockSessionInstance.Email = 'buyer@example.com';
+            renewalMocks.sellsSubscription.mockResolvedValue(true);
+
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(renewalMocks.ensureCustomer).toHaveBeenCalledWith(
+                expect.objectContaining({ ExistingProviderCustomerRef: null, Email: 'buyer@example.com', BillToPersonID: 'person-1' }),
+            );
+            const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as {
+                ProviderCustomerRef?: string;
+                SaveInstrumentForReuse?: boolean;
+                IdempotencyKey: string;
+            };
+            expect(request.ProviderCustomerRef).toBe('cus_new');
+            expect(request.SaveInstrumentForReuse).toBe(true);
+            expect(request.IdempotencyKey).toBe('checkout-sess-123-59900-keep');
+        });
+
+        it('reuses the customer the buyer already has with this provider', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.DraftOrderID = 'order-1';
+            mocks.mockSessionInstance.PersonID = 'person-1';
+            renewalMocks.sellsSubscription.mockResolvedValue(true);
+            renewalMocks.findCustomer.mockResolvedValue('cus_existing');
+            renewalMocks.ensureCustomer.mockResolvedValue({ Success: true, ProviderCustomerRef: 'cus_existing', WasExisting: true });
+
+            await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(renewalMocks.findCustomer).toHaveBeenCalledWith('person-1', 'pp-1', testUser);
+            expect(renewalMocks.ensureCustomer).toHaveBeenCalledWith(expect.objectContaining({ ExistingProviderCustomerRef: 'cus_existing' }));
+            const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as { ProviderCustomerRef?: string };
+            expect(request.ProviderCustomerRef).toBe('cus_existing');
+        });
+
+        it('still sells when no customer can be had — the card is simply not kept', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.DraftOrderID = 'order-1';
+            mocks.mockSessionInstance.PersonID = 'person-1';
+            renewalMocks.sellsSubscription.mockResolvedValue(true);
+            renewalMocks.ensureCustomer.mockResolvedValue({ Success: false, Reason: 'gateway refused' });
+
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as { ProviderCustomerRef?: string; SaveInstrumentForReuse?: boolean; IdempotencyKey: string };
+            expect(request.ProviderCustomerRef).toBeUndefined();
+            expect(request.SaveInstrumentForReuse).toBe(false);
+            expect(request.IdempotencyKey).toBe('checkout-sess-123-59900');
+        });
+
+        it('does not ask the gateway for a customer when nothing on the order renews', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.DraftOrderID = 'order-1';
+            mocks.mockSessionInstance.PersonID = 'person-1';
+
+            await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(renewalMocks.ensureCustomer).not.toHaveBeenCalled();
+            const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as { SaveInstrumentForReuse?: boolean };
+            expect(request.SaveInstrumentForReuse).toBe(false);
+        });
+    });
+
     describe('CompleteCheckout', () => {
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', 'wrong-key');
@@ -1076,6 +1208,46 @@ describe('CheckoutSessionService', () => {
             expect(res.OrderID).toBe('order-999');
             expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
             expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+        });
+
+        it('keeps the card for renewal after a successful capture, and never before', async () => {
+            mocks.mockSessionInstance.Status = 'Confirmed';
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockOrderInstance.TotalGross = 100;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = 'person-new-1';
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(renewalMocks.saveInstrument).toHaveBeenCalledTimes(1);
+            expect(renewalMocks.saveInstrument).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    OrderHeaderID: mocks.mockOrderInstance.ID,
+                    OwnerPersonID: 'person-new-1',
+                    PaymentProviderID: 'pp-1',
+                    ProviderIntentID: 'pi_gw_1',
+                    TenderCode: 'CreditCard',
+                }),
+                expect.anything(),
+                testUser,
+            );
+            const order = mocks.mockCaptureExecute.mock.invocationCallOrder[0];
+            const save = renewalMocks.saveInstrument.mock.invocationCallOrder[0];
+            expect(save).toBeGreaterThan(order);
+        });
+
+        it('does not try to keep the card when the capture fails', async () => {
+            mocks.mockSessionInstance.Status = 'Confirmed';
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockOrderInstance.TotalGross = 100;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = 'person-new-1';
+            mocks.mockCaptureExecute.mockResolvedValueOnce({ Success: false, ErrorMessage: 'declined' });
+
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(renewalMocks.saveInstrument).not.toHaveBeenCalled();
         });
 
         it('BookSettledCheckoutPaymentIfNeeded books CapturePayment for a Confirmed unpaid session', async () => {

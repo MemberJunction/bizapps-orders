@@ -123,6 +123,8 @@ export interface CheckoutSubmissionEvent {
     stripePaymentMethodId?: string;
     stripePaymentIntentId?: string;
     sessionKey: string;
+    /** True when the buyer ticked the automatic-renewal agreement (`autoRenewConsentText`). */
+    autoRenewConsent?: boolean;
 }
 
 declare global {
@@ -250,6 +252,8 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     public company = signal<string>('');
     public title = signal<string>('');
     public quantity = signal<number>(1);
+    /** The buyer's tick on the automatic-renewal agreement, when the widget asks for one. */
+    public autoRenewConsent = signal<boolean>(false);
 
     // Generic units array holding field maps for each unit
     public units = signal<Array<Record<string, unknown>>>([]);
@@ -305,6 +309,11 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
 
     // Computed properties
     public isFree = computed(() => (this._config()?.unitPrice ?? 0) <= 0);
+    /** The agreement text, when this widget sells something that renews on its own and must say so. */
+    public autoRenewConsentText = computed<string | null>(() => {
+        const text = this._config()?.autoRenewConsentText;
+        return typeof text === 'string' && text.trim() && !this.isFree() ? text.trim() : null;
+    });
     public isPerUnit = computed(() => {
         const cfg = this._config();
         return cfg?.unitMode === 'perUnit' || Boolean(cfg?.isEvent);
@@ -529,6 +538,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     }
 
     public isFormValid(): boolean {
+        if (this.autoRenewConsentText() && !this.autoRenewConsent()) return false;
         const currentUnits = this.units();
         const fields = this.activeFieldDefs();
 
@@ -604,7 +614,8 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             answers: this.answers(),
             choices: this.choices(),
             stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? undefined),
-            sessionKey: finalSessionKey
+            sessionKey: finalSessionKey,
+            autoRenewConsent: this.autoRenewConsentText() ? this.autoRenewConsent() : undefined
         };
 
         // Execute custom validation hook if present (fails closed)

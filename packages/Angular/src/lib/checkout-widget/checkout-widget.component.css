@@ -401,3 +401,16 @@
 @keyframes mj-spin {
     to { transform: rotate(360deg); }
 }
+
+.mj-checkout-consent {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    margin: 0.75rem 0;
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+.mj-checkout-consent input {
+    margin-top: 0.2rem;
+    flex: 0 0 auto;
+}

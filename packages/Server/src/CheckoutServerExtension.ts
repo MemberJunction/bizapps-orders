@@ -580,7 +580,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
-        const result = await CheckoutSessionService.OpenPaymentIntentForSession(sessionId, clientSessionKey, user);
+        const result = await CheckoutSessionService.OpenPaymentIntentForSession(sessionId, clientSessionKey, user, {
+            AutoRenewConsent: req.body?.autoRenewConsent === true,
+        });
         res.status(result.Success ? 200 : 400).json(result);
     }
 

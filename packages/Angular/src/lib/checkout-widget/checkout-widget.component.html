@@ -312,6 +312,16 @@
             </div>
         </section>
 
+        @if (autoRenewConsentText(); as consentText) {
+            <label class="mj-checkout-consent">
+                <input type="checkbox"
+                    [checked]="autoRenewConsent()"
+                    (change)="autoRenewConsent.set($any($event.target).checked)"
+                    [disabled]="isProcessing" />
+                <span>{{ consentText }}</span>
+            </label>
+        }
+
         <!-- Final Total Line -->
         <div class="mj-checkout-total-row">
             <span class="mj-total-label">Total Due</span>

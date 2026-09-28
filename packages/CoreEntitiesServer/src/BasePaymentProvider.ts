@@ -74,6 +74,14 @@ export interface CreateIntentRequest {
     /** A saved instrument to charge, when the customer has one on file. */
     ProviderCustomerRef?: string | null;
     ProviderInstrumentRef?: string | null;
+    /**
+     * Ask the gateway to keep the instrument the customer is about to enter, so it can be charged
+     * later without them present — the first purchase of an auto-renewing subscription. Needs a
+     * `ProviderCustomerRef`: a saved instrument belongs to a gateway customer, and without one the
+     * gateway has nothing to attach it to. Ignored when `ProviderInstrumentRef` is set, since that
+     * instrument is already saved.
+     */
+    SaveInstrumentForReuse?: boolean;
     /** Free-form, echoed back on webhooks. Useful for reconciliation, never load-bearing. */
     Metadata?: Record<string, string>;
     /**
@@ -134,6 +142,45 @@ export interface RetrieveIntentResult {
     Status?: IntentStatus;
     /** Major units as the gateway currently reports them. */
     Amount?: number;
+    /**
+     * The instrument the intent was paid with, when the gateway reports one. Token references and
+     * display fields only — never a card number. Present so a caller can put a saved card in the
+     * wallet after the first payment.
+     */
+    Instrument?: RetrievedInstrument;
+}
+
+/** The instrument behind a paid intent, as the gateway describes it. */
+export interface RetrievedInstrument {
+    /** The gateway customer the instrument is attached to; null when it is not saved to one. */
+    ProviderCustomerRef: string | null;
+    ProviderInstrumentRef: string;
+    Brand?: string;
+    Last4?: string;
+    ExpiryMonth?: number;
+    ExpiryYear?: number;
+    HolderName?: string;
+}
+
+/** A gateway customer to reuse or create — the owner of any instrument saved for later charges. */
+export interface EnsureCustomerRequest {
+    /** The customer already on file for this person with this provider, when there is one. */
+    ExistingProviderCustomerRef?: string | null;
+    Email?: string | null;
+    Name?: string | null;
+    /** Ours, echoed into the gateway's record so the two can be matched. */
+    BillToPersonID?: string | null;
+    BillToOrganizationID?: string | null;
+    /** Sent to gateways that support one, so a retried call does not create a second customer. */
+    IdempotencyKey?: string;
+}
+
+export interface EnsureCustomerResult {
+    Success: boolean;
+    Reason?: string;
+    ProviderCustomerRef?: string;
+    /** True when `ExistingProviderCustomerRef` was reused rather than a new customer created. */
+    WasExisting?: boolean;
 }
 
 export interface CaptureResult {
@@ -286,6 +333,16 @@ export class BasePaymentProvider {
 
     public async Refund(_request: RefundRequest): Promise<RefundResult> {
         return { Success: false, Reason: this.notImplemented('refunding a payment') };
+    }
+
+    /**
+     * Reuse or create the gateway customer that a saved instrument will belong to.
+     *
+     * Refuses by default, like every other operation here: a driver that cannot keep an instrument
+     * for later must say so, not hand back an id nothing will accept.
+     */
+    public async EnsureCustomer(_request: EnsureCustomerRequest): Promise<EnsureCustomerResult> {
+        return { Success: false, Reason: this.notImplemented('keeping a customer for saved instruments') };
     }
 
     /**

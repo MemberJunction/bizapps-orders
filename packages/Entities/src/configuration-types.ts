@@ -108,6 +108,14 @@ export interface CheckoutWidgetConfiguration {
     allowQuantity?: boolean;
     maxQuantity?: number;
     stripePublishableKey?: string;
+    /**
+     * Wording of the automatic-renewal agreement the buyer must accept before paying — for a widget
+     * selling an auto-renewing subscription. When set, the widget shows a required checkbox with this
+     * text, the server refuses to open a payment intent without the buyer's agreement, and the
+     * checkout session records this server-side text and the time of agreement. Unset means no
+     * checkbox.
+     */
+    autoRenewConsentText?: string;
     successMessage?: string;
     redirectUrl?: string;
     extensionEntityName?: string;

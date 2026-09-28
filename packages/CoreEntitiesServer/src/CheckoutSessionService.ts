@@ -47,6 +47,11 @@ import {
 import { EscapeText } from './sql-guards.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
+import {
+    FindReusableProviderCustomerRef,
+    OrderSellsSubscription,
+    SaveCheckoutInstrumentForRenewals,
+} from './CheckoutSavedInstrument.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
 import { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
 import { CheckoutStepLog, type CheckoutStepAttempt, type CheckoutStepSource } from './CheckoutStepLog.js';
@@ -322,6 +327,7 @@ export class CheckoutSessionService {
         'allowQuantity',
         'maxQuantity',
         'stripePublishableKey',
+        'autoRenewConsentText',
         'successMessage',
         'redirectUrl',
         'extensionEntityName',
@@ -1232,7 +1238,8 @@ export class CheckoutSessionService {
     public static async OpenPaymentIntentForSession(
         sessionID: string,
         clientSessionKey: string,
-        contextUser?: UserInfo
+        contextUser?: UserInfo,
+        options?: { AutoRenewConsent?: boolean }
     ): Promise<OpenSessionPaymentIntentResult> {
         const failed = (message: string): OpenSessionPaymentIntentResult => ({
             Success: false,
@@ -1291,17 +1298,33 @@ export class CheckoutSessionService {
 
         let paymentProviderId: string | undefined;
         let currencyCode: string | undefined;
+        let autoRenewConsentText: string | undefined;
         if (widget.Configuration) {
             try {
                 const configObj = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
                 paymentProviderId = typeof configObj.paymentProviderId === 'string' ? configObj.paymentProviderId : undefined;
                 currencyCode = typeof configObj.currency === 'string' ? configObj.currency : undefined;
+                autoRenewConsentText =
+                    typeof configObj.autoRenewConsentText === 'string' && configObj.autoRenewConsentText.trim()
+                        ? configObj.autoRenewConsentText.trim()
+                        : undefined;
             } catch {
                 // Malformed configuration already fails InitializeSession; treat as unset here.
             }
         }
         if (!paymentProviderId) {
             return failed(`Checkout widget '${widget.Name}' has no paymentProviderId configured — a paid checkout requires one.`);
+        }
+
+        // The automatic-renewal agreement. The buyer's tick is the only client input; the wording
+        // recorded is the widget's own server-side text, so what the session says was agreed to is
+        // what the widget displayed, not something a caller supplied.
+        if (autoRenewConsentText) {
+            if (options?.AutoRenewConsent !== true) {
+                return failed('Please agree to the automatic renewal terms to continue.');
+            }
+            session.AutoRenewConsentText = autoRenewConsentText;
+            session.AutoRenewConsentAt = new Date();
         }
 
         const mdProvider = Metadata.Provider;
@@ -1312,14 +1335,22 @@ export class CheckoutSessionService {
         // Products only: the order, and so its number, does not exist until completion.
         const description = await DescribeCheckoutSnapshot(session.MetadataJSON, mdProvider, contextUser);
 
+        // A subscription that renews on its own needs the card kept at THIS payment — see
+        // CheckoutSavedInstrument. Fail-soft: a card that cannot be kept must not block the sale.
+        const saveForRenewal = await this.resolveCustomerForRenewal(session, paymentProviderId, mdProvider, contextUser);
+
         const openResult = await OpenPaymentIntent({
             PaymentProviderID: paymentProviderId,
             Amount: snapshotTotal,
             CurrencyCode: currencyCode,
             BillToPersonID: session.PersonID ?? undefined,
+            ProviderCustomerRef: saveForRenewal ?? undefined,
+            SaveInstrumentForReuse: !!saveForRenewal,
             // Stable per-session idempotency key: reopening for the same session+amount
-            // returns the SAME gateway intent instead of minting a fresh one per retry.
-            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}`,
+            // returns the SAME gateway intent instead of minting a fresh one per retry. A
+            // card-keeping intent gets its own key, because the gateway refuses a repeated key
+            // whose request parameters differ.
+            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}${saveForRenewal ? '-keep' : ''}`,
             Metadata: { CheckoutSessionID: sessionID },
             Description: description
         }, mdProvider, contextUser);
@@ -1342,6 +1373,49 @@ export class CheckoutSessionService {
             Status: openResult.Status,
             Amount: snapshotTotal
         };
+    }
+
+    /**
+     * The gateway customer a renewal card will belong to, when this checkout sells a subscription:
+     * the one the buyer already has with this provider, or a new one. Null when nothing renews or the
+     * customer cannot be had — logged, and the sale goes ahead without keeping the card.
+     */
+    private static async resolveCustomerForRenewal(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        paymentProviderId: string,
+        mdProvider: IMetadataProvider,
+        contextUser: UserInfo
+    ): Promise<string | null> {
+        if (!session.DraftOrderID || !session.PersonID) {
+            return null;
+        }
+        try {
+            if (!(await OrderSellsSubscription(session.DraftOrderID, contextUser))) {
+                return null;
+            }
+            const existing = await FindReusableProviderCustomerRef(session.PersonID, paymentProviderId, contextUser);
+            const driver = await ResolvePaymentProvider(paymentProviderId, mdProvider, contextUser);
+            const customer = await driver.EnsureCustomer({
+                ExistingProviderCustomerRef: existing,
+                Email: session.Email ?? null,
+                BillToPersonID: session.PersonID,
+                IdempotencyKey: `customer-${session.PersonID}-${paymentProviderId}`,
+            });
+            if (!customer.Success || !customer.ProviderCustomerRef) {
+                LogError(
+                    `[CheckoutSessionService] Session ${session.ID}: no gateway customer for the renewal card ` +
+                        `(${customer.Reason ?? 'no reason given'}); the subscription will not auto-charge.`
+                );
+                return null;
+            }
+            return customer.ProviderCustomerRef;
+        } catch (err) {
+            LogError(
+                `[CheckoutSessionService] Session ${session.ID}: could not prepare a renewal card: ` +
+                    `${err instanceof Error ? err.message : String(err)}`
+            );
+            return null;
+        }
     }
 
     /**
@@ -1990,6 +2064,22 @@ export class CheckoutSessionService {
                 return this.captureFailed(order.ID, detail, isCaptureRefusalRetryable(codes), contextUser, session.ID, step);
             }
             await CheckoutStepLog.Succeed(step);
+            // The money has moved; now keep the card for any subscription that renews on its own.
+            // Fail-soft by contract, so this cannot turn a booked capture into a failed one.
+            if (intent.PaymentProviderID && intent.ProviderIntentID) {
+                await SaveCheckoutInstrumentForRenewals(
+                    {
+                        OrderHeaderID: order.ID,
+                        CompanyID: order.CompanyID,
+                        OwnerPersonID: order.BillToPersonID ?? null,
+                        PaymentProviderID: intent.PaymentProviderID,
+                        ProviderIntentID: intent.ProviderIntentID,
+                        TenderCode: tenderCode,
+                    },
+                    mdProvider,
+                    contextUser
+                );
+            }
             return { Attempted: true, Booked: true };
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);

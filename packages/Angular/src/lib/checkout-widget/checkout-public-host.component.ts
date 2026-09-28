@@ -309,6 +309,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             const intent = await this.post('/payment-intent', {
                 sessionId: this.sessionId,
                 clientSessionKey: this.sessionKey,
+                autoRenewConsent: event.autoRenewConsent === true,
             });
             if (!intent?.Success) {
                 throw new Error(this.str(intent?.ErrorMessage, 'Could not start payment.'));

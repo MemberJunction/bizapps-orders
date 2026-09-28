@@ -201,6 +201,31 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(component.isFormValid()).toBe(true);
         });
 
+        it('holds Pay until the buyer ticks the automatic-renewal agreement, and reports the tick', () => {
+            component.config = { unitPrice: 599, autoRenewConsentText: 'Renews every year until cancelled.' } as CheckoutWidgetConfig;
+            component.email.set('jane@example.com');
+            component.firstName.set('Jane');
+            component.lastName.set('Doe');
+            component.isPaymentReady = true;
+
+            expect(component.autoRenewConsentText()).toBe('Renews every year until cancelled.');
+            expect(component.isFormValid()).toBe(false);
+
+            component.autoRenewConsent.set(true);
+            expect(component.isFormValid()).toBe(true);
+
+            const emitSpy = vi.spyOn(component.submitted, 'emit');
+            component.handleSubmit();
+            expect(emitSpy.mock.calls[0][0].autoRenewConsent).toBe(true);
+        });
+
+        it('shows no agreement for a free checkout or when the widget sets no wording', () => {
+            component.config = { unitPrice: 0, autoRenewConsentText: 'Renews every year.' } as CheckoutWidgetConfig;
+            expect(component.autoRenewConsentText()).toBeNull();
+            component.config = { unitPrice: 599 } as CheckoutWidgetConfig;
+            expect(component.autoRenewConsentText()).toBeNull();
+        });
+
         it('mounts custom JS exactly once during component initialization and ngOnChanges cycle', () => {
             let evalCount = 0;
             // Define global counter incremented by script execution

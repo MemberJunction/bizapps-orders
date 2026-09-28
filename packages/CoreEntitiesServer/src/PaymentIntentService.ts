@@ -77,6 +77,11 @@ export interface OpenIntentRequest {
     /** A saved instrument to charge — the recurring-renewal path, where the mandate already exists. */
     ProviderCustomerRef?: string | null;
     ProviderInstrumentRef?: string | null;
+    /**
+     * Keep the instrument the customer enters so it can be charged again later (the first purchase
+     * of an auto-renewing subscription). Needs `ProviderCustomerRef`. See `CreateIntentRequest`.
+     */
+    SaveInstrumentForReuse?: boolean;
     /** Echoed back on webhooks. Useful for reconciliation, never load-bearing. */
     Metadata?: Record<string, string>;
     /**
@@ -144,6 +149,7 @@ export async function OpenPaymentIntent(
         BillToOrganizationID: request.BillToOrganizationID ?? null,
         ProviderCustomerRef: request.ProviderCustomerRef ?? null,
         ProviderInstrumentRef: request.ProviderInstrumentRef ?? null,
+        SaveInstrumentForReuse: request.SaveInstrumentForReuse ?? false,
         Metadata: request.Metadata,
         Description: description,
         IdempotencyKey: request.IdempotencyKey ?? undefined,
