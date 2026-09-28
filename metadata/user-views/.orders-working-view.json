@@ -38,5 +38,27 @@
       "lastModified": "2026-09-02T03:26:38.481Z",
       "checksum": "81c75af7e1ad6704f587cb9cd5ba721f10a4360a7ecf0498b38905b4dd6d97ec"
     }
+  },
+  {
+    "_comments": [
+      "Operator queue for bizapps-orders#326. The 15-minute stale-Running threshold matches STALE_RUNNING_MINUTES in CheckoutStepLog.ts; change both together."
+    ],
+    "fields": {
+      "Name": "Checkouts: Needs Review",
+      "Description": "Post-payment checkout steps whose last attempt failed, or that started more than 15 minutes ago and never reported back. Replay one with Orders.ReplayCheckoutStep.",
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps",
+      "UserID": "ECAFCCEC-6A37-EF11-86D4-000D3A4E707E",
+      "IsShared": true,
+      "WhereClause": "[Status] = 'Failed' OR ([Status] = 'Running' AND [LastAttemptAt] < DATEADD(MINUTE, -15, SYSDATETIMEOFFSET()))",
+      "CustomWhereClause": true,
+      "GridState": "{\"sortSettings\":[{\"field\":\"LastAttemptAt\",\"dir\":\"asc\"}],\"columnSettings\":[{\"Name\":\"CheckoutSession\",\"DisplayName\":\"Session\",\"orderIndex\":0,\"width\":220},{\"Name\":\"StepName\",\"DisplayName\":\"Step\",\"orderIndex\":1,\"width\":110},{\"Name\":\"Status\",\"DisplayName\":\"Status\",\"orderIndex\":2,\"width\":100},{\"Name\":\"Attempts\",\"DisplayName\":\"Attempts\",\"orderIndex\":3,\"width\":90},{\"Name\":\"Retryable\",\"DisplayName\":\"Retryable\",\"orderIndex\":4,\"width\":90},{\"Name\":\"LastAttemptSource\",\"DisplayName\":\"Last source\",\"orderIndex\":5,\"width\":110},{\"Name\":\"LastAttemptAt\",\"DisplayName\":\"Last attempt\",\"orderIndex\":6,\"width\":170,\"format\":{\"type\":\"date\",\"dateFormat\":\"medium\"}},{\"Name\":\"LastError\",\"DisplayName\":\"Last error\",\"orderIndex\":7,\"width\":360}]}"
+    },
+    "primaryKey": {
+      "ID": "72C694CB-B982-48A7-843C-537747DDE440"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T23:39:40.166Z",
+      "checksum": "3f7a0f5c61c5bf3773fdfc198f2a2ca0af5a3c967d97b26f1febb3204de611e6"
+    }
   }
 ]

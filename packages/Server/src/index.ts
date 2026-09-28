@@ -42,6 +42,7 @@ import {
     LoadIssueInstalmentInvoiceOperation,
     LoadRecordProgressOperation,
     LoadGetProgressWorklistOperation,
+    LoadReplayCheckoutStepOperation,
     LoadOrderHeaderPaymentScheduleEntityServer,
     LoadOrderLineProgressMeasurementEntityServer,
     LoadGetFulfillmentQueueOperation,
@@ -129,6 +130,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
     LoadRecordProgressOperation(); // 'Orders.RecordProgress' — one attested POC observation and its catch-up entry (AIDP-26)
     LoadGetProgressWorklistOperation(); // 'Orders.GetProgressWorklist' — open POC lines with their last observation
+    LoadReplayCheckoutStepOperation(); // 'Orders.ReplayCheckoutStep' — an operator re-drives one failed post-payment checkout step (#326)
     LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
     LoadOrderLineProgressMeasurementEntityServer(); // refuses a Posted observation the operation did not write
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog

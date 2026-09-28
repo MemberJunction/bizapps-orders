@@ -51,9 +51,10 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 5. [The `Configuration` JSONType & `customUI` Engine](#the-configuration-jsontype--customui-engine)
 6. [Multi-Unit Discrete Expansion (`unitMode`)](#multi-unit-discrete-expansion-unitmode)
 7. [Zero-DB-Draft In-Memory Pricing & Atomic Booking](#zero-db-draft-in-memory-pricing--atomic-booking)
-8. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
-9. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
-10. [Server API & Service Reference](#server-api--service-reference)
+8. [Post-Payment Step Record, Review Queue and Replay](#post-payment-step-record-review-queue-and-replay)
+9. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
+10. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
+11. [Server API & Service Reference](#server-api--service-reference)
 
 ---
 
@@ -364,6 +365,26 @@ if (!confirmed) {
 5. Emits real-time notification events across MemberJunction.
 
 ---
+
+## Post-Payment Step Record, Review Queue and Replay
+
+Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row per session (`CheckoutStepLog.ts`):
+
+| Step | Runs in | Failure leaves |
+|---|---|---|
+| `Confirm` | `CompleteCheckout`, once payment has checked out | the session `Open`; the buyer's next complete call retries it |
+| `Capture` | `CompleteCheckout`, its replay, and the `payment_intent.succeeded` webhook | the order `Confirmed` and unpaid |
+
+- Every attempt sets the row `Running`, adds one to `Attempts` and records its source (`Checkout`, `Webhook` or `Replay`). It then ends `Succeeded` or `Failed` with `LastError` and `Retryable`.
+- Rows are written outside the step's own transaction, so a rolled-back `Confirm` still records its failure. A write that fails is logged; it never fails the step.
+- The shared view **Checkouts: Needs Review** lists `Failed` rows, plus `Running` rows whose last attempt started more than 15 minutes ago (`STALE_RUNNING_MINUTES`).
+- `Orders.ReplayCheckoutStep` (authorization `MJ.BizApps.Orders.Checkout.Replay`, held by the **Checkout Operator** role) re-drives one step:
+  - a `Succeeded` step is a no-op;
+  - a step still `Running` inside the stale window is refused;
+  - `Capture` re-runs the same idempotent `CapturePayment` (`checkout-complete:${session.ID}`);
+  - `Confirm` is not replayable here.
+- The terminal-capture Task is raised on the first non-retryable failure only, not again on every replay of it.
+- GuestOrder claim minting is not recorded: it is dormant until MJ publishes the identity-claim engine.
 
 ## Guest Record Claiming Workflow
 

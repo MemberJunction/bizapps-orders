@@ -1337,6 +1337,45 @@ export interface RefundPaymentOutput {
 }
 
 /**
+ * Input for `Orders.ReplayCheckoutStep`.
+ *
+ * Names one post-payment step of one checkout session, as recorded in CheckoutSessionStep.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersReplayCheckoutStepInput {
+    /** The checkout session whose step is replayed. */
+    CheckoutSessionID: string;
+    /** The step to replay: 'Capture' or 'Confirm'. Only Capture is replayable today. */
+    StepName: string;
+}
+
+/**
+ * Output for `Orders.ReplayCheckoutStep`.
+ *
+ * Outcome says what happened:
+ *   Replayed          the step ran again; Status is how it ended
+ *   AlreadySucceeded  the step had already succeeded, so nothing ran
+ *   Refused           the step was not run (no record, not replayable, still running, not authorized)
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersReplayCheckoutStepOutput {
+    /** True when the step is Succeeded after the call, whether it ran now or before. */
+    Success: boolean;
+    Outcome: 'Replayed' | 'AlreadySucceeded' | 'Refused';
+    Message?: string;
+    CheckoutSessionID?: string;
+    StepName?: string;
+    /** The step's Status after the call: Running, Succeeded or Failed. */
+    Status?: string;
+    /** The step's Attempts after the call. */
+    Attempts?: number;
+    /** The last attempt's error, when Status is Failed. */
+    LastError?: string | null;
+}
+
+/**
  * Input for `Orders.SpawnRenewals`.
  *
  * A renewal is a SCHEDULED CONTINUATION and auto-renew is the consent switch. This
@@ -1661,6 +1700,22 @@ export class OrdersRefundPaymentOperation extends BaseRemotableOperation<RefundP
     public readonly OperationKey = "Orders.RefundPayment";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "payments:refund";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ReplayCheckoutStep — Replay Checkout Step
+// ============================================================
+/**
+ * Replay Checkout Step
+ * Re-drive one post-payment step of a checkout session from its CheckoutSessionStep record. Requires the MJ.BizApps.Orders.Checkout.Replay authorization. A Succeeded step is a no-op. A step still Running inside the stale window is refused. Capture re-runs the checkout's idempotent CapturePayment; Confirm is not replayable here.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ReplayCheckoutStep'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersReplayCheckoutStepOperation extends BaseRemotableOperation<OrdersReplayCheckoutStepInput, OrdersReplayCheckoutStepOutput> {
+    public readonly OperationKey = "Orders.ReplayCheckoutStep";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 
