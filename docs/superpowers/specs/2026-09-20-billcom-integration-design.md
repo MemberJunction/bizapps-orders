@@ -522,9 +522,12 @@ Decisions above were made so work can start; each is reversible before phase 2 s
 3. **Instalment invoice number format** in BILL (`ORD-1234-2`) and whether a re-issue may reuse it
    (D-B7, spike S4). Plan §14.3 already flags this for Jeremy/Craig.
 4. **D-B8:** BILL-recorded checks are captured by the poller and must not be keyed manually. Jeremy.
-5. **D-B9:** zero fee leg on BILL payments. Jeremy/Johanna.
-6. **Tender mapping** for BILL payments (`ACH` default). Is there a `receivablesType`/funding value
-   Finance wants mapped to `Check` or `Wire`? Spike S2 lists what BILL actually returns.
+5. ~~**D-B9:** zero fee leg on BILL payments. Jeremy/Johanna.~~ **CLOSED** — no fee leg in AIDP by
+   design; the bank's fee is booked in Business Central at bank reconciliation (Jeremy, 2026-09-25,
+   §13 B).
+6. ~~**Tender mapping** for BILL payments (`ACH` default). Is there a `receivablesType`/funding value
+   Finance wants mapped to `Check` or `Wire`?~~ **CLOSED** — see the Q6 answer above and §13 A:
+   `CHECK` → `Check`, and `OTHER` → `Wire` by agreed convention (Jeremy, 2026-09-25).
 7. **D-B10 multi-company orders** are out of v1's capture path. Acceptable for cutover?
 8. **Reversal automation.** v1 flags voided/failed BILL payments as `ReversalNeeded`; O-US13's
    manual path handles them. Automate in a follow-up?
@@ -727,9 +730,11 @@ monthly expense. One caveat the CFO raised: on the rare credit-card receipt, the
 Bill.com passes to the customer and the fee it charges us rarely line up, so a few pennies are
 reconciled by hand today. That is unchanged by this integration. Tyler owns the day-to-day detail.
 
-**Q6 (tender mapping) — CLOSED, as built.** "I am unaware of any PayPal, wallet, or other payment
-types." The bulk is ACH; credit card is rare. The four unmapped values falling to ACH is therefore
-harmless, because they do not occur.
+**Q6 (tender mapping) — CLOSED, and it changed the build.** "I am unaware of any PayPal, wallet, or
+other payment types." The bulk is ACH; credit card is rare. That answer did more than make the
+unmapped residue harmless — it freed `OTHER`, which Jeremy then spent on wires (§13 A, 2026-09-25):
+Finance selects `Other` when marking a wire paid, and `OTHER` maps to Orders' `Wire`. `PAYPAL`,
+`WALLET` and `UNDEFINED` still fall to ACH and are unreachable, because they do not occur.
 
 **Q3 (instalment numbering) — effectively Craig's call.** The CFO's own preference is to suffix the
 re-issue, matching how they operate today, but he defers: "I am fine with any approach that gives us
@@ -747,7 +752,19 @@ change; worth recording because it was arrived at independently and now has an o
 
 Two things the answer exposes, neither previously visible.
 
-**A. WIRES ARE REAL, RECURRING, AND THIS RAIL CANNOT CLASSIFY THEM.** Earlier notes said wires simply
+**A. WIRES ARE REAL AND RECURRING — SETTLED 2026-09-25: `OTHER` MEANS WIRE.**
+
+> **Jeremy's answer (PR #235, 2026-09-25):** "Wires arriving as OTHER: let's map OTHER to Wire. We
+> don't use PayPal, wallet or other tender, so OTHER is free for this. Finance will select Other when
+> marking a wire paid in Bill.com. I'd rather not read a marker from the description or reference
+> number, since that depends on consistent typing."
+>
+> Option one below, taken. Implemented in `BILLCOM_TENDER` (`OTHER: 'Wire'`) and covered by tests.
+> The marker-reading option is explicitly rejected, for the reason Jeremy gives: a rule that depends
+> on a person typing consistently is not a rule. `PAYPAL`, `WALLET` and `UNDEFINED` still fall to ACH
+> and are now unreachable rather than a guess — which is what made spending `OTHER` safe.
+
+The problem as it stood: Earlier notes said wires simply
 do not come through Bill.com. That was wrong. Money arriving directly in the bank — ACH, wire and
 cheque — is recorded by Finance and then **marked as paid in Bill.com**, and that practice continues
 after cutover because the flow out of Bill.com is how AIDP Next learns about cash. So wires do arrive
@@ -759,19 +776,29 @@ and `TenderFor` then maps `OTHER` to ACH by default. A wire is therefore recorde
 and Orders' own `Wire` payment type, which exists and is seeded, stays unreachable. Finance's own
 `Wire` classification is lost at the boundary.
 
-Options, none yet chosen: agree a convention (mark wires as `OTHER` and map `OTHER` → Wire, which is
+Options as they were put: agree a convention (mark wires as `OTHER` and map `OTHER` → Wire, which is
 safe only because PayPal and wallet genuinely do not occur here); read Bill.com's `description` or
-`referenceNumber` for a marker; or accept the loss and reclassify downstream.
+`referenceNumber` for a marker; or accept the loss and reclassify downstream. **The first was chosen.**
 
-**B. THE WIRE FEE HAS NO PATH INTO AIDP NEXT.** Finance records a wire gross with the bank's fee as a
+**B. THE WIRE FEE — SETTLED 2026-09-25: NO FEE LEG IN AIDP, BY DESIGN.**
+
+> **Jeremy's answer (PR #235, 2026-09-25):** "No fee leg in AiDP. Capture books the payment gross and
+> relieves the full invoice amount. Finance books the bank's fee in BC as a bank fee expense during
+> the bank reconciliation. Bank feeds come after go-live, and that's where fees belong."
+>
+> No code change: gross capture with no fee leg is already what this rail does, so what follows
+> describes the behaviour as intended rather than a gap. The fee's home is the bank reconciliation in
+> Business Central, and it arrives with the bank feeds after go-live.
+
+The situation the answer settles: Finance records a wire gross with the bank's fee as a
 separate expense: $9,975 received on a $10,000 invoice is booked as a $10,000 receipt and a $25 fee.
 Bill.com is then marked paid for the gross, which is what we poll, so the capture books $10,000 with a
 zero fee leg — correct as far as it goes. But the $25 expense exists only in Finance's own process.
 Nothing in this integration learns about it, because Bill.com was never told.
 
-If AIDP Next becomes the record for cash inflows, that fee needs a route in. This is not a Bill.com
-defect and not fixable inside this rail; it is a gap between "mark as paid for gross" and "the bank
-credited less". Raised for Finance and accounting to decide where the fee is booked.
+This is not a Bill.com defect and not fixable inside this rail; it is the distance between "marked
+paid for gross" and "the bank credited less". Finance and accounting have placed it in the bank
+reconciliation, not here.
 
 **Left open by the CFO, back to Robert:** whether the Stripe and HubSpot cash-receipt flows need the
 same examination. Outside this integration's scope, but he asked.
@@ -885,9 +912,10 @@ Full table in `2026-09-20-billcom-spike-results.md`. What it changed in this des
     would have booked an online card payment to the bank; and it branched on `WIRE`, which BILL cannot
     emit, while sending `CASH` to ACH although Orders has a `Cash` payment type. `receivablesType` is now
     authoritative. **Orders' `Wire` tender is unreachable from this rail** — worth saying out loud to
-    Finance, since §12 q6 asked about it.
-  - `PAYPAL`, `WALLET`, `OTHER` and `UNDEFINED` still fall to ACH. That is a placeholder and **§12 q6 stays
-    open**, but it is now a four-value residue rather than everything unrecognised.
+    Finance, since §12 q6 asked about it. **Since settled — see §13 A: `OTHER` now maps to `Wire`, so
+    Orders' `Wire` tender is reachable after all, by agreed convention rather than by a BILL type.**
+  - `PAYPAL`, `WALLET` and `UNDEFINED` still fall to ACH. **§12 q6 is CLOSED** (Jeremy, 2026-09-25): AIDP
+    uses no PayPal, wallet or other tender, so the residue is unreachable rather than a placeholder.
 - **The capture leg is still unproven.** The poll correctly returned `Unmatched`, because the probe invoice
   was created in BILL directly and Orders never issued it. Proving capture needs a Confirmed QA order, an
   issued invoice, and a payment against that. That is the last live gap.

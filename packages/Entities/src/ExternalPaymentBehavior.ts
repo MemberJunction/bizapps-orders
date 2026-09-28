@@ -217,13 +217,23 @@ export function ExternalPaymentIdempotencyKey(typeCode: string, externalPaymentR
  * bank: BILL reports the method on online payments too. `OnlinePayment` now only breaks the tie when
  * BILL reports no type at all, where "BILL moved it" is the one thing we do know.
  *
- * The keys are BILL's whole documented enum. Note what is NOT in it: there is no `WIRE`, so the Wire
- * branch this function used to carry could never fire, and Orders' `Wire` tender is unreachable from
- * this rail. `CASH` maps to Orders' own `Cash` type, which the old default silently booked as ACH.
+ * The keys are BILL's whole documented enum. Note what is NOT in it: there is no `WIRE`. `CASH` maps
+ * to Orders' own `Cash` type, which the old default silently booked as ACH.
  *
- * `PAYPAL`, `WALLET`, `OTHER` and `UNDEFINED` have no Orders equivalent and fall to ACH. That is a
- * placeholder, not a finding — see spec §12 question 6, open for Finance. It is a much smaller
- * residue than before, when every unrecognised value landed here.
+ * `OTHER` MEANS WIRE, BY AGREEMENT — not by inference. Wires do arrive (money landing directly in the
+ * bank is marked paid in Bill.com by hand), and BILL has no wire type, so whoever marks the invoice
+ * must pick something from the enum. Jeremy settled this on PR #235 on 2026-09-25, choosing the
+ * convention the spec offered as option A (§13 A): Finance selects `Other` when marking a wire paid,
+ * and `OTHER` maps to Orders' `Wire`. It is safe to spend `OTHER` this way precisely because Finance
+ * confirmed AIDP uses no PayPal, wallet or other tender, so nothing else can legitimately claim it.
+ *
+ * The convention is deliberately NOT a marker read out of the description or reference number: that
+ * would depend on consistent typing by a person, which is exactly what this kind of rule must not do.
+ *
+ * `PAYPAL`, `WALLET` and `UNDEFINED` are left falling to ACH. Finance says they cannot occur, so this
+ * is unreachable rather than a guess — but if one ever did arrive it would book to the bank silently,
+ * which is the same shape of defect the rest of this table exists to remove. Worth revisiting the day
+ * the residue stops being hypothetical; it is not worth inventing a refusal path for today.
  */
 const BILLCOM_TENDER: Readonly<Record<string, OrdersTenderCode>> = Object.freeze({
     CASH: 'Cash',
@@ -231,10 +241,12 @@ const BILLCOM_TENDER: Readonly<Record<string, OrdersTenderCode>> = Object.freeze
     CREDIT_CARD: 'CreditCard',
     VIRTUAL_CARD: 'CreditCard',
     ACH: 'ACH',
+    // By agreement, not by inference — see above.
+    OTHER: 'Wire',
 });
 
-/** The `PaymentType.Code` values this rail can produce. Seeded metadata; `Wire` is unreachable from BILL. */
-export type OrdersTenderCode = 'ACH' | 'Cash' | 'Check' | 'CreditCard';
+/** The `PaymentType.Code` values this rail can produce. All seeded and active in `metadata/payment-types`. */
+export type OrdersTenderCode = 'ACH' | 'Cash' | 'Check' | 'CreditCard' | 'Wire';
 
 export function TenderFor(p: { OnlinePayment: boolean | null; ReceivablesType: string | null }): OrdersTenderCode {
     const mapped = BILLCOM_TENDER[(p.ReceivablesType ?? '').trim().toUpperCase()];

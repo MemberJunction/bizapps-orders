@@ -186,8 +186,21 @@ describe('idempotency key and tender', () => {
         expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'ACH' })).toBe('ACH');
     });
 
-    it('sends the values Orders has no tender for to ACH, pending Finance (spec §12 q6)', () => {
-        for (const t of ['PAYPAL', 'WALLET', 'OTHER', 'UNDEFINED']) {
+    it('reads OTHER as a wire, which is the convention Finance agreed (spec §13 A)', () => {
+        // BILL has no WIRE type and wires are real and recurring, so Finance marks them Other when
+        // marking the invoice paid. Jeremy settled this on PR #235, 2026-09-25. Before it, every wire
+        // was recorded in Orders as ACH and Finance's own classification was lost at the boundary.
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: 'OTHER' })).toBe('Wire');
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: ' other ' })).toBe('Wire');
+        // A wire is marked by hand, but the flag must not override the agreed convention.
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'OTHER' })).toBe('Wire');
+    });
+
+    it('leaves the tenders Finance says cannot occur falling to ACH', () => {
+        // Unreachable rather than a guess: AIDP uses no PayPal or wallet, which is what freed OTHER
+        // for wires in the first place. Recorded as a test so the day one DOES arrive, this is a
+        // deliberate decision somebody changed rather than an oversight.
+        for (const t of ['PAYPAL', 'WALLET', 'UNDEFINED']) {
             expect(TenderFor({ OnlinePayment: true, ReceivablesType: t })).toBe('ACH');
         }
         expect(TenderFor({ OnlinePayment: null, ReceivablesType: null })).toBe('ACH');
