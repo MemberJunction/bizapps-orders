@@ -20,8 +20,7 @@ export class mjBizAppsOrdersCheckoutSessionFormComponent extends BaseFormCompone
             { sectionKey: 'customerInformation', sectionName: 'Customer Information', isExpanded: true },
             { sectionKey: 'orderAndPayment', sectionName: 'Order and Payment', isExpanded: true },
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersCheckoutSessionSteps', sectionName: 'Checkout Session Steps', isExpanded: false }
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }
 }
