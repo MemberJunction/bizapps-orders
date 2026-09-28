@@ -162,7 +162,7 @@ finding on its own.
 **Seam:** `AllBackEnd` recognition on a product that is neither an event nor a subscription — nothing supplies `ServicePeriodStart/End`.
 **Build:** ADV Deferred No Period × 1.
 **Expected:** confirm **FAILS** — "…needs a service period, but this order line has no ServicePeriodStart/ServicePeriodEnd".
-**Prediction:** if the UI exposes service-period fields, filling them by hand should make it succeed (Dr AR 65.00 / Cr Deferred Revenue 65.00 + one `RevenueRecognition` JE on the period end). If it does **not** expose them, this product is unsellable through the UI at all — a catalog configuration that no user can recover from.
+**Prediction:** the order screen shows Service period start and end on the line and keeps Confirm disabled until both are set. A caller that skips the screen still gets the refusal above. With the dates set it confirms: Dr AR 65.00 / Cr Deferred Revenue 65.00 + one `RevenueRecognition` JE on the period end. A refused confirm leaves the order in Draft, not showing Confirmed.
 
 ---
 

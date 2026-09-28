@@ -261,6 +261,50 @@
                 </div>
             }
 
+            <!--
+                SERVICE PERIOD — deferred lines that neither an event nor a subscription dates.
+                The recognition type earns against this window, so the order cannot be confirmed
+                without it.
+            -->
+            @if (NeedsStatedServicePeriod(line)) {
+                <div class="mjo-ol-term">
+                    <label
+                        class="mjo-ol-term__label"
+                        [attr.for]="CanEditServicePeriod() ? 'mjo-ol-sp-start-' + line.ID : null">
+                        Service period
+                    </label>
+                    @if (CanEditServicePeriod()) {
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            aria-label="Service period start"
+                            [id]="'mjo-ol-sp-start-' + line.ID"
+                            [value]="ServicePeriodValue(line, 'Start')"
+                            (change)="SetServicePeriod(line, 'Start', $event)">
+                        <span class="mjo-ol-term__label" aria-hidden="true">to</span>
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            aria-label="Service period end"
+                            [value]="ServicePeriodValue(line, 'End')"
+                            (change)="SetServicePeriod(line, 'End', $event)">
+                    } @else {
+                        <span class="mjo-ol-term__value">
+                            {{ ServicePeriodValue(line, 'Start') || '—' }} to {{ ServicePeriodValue(line, 'End') || '—' }}
+                        </span>
+                    }
+                    @if (ServicePeriodBackwards(line)) {
+                        <span class="mjo-ol-term__hint is-error" role="alert">
+                            End date must be on or after the start date.
+                        </span>
+                    } @else if (ServicePeriodMissing(line)) {
+                        <span class="mjo-ol-term__hint">
+                            Needed to confirm: revenue on this line is recognized against these dates.
+                        </span>
+                    }
+                </div>
+            }
+
             @if (ExtensionFor(line); as ext) {
                 <div class="mjo-ol-ext" [class.is-open]="IsExtensionOpen(line)">
                     <button

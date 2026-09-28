@@ -32,6 +32,7 @@ import { mjBizAppsOrdersOrderChargeAllocationFormComponent } from "./Entities/mj
 import { mjBizAppsOrdersOrderChargeFormComponent } from "./Entities/mjBizAppsOrdersOrderCharge/mjbizappsordersordercharge.form.component";
 import { mjBizAppsOrdersOrderCompanyPolicyFormComponent } from "./Entities/mjBizAppsOrdersOrderCompanyPolicy/mjbizappsordersordercompanypolicy.form.component";
 import { mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent } from "./Entities/mjBizAppsOrdersOrderHeaderPaymentSchedule/mjbizappsordersorderheaderpaymentschedule.form.component";
+import { mjBizAppsOrdersOrderLineProgressMeasurementFormComponent } from "./Entities/mjBizAppsOrdersOrderLineProgressMeasurement/mjbizappsordersorderlineprogressmeasurement.form.component";
 import { mjBizAppsOrdersOrderHeaderFormComponent } from "./Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component";
 import { mjBizAppsOrdersOrderLineDimensionFormComponent } from "./Entities/mjBizAppsOrdersOrderLineDimension/mjbizappsordersorderlinedimension.form.component";
 import { mjBizAppsOrdersOrderConcessionFormComponent } from "./Entities/mjBizAppsOrdersOrderConcession/mjbizappsordersorderconcession.form.component";
@@ -570,6 +571,7 @@ declarations: [
     mjBizAppsOrdersCustomerTaxExemptionFormComponent,
     mjBizAppsOrdersPaymentIntentFormComponent,
     mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent,
+    mjBizAppsOrdersOrderLineProgressMeasurementFormComponent,
     mjBizAppsOrdersOrderConcessionFormComponent
 ],
 imports: [

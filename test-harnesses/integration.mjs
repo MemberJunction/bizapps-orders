@@ -125,9 +125,12 @@ const ALL_BUNDLES = [
     'ach-settlement',
     'embedded-payment-detail',
     'payment-schedule',
+    'payment-deposit',
+    'contract-reversal',
     'concessions',
     'term-extension',
     'party-roster',
+    'progress-measurement',
     'volume',
 ];
 
