@@ -452,6 +452,13 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return this.dateInputValue(end === 'Start' ? line.ServicePeriodStart : line.ServicePeriodEnd);
     }
 
+    /** Shown on the line as it is typed; the line's own validation refuses it at save. */
+    public ServicePeriodBackwards(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const start = line.ServicePeriodStart;
+        const end = line.ServicePeriodEnd;
+        return !!start && !!end && new Date(end).getTime() < new Date(start).getTime();
+    }
+
     public ServicePeriodMissing(line: mjBizAppsOrdersOrderLineEntity): boolean {
         return !line.ServicePeriodStart || !line.ServicePeriodEnd;
     }

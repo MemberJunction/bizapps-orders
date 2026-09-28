@@ -10,15 +10,18 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrdersEngine } from '../pricing/OrdersEngine.js';
+import { ValidationResult } from '@memberjunction/core';
 import { OrderHeaderEntity } from '../OrderHeaderEntity.js';
+import { OrderLineEntity } from '../OrderLineEntity.js';
 
 type Row = Record<string, unknown>;
 
-function seed(data: { products?: Row[]; types?: Row[]; revRec?: Row[] }): void {
+function seed(data: { products?: Row[]; types?: Row[]; revRec?: Row[]; events?: Row[] }): void {
     const engine = OrdersEngine.Instance as unknown as Record<string, unknown>;
     engine._products = data.products ?? [];
     engine._productTypes = data.types ?? [];
     engine._revenueRecognitionTypes = data.revRec ?? [];
+    engine._eventProducts = data.events ?? [];
 }
 
 const CATALOG = {
@@ -35,9 +38,11 @@ const CATALOG = {
         { ID: 'p-deliverable', ProductTypeID: 't-service', RevenueRecognitionTypeID: 'rr-backend' },
         { ID: 'p-upfront', ProductTypeID: 't-service', RevenueRecognitionTypeID: 'rr-upfront' },
         { ID: 'p-event', ProductTypeID: 't-event', RevenueRecognitionTypeID: 'rr-backend' },
+        { ID: 'p-event-unloaded', ProductTypeID: 't-event', RevenueRecognitionTypeID: 'rr-backend' },
         { ID: 'p-sub', ProductTypeID: 't-service', RevenueRecognitionTypeID: 'rr-backend', SubscriptionTypeID: 'st-1' },
         { ID: 'p-gift', ProductTypeID: 't-gift', RevenueRecognitionTypeID: 'rr-backend' },
     ],
+    events: [{ ID: 'p-event', EventStartsAt: '2026-10-14T13:00:00Z', EventEndsAt: '2026-10-16T21:00:00Z' }],
 };
 
 beforeEach(() => seed(CATALOG));
@@ -54,6 +59,11 @@ describe('OrdersEngine.ServicePeriodSource', () => {
         expect(e.ServicePeriodSource('p-sub')).toBe('Subscription');
         expect(e.ServicePeriodSource('p-upfront')).toBe('NotRequired');
         expect(e.ServicePeriodSource('p-gift')).toBe('NotRequired');
+    });
+
+    it('asks for the window on an event-type product that has no event record', () => {
+        // Nothing can stamp it: the save reads the Event Products row, not the product type.
+        expect(OrdersEngine.Instance.ServicePeriodSource('p-event-unloaded')).toBe('Line');
     });
 
     it('does not ask for a window when the catalog does not know the product', () => {
@@ -139,5 +149,29 @@ describe('SaveStatus', () => {
         const o = order([], { Save: vi.fn(async () => true) });
         await o.SaveStatus('Voided', 'could not void');
         expect(o.Status).toBe('Voided');
+    });
+});
+
+describe('OrderLineEntity refuses a service period that ends before it starts', () => {
+    function check(start: Date | null, end: Date | null): ValidationResult {
+        const result = new ValidationResult();
+        result.Success = true;
+        const stub = { ServicePeriodStart: start, ServicePeriodEnd: end };
+        (OrderLineEntity.prototype as unknown as { refuseBackwardsServicePeriod(r: ValidationResult): void })
+            .refuseBackwardsServicePeriod.call(stub, result);
+        return result;
+    }
+
+    it('names the end date with a plain message', () => {
+        const result = check(new Date(Date.UTC(2026, 11, 31)), new Date(Date.UTC(2026, 9, 1)));
+        expect(result.Success).toBe(false);
+        expect(result.Errors[0].Source).toBe('ServicePeriodEnd');
+        expect(result.Errors[0].Message).toContain('on or after the start date');
+    });
+
+    it('accepts a one-day window and a half-filled one', () => {
+        const day = new Date(Date.UTC(2026, 9, 1));
+        expect(check(day, day).Success).toBe(true);
+        expect(check(day, null).Success).toBe(true);
     });
 });
