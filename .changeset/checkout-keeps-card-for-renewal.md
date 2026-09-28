@@ -1,8 +1,8 @@
 ---
-'@mj-biz-apps/orders-entities': patch
-'@mj-biz-apps/orders-core-entities-server': patch
-'@mj-biz-apps/orders-server': patch
-'@mj-biz-apps/orders-ng': patch
+'@mj-biz-apps/orders-entities': minor
+'@mj-biz-apps/orders-core-entities-server': minor
+'@mj-biz-apps/orders-server': minor
+'@mj-biz-apps/orders-ng': minor
 ---
 
 The anonymous checkout now keeps the buyer's card when the order sells an auto-renewing subscription, so the renewal can be charged later. Before paying, it reuses or creates the buyer's gateway customer (found through their own wallet, never by e-mail) and asks the gateway to keep the card (`setup_future_usage: off_session` on Stripe); after the capture books, it files the card in the buyer's wallet (`PaymentDetail` + `CustomerPaymentMethod`) and sets it as each new subscription's renewal card (new `Subscription.DefaultCustomerPaymentMethodID`). Keeping the card is fail-soft: a failure is logged and never blocks or reverses the sale.
