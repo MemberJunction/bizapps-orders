@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../RailCustomerNameLimit.js', () => ({
     LoadBillToName: vi.fn(async () => ({ Kind: 'Organization', Name: 'x'.repeat(120) })),
-    CheckOrderBillToName: vi.fn(async () => ['Organization name is 120 characters; Bill.com customers.name allows 100. Shorten it before saving.']),
+    CheckOrderBillToName: vi.fn(async () => ['Organization name is 120 characters; Bill.com customers.name allows 100. Shorten it.']),
 }));
 
 import { OrderEntityServer } from '../OrderEntityServer.js';

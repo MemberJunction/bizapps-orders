@@ -78,7 +78,7 @@ describe('CheckRailCustomerName', () => {
 
     it('rejects a longer name, naming the field and the limit', async () => {
         expect(await CheckRailCustomerName(billComRail(), 'Organization', 'x'.repeat(110), provider, user)).toBe(
-            'Organization name is 110 characters; Bill.com customers.name allows 100. Shorten it before saving.',
+            'Organization name is 110 characters; Bill.com customers.name allows 100. Shorten it.',
         );
     });
 
@@ -96,7 +96,7 @@ describe('CheckRailInvoiceNumber', () => {
 
     it('rejects a longer number, naming the field and the limit', async () => {
         expect(await CheckRailInvoiceNumber(billComRail(), 'N'.repeat(101), provider, user)).toBe(
-            'Invoice number is 101 characters; Bill.com invoices.invoiceNumber allows 100. Shorten it before saving.',
+            'Invoice number is 101 characters; Bill.com invoices.invoiceNumber allows 100. Shorten it.',
         );
     });
 
@@ -111,7 +111,7 @@ describe('CheckOrderBillToName', () => {
     it("checks each selling company's rail and skips companies that invoice natively", async () => {
         vi.mocked(FindInvoiceRailForCompany).mockImplementation(async (companyID: string) => (companyID === 'company-1' ? billComRail() : null));
         const messages = await CheckOrderBillToName(['company-1', 'company-2'], { Kind: 'Organization', Name: 'x'.repeat(120) }, provider, user);
-        expect(messages).toEqual(['Organization name is 120 characters; Bill.com customers.name allows 100. Shorten it before saving.']);
+        expect(messages).toEqual(['Organization name is 120 characters; Bill.com customers.name allows 100. Shorten it.']);
         expect(FindInvoiceRailForCompany).toHaveBeenCalledTimes(2);
     });
 

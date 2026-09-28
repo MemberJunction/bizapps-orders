@@ -12,6 +12,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import { UserCache } from '@memberjunction/generic-database-provider';
 import { ExternalFieldLimitEngine } from '@mj-biz-apps/common-entities';
 import type { BaseInvoiceRail } from './BaseInvoiceRail.js';
 import { FindInvoiceRailForCompany } from './InvoiceRailResolver.js';
@@ -19,6 +20,15 @@ import { ORGANIZATION_ENTITY, PERSON_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 
 export type BillToPartyKind = 'Organization' | 'Person';
+
+/**
+ * Configures the limit engine with the server's system user, falling back to `user`. Field
+ * lengths are catalog data, so whether they can be read must not depend on which user's save or
+ * send is being checked.
+ */
+async function configureLimits(provider: IMetadataProvider, user: UserInfo): Promise<void> {
+    await ExternalFieldLimitEngine.Instance.Config(false, UserCache.Instance.GetSystemUser() ?? user, provider);
+}
 
 /** The message for `name` on `rail`, or null when it fits or the rail declares no targets. */
 export async function CheckRailCustomerName(
@@ -28,7 +38,7 @@ export async function CheckRailCustomerName(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<string | null> {
-    await ExternalFieldLimitEngine.Instance.Config(false, user, provider);
+    await configureLimits(provider, user);
     const targets = rail.CustomerNameTargets();
     if (targets.length === 0) return null;
     return ExternalFieldLimitEngine.Instance.Check(`${partyKind} name`, name, targets);
@@ -45,7 +55,7 @@ export async function CheckRailInvoiceNumber(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<string | null> {
-    await ExternalFieldLimitEngine.Instance.Config(false, user, provider);
+    await configureLimits(provider, user);
     const targets = rail.InvoiceNumberTargets();
     if (targets.length === 0) return null;
     return ExternalFieldLimitEngine.Instance.Check('Invoice number', documentNumber, targets);
