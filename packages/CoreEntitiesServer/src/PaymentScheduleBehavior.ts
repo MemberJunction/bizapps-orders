@@ -239,7 +239,9 @@ export interface InstalmentCashFacts {
 export interface CashSplit {
     /** Cr Accounts Receivable: the part that settles instalments the customer has actually been billed for. */
     Receivable: number;
-    /** Cr Customer Deposits: the rest. Money in hand for something not yet billed is a customer deposit. */
+    /** Cr Customer Deposits: cash for instalments not yet billed, up to what they can still hold.
+     *  Money in hand for something not yet billed is a customer deposit; unnamed cash beyond the
+     *  whole schedule is not, and stays in `Receivable` as a customer credit. */
     Deposit: number;
 }
 
@@ -248,6 +250,12 @@ const LIVE_FOR_CASH = (r: InstalmentCashFacts): boolean => r.Status !== 'Cancele
 /** What a row can still absorb against an invoice the customer holds. Zero for a row never billed. */
 function billedUnpaid(row: InstalmentCashFacts): number {
     if (!row.DocumentNumber) return 0;
+    return Math.max(0, Money(Number(row.Amount) - Number(row.AmountPaid)));
+}
+
+/** What an unbilled row can still hold as a deposit: its unpaid amount. Zero for a billed row. */
+function unbilledRoom(row: InstalmentCashFacts): number {
+    if (row.DocumentNumber) return 0;
     return Math.max(0, Money(Number(row.Amount) - Number(row.AmountPaid)));
 }
 
@@ -286,8 +294,17 @@ export function SplitCashForCompany(
     const named = namedRowID ? mine.find((r) => key(r.ID) === key(namedRowID)) : undefined;
     const capacity = named ? billedUnpaid(named) : Money(mine.reduce((sum, r) => sum + billedUnpaid(r), 0));
 
-    const receivable = Money(Math.min(share, capacity));
-    return { Receivable: receivable, Deposit: Money(share - receivable) };
+    const settles = Money(Math.min(share, capacity));
+
+    // UNNAMED CASH BEYOND THE WHOLE SCHEDULE IS A CUSTOMER CREDIT IN AR, NOT A DEPOSIT (Jeremy,
+    // 2026-09-25 on #234). Customer Deposits holds only cash against a specific scheduled instalment
+    // not yet invoiced; the cascade places unnamed cash on no row once every row is full, so that
+    // excess belongs to no instalment and credits AR exactly as on an unscheduled order. The refund
+    // then mirrors it with no change: it releases only what the rows held, and the rest debits AR.
+    // Named cash is untouched: the cascade puts all of it on the named row, which holds it.
+    const room = named ? Infinity : Money(mine.reduce((sum, r) => sum + unbilledRoom(r), 0));
+    const deposit = Money(Math.min(share - settles, room));
+    return { Receivable: Money(share - deposit), Deposit: deposit };
 }
 
 /* ── Consuming, holding and releasing deposits (#234 review) ────────────────────────────────── */
@@ -327,6 +344,34 @@ export function ConsumeReceivable(
 }
 
 /**
+ * Charge a deposit against the facts, so the next line of the same payment sees the room it used.
+ *
+ * Without this, two unnamed lines of one payment would each see the same unbilled room and each
+ * book a deposit for it, and the excess beyond the schedule would go to Customer Deposits after
+ * all. A named row takes the whole deposit (the cascade puts named cash there regardless of room);
+ * unnamed cash fills unbilled rows in the order they came back, as the cascade does.
+ */
+export function ConsumeDeposit(
+    facts: InstalmentCashFacts[],
+    companyID: string,
+    amount: number,
+    namedRowID?: string | null,
+): InstalmentCashFacts[] {
+    const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
+    const named = namedRowID
+        ? facts.find((r) => key(r.ID) === key(namedRowID) && key(r.CompanyID) === key(companyID))
+        : undefined;
+    let left = Money(amount);
+    return facts.map((row) => {
+        if (left <= 0 || key(row.CompanyID) !== key(companyID) || !LIVE_FOR_CASH(row)) return row;
+        if (named && row !== named) return row;
+        const used = named ? left : Math.min(left, unbilledRoom(row));
+        left = Money(left - used);
+        return used > 0 ? { ...row, AmountPaid: Money(row.AmountPaid + used) } : row;
+    });
+}
+
+/**
  * The customer deposits a company's rows hold: cash on a row beyond what that row has billed.
  *
  * An unbilled row's whole `AmountPaid` is a deposit, since nothing was invoiced for it; a billed row
@@ -351,9 +396,9 @@ export function HeldDeposit(rows: InstalmentCashFacts[], companyID: string): num
  * stories: a refund that the cascade takes out of instalment 2's prepayment debits Customer
  * Deposits, one that it takes out of instalment 1's settled invoice debits AR.
  *
- * ponytail: unnamed cash beyond every row's room is placed on no row, so a refund of an overpayment
- * of the WHOLE order sees only what the rows held. Size such a refund from the original payment's
- * entry if it ever matters.
+ * Unnamed cash beyond every row's room is placed on no row, and the capture credits it to AR rather
+ * than Customer Deposits (`SplitCashForCompany`), so a refund that sees only what the rows held
+ * debits AR for that excess: the mirror of what the capture booked.
  */
 export function DepositReleasedByCompany(before: InstalmentCashFacts[], after: InstalmentCashFacts[]): Map<string, number> {
     const companies = new Set([...before, ...after].map((r) => r.CompanyID.toLowerCase()));
@@ -406,6 +451,7 @@ export function PlanLineDeposits(
         }
         const split = SplitCashForCompany(amount, share.CompanyID, facts, namedRowID);
         facts = ConsumeReceivable(facts, share.CompanyID, split.Receivable, namedRowID);
+        facts = ConsumeDeposit(facts, share.CompanyID, split.Deposit, namedRowID);
         if (split.Deposit > 0) deposits.set(company, split.Deposit);
     }
     return { Deposits: deposits, Working: { Facts: facts, Released: released } };

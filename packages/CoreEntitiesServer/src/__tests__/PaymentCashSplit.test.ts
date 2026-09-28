@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+    ConsumeDeposit,
     ConsumeReceivable,
     DepositReleasedByCompany,
     HeldDeposit,
@@ -54,8 +55,22 @@ describe('SplitCashForCompany', () => {
         expect(SplitCashForCompany(150, CO_A, rows)).toEqual({ Receivable: 60, Deposit: 90 });
     });
 
-    it('a fully paid invoice contributes nothing', () => {
-        expect(SplitCashForCompany(50, CO_A, [invoiced('1', 100, 100)])).toEqual({ Receivable: 0, Deposit: 50 });
+    it('a fully paid schedule has no room, so unnamed cash is a customer credit in AR (Jeremy, #234)', () => {
+        expect(SplitCashForCompany(50, CO_A, [invoiced('1', 100, 100)])).toEqual({ Receivable: 50, Deposit: 0 });
+    });
+
+    it("Jeremy's overpayment: 400 on a 300 schedule with instalment 1 issued is AR 200, deposit 200", () => {
+        const rows = [invoiced('1', 100), row({ ID: '2' }), row({ ID: '3' })];
+        expect(SplitCashForCompany(400, CO_A, rows)).toEqual({ Receivable: 200, Deposit: 200 });
+    });
+
+    it('a deposit is bounded by what the unbilled rows can still hold', () => {
+        const rows = [row({ ID: '1', AmountPaid: 70 }), row({ ID: '2', AmountPaid: 120 })];
+        expect(SplitCashForCompany(50, CO_A, rows)).toEqual({ Receivable: 20, Deposit: 30 });
+    });
+
+    it('naming a Scheduled row keeps the whole amount a deposit, even beyond the row', () => {
+        expect(SplitCashForCompany(150, CO_A, [row({ ID: '1' })], '1')).toEqual({ Receivable: 0, Deposit: 150 });
     });
 
     it('cash short of the invoiced total leaves no deposit', () => {
@@ -156,6 +171,22 @@ describe('DepositReleasedByCompany', () => {
         const before = [row({ ID: '1' })];
         const after = [row({ ID: '1', AmountPaid: 30 })];
         expect(DepositReleasedByCompany(before, after).get(CO_A)).toBe(0);
+    });
+});
+
+describe('ConsumeDeposit', () => {
+    it('two unnamed lines of one payment share the unbilled room rather than each seeing all of it', () => {
+        const start = { Facts: [row({ ID: '1' }), row({ ID: '2' })], Released: new Map<string, number>() };
+        const first = PlanLineDeposits([{ CompanyID: CO_A, Amount: 150 }], false, null, start);
+        expect(first.Deposits.get(CO_A)).toBe(150);
+        const second = PlanLineDeposits([{ CompanyID: CO_A, Amount: 150 }], false, null, first.Working);
+        expect(second.Deposits.get(CO_A)).toBe(50);
+    });
+
+    it('a named deposit fills its own row, however much, and takes room from later unnamed cash', () => {
+        const after = ConsumeDeposit([row({ ID: '1' }), row({ ID: '2' })], CO_A, 130, '2');
+        expect(after.map((r) => r.AmountPaid)).toEqual([0, 130]);
+        expect(SplitCashForCompany(150, CO_A, after)).toEqual({ Receivable: 50, Deposit: 100 });
     });
 });
 

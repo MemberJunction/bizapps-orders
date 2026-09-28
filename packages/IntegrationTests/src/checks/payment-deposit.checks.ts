@@ -1,5 +1,5 @@
 /**
- * payment-deposit.checks.ts — the `payment-deposit` bundle (PM1–PM12).
+ * payment-deposit.checks.ts — the `payment-deposit` bundle (PM1–PM15).
  *
  * CASH AHEAD OF BILLING IS NOT A PAYMENT ON ACCOUNT (D91). A scheduled company books no value at
  * confirm, so until an instalment is invoiced there is no receivable for cash to clear. Crediting
@@ -27,6 +27,11 @@
  *   PM11 a deposit for a company with no Customer Deposits account is refused, naming both
  *   PM12 refunding PM3's named deposit mirrors it: Dr Customer Deposits / Cr Cash, and the named
  *        instalment goes back to zero paid
+ *   PM13 a two-line order that does not divide evenly: a prepaid instalment issues and every
+ *        instalment bills exactly its row (and each line exactly its amount)
+ *   PM14 the same on a single taxed line, net and tax sliced together
+ *   PM15 unnamed cash beyond the whole schedule credits AR, not Customer Deposits, and its refund
+ *        nets both accounts to zero (Jeremy's ruling)
  *
  * PM1 is the cascade half and PM2/PM3 the ledger half of one rule; they are in one bundle because
  * a change that satisfies either alone is wrong.
@@ -180,12 +185,12 @@ const schedule = (ctx: IntegrationCheckContext, orderID: string) =>
            FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE OrderHeaderID='${orderID}' ORDER BY InstallmentNumber`,
     );
 
-/** A confirmed order for `gross`, with the given instalments when any are asked for. */
+/** A confirmed order for `gross` (or one line per `unitPrices`), with the given instalments when any are asked for. */
 async function orderWith(
     ctx: IntegrationCheckContext,
     instalments: { InstallmentNumber: number; DueDate: string; Amount: number }[],
     gross = 300,
-    over: { companyID?: string; productID?: string } = {},
+    over: { companyID?: string; productID?: string; unitPrices?: number[] } = {},
 ) {
     const f = Fx();
     const companyID = over.companyID ?? f.CoA.ID;
@@ -193,7 +198,7 @@ async function orderWith(
         CompanyID: companyID,
         BillToOrganizationID: f.Customers.OrganizationID,
         OrderDate: new Date('2026-07-01T00:00:00Z'),
-        Lines: [{ ProductID: over.productID ?? f.Products.WidgetA, Quantity: 1, UnitPrice: gross }],
+        Lines: (over.unitPrices ?? [gross]).map((price) => ({ ProductID: over.productID ?? f.Products.WidgetA, Quantity: 1, UnitPrice: price })),
     });
     Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
     const orderID = draft.Order.ID as string;
@@ -274,6 +279,13 @@ async function refund(ctx: IntegrationCheckContext, paymentID: string): Promise<
 const TWO = [
     { InstallmentNumber: 1, DueDate: '2026-07-15', Amount: 100 },
     { InstallmentNumber: 2, DueDate: '2026-10-15', Amount: 200 },
+];
+
+/** Three instalments whose amounts do not divide the lines evenly. */
+const thirds = (a: number, b: number, c: number) => [
+    { InstallmentNumber: 1, DueDate: '2026-08-15', Amount: a },
+    { InstallmentNumber: 2, DueDate: '2026-09-15', Amount: b },
+    { InstallmentNumber: 3, DueDate: '2026-10-15', Amount: c },
 ];
 
 export const PaymentDepositChecks: NamedCheck[] = [
@@ -643,6 +655,110 @@ export const PaymentDepositChecks: NamedCheck[] = [
                     `SELECT ID FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE ID='${result.Payment.ID ?? '00000000-0000-0000-0000-000000000000'}'`,
                 );
                 AssertEqual(stored, null, 'and nothing was written');
+            }),
+    },
+    {
+        Id: 'payment-deposit.PM13',
+        Name: 'PM13: a prepaid instalment on a two-line order that does not divide evenly issues, and bills exactly its row',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Andrew's worked example (#234 third review, item 1): lines 1,000 and 250 in three
+                // equal instalments, rows 416.67 / 416.67 / 416.66. Sliced line by line, instalment 2
+                // billed 416.66, so the 416.67 deposit met a smaller bill and the issue threw.
+                const f = Fx();
+                const orderID = await orderWith(ctx, thirds(416.67, 416.67, 416.66), 1250, { unitPrices: [1000, 250] });
+                const rows = await schedule(ctx, orderID);
+                const ar = await accountCodeForRole(ctx, 'Accounts Receivable', f.CoA.ID);
+                const deposits = await accountCodeForRole(ctx, CUSTOMER_DEPOSITS, f.CoA.ID);
+
+                const paymentID = await pay(ctx, orderID, 416.67, rows[1].ID);
+                const issued = await issue(ctx, rows[1].ID);
+                Assert(issued.JournalEntryID != null, 'the prepaid instalment issues and posts its bill');
+                const bill2 = await instalmentEntryLines(ctx, rows[1].ID);
+                const capture = await allocationLines(ctx, paymentID);
+                AssertEqual(creditedTo(capture, deposits), 416.67, 'capture: Cr Customer Deposits 416.67');
+                AssertEqual(debitedTo(bill2, ar), 416.67, 'instalment 2 bills exactly its row');
+                AssertEqual(debitedTo(bill2, deposits), 416.67, 'and the deposit clears it in full');
+                AssertEqual(netOn([...capture, ...bill2], ar), 0, 'AR is zero for instalment 2');
+                AssertEqual(netOn([...capture, ...bill2], deposits), 0, 'and so is Customer Deposits');
+
+                // The mirror case: instalment 1 used to bill 416.68 on a 416.67 row, leaving a cent
+                // open in AR after the customer paid the invoice in full.
+                await issue(ctx, rows[0].ID);
+                const bill1 = await instalmentEntryLines(ctx, rows[0].ID);
+                AssertEqual(debitedTo(bill1, ar), 416.67, 'instalment 1 bills exactly its row');
+                const paid1 = await allocationLines(ctx, await pay(ctx, orderID, 416.67));
+                AssertEqual(netOn([...bill1, ...paid1], ar), 0, 'paying the invoice in full leaves no cent in AR');
+
+                // And the last instalment takes the remainder, so every line bills its full amount.
+                await issue(ctx, rows[2].ID);
+                AssertEqual(debitedTo(await instalmentEntryLines(ctx, rows[2].ID), ar), 416.66, 'instalment 3 bills exactly its row');
+                const billed = await TxQuery<{ BilledToDate: number }>(
+                    ctx,
+                    `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}' ORDER BY LineNumber`,
+                );
+                AssertEqual(billed.map((b) => Number(b.BilledToDate)).join(','), '1000,250', 'each line has billed exactly its amount');
+            }),
+    },
+    {
+        Id: 'payment-deposit.PM14',
+        Name: 'PM14: a prepaid instalment on a single taxed line issues, net and tax sliced together',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // 100 net + 10% tax = 110 over three rows. Net and tax sliced separately billed
+                // instalment 2 at 33.33 + 3.33 = 36.66 against a 36.67 row.
+                const f = Fx();
+                const { orderID, ids, saved, message } = await scheduledOrder(ctx, thirds(36.67, 36.67, 36.66), {
+                    gross: 100,
+                    charges: [{ Code: 'SalesTax', Rate: 0.1 }],
+                });
+                Assert(saved, `confirm: ${message}`);
+                const ar = await accountCodeForRole(ctx, 'Accounts Receivable', f.CoA.ID);
+                const deposits = await accountCodeForRole(ctx, CUSTOMER_DEPOSITS, f.CoA.ID);
+
+                const capture = await allocationLines(ctx, await pay(ctx, orderID, 36.67, ids[1]));
+                await issue(ctx, ids[1]);
+                const bill = await instalmentEntryLines(ctx, ids[1]);
+                AssertEqual(debitedTo(bill, ar), 36.67, 'instalment 2 bills exactly its row, tax included');
+                AssertEqual(netOn([...capture, ...bill], ar), 0, 'AR ends at zero');
+                AssertEqual(netOn([...capture, ...bill], deposits), 0, 'and Customer Deposits at zero');
+                const debits = Math.round(bill.reduce((t, l) => t + Number(l.DebitAmount ?? 0), 0) * 100) / 100;
+                const credits = Math.round(bill.reduce((t, l) => t + Number(l.CreditAmount ?? 0), 0) * 100) / 100;
+                AssertEqual(debits, credits, 'and the bill balances with its tax credit sliced from the same piece');
+            }),
+    },
+    {
+        Id: 'payment-deposit.PM15',
+        Name: 'PM15: unnamed cash beyond the whole schedule credits AR as a customer credit, and its refund mirrors it',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Jeremy's ruling on #234: pay 400 on a 300 order with instalment 1 issued. 100
+                // settles the invoice, 200 is held against instalments 2 and 3, and the 100 beyond
+                // every row is a credit on the customer's account in AR, not a deposit.
+                const f = Fx();
+                const orderID = await orderWith(ctx, thirds(100, 100, 100), 300);
+                const rows = await schedule(ctx, orderID);
+                await issue(ctx, rows[0].ID);
+                const paymentID = await pay(ctx, orderID, 400);
+
+                const ar = await accountCodeForRole(ctx, 'Accounts Receivable', f.CoA.ID);
+                const deposits = await accountCodeForRole(ctx, CUSTOMER_DEPOSITS, f.CoA.ID);
+                const capture = await allocationLines(ctx, paymentID);
+                AssertEqual(creditedTo(capture, ar), 200, 'Cr AR 200: the invoice plus the customer credit');
+                AssertEqual(creditedTo(capture, deposits), 200, 'Cr Customer Deposits 200: only what instalments 2 and 3 hold');
+
+                const refundLines = await allocationLines(ctx, await refund(ctx, paymentID));
+                AssertEqual(debitedTo(refundLines, deposits), 200, 'the refund releases the 200 of deposits');
+                AssertEqual(debitedTo(refundLines, ar), 200, 'and debits AR for the rest');
+                const both = [...capture, ...refundLines];
+                AssertEqual(netOn(both, ar), 0, 'the payment and refund net to nothing on AR (was -100)');
+                AssertEqual(netOn(both, deposits), 0, 'and to nothing on Customer Deposits (was +100)');
+
+                const after = await schedule(ctx, orderID);
+                AssertEqual(after.map((r) => Number(r.AmountPaid)).join(','), '0,0,0', 'and the schedule holds nothing');
             }),
     },
 ];
