@@ -82,8 +82,7 @@ overlaps AS (
         pr.LaterID,
         pr.MatchBasis,
         MIN(CASE WHEN ta.StartDate > tb.StartDate THEN ta.StartDate ELSE tb.StartDate END) AS OverlapStart,
-        MAX(CASE WHEN ta.EndDate   < tb.EndDate   THEN ta.EndDate   ELSE tb.EndDate   END) AS OverlapEnd,
-        SUM(tb.Amount) AS LaterOverlappingTermsAmount
+        MAX(CASE WHEN ta.EndDate   < tb.EndDate   THEN ta.EndDate   ELSE tb.EndDate   END) AS OverlapEnd
     FROM pairs pr
     INNER JOIN [__mj_BizAppsOrders].SubscriptionTerm ta
             ON ta.SubscriptionID = pr.EarlierID
@@ -117,10 +116,25 @@ SELECT
     lo.ID                         AS LaterOrderHeaderID,
     lo.OrderNumber                AS LaterOrderNumber,
     lo.ConfirmedAt                AS LaterOrderConfirmedAt,
-    ov.LaterOverlappingTermsAmount
+    amt.LaterOverlappingTermsAmount
 FROM overlaps ov
 INNER JOIN live e ON e.ID = ov.EarlierID
 INNER JOIN live l ON l.ID = ov.LaterID
+-- Summed per later TERM, not per overlapping term pair: a later term that overlaps two earlier
+-- terms is counted once.
+OUTER APPLY (
+    SELECT SUM(tb.Amount) AS LaterOverlappingTermsAmount
+    FROM [__mj_BizAppsOrders].SubscriptionTerm tb
+    WHERE tb.SubscriptionID = ov.LaterID
+      AND tb.Status NOT IN (N'Canceled', N'Lapsed')
+      AND EXISTS (
+          SELECT 1
+          FROM [__mj_BizAppsOrders].SubscriptionTerm ta
+          WHERE ta.SubscriptionID = ov.EarlierID
+            AND ta.Status NOT IN (N'Canceled', N'Lapsed')
+            AND tb.StartDate <= ta.EndDate
+            AND ta.StartDate <= tb.EndDate)
+) amt
 LEFT JOIN [__mj_BizAppsOrders].OrderLine eol ON eol.ID = e.OrderLineID
 LEFT JOIN [__mj_BizAppsOrders].OrderHeader eo ON eo.ID = eol.OrderHeaderID
 LEFT JOIN [__mj_BizAppsOrders].OrderLine lol ON lol.ID = l.OrderLineID
