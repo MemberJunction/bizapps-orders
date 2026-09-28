@@ -47,6 +47,12 @@ export const ORDERS_SETTING = {
      * A whole number of 0 or more; `off` disables the cutoff.
      */
     RenewalAccessCutoffDaysPastDue: 'RenewalAccessCutoffDaysPastDue',
+    /**
+     * Days before a line's service start that its invoice goes out, when neither the line's product
+     * category nor any ancestor states `InvoiceLeadDays` (orders #342). Drives the one-row schedule
+     * a hand-confirmed, future-dated order gets at confirm. A whole number of 0 or more.
+     */
+    DefaultInvoiceLeadDays: 'DefaultInvoiceLeadDays',
 } as const;
 
 /**
@@ -60,6 +66,7 @@ const DEFAULTS = {
     AutoPopulateOrganizationFromPerson: true,
     OrganizationAffiliationRelationshipTypes: ['Employee'],
     RenewalAccessCutoffDaysPastDue: 14,
+    DefaultInvoiceLeadDays: 30,
 } as const;
 
 /** Anything other than an explicit falsey string is true — an unparseable value should not disable a feature silently. */
@@ -188,6 +195,14 @@ export class OrdersSettings {
             this.raw(ORDERS_SETTING.RenewalAccessCutoffDaysPastDue),
             DEFAULTS.RenewalAccessCutoffDaysPastDue,
         );
+    }
+
+    /**
+     * The fallback invoice lead, in days. `off` is not a meaning this setting has, so it reads as
+     * the default like any other unreadable value.
+     */
+    public static get DefaultInvoiceLeadDays(): number {
+        return asDaysOrOff(this.raw(ORDERS_SETTING.DefaultInvoiceLeadDays), DEFAULTS.DefaultInvoiceLeadDays) ?? DEFAULTS.DefaultInvoiceLeadDays;
     }
 
 }

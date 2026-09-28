@@ -49,6 +49,7 @@ import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
     OrderHeaderEntity,
+    mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
     mjBizAppsOrdersOrderLineEntity,
     type AddressLike,
     mjBizAppsOrdersOrderLinePriceComponentEntity,
@@ -87,7 +88,7 @@ import {
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
-import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { DefaultScheduleRows, ExplainShortfalls, ResolveInvoiceLeadDays, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
@@ -619,7 +620,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // per-company gross does not exist until the lines are written. Throwing rolls the
                 // whole confirm back: no journal entries, no subscription, no sequence number spent.
                 // An order with no schedule rows has nothing to check and books exactly as before.
-                const scheduleRows = await this.verifyScheduleTies(lines);
+                let scheduleRows = await this.verifyScheduleTies(lines);
+
+                // NO SCHEDULE AND A FUTURE SERVICE START: one row per company, due lead-days before
+                // the start (orders #342). Written here, inside the transaction and before booking,
+                // so D92 books it like any hand-entered schedule; re-read so the tie check covers it.
+                if (!scheduleRows.length && (await this.writeDefaultSchedule(lines))) {
+                    scheduleRows = await this.verifyScheduleTies(lines);
+                }
 
                 // Subscriptions before booking: a term must exist so recognition entries can anchor
                 // to it (D46) and use its anchored/prorated window rather than raw line dates.
@@ -3605,6 +3613,56 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (!shortfalls.length) return rows.Results ?? [];
         const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
         throw new Error(ExplainShortfalls(this.OrderNumber ?? '', shortfalls, (id) => String(names.get(id) ?? id)));
+    }
+
+    /**
+     * Give an order confirmed with NO schedule the default one-row-per-company schedule when its
+     * service starts further out than the invoice lead (orders #342). Returns whether it wrote any.
+     *
+     * The rule is {@link DefaultScheduleRows}; the lead comes from each line's product category, then
+     * its ancestors (the pricing walk, `OrdersEngine.CategoryChain`), then `DefaultInvoiceLeadDays`.
+     * A reversal order never gets one: it settles against its origin, not on a schedule of its own.
+     * An EVENT line never triggers one either: tickets are paid at registration, so its event dates
+     * are not a reason to hold the invoice back. It still counts toward its company's gross.
+     */
+    private async writeDefaultSchedule(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<boolean> {
+        if (lines.some((l) => l.ReversesOrderLineID)) return false;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        await LoadOrdersEngine(provider, user);
+        await OrdersSettings.Load(provider, user);
+        const engine = OrdersEngine.Instance;
+        const fallback = OrdersSettings.DefaultInvoiceLeadDays;
+        const orderDay = ToISODate(await CalendarDayOrToday(this.OrderDate, provider, user)) as string;
+
+        const drafts = DefaultScheduleRows(
+            lines.map((l) => ({
+                CompanyID: String(l.CompanyID),
+                LineTotalGross: Number(l.LineTotalGross ?? 0),
+                ServicePeriodStart: engine.EventProductByID(l.ProductID) ? null : l.ServicePeriodStart,
+                LeadDays: ResolveInvoiceLeadDays(
+                    engine.CategoryChain(engine.ProductByID(l.ProductID)?.ProductCategoryID).map((id) => engine.ProductCategoryByID(id)?.InvoiceLeadDays),
+                    fallback,
+                ),
+            })),
+            orderDay,
+        );
+        for (const draft of drafts) {
+            const row = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity>(ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, user);
+            row.NewRecord();
+            row.OrderHeaderID = this.ID;
+            row.CompanyID = draft.CompanyID;
+            row.InstallmentNumber = draft.InstallmentNumber;
+            row.DueDate = new Date(`${draft.DueDate}T00:00:00Z`);
+            row.Amount = draft.Amount;
+            row.Status = 'Scheduled';
+            if (!(await row.Save())) {
+                throw new Error(
+                    `Order ${this.OrderNumber} could not write its default payment schedule: ${row.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+        }
+        return drafts.length > 0;
     }
 
     /**

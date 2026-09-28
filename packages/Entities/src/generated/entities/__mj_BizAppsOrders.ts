@@ -4463,6 +4463,11 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Display Name: Pricing Driver Class
         * * SQL Data Type: nvarchar(255)
         * * Description: ClassFactory key of a BasePriceResolver subclass for every product in this category (and, unless overridden, its child categories), or NULL. See Product.PricingDriverClass for the resolution order.`),
+    InvoiceLeadDays: z.number().nullable().describe(`
+        * * Field Name: InvoiceLeadDays
+        * * Display Name: Invoice Lead Days
+        * * SQL Data Type: int
+        * * Description: Days before a line's service start that its invoice falls due, for an order confirmed with no payment schedule: such an order gets one Scheduled instalment per company, due on the earliest service start less the lowest lead among its dated lines, when that day is after the order date. NULL inherits from the parent category, and a tree with none uses the Orders application setting DefaultInvoiceLeadDays.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company
@@ -18946,6 +18951,19 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
     }
     set PricingDriverClass(value: string | null) {
         this.Set('PricingDriverClass', value);
+    }
+
+    /**
+    * * Field Name: InvoiceLeadDays
+    * * Display Name: Invoice Lead Days
+    * * SQL Data Type: int
+    * * Description: Days before a line's service start that its invoice falls due, for an order confirmed with no payment schedule: such an order gets one Scheduled instalment per company, due on the earliest service start less the lowest lead among its dated lines, when that day is after the order date. NULL inherits from the parent category, and a tree with none uses the Orders application setting DefaultInvoiceLeadDays.
+    */
+    get InvoiceLeadDays(): number | null {
+        return this.Get('InvoiceLeadDays');
+    }
+    set InvoiceLeadDays(value: number | null) {
+        this.Set('InvoiceLeadDays', value);
     }
 
     /**

@@ -43,5 +43,16 @@
       "lastModified": "2026-09-28T21:24:27.258Z",
       "checksum": "8a306a2d3c2df73af1018c43dde117f7fe4a8afa7b1f673d586ce3468d45888f"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "DefaultInvoiceLeadDays",
+      "Value": "30",
+      "Comments": "Days before a line's service start that a hand-confirmed order's default one-row payment schedule falls due, when neither the line's product category nor any ancestor category sets InvoiceLeadDays. Applies only to an order confirmed with no payment schedule whose earliest service start is further away than the lead. A whole number of 0 or more; an unreadable value falls back to 30."
+    },
+    "primaryKey": {
+      "ID": "585A4B9C-3B50-4C56-AEA8-EC43EA07CF7F"
+    }
   }
 ]

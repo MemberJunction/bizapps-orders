@@ -11688,6 +11688,9 @@ export class mjBizAppsOrdersProductCategory_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
+    @Field(() => Int, {nullable: true, description: `Days before a line's service start that its invoice falls due, for an order confirmed with no payment schedule: such an order gets one Scheduled instalment per company, due on the earliest service start less the lowest lead among its dated lines, when that day is after the order date. NULL inherits from the parent category, and a tree with none uses the Orders application setting DefaultInvoiceLeadDays.`}) 
+    InvoiceLeadDays?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -11761,6 +11764,9 @@ export class CreatemjBizAppsOrdersProductCategoryInput {
     @Field({ nullable: true })
     PricingDriverClass: string | null;
 
+    @Field(() => Int, { nullable: true })
+    InvoiceLeadDays: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -11809,6 +11815,9 @@ export class UpdatemjBizAppsOrdersProductCategoryInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field(() => Int, { nullable: true })
+    InvoiceLeadDays?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

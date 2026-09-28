@@ -129,6 +129,57 @@ export function RenewalScheduleRows(lines: ScheduleLineFacts[], dueDate: string)
 }
 
 /**
+ * A line's invoice lead in days (orders #342): the nearest `InvoiceLeadDays` stated on its product
+ * category or an ancestor, else `fallback` (the `DefaultInvoiceLeadDays` setting).
+ *
+ * @param chainLeads The category's own value first, then each ancestor's, nearest first.
+ */
+export function ResolveInvoiceLeadDays(chainLeads: ReadonlyArray<number | null | undefined>, fallback: number): number {
+    return chainLeads.find((d) => d != null) ?? fallback;
+}
+
+/** A line as the default-schedule rule reads it. */
+export interface DefaultScheduleLineFacts extends ScheduleLineFacts {
+    ServicePeriodStart: DateCell;
+    /** {@link ResolveInvoiceLeadDays} for the line's category. */
+    LeadDays: number;
+}
+
+/**
+ * The one-row schedule a hand-confirmed order with NO schedule gets (orders #342, Jeremy's ruling).
+ *
+ * Per company: the earliest `ServicePeriodStart` among its lines that have one, less the lowest lead
+ * among those same lines. When that day falls AFTER `orderDay`, the company gets one row for its
+ * whole line gross, due that day, so D92 books no receivable at confirm and the instalment is billed
+ * when it falls due. Otherwise the company gets nothing and books as it always has. A company with no
+ * dated line, or whose lines come to nothing, gets nothing.
+ *
+ * @param orderDay The order's business day, `YYYY-MM-DD`. Compared as a string, which is a calendar
+ *   comparison for ISO dates.
+ */
+export function DefaultScheduleRows(lines: DefaultScheduleLineFacts[], orderDay: string): Array<ScheduleRowDraft & { CompanyID: string }> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(orderDay)) throw new Error(`The default schedule needs the order day as YYYY-MM-DD; got '${orderDay}'.`);
+    const byCompany = new Map<string, DefaultScheduleLineFacts[]>();
+    for (const l of lines) {
+        const key = String(l.CompanyID).toLowerCase();
+        byCompany.set(key, [...(byCompany.get(key) ?? []), l]);
+    }
+    const out: Array<ScheduleRowDraft & { CompanyID: string }> = [];
+    for (const companyLines of byCompany.values()) {
+        const dated = companyLines.filter((l) => ToISODate(l.ServicePeriodStart) != null);
+        if (!dated.length) continue;
+        const start = dated.map((l) => ToISODate(l.ServicePeriodStart) as string).sort()[0];
+        const due = AddDays(start, -Math.min(...dated.map((l) => l.LeadDays))) as string;
+        if (due <= orderDay) continue;
+        const total = Money(companyLines.reduce((sum, l) => sum + Number(l.LineTotalGross ?? 0), 0));
+        if (total <= 0) continue;
+        const [row] = BuildPaymentSchedule({ Total: total, Count: 1, Cadence: 'Annual', FirstDueDate: due });
+        out.push({ ...row, CompanyID: companyLines[0].CompanyID });
+    }
+    return out;
+}
+
+/**
  * When a spawned renewal's instalment is due (orders #305 review): the invoice day plus the
  * customer's payment terms, never later than the order date (the new term's start).
  *

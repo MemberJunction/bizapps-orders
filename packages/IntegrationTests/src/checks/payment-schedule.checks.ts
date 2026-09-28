@@ -39,6 +39,12 @@
  *   PS-G  Scenario 3: an UpFront line earns in full at confirm, the unbilled part to the contract asset
  *   PS-H  a line carrying an Unbilled balance is invoiced against Unbilled FIRST, then Deferred
  *   PS-I  a discount spanning a due AND a future instalment is booked ONCE, at recognition
+ *   PS-J  no schedule, service start beyond the lead: one row due start − lead, no AR until issued (#342)
+ *   PS-K  no schedule, service start within the lead: no row, books AR at confirm as before
+ *   PS-L  an order confirmed with its own rows keeps them — no default row is added
+ *   PS-M  a category's InvoiceLeadDays (90) wins over the DefaultInvoiceLeadDays setting (30)
+ *   PS-N  two companies on one order each get their own default row
+ *   PS-O  an event ticket 60 days out books at confirm with no default row
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -58,7 +64,7 @@ import {
     type IntegrationCheckContext,
     type NamedCheck,
 } from '@memberjunction/testing-integration';
-import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OrderHeaderEntity, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { BuildInvoiceDocuments, type OrderHeaderPaymentScheduleEntityServer } from '@mj-biz-apps/orders-core-entities-server';
 import {
     ACCT_SCHEMA,
@@ -70,8 +76,10 @@ import {
     TeardownOrdersFixture,
     TxOne,
     TxQuery,
+    upsertViaEntity,
 } from '../fixture.js';
-import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from '../entity-names.js';
+import { World } from '../world/world.js';
+import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, PRODUCT_CATEGORY_ENTITY } from '../entity-names.js';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
 import type { RequestedCharge } from '@mj-biz-apps/orders-core-entities-server';
 import { CreatePayment } from '../payment-builder.js';
@@ -363,6 +371,40 @@ const FUTURE = [
     { InstallmentNumber: 2, DueDate: '2027-10-01', Amount: 100 },
     { InstallmentNumber: 3, DueDate: '2028-07-01', Amount: 100 },
 ];
+
+/**
+ * Confirm a DeferredA order with no schedule, dated 2026-07-01, whose service starts on `start`
+ * (orders #342). DeferredA is EvenOverTime and takes its period from the line, in BCP's SERVICES
+ * category, which states no InvoiceLeadDays — so the lead is the 30-day default unless a check sets one.
+ */
+async function unscheduledFutureOrder(ctx: IntegrationCheckContext, start: string, extraLines: Array<{ ProductID: string; Quantity: number; UnitPrice: number; ServicePeriodStart?: string }> = []) {
+    const f = Fx();
+    const result = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        OrderDate: new Date('2026-07-01T00:00:00Z'),
+        Lines: [
+            { ProductID: f.Products.DeferredA, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: start, ServicePeriodEnd: '2027-12-31' },
+            ...extraLines,
+        ],
+    } as Parameters<typeof ConfirmOrder>[1]);
+    Assert(result.Saved, `confirm failed: ${result.Message}`);
+    return result.Order.ID as string;
+}
+
+/** Run `body` with BCP's SERVICES category stating `days`, through the entity so the catalog cache sees it. */
+async function withServicesLead(ctx: IntegrationCheckContext, days: number, body: () => Promise<void>): Promise<void> {
+    const categoryID = World().Categories['BCP:SERVICES'];
+    Assert(categoryID != null, "ORD-WORLD category 'BCP:SERVICES' was not loaded");
+    await upsertViaEntity(ctx, PRODUCT_CATEGORY_ENTITY, categoryID, { InvoiceLeadDays: days });
+    await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+    try {
+        await body();
+    } finally {
+        await upsertViaEntity(ctx, PRODUCT_CATEGORY_ENTITY, categoryID, { InvoiceLeadDays: null });
+        await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+    }
+}
 
 export const PaymentScheduleChecks: NamedCheck[] = [
     {
@@ -949,6 +991,122 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 const totals = await lineTotals(ctx, orderID);
                 AssertEqual(Number(totals[0].BilledToDate), 900, 'BilledToDate is net, not gross');
                 AssertEqual(Number(totals[0].RecognizedToDate), 900, 'and it has caught up to recognition');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-J',
+        Name: 'PS-J: no schedule and a service start beyond the lead gets one row due start − lead; AR waits for the invoice',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // ORD-000039's shape: confirmed by hand, coverage starts well after the order date.
+                const orderID = await unscheduledFutureOrder(ctx, '2027-01-01');
+
+                const rows = await schedule(ctx, orderID);
+                AssertEqual(rows.length, 1, `one default row: ${JSON.stringify(rows)}`);
+                AssertEqual(rows[0].InstallmentNumber, 1, 'instalment 1');
+                AssertEqual(rows[0].DueDate, '2026-12-02', 'due 30 days (the default lead) before the 2027-01-01 start');
+                AssertEqual(Number(rows[0].Amount), 1200, "for the company's whole line gross");
+                AssertEqual(rows[0].Status, 'Scheduled', 'not issued at confirm — it is not due yet');
+
+                const atConfirm = await allLedger(ctx, orderID);
+                AssertEqual(netOn(atConfirm, AR_CODE), 0, 'no receivable at confirm (D92)');
+
+                const issued = await issue(ctx, rows[0].ID);
+                Assert(issued.Success, `issue: ${issued.Message}`);
+                const after = await allLedger(ctx, orderID);
+                assertBalanced(after, 'confirm plus the invoice');
+                AssertEqual(netOn(after, AR_CODE), 1200, 'the receivable appears when the instalment is issued');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-K',
+        Name: 'PS-K: no schedule and a service start within the lead gets no row and books AR at confirm',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const orderID = await unscheduledFutureOrder(ctx, '2026-07-20');
+                AssertEqual((await schedule(ctx, orderID)).length, 0, 'no default row inside the lead');
+                AssertEqual(netOn(await bookingLedger(ctx, orderID), AR_CODE), 1200, 'the whole order is a receivable at confirm, as before');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-L',
+        Name: 'PS-L: an order confirmed with its own schedule keeps it — no default row is added',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const { orderID, saved, message } = await scheduledOrder(ctx, FUTURE, {
+                    productID: f.Products.DeferredA,
+                    servicePeriod: { Start: '2028-01-01', End: '2028-12-31' },
+                });
+                Assert(saved, `confirm: ${message}`);
+                const rows = await schedule(ctx, orderID);
+                AssertEqual(
+                    JSON.stringify(rows.map((r) => [r.InstallmentNumber, r.DueDate, Number(r.Amount)])),
+                    JSON.stringify(FUTURE.map((r) => [r.InstallmentNumber, r.DueDate, r.Amount])),
+                    'exactly the hand-entered rows',
+                );
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-M',
+        Name: "PS-M: a category's InvoiceLeadDays (90) wins over the DefaultInvoiceLeadDays setting (30)",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                await withServicesLead(ctx, 90, async () => {
+                    const orderID = await unscheduledFutureOrder(ctx, '2027-01-01');
+                    const rows = await schedule(ctx, orderID);
+                    AssertEqual(rows.length, 1, 'one default row');
+                    AssertEqual(rows[0].DueDate, '2026-10-03', 'due 90 days before the start, not 30');
+                });
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-N',
+        Name: 'PS-N: two companies on one order each get their own default row',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // BCP's DeferredA starts 2027-01-01; HH's membership states its term start, 2027-04-15.
+                // Both recognise over time, so neither needs an Unbilled link (HH has none).
+                const hhMembership = World().Products['HH-MEM'];
+                Assert(hhMembership != null, "ORD-WORLD product 'HH-MEM' was not loaded");
+                const orderID = await unscheduledFutureOrder(ctx, '2027-01-01', [
+                    { ProductID: hhMembership!, Quantity: 1, UnitPrice: 300, ServicePeriodStart: '2027-04-15' },
+                ]);
+                const rows = await schedule(ctx, orderID);
+                AssertEqual(rows.length, 2, `a row per company: ${JSON.stringify(rows)}`);
+                const byCompany = new Map(rows.map((r) => [r.CompanyID.toLowerCase(), r]));
+                const bcp = byCompany.get(f.CoA.ID.toLowerCase());
+                const hh = byCompany.get(f.CoB.ID.toLowerCase());
+                Assert(bcp != null && hh != null, 'one for each selling company');
+                AssertEqual([bcp!.DueDate, Number(bcp!.Amount)].join(' '), '2026-12-02 1200', 'BCP: its own gross, due 30 days before its start');
+                AssertEqual([hh!.DueDate, Number(hh!.Amount)].join(' '), '2027-03-16 300', 'HH: its own gross, due 30 days before its start');
+                AssertEqual(netOn(await allLedger(ctx, orderID), AR_CODE), 0, 'and neither company has a receivable yet');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-O',
+        Name: 'PS-O: an event ticket 60 days out books at confirm with no default row',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Tickets are paid at registration (Jeremy's call pending): event dates never defer the invoice.
+                const f = Fx();
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date(f.Event.StartsAt.getTime() - 60 * 86_400_000),
+                    Lines: [{ ProductID: f.Products.EventTicket, Quantity: 1, UnitPrice: 500 }],
+                });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+                const orderID = result.Order.ID as string;
+                AssertEqual((await schedule(ctx, orderID)).length, 0, 'no default row for an event ticket');
+                AssertEqual(netOn(await bookingLedger(ctx, orderID), AR_CODE), 500, 'the ticket is a receivable at confirm, as before');
             }),
     },
 ];
