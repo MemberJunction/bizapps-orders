@@ -25,7 +25,7 @@
  */
 import BodyParser from 'body-parser';
 import type { Application, Request, Response } from 'express';
-import { LogError, LogStatus, Metadata, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { LogError, LogStatus, Metadata, type IMetadataProvider, type UserInfo, RunView, type IRunViewProvider } from '@memberjunction/core';
 import { UserCache } from '@memberjunction/generic-database-provider';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseServerExtension, type ExtensionHealthResult, type ExtensionInitResult, type ServerExtensionConfig } from '@memberjunction/server-extensions-core';
@@ -126,7 +126,48 @@ export async function HandleBillComWebhook(
     void runPoll(req.providerId, provider, user).catch((err) => LogError(`Bill.com webhook-triggered poll for ${req.providerId} failed: ${err instanceof Error ? err.message : String(err)}`));
 }
 
+/** The Action behind `Orders — Poll External Payments`, whose scheduled job governs this route. */
+const POLL_ACTION_ID = 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B11';
+const SCHEDULED_JOB_ENTITY = 'MJ: Scheduled Jobs';
+
+/**
+ * A NOTIFICATION MUST NOT RECORD CASH THE SCHEDULED JOB IS NOT YET ALLOWED TO RECORD.
+ *
+ * This route used to call the poll with `Preview: false` outright. Both jobs ship Disabled and in
+ * Preview precisely so Finance reads one run before any money moves, and merging this branch is
+ * supposed to turn nothing on — but the route is enabled in the server config, so the day somebody
+ * registered the Bill.com subscription and set the secret, the first `invoice.updated` event would
+ * have captured a real payment and posted Dr Cash / Cr A/R before anyone had approved a preview.
+ *
+ * So the webhook now follows the job rather than overriding it: it polls only when the scheduled poll
+ * job is Active AND out of Preview. Anything else is logged and ignored, because a webhook-driven
+ * preview writes nothing and nobody reads its output — the scheduled run is where a preview belongs.
+ */
+export function PollJobIsLive(job: { Status: string | null; Configuration: string | null } | null | undefined): { Live: boolean; Why: string } {
+    if (!job) return { Live: false, Why: 'no scheduled poll job is installed' };
+    if ((job.Status ?? '').trim().toLowerCase() !== 'active') return { Live: false, Why: `the scheduled poll job is ${job.Status?.trim() || 'not active'}` };
+    // Preview is a Static param on the job, and the scheduler stores every parameter as TEXT — so the
+    // flag arrives as the STRING "true", which is why this reads the text rather than a boolean.
+    const preview = /"Value"\s*:\s*"true"/i.test(job.Configuration ?? '');
+    if (preview) return { Live: false, Why: 'the scheduled poll job is still in Preview' };
+    return { Live: true, Why: 'the scheduled poll job is live' };
+}
+
+async function pollIsLive(provider: IMetadataProvider, user: UserInfo): Promise<{ Live: boolean; Why: string }> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<{ Status: string | null; Configuration: string | null }>(
+        { EntityName: SCHEDULED_JOB_ENTITY, ExtraFilter: `Configuration LIKE '%${POLL_ACTION_ID}%'`, Fields: ['Status', 'Configuration'], ResultType: 'simple' },
+        user,
+    );
+    return PollJobIsLive(r.Results?.[0]);
+}
+
 async function defaultRunPoll(providerId: string, provider: IMetadataProvider, user: UserInfo): Promise<void> {
+    const live = await pollIsLive(provider, user);
+    if (!live.Live) {
+        LogStatus(`[Orders] Bill.com notification for ${providerId} acknowledged but NOT polled: ${live.Why}. Nothing was recorded.`);
+        return;
+    }
     const result = await new OrdersPollExternalPaymentsOperation().Execute({ PaymentProviderID: providerId, Preview: false }, { provider, user });
     const out = result.Output;
     LogStatus(`[Orders] Bill.com webhook-triggered poll for ${providerId}: ${out?.Message ?? result.ErrorMessage ?? 'no result'}`);

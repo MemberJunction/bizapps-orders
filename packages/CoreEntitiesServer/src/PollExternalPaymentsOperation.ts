@@ -45,7 +45,12 @@ import {
 } from '@mj-biz-apps/orders-entities';
 
 import type { BaseInvoiceRail, RailPaymentRecord } from './BaseInvoiceRail.js';
-import { EXTERNAL_PAYMENT_ENTITY, ORDER_HEADER_ENTITY, PAYMENT_PROVIDER_SYNC_STATE_ENTITY } from './entity-names.js';
+import {
+    EXTERNAL_PAYMENT_ENTITY,
+    ORDER_HEADER_ENTITY,
+    PAYMENT_LINE_ENTITY,
+    PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
+} from './entity-names.js';
 import { ListInvoiceRailProviderIDs, ResolveInvoiceRail } from './InvoiceRailResolver.js';
 import { LoadExternalInvoicesByRef, updateExternalInvoice } from './IssueExternalInvoiceOperation.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
@@ -106,6 +111,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             Held: 0,
             Unmatched: 0,
             Refused: 0,
+            Reapplied: 0,
             ReversalNeeded: 0,
             Ignored: 0,
             Outcomes: [],
@@ -131,18 +137,19 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 else if (o.Disposition === 'Held') out.Held++;
                 else if (o.Disposition === 'Unmatched') out.Unmatched++;
                 else if (o.Disposition === 'Refused') out.Refused++;
+                else if (o.Disposition === 'Reapplied') out.Reapplied++;
                 else if (o.Disposition === 'ReversalNeeded') out.ReversalNeeded++;
                 else out.Ignored++;
             }
             if (faults.length) {
                 return { ...out, Success: false, ResultCode: 'ERROR', Message: `The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
             }
-            if (!preview && out.Unmatched + out.Refused + out.ReversalNeeded > 0) {
+            if (!preview && out.Unmatched + out.Refused + out.Reapplied + out.ReversalNeeded > 0) {
                 return {
                     ...out,
                     Success: false,
                     ResultCode: 'ATTENTION',
-                    Message: `${out.Captured} payment(s) captured; ${out.Unmatched} unmatched, ${out.Refused} refused and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).`,
+                    Message: `${out.Captured} payment(s) captured; ${out.Unmatched} unmatched, ${out.Refused} refused, ${out.Reapplied} re-applied on the rail and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).`,
                 };
             }
             out.Message = preview
@@ -253,7 +260,17 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
     ): Promise<ExternalPaymentOutcome> {
         const providerID = rail.Config.PaymentProviderID;
         const base = { PaymentProviderID: providerID, ExternalPaymentRef: p.ExternalPaymentRef, Amount: money(p.Amount), ExternalStatus: p.Status };
-        const decision = DecideExternalPayment({ ExternalPaymentRef: p.ExternalPaymentRef, Status: p.Status, PriorDisposition: prior?.Disposition ?? null });
+        // Only a captured payment can have been re-applied, so the ledger read is skipped otherwise.
+        const applicationsChanged =
+            prior?.Disposition === 'Captured' && prior.PaymentHeaderID
+                ? await applicationsDiffer(String(prior.PaymentHeaderID), p, providerID, provider, user)
+                : undefined;
+        const decision = DecideExternalPayment({
+            ExternalPaymentRef: p.ExternalPaymentRef,
+            Status: p.Status,
+            PriorDisposition: prior?.Disposition ?? null,
+            ApplicationsChanged: applicationsChanged,
+        });
 
         const record = async (disposition: ExternalPaymentDisposition, reason: string, paymentHeaderID: string | null = prior?.PaymentHeaderID ?? null) => {
             if (!preview) await upsertExternalPayment(provider, user, providerID, p, prior, disposition, reason, paymentHeaderID);
@@ -268,6 +285,10 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         if (decision.Action === 'Hold') {
             await record('Held', decision.Reason);
             return { ...base, Disposition: 'Held', Reason: decision.Reason };
+        }
+        if (decision.Action === 'Reapplied') {
+            await record('Reapplied', decision.Reason);
+            return { ...base, Disposition: 'Reapplied', Reason: decision.Reason, PaymentHeaderID: prior?.PaymentHeaderID ?? null };
         }
         if (decision.Action === 'ReversalNeeded') {
             await record('ReversalNeeded', decision.Reason);
@@ -447,6 +468,59 @@ async function loadOrders(orderIDs: readonly string[], provider: IMetadataProvid
     );
     for (const o of r.Results ?? []) map.set(String(o.ID).toLowerCase(), { BillToOrganizationID: o.BillToOrganizationID, BillToPersonID: o.BillToPersonID });
     return map;
+}
+
+/**
+ * Whether the rail's current application of a payment still matches the payment lines we hold.
+ *
+ * Bill.com lets Finance re-apply a receipt after the fact: 700.00 recorded against invoice A becomes
+ * 300.00 on A and 400.00 on B, or moves to invoice C entirely. The payment's own total never changes,
+ * so every later poll saw "already captured" and did nothing, while Orders showed the wrong invoices
+ * settled and nothing anywhere said so.
+ *
+ * Compared as a set of (order, amount) pairs rather than by invoice: our PaymentLines record the
+ * ORDER an amount landed on, which is what a person would have to re-allocate. A rail invoice we
+ * cannot map to an order is treated as a difference — it means the money now points somewhere we did
+ * not send.
+ */
+async function applicationsDiffer(
+    paymentHeaderID: string,
+    p: RailPaymentRecord,
+    providerID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<boolean> {
+    try {
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const lines = await rv.RunView<{ OrderHeaderID: string; Amount: number }>(
+            {
+                EntityName: PAYMENT_LINE_ENTITY,
+                ExtraFilter: `PaymentHeaderID = '${RequireUUID(paymentHeaderID, 'PaymentHeaderID')}'`,
+                Fields: ['OrderHeaderID', 'Amount'],
+                ResultType: 'simple',
+            },
+            user,
+        );
+        const refs = p.InvoicePayments.map((ip) => ip.ExternalInvoiceRef).filter(Boolean);
+        const invoices = await LoadExternalInvoicesByRef(providerID, refs, provider, user);
+        const orderByRef = new Map(invoices.map((i) => [String(i.ExternalInvoiceRef).toLowerCase(), String(i.OrderHeaderID).toLowerCase()]));
+
+        const key = (pairs: Array<[string, number]>) =>
+            pairs
+                .map(([order, amount]) => `${order}:${money(amount).toFixed(2)}`)
+                .sort()
+                .join('|');
+
+        const ours = key((lines.Results ?? []).map((l) => [String(l.OrderHeaderID).toLowerCase(), Number(l.Amount)]));
+        const theirs = key(
+            p.InvoicePayments.map((ip) => [orderByRef.get(String(ip.ExternalInvoiceRef).toLowerCase()) ?? `unmapped:${ip.ExternalInvoiceRef}`, ip.Amount]),
+        );
+        return ours !== theirs;
+    } catch (err) {
+        // A failure to compare must not invent a difference, which would park a correct payment.
+        LogError(`Could not compare Bill.com applications for payment ${p.ExternalPaymentRef}: ${err}`);
+        return false;
+    }
 }
 
 /** Best effort: refresh the rail's view of the invoices a payment touched. A failure here is logged, never fatal. */

@@ -218,6 +218,28 @@ export function DecideInvoiceable(i: {
             }
             break;
         case 'Canceled':
+            // AN INSTALMENT IS NEVER RE-ISSUED — Craig's ruling on golive #242, Jeremy agreeing. The
+            // replacement comes from a new `Scheduled` row carrying the next instalment number. The
+            // old number cannot come back anyway: Bill.com keeps it on the archived invoice and
+            // refuses a duplicate with 422, so `AllowReissue` here only ever produced a refusal from
+            // the rail, after telling the person it would work.
+            if (i.ScheduleRowNamed) {
+                return {
+                    Verdict: 'Refuse',
+                    Code: 'HAS_HISTORY',
+                    Reason:
+                        'This instalment was cancelled on the rail and keeps its number as history. Instalments are never re-issued: ' +
+                        'cancel the instalment itself to raise a credit memo and a replacement row, which bills under the next number.',
+                };
+            }
+            if (!i.AllowReissue) {
+                return {
+                    Verdict: 'Refuse',
+                    Code: 'HAS_HISTORY',
+                    Reason: 'This unit was previously canceled on the rail. Re-issuing is a deliberate act: send again with AllowReissue.',
+                };
+            }
+            break;
         case 'Failed':
             if (!i.AllowReissue) {
                 return {

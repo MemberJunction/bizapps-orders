@@ -56,6 +56,7 @@ import {
     LoadBillComPaymentProvider,
     LoadBillComInvoiceRail,
     LoadIssueExternalInvoiceOperation,
+    LoadAdoptExternalInvoiceOperation,
     LoadCancelExternalInvoiceOperation,
     LoadGetExternalInvoicingWorklistOperation,
     LoadSendExternalInvoicesOperation,
@@ -138,6 +139,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSpawnRenewalsOperation();      // the 'Orders.SpawnRenewals' remote operation (D55)
     LoadIssueExternalInvoiceOperation();        // 'Orders.IssueExternalInvoice' — one billing unit → one Bill.com invoice, once (golive #146)
     LoadCancelExternalInvoiceOperation();       // 'Orders.CancelExternalInvoice' — archive an unpaid rail invoice, no ledger event (golive #147)
+    LoadAdoptExternalInvoiceOperation();        // 'Orders.AdoptExternalInvoice' — resolve a claimed unit by recording the invoice the rail already holds
     LoadGetExternalInvoicingWorklistOperation(); // 'Orders.GetExternalInvoicingWorklist' — invoiceable and unsent, computed per request
     LoadSendExternalInvoicesOperation();        // 'Orders.SendExternalInvoices' — the sweep the scheduler calls
     LoadPollExternalPaymentsOperation();        // 'Orders.PollExternalPayments' — cleared Bill.com payments, captured once (golive #148)

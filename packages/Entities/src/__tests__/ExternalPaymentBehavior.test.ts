@@ -45,6 +45,43 @@ describe('DecideExternalPayment', () => {
     it('a refused capture is tried again next pass — the configuration may have been fixed', () => expect(DecideExternalPayment(seen('PAID', 'Refused')).Action).toBe('Capture'));
 });
 
+/**
+ * Bill.com lets Finance re-apply a receipt after we have recorded it: 700.00 against invoice A becomes
+ * 300.00 on A and 400.00 on B, or moves to invoice C. The payment total never changes, so "already
+ * captured" swallowed it and Orders kept showing the wrong invoices settled, silently and for ever.
+ */
+describe('a captured payment that the rail has re-applied', () => {
+    const seen = (over: Partial<Parameters<typeof DecideExternalPayment>[0]> = {}) => ({
+        ExternalPaymentRef: '0rp1',
+        Status: 'PAID',
+        PriorDisposition: 'Captured' as const,
+        ...over,
+    });
+
+    it('is reported for a person, not ignored', () => {
+        const d = DecideExternalPayment(seen({ ApplicationsChanged: true }));
+        expect(d.Action).toBe('Reapplied');
+        expect(d.Reason).toMatch(/different invoices/i);
+        expect(d.Reason).toMatch(/nothing is changed automatically/i);
+    });
+
+    it('is still ignored when the applications match', () => {
+        expect(DecideExternalPayment(seen({ ApplicationsChanged: false })).Action).toBe('Ignore');
+    });
+
+    it('is ignored when nothing checked — an unchecked payment must not look re-applied', () => {
+        expect(DecideExternalPayment(seen()).Action).toBe('Ignore');
+    });
+
+    it('still prefers a reversal when the rail voided it, re-applied or not', () => {
+        expect(DecideExternalPayment(seen({ Status: 'VOID', ApplicationsChanged: true })).Action).toBe('ReversalNeeded');
+    });
+
+    it('does not fire for a payment that was never captured', () => {
+        expect(DecideExternalPayment(seen({ PriorDisposition: 'Held', ApplicationsChanged: true })).Action).toBe('Capture');
+    });
+});
+
 describe('AllocateInvoicePayments', () => {
     const unit = (OrderHeaderID: string, OrderHeaderPaymentScheduleID: string | null = null, CompanyID = 'c'): UnitRef => ({
         OrderHeaderID, CompanyID, OrderHeaderPaymentScheduleID, BillToOrganizationID: 'org', BillToPersonID: null,

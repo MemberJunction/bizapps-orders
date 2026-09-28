@@ -12,7 +12,7 @@ export interface ExternalPaymentOutcome {
     ExternalPaymentRef: string;
     Amount: number;
     ExternalStatus: string | null;
-    Disposition: 'Captured' | 'Held' | 'Unmatched' | 'Refused' | 'Ignored' | 'ReversalNeeded';
+    Disposition: 'Captured' | 'Held' | 'Unmatched' | 'Refused' | 'Ignored' | 'Reapplied' | 'ReversalNeeded';
     Reason: string;
     PaymentNumber?: string | null;
     PaymentHeaderID?: string | null;
@@ -27,6 +27,8 @@ export interface OrdersPollExternalPaymentsOutput {
     Unmatched: number;
     /** Orders.CapturePayment refused the capture (split-company order, ambiguous payer, configuration). Counts as attention. */
     Refused: number;
+    /** Captured, then re-applied to different invoices in Bill.com. The cash is right; the allocation here is not. */
+    Reapplied: number;
     ReversalNeeded: number;
     Ignored: number;
     Outcomes: ExternalPaymentOutcome[];

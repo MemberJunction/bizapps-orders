@@ -4,12 +4,13 @@ import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import { MJConfirmService } from '@memberjunction/ng-ui-components';
 import {
+    OrdersAdoptExternalInvoiceOperation,
     OrdersCancelExternalInvoiceOperation,
     OrdersIssueExternalInvoiceOperation,
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { FormatDate, FormatMoney } from '../panels/money-format';
-import { CanCancel, CanSend, StateChipClass, StateLabel, type ExternalInvoiceLike } from '../panels/external-invoice-view';
+import { CanCancel, CanResolveInFlight, CanSend, StateChipClass, StateLabel, type ExternalInvoiceLike } from '../panels/external-invoice-view';
 
 /** One `ExternalInvoice` row as this panel needs it. Read by name; the panel never writes one. */
 interface ExternalInvoiceRow {
@@ -112,6 +113,32 @@ const RAIL_TYPE_CODES = ['BillCom'];
                     </table>
                 }
 
+                @if (Resolvable) {
+                    <div class="mjo-xi__inflight">
+                        <p class="small">
+                            <strong>{{ Selected!.DocumentNumber }} was never confirmed.</strong>
+                            {{ ProviderName }} may or may not hold this invoice — open it and look. If the invoice is there,
+                            record its reference below. If it is not, re-issue: the claim is superseded and a fresh invoice is sent.
+                        </p>
+                        <div class="row mjo-xi__inflight-row">
+                            <input
+                                type="text"
+                                class="mjo-xi__ref"
+                                [value]="AdoptRef"
+                                [disabled]="Busy"
+                                (input)="AdoptRef = $any($event.target).value"
+                                [attr.aria-label]="'The invoice reference in ' + ProviderName"
+                                [placeholder]="ProviderName + ' invoice reference'" />
+                            <button type="button" mjButton variant="primary" [disabled]="Busy || !AdoptRef.trim()" (click)="Adopt()">
+                                <i class="fa-solid fa-link" aria-hidden="true"></i> Record this reference
+                            </button>
+                            <button type="button" mjButton variant="outline" [disabled]="Busy" (click)="Reissue()">
+                                <i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Nothing there — re-issue
+                            </button>
+                        </div>
+                    </div>
+                }
+
                 <div class="row mjo-xi__actions">
                     @if (Sendable) {
                         <button type="button" mjButton variant="primary" [disabled]="Busy" (click)="Send()">
@@ -142,6 +169,10 @@ const RAIL_TYPE_CODES = ['BillCom'];
             .mjo-xi__errrow td { color: var(--mj-color-danger, #b42318); cursor: default; padding-top: 0; }
             .mjo-xi__table .num { text-align: right; font-variant-numeric: tabular-nums; }
             .mjo-xi__actions { align-items: center; gap: var(--mj-space-3); }
+            .mjo-xi__inflight { border: 1px solid var(--mj-color-border); border-radius: var(--mj-radius-2, 6px); padding: var(--mj-space-3); margin-bottom: var(--mj-space-3); }
+            .mjo-xi__inflight p { margin: 0 0 var(--mj-space-2); }
+            .mjo-xi__inflight-row { align-items: center; gap: var(--mj-space-2); flex-wrap: wrap; }
+            .mjo-xi__ref { flex: 1 1 18rem; min-width: 12rem; padding: var(--mj-space-2); border: 1px solid var(--mj-color-border); border-radius: var(--mj-radius-1, 4px); font-family: var(--mj-font-mono, monospace); }
         `,
     ],
 })
@@ -165,6 +196,8 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     public Busy = false;
     public Rows: ExternalInvoiceRow[] = [];
     public Selected: ExternalInvoiceRow | null = null;
+    /** What a person typed into the in-flight resolution box. Never sent anywhere but the adopt call. */
+    public AdoptRef = '';
     /** Read from the provider row, so a second rail needs no change here. */
     public ProviderName = 'the invoicing rail';
 
@@ -185,6 +218,11 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /** Only a live invoice can be withdrawn, and only the selected one. */
     public get Cancellable(): boolean {
         return CanCancel(this.Selected, this.Visible);
+    }
+
+    /** A send that was never confirmed, which only a person with the rail open can resolve. */
+    public get Resolvable(): boolean {
+        return CanResolveInFlight(this.Selected, this.Visible);
     }
 
     public StateLabel(row: ExternalInvoiceLike): string {
@@ -227,6 +265,75 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
                 return;
             }
             this.Notice = { Tone: 'success', Text: out.Message ?? `Sent as ${out.ExternalInvoiceRef}.` };
+            await this.load();
+        } finally {
+            this.Busy = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * The rail HAS the invoice: record its reference against the claimed row.
+     *
+     * No confirmation dialog, because this is the conservative answer — it posts nothing and sends
+     * nothing. The operation reads the invoice back and refuses a total that does not tie, which is
+     * the check that matters and is not one a dialog could make.
+     */
+    public async Adopt(): Promise<void> {
+        const row = this.Selected;
+        const ref = this.AdoptRef.trim();
+        if (!row || !ref || this.Busy) return;
+
+        this.Busy = true;
+        this.Notice = null;
+        this.cdr.detectChanges();
+        try {
+            const result = await new OrdersAdoptExternalInvoiceOperation().Execute({ ExternalInvoiceID: row.ID, ExternalInvoiceRef: ref });
+            const out = result.Output;
+            if (!result.Success || !out?.Success) {
+                this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The reference could not be recorded.' };
+                return;
+            }
+            this.Notice = { Tone: 'success', Text: out.Message ?? `${row.DocumentNumber} now carries ${ref}.` };
+            this.AdoptRef = '';
+            await this.load();
+        } finally {
+            this.Busy = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * The rail has NOTHING: supersede the claim and send again.
+     *
+     * This is the expensive answer if the person is wrong — it is what puts a second invoice in a
+     * customer's inbox — so it asks, and says plainly what it is relying on.
+     */
+    public async Reissue(): Promise<void> {
+        const row = this.Selected;
+        if (!row || this.Busy) return;
+        const proceed = await this.confirm.Confirm({
+            title: `Re-issue ${row.DocumentNumber}?`,
+            message: `This relies on ${this.ProviderName} holding no invoice for this unit.`,
+            detail: 'The unconfirmed send is marked Failed and a fresh invoice is created. If the rail does hold one, the customer receives a second invoice — record its reference instead.',
+            type: 'warning',
+            confirmText: 'Nothing is there — re-issue',
+            cancelText: 'Let me check again',
+        });
+        if (!proceed) return;
+
+        this.Busy = true;
+        this.Notice = null;
+        this.cdr.detectChanges();
+        try {
+            const result = await new OrdersIssueExternalInvoiceOperation().Execute({ OrderHeaderID: this.Record.ID, AllowReissue: true });
+            const out = result.Output;
+            if (!result.Success || !out?.Success) {
+                this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The invoice could not be re-issued.' };
+                return;
+            }
+            this.Notice = { Tone: 'success', Text: out.Message ?? `Sent as ${out.ExternalInvoiceRef}.` };
+            this.Selected = null;
             await this.load();
         } finally {
             this.Busy = false;

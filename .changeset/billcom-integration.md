@@ -19,8 +19,12 @@ An order billed as a whole is invoiceable at Confirmed; an instalment (PR #220) 
 frozen. The send is decoupled from both events: `Orders.SendExternalInvoices` works a computed worklist
 (`Orders.GetExternalInvoicingWorklist`) through `Orders.IssueExternalInvoice`, which claims the unit
 with a `Sending` row before the rail is called so a double send fails here rather than at Bill.com.
-`Orders.CancelExternalInvoice` archives an unpaid invoice and is blocked when money has been applied.
-Native email delivery refuses a unit that is invoiced through the rail.
+`Orders.CancelExternalInvoice` archives an unpaid invoice and is blocked when money has been applied;
+on an instalment it leaves the rail facts as history, because Craig ruled that an issued instalment is
+never re-issued — the replacement carries the next number. A send that times out leaves the unit
+claimed on purpose, and `Orders.AdoptExternalInvoice` is the other half of resolving that: it records
+the reference the rail already holds, after reading the invoice back and refusing a total that does not
+tie. Native email delivery refuses a unit that is invoiced through the rail.
 
 **Payments are polled, once.** Bill.com publishes no payment-received webhook, so
 `Orders.PollExternalPayments` reads receivable payments since a stored watermark, matches
@@ -32,9 +36,13 @@ run now.
 
 **Schema.** New tables `ExternalInvoice`, `ExternalCustomer`, `ExternalPayment`,
 `PaymentProviderSyncState`; new nullable `PaymentProvider.CompanyIntegrationID`. Three new `V`
-migrations targeting v5.15.0, plain DDL per the convention set on PR #220; the FK to
-`OrderHeaderPaymentSchedule` is added only where that table exists. Applied to a development database,
-with the CodeGen output folded under each migration's banner.
+migrations, plain DDL per the convention set on PR #220; the FK to `OrderHeaderPaymentSchedule` is added
+only where that table exists. Applied to a development database, with the CodeGen output folded under
+each migration's banner. A fourth migration, `BillCom_Metadata_Sync`, carries the declarative metadata —
+the `BillCom` provider type, the six remote operations, the two Actions with their 22 params and the two
+scheduled jobs — because `metadata/` is a dev-time source no host installs. It was generated from a
+database that did not hold those rows, so every statement is an `spCreate`, and each is guarded on the
+primary key or the row's natural key so a host that already has the row is left alone.
 
 **Verified live against the BILL sandbox**, not only in unit tests: customer and invoice create,
 archive, duplicate-number refusal, payment polling, and the full capture chain — a confirmed order
@@ -42,11 +50,10 @@ issued to Bill.com, a payment recorded there, and the poll capturing it, with th
 to zero and accounting booking DR Cash / CR Accounts Receivable against the confirm entry's DR AR /
 CR Sales. Re-polling from an earlier watermark captured nothing further.
 
-Two defects in `@memberjunction/connector-bill-com` 0.3.1 surfaced and are filed upstream
-(MemberJunction/Integrations #390 and #391, both fixed in PR #392): every generic request repeats the
-API version and 404s, and invoice archive has no connector verb. Until that release, a fresh database
-needs the version prefix stripped from the three seeded Bill.com `IntegrationObject` rows, and the
-gateway reaches the archive endpoint through the connector's own session.
+Two defects in `@memberjunction/connector-bill-com` 0.3.1 surfaced and were filed upstream
+(MemberJunction/Integrations #390 and #391, fixed in PR #392): every generic request repeated the API
+version and 404'd, and invoice archive had no connector verb. Both are released in 0.3.2, which this
+change depends on; the local workarounds are gone and archive goes through the connector's own verb.
 
 **The screens.** An **External invoicing** panel on the order form lists what the rail holds for that
 order and carries the two acts a person may take; it hides itself entirely for a company with no rail,
@@ -62,5 +69,6 @@ offering it against a unit already live — or one whose last send was never con
 billing unit becomes two invoices in a customer's inbox.
 
 **Scheduling.** Two Actions and two `MJ: Scheduled Jobs` rows (half-hourly send in business hours,
-hourly poll), both shipped **Disabled and set to Preview**, like the renewal job. The metadata rows
-reach a host only through a release `*__Metadata_Sync.sql`, which this change does not yet include.
+hourly poll), both shipped **Disabled and set to Preview**, like the renewal job, and installed by the
+metadata migration above. Enabling them is a deliberate act, and the webhook follows the poll job rather
+than overriding it.

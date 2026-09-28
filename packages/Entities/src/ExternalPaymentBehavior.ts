@@ -20,7 +20,7 @@
  * @module @mj-biz-apps/orders-entities
  */
 
-export type ExternalPaymentDisposition = 'Captured' | 'Held' | 'Unmatched' | 'Refused' | 'Ignored' | 'ReversalNeeded';
+export type ExternalPaymentDisposition = 'Captured' | 'Held' | 'Unmatched' | 'Refused' | 'Ignored' | 'Reapplied' | 'ReversalNeeded';
 
 export type RailPaymentClass = 'Cleared' | 'Pending' | 'Reversed';
 
@@ -57,11 +57,16 @@ export function ClassifyPaymentStatus(status: string | null | undefined): RailPa
 export interface PaymentSeen {
     ExternalPaymentRef: string;
     Status: string | null;
+    /**
+     * True when the rail's current `invoicePayments[]` no longer match the payment lines we hold for
+     * this payment. Computed by the caller (it needs the ledger); undefined means "not checked".
+     */
+    ApplicationsChanged?: boolean;
     /** What the last pass did with this payment, or null when it has never been seen. */
     PriorDisposition: ExternalPaymentDisposition | null;
 }
 
-export type ExternalPaymentAction = 'Capture' | 'Hold' | 'Ignore' | 'ReversalNeeded';
+export type ExternalPaymentAction = 'Capture' | 'Hold' | 'Ignore' | 'Reapplied' | 'ReversalNeeded';
 
 export function DecideExternalPayment(p: PaymentSeen): { Action: ExternalPaymentAction; Reason: string } {
     const cls = ClassifyPaymentStatus(p.Status);
@@ -70,6 +75,19 @@ export function DecideExternalPayment(p: PaymentSeen): { Action: ExternalPayment
     if (p.PriorDisposition === 'Captured') {
         if (cls === 'Reversed') {
             return { Action: 'ReversalNeeded', Reason: `${ref} was captured and Bill.com now reports it '${p.Status}'. The cash has to be reversed (bank-return path, O-US13); nothing is changed automatically.` };
+        }
+        // THE RAIL CAN MOVE MONEY WE ALREADY RECORDED. Bill.com lets Finance re-apply a receipt:
+        // 700.00 recorded against invoice A last week becomes 300.00 on A and 400.00 on B today, or
+        // moves to invoice C entirely. The payment is unchanged in total, so nothing here is wrong —
+        // but our PaymentLines now point at the wrong invoices, Orders shows B open while Bill.com
+        // shows it paid, and no amount of re-polling notices because the payment is "already
+        // captured". Reported for a person rather than silently ignored, the same posture a void
+        // after capture takes.
+        if (p.ApplicationsChanged === true) {
+            return {
+                Action: 'Reapplied',
+                Reason: `${ref} was captured, and Bill.com has since applied it to different invoices. The cash is right; the allocation here is not. Re-allocate it by hand — nothing is changed automatically.`,
+            };
         }
         return { Action: 'Ignore', Reason: `${ref} is already captured.` };
     }

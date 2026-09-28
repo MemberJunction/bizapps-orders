@@ -22,7 +22,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 import { BaseEntity, BaseRemotableOperation, CompositeKey, LogError, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
     OrdersIssueExternalInvoiceOperation as OrdersIssueExternalInvoiceOperationBase,
     type OrdersIssueExternalInvoiceInput,
@@ -162,6 +162,32 @@ export async function PaidOnBillingUnit(
     return money((r.Results ?? []).reduce((s, l) => s + Number(l.Amount), 0));
 }
 
+/**
+ * Which suffix letter this company's document carries — `-A`, `-B` — on a split order.
+ *
+ * MUST AGREE WITH `BuildDocuments`, which sorts the lines' company ids as the database returns them
+ * and takes the position in that array. The rail sends the number the customer's document prints; if
+ * the two disagree the customer holds a document numbered differently from the invoice raising it.
+ *
+ * COMPARED CASE-INSENSITIVELY, and that is the whole point of this function existing. SQL Server
+ * returns uppercase ids; a lower-cased needle found nothing, `Math.max(0, -1)` turned the miss into
+ * position 0, and every company on the order was numbered `-A`. Two Bill.com organisations then each
+ * received an invoice called `ORD-1234-A`; one organisation refused the second as a duplicate number
+ * and that company was never billed at all.
+ */
+export function companySuffixIndex(companies: readonly string[], companyID: string): number {
+    const index = [...companies].sort().findIndex((c) => UUIDsEqual(c, companyID));
+    // A miss cannot be silently position 0 again. On a single-company order the suffix is unused, so
+    // 0 is harmless; on a split order it is the bug above, so say so rather than mislabel a document.
+    if (index < 0 && companies.length > 1) {
+        throw new Error(
+            `Company ${companyID} does not appear among the companies selling on this order (${companies.join(', ')}), ` +
+                `so the document suffix cannot be derived. Refusing rather than numbering it as the first company.`,
+        );
+    }
+    return Math.max(0, index);
+}
+
 /** Registers {@link IssueExternalInvoiceOperation}. Called from the server bootstrap. */
 export function LoadIssueExternalInvoiceOperation(): void {
     void IssueExternalInvoiceOperation;
@@ -298,7 +324,7 @@ export async function IssueOneUnit(
               InstallmentCount: 1,
               DueDate: doc.DueDate,
               Amount: doc.Gross,
-              DocumentNumber: CompanyDocumentNumber(order.OrderNumber, Math.max(0, [...lineCompanies].sort().indexOf(companyID.toLowerCase())), Math.max(1, lineCompanies.length)),
+              DocumentNumber: CompanyDocumentNumber(order.OrderNumber, companySuffixIndex(lineCompanies, companyID), Math.max(1, lineCompanies.length)),
           };
     const invoiceDate = isoDate(row?.InvoicedAt ?? order.ConfirmedAt) ?? Today();
     const payload = BuildExternalInvoicePayload(
@@ -353,6 +379,20 @@ export async function IssueOneUnit(
     }
 
     // 7. Claim the unit (Sending) BEFORE the rail is called.
+    //
+    // A DELIBERATE RE-ISSUE MUST FIRST RETIRE THE CLAIM IT IS REPLACING. `Sending` means a send that
+    // was never confirmed, and `DecideInvoiceable` lets a person past it with AllowReissue once they
+    // have checked the rail. Without this the claim below hits UQ_ExternalInvoice_LiveUnit against the
+    // OLD row and answers "already in flight" — forever, because cancel refuses anything not Sent, the
+    // sweep skips in-flight units, and the order form hides the button. The only escape was editing
+    // the row by hand.
+    if (opts.AllowReissue && existing?.Status === 'Sending' && existing.ID) {
+        await updateExternalInvoice(provider, user, String(existing.ID), {
+            Status: 'Failed',
+            LastError: `Superseded by a deliberate re-issue at ${new Date().toISOString()}. The person re-issuing confirmed the rail holds no invoice for this unit.`,
+        });
+    }
+
     let externalInvoiceID: string;
     try {
         externalInvoiceID = await writeExternalInvoice(
@@ -464,6 +504,16 @@ function echoOf(row: ExternalInvoiceRow): Partial<OrdersIssueExternalInvoiceOutp
 }
 
 /** The unit's most relevant row: a live one if any, else the most recent of any status. */
+/** One external-invoice row by its own id. Used where a person names the row rather than the unit. */
+export async function LoadExternalInvoiceByID(id: string, provider: IMetadataProvider, user: UserInfo): Promise<ExternalInvoiceRow | null> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<ExternalInvoiceRow>(
+        { EntityName: EXTERNAL_INVOICE_ENTITY, ExtraFilter: `ID = '${RequireUUID(id, 'ExternalInvoiceID')}'`, ResultType: 'simple' },
+        user,
+    );
+    return r.Results?.[0] ?? null;
+}
+
 export async function LoadExternalInvoiceForUnit(
     paymentProviderID: string,
     unit: BillingUnitKey,

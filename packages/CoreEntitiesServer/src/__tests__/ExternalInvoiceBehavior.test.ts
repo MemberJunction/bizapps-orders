@@ -56,6 +56,38 @@ describe('DecideInvoiceable — an interrupted send', () => {
     });
 });
 
+/**
+ * Craig ruled on golive #242 (2026-09-22) and Jeremy agreed: an instalment is never re-issued.
+ * Cancelling one raises a credit memo and a REPLACEMENT row with the next number. The old number
+ * cannot come back anyway — Bill.com keeps it on the archived invoice and refuses a duplicate with
+ * 422 — so offering a re-issue promised something that could only fail at the rail.
+ */
+describe('DecideInvoiceable — a cancelled unit', () => {
+    const decide = (over: Partial<Parameters<typeof DecideInvoiceable>[0]> = {}) =>
+        DecideInvoiceable({
+            OrderStatus: 'Confirmed',
+            HasSchedule: false,
+            ScheduleRowStatus: null,
+            ScheduleRowNamed: false,
+            ExistingStatus: 'Canceled',
+            AllowReissue: false,
+            ...over,
+        });
+
+    it('never re-issues a cancelled instalment, even when asked', () => {
+        const d = decide({ ScheduleRowNamed: true, HasSchedule: true, AllowReissue: true });
+        expect(d.Verdict).toBe('Refuse');
+        expect(d.Code).toBe('HAS_HISTORY');
+        expect(d.Reason).toMatch(/never re-issued/i);
+        expect(d.Reason).toMatch(/replacement row/i);
+    });
+
+    it('still lets a whole-order unit be re-issued deliberately — no ruling there yet', () => {
+        expect(decide({ AllowReissue: true }).Verdict).toBe('Issue');
+        expect(decide({ AllowReissue: false }).Verdict).toBe('Refuse');
+    });
+});
+
 describe('BuildExternalInvoicePayload — refusals that should not happen', () => {
     it('sends a fractional-quantity order instead of drifting a cent per line', () => {
         // 2.5 × 13.332 stores as 33.33 a line. rowLines derives 13.33 back out, so summing the raw

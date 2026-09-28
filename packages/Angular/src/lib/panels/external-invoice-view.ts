@@ -24,7 +24,7 @@ export interface ExternalInvoiceLike {
 }
 
 /** What the poller left for a person. `Captured` and `Ignored` are finished and never appear. */
-export type PaymentExceptionDisposition = 'Held' | 'Unmatched' | 'Refused' | 'ReversalNeeded';
+export type PaymentExceptionDisposition = 'Held' | 'Unmatched' | 'Refused' | 'Reapplied' | 'ReversalNeeded';
 
 /**
  * Whether a person may send this order to the rail now.
@@ -37,6 +37,21 @@ export type PaymentExceptionDisposition = 'Held' | 'Unmatched' | 'Refused' | 'Re
 export function CanSend(orderStatus: string | null | undefined, rows: readonly ExternalInvoiceLike[], hasRail: boolean): boolean {
     if (!hasRail || orderStatus !== 'Confirmed') return false;
     return !rows.some((r) => r.Status === 'Sent' || r.Status === 'Sending');
+}
+
+/**
+ * Whether the selected row is a send that was never confirmed, and so needs a person to resolve it.
+ *
+ * A `Sending` row is the one state with no automatic way out: the sweep skips it, `CanSend` refuses
+ * it, and cancel refuses anything that is not `Sent`. Until this returned true the only exit was
+ * editing the row by hand in Explorer — which the row's own message nonetheless told people to do.
+ *
+ * The two answers are the rail's, not ours: the rail HOLDS the invoice (record its reference) or it
+ * does not (re-issue, superseding the claim). Both are offered together on purpose, because choosing
+ * between them means looking at the rail.
+ */
+export function CanResolveInFlight(selected: ExternalInvoiceLike | null | undefined, hasRail: boolean): boolean {
+    return hasRail && selected?.Status === 'Sending';
 }
 
 /** Only a live invoice can be withdrawn. A cancel posts nothing; a paid invoice is a refund instead. */
@@ -86,6 +101,8 @@ export function DispositionLabel(d: PaymentExceptionDisposition): string {
             return 'No invoice here';
         case 'Refused':
             return 'Capture refused';
+        case 'Reapplied':
+            return 'Re-applied on the rail';
         default:
             return 'Needs reversal';
     }

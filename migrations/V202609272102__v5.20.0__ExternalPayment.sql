@@ -36,7 +36,7 @@ CREATE TABLE [${flyway:defaultSchema}].[ExternalPayment] (
     CONSTRAINT [FK_ExternalPayment_PaymentProvider] FOREIGN KEY ([PaymentProviderID]) REFERENCES [${flyway:defaultSchema}].[PaymentProvider]([ID]),
     CONSTRAINT [FK_ExternalPayment_PaymentHeader]   FOREIGN KEY ([PaymentHeaderID])   REFERENCES [${flyway:defaultSchema}].[PaymentHeader]([ID]),
     CONSTRAINT [UQ_ExternalPayment_Ref] UNIQUE ([PaymentProviderID], [ExternalPaymentRef]),
-    CONSTRAINT [CK_ExternalPayment_Disposition] CHECK ([Disposition] IN (N'Captured', N'Held', N'Unmatched', N'Refused', N'Ignored', N'ReversalNeeded')),
+    CONSTRAINT [CK_ExternalPayment_Disposition] CHECK ([Disposition] IN (N'Captured', N'Held', N'Unmatched', N'Refused', N'Ignored', N'Reapplied', N'ReversalNeeded')),
     -- A captured payment always knows which PaymentHeader it made.
     CONSTRAINT [CK_ExternalPayment_CapturedHasHeader] CHECK ([Disposition] <> N'Captured' OR [PaymentHeaderID] IS NOT NULL)
 );

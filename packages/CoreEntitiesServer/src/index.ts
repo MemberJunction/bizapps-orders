@@ -372,6 +372,7 @@ export {
     LoadExternalInvoicesByRef,
 } from './IssueExternalInvoiceOperation.js';
 export type { ExternalInvoiceRow, IssueUnitOptions } from './IssueExternalInvoiceOperation.js';
+export { AdoptExternalInvoiceOperation, LoadAdoptExternalInvoiceOperation } from './AdoptExternalInvoiceOperation.js';
 export { CancelExternalInvoiceOperation, LoadCancelExternalInvoiceOperation, paidOnUnit } from './CancelExternalInvoiceOperation.js';
 export {
     GetExternalInvoicingWorklistOperation,

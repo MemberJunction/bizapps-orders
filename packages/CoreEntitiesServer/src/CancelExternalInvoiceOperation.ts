@@ -23,7 +23,7 @@ import {
 import { EXTERNAL_INVOICE_ENTITY, ORDER_HEADER_ENTITY, PAYMENT_LINE_ENTITY } from './entity-names.js';
 import { DecideCancel, money } from './ExternalInvoiceBehavior.js';
 import { ResolveInvoiceRail } from './InvoiceRailResolver.js';
-import { PaidOnBillingUnit, stampScheduleRow, updateExternalInvoice, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
+import { PaidOnBillingUnit, updateExternalInvoice, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
 @RegisterClass(BaseRemotableOperation, 'Orders.CancelExternalInvoice')
@@ -62,15 +62,31 @@ export class CancelExternalInvoiceOperation extends OrdersCancelExternalInvoiceO
 
             const canceledAt = new Date();
             await updateExternalInvoice(provider, user, row.ID, { Status: 'Canceled', CanceledAt: canceledAt, CancelReason: reason.slice(0, 500), ExternalStatus: 'ARCHIVED', LastSyncedAt: canceledAt });
-            if (row.OrderHeaderPaymentScheduleID) {
-                await stampScheduleRow(provider, user, String(row.OrderHeaderPaymentScheduleID), { ExternalSystem: null, ExternalInvoiceRef: null, SentAt: null });
+
+            // AN INSTALMENT IS NEVER RE-ISSUED. Craig ruled this on golive #242 (2026-09-22) and Jeremy
+            // agreed: cancelling an issued instalment produces a credit memo and a REPLACEMENT
+            // `Scheduled` row, which takes the next instalment number and so a new document number.
+            // Instalment numbers are never reused.
+            //
+            // This used to clear the schedule row's rail facts so the instalment read as unsent again,
+            // and told the person to re-issue it. That could not work: the frozen number goes back to
+            // Bill.com, which refuses a duplicate with 422, so the instalment could never be sent again
+            // and the message promised something impossible. The rail facts now stay as HISTORY —
+            // the rail did hold this invoice, and the credit memo references it by number.
+            const instalment = !!row.OrderHeaderPaymentScheduleID;
+            if (!instalment) {
+                // A whole-order unit has no replacement row to come from, and no ruling yet on what a
+                // re-issue would be numbered (Andrew is getting that from Craig). Clearing the header's
+                // display-only copy is still right: this order no longer has a live rail invoice.
+                await clearHeaderDocumentNumber(provider, user, String(row.OrderHeaderID), row.DocumentNumber);
             }
-            await clearHeaderDocumentNumber(provider, user, String(row.OrderHeaderID), row.DocumentNumber);
 
             return {
                 Success: true,
                 ResultCode: 'CANCELED',
-                Message: `${row.DocumentNumber} was archived on ${rail.Config.Name}. The unit reads as unsent; re-issue it deliberately if it is still owed.`,
+                Message: instalment
+                    ? `${row.DocumentNumber} was archived on ${rail.Config.Name}. The instalment keeps this number as history — instalments are never re-issued; cancel the instalment to raise a credit memo and a replacement row with the next number.`
+                    : `${row.DocumentNumber} was archived on ${rail.Config.Name}. The unit reads as unsent.`,
                 ExternalInvoiceID: row.ID,
                 CanceledAt: canceledAt.toISOString(),
             };

@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     CanCancel,
+    CanResolveInFlight,
     CanSend,
     DispositionChipClass,
     DispositionLabel,
@@ -121,5 +122,23 @@ describe('the vendor is never named in this module', () => {
         // The file header may cite the design note; no label, class or branch may name a vendor.
         const code = source.split('\n').filter((l) => !l.trimStart().startsWith('*') && !l.trimStart().startsWith('/*')).join('\n');
         expect(code).not.toMatch(/Bill\.?com/i);
+    });
+});
+
+describe('CanResolveInFlight', () => {
+    it('offers the resolution only for a send that was never confirmed', () => {
+        expect(CanResolveInFlight({ Status: 'Sending' }, true)).toBe(true);
+    });
+
+    it('refuses every settled state — those have their own answers', () => {
+        for (const Status of ['Sent', 'Canceled', 'Failed'] as const) {
+            expect(CanResolveInFlight({ Status }, true)).toBe(false);
+        }
+    });
+
+    it('refuses when nothing is selected, or when the company has no rail', () => {
+        expect(CanResolveInFlight(null, true)).toBe(false);
+        expect(CanResolveInFlight(undefined, true)).toBe(false);
+        expect(CanResolveInFlight({ Status: 'Sending' }, false)).toBe(false);
     });
 });

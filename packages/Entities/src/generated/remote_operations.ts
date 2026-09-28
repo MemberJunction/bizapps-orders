@@ -1633,6 +1633,51 @@ export class OrdersCancelExternalInvoiceOperation extends BaseRemotableOperation
 }
 
 // ============================================================
+// Orders.AdoptExternalInvoice — Adopt External Invoice
+// ============================================================
+export interface OrdersAdoptExternalInvoiceInput {
+    /** The claimed (`Sending`) ExternalInvoice row to resolve. */
+    ExternalInvoiceID: string;
+    /** The rail's own invoice id — Bill.com `00e…` — that this unit's send actually produced. */
+    ExternalInvoiceRef: string;
+    /** Report what would happen and write nothing. */
+    Preview?: boolean;
+}
+export type OrdersAdoptExternalInvoiceResultCode =
+    | 'ADOPTED'
+    | 'PREVIEWED'
+    | 'NOT_CLAIMED'
+    | 'NOT_FOUND_ON_RAIL'
+    | 'TIE_FAILED'
+    | 'ALREADY_ADOPTED'
+    | 'ERROR';
+export interface OrdersAdoptExternalInvoiceOutput {
+    Success: boolean;
+    Message?: string;
+    ResultCode: OrdersAdoptExternalInvoiceResultCode;
+    ExternalInvoiceID?: string | null;
+    ExternalInvoiceRef?: string | null;
+    DocumentNumber?: string | null;
+    /** What the rail says this invoice totals, when it could be read. */
+    ExternalTotal?: number | null;
+    /** What the unit is worth here. The two must agree to the cent. */
+    Amount?: number | null;
+}
+
+/**
+ * Adopt External Invoice
+ * Attaches an invoice the rail already holds to a unit whose send was never confirmed.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.AdoptExternalInvoice'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersAdoptExternalInvoiceOperation extends BaseRemotableOperation<OrdersAdoptExternalInvoiceInput, OrdersAdoptExternalInvoiceOutput> {
+    public readonly OperationKey = "Orders.AdoptExternalInvoice";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
 // Orders.GetExternalInvoicingWorklist — Get External Invoicing Worklist
 // ============================================================
 export interface OrdersGetExternalInvoicingWorklistInput {
@@ -1754,7 +1799,7 @@ export interface ExternalPaymentOutcome {
     ExternalPaymentRef: string;
     Amount: number;
     ExternalStatus: string | null;
-    Disposition: 'Captured' | 'Held' | 'Unmatched' | 'Refused' | 'Ignored' | 'ReversalNeeded';
+    Disposition: 'Captured' | 'Held' | 'Unmatched' | 'Refused' | 'Ignored' | 'Reapplied' | 'ReversalNeeded';
     Reason: string;
     PaymentNumber?: string | null;
     PaymentHeaderID?: string | null;
@@ -1769,6 +1814,8 @@ export interface OrdersPollExternalPaymentsOutput {
     Unmatched: number;
     /** Orders.CapturePayment refused the capture (split-company order, ambiguous payer, configuration). Counts as attention. */
     Refused: number;
+    /** Captured, then re-applied to different invoices in Bill.com. The cash is right; the allocation here is not. */
+    Reapplied: number;
     ReversalNeeded: number;
     Ignored: number;
     Outcomes: ExternalPaymentOutcome[];

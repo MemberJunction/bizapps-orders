@@ -26,7 +26,7 @@ vi.mock('@mj-biz-apps/orders-entities', async () => {
     return { ...actual, OrdersPollExternalPaymentsOperation: class { Execute = async () => ({ Success: true, Output: { Message: 'ok' } }); } };
 });
 
-import { HandleBillComWebhook } from '../BillComWebhookExtension.js';
+import { HandleBillComWebhook, PollJobIsLive } from '../BillComWebhookExtension.js';
 import { SignBillComPayload, VerifyBillComSignature, ParseBillComWebhookEvent } from '@mj-biz-apps/orders-core-entities-server';
 
 const providerId = '11111111-2222-4333-8444-555555555555';
@@ -96,5 +96,43 @@ describe('HandleBillComWebhook', () => {
         const { calls, res } = respond();
         await HandleBillComWebhook({ rawBody: body, headers: {}, providerId }, res, () => ({ provider: undefined, user: undefined }));
         expect(calls[0].status).toBe(500);
+    });
+});
+
+/**
+ * A VERIFIED NOTIFICATION MUST NOT RECORD CASH THE SCHEDULED JOB IS NOT YET ALLOWED TO RECORD.
+ *
+ * The route is enabled in the server config while both jobs ship Disabled and in Preview, so this
+ * used to call the poll with Preview hard-coded off: the day somebody registered the Bill.com
+ * subscription and set the secret, the first invoice event would have captured a real payment and
+ * posted Dr Cash / Cr A/R before anyone had read a preview run.
+ */
+describe('PollJobIsLive', () => {
+    const live = { Status: 'Active', Configuration: '{"Params":[{"Value":"false"}]}' };
+
+    it('polls only when the scheduled job is Active and out of Preview', () => {
+        expect(PollJobIsLive(live).Live).toBe(true);
+    });
+
+    it('refuses while the job is in Preview, however it is cased', () => {
+        expect(PollJobIsLive({ ...live, Configuration: '{"Params":[{"Value":"true"}]}' }).Live).toBe(false);
+        expect(PollJobIsLive({ ...live, Configuration: '{"Params":[{"Value":"TRUE"}]}' }).Live).toBe(false);
+    });
+
+    it('refuses while the job is Disabled — the shipping posture', () => {
+        const d = PollJobIsLive({ ...live, Status: 'Disabled' });
+        expect(d.Live).toBe(false);
+        expect(d.Why).toMatch(/Disabled/i);
+    });
+
+    it('refuses when no job is installed at all, rather than assuming permission', () => {
+        expect(PollJobIsLive(null).Live).toBe(false);
+        expect(PollJobIsLive(undefined).Live).toBe(false);
+    });
+
+    it('says WHY, because the notification is otherwise silently dropped', () => {
+        for (const j of [null, { ...live, Status: 'Disabled' }, { ...live, Configuration: '{"Params":[{"Value":"true"}]}' }]) {
+            expect(PollJobIsLive(j).Why.length).toBeGreaterThan(0);
+        }
     });
 });

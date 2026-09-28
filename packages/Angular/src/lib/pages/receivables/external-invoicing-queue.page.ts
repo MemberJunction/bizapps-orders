@@ -21,7 +21,7 @@ interface PaymentExceptionRow {
     Amount: number;
     PaymentDate: string | null;
     ExternalStatus: string | null;
-    Disposition: 'Held' | 'Unmatched' | 'Refused' | 'ReversalNeeded';
+    Disposition: 'Held' | 'Unmatched' | 'Refused' | 'Reapplied' | 'ReversalNeeded';
     Reason: string | null;
     LastSeenAt: string | null;
 }
@@ -29,7 +29,7 @@ interface PaymentExceptionRow {
 const EXTERNAL_PAYMENT_ENTITY = 'MJ_BizApps_Orders: External Payments';
 
 /** Dispositions that mean money is waiting on a person. `Captured` and `Ignored` are finished. */
-const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'ReversalNeeded'];
+const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'ReversalNeeded'];
 
 /**
  * `mjo-external-invoicing-queue-page` — the two queues the scheduled jobs leave behind.
