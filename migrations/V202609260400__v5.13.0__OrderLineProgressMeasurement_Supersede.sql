@@ -185,7 +185,7 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '6579af5a-9320-4a5d-b79e-560ede6e167c',
             '9F5508E8-9F4F-4F5D-B991-C98BF0043498', -- Entity: MJ_BizApps_Orders: Order Line Progress Measurements
-            19,
+            (SELECT COALESCE(MAX([Sequence]), 0) FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '9F5508E8-9F4F-4F5D-B991-C98BF0043498') + 1,
             'SupersedesMeasurementID',
             'Supersedes Measurement ID',
             'The posted observation this row replaces. Set only by Orders.RecordProgress for a user holding MJ.BizApps.Orders.Progress.Supersede. The replaced row is not edited: its recognition is reversed by ReversalJournalEntryID and it stops counting as the line''s last observation. At most one row may supersede any observation.',
@@ -248,7 +248,7 @@ UPDATE [${mjSchema}].[EntityField]
          (
             '45716272-ad16-4ebe-8cf3-a71b3fec5f30',
             '9F5508E8-9F4F-4F5D-B991-C98BF0043498', -- Entity: MJ_BizApps_Orders: Order Line Progress Measurements
-            20,
+            (SELECT COALESCE(MAX([Sequence]), 0) FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '9F5508E8-9F4F-4F5D-B991-C98BF0043498') + 1,
             'ReversalJournalEntryID',
             'Reversal Journal Entry ID',
             'Soft reference into accounting: the entry reversing the superseded observation''s recognition, dated on that observation''s MeasurementDate so the revenue it recognised nets to zero on that date; the Deferred/Unbilled split follows the line''s billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.',
