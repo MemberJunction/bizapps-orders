@@ -19,13 +19,22 @@ export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './
 export {
     FindConcessionLimitRule,
     FindUnapprovedConcessions,
+    FindUncoveredLinePrices,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
     OrderConcessionTotal,
     OrderNetTotal,
     type ConcessionLineFacts,
     type LinePriceConcession,
+    type UncoveredLinePrice,
 } from './ConcessionGate.js';
+export {
+    PRICE_BELOW_ENGINE_TYPE_CODE,
+    RaisePriceBelowEngineExceptions,
+    type BookedLineFacts,
+    type PriceBelowEngineBooking,
+    type PriceBelowEngineOutcome,
+} from './PriceBelowEngineExceptions.js';
 export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
 export { BeginInstalmentIssue, EndInstalmentIssue, IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';

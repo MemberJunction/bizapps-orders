@@ -41,6 +41,7 @@ import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo }
 import {
     ConcessionShare,
     ConcessionValue,
+    Money,
     ResolveLinePriceStanding,
     ShareBreach,
     type ConcessionAuthority,
@@ -178,9 +179,8 @@ export async function FindUnapprovedConcessions(
         if (shareProblem) problems.push(shareProblem);
     }
 
-    for (const line of await statedPriceLines(orderHeaderID, inMemoryLines, provider, user)) {
-        const concession = await LinePriceConcessionFor(line, provider, user);
-        if (!concession) continue;
+    for (const standing of await assessLinePrices(orderHeaderID, inMemoryLines, rows, provider, user)) {
+        const { Line: line, Concession: concession } = standing;
         // A concession is recorded against a saved line, so a line not yet saved cannot have one —
         // tell the rep how to get one rather than that none is recorded.
         if (!orderHeaderID || !line.ID) {
@@ -192,14 +192,7 @@ export async function FindUnapprovedConcessions(
             );
             continue;
         }
-        const approved = rows.some(
-            (r) =>
-                r.Status === 'Approved' &&
-                sameID(r.OrderLineID, line.ID) &&
-                (r.DeliveryForm === 'Price' || r.DeliveryForm === 'Scope') &&
-                Number(r.ComputedValue) + MONEY_TOLERANCE >= concession.Valuation.Value,
-        );
-        if (approved) continue;
+        if (standing.Covered) continue;
         problems.push(
             `line ${line.LineNumber ?? '?'} is priced at ${Number(line.UnitPrice ?? 0).toFixed(2)} against an engine ` +
                 `price of ${concession.EngineUnitPrice.toFixed(2)}, a concession worth ` +
@@ -310,6 +303,89 @@ async function loadShareLimits(authorityIDs: string[], provider: IMetadataProvid
 
 function concessionTotal(rows: readonly ConcessionRow[]): number {
     return rows.filter((r) => r.Status !== 'Rejected').reduce((sum, r) => sum + Number(r.ComputedValue ?? 0), 0);
+}
+
+/** A line whose stated price is below its engine price by more than any approved concession covers. */
+export interface UncoveredLinePrice {
+    Line: ConcessionLineFacts;
+    Concession: LinePriceConcession;
+    /** The largest Approved Price or Scope concession recorded against the line; 0 when there is none. */
+    ApprovedValue: number;
+    /** What the line gives away beyond `ApprovedValue`. Always above zero. */
+    Shortfall: number;
+}
+
+/**
+ * The confirm gate's line-price check in report-only mode: every saved line of this order whose
+ * stated price is below its engine price with no Approved concession covering it, with the value
+ * left uncovered. Refuses nothing.
+ *
+ * Asked at booking, after the gate, for the bookings the gate lets through (golive #279). It is
+ * the gate's own evaluation, so the two cannot disagree about which lines are concessions: bundle
+ * components, reversals, the engine's own price and a named list pick are excluded here exactly as
+ * there. A Pending concession covers nothing, as it does not at the gate.
+ *
+ * @param inMemoryLines  lines the caller holds, which win over their persisted copies.
+ */
+export async function FindUncoveredLinePrices(
+    orderHeaderID: string,
+    inMemoryLines: readonly ConcessionLineFacts[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<UncoveredLinePrice[]> {
+    const rows = await loadConcessions(orderHeaderID, provider, user);
+    const uncovered: UncoveredLinePrice[] = [];
+    for (const standing of await assessLinePrices(orderHeaderID, inMemoryLines, rows, provider, user)) {
+        if (standing.Covered || !standing.Line.ID) continue;
+        const shortfall = Money(standing.Concession.Valuation.Value - standing.ApprovedValue);
+        if (!(shortfall > 0)) continue;
+        uncovered.push({
+            Line: standing.Line,
+            Concession: standing.Concession,
+            ApprovedValue: standing.ApprovedValue,
+            Shortfall: shortfall,
+        });
+    }
+    return uncovered;
+}
+
+/** One stated-price line that carries a concession, and how far the approved rows cover it. */
+interface LinePriceStandingOnOrder {
+    Line: ConcessionLineFacts;
+    Concession: LinePriceConcession;
+    ApprovedValue: number;
+    /** An Approved Price or Scope concession on the line is worth at least the line's concession. */
+    Covered: boolean;
+}
+
+/** Every stated-price line whose price is a concession, judged against the order's concession rows. */
+async function assessLinePrices(
+    orderHeaderID: string | null,
+    inMemoryLines: readonly ConcessionLineFacts[],
+    rows: readonly ConcessionRow[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<LinePriceStandingOnOrder[]> {
+    const standings: LinePriceStandingOnOrder[] = [];
+    for (const line of await statedPriceLines(orderHeaderID, inMemoryLines, provider, user)) {
+        const concession = await LinePriceConcessionFor(line, provider, user);
+        if (!concession) continue;
+        const approvedValue = rows
+            .filter(
+                (r) =>
+                    r.Status === 'Approved' &&
+                    sameID(r.OrderLineID, line.ID) &&
+                    (r.DeliveryForm === 'Price' || r.DeliveryForm === 'Scope'),
+            )
+            .reduce((max, r) => Math.max(max, Number(r.ComputedValue)), 0);
+        standings.push({
+            Line: line,
+            Concession: concession,
+            ApprovedValue: approvedValue,
+            Covered: approvedValue + MONEY_TOLERANCE >= concession.Valuation.Value,
+        });
+    }
+    return standings;
 }
 
 interface ConcessionRow {
