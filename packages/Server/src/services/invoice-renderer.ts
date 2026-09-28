@@ -23,7 +23,8 @@
  *   ACTIONS: ../custom/generate-invoice.action.ts · ../custom/send-document.action.ts
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import { BuildInvoiceDocuments, DecorateInvoice, type DisplayInvoice } from '@mj-biz-apps/orders-core-entities-server';
+import { BuildInvoiceDocuments, CalendarDayOrToday, DecorateInvoice, RequireDate, type DisplayInvoice } from '@mj-biz-apps/orders-core-entities-server';
+import { ToISODate } from '@mj-biz-apps/orders-entities';
 import { TemplateEngineServer } from '@memberjunction/templates';
 
 /** The template rendered when a caller does not name one. */
@@ -61,7 +62,7 @@ export interface RenderInvoiceOptions {
 }
 
 /** A refusal carries a code so the caller can map it to an action result without parsing prose. */
-export type RenderFailureCode = 'ORDER_NOT_FOUND' | 'NOT_INVOICEABLE' | 'TEMPLATE_NOT_FOUND' | 'RENDER_FAILED';
+export type RenderFailureCode = 'ORDER_NOT_FOUND' | 'NOT_INVOICEABLE' | 'TEMPLATE_NOT_FOUND' | 'RENDER_FAILED' | 'INVALID_AS_OF_DATE';
 
 /**
  * A flat result rather than a discriminated union, matching `RefundPaymentOutput` and the driver
@@ -91,7 +92,22 @@ export async function RenderInvoiceDocuments(
     user: UserInfo,
     options: RenderInvoiceOptions = {},
 ): Promise<RenderInvoiceResult> {
+    // A day the caller named is caller input, and everything below it normalises rather than
+    // refuses: `AsDateValue` answers `null` for `2026-02-30`, so an invoice asked for an impossible
+    // day would be dated TODAY — on the document, and in the days-until-due countdown — with
+    // nothing to tell the caller their date never existed. Refused here rather than there, because
+    // this is the boundary both actions (`Orders.GenerateInvoice`, `Orders.SendDocument`) come
+    // through. `AsOfDate` is `string | null` here, so unlike the operations' `Date | string` inputs
+    // there is no non-textual case to skip.
     const asOf = options.AsOfDate ?? null;
+    if (asOf) {
+        try {
+            RequireDate(asOf, 'AsOfDate');
+        } catch (e) {
+            return { Success: false, Documents: [], Code: 'INVALID_AS_OF_DATE', Message: String((e as Error).message) };
+        }
+    }
+
     const built = await BuildInvoiceDocuments(orderID, provider, user, {
         AsOf: asOf,
         OnlyCompanyID: options.CompanyID ?? null,
@@ -111,7 +127,9 @@ export async function RenderInvoiceDocuments(
 
     const format = options.Format ?? 'HTML';
     const locale = options.Locale ?? 'en-US';
-    const generatedOn = asOf ?? new Date().toISOString().slice(0, 10);
+    // The BUSINESS day (#209): the UTC day is already tomorrow for the whole American evening,
+    // and this is the date printed on the document.
+    const generatedOn = ToISODate(await CalendarDayOrToday(asOf, provider, user)) as string;
     const templateName = options.TemplateName ?? DEFAULT_INVOICE_TEMPLATE;
 
     let render: ((doc: DisplayInvoice) => Promise<{ html: string | null; error?: string }>) | null = null;

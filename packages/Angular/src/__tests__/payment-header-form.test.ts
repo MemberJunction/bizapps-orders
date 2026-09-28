@@ -1,9 +1,11 @@
 import '@angular/compiler';
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import '../public-api';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { ToISODate } from '@mj-biz-apps/orders-entities';
+import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
 import { mjBizAppsOrdersPaymentHeaderFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersPaymentHeader/mjbizappsorderspaymentheader.form.component';
 import { BizAppsPaymentHeaderFormComponent } from '../lib/custom/PaymentHeader/payment-header-form.component';
 import { PaymentHeaderPanel } from '../lib/form-panels/payment-header.panel';
@@ -433,5 +435,70 @@ describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters',
         expect(instance.BankAccountType).toBe('Checking');
         expect(instance.RoutingLast4).toBe('1234');
         expect(instance.AccountLast4).toBe('5678');
+    });
+});
+
+/**
+ * Clearing the date field used to stamp `new Date()` — an instant — into `PaymentDate`, which is a
+ * SQL `DATE` (#209). At 9 PM Eastern that instant is already the next UTC day, so a payment entered
+ * in the evening and then cleared was dated tomorrow, the same defect the server paths carried.
+ *
+ * The component is exercised through its prototype, as the getters above are: the setter touches
+ * only `this.record`, and standing an Angular component up through DI would test the framework.
+ */
+describe('BizAppsPaymentHeaderFormComponent PaymentDate field (#209)', () => {
+    const engine = BusinessTimeZoneEngine.Instance as unknown as {
+        _configurations: InstanceConfigurationRow[];
+        _loaded: boolean;
+    };
+    const saved = { rows: engine._configurations, loaded: engine._loaded };
+
+    /** 01:00 UTC on the 28th = 21:00 EDT on the 27th. */
+    const BUG_INSTANT = '2026-08-28T01:00:00.000Z';
+
+    beforeEach(() => {
+        engine._configurations = [
+            {
+                FeatureKey: 'BizApps.BusinessTimeZone',
+                Value: '{"iana":"America/New_York","sql":"Eastern Standard Time"}',
+                DefaultValue: '{"iana":"UTC","sql":"UTC"}',
+            },
+        ];
+        engine._loaded = true;
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(BUG_INSTANT));
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        engine._configurations = saved.rows;
+        engine._loaded = saved.loaded;
+    });
+
+    const form = (): BizAppsPaymentHeaderFormComponent => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        instance.record = { PaymentDate: null } as unknown as mjBizAppsOrdersPaymentHeaderEntity;
+        return instance;
+    };
+
+    it('falls back to the BUSINESS day when the field is cleared, not the UTC day', () => {
+        const instance = form();
+        instance.PaymentDateInput = '';
+        expect(ToISODate(instance.record.PaymentDate)).toBe('2026-08-27');
+        // The regression: `new Date()` at this instant round-trips out of a date column as the 28th.
+        expect(ToISODate(instance.record.PaymentDate)).not.toBe('2026-08-28');
+    });
+
+    it('keeps the day the user picked, pinned to midnight UTC so the column round-trips it', () => {
+        const instance = form();
+        instance.PaymentDateInput = '2026-03-15';
+        expect(ToISODate(instance.record.PaymentDate)).toBe('2026-03-15');
+        expect((instance.record.PaymentDate as Date).getUTCHours()).toBe(0);
+    });
+
+    it('round-trips through the getter, which is what the input element binds to', () => {
+        const instance = form();
+        instance.PaymentDateInput = '2026-03-15';
+        expect(instance.PaymentDateInput).toBe('2026-03-15');
     });
 });

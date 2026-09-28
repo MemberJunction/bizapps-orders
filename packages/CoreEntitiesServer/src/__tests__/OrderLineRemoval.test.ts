@@ -214,6 +214,8 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
     // Both are accessors backed by the field list a real entity loads, so they are shadowed.
     Object.defineProperty(instance, 'IsSaved', { value: true });
     Object.defineProperty(instance, 'OrderNumber', { value: 'ORD-000003', writable: true });
+    // A draft: the address-snapshot fill that a booked order's save runs is not this file's subject.
+    Object.defineProperty(instance, 'IsBookedOrder', { value: false });
 
     const headerSave = vi.spyOn(OrderHeaderEntity.prototype, 'Save').mockImplementation(async () => {
         log.push('save-header');

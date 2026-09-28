@@ -18,6 +18,7 @@ import { LoadGenerateInvoiceAction } from './custom/generate-invoice.action.js';
 import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action.js';
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
 import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
+import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-gated-access.action.js';
 import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
 import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
 
@@ -160,6 +161,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSendDocumentAction();          // 'Orders.SendDocument' — an order, rendered AND sent (§4.4)
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
     LoadSpawnRenewalsAction();         // 'Orders.SpawnRenewals' — the scheduler's way in to the renewal operation
+    LoadEnforcePaymentGatedAccessAction(); // 'Orders.EnforcePaymentGatedAccess' — nightly renewal cutoff and restore (#223)
     LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
     LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll
 

@@ -6,8 +6,10 @@
  *   `Orders.RefundPayment`   somebody DECIDED to give the money back
  *   `PaymentSettlement`      the BANK took it back, days after we booked it as received
  *
- * They differ entirely in why they happen and not at all in what they must write. Both produce a new
- * `PaymentHeader` with `Status='Refunded'` and `ReversesPaymentHeaderID` pointing at the original,
+ * They differ entirely in why they happen and in one column of what they write — `ReversalSource`,
+ * which payment-gated access reads, because a bank return takes access away and a refund does not.
+ * Otherwise the shape is the same. Both produce a new `PaymentHeader` with `Status='Refunded'` and
+ * `ReversesPaymentHeaderID` pointing at the original,
  * carrying negative `PaymentLine`s that un-apply the cash from the orders the original settled. That
  * shape is not incidental — `Status='Refunded'` is precisely what makes `PaymentHeaderEntityServer`
  * book the MIRROR of the capture entry (D53), and the negative lines are what move each order's
@@ -37,9 +39,11 @@ import {
     type IRunViewProvider,
     type UserInfo,
 } from '@memberjunction/core';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersPaymentLineEntity,
+    TodayAsDateValue,
 } from '@mj-biz-apps/orders-entities';
 import type { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 
@@ -66,8 +70,16 @@ export interface AppliedAllocation {
     Amount: number;
 }
 
+/** Who took the money back: the seller deciding to (`Refund`), or the bank (`BankReturn`). */
+export type ReversalSource = 'Refund' | 'BankReturn';
+
 /** Why this reversal is being written, and what to stamp on it. */
 export interface PaymentReversalRequest {
+    /**
+     * Stamped on the reversal as `ReversalSource`. Required, because access reads it: a bank return
+     * takes access away with the cash, a refund does not (`EntitlementBehavior.DecideGrantStatus`).
+     */
+    Source: ReversalSource;
     /** Positive magnitude, as `Amount` is stored on both a capture and a reversal. */
     Amount: number;
     Reason: string | null;
@@ -222,18 +234,29 @@ export async function CreateReversingPayment(
     request: PaymentReversalRequest,
     lines: mjBizAppsOrdersPaymentLineEntity[],
 ): Promise<PaymentReversalResult> {
+    // Warmed before `NextPaymentNumber`, which takes an UPDLOCK/HOLDLOCK on the single global
+    // `PaymentSequence` row: on a cold engine a metadata read after that point would serialise
+    // every other payment-number mint behind it. Both callers have already opened a transaction,
+    // so this cannot be hoisted out of one entirely — but it can be hoisted out of the lock.
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+
     const reversal = await provider.GetEntityObject<PaymentHeaderEntityServer>(PAYMENT_HEADER_ENTITY, user);
     reversal.NewRecord();
     reversal.PaymentNumber = await NextPaymentNumber(provider);
     reversal.ReceivingCompanyID = original.ReceivingCompanyID;
     reversal.BillToOrganizationID = original.BillToOrganizationID;
     reversal.BillToPersonID = original.BillToPersonID;
-    reversal.PaymentDate = new Date();
+    // The business calendar day, not the instant (#209). `PaymentDate` is a SQL `DATE`, and
+    // `new Date()` is an instant that serialises in UTC — a refund issued at 9 PM Eastern was
+    // dated tomorrow, which files the reversal in the wrong period from the one it reverses.
+    // Today rather than the original's day on purpose: a reversal is its own cash event.
+    reversal.PaymentDate = TodayAsDateValue();
     reversal.PaymentTypeID = original.PaymentTypeID;
     reversal.Amount = request.Amount;
     reversal.ProcessingFeeAmount = 0;
     reversal.ReversesPaymentHeaderID = original.ID;
     reversal.ReversalReason = request.Reason ?? null;
+    reversal.ReversalSource = request.Source;
     reversal.ProviderRefundID = request.ProviderRefundID ?? null;
     reversal.Status = 'Refunded';
     reversal.Description = request.Description ?? `Refund of ${original.PaymentNumber}`;

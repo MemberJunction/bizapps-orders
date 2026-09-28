@@ -7,7 +7,9 @@ import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
 import {
+    AsDateValue,
     PaymentHeaderEntity,
+    TodayAsDateValue,
     mjBizAppsOrdersPaymentHeaderEntity,
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersOrderHeaderEntity,
@@ -599,7 +601,10 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
 
     public set PaymentDateInput(val: string) {
         if (!this.record) return;
-        this.record.PaymentDate = val ? new Date(val) : new Date();
+        // A `date` column holds a calendar day, so clearing the field falls back to today's
+        // BUSINESS day rather than the instant (#209) — `new Date()` here dated an evening payment
+        // tomorrow, the same way the server paths did.
+        this.record.PaymentDate = AsDateValue(val) ?? TodayAsDateValue();
     }
 
     public async OnPayerSelectionChanged(): Promise<void> {

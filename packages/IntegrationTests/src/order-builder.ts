@@ -12,6 +12,7 @@ import type {
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersPaymentDetailEntity,
 } from '@mj-biz-apps/orders-entities';
+import { AsDateValue, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 import type {
     ManualDiscountRequest,
     OrderEntityServer,
@@ -150,7 +151,10 @@ export async function BuildOrder(
     );
     order.NewRecord();
     order.OrderType = spec.OrderType ?? 'Sale';
-    order.OrderDate = spec.OrderDate ?? new Date();
+    // The harness must not carry the defect under test (#209): a fixture dated from the clock
+    // is dated tomorrow for the whole American evening, so an assertion about which day a row
+    // landed on would pass or fail by the hour the suite happened to run.
+    order.OrderDate = AsDateValue(spec.OrderDate) ?? TodayAsDateValue();
     order.Status = 'Draft';
     order.CompanyID = spec.CompanyID;
     if (spec.DueDate) order.DueDate = new Date(spec.DueDate);

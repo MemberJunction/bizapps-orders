@@ -22,6 +22,7 @@ export class mjBizAppsOrdersPaymentHeaderFormComponent extends BaseFormComponent
             { sectionKey: 'processingDetails', sectionName: 'Processing Details', isExpanded: true },
             { sectionKey: 'reversalInformation', sectionName: 'Reversal Information', isExpanded: true },
             { sectionKey: 'notesAndMetadata', sectionName: 'Notes and Metadata', isExpanded: false },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Lines', isExpanded: false },

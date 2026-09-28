@@ -40,6 +40,7 @@ import type { RequestedCharge } from './ChargeEngine.js';
 import type { PriceResolutionContext, ResolvedPrice } from './PriceResolver.js';
 import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngine.js';
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
+import { AsDateValue, TodayAsDateValue } from '../date-cell';
 import { RunCharges, SplitChargesByLine } from './ChargeEngine.js';
 import { PriceResolutionError, ResolvePrice } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
@@ -268,7 +269,7 @@ export class OrderPricingService {
                 CompanyID: this.ctx.CompanyID,
                 OrganizationID: this.ctx.BillToOrganizationID ?? null,
                 PersonID: this.ctx.BillToPersonID ?? null,
-                AsOf: this.ctx.OrderDate ? new Date(this.ctx.OrderDate) : new Date(),
+                AsOf: AsDateValue(this.ctx.OrderDate) ?? TodayAsDateValue(),
                 Codes: this.ctx.PromotionCodes,
                 Lines: lines,
                 StackingMode: policy.StackingMode,
@@ -504,7 +505,7 @@ export class OrderPricingService {
                     CompanyID: this.ctx.CompanyID,
                     OrganizationID: this.ctx.BillToOrganizationID ?? null,
                     PersonID: this.ctx.BillToPersonID ?? null,
-                    AsOf: this.ctx.OrderDate ? new Date(this.ctx.OrderDate) : new Date(),
+                    AsOf: AsDateValue(this.ctx.OrderDate) ?? TodayAsDateValue(),
                 },
                 provider,
                 user,
@@ -618,7 +619,7 @@ export class OrderPricingService {
             ProductCategoryID: product?.ProductCategoryID ?? null,
             CompanyID: product?.CompanyID ?? this.ctx.CompanyID,
             Quantity: Number(line.Quantity ?? 0),
-            AsOf: this.ctx.OrderDate ? new Date(this.ctx.OrderDate) : new Date(),
+            AsOf: AsDateValue(this.ctx.OrderDate) ?? TodayAsDateValue(),
             OrganizationID: this.ctx.BillToOrganizationID ?? null,
             PersonID: this.ctx.BillToPersonID ?? null,
             ApplicabilityContext: await this.applicabilityBag(line.ProductID),
@@ -752,7 +753,10 @@ export class OrderPricingService {
         line: mjBizAppsOrdersOrderLineEntity,
         product: { Name: string; Status: string; AvailableFrom: Date | null; AvailableTo: Date | null },
     ): void {
-        const asOf = this.ctx.OrderDate ? new Date(this.ctx.OrderDate) : new Date();
+        // A calendar day, not an instant (#209): applicability is judged against
+        // `EffectiveFrom`/`EffectiveTo`, both `date` columns, so an evening order priced against
+        // the UTC day would take tomorrow's rules.
+        const asOf = AsDateValue(this.ctx.OrderDate) ?? TodayAsDateValue();
         const day = (d: Date) => d.toISOString().slice(0, 10);
 
         if (product.Status !== 'Active') {

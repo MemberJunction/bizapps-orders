@@ -26,6 +26,7 @@ import {
     mjBizAppsOrdersEntitlementGrantEntity,
 } from '@mj-biz-apps/orders-entities';
 import { resolvePersonID } from './claimDriverHelpers.js';
+import { IsPaymentSuspension } from './EntitlementBehavior.js';
 
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
@@ -140,8 +141,12 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
                     );
                     if (await grant.Load(row.ID)) {
                         grant.BeneficiaryPersonID = personID;
-                        if (grant.Status !== 'Active') {
+                        // Claiming an order does not pay for it: a grant held for payment stays
+                        // held until the payment arrives (PaymentGatedAccess).
+                        if (grant.Status !== 'Active' && !IsPaymentSuspension(grant)) {
                             grant.Status = 'Active';
+                            grant.SuspendedAt = null;
+                            grant.SuspensionReason = null;
                             grant.ProvisionedAt = new Date();
                         }
                         if (await grant.Save()) {

@@ -46,6 +46,13 @@ import type {
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
 
+/** Same codes the server reads: `GIFT_CARD_PRODUCT_TYPE_CODE`, and the IS-A child an event product carries. */
+const GIFT_CARD_TYPE_CODE = 'giftcard';
+const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
+
+/** See {@link OrdersEngine.ServicePeriodSource}. */
+export type ServicePeriodSource = 'NotRequired' | 'Event' | 'Subscription' | 'Line';
+
 /**
  * The lookup + catalog cache for BizApps Orders.
  *
@@ -206,6 +213,31 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         const product = this.ProductByID(productID);
         if (!product) return false;
         return !!this.ProductTypeByID(product.ProductTypeID)?.RequiresFulfillment;
+    }
+
+    /**
+     * Where a line of this product gets the service period its recognition type needs.
+     *
+     * `NotRequired` — the recognition type does not ask for one (`RequiresServicePeriod = 0`), or the
+     * product is a gift card, which recognises when the card is spent rather than on dates.
+     * `Event` — the order save stamps it from the event's own dates.
+     * `Subscription` — the order save stamps it from the subscription term.
+     * `Line` — nothing supplies it: the person entering the order has to.
+     *
+     * Unknown product → `NotRequired`, so a screen whose cache has not loaded does not refuse a confirm
+     * the server would accept. The server's refusal is the recognition driver at confirm
+     * (`RequireServicePeriod`), which runs after the stamping.
+     */
+    public ServicePeriodSource(productID: string | null | undefined): ServicePeriodSource {
+        const product = this.ProductByID(productID);
+        if (!product) return 'NotRequired';
+        const type = this.ProductTypeByID(product.ProductTypeID);
+        if ((type?.Code ?? '').trim().toLowerCase() === GIFT_CARD_TYPE_CODE) return 'NotRequired';
+        const revRec = this.RevenueRecognitionTypeByID(this.ResolveRevenueRecognitionTypeID(productID));
+        if (!revRec?.RequiresServicePeriod) return 'NotRequired';
+        if (product.SubscriptionTypeID) return 'Subscription';
+        if (type?.ProductExtensionEntity === EVENT_PRODUCT_ENTITY) return 'Event';
+        return 'Line';
     }
 
     /** Active base-channel (no list) prices on a product, highest priority first. */

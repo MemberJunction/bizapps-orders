@@ -151,6 +151,37 @@ export function TodayAsDateValue(): Date {
     return FromCalendarDay(Today());
 }
 
+/**
+ * The calendar day a cell NAMES, as a `Date` safe to assign to a `date`-typed field — or `null`
+ * when it names none.
+ *
+ * The counterpart to {@link TodayAsDateValue} for a day that came from somewhere: a form field, a
+ * remote operation's input, a row already in hand. `new Date(cell)` is nearly right and quietly
+ * wrong at the edges — on `'2026-08-27'` it gives midnight UTC, which is correct, but on a full
+ * instant (`'2026-08-27T21:00:00-05:00'`) it keeps the time, and a `date` column then truncates
+ * that in UTC and files the row on the 28th. Reading the day first and re-pinning it to midnight
+ * makes both inputs behave the same.
+ *
+ * Returns `null` rather than today for an absent or unreadable cell, so the caller decides what
+ * absence means — usually `?? TodayAsDateValue()`, occasionally a refusal.
+ *
+ * "Unreadable" includes a well-FORMED day that does not exist: `'2026-02-30'` survives `ToISODate`,
+ * which only reads the shape, and `FromCalendarDay` then rejects it by throwing. A reader whose
+ * whole job is to normalise whatever arrived must not throw on one class of bad input and answer
+ * `null` on the others — a caller cannot defend against both, and the one that reaches this from
+ * an HTTP boundary would have taken a 500 for a typo. Callers that need the typo REPORTED rather
+ * than absorbed validate before calling: `RequireDate` in the server package does exactly that.
+ */
+export function AsDateValue(value: unknown): Date | null {
+    const day = ToISODate(value);
+    if (day === null) return null;
+    try {
+        return FromCalendarDay(day);
+    } catch {
+        return null;
+    }
+}
+
 /** The UTC calendar fields, zero-padded. */
 function utcDay(date: Date): string {
     return `${String(date.getUTCFullYear()).padStart(4, '0')}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;

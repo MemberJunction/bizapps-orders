@@ -19,7 +19,7 @@
 > **Schema:** `__mj_BizAppsOrders` · **Entity prefix:** `MJ_BizApps_Orders: ` · **Keys:** UUID throughout
 > **49 tables · 85 internal relationships · 48 cross-app foreign keys ·
 > 120 CHECK constraints · 32 unique indexes** beyond the primary keys ·
-> **7 business triggers** · 49 generated views.
+> **10 business triggers** · 49 generated views.
 >
 > (49 is the app's own tables. `sys.tables` reports 50 because Flyway keeps its
 > `flyway_schema_history` in this schema; that table belongs to the migration tool, not to the model.)
@@ -546,6 +546,8 @@ erDiagram
         nvarchar_max Description
         nvarchar_max Notes
         datetimeoffset ConfirmedAt
+        nvarchar_max BillToAddressSnapshot
+        nvarchar_max ShipToAddressSnapshot
     }
     OrderLine {
         uuid ID PK "required"
@@ -563,6 +565,7 @@ erDiagram
         decimal_18_2 LineTax "required"
         decimal_18_2 LineTotalGross
         uuid ShipToAddressID
+        nvarchar_max ShipToAddressSnapshot
         uuid ShipToOrganizationID FK
         uuid ShipToPersonID FK
         uuid RenewsSubscriptionID
@@ -1131,13 +1134,15 @@ migration.
 
 ## 5. The rules that live in TRIGGERS, not in the tables
 
-8 business triggers, and they carry two of the app's load-bearing guarantees. A diagram cannot
+10 business triggers, and they carry two of the app's load-bearing guarantees. A diagram cannot
 show either, and code that ignores them will fail at runtime rather than at compile time.
 
 | table | trigger | what it guarantees |
 |---|---|---|
 | `OrderHeader` | `trg_OrderHeader_ImmutableAfterConfirm` | A confirmed order's date, selling company, order type, reversal link and set bill-to party are history (51013), and its status cannot leave Confirmed (51014). An empty bill-to party may still be filled, which is how a guest order is claimed. |
+| `OrderHeader` | `trg_OrderHeader_AddressFrozenAfterConfirm` | A confirmed order keeps the address it was sold to. On a Confirmed order a set `BillToAddressID` / `ShipToAddressID` cannot be replaced or cleared, an empty one can be filled only together with its snapshot, and a written snapshot never changes on any order. Error 51015. Reporting and the invoice read `BillToAddressSnapshot` / `ShipToAddressSnapshot` on a confirmed order, because the Common `Address` row stays editable. |
 | `OrderLine` | `trg_OrderLine_ImmutableAfterConfirm` | A confirmed line's money and selling company are history. Error 51003. This is why the server short-circuits its own total recomputation once `JournalEntryID` is stamped — a figure it cannot reproduce from stored state alone would be rejected here and roll back the whole confirm. |
+| `OrderLine` | `trg_OrderLine_AddressFrozenAfterConfirm` | The same set-once rule for a line's own `ShipToAddressID` and `ShipToAddressSnapshot`. Error 51016. The confirm path writes a draft's line snapshots while the header is still Draft for this reason. `test-harnesses/address-snapshot-triggers.mjs` exercises both triggers. |
 | `OrderLine` | `trg_OrderLine_RollupTotals` | Header totals are derived from lines by the database, so a client cannot supply a total that disagrees with what was booked. |
 | `PaymentDetail` | `trg_PaymentDetail_Immutable` | A recorded payment instrument cannot be edited after the fact. |
 | `PaymentHeader` | `trg_PaymentHeader_ImmutableAfterCapture` | Captured money is frozen. |

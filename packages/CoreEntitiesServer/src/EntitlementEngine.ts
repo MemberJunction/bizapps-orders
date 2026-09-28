@@ -35,18 +35,20 @@ import {
 } from '@memberjunction/core';
 import { LoadOrdersEngine, OrdersEngine, mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
 import {
-    InitialGrantStatus,
+    DecideGrantStatus,
     ReduceGrantForReturn,
     ResolveEntitlementPolicy,
     ResolveGrantQuantity,
     ResolveValidityWindow,
     ShouldRevokeGrantsOnCancel,
     type GrantTiming,
+    type OrderPaymentFacts,
     type PolicyCategoryLevel,
     type QuantityMode,
     type ValidityMode,
 } from './EntitlementBehavior.js';
 import { RequireUUID } from './sql-guards.js';
+import { OrdersSettings } from './OrdersSettings.js';
 
 const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
@@ -64,14 +66,16 @@ export interface GrantableLine {
     /** Per-line ship-to doubles as WHO an intangible line is for (D61) — the natural beneficiary. */
     ShipToPersonID?: string | null;
     ShipToOrganizationID?: string | null;
+    /** Set on a renewal line. An `OnFirstPayment` renewal starts Active; a new purchase waits for cash. */
+    RenewsSubscriptionID?: string | null;
 }
 
-/** The order facts. `Balance`/`TotalGross` decide whether an OnPaidInFull grant starts Active. */
+/** The order facts. `Payment` decides whether a payment-gated grant starts Active. */
 export interface GrantableOrder {
     ID: string;
     OrderDate: Date;
-    Balance: number | null;
-    TotalGross: number | null;
+    /** From `PaymentGatedAccess.LoadOrderPaymentFacts`, read after the confirm's own payment landed. */
+    Payment: OrderPaymentFacts;
     BillToPersonID?: string | null;
     BillToOrganizationID?: string | null;
 }
@@ -105,6 +109,8 @@ export async function CreateEntitlementGrants(
     options?: EntitySaveOptions,
 ): Promise<GrantOutcome> {
     const out: GrantOutcome = { Created: 0, Grants: [] };
+    await OrdersSettings.Load(provider, user);
+    const cutoffDaysPastDue = OrdersSettings.RenewalAccessCutoffDaysPastDue;
 
     // Reversal lines and anything with no positive quantity confer nothing.
     const grantable = lines.filter((l) => Number(l.Quantity ?? 0) > 0);
@@ -247,8 +253,19 @@ export async function CreateEntitlementGrants(
             grant.ValidFrom = validity.ValidFrom;
             grant.ValidTo = validity.ValidTo;
             grant.ValidityModeApplied = validity.ModeApplied;
-            const status = InitialGrantStatus(resolved.GrantTiming, order);
+            const decision = DecideGrantStatus(
+                resolved.GrantTiming,
+                !!line.RenewsSubscriptionID,
+                order.Payment,
+                cutoffDaysPastDue,
+            );
+            const status = decision.Status;
             grant.Status = status;
+            // Recorded so the grant can be re-decided later under the rule it was written under,
+            // whatever the catalog says by then (PaymentGatedAccess).
+            grant.GrantTimingApplied = resolved.GrantTiming;
+            grant.SuspensionReason = decision.Reason;
+            grant.SuspendedAt = status === 'Suspended' ? new Date() : null;
 
             if (!(await grant.Save(options))) {
                 throw new Error(

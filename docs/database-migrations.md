@@ -41,6 +41,27 @@ npm run mj:migrate      # apply the new migration to your database
 npm run mj:codegen      # entity metadata, base views, CRUD procs, TypeScript
 ```
 
+## A merged migration is locked
+
+No edits, no renames, no deletions once it is on `next`. Fix it forward in a new file.
+
+The runner records each applied migration's version, script name and checksum. Change the file and
+every database that ran it refuses to migrate until somebody repairs the history table by hand, while
+every database that did not run it gets different SQL. The populations diverge silently — which
+schema a colleague has depends on when they last pulled.
+
+Renaming counts, and is the case people miss. The version is the twelve digits in the filename, so a
+rename produces a migration nobody has run: it executes again, and plain DDL then fails on objects
+that already exist. Because a run is one transaction, that failure takes every other pending
+migration down with it.
+
+Renumbering a migration that has **not** merged is fine and is the normal response when `next` gains a
+higher timestamp while your branch is open. Only the author's own database is affected, and the file
+is not yet anybody's history.
+
+`.github/scripts/check-migrations-locked.mjs` enforces this on every PR and carries its own
+self-test. Reviewers: a red result here is blocking. It has been merged past twice.
+
 ## What must NOT happen any more
 
 **Do not edit the baseline** (`migrations/V202607061432__v0.1.x__Tables_and_Objects.sql`), above or

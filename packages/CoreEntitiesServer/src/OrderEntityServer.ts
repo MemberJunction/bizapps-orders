@@ -46,8 +46,11 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
+    ADDRESS_SNAPSHOT_FIELDS,
+    BuildAddressSnapshot,
     OrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
+    type AddressLike,
     mjBizAppsOrdersOrderLinePriceComponentEntity,
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersPaymentLineEntity,
@@ -57,6 +60,7 @@ import {
     mjBizAppsOrdersSubscriptionTermEntity,
     ToISODate,
 } from '@mj-biz-apps/orders-entities';
+import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
@@ -64,6 +68,7 @@ import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntitySe
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
@@ -427,7 +432,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // rollups this save sends are the rollups the row already holds, so the write is a no-op
             // on those four columns no matter what the caller believed about them.
             await this.refreshRolledUpTotals();
-            return super.Save(options);
+            try {
+                if (this.IsBookedOrder) await this.stampAddressSnapshots('fill');
+                return await super.Save(options);
+            } finally {
+                this.addressSnapshotsStamped = false;
+            }
         }
 
         // WHEN IT IS DUE, DECIDED ONCE AND STORED (D83) — AND RESOLVED BEFORE THE TRANSACTION OPENS.
@@ -538,6 +548,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
                 booking ? await this.decideSubscriptions() : new Map();
             await this.prepareLines(decisions);
+
+            // THE ADDRESS AS SOLD, copied onto the order at the first confirm (golive #263).
+            //
+            // HERE, before either line write below: a draft's existing lines are written while the
+            // header is still Draft, and `trg_OrderLine_AddressFrozenAfterConfirm` refuses the line
+            // snapshot once the header is Confirmed. Inside the transaction, so it reads the same
+            // Address rows the tax resolution in `prepareLines` just read.
+            if (booking) await this.stampAddressSnapshots('confirm');
+            else if (this.IsBookedOrder) await this.stampAddressSnapshots('fill');
 
             // CONFIRM-AFTER-DRAFT: the lines already exist. `prepareLines` just prorated them
             // (membership qty 1 → 0.3836). If the header flips to Confirmed first, trigger 51003
@@ -664,6 +683,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             return false;
         } finally {
             this.bookingInFlight = false;
+            this.addressSnapshotsStamped = false;
         }
     }
 
@@ -1201,12 +1221,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * Create the grants this order's lines confer (D27/D76).
      *
      * Delegates entirely to `EntitlementEngine`; what lives here is the mapping from the order's own
-     * entities to the structural shape the engine takes, plus the balance the timing rule needs.
+     * entities to the structural shape the engine takes, plus the payment facts the timing rule needs.
      *
-     * `Balance` is re-read from the header rather than trusted from memory: `createInitialPayment`
+     * The payment facts are re-read from the row rather than trusted from memory: `createInitialPayment`
      * has just run, and the rollup triggers (D41) moved `AmountPaid`/`Balance` on the ROW without
-     * telling this object. An `OnPaidInFull` grant reading a stale balance would sit Suspended on an
-     * order that is already paid.
+     * telling this object. A payment-gated grant reading a stale balance would sit Suspended on an
+     * order that is already paid. They come from the same loader the payment path re-decides with,
+     * so a grant is born under the rule that will later move it.
      */
     private async grantEntitlements(
         lines: mjBizAppsOrdersOrderLineEntity[],
@@ -1216,14 +1237,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
-        const fresh = await this.readBalanceFromRow();
+        const asOf = await BusinessDay(provider, user);
+        const payment = (await LoadOrderPaymentFacts([this.ID], provider, user, asOf)).get(this.ID.toLowerCase());
+        if (!payment) {
+            throw new Error(`Order ${this.OrderNumber ?? this.ID} could not be re-read to decide its entitlement grants.`);
+        }
 
         await CreateEntitlementGrants(
             {
                 ID: this.ID,
-                OrderDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
-                Balance: fresh.Balance,
-                TotalGross: fresh.TotalGross,
+                // Not the `date`-column defect the other sites carry — `GrantedOn` becomes the
+                // grant's `ValidFrom`/`ValidTo`, which are `DATETIMEOFFSET`. It is the same
+                // INCONSISTENCY, though: with an order date the grant started at that day's
+                // midnight, without one it started at whatever instant the confirm happened to run.
+                OrderDate: await CalendarDayOrToday(this.OrderDate, provider, user),
+                Payment: payment,
                 BillToPersonID: this.BillToPersonID ?? null,
                 BillToOrganizationID: this.BillToOrganizationID ?? null,
             },
@@ -1233,6 +1261,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Quantity: Number(l.Quantity ?? 0),
                 ShipToPersonID: l.ShipToPersonID ?? null,
                 ShipToOrganizationID: l.ShipToOrganizationID ?? null,
+                RenewsSubscriptionID: l.RenewsSubscriptionID ?? null,
             })),
             subs.TermsByLine,
             provider,
@@ -1491,6 +1520,118 @@ export class OrderEntityServer extends OrderHeaderEntity {
             user,
             options,
         );
+    }
+
+    /**
+     * Copy the bill-to and ship-to addresses onto the order and its lines (golive #263).
+     *
+     * `confirm` — the booking save. Every address the order and its lines name is copied, replacing
+     * whatever the in-memory record carried.
+     *
+     * `fill` — any later save of a booked order. A snapshot that is already stored is kept, whatever
+     * the caller sent; one that is missing is written from its address. That covers an empty address
+     * filled after confirm, and an order confirmed before snapshots existed.
+     *
+     * A line gets a snapshot only when it names a ship-to address of its own; a line without one
+     * ships to the header's.
+     *
+     * A reference with no Address row behind it (deleted, or hidden from this user by row-level
+     * security) refuses the save when the address is being recorded now: on confirm, or when an
+     * empty address is filled on this save. `OrderLine.ShipToAddressID` has no foreign key, and a
+     * confirmed order with no record of where the sale went is the defect this exists to prevent.
+     *
+     * An address that was already on a booked order and has since lost its row is left without a
+     * snapshot, and the save goes ahead. Refusing it would lock the order: the save fails for a row
+     * nobody can bring back, and the ID cannot be replaced or cleared because the order is booked.
+     */
+    private async stampAddressSnapshots(mode: 'confirm' | 'fill'): Promise<void> {
+        type Target = {
+            entity: BaseEntity;
+            idField: string;
+            snapshotField: string;
+            what: string;
+            addressID: () => string | null;
+            write: (snapshot: string | null) => void;
+        };
+        const targets: Target[] = [
+            {
+                entity: this,
+                idField: 'BillToAddressID',
+                snapshotField: 'BillToAddressSnapshot',
+                what: 'bill-to',
+                addressID: () => this.BillToAddressID,
+                write: (v) => { this.BillToAddressSnapshot = v; },
+            },
+            {
+                entity: this,
+                idField: 'ShipToAddressID',
+                snapshotField: 'ShipToAddressSnapshot',
+                what: 'ship-to',
+                addressID: () => this.ShipToAddressID,
+                write: (v) => { this.ShipToAddressSnapshot = v; },
+            },
+            ...this.Lines.Items.map((line): Target => ({
+                entity: line,
+                idField: 'ShipToAddressID',
+                snapshotField: 'ShipToAddressSnapshot',
+                what: `line ${line.LineNumber ?? ''} ship-to`,
+                addressID: () => line.ShipToAddressID,
+                write: (v) => { line.ShipToAddressSnapshot = v; },
+            })),
+        ];
+        const stored = (t: Target): string | null => {
+            const old = t.entity.GetFieldByName(t.snapshotField)?.OldValue;
+            return typeof old === 'string' && old ? old : null;
+        };
+        const addressID = (t: Target): string | null => t.addressID() ?? null;
+        /** The address was set before this save and is still the same one. */
+        const unchanged = (t: Target): boolean => {
+            const old = t.entity.GetFieldByName(t.idField)?.OldValue;
+            return typeof old === 'string' && UUIDsEqual(old, addressID(t));
+        };
+        const needsRead = (t: Target): boolean => !!addressID(t) && (mode === 'confirm' || !stored(t));
+
+        const ids = targets.filter(needsRead).map((t) => addressID(t) as string);
+        const byID = new Map<string, AddressLike>();
+        if (ids.length) {
+            const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+            const result = await rv.RunView<AddressLike>(
+                {
+                    EntityName: COMMON_ADDRESS_ENTITY,
+                    ExtraFilter: `ID IN (${RequireUUIDs([...new Set(ids)], 'AddressID').map((id) => `'${id}'`).join(',')})`,
+                    Fields: [...ADDRESS_SNAPSHOT_FIELDS],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                this.ContextCurrentUser as UserInfo,
+            );
+            if (!result.Success) {
+                throw new Error(`Could not read the order's addresses to keep with it: ${result.ErrorMessage}`);
+            }
+            for (const row of result.Results) byID.set(row.ID.toLowerCase(), row);
+        }
+
+        for (const t of targets) {
+            let value: string | null;
+            if (!needsRead(t)) {
+                value = mode === 'confirm' ? null : stored(t);
+            } else {
+                const id = addressID(t) as string;
+                const row = byID.get(id.toLowerCase());
+                if (row) {
+                    value = BuildAddressSnapshot(row);
+                } else if (mode === 'fill' && unchanged(t)) {
+                    value = null;
+                } else {
+                    throw new Error(
+                        `Order ${this.OrderNumber ?? ''} cannot be saved: its ${t.what} address (${id}) does not exist ` +
+                            `or is not visible to you. Choose the address again and save.`,
+                    );
+                }
+            }
+            t.write(value);
+        }
+        this.addressSnapshotsStamped = true;
     }
 
     /** The header's rollup columns as the DATABASE now holds them, after the payment triggers ran. */
@@ -1848,7 +1989,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             OrdersEngine.Instance.Products.map((p) => [uuidKey(p.ID), p]),
         );
         const eventStarts = await this.loadEventStarts(lines.map((l) => l.ProductID));
-        const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();
+        // A calendar day (#209): the dimension defaults this resolves are effective-dated against
+        // `date` columns, so an instant answers the UTC day and an evening confirm would read
+        // tomorrow's tags.
+        const asOf = await CalendarDayOrToday(this.OrderDate, provider, user);
 
         const existing = await this.loadLineDimensionRows(lines.map((l) => l.ID));
 
@@ -2443,6 +2587,22 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // "create" — see PENDING_SIBLING_ID.
         const pendingSiblings = new Map<string, ExistingSubscription>();
 
+        // The order's booking day, as a calendar day (#209). `Decide` reduces it with `utcDay` and
+        // the settled term reaches `SubscriptionTerm.StartDate`/`EndDate`, both `DATE NOT NULL`, so
+        // an instant taken at 9 PM Eastern would start coverage tomorrow.
+        //
+        // Resolved ONCE for the whole confirm rather than per line: it cannot vary by line, and
+        // this method runs inside the transaction `confirm` opens, where the fallback's metadata
+        // read is least welcome. That read stays unlikely for the reason the initial-payment site
+        // gives — `OrderDate` is defaulted at `NewRecord()` since #168 — and `CalendarDayOrToday`
+        // skips it entirely whenever the day is stated, which is the normal case. Hoisting it out
+        // of the transaction would mean restructuring `confirm`, which is not this issue's job.
+        const purchaseDay = await CalendarDayOrToday(
+            this.OrderDate,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
             let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
@@ -2480,7 +2640,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
             const decision = behavior.Decide({
                 Rules: rules,
-                PurchaseDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                PurchaseDate: purchaseDay,
                 // The line is not saved yet, so `LineTotalNet` is not computed — derive the same
                 // figure OrderLineEntityServer will: quantity × price, less the discount.
                 Amount: this.pendingLineNet(line),
@@ -2571,7 +2731,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (!subscriber.PersonID) return subscriber;
         if (!OrdersSettings.AutoPopulateOrganizationFromPerson) return subscriber;
 
-        const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();
+        // The affiliation question is asked AS OF a calendar day, and the `Relationship` rows it
+        // reads carry `StartDate`/`EndDate` `date` columns (#209). An instant answers the UTC day,
+        // so an evening confirm asked about tomorrow — and a person who changes employer overnight
+        // would be filed against the wrong organization on the order.
+        const asOf = await CalendarDayOrToday(
+            this.OrderDate,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
         const inferred = await this.organizationAsOf(subscriber.PersonID, asOf);
         return inferred ? { ...subscriber, OrganizationID: inferred } : subscriber;
     }
@@ -3125,7 +3293,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
         payment.ReceivingCompanyID = this.CompanyID;
         payment.BillToOrganizationID = this.BillToOrganizationID;
         payment.BillToPersonID = this.BillToPersonID;
-        payment.PaymentDate = this.OrderDate ?? new Date();
+        // The order's own day, or today's business day when it has none (#209). `OrderDate` is
+        // defaulted at `NewRecord()` since #168, so the fallback is very likely unreachable — but a
+        // `DATE` column fed `new Date()` is dated tomorrow for the whole American evening, and the
+        // next caller to reach this method with no order date should not discover that. Keeping the
+        // stated day matters just as much: a backdated order's payment must carry the same date.
+        payment.PaymentDate = await CalendarDayOrToday(this.OrderDate, provider, user);
         payment.PaymentTypeID = this.InitialPaymentTypeID;
         payment.Amount = amount;
         payment.PaymentDetailID = paymentDetailID;
@@ -3268,7 +3441,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async issueDueInstalments(scheduleRows: ScheduleTimingFacts[]): Promise<void> {
         if (!scheduleRows.length) return;
-        const effectiveDate = (this.OrderDate ? new Date(this.OrderDate) : new Date()).toISOString().slice(0, 10);
+        // The order's own day, or today's BUSINESS day (#209). This decides which instalments are
+        // due — it is compared against `DueDate`, a `date` column — and `toISOString()` reads the
+        // UTC day, so an evening confirm would bill tomorrow's instalment a day early.
+        const effectiveDate = ToISODate(
+            await CalendarDayOrToday(
+                this.OrderDate,
+                this.ProviderToUse as unknown as IMetadataProvider,
+                this.ContextCurrentUser as UserInfo,
+            ),
+        ) as string;
 
         const due = scheduleRows
             .filter((r) => r.Status === 'Scheduled' && ToISODate(r.DueDate) !== null && ToISODate(r.DueDate)! <= effectiveDate)

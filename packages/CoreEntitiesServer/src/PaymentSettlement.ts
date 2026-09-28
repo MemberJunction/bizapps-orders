@@ -341,6 +341,7 @@ async function reverse(
             user,
             payment,
             {
+                Source: 'BankReturn',
                 Amount: amount,
                 Reason: reason,
                 ProviderRefundID: event.ProviderChargeID ?? null,

@@ -38,8 +38,10 @@ import { ResolveActiveEmployerOrganization } from './PartyAffiliationBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
+import { OrdersEngine } from './pricing/OrdersEngine';
 import { anyFieldIsDirty } from './field-dirty';
-import { TodayAsDateValue } from './date-cell';
+import { AsDateValue, TodayAsDateValue } from './date-cell';
+import { ParseAddressSnapshot, type OrderAddressSnapshot } from './order-address-snapshot';
 import {
     BookedMoneyEditMessage,
     ORDER_HEADER_MONEY_FIELDS,
@@ -89,6 +91,16 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
     public ClearShipToAddress(): void {
         this.GetCompanion<EmbeddedRecord>('ShipToAddressID_Object')?.Clear();
+    }
+
+    /** The bill-to address this order was confirmed with, or null before it is confirmed. */
+    public get BillToAddressAsSold(): OrderAddressSnapshot | null {
+        return ParseAddressSnapshot(this.BillToAddressSnapshot);
+    }
+
+    /** The ship-to address this order was confirmed with, or null before it is confirmed. */
+    public get ShipToAddressAsSold(): OrderAddressSnapshot | null {
+        return ParseAddressSnapshot(this.ShipToAddressSnapshot);
     }
 
     public get InitialPaymentReference(): string | null {
@@ -228,6 +240,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         const result = super.Validate();
         this.dropSavePopulatedFieldErrors(result);
         this.refuseBookedMoneyEdits(result);
+        this.refuseBookedAddressEdits(result);
 
         const verdict = this.statusTransitionVerdict();
         if (!verdict.Allowed) {
@@ -391,6 +404,71 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     }
 
     /**
+     * Set by the server subclass while it writes the address snapshots itself, so the rule below can
+     * tell its own write from a caller's. Cleared once the save returns.
+     */
+    protected addressSnapshotsStamped = false;
+
+    /**
+     * Refuse a change to where a confirmed order was sold (golive #263).
+     *
+     * A confirmed order keeps the addresses it was sold to for the life of the order: the state a
+     * sale counts in is decided by where the customer was on the date of sale. An address that is
+     * set cannot be replaced or cleared. An empty one may be filled, as an empty bill-to party may
+     * be filled after confirm, and the server snapshots it on that save.
+     * `trg_OrderHeader_AddressFrozenAfterConfirm` (51015) and
+     * `trg_OrderLine_AddressFrozenAfterConfirm` (51016) hold the same rule at the database; this
+     * says so before the round trip, against the field that was changed.
+     *
+     * The snapshots are the server's to write, from the Address rows, so a change to one from
+     * anywhere else is refused on any order.
+     */
+    private refuseBookedAddressEdits(result: ValidationResult): void {
+        const refuse = (source: string, message: string): void => {
+            result.Success = false;
+            result.Errors.push(new ValidationErrorInfo(source, message, null, ValidationErrorType.Failure));
+        };
+        const wasSet = (entity: BaseEntity, name: string): boolean => entity.GetFieldByName(name)?.OldValue != null;
+
+        if (!this.addressSnapshotsStamped) {
+            for (const name of ['BillToAddressSnapshot', 'ShipToAddressSnapshot'] as const) {
+                if (this.FieldIsDirty(name)) {
+                    refuse(name, `${name} is written by the server from the Address row and cannot be set directly.`);
+                }
+            }
+            this.Lines.Items.forEach((line, index) => {
+                if (anyFieldIsDirty(line, ['ShipToAddressSnapshot'])) {
+                    refuse(
+                        `Lines[${index}].ShipToAddressSnapshot`,
+                        'ShipToAddressSnapshot is written by the server from the Address row and cannot be set directly.',
+                    );
+                }
+            });
+        }
+
+        if (!this.MoneyLocked) return;
+        const order = `Order ${this.OrderNumber ?? ''}`.trim();
+        for (const name of ['BillToAddressID', 'ShipToAddressID'] as const) {
+            if (this.FieldIsDirty(name) && wasSet(this, name)) {
+                refuse(
+                    name,
+                    `${order} is confirmed, so its ${name === 'BillToAddressID' ? 'bill-to' : 'ship-to'} address ` +
+                        `cannot be replaced or cleared: the order keeps the address it was sold to. Use a reversal order.`,
+                );
+            }
+        }
+        this.Lines.Items.forEach((line, index) => {
+            if (line.IsSaved && anyFieldIsDirty(line, ['ShipToAddressID']) && wasSet(line, 'ShipToAddressID')) {
+                refuse(
+                    `Lines[${index}].ShipToAddressID`,
+                    `${order} is confirmed, so line ${line.LineNumber ?? index + 1}'s ship-to address cannot be ` +
+                        `replaced or cleared: the line keeps the address it was sold to. Use a reversal order.`,
+                );
+            }
+        });
+    }
+
+    /**
      * Which editing SECTION each validation failure belongs to.
      *
      * The order editor shows errors against the section that owns the field — an unreachable payer
@@ -483,12 +561,37 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         if (this.Lines.Count === 0 && (!this.IsSaved || this.Lines.IsLoaded)) {
             return { Allowed: false, Reason: 'Need a line.' };
         }
+        const undated = this.LinesMissingServicePeriod();
+        if (undated.length > 0) {
+            const numbers = undated.map((l) => l.LineNumber).filter((n) => n != null);
+            const which = numbers.length > 0 ? `Line ${numbers.join(', ')}` : 'A line';
+            return {
+                Allowed: false,
+                Reason: `${which} needs a service period (start and end date) before this can be confirmed.`,
+            };
+        }
         return { Allowed: true };
     }
 
-    /** True when {@link Confirm} is a legal next move from what is on this object. */
-    public get CanConfirm(): boolean {
-        return this.ConfirmEligibility().Allowed;
+    /**
+     * Lines whose recognition type needs a service period (`RequiresServicePeriod`), that nothing
+     * will date, and that do not have both dates.
+     *
+     * Event lines are left out because the save stamps them from the event, and subscription lines
+     * because it stamps them from the term. What remains has no source but the person entering the
+     * order. The browser asks this before offering Confirm, so the user is told before the server's
+     * recognition driver refuses the booking.
+     *
+     * Reads `OrdersEngine`; the caller loads it. With the cache empty nothing counts, which leaves
+     * the decision to the server.
+     */
+    public LinesMissingServicePeriod(): OrderHeaderEntity['Lines']['Items'] {
+        const engine = OrdersEngine.Instance;
+        return this.Lines.Items.filter(
+            (line) =>
+                !(line.ServicePeriodStart && line.ServicePeriodEnd) &&
+                engine.ServicePeriodSource(line.ProductID) === 'Line',
+        );
     }
 
     /**
@@ -506,9 +609,24 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         if (this.IsSaved && !this.Lines.IsLoaded) {
             await this.Lines.Load();
         }
-        this.Status = 'Confirmed';
+        await this.SaveStatus('Confirmed', 'The order could not be confirmed.');
+    }
+
+    /**
+     * Move to `status` by saving, and put the previous status back if the save is refused.
+     *
+     * Without the restore a refused transition stays on the object as an unsaved edit: the screen
+     * reads the new status, `IsBookedOrder` hides the verbs that depend on it, and every later save
+     * re-sends the same transition and is refused the same way, whatever else changed.
+     *
+     * Throws with the server's reason.
+     */
+    public async SaveStatus(status: OrderHeaderEntity['Status'], fallbackMessage: string): Promise<void> {
+        const previous = this.Status;
+        this.Status = status;
         if (!(await this.Save())) {
-            throw new Error(this.LatestResult?.CompleteMessage?.trim() || 'The order could not be confirmed.');
+            this.Status = previous;
+            throw new Error(this.LatestResult?.CompleteMessage?.trim() || fallbackMessage);
         }
     }
 
@@ -572,7 +690,10 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         const provider = this.ProviderToUse as unknown as IRunViewProvider;
         if (!provider) return null;
 
-        const asOf = this.OrderDate ?? new Date();
+        // Affiliation is a point-in-time question answered against `StartDate`/`EndDate`, both
+        // `date` columns, so this is a calendar day (#209). `new Date()` is an instant that reads
+        // back as the UTC day, which for an evening order is tomorrow.
+        const asOf = AsDateValue(this.OrderDate) ?? TodayAsDateValue();
         const orgId = await ResolveActiveEmployerOrganization(provider, targetPersonID, asOf, this.ContextCurrentUser);
         if (!orgId) return null;
 

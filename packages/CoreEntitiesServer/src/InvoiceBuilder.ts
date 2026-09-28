@@ -34,7 +34,8 @@ import {
 } from './InvoiceBehavior.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
-import { LoadOrdersEngine, OrdersEngine, ToISODate } from '@mj-biz-apps/orders-entities';
+import { LoadOrdersEngine, OrdersEngine, ParseAddressSnapshot, ToISODate, type OrderAddressSnapshot } from '@mj-biz-apps/orders-entities';
+import { CalendarDayOrToday } from './calendar-day.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_CHARGE_ENTITY = 'MJ_BizApps_Orders: Order Charges';
@@ -104,7 +105,7 @@ function uuidList(ids: Iterable<string | null | undefined>, context: string): st
 }
 
 /** Postal lines for an address, skipping the parts that are not filled in. */
-function addressLines(row: Row | undefined): string[] {
+function addressLines(row: Row | OrderAddressSnapshot | undefined): string[] {
     if (!row) return [];
     const cityLine = [str(row.City), [str(row.StateProvince), str(row.PostalCode)].filter(Boolean).join(' ')]
         .filter(Boolean)
@@ -134,7 +135,10 @@ export async function BuildInvoiceDocuments(
     },
 ): Promise<InvoiceBuildResult> {
     const id = RequireUUID(orderHeaderID, 'OrderHeaderID');
-    const asOf = options?.AsOf ? String(options.AsOf).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    // A calendar day, from the business zone (#209). This drives the days-until-due countdown
+    // against `DueDate`, a `date` column, so a UTC-day default made an evening invoice read one
+    // day closer to due than it was.
+    const asOf = ToISODate(await CalendarDayOrToday(options?.AsOf, provider, user)) as string;
 
     // Read first, because it decides which company's document this is.
     const instalmentResult = options?.PaymentScheduleID
@@ -388,8 +392,15 @@ export async function BuildInvoiceDocuments(
         return status !== 'Reversed' && status !== 'Failed' && status !== 'Voided';
     });
 
-    const billToAddress = order.BillToAddressID ? addressByID.get(String(order.BillToAddressID)) : undefined;
-    const shipToAddress = order.ShipToAddressID ? addressByID.get(String(order.ShipToAddressID)) : undefined;
+    // A confirmed order is invoiced to the address it was sold to, not wherever the customer's
+    // Address row says they are now (golive #263). Orders with no snapshot — drafts, and orders
+    // confirmed before snapshots existed — still read the live row.
+    const billToAddress =
+        ParseAddressSnapshot(str(order.BillToAddressSnapshot)) ??
+        (order.BillToAddressID ? addressByID.get(String(order.BillToAddressID)) : undefined);
+    const shipToAddress =
+        ParseAddressSnapshot(str(order.ShipToAddressSnapshot)) ??
+        (order.ShipToAddressID ? addressByID.get(String(order.ShipToAddressID)) : undefined);
 
     const billTo: InvoicePartyFacts = {
         Name: str(order.BillToOrganization) ?? str(order.BillToPerson),

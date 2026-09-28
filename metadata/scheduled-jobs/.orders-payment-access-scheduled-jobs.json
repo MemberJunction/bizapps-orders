@@ -1,0 +1,39 @@
+[
+  {
+    "_comments": [
+      "THE NIGHTLY PAYMENT-GATED ACCESS PASS (bc-aidp-next-golive#223).",
+      "",
+      "IT SHIPS DISABLED AND SET TO PREVIEW, the same two-step gate as the renewal job:",
+      "  · Status Disabled keeps a lower environment from cutting customers off the moment this lands.",
+      "  · Preview true means an enabled job reports what it would suspend and writes nothing.",
+      "Enable it, read the run's Changes output, then set Preview to false.",
+      "",
+      "03:30 UTC, after the 03:00 renewal pass, so a renewal placed tonight is seen with its own grants.",
+      "Daily because days past due change daily. ConcurrencyMode Skip, MissedRunPolicy RunOnce: the pass",
+      "is idempotent, so a catch-up is one run, not one per missed day. RunImmediatelyIfNeverRun false:",
+      "a first deployment must not suspend anybody before somebody has read the preview.",
+      "",
+      "OwnerUserID / NotifyUserID are unset: they name people, which differ per environment."
+    ],
+    "fields": {
+      "Name": "Orders — Enforce Payment-Gated Access (daily)",
+      "Description": "Suspends OnFirstPayment grants on renewal orders past the RenewalAccessCutoffDaysPastDue setting, and restores payment-suspended grants whose payment has arrived. Ships disabled and set to Preview: enable it, confirm the Changes list on the run, then set Preview to false.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 30 3 * * *",
+      "Timezone": "UTC",
+      "Status": "Disabled",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 30,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\":\"F93098EC-6F6B-4B34-A29A-EBE61C40F29A\",\"Params\":[{\"ActionParamID\":\"EB7BB6DE-F9CE-4591-B902-FBB52FA591EE\",\"ValueType\":\"Static\",\"Value\":\"true\"}]}"
+    },
+    "primaryKey": {
+      "ID": "8AFB25CC-3A2F-4C93-8BFA-4667A7ED0B6F"
+    }
+  }
+]

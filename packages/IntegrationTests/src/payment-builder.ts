@@ -21,6 +21,7 @@ import type {
     mjBizAppsOrdersPaymentHeaderEntity,
     mjBizAppsOrdersPaymentLineEntity,
 } from '@mj-biz-apps/orders-entities';
+import { AsDateValue, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 import type { PaymentHeaderEntityServer } from '@mj-biz-apps/orders-core-entities-server';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
@@ -88,7 +89,10 @@ export async function CreatePayment(user: UserInfo, spec: PaymentSpec): Promise<
     payment.PaymentTypeID = spec.PaymentTypeID;
     payment.Amount = spec.Amount;
     payment.ProcessingFeeAmount = spec.ProcessingFeeAmount ?? 0;
-    payment.PaymentDate = spec.PaymentDate ?? new Date();
+    // The harness must not carry the defect under test (#209): a fixture dated from the clock
+    // is dated tomorrow for the whole American evening, so an assertion about which day a row
+    // landed on would pass or fail by the hour the suite happened to run.
+    payment.PaymentDate = AsDateValue(spec.PaymentDate) ?? TodayAsDateValue();
     payment.Status = spec.Status ?? 'Captured';
     if (spec.BillToOrganizationID) payment.BillToOrganizationID = spec.BillToOrganizationID;
     if (spec.BillToPersonID) payment.BillToPersonID = spec.BillToPersonID;

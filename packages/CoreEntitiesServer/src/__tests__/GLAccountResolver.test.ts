@@ -2,7 +2,13 @@
  * GLAccountResolver walk: product → category → ancestors → product type → company.
  */
 import { describe, expect, it } from 'vitest';
-import { GLAccountResolver, GL_ROLE } from '../GLAccountResolver.js';
+import {
+    GLAccountResolutionError,
+    GLAccountResolver,
+    GL_ROLE,
+    IsRoleNotLinked,
+    UnbilledReceivableNotLinkedError,
+} from '../GLAccountResolver.js';
 
 const E = {
     Product: 'ent-product',
@@ -81,5 +87,60 @@ describe('GLAccountResolver walk', () => {
         await expect(
             impl.Resolve(GL_ROLE.AccountsReceivable, 'prod', 'cat-leaf', company, asOf, 'type-book'),
         ).rejects.toThrow(/product type/);
+    });
+});
+
+/** Catch the rejection so its fields can be asserted, failing the test if nothing is thrown. */
+async function rejectionOf(p: Promise<unknown>): Promise<GLAccountResolutionError> {
+    try {
+        await p;
+    } catch (err) {
+        expect(err).toBeInstanceOf(GLAccountResolutionError);
+        return err as GLAccountResolutionError;
+    }
+    throw new Error('expected a GLAccountResolutionError, but the promise resolved');
+}
+
+describe('GLAccountResolutionError says WHY it failed (golive #261)', () => {
+    it("reports nothing linked as 'NotLinked', which a tolerant caller may fall back on", async () => {
+        const { impl } = resolver({});
+        const err = await rejectionOf(
+            impl.Resolve(GL_ROLE.GiftCardLiability, 'prod', 'cat-leaf', company, asOf, 'type-book'),
+        );
+        expect(err.Failure).toBe('NotLinked');
+        expect(IsRoleNotLinked(err)).toBe(true);
+    });
+
+    it("reports a link to another company as 'CrossCompany', which no caller may fall back on (D6)", async () => {
+        const impl = new GLAccountResolver(E, {} as never, {} as never, () => ({
+            GLAccountID: 'acct-other',
+            CompanyID: 'co-other',
+        }));
+        const err = await rejectionOf(impl.Resolve(GL_ROLE.UnbilledReceivable, null, null, company, asOf));
+        expect(err.Failure).toBe('CrossCompany');
+        expect(IsRoleNotLinked(err)).toBe(false);
+    });
+
+    it('does not mistake an unrelated error for an unlinked role', () => {
+        expect(IsRoleNotLinked(new Error('connection reset'))).toBe(false);
+    });
+});
+
+describe('UnbilledReceivableNotLinkedError', () => {
+    it('names the entry, the role, the company, the amount and where to link it', async () => {
+        const { impl } = resolver({});
+        const cause = await rejectionOf(
+            impl.Resolve(GL_ROLE.UnbilledReceivable, 'prod', 'cat-leaf', company, asOf, 'type-book'),
+        );
+        const err = UnbilledReceivableNotLinkedError('Order 1042 line 2', company, -250, cause);
+
+        expect(err.Role).toBe(GL_ROLE.UnbilledReceivable);
+        expect(err.Failure).toBe('NotLinked');
+        expect(err.message).toContain('Order 1042 line 2');
+        expect(err.message).toContain(`'${GL_ROLE.UnbilledReceivable}'`);
+        expect(err.message).toContain(company);
+        expect(err.message).toContain('250.00');
+        expect(err.message).toContain('Account Links');
+        expect(err.message).toContain('Nothing was posted');
     });
 });
