@@ -1,0 +1,36 @@
+[
+  {
+    "_comments": [
+      "FINANCE EXCEPTION TYPE 5, OVERLAPPING_SUBSCRIPTION (golive #279). Its own dot-json so it conflicts",
+      "with no other change to `.orders-remote-operations.json`; `filePattern` is `**/.*.json`.",
+      "",
+      "The nightly caller is the `Orders.DetectOverlappingSubscriptions` Action; this operation carries",
+      "the whole check so the Action stays an adapter, as with `Orders.SpawnRenewals`."
+    ],
+    "fields": {
+      "Name": "Detect Overlapping Subscriptions",
+      "OperationKey": "Orders.DetectOverlappingSubscriptions",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "Raise a finance exception for each pair of live subscriptions for one holder whose terms overlap: the same product, or (when the exception type's IncludeSameCategory setting is on) products in the same category with the same subscription type. Each overlap is billed and recognized twice unless one is cancelled. Reads its settings from the OVERLAPPING_SUBSCRIPTION exception type and does nothing when that type is missing or inactive. The source record is the later subscription and the creator is whoever confirmed the order that booked it; an order confirmed before that was recorded raises the exception as creator unresolved. Re-running is safe: a pair that already has an exception is left alone.",
+      "InputTypeName": "OrdersDetectOverlappingSubscriptionsInput",
+      "InputTypeDefinition": "@file:types/orders-detect-overlapping-subscriptions.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersDetectOverlappingSubscriptionsOutput",
+      "OutputTypeDefinition": "@file:types/orders-detect-overlapping-subscriptions.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "LongRunning",
+      "RequiredScope": "subscriptions:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "3F4B9D9E-1084-4C7C-A883-21D3DC014D68"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T13:40:39.612Z",
+      "checksum": "6023f40708aa2966fae83d0247d3f155cd749671fe229e3df08ddd33e6a61cf9"
+    }
+  }
+]

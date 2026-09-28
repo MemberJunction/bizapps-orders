@@ -109,6 +109,8 @@ export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './Cancel
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
 export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
 
+export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
+
 export {
     BuildGLAccountResolver,
     EntityIDFor,

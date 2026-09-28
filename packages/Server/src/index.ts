@@ -19,6 +19,7 @@ import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
 import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
 import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-gated-access.action.js';
+import { LoadDetectOverlappingSubscriptionsAction } from './custom/detect-overlapping-subscriptions.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -52,6 +53,7 @@ import {
     LoadTaxResolver,
     LoadRevenueRecognitionDrivers,
     LoadSpawnRenewalsOperation,
+    LoadDetectOverlappingSubscriptionsOperation,
     LoadEmailDeliveryChannel,
     LoadStoredValuePaymentProvider,
     LoadStripeACHPaymentProvider,
@@ -131,6 +133,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
     LoadSpawnRenewalsOperation();      // the 'Orders.SpawnRenewals' remote operation (D55)
+    LoadDetectOverlappingSubscriptionsOperation(); // 'Orders.DetectOverlappingSubscriptions' — finance exception type 5 (golive #279)
     LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
     LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator
 
@@ -151,6 +154,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
     LoadSpawnRenewalsAction();         // 'Orders.SpawnRenewals' — the scheduler's way in to the renewal operation
     LoadEnforcePaymentGatedAccessAction(); // 'Orders.EnforcePaymentGatedAccess' — nightly renewal cutoff and restore (#223)
+    LoadDetectOverlappingSubscriptionsAction(); // 'Orders.DetectOverlappingSubscriptions' — nightly overlap check for finance review (golive #279)
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class

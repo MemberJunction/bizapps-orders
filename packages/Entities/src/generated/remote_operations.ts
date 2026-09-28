@@ -505,6 +505,63 @@ export interface CheckEntitlementOutput {
 }
 
 /**
+ * Input for `Orders.DetectOverlappingSubscriptions`.
+ *
+ * The nightly check behind finance exception type OVERLAPPING_SUBSCRIPTION: one exception per
+ * pair of live subscriptions for one holder whose terms overlap, raised through accounting's
+ * `Accounting.RaiseFinanceExceptions`. Re-running is safe — an exception already raised for a
+ * pair is left as it is.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersDetectOverlappingSubscriptionsInput {
+    /**
+     * The business day the exceptions are dated to (YYYY-MM-DD). Omit for today in the business
+     * time zone, which is what the schedule uses.
+     */
+    AsOfDate?: string;
+}
+
+/**
+ * Output for `Orders.DetectOverlappingSubscriptions`.
+ *
+ * Counts, plus every error, so an unattended run that raised nothing can be told apart from one
+ * that found nothing.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OverlappingSubscriptionsDetectionError {
+    /** `<EarlierSubscriptionID>|<LaterSubscriptionID>` when the error belongs to one pair. */
+    DedupeKey?: string;
+    Code: string;
+    Message: string;
+}
+
+export interface OrdersDetectOverlappingSubscriptionsOutput {
+    /** False when any pair could not be raised; every reason is in Errors. */
+    Success: boolean;
+    Message?: string;
+    /**
+     * False when the OVERLAPPING_SUBSCRIPTION exception type is missing or inactive. The check then
+     * does not run: the type's configuration is the only source of its settings.
+     */
+    TypeActive: boolean;
+    /** The business day the exceptions were dated to (YYYY-MM-DD). */
+    ExceptionDate: string;
+    /** Pairs the "Overlapping Subscriptions" query returned. */
+    PairsFound: number;
+    /** Pairs left after the IncludeSameCategory setting: the ones an exception was raised for. */
+    PairsConsidered: number;
+    /** Exceptions created by this run. */
+    Created: number;
+    /** Pairs that already had an exception, in any status. Left unchanged. */
+    AlreadyRaised: number;
+    /** Pairs accounting skipped. */
+    Skipped: number;
+    Errors: OverlappingSubscriptionsDetectionError[];
+}
+
+/**
  * Input for `Orders.FulfillOrderLines`.
  *
  * Flipping lines to Fulfilled and advancing the order when the last one is done are ONE decision,
@@ -1463,6 +1520,22 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
     public readonly OperationKey = "Orders.CheckEntitlement";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.DetectOverlappingSubscriptions — Detect Overlapping Subscriptions
+// ============================================================
+/**
+ * Detect Overlapping Subscriptions
+ * Raise a finance exception for each pair of live subscriptions for one holder whose terms overlap: the same product, or (when the exception type's IncludeSameCategory setting is on) products in the same category with the same subscription type. Each overlap is billed and recognized twice unless one is cancelled. Reads its settings from the OVERLAPPING_SUBSCRIPTION exception type and does nothing when that type is missing or inactive. The source record is the later subscription and the creator is whoever confirmed the order that booked it; an order confirmed before that was recorded raises the exception as creator unresolved. Re-running is safe: a pair that already has an exception is left alone.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.DetectOverlappingSubscriptions'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersDetectOverlappingSubscriptionsOperation extends BaseRemotableOperation<OrdersDetectOverlappingSubscriptionsInput, OrdersDetectOverlappingSubscriptionsOutput> {
+    public readonly OperationKey = "Orders.DetectOverlappingSubscriptions";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "subscriptions:write";
     public readonly RequiresSystemUser = false;
 }
 
