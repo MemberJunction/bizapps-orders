@@ -12,19 +12,26 @@
  *    stale client copy of them — the same erase-the-total hazard OrderHeader had (golive #186). So
  *    they are re-read from the row before every update, exactly as `OrderEntityServer` does.
  *
+ * 3. ONLY THE OPERATION ISSUES (D91). Invoicing is what creates the receivable and posts the
+ *    billing entry, so a row may not arrive at `Invoiced` — or acquire an invoice number — by any
+ *    route other than `Orders.IssueInstalmentInvoice`. Half-issuing a row by hand froze it with no
+ *    journal entry behind it and nothing to show that anything was missing.
+ *
  * Everything else — immutability past Scheduled, identity set-once — is a trigger, where a bypassed
- * class cannot reach it.
+ * class cannot reach it. This one cannot be: the trigger sees the same UPDATE either way and has no
+ * idea which code path sent it.
  */
 import { BaseEntity, BaseEntityResult, EntitySaveOptions, IRunViewProvider, RunView } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
 import { RequireUUID } from './sql-guards.js';
 
 @RegisterClass(BaseEntity, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY)
 export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrderHeaderPaymentScheduleEntity {
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
-        const problem = await this.stampCompany();
+        const problem = this.checkIssuedOnlyByOperation() ?? (await this.stampCompany());
         if (problem) {
             // Registered rather than thrown: a refusal is a business outcome the caller reads off
             // LatestResult, the same contract every other save failure in this package uses.
@@ -33,6 +40,36 @@ export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrder
         }
         if (this.IsSaved) await this.adoptRollupsFromRow();
         return super.Save(options);
+    }
+
+    /**
+     * Refuse an issue that did not come from `Orders.IssueInstalmentInvoice`.
+     *
+     * Three transitions count as issuing, because each one on its own leaves a row the trigger will
+     * then freeze: advancing `Status` to `Invoiced`, and setting `DocumentNumber` or `InvoicedAt`
+     * where the stored row had none. A row created outright as `Invoiced` counts too — the CHECK
+     * constraint makes that possible as long as the identity columns come with it.
+     *
+     * Read from `OldValue`, not from `Dirty`: what matters is the stored row, and a caller that
+     * loads, edits and re-sets the same value should pass.
+     */
+    private checkIssuedOnlyByOperation(): string | null {
+        const stored = (name: string): unknown => (this.IsSaved ? this.GetFieldByName(name)?.OldValue : null);
+
+        const advancing = this.Status === 'Invoiced' && stored('Status') !== 'Invoiced';
+        const numbering = !!this.DocumentNumber && !stored('DocumentNumber');
+        const stamping = !!this.InvoicedAt && !stored('InvoicedAt');
+        if (!advancing && !numbering && !stamping) return null;
+
+        if (IsInstalmentIssueInProgress(this.ID)) return null;
+
+        return (
+            `An instalment is invoiced through Orders.IssueInstalmentInvoice, which freezes the document ` +
+            `number and posts the billing entry in one transaction. Setting ` +
+            `${[advancing ? 'Status to Invoiced' : null, numbering ? 'DocumentNumber' : null, stamping ? 'InvoicedAt' : null]
+                .filter(Boolean)
+                .join(', ')} directly would leave the row frozen with no entry behind it.`
+        );
     }
 
     /** Stamp `CompanyID` from the order's lines. Returns the refusal when it cannot be derived. */

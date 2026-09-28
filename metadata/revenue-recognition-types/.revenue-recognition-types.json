@@ -55,5 +55,25 @@
       "lastModified": "2026-09-02T03:26:24.677Z",
       "checksum": "6c692b6a318c982c40004fa3d92eb6b8b9ae8842e742912f697918ad648accfe"
     }
+  },
+  {
+    "fields": {
+      "Code": "PercentComplete",
+      "Name": "Percentage of Completion",
+      "Description": "Recognised by cumulative catch-up as progress is attested, not on a schedule computed at booking (plan D90). The line books to Deferred Revenue and stages no release entries; each Orders.RecordProgress observation posts LineTotalNet × percent complete minus what is already recognised, so a backward slide reverses through the same subtraction. DriverClass names the default progress method — ManualAttestation: a named person signs the percent.",
+      "DriverClass": "ManualAttestation",
+      "IsDeferred": 1,
+      "RequiresServicePeriod": 1,
+      "Sequence": 40,
+      "IsActive": 1,
+      "ScheduleBasis": "OnMeasurement"
+    },
+    "primaryKey": {
+      "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F04"
+    },
+    "sync": {
+      "lastModified": "2026-09-20T20:17:09.219Z",
+      "checksum": "1b56f03f7ef247ead1c73d8fa3f1d0ffe35057d5e89bea3d40a441b3db104bcd"
+    }
   }
 ]

@@ -17,7 +17,7 @@ import { MaxLength } from 'class-validator';
 import * as mj_core_schema_server_object_types from '@memberjunction/server'
 
 
-import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
     
 
 //****************************************************************************
@@ -5408,6 +5408,287 @@ export class mjBizAppsOrdersOrderLinePriceComponentResolver extends ResolverBase
         const provider = GetReadWriteProvider(providers);
         const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
         return this.DeleteRecord('MJ_BizApps_Orders: Order Line Price Components', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Order Line Progress Measurements
+//****************************************************************************
+@ObjectType({ description: `One attested progress observation on a percentage-of-completion order line (D90). PercentComplete is CUMULATIVE; Orders.RecordProgress posts the difference between the target it implies and what is already recognised, so a backward slide reverses through the same subtraction. A Posted row is immutable — corrections happen forward, in the next observation.` })
+export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({description: `The percentage-of-completion order line this observation is about.`}) 
+    @MaxLength(36)
+    OrderLineID: string;
+        
+    @Field({description: `The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.`}) 
+    MeasurementDate: Date;
+        
+    @Field(() => Float, {description: `CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.`}) 
+    PercentComplete: number;
+        
+    @Field({description: `The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.`}) 
+    @MaxLength(40)
+    MethodCode: string;
+        
+    @Field(() => Float, {nullable: true, description: `Optional quantitative input behind the percent (cost incurred, units delivered), kept for audit. PercentComplete drives the entry regardless.`}) 
+    MeasureNumerator?: number;
+        
+    @Field(() => Float, {nullable: true, description: `Optional quantitative denominator behind the percent (estimated total cost, total units), kept for audit.`}) 
+    MeasureDenominator?: number;
+        
+    @Field({nullable: true, description: `Who signed this observation. Every recognition entry names the observation and the person who signed it.`}) 
+    @MaxLength(36)
+    AttestedByUserID?: string;
+        
+    @Field({nullable: true, description: `Where a derived number came from, when it was derived (entity). NULL for a plain attestation.`}) 
+    @MaxLength(36)
+    SourceEntityID?: string;
+        
+    @Field({nullable: true, description: `Where a derived number came from, when it was derived (record). NULL for a plain attestation.`}) 
+    @MaxLength(400)
+    SourceRecordID?: string;
+        
+    @Field({nullable: true, description: `Free text from the signer.`}) 
+    Notes?: string;
+        
+    @Field(() => Float, {nullable: true, description: `Revenue recognised on the line before this observation posted. Materialised for the audit chain; agrees with the sum of posted recognition entries for the line.`}) 
+    RecognizedToDateBefore?: number;
+        
+    @Field(() => Float, {nullable: true, description: `Revenue recognised on the line after this observation posted: LineTotalNet × PercentComplete, rounded to the cent. At 100% it is the line amount exactly.`}) 
+    RecognizedToDateAfter?: number;
+        
+    @Field(() => Float, {nullable: true, description: `The delta this observation posted: After − Before. NEGATIVE on a backward slide (the entry is mirrored, Dr Sales / Cr Deferred Revenue). Zero when the observation moved nothing, in which case no entry was written.`}) 
+    RecognitionAmount?: number;
+        
+    @Field({nullable: true, description: `The RevenueRecognition journal entry this observation produced. Soft reference into accounting. NULL when the delta was zero.`}) 
+    @MaxLength(36)
+    JournalEntryID?: string;
+        
+    @Field({description: `Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.`}) 
+    @MaxLength(20)
+    Status: string;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    AttestedByUser?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(255)
+    SourceEntity?: string;
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Order Line Progress Measurements
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersOrderLineProgressMeasurementInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    OrderLineID?: string;
+
+    @Field({ nullable: true })
+    MeasurementDate?: Date;
+
+    @Field(() => Float, { nullable: true })
+    PercentComplete?: number;
+
+    @Field({ nullable: true })
+    MethodCode?: string;
+
+    @Field(() => Float, { nullable: true })
+    MeasureNumerator: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MeasureDenominator: number | null;
+
+    @Field({ nullable: true })
+    AttestedByUserID: string | null;
+
+    @Field({ nullable: true })
+    SourceEntityID: string | null;
+
+    @Field({ nullable: true })
+    SourceRecordID: string | null;
+
+    @Field({ nullable: true })
+    Notes: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RecognizedToDateBefore: number | null;
+
+    @Field(() => Float, { nullable: true })
+    RecognizedToDateAfter: number | null;
+
+    @Field(() => Float, { nullable: true })
+    RecognitionAmount: number | null;
+
+    @Field({ nullable: true })
+    JournalEntryID: string | null;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Order Line Progress Measurements
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersOrderLineProgressMeasurementInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    OrderLineID?: string;
+
+    @Field({ nullable: true })
+    MeasurementDate?: Date;
+
+    @Field(() => Float, { nullable: true })
+    PercentComplete?: number;
+
+    @Field({ nullable: true })
+    MethodCode?: string;
+
+    @Field(() => Float, { nullable: true })
+    MeasureNumerator?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MeasureDenominator?: number | null;
+
+    @Field({ nullable: true })
+    AttestedByUserID?: string | null;
+
+    @Field({ nullable: true })
+    SourceEntityID?: string | null;
+
+    @Field({ nullable: true })
+    SourceRecordID?: string | null;
+
+    @Field({ nullable: true })
+    Notes?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RecognizedToDateBefore?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    RecognizedToDateAfter?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    RecognitionAmount?: number | null;
+
+    @Field({ nullable: true })
+    JournalEntryID?: string | null;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Order Line Progress Measurements
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersOrderLineProgressMeasurementViewResult {
+    @Field(() => [mjBizAppsOrdersOrderLineProgressMeasurement_])
+    Results: mjBizAppsOrdersOrderLineProgressMeasurement_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersOrderLineProgressMeasurement_)
+export class mjBizAppsOrdersOrderLineProgressMeasurementResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersOrderLineProgressMeasurementViewResult)
+    async RunmjBizAppsOrdersOrderLineProgressMeasurementViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersOrderLineProgressMeasurementViewResult)
+    async RunmjBizAppsOrdersOrderLineProgressMeasurementViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersOrderLineProgressMeasurementViewResult)
+    async RunmjBizAppsOrdersOrderLineProgressMeasurementDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Order Line Progress Measurements';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersOrderLineProgressMeasurement_, { nullable: true })
+    async mjBizAppsOrdersOrderLineProgressMeasurement(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersOrderLineProgressMeasurement_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Order Line Progress Measurements', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwOrderLineProgressMeasurements')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Order Line Progress Measurements', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Order Line Progress Measurements', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersOrderLineProgressMeasurement_)
+    async CreatemjBizAppsOrdersOrderLineProgressMeasurement(
+        @Arg('input', () => CreatemjBizAppsOrdersOrderLineProgressMeasurementInput) input: CreatemjBizAppsOrdersOrderLineProgressMeasurementInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Order Line Progress Measurements', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersOrderLineProgressMeasurement_)
+    async UpdatemjBizAppsOrdersOrderLineProgressMeasurement(
+        @Arg('input', () => UpdatemjBizAppsOrdersOrderLineProgressMeasurementInput) input: UpdatemjBizAppsOrdersOrderLineProgressMeasurementInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Order Line Progress Measurements', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersOrderLineProgressMeasurement_)
+    async DeletemjBizAppsOrdersOrderLineProgressMeasurement(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Order Line Progress Measurements', key, options, provider, userPayload, pubSub);
     }
     
 }
@@ -11544,6 +11825,9 @@ export class mjBizAppsOrdersRevenueRecognitionType_ {
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
+    @Field({description: `AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.`}) 
+    @MaxLength(20)
+    ScheduleBasis: string;
         
 }
 
@@ -11578,6 +11862,9 @@ export class CreatemjBizAppsOrdersRevenueRecognitionTypeInput {
 
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
+
+    @Field({ nullable: true })
+    ScheduleBasis?: string;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -11615,6 +11902,9 @@ export class UpdatemjBizAppsOrdersRevenueRecognitionTypeInput {
 
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
+
+    @Field({ nullable: true })
+    ScheduleBasis?: string;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

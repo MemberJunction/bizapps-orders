@@ -2050,6 +2050,120 @@ export const mjBizAppsOrdersOrderLinePriceComponentSchema = z.object({
 export type mjBizAppsOrdersOrderLinePriceComponentEntityType = z.infer<typeof mjBizAppsOrdersOrderLinePriceComponentSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Order Line Progress Measurements
+ */
+export const mjBizAppsOrdersOrderLineProgressMeasurementSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderLineID: z.string().describe(`
+        * * Field Name: OrderLineID
+        * * Display Name: Order Line ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+        * * Description: The percentage-of-completion order line this observation is about.`),
+    MeasurementDate: z.date().describe(`
+        * * Field Name: MeasurementDate
+        * * Display Name: Measurement Date
+        * * SQL Data Type: date
+        * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.`),
+    PercentComplete: z.number().describe(`
+        * * Field Name: PercentComplete
+        * * Display Name: Percent Complete
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.`),
+    MethodCode: z.string().describe(`
+        * * Field Name: MethodCode
+        * * Display Name: Method Code
+        * * SQL Data Type: nvarchar(40)
+        * * Description: The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.`),
+    MeasureNumerator: z.number().nullable().describe(`
+        * * Field Name: MeasureNumerator
+        * * Display Name: Measure Numerator
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Optional quantitative input behind the percent (cost incurred, units delivered), kept for audit. PercentComplete drives the entry regardless.`),
+    MeasureDenominator: z.number().nullable().describe(`
+        * * Field Name: MeasureDenominator
+        * * Display Name: Measure Denominator
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Optional quantitative denominator behind the percent (estimated total cost, total units), kept for audit.`),
+    AttestedByUserID: z.string().nullable().describe(`
+        * * Field Name: AttestedByUserID
+        * * Display Name: Attested By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: Who signed this observation. Every recognition entry names the observation and the person who signed it.`),
+    SourceEntityID: z.string().nullable().describe(`
+        * * Field Name: SourceEntityID
+        * * Display Name: Source Entity ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Entities (vwEntities.ID)
+        * * Description: Where a derived number came from, when it was derived (entity). NULL for a plain attestation.`),
+    SourceRecordID: z.string().nullable().describe(`
+        * * Field Name: SourceRecordID
+        * * Display Name: Source Record ID
+        * * SQL Data Type: nvarchar(400)
+        * * Description: Where a derived number came from, when it was derived (record). NULL for a plain attestation.`),
+    Notes: z.string().nullable().describe(`
+        * * Field Name: Notes
+        * * Display Name: Notes
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: Free text from the signer.`),
+    RecognizedToDateBefore: z.number().nullable().describe(`
+        * * Field Name: RecognizedToDateBefore
+        * * Display Name: Recognized To Date Before
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Revenue recognised on the line before this observation posted. Materialised for the audit chain; agrees with the sum of posted recognition entries for the line.`),
+    RecognizedToDateAfter: z.number().nullable().describe(`
+        * * Field Name: RecognizedToDateAfter
+        * * Display Name: Recognized To Date After
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Revenue recognised on the line after this observation posted: LineTotalNet × PercentComplete, rounded to the cent. At 100% it is the line amount exactly.`),
+    RecognitionAmount: z.number().nullable().describe(`
+        * * Field Name: RecognitionAmount
+        * * Display Name: Recognition Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The delta this observation posted: After − Before. NEGATIVE on a backward slide (the entry is mirrored, Dr Sales / Cr Deferred Revenue). Zero when the observation moved nothing, in which case no entry was written.`),
+    JournalEntryID: z.string().nullable().describe(`
+        * * Field Name: JournalEntryID
+        * * Display Name: Journal Entry ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: The RevenueRecognition journal entry this observation produced. Soft reference into accounting. NULL when the delta was zero.`),
+    Status: z.union([z.literal('Draft'), z.literal('Posted')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Draft
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Draft
+    *   * Posted
+        * * Description: Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    AttestedByUser: z.string().nullable().describe(`
+        * * Field Name: AttestedByUser
+        * * Display Name: Attested By User
+        * * SQL Data Type: nvarchar(100)`),
+    SourceEntity: z.string().nullable().describe(`
+        * * Field Name: SourceEntity
+        * * Display Name: Source Entity
+        * * SQL Data Type: nvarchar(255)`),
+});
+
+export type mjBizAppsOrdersOrderLineProgressMeasurementEntityType = z.infer<typeof mjBizAppsOrdersOrderLineProgressMeasurementSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Lines
  */
 export const mjBizAppsOrdersOrderLineSchema = z.object({
@@ -4446,6 +4560,16 @@ export const mjBizAppsOrdersRevenueRecognitionTypeSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    ScheduleBasis: z.union([z.literal('AtBooking'), z.literal('OnMeasurement')]).describe(`
+        * * Field Name: ScheduleBasis
+        * * Display Name: Schedule Basis
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: AtBooking
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AtBooking
+    *   * OnMeasurement
+        * * Description: AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.`),
 });
 
 export type mjBizAppsOrdersRevenueRecognitionTypeEntityType = z.infer<typeof mjBizAppsOrdersRevenueRecognitionTypeSchema>;
@@ -11177,6 +11301,292 @@ export class mjBizAppsOrdersOrderLinePriceComponentEntity extends BaseEntity<mjB
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: SourceEntity
+    * * Display Name: Source Entity
+    * * SQL Data Type: nvarchar(255)
+    */
+    get SourceEntity(): string | null {
+        return this.Get('SourceEntity');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Order Line Progress Measurements - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OrderLineProgressMeasurement
+ * * Base View: vwOrderLineProgressMeasurements
+ * * @description One attested progress observation on a percentage-of-completion order line (D90). PercentComplete is CUMULATIVE; Orders.RecordProgress posts the difference between the target it implies and what is already recognised, so a backward slide reverses through the same subtraction. A Posted row is immutable — corrections happen forward, in the next observation.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Line Progress Measurements')
+export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntity<mjBizAppsOrdersOrderLineProgressMeasurementEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Order Line Progress Measurements record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Line Progress Measurements record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOrderLineProgressMeasurementEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderLineID
+    * * Display Name: Order Line ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    * * Description: The percentage-of-completion order line this observation is about.
+    */
+    get OrderLineID(): string {
+        return this.Get('OrderLineID');
+    }
+    set OrderLineID(value: string) {
+        this.Set('OrderLineID', value);
+    }
+
+    /**
+    * * Field Name: MeasurementDate
+    * * Display Name: Measurement Date
+    * * SQL Data Type: date
+    * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.
+    */
+    get MeasurementDate(): Date {
+        return this.Get('MeasurementDate');
+    }
+    set MeasurementDate(value: Date) {
+        this.Set('MeasurementDate', value);
+    }
+
+    /**
+    * * Field Name: PercentComplete
+    * * Display Name: Percent Complete
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.
+    */
+    get PercentComplete(): number {
+        return this.Get('PercentComplete');
+    }
+    set PercentComplete(value: number) {
+        this.Set('PercentComplete', value);
+    }
+
+    /**
+    * * Field Name: MethodCode
+    * * Display Name: Method Code
+    * * SQL Data Type: nvarchar(40)
+    * * Description: The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.
+    */
+    get MethodCode(): string {
+        return this.Get('MethodCode');
+    }
+    set MethodCode(value: string) {
+        this.Set('MethodCode', value);
+    }
+
+    /**
+    * * Field Name: MeasureNumerator
+    * * Display Name: Measure Numerator
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Optional quantitative input behind the percent (cost incurred, units delivered), kept for audit. PercentComplete drives the entry regardless.
+    */
+    get MeasureNumerator(): number | null {
+        return this.Get('MeasureNumerator');
+    }
+    set MeasureNumerator(value: number | null) {
+        this.Set('MeasureNumerator', value);
+    }
+
+    /**
+    * * Field Name: MeasureDenominator
+    * * Display Name: Measure Denominator
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Optional quantitative denominator behind the percent (estimated total cost, total units), kept for audit.
+    */
+    get MeasureDenominator(): number | null {
+        return this.Get('MeasureDenominator');
+    }
+    set MeasureDenominator(value: number | null) {
+        this.Set('MeasureDenominator', value);
+    }
+
+    /**
+    * * Field Name: AttestedByUserID
+    * * Display Name: Attested By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: Who signed this observation. Every recognition entry names the observation and the person who signed it.
+    */
+    get AttestedByUserID(): string | null {
+        return this.Get('AttestedByUserID');
+    }
+    set AttestedByUserID(value: string | null) {
+        this.Set('AttestedByUserID', value);
+    }
+
+    /**
+    * * Field Name: SourceEntityID
+    * * Display Name: Source Entity ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Entities (vwEntities.ID)
+    * * Description: Where a derived number came from, when it was derived (entity). NULL for a plain attestation.
+    */
+    get SourceEntityID(): string | null {
+        return this.Get('SourceEntityID');
+    }
+    set SourceEntityID(value: string | null) {
+        this.Set('SourceEntityID', value);
+    }
+
+    /**
+    * * Field Name: SourceRecordID
+    * * Display Name: Source Record ID
+    * * SQL Data Type: nvarchar(400)
+    * * Description: Where a derived number came from, when it was derived (record). NULL for a plain attestation.
+    */
+    get SourceRecordID(): string | null {
+        return this.Get('SourceRecordID');
+    }
+    set SourceRecordID(value: string | null) {
+        this.Set('SourceRecordID', value);
+    }
+
+    /**
+    * * Field Name: Notes
+    * * Display Name: Notes
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: Free text from the signer.
+    */
+    get Notes(): string | null {
+        return this.Get('Notes');
+    }
+    set Notes(value: string | null) {
+        this.Set('Notes', value);
+    }
+
+    /**
+    * * Field Name: RecognizedToDateBefore
+    * * Display Name: Recognized To Date Before
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Revenue recognised on the line before this observation posted. Materialised for the audit chain; agrees with the sum of posted recognition entries for the line.
+    */
+    get RecognizedToDateBefore(): number | null {
+        return this.Get('RecognizedToDateBefore');
+    }
+    set RecognizedToDateBefore(value: number | null) {
+        this.Set('RecognizedToDateBefore', value);
+    }
+
+    /**
+    * * Field Name: RecognizedToDateAfter
+    * * Display Name: Recognized To Date After
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Revenue recognised on the line after this observation posted: LineTotalNet × PercentComplete, rounded to the cent. At 100% it is the line amount exactly.
+    */
+    get RecognizedToDateAfter(): number | null {
+        return this.Get('RecognizedToDateAfter');
+    }
+    set RecognizedToDateAfter(value: number | null) {
+        this.Set('RecognizedToDateAfter', value);
+    }
+
+    /**
+    * * Field Name: RecognitionAmount
+    * * Display Name: Recognition Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The delta this observation posted: After − Before. NEGATIVE on a backward slide (the entry is mirrored, Dr Sales / Cr Deferred Revenue). Zero when the observation moved nothing, in which case no entry was written.
+    */
+    get RecognitionAmount(): number | null {
+        return this.Get('RecognitionAmount');
+    }
+    set RecognitionAmount(value: number | null) {
+        this.Set('RecognitionAmount', value);
+    }
+
+    /**
+    * * Field Name: JournalEntryID
+    * * Display Name: Journal Entry ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: The RevenueRecognition journal entry this observation produced. Soft reference into accounting. NULL when the delta was zero.
+    */
+    get JournalEntryID(): string | null {
+        return this.Get('JournalEntryID');
+    }
+    set JournalEntryID(value: string | null) {
+        this.Set('JournalEntryID', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Draft
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Draft
+    *   * Posted
+    * * Description: Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.
+    */
+    get Status(): 'Draft' | 'Posted' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Draft' | 'Posted') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: AttestedByUser
+    * * Display Name: Attested By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get AttestedByUser(): string | null {
+        return this.Get('AttestedByUser');
     }
 
     /**
@@ -18291,6 +18701,24 @@ export class mjBizAppsOrdersRevenueRecognitionTypeEntity extends BaseEntity<mjBi
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ScheduleBasis
+    * * Display Name: Schedule Basis
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: AtBooking
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AtBooking
+    *   * OnMeasurement
+    * * Description: AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.
+    */
+    get ScheduleBasis(): 'AtBooking' | 'OnMeasurement' {
+        return this.Get('ScheduleBasis');
+    }
+    set ScheduleBasis(value: 'AtBooking' | 'OnMeasurement') {
+        this.Set('ScheduleBasis', value);
     }
 }
 

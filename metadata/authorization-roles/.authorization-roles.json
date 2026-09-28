@@ -1,0 +1,22 @@
+[
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Progress.Attest",
+      "RoleID": "@lookup:MJ: Roles.Name=Engagement Lead",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "4A5BFA8C-25D5-4C83-9B1B-AADDC66FAE71"
+    }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Price.OverrideAny",
+      "RoleID": "@lookup:MJ: Roles.Name=Account Director",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "D8F2A094-F8A9-43F4-A347-716C4657BD8D"
+    }
+  }
+]
