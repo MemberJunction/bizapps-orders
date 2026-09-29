@@ -1,4 +1,14 @@
-import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output, inject } from '@angular/core';
+import {
+    ChangeDetectorRef,
+    Component,
+    EventEmitter,
+    Input,
+    OnChanges,
+    OnInit,
+    Output,
+    SimpleChanges,
+    inject,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
@@ -15,6 +25,9 @@ import { MJOPricingScheduler } from '../../services/pricing-scheduler.service';
 import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
+
+/** The reason a return opens with, and the one it returns to when the origin changes. */
+const DEFAULT_RETURN_REASON = 'Damaged in transit';
 
 /** A line being returned, with the cap the origin imposes. */
 interface MJOReturnLine {
@@ -63,6 +76,27 @@ interface MJOReturnLine {
                 The original order is not changed.
         </mj-alert>
 
+        <!--
+            WHAT WENT WRONG, ON SCREEN. \`Error\` was assigned on three paths — a failed origin load,
+            a refused confirm and a thrown confirm — and bound nowhere, so every one of them showed
+            the user an unchanged page and no reason. It sits above both branches because two of the
+            three happen while the origin card is not rendered.
+        -->
+        @if (Error) {
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation"
+                      class="mjo-rt__note mjo-rt__error" data-testid="return-error">
+                {{ Error }}
+            </mj-alert>
+        }
+
+        <!-- Work this page discarded on the user's behalf, said out loud rather than done quietly. -->
+        @if (Notice) {
+            <mj-alert Variant="warning" Icon="fa-solid fa-circle-info" class="mjo-rt__note"
+                      data-testid="return-notice">
+                {{ Notice }}
+            </mj-alert>
+        }
+
         @if (Origin) {
             <div class="mj-card mjo-rt__origin">
                 <div class="mj-card-pad mjo-rt__origin-row">
@@ -74,7 +108,25 @@ interface MJOReturnLine {
                         {{ Origin.BillToOrganization ?? Origin.BillToPerson ?? '—' }}
                     </mjo-stated-value>
                     <mjo-stated-value Label="Original">{{ Origin.TotalGross | mjoMoney }}</mjo-stated-value>
+                    <button type="button" mjButton variant="outline" size="sm" (click)="OpenPicker()">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Change origin order
+                    </button>
                 </div>
+                @if (PickerOpen) {
+                    <div class="mj-card-pad mjo-rt__picker">
+                        <mj-dropdown
+                            AriaLabel="Original order"
+                            Placeholder="Choose an order…"
+                            [Data]="PickerOrders"
+                            TextField="OrderNumber"
+                            ValueField="ID"
+                            [ValuePrimitive]="true"
+                            [Filterable]="true"
+                            (FilterChange)="FilterOrders($any($event))"
+                            (ValueChange)="ChooseOrigin($any($event))"
+                            name="changeOriginOrder" />
+                    </div>
+                }
             </div>
 
             <div class="mjo-rt__split">
@@ -187,9 +239,10 @@ interface MJOReturnLine {
                         <button
                             type="button"
                             mjButton variant="primary"
-                            [disabled]="!CanReturn"
+                            [disabled]="!CanReturn || Busy"
                             (click)="ConfirmReturn()">
-                            <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm return
+                            <i class="fa-solid fa-check" aria-hidden="true"></i>
+                            {{ Busy ? 'Confirming…' : 'Confirm return' }}
                         </button>
                     </div>
                 </aside>
@@ -199,6 +252,34 @@ interface MJOReturnLine {
                 <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
                 <div class="t">Select an order to return</div>
                 <div class="small">Choose the original order to start a return.</div>
+                <!--
+                    THREE STATES, NOT TWO. "Not asked yet" and "asked and got nothing" used to render
+                    the same sentence, so the "no booked orders" message flashed on every open — and a
+                    FAILED query returns an empty list too, which would have told the user the
+                    business has no confirmed orders when the truth was that the read did not work.
+                -->
+                @if (!PickerLoaded) {
+                    <div class="small muted mjo-rt__picker" data-testid="picker-loading">Loading orders…</div>
+                } @else if (PickerOrders.length) {
+                    <div class="mjo-rt__picker">
+                        <mj-dropdown
+                            AriaLabel="Original order"
+                            Placeholder="Choose an order…"
+                            [Data]="PickerOrders"
+                            TextField="OrderNumber"
+                            ValueField="ID"
+                            [ValuePrimitive]="true"
+                            [Filterable]="true"
+                            (FilterChange)="FilterOrders($any($event))"
+                            (ValueChange)="ChooseOrigin($any($event))"
+                            name="originOrder" />
+                    </div>
+                } @else {
+                    <div class="small muted mjo-rt__picker" data-testid="picker-empty">
+                        No confirmed orders came back to return against. An order has to be confirmed
+                        before it can be reversed — if you expected one here, the read may have failed.
+                    </div>
+                }
             </div>
         }
     `,
@@ -227,6 +308,25 @@ interface MJOReturnLine {
             .mjo-rt__qty { width: 74px; }
             .mjo-rt__actions { margin-top: var(--mj-space-4); }
             .mjo-rt__empty { padding: var(--mj-space-12); }
+            /* A SERVER ERROR IS NOT A SENTENCE. Measured on the golive#251 save failure: 11,636
+               characters and 4,003px tall, which pushed the whole return off screen. The text is
+               kept in full -- it is the only diagnostic anyone gets -- but it scrolls in its own
+               box instead of becoming the page. */
+            .mjo-rt__error {
+                max-height: 12rem;
+                overflow-y: auto;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+            /* The picker reads as one control rather than filling the card, and is centred in the
+               empty state because everything above it there is centred too. */
+            .mjo-rt__picker {
+                margin: var(--mj-space-4) auto 0;
+                max-width: 340px;
+                text-align: left;
+            }
+            /* The origin row pushes its action to the right, as the approved design does. */
+            .mjo-rt__origin-row > button { margin-left: auto; }
 
             @media (max-width: 1100px) {
                 .mjo-rt__split { flex-direction: column; }
@@ -238,7 +338,7 @@ interface MJOReturnLine {
         `,
     ],
 })
-export class MJOReturnPageComponent implements OnInit {
+export class MJOReturnPageComponent implements OnInit, OnChanges {
     /**
      * Render what was just loaded.
      *
@@ -257,8 +357,64 @@ export class MJOReturnPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
     private readonly entry = inject(MJOPricingScheduler);
 
-    /** The order being returned against. */
+    /**
+     * The order being returned against.
+     *
+     * Optional, and it was the ONLY way in until the picker below existed — which is why golive#250
+     * reported the page as unreachable: nothing in the repo ever set it, so the page showed its
+     * "choose the original order" empty state and offered nothing to choose with.
+     */
     @Input() OriginOrderID: string | null = null;
+
+    /**
+     * The order actually being returned against — the component's own state, NOT the `@Input`.
+     *
+     * `ChooseOrigin` used to assign `this.OriginOrderID`. Angular diffs an input against the last
+     * value IT bound, so after the picker wrote one, a parent binding that SAME id produced no
+     * `ngOnChanges` and the page quietly refused to reload. Writing your own input also means the
+     * parent and the child disagree about who owns it. The input is now read-only to this class:
+     * `ngOnInit`/`ngOnChanges` copy it in, the picker sets this directly, and everything downstream
+     * reads this.
+     */
+    private selectedOriginID: string | null = null;
+
+    /**
+     * THE ORIGIN PICKER (golive#250, and `mockups/orders/return.html`'s `<!-- origin picker -->`).
+     *
+     * Only BOOKED orders are offered, because that is what a return reverses — `IsBooked` is
+     * "journal entries exist and the receivable is real". A Draft or Quoted order has no money to
+     * give back, and `ReversalResolver` skips Draft and Voided on the server, so offering one would
+     * be offering a choice the server refuses.
+     *
+     * Filtered server-side rather than fetched-and-filtered: `MJOGetOrdersOptions` records a real
+     * performance bug from doing the latter, and a returns picker on a long-lived instance is
+     * exactly where it would bite.
+     */
+    public PickerOrders: mjBizAppsOrdersOrderHeaderEntity[] = [];
+    public PickerOpen = false;
+
+    /**
+     * Has the picker's list been ASKED for yet, as distinct from having come back empty?
+     *
+     * Without this the empty state renders during the initial load and says "no booked orders to
+     * return against yet" — so the message flashes on every open, and, worse, `run()` returns `[]`
+     * when the query FAILS. `orders-queries` argues that case against itself: *"an empty state is
+     * the most reassuring thing on the screen. A failed query that reads as good news is the worst
+     * outcome available."* A broken returns page would have told the user the business has no
+     * confirmed orders.
+     */
+    public PickerLoaded = false;
+
+    /**
+     * Which origin load is the current one.
+     *
+     * `LoadOrigin` awaits three times — the order, its lines, then the prior returns — and assigns to
+     * shared fields after each. The picker is on screen THROUGHOUT, because the load clears `Origin`
+     * first and the `@else` branch renders, so a second pick starts a second pass. Without this the
+     * slower response lands last and `Origin` and `Lines` can end up describing different orders,
+     * which `ConfirmReturn` would then book. Narrow window; wrong money.
+     */
+    private originLoadToken = 0;
 
     /** Emitted AFTER the return is booked, carrying the new order's id. */
     @Output() ReturnCreated = new EventEmitter<string | null>();
@@ -277,15 +433,134 @@ export class MJOReturnPageComponent implements OnInit {
         'Pricing error',
     ];
 
-    public Reason = 'Damaged in transit';
+    public Reason = DEFAULT_RETURN_REASON;
+
+    /** A non-blocking note about something the page did on the user's behalf, such as clearing work. */
+    public Notice: string | null = null;
 
     public async ngOnInit(): Promise<void> {
-        if (!this.OriginOrderID) return;
-        const orders = await GetOrders({ Preset: 'all' });
-        this.Origin = orders.find((o) => o.ID === this.OriginOrderID) ?? null;
-        if (!this.Origin) return;
+        // The input is copied in, never written back — see `selectedOriginID`.
+        this.selectedOriginID = this.OriginOrderID;
+        await this.LoadReturnableOrders();
+        await this.LoadOrigin();
+    }
+
+    /**
+     * THE INPUT CAN ARRIVE AFTER CONSTRUCTION, and `ngOnInit` runs once.
+     *
+     * The section shell hands a cached page its record with `setInput(...)`, which runs `ngOnChanges`
+     * and nothing else. Without this the page would load an order only when it happened to be
+     * constructed with one already set, and silently keep showing the previous origin otherwise —
+     * the shape `order-document.page.ts` still has.
+     */
+    public async ngOnChanges(changes: SimpleChanges): Promise<void> {
+        if (changes['OriginOrderID'] && !changes['OriginOrderID'].firstChange) {
+            this.selectedOriginID = this.OriginOrderID;
+            await this.LoadOrigin();
+        }
+    }
+
+    /** The orders a return may be written against — see `PickerOrders`. */
+    private async LoadReturnableOrders(search?: string): Promise<void> {
+        this.PickerOrders = await GetOrders({ Preset: 'booked', MaxRows: 200, Search: search?.trim() || undefined });
+        this.PickerLoaded = true;
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Re-ask the SERVER as the user types, rather than filtering the page we already hold.
+     *
+     * `MaxRows: 200` caps the list, and `run()` reports truncation only when no explicit cap was
+     * given — deliberately, because an explicit cap usually means a caller that WANTED a short list.
+     * That reasoning does not transfer here: this is the only route into returns, so the cap was
+     * silent by construction, and `[Filterable]` does not rescue it because `MJDropdownComponent`
+     * filters `Data` in the browser on `TextField`. The 201st-oldest booked order was unreachable by
+     * scrolling AND by typing, which turns a performance concern into a correctness one — returns
+     * against older orders simply stop being possible.
+     *
+     * With the text sent to the server the cap stops mattering: the 200 are now the 200 that match.
+     */
+    public async FilterOrders(search: string): Promise<void> {
+        await this.LoadReturnableOrders(search);
+    }
+
+
+    /** Choose the origin from the picker. Same load path as the input, so both routes agree. */
+    public async ChooseOrigin(orderID: string | null): Promise<void> {
+        if (!orderID) return;
+        if (orderID === this.selectedOriginID) {
+            // Picking the order already loaded should not discard the quantities typed against it.
+            this.PickerOpen = false;
+            this.cdr.detectChanges();
+            return;
+        }
+        // WHAT MUST NOT CROSS ORDERS. `LoadOrigin` replaces `Lines`, so quantities typed against the
+        // previous order go — correctly, since they name its line ids. `Reason` did NOT reset, so a
+        // reason chosen for one order silently became the reason recorded against another. Say when
+        // work is discarded rather than doing it quietly.
+        const discarding = this.Lines.some((l) => l.Returning > 0);
+        this.Reason = DEFAULT_RETURN_REASON;
+        this.Notice = discarding
+            ? 'Quantities from the previous order were cleared — they belong to its lines, not this one.'
+            : null;
+        this.Error = null;
+        this.selectedOriginID = orderID;
+        this.PickerOpen = false;
+        // The picker closing is a visible change of its own, and it happens BEFORE the await rather
+        // than as a side effect of whatever `LoadOrigin` does after it. `render-after-load` asks for
+        // the call in the same body as the assignment for exactly this reason: a tick that only
+        // happens across an await boundary is one the caller can move or drop without noticing.
+        this.cdr.detectChanges();
+        await this.LoadOrigin();
+    }
+
+    /** Reopen the picker to swap origins — the design's "Change origin order". */
+    public OpenPicker(): void {
+        this.PickerOpen = true;
+        this.cdr.detectChanges();
+    }
+
+    /** Load `OriginOrderID`'s order and its returnable lines, or clear the page if there is none. */
+    private async LoadOrigin(): Promise<void> {
+        // Claim this pass. Every assignment below is gated on still being the newest one — see
+        // `originLoadToken`. A superseded pass returns without touching anything.
+        const token = ++this.originLoadToken;
+        const current = (): boolean => token === this.originLoadToken;
+
+        this.Lines = [];
+        this.Origin = null;
+        if (!this.selectedOriginID) {
+            this.cdr.detectChanges();
+            return;
+        }
+        // BY ID, not every order then `.find`. `MJOGetOrdersOptions.OrderHeaderID` exists for exactly
+        // this and says why: "cheaper and exact where a caller already has the ID". The previous
+        // `Preset: 'all'` read the whole table to keep one row — invisible on a fresh instance and
+        // steadily worse with every order taken, which is the performance bug that options doc
+        // already records against fast entry's customer picker.
+        // GUARDED. `GetOrders` THROWS on a malformed id rather than returning nothing, and nothing
+        // above catches — so a bad id killed the load mid-flight with `Error` still null, i.e. a
+        // blank page and no reason. The `Preset:'all'` + `.find` this replaced could only come back
+        // empty, so the throw arrived with the by-id read.
+        let orders: mjBizAppsOrdersOrderHeaderEntity[];
+        try {
+            orders = await GetOrders({ OrderHeaderID: this.selectedOriginID });
+        } catch (e) {
+            if (!current()) return;
+            this.Error = `That order could not be loaded: ${e instanceof Error ? e.message : String(e)}`;
+            this.cdr.detectChanges();
+            return;
+        }
+        if (!current()) return;
+        this.Origin = orders[0] ?? null;
+        if (!this.Origin) {
+            this.Error = 'That order could not be loaded.';
+            this.cdr.detectChanges();
+            return;
+        }
 
         const lines = await GetOrderLines(this.Origin.ID);
+        if (!current()) return;
         // WHAT HAS ALREADY GONE BACK, from the server. The cap counts reversals across every order
         // and ignores Draft and Voided ones — the rule `ReversalResolver` refuses with at confirm
         // time. Computing it here from a view would be a second copy of that rule, and the copy on
@@ -293,6 +568,7 @@ export class MJOReturnPageComponent implements OnInit {
         // maximum it offered ignored earlier returns entirely; the server still refused the
         // over-return, which made the screen wrong rather than dangerous.
         const alreadyReturned = await this.LoadPriorReturns(lines.map((l) => String(l['ID'])));
+        if (!current()) return;
         this.Lines = lines.map((line) => {
             const net = Number(line['LineTotalNet'] ?? 0);
             const tax = Number(line['LineTax'] ?? 0);
@@ -399,6 +675,11 @@ export class MJOReturnPageComponent implements OnInit {
 
             // Throws with the engine's reason if refused; nothing is booked and the catch shows why.
             await draft.Confirm();
+            // BOOKED, so this page must stop offering to book it again. `CanReturn` reads
+            // `Lines.some(Returning > 0)` and nothing cleared the quantities, so the button stayed
+            // live after a success — and the second attempt exceeds the server's already-returned
+            // cap and is refused, which before this PR went into an `Error` nobody rendered.
+            this.Lines = this.Lines.map((l) => ({ ...l, AlreadyReturned: l.AlreadyReturned + l.Returning, Returning: 0 }));
             this.ReturnCreated.emit(draft.ID ?? null);
         } catch (e) {
             this.Error = e instanceof Error ? e.message : String(e);

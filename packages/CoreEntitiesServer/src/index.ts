@@ -15,8 +15,18 @@ export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './
 export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './GetBillingWorklistOperation.js';
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
-export { EmitInstalmentReclassEntry } from './InstalmentReclass.js';
-export type { InstalmentReclassContext } from './InstalmentReclass.js';
+export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
+export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
+export { BeginInstalmentIssue, EndInstalmentIssue, IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
+// Percentage-of-completion (AIDP-26, plan D90): the attestation, the catch-up entry, the worklist.
+export { RecordProgressOperation, LoadRecordProgressOperation } from './RecordProgressOperation.js';
+export {
+    OrderLineProgressMeasurementEntityServer,
+    LoadOrderLineProgressMeasurementEntityServer,
+} from './OrderLineProgressMeasurementEntityServer.js';
+export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from './GetProgressWorklistOperation.js';
+export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
+export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
     AddMonths,
     BuildPaymentSchedule,
@@ -24,8 +34,16 @@ export {
     ExplainShortfalls,
     SCHEDULE_DEFAULTS,
     ScheduleShortfalls,
+    ScheduledCompanyIDs,
 } from './PaymentScheduleBehavior.js';
-export type { ScheduleCadence, ScheduleLineFacts, ScheduleRowDraft, ScheduleRowFacts, ScheduleShortfall } from './PaymentScheduleBehavior.js';
+export type {
+    ScheduleCadence,
+    ScheduleLineFacts,
+    ScheduleRowDraft,
+    ScheduleRowFacts,
+    ScheduleShortfall,
+    ScheduleTimingFacts,
+} from './PaymentScheduleBehavior.js';
 
 // Fulfilment (D15) — a logistics fact, deliberately disconnected from revenue.
 export {
@@ -43,13 +61,13 @@ export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from '
 export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
-export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 
 export { MergeOrderRollups, ORDER_ROLLUP_FIELDS } from './OrderRollupBehavior.js';
 export type { OrderRollupField, OrderRollups, ResolvedOrderRollups } from './OrderRollupBehavior.js';
 
-export { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
-export type { JEDraft, JELineDraft, OrderLineDraft } from './OrderJournalEntryFactory.js';
+export { OrderJournalEntryFactory, BuildValueEntryLines, LineAmounts } from './OrderJournalEntryFactory.js';
+export type { JEDraft, JELineDraft, OrderLineDraft, ValueEntryAmounts, ValueEntryAccounts } from './OrderJournalEntryFactory.js';
 export { MergeLineDimensions, MergeDerivedTags } from './LineDimensionMerge.js';
 export { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 export type { DimensionDefaultEntityIDs, ResolvedDefault } from './DimensionDefaultResolver.js';
@@ -63,8 +81,11 @@ export {
     EvenOverTimeDriver,
     AllBackEndDriver,
     LoadRevenueRecognitionDrivers,
+    ProgressRecognitionDriver,
+    ManualAttestationDriver,
+    ComputeCatchUp,
 } from './RevenueRecognition.js';
-export type { RevRecContext, RevRecEntry, RevRecSchedule } from './RevenueRecognition.js';
+export type { RevRecContext, RevRecEntry, RevRecSchedule, ProgressMeasurement, CatchUp } from './RevenueRecognition.js';
 
 export {
     SubscriptionBehavior,
@@ -93,8 +114,9 @@ export {
     EntityIDFor,
     LoadAccountingEngine,
     ResolverEntities,
+    SubmitJournalEntryDrafts,
 } from './AccountingBridge.js';
-export type { AccountingEngineSurface } from './AccountingBridge.js';
+export type { AccountingEngineSurface, CreateJournalEntriesOutcome } from './AccountingBridge.js';
 
 export { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
 export type {
@@ -159,7 +181,7 @@ export type { PriceRule, PriceTierRule, PriceContext, PricingModel, Inapplicable
 export { RemainingReturnable, ValidateReversal, InheritedTerms } from './ReversalBehavior.js';
 export type { ReversalOrigin, ReversalRequest } from './ReversalBehavior.js';
 export { LoadReversalContext } from './ReversalResolver.js';
-export type { ReversalContext } from './ReversalResolver.js';
+export type { PriorReversal, ReversalContext } from './ReversalResolver.js';
 
 // Entitlements (D27/D76) — the pure policy resolution and the engine that applies it.
 export {
@@ -167,6 +189,11 @@ export {
     ResolveGrantQuantity,
     ResolveValidityWindow,
     InitialGrantStatus,
+    DecideGrantStatus,
+    FirstPaymentAmount,
+    ReconcileGrantStatus,
+    IsPaymentSuspension,
+    PAYMENT_GATED_TIMINGS,
     ReduceGrantForReturn,
     EvaluateGrantAccess,
     PickWinningAccess,
@@ -176,6 +203,11 @@ export {
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
+    SuspensionReason,
+    OrderPaymentFacts,
+    FirstPaymentScheduleRow,
+    GrantStatusDecision,
+    GrantStatusFacts,
     QuantityMode,
     ValidityMode,
     PolicyLevel,
@@ -198,6 +230,19 @@ export {
     RevokeGrantsForCanceledSubscription,
 } from './EntitlementEngine.js';
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
+// Payment-gated access (bc-aidp-next-golive#223) — grant status kept in step with the order's cash.
+export {
+    LoadOrderPaymentFacts,
+    ReconcilePaymentGatedGrants,
+    EnforcePaymentGatedAccess,
+} from './PaymentGatedAccess.js';
+export type {
+    OrderAccessFacts,
+    GrantStatusChange,
+    ReconcileOptions,
+    EnforcePaymentGatedAccessInput,
+    EnforcePaymentGatedAccessOutput,
+} from './PaymentGatedAccess.js';
 export { CheckEntitlementOperation, LoadCheckEntitlementOperation } from './CheckEntitlementOperation.js';
 export { ListEntitlementsOperation, LoadListEntitlementsOperation } from './ListEntitlementsOperation.js';
 export { CheckPersonEntitlement, ListPersonEntitlements, ASOF_FUTURE_TOLERANCE_MS } from './EntitlementRead.js';
@@ -515,3 +560,7 @@ export type {
 // (see the repo CLAUDE.md "SQL Safety" rule). Exported so the Server package's edge can use
 // the same audited helpers rather than hand-rolling its own.
 export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';
+
+// The calendar-day rule for records that carry a `date` column (#209). Exported for the same
+// reason as the guards above: the edge should reach for the audited helper, not re-derive it.
+export { CalendarDayOrToday } from './calendar-day.js';

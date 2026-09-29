@@ -88,6 +88,24 @@ export function IsOverdue(order: OverdueFacts, asOfDay: string): boolean {
 }
 
 /**
+ * How many whole days an order is past due as of a given day — 0 when it is not overdue at all.
+ *
+ * Built on {@link IsOverdue} rather than beside it, so "3 days past due" can never be reported for
+ * an order the rule says is not overdue (a voided one, or one whose balance has cleared).
+ *
+ * @param order - The order, with `DueDateISO` already normalized to `YYYY-MM-DD`.
+ * @param asOfDay - The business day as `YYYY-MM-DD`.
+ */
+export function DaysOverdue(order: OverdueFacts, asOfDay: string): number {
+    if (!IsOverdue(order, asOfDay)) return 0;
+    const day = (iso: string): number => {
+        const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+        return Date.UTC(y, (m ?? 1) - 1, d ?? 1);
+    };
+    return Math.round((day(asOfDay) - day(order.DueDateISO as string)) / 86_400_000);
+}
+
+/**
  * The same rule as a T-SQL boolean expression, for the layered base view.
  *
  * "Today" is `bt.Today` from `[__mj_BizAppsCommon].[fnBusinessToday]()`, which the view CROSS JOINs

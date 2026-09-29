@@ -1,0 +1,30 @@
+[
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Progress.Attest",
+      "RoleID": "@lookup:MJ: Roles.Name=Engagement Lead",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "4A5BFA8C-25D5-4C83-9B1B-AADDC66FAE71"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T21:24:42.701Z",
+      "checksum": "72d8de668bc6b520d118e006bd48e412ccd75bd9c076dbbd13774f08c1a29247"
+    }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Price.OverrideAny",
+      "RoleID": "@lookup:MJ: Roles.Name=Account Director",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "D8F2A094-F8A9-43F4-A347-716C4657BD8D"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T21:24:42.758Z",
+      "checksum": "5cd8769f6d6308693ab8a50888ff59718d8cacc117b90934f6e302def468156e"
+    }
+  }
+]

@@ -356,6 +356,8 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
         },
         Products: {
             WidgetA: requireProduct('WidgetA'),
+            /** The one BCP product with a 'Sales Discounts' link, so a discount books its own contra. */
+            DiscountedA: requireProduct('DiscountedA'),
             GiftCardA: requireProduct('GiftCardA'),
             BundleA: requireProduct('BundleA'),
             BundlePartX: requireProduct('BundlePartX'),
@@ -364,6 +366,7 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             WidgetC: requireProduct('WidgetC'),
             EventA: requireProduct('EventA'),
             DeferredA: requireProduct('DeferredA'),
+            PocA: requireProduct('PocA'),
             SubRolling: requireProduct('SubRolling'),
             SubCalendar: requireProduct('SubCalendar'),
             SubFiscal: requireProduct('SubFiscal'),

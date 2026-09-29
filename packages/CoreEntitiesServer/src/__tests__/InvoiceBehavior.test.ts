@@ -643,6 +643,32 @@ describe('instalment documents', () => {
         expect(InstalmentDocumentNumber('ORD-1005', 1, 2, 3, 4)).toBe('ORD-1005-B3');
     });
 
+    // CANCELLING AN INSTALMENT DOES NOT GIVE ITS NUMBER BACK (golive #242, Robert). Bill.com 422s
+    // on a duplicate invoice number and archiving keeps the number reserved, so the count fed here
+    // is EVERY row of the company whatever its status, not the live ones. These are the two shapes
+    // the finding names.
+    it('a cancelled instalment still consumes its number — one-instalment company', () => {
+        // One instalment, cancelled, replaced. Counting live rows gives 1 for both and numbers the
+        // replacement 'ORD-1005' a second time. Counting all rows gives 2, so they stay distinct.
+        expect(InstalmentDocumentNumber('ORD-1005', 0, 1, 1, 1)).toBe('ORD-1005');
+        expect(InstalmentDocumentNumber('ORD-1005', 0, 1, 1, 2)).toBe('ORD-1005-1');
+        expect(InstalmentDocumentNumber('ORD-1005', 0, 1, 2, 2)).toBe('ORD-1005-2');
+    });
+
+    it('a cancelled instalment still consumes its number — multi-company order', () => {
+        // Same on the B company: the suffix is per company, and the cancelled row counts there too.
+        expect(InstalmentDocumentNumber('ORD-1005', 1, 2, 1, 1)).toBe('ORD-1005-B');
+        expect(InstalmentDocumentNumber('ORD-1005', 1, 2, 1, 2)).toBe('ORD-1005-B1');
+        expect(InstalmentDocumentNumber('ORD-1005', 1, 2, 2, 2)).toBe('ORD-1005-B2');
+    });
+
+    it('every instalment of a company gets a distinct number once cancelled rows are counted', () => {
+        // Three authored, the middle one cancelled, a fourth added: four numbers, no repeats.
+        const numbers = [1, 2, 3, 4].map((n) => InstalmentDocumentNumber('ORD-1005', 0, 1, n, 4));
+        expect(new Set(numbers).size).toBe(numbers.length);
+        expect(numbers).toEqual(['ORD-1005-1', 'ORD-1005-2', 'ORD-1005-3', 'ORD-1005-4']);
+    });
+
     it('with no instalment given, the document is exactly what it always was', () => {
         // THE REGRESSION FENCE. The implicit instalment is the whole company gross on the header
         // date, so nothing about a schedule-less order's document moves.

@@ -67,13 +67,22 @@ import {
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
+import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
-import { PaymentAllocationFactory } from './PaymentAllocationFactory.js';
-import { LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
+import { LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import {
+    DepositReleasedByCompany,
+    PlanLineDeposits,
+    type DepositWorking,
+    type InstalmentCashFacts,
+} from './PaymentScheduleBehavior.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
+import { ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
+import { RequireUUID } from './sql-guards.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -172,6 +181,17 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             for (const line of this.Lines.Items) {
                 line.PaymentHeaderID = this.ID;
             }
+
+            // THE PRE-PAYMENT SCHEDULE, READ BEFORE ANYTHING OF THIS PAYMENT IS WRITTEN (D91). Two
+            // writes move `AmountPaid` on the very instalments the split is computed from: saving a
+            // line (trg_PaymentLine_RollupTotals), and changing this header's status
+            // (trg_PaymentHeader_RollupTotals). The second is the webhook: a Pending payment promoted
+            // to Captured arrives with its lines already persisted and none in memory, so the read
+            // has to come before the header save and has to include the persisted unbooked lines.
+            // Reading after either write would count this payment's own cash as already-settled
+            // billing and credit AR for it (#234 review, item 2). Keyed by order.
+            const scheduleFactsByOrder = capturing ? await this.loadScheduleFacts() : new Map<string, InstalmentCashFacts[]>();
+
             if (!(await super.Save({ ...options, SkipRelatedCollections: true }))) {
                 throw new Error(
                     `Failed to save payment ${this.PaymentNumber}: ` +
@@ -196,13 +216,14 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
 
             if (capturing) {
                 // Book journal entries for all unbooked allocations of this payment in one atomic batch.
-                await this.bookAllocations(options);
+                await this.bookAllocations(scheduleFactsByOrder, options);
                 await this.assertAllocationInvariant();
                 // Only reach the fee builder when there IS a fee AND this tender books one inline.
                 // OFF BY DEFAULT (D82).
                 if (Number(this.ProcessingFeeAmount ?? 0) > 0 && (await this.feeBooksInline())) {
                     await this.bookProcessingFee(options);
                 }
+                await this.reconcileAccess(options);
             }
 
             await dbProvider.CommitTransaction();
@@ -219,6 +240,36 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             this.RegisterResultHistoryEntry(this.buildFailureResult(err));
             return false;
         }
+    }
+
+    /**
+     * Move payment-gated grants on the orders this payment touched (bc-aidp-next-golive#223).
+     *
+     * Here, inside the booking transaction, because this is the one point every capture and every
+     * reversal passes — card, ACH on settlement, check, a refund, a returned debit — and the rollup
+     * triggers have already moved each order's `AmountPaid`. A refund passes through here too, but
+     * leaves access where it was: the decision adds seller refunds back (`ReversalSource`). A payment that clears a first
+     * instalment and a grant that stays suspended must not both be committed.
+     */
+    private async reconcileAccess(options?: EntitySaveOptions): Promise<void> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const lines = await rv.RunView<{ OrderHeaderID: string | null }>(
+            {
+                EntityName: PAYMENT_LINE_ENTITY,
+                ExtraFilter: `PaymentHeaderID='${this.ID}'`,
+                Fields: ['OrderHeaderID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        const orderIDs = (lines.Results ?? []).map((l) => l.OrderHeaderID).filter((id): id is string => !!id);
+        await ReconcilePaymentGatedGrants(
+            orderIDs,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+            { SaveOptions: options },
+        );
     }
 
     /**
@@ -321,7 +372,61 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      * submitted to Accounting.CreateJournalEntries in one batch inside the payment transaction, and
      * stamped with BookedAt.
      */
-    private async bookAllocations(options?: EntitySaveOptions): Promise<void> {
+    /**
+     * The pre-payment instalment picture for every order this payment's unbooked lines settle.
+     *
+     * Read before any line is written; see LoadInstalmentCashFacts for why after is too late.
+     */
+    private async loadScheduleFacts(): Promise<Map<string, InstalmentCashFacts[]>> {
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const orderIDs = new Set<string>();
+        for (const line of this.Lines.Items) {
+            if (!line.BookedAt && line.OrderHeaderID) orderIDs.add(String(line.OrderHeaderID).toLowerCase());
+        }
+        // The webhook's header comes without its lines; the ones it books are already in the table.
+        if (this.IsSaved && this.ID) {
+            const rv = new RunView(provider);
+            const res = await rv.RunView<{ OrderHeaderID: string }>(
+                {
+                    EntityName: PAYMENT_LINE_ENTITY,
+                    ExtraFilter: `PaymentHeaderID='${RequireUUID(this.ID, 'PaymentHeaderID')}' AND BookedAt IS NULL`,
+                    Fields: ['OrderHeaderID'],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                user,
+            );
+            if (!res?.Success) {
+                throw new Error(`Could not read payment ${this.PaymentNumber}'s allocations: ${res?.ErrorMessage ?? 'unknown error'}`);
+            }
+            for (const row of res.Results ?? []) orderIDs.add(String(row.OrderHeaderID).toLowerCase());
+        }
+        const byOrder = new Map<string, InstalmentCashFacts[]>();
+        for (const orderID of orderIDs) {
+            byOrder.set(orderID, await LoadInstalmentCashFacts(provider, user, orderID));
+        }
+        return byOrder;
+    }
+
+    /**
+     * Where each order's deposit planning starts: the pre-payment schedule, plus — when this payment
+     * takes cash back — what that took out of the rows' deposits, read now that every line is down.
+     */
+    private async depositWorkingFor(orderID: string, before: InstalmentCashFacts[], reversing: boolean): Promise<DepositWorking> {
+        if (!reversing || !before.length) return { Facts: before, Released: new Map() };
+        const after = await LoadInstalmentCashFacts(
+            this.ProviderToUse as unknown as IRunViewProvider,
+            this.ContextCurrentUser as UserInfo,
+            orderID,
+        );
+        return { Facts: before, Released: DepositReleasedByCompany(before, after) };
+    }
+
+    private async bookAllocations(
+        scheduleFactsByOrder: Map<string, InstalmentCashFacts[]>,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
@@ -366,6 +471,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         );
 
         const allDrafts: PaymentJEDraft[] = [];
+        // Per order: what the lines planned so far have left, so a second allocation on the same
+        // payment and order neither credits AR for the same invoice nor returns the same deposit twice.
+        const workingByOrder = new Map<string, DepositWorking>();
 
         for (const line of unbookedLines) {
             const orderLines = await LoadOrderLineShares(
@@ -381,6 +489,24 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             }
             const orderNumber = await this.loadOrderNumber(line.OrderHeaderID);
 
+            const orderKey = String(line.OrderHeaderID).toLowerCase();
+            const before = scheduleFactsByOrder.get(orderKey);
+            if (!before) {
+                throw new Error(
+                    `Payment ${this.PaymentNumber}: order ${line.OrderHeaderID}'s schedule was not read before ` +
+                        `the payment was written, so the deposit split cannot be decided. Nothing was booked.`,
+                );
+            }
+            const isReversal = this.Status === 'Refunded' || (line.Amount ?? 0) < 0;
+            const working = workingByOrder.get(orderKey) ?? (await this.depositWorkingFor(orderKey, before, isReversal));
+            const plan = PlanLineDeposits(
+                AllocateByCompany(Math.abs(line.Amount ?? 0), orderLines, line.OrderLineID ?? null),
+                isReversal,
+                line.OrderHeaderPaymentScheduleID ?? null,
+                working,
+            );
+            workingByOrder.set(orderKey, plan.Working);
+
             const { Drafts } = await factory.BuildAllocationDrafts({
                 PaymentLineID: line.ID,
                 PaymentNumber: this.PaymentNumber,
@@ -389,8 +515,11 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 ReceivingCompanyID: this.ReceivingCompanyID,
                 OrderLines: orderLines,
                 TargetOrderLineID: line.OrderLineID ?? null,
-                PaymentDate: this.PaymentDate ? new Date(this.PaymentDate) : new Date(),
-                IsReversal: this.Status === 'Refunded' || (line.Amount ?? 0) < 0,
+                Deposits: plan.Deposits,
+                // The allocation entry's `EffectiveDate` comes from this (#209): a day, so the
+                // fallback has to be a day too, not the instant the booking happened to run at.
+                PaymentDate: await CalendarDayOrToday(this.PaymentDate, provider, user),
+                IsReversal: isReversal,
             });
 
             allDrafts.push(...Drafts);
@@ -662,7 +791,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             CompanyID: this.ReceivingCompanyID,
             Amount: this.Amount ?? 0,
             ProcessingFeeAmount: this.ProcessingFeeAmount ?? 0,
-            PaymentDate: this.PaymentDate ? new Date(this.PaymentDate) : new Date(),
+            // As in `bookAllocations`: the fee entry's `EffectiveDate` is this day (#209).
+            PaymentDate: await CalendarDayOrToday(this.PaymentDate, provider, user),
             IsReversal: this.Status === 'Refunded',
         });
 

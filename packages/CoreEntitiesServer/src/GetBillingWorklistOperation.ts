@@ -22,6 +22,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
@@ -70,7 +71,12 @@ export class GetBillingWorklistOperation extends OrdersGetBillingWorklistOperati
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<OrdersGetBillingWorklistOutput> {
-        const asOf = RequireDate(input?.AsOfDate ?? new Date().toISOString().slice(0, 10), 'AsOfDate');
+        // The BUSINESS day, not the UTC one (#209) — `toISOString()` is already tomorrow for the
+        // whole American evening, so an evening run would bill against a window starting a day
+        // late. The same correction `GetOverdueWorklistOperation` took, for the same reason: the
+        // two worklists must answer for the same day or they disagree about which orders are due.
+        await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+        const asOf = RequireDate(input?.AsOfDate ?? BusinessTimeZoneEngine.Instance.Today(), 'AsOfDate');
         const windowDays = Math.max(0, Math.floor(Number(input?.WindowDays ?? 30)));
         const windowEnd = addDays(asOf, windowDays);
         const maxCount = input?.MaxCount ?? 500;

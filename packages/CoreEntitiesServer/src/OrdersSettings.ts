@@ -42,6 +42,11 @@ export const ORDERS_SETTING = {
      * without a schema change on either side.
      */
     OrganizationAffiliationRelationshipTypes: 'OrganizationAffiliationRelationshipTypes',
+    /**
+     * Days past due at which a renewal's `OnFirstPayment` grants are suspended (bc-aidp-next-golive#223).
+     * A whole number of 0 or more; `off` disables the cutoff.
+     */
+    RenewalAccessCutoffDaysPastDue: 'RenewalAccessCutoffDaysPastDue',
 } as const;
 
 /**
@@ -54,6 +59,7 @@ export const ORDERS_SETTING = {
 const DEFAULTS = {
     AutoPopulateOrganizationFromPerson: true,
     OrganizationAffiliationRelationshipTypes: ['Employee'],
+    RenewalAccessCutoffDaysPastDue: 14,
 } as const;
 
 /** Anything other than an explicit falsey string is true — an unparseable value should not disable a feature silently. */
@@ -63,6 +69,18 @@ function asBoolean(raw: string | undefined, fallback: boolean): boolean {
     if (['false', '0', 'no', 'off'].includes(v)) return false;
     if (['true', '1', 'yes', 'on'].includes(v)) return true;
     return fallback;
+}
+
+/**
+ * A whole number of days, or `null` for an explicit `off`. Anything unreadable takes the default
+ * rather than disabling the rule: a mistyped cutoff should keep the policy, not quietly drop it.
+ */
+function asDaysOrOff(raw: string | undefined, fallback: number): number | null {
+    if (raw == null) return fallback;
+    const v = raw.trim().toLowerCase();
+    if (['off', 'none', 'disabled'].includes(v)) return null;
+    if (!/^\d+$/.test(v)) return fallback;
+    return Number(v);
 }
 
 function asList(raw: string | undefined, fallback: readonly string[]): string[] {
@@ -161,6 +179,14 @@ export class OrdersSettings {
         return asList(
             this.raw(ORDERS_SETTING.OrganizationAffiliationRelationshipTypes),
             DEFAULTS.OrganizationAffiliationRelationshipTypes,
+        );
+    }
+
+    /** Days past due at which a renewal loses access, or `null` when the cutoff is switched off. */
+    public static get RenewalAccessCutoffDaysPastDue(): number | null {
+        return asDaysOrOff(
+            this.raw(ORDERS_SETTING.RenewalAccessCutoffDaysPastDue),
+            DEFAULTS.RenewalAccessCutoffDaysPastDue,
         );
     }
 

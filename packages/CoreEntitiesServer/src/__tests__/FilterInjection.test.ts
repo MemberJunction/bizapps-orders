@@ -25,6 +25,7 @@ import {
     EscapeText,
     InvalidOperationInputError,
     RequireDate,
+    RequireOptionalDay,
     RequireOptionalUUID,
     RequireUUID,
     RequireUUIDs,
@@ -81,6 +82,33 @@ describe('sql guards', () => {
             InvalidOperationInputError,
         );
         expect(() => RequireDate('not-a-date', 'AsOfDate')).toThrow(InvalidOperationInputError);
+    });
+
+    it('rejects a well-formed day that does not exist, rather than rolling it forward', () => {
+        // `Date.parse('2026-02-30')` succeeds — JavaScript rolls it to 2 March — so the shape check
+        // and `Date.parse` together still accepted a day nobody named. Silently moving a caller's
+        // date is the worst of the three outcomes: no error, and the row is filed on another day.
+        expect(() => RequireDate('2026-02-30', 'PaymentDate')).toThrow(InvalidOperationInputError);
+        expect(() => RequireDate('2026-06-31', 'PaymentDate')).toThrow(/not a real calendar day/);
+        expect(() => RequireDate('2026-13-01', 'PaymentDate')).toThrow(InvalidOperationInputError);
+        // Leap years are real days and must survive.
+        expect(RequireDate('2028-02-29', 'PaymentDate')).toBe('2028-02-29');
+        expect(() => RequireDate('2026-02-29', 'PaymentDate')).toThrow(InvalidOperationInputError);
+    });
+
+    it('RequireOptionalDay checks both forms a caller day arrives in (#272)', () => {
+        // Absent stays absent, so the caller's fallback to today is still its own decision.
+        expect(RequireOptionalDay(undefined, 'AsOf')).toBeNull();
+        expect(RequireOptionalDay(null, 'AsOf')).toBeNull();
+        expect(RequireOptionalDay('', 'AsOf')).toBeNull();
+        // A string goes through `RequireDate`.
+        expect(RequireOptionalDay('2026-03-04T11:22:33Z', 'AsOf')).toBe('2026-03-04');
+        expect(() => RequireOptionalDay('2026-02-30', 'AsOf')).toThrow(/not a real calendar day/);
+        // A real `Date` passes unchanged; one that names no instant is refused.
+        const real = new Date('2026-03-15T00:00:00.000Z');
+        expect(RequireOptionalDay(real, 'AsOf')).toBe(real);
+        expect(() => RequireOptionalDay(new Date('garbage'), 'AsOf')).toThrow(InvalidOperationInputError);
+        expect(() => RequireOptionalDay(new Date('garbage'), 'AsOf')).toThrow('AsOf is not a valid date.');
     });
 
     it('escapes free text by doubling the quote', () => {

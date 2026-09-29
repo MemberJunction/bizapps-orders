@@ -46,8 +46,11 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
+    ADDRESS_SNAPSHOT_FIELDS,
+    BuildAddressSnapshot,
     OrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
+    type AddressLike,
     mjBizAppsOrdersOrderLinePriceComponentEntity,
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersPaymentLineEntity,
@@ -55,18 +58,22 @@ import {
     mjBizAppsOrdersSubscriptionEntity,
     mjBizAppsOrdersSubscriptionEventEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
+    ToISODate,
 } from '@mj-biz-apps/orders-entities';
+import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
+import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
-import { LoadReversalContext } from './ReversalResolver.js';
+import { IsWholeOrderReversed, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
-import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
+import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
@@ -80,9 +87,11 @@ import {
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
-import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
+import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
-import { AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
+import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
+import { Today, AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
 const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
@@ -425,7 +434,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // rollups this save sends are the rollups the row already holds, so the write is a no-op
             // on those four columns no matter what the caller believed about them.
             await this.refreshRolledUpTotals();
-            return super.Save(options);
+            try {
+                if (this.IsBookedOrder) await this.stampAddressSnapshots('fill');
+                return await super.Save(options);
+            } finally {
+                this.addressSnapshotsStamped = false;
+            }
         }
 
         // WHEN IT IS DUE, DECIDED ONCE AND STORED (D83) — AND RESOLVED BEFORE THE TRANSACTION OPENS.
@@ -537,6 +551,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 booking ? await this.decideSubscriptions() : new Map();
             await this.prepareLines(decisions);
 
+            // THE ADDRESS AS SOLD, copied onto the order at the first confirm (golive #263).
+            //
+            // HERE, before either line write below: a draft's existing lines are written while the
+            // header is still Draft, and `trg_OrderLine_AddressFrozenAfterConfirm` refuses the line
+            // snapshot once the header is Confirmed. Inside the transaction, so it reads the same
+            // Address rows the tax resolution in `prepareLines` just read.
+            if (booking) await this.stampAddressSnapshots('confirm');
+            else if (this.IsBookedOrder) await this.stampAddressSnapshots('fill');
+
             // CONFIRM-AFTER-DRAFT: the lines already exist. `prepareLines` just prorated them
             // (membership qty 1 → 0.3836). If the header flips to Confirmed first, trigger 51003
             // freezes Quantity/LineTotal* and the UPDATE rolls back inside INSERT-EXEC — the
@@ -549,7 +572,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
 
             if (booking) {
-                this.ConfirmedAt = new Date();
+                this.stampConfirmation();
             }
             if (!headerAlreadyPersisted && !this.OrderNumber) {
                 this.OrderNumber = await this.assignOrderNumber();
@@ -596,12 +619,27 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // per-company gross does not exist until the lines are written. Throwing rolls the
                 // whole confirm back: no journal entries, no subscription, no sequence number spent.
                 // An order with no schedule rows has nothing to check and books exactly as before.
-                await this.verifyScheduleTies(lines);
+                const scheduleRows = await this.verifyScheduleTies(lines);
 
                 // Subscriptions before booking: a term must exist so recognition entries can anchor
                 // to it (D46) and use its anchored/prorated window rather than raw line dates.
-                const subs = await this.materializeSubscriptions(lines, decisions, options);
-                await this.bookLines(lines, options, subs);
+                // EACH REVERSING LINE'S ORIGIN, READ ONCE (Andrew, #237). Cadence, credit memo,
+                // entitlements and the schedule all need it, and four reads per line was four
+                // chances to see the origin in four different states.
+                const reversals = await this.loadReversalContexts(lines);
+                const subs = await this.materializeSubscriptions(lines, decisions, reversals, options);
+                await this.bookLines(lines, options, subs, scheduleRows, reversals);
+
+                // ISSUE WHAT IS ALREADY DUE (D92). A company billed by instalment books no value at
+                // confirm — except the instalments whose due date has already arrived, usually the
+                // first. Those are billed now, through the SAME act a person triggers later, so the
+                // document number, the stamps and the entry are identical whichever route issued
+                // them. Inside this transaction: a confirm that fails must leave no invoiced row.
+                //
+                // AFTER bookLines, deliberately. Booking is what puts an up-front line's revenue on
+                // the ledger, and rule 1 reads BilledToDate, so issuing first would price the
+                // contra split against a total that the same confirm is about to change.
+                await this.issueDueInstalments(scheduleRows);
                 await this.createInitialPayment(options);
 
                 // ENTITLEMENTS LAST, and INSIDE this transaction (D27/D76).
@@ -617,7 +655,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 await this.grantEntitlements(lines, subs, options);
 
                 // And the mirror: a returned line takes its access with it.
-                await this.revokeEntitlementsForReversals(lines, options);
+                await this.revokeEntitlementsForReversals(lines, reversals, options);
+
+                // A reversed order stops billing (D92 §6). Inside, for the same reason as the two
+                // above: an order that credits the customer back and keeps invoicing them every
+                // quarter has done half a reversal, and the half that is left is the half that
+                // takes money.
+                await this.cancelOriginInstalments(lines, reversals, options);
 
                 // GIFT CARDS, alongside entitlements and for the same reason. Selling a gift card
                 // that never mints an instrument has taken money for nothing, so a failure here
@@ -651,6 +695,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             return false;
         } finally {
             this.bookingInFlight = false;
+            this.addressSnapshotsStamped = false;
         }
     }
 
@@ -854,6 +899,28 @@ export class OrderEntityServer extends OrderHeaderEntity {
     // `bookingInFlight` and `willBookOnThisSave()` moved to OrderHeaderEntity (both `protected`),
     // because the rules that consult them — must have a payer, must have something to book — are
     // decidable without the database and now run on both tiers.
+
+    /**
+     * WHEN AND BY WHOM this order was booked, written by the booking save and by nothing else.
+     *
+     * The confirmer is the save's context user, never a value the caller sent: a graph save overlays
+     * the client's fields onto the row (`SaveEntityGraphOperation.rebuildRoot`), so a
+     * `ConfirmedByUserID` arriving on the payload is overwritten here rather than trusted. The
+     * finance exception review uses it to keep a person from clearing an exception raised against an
+     * order they confirmed themselves (golive #279).
+     *
+     * A booking run by an unattended process records whichever user that process runs as — the
+     * renewal job's user for a renewal, for instance. With no context user at all it records NULL
+     * rather than failing the booking: a reader already has to treat NULL as "not known", because
+     * every order booked before the column existed carries it.
+     *
+     * Once `ConfirmedAt` is set both are final: `ConfirmedByUserID` is refused at `Validate()`
+     * (ORDER_HEADER_MONEY_FIELDS) and by trigger 51017.
+     */
+    protected stampConfirmation(): void {
+        this.ConfirmedAt = new Date();
+        this.ConfirmedByUserID = this.ContextCurrentUser?.ID ?? null;
+    }
 
     /**
      * Settle every line's money IN MEMORY. Writes nothing.
@@ -1188,12 +1255,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * Create the grants this order's lines confer (D27/D76).
      *
      * Delegates entirely to `EntitlementEngine`; what lives here is the mapping from the order's own
-     * entities to the structural shape the engine takes, plus the balance the timing rule needs.
+     * entities to the structural shape the engine takes, plus the payment facts the timing rule needs.
      *
-     * `Balance` is re-read from the header rather than trusted from memory: `createInitialPayment`
+     * The payment facts are re-read from the row rather than trusted from memory: `createInitialPayment`
      * has just run, and the rollup triggers (D41) moved `AmountPaid`/`Balance` on the ROW without
-     * telling this object. An `OnPaidInFull` grant reading a stale balance would sit Suspended on an
-     * order that is already paid.
+     * telling this object. A payment-gated grant reading a stale balance would sit Suspended on an
+     * order that is already paid. They come from the same loader the payment path re-decides with,
+     * so a grant is born under the rule that will later move it.
      */
     private async grantEntitlements(
         lines: mjBizAppsOrdersOrderLineEntity[],
@@ -1203,14 +1271,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
-        const fresh = await this.readBalanceFromRow();
+        const asOf = await BusinessDay(provider, user);
+        const payment = (await LoadOrderPaymentFacts([this.ID], provider, user, asOf)).get(this.ID.toLowerCase());
+        if (!payment) {
+            throw new Error(`Order ${this.OrderNumber ?? this.ID} could not be re-read to decide its entitlement grants.`);
+        }
 
         await CreateEntitlementGrants(
             {
                 ID: this.ID,
-                OrderDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
-                Balance: fresh.Balance,
-                TotalGross: fresh.TotalGross,
+                // Not the `date`-column defect the other sites carry — `GrantedOn` becomes the
+                // grant's `ValidFrom`/`ValidTo`, which are `DATETIMEOFFSET`. It is the same
+                // INCONSISTENCY, though: with an order date the grant started at that day's
+                // midnight, without one it started at whatever instant the confirm happened to run.
+                OrderDate: await CalendarDayOrToday(this.OrderDate, provider, user),
+                Payment: payment,
                 BillToPersonID: this.BillToPersonID ?? null,
                 BillToOrganizationID: this.BillToOrganizationID ?? null,
             },
@@ -1220,6 +1295,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Quantity: Number(l.Quantity ?? 0),
                 ShipToPersonID: l.ShipToPersonID ?? null,
                 ShipToOrganizationID: l.ShipToOrganizationID ?? null,
+                RenewsSubscriptionID: l.RenewsSubscriptionID ?? null,
             })),
             subs.TermsByLine,
             provider,
@@ -1480,6 +1556,118 @@ export class OrderEntityServer extends OrderHeaderEntity {
         );
     }
 
+    /**
+     * Copy the bill-to and ship-to addresses onto the order and its lines (golive #263).
+     *
+     * `confirm` — the booking save. Every address the order and its lines name is copied, replacing
+     * whatever the in-memory record carried.
+     *
+     * `fill` — any later save of a booked order. A snapshot that is already stored is kept, whatever
+     * the caller sent; one that is missing is written from its address. That covers an empty address
+     * filled after confirm, and an order confirmed before snapshots existed.
+     *
+     * A line gets a snapshot only when it names a ship-to address of its own; a line without one
+     * ships to the header's.
+     *
+     * A reference with no Address row behind it (deleted, or hidden from this user by row-level
+     * security) refuses the save when the address is being recorded now: on confirm, or when an
+     * empty address is filled on this save. `OrderLine.ShipToAddressID` has no foreign key, and a
+     * confirmed order with no record of where the sale went is the defect this exists to prevent.
+     *
+     * An address that was already on a booked order and has since lost its row is left without a
+     * snapshot, and the save goes ahead. Refusing it would lock the order: the save fails for a row
+     * nobody can bring back, and the ID cannot be replaced or cleared because the order is booked.
+     */
+    private async stampAddressSnapshots(mode: 'confirm' | 'fill'): Promise<void> {
+        type Target = {
+            entity: BaseEntity;
+            idField: string;
+            snapshotField: string;
+            what: string;
+            addressID: () => string | null;
+            write: (snapshot: string | null) => void;
+        };
+        const targets: Target[] = [
+            {
+                entity: this,
+                idField: 'BillToAddressID',
+                snapshotField: 'BillToAddressSnapshot',
+                what: 'bill-to',
+                addressID: () => this.BillToAddressID,
+                write: (v) => { this.BillToAddressSnapshot = v; },
+            },
+            {
+                entity: this,
+                idField: 'ShipToAddressID',
+                snapshotField: 'ShipToAddressSnapshot',
+                what: 'ship-to',
+                addressID: () => this.ShipToAddressID,
+                write: (v) => { this.ShipToAddressSnapshot = v; },
+            },
+            ...this.Lines.Items.map((line): Target => ({
+                entity: line,
+                idField: 'ShipToAddressID',
+                snapshotField: 'ShipToAddressSnapshot',
+                what: `line ${line.LineNumber ?? ''} ship-to`,
+                addressID: () => line.ShipToAddressID,
+                write: (v) => { line.ShipToAddressSnapshot = v; },
+            })),
+        ];
+        const stored = (t: Target): string | null => {
+            const old = t.entity.GetFieldByName(t.snapshotField)?.OldValue;
+            return typeof old === 'string' && old ? old : null;
+        };
+        const addressID = (t: Target): string | null => t.addressID() ?? null;
+        /** The address was set before this save and is still the same one. */
+        const unchanged = (t: Target): boolean => {
+            const old = t.entity.GetFieldByName(t.idField)?.OldValue;
+            return typeof old === 'string' && UUIDsEqual(old, addressID(t));
+        };
+        const needsRead = (t: Target): boolean => !!addressID(t) && (mode === 'confirm' || !stored(t));
+
+        const ids = targets.filter(needsRead).map((t) => addressID(t) as string);
+        const byID = new Map<string, AddressLike>();
+        if (ids.length) {
+            const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+            const result = await rv.RunView<AddressLike>(
+                {
+                    EntityName: COMMON_ADDRESS_ENTITY,
+                    ExtraFilter: `ID IN (${RequireUUIDs([...new Set(ids)], 'AddressID').map((id) => `'${id}'`).join(',')})`,
+                    Fields: [...ADDRESS_SNAPSHOT_FIELDS],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                this.ContextCurrentUser as UserInfo,
+            );
+            if (!result.Success) {
+                throw new Error(`Could not read the order's addresses to keep with it: ${result.ErrorMessage}`);
+            }
+            for (const row of result.Results) byID.set(row.ID.toLowerCase(), row);
+        }
+
+        for (const t of targets) {
+            let value: string | null;
+            if (!needsRead(t)) {
+                value = mode === 'confirm' ? null : stored(t);
+            } else {
+                const id = addressID(t) as string;
+                const row = byID.get(id.toLowerCase());
+                if (row) {
+                    value = BuildAddressSnapshot(row);
+                } else if (mode === 'fill' && unchanged(t)) {
+                    value = null;
+                } else {
+                    throw new Error(
+                        `Order ${this.OrderNumber ?? ''} cannot be saved: its ${t.what} address (${id}) does not exist ` +
+                            `or is not visible to you. Choose the address again and save.`,
+                    );
+                }
+            }
+            t.write(value);
+        }
+        this.addressSnapshotsStamped = true;
+    }
+
     /** The header's rollup columns as the DATABASE now holds them, after the payment triggers ran. */
     private async readBalanceFromRow(): Promise<ResolvedOrderRollups> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
@@ -1540,6 +1728,113 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * Each reversing line's origin, keyed by the REVERSING line's id — loaded once per confirm.
+     *
+     * Every line on THIS order is excluded from "already reversed", so it counts only reversals
+     * booked on other orders. Those have already reduced the origin's BilledToDate by their memos;
+     * a sibling line on this order has not yet, and counting it would prorate the memo against
+     * units whose balance is still in the total.
+     */
+    private async loadReversalContexts(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+    ): Promise<Map<string, ReversalContext>> {
+        const out = new Map<string, ReversalContext>();
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const ownLineIDs = lines.map((l) => String(l.ID)).filter(Boolean);
+
+        for (const line of lines.filter((l) => l.ReversesOrderLineID)) {
+            const context = await LoadReversalContext(line.ReversesOrderLineID, provider, user, ownLineIDs);
+            if (!context) {
+                // applyReversalOrigin refuses this at line save, so reaching here is a bug, not data.
+                throw new Error(`Order line ${line.LineNumber} reverses ${line.ReversesOrderLineID}, which no longer exists.`);
+            }
+            out.set(uuidKey(line.ID), context);
+        }
+        return out;
+    }
+
+    /**
+     * The origin position for each reversing line whose origin is billed by instalment (D92 §6),
+     * keyed by the REVERSING line's id. Absence means an ordinary reversal: mirror the booking.
+     */
+    private creditMemosForReversals(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
+    ): Map<string, CreditMemoForLine> {
+        const memos = new Map<string, CreditMemoForLine>();
+        for (const line of lines) {
+            const context = reversals.get(uuidKey(line.ID));
+            if (!context?.OriginScheduled) continue;
+            memos.set(String(line.ID), {
+                OriginLineID: context.Origin.ID,
+                BilledToDate: Number(context.Origin.BilledToDate ?? 0),
+                RecognizedToDate: Number(context.Origin.RecognizedToDate ?? 0),
+                RemainingQuantity: context.Origin.Quantity - context.AlreadyReversed,
+                OriginNet: Number(context.Origin.LineTotalNet ?? 0),
+                PriorReversals: context.PriorReversals,
+                ScheduleRows: context.ScheduleRows,
+                OriginOrderNumber: context.Origin.OrderNumber ?? null,
+                OriginLineNumber: context.Origin.LineNumber ?? null,
+            });
+        }
+        return memos;
+    }
+
+    /**
+     * Withdraw the instalments the reversed order will never bill (D92 §6).
+     *
+     * A future instalment is a promise to invoice, not money that has moved, so it is simply taken
+     * back and nothing posts. What HAS been billed is unwound by the reversing line's own credit
+     * memo, and an instalment the customer holds an invoice for is never touched here — see
+     * `InstalmentsToCancel`, which tests the frozen document number rather than the status.
+     *
+     * Reaches the ORIGIN order's schedule, not this one's: the reversal is a separate order and has
+     * no schedule of its own. Idempotent, because a row already `Canceled` is not selected, so
+     * re-saving a confirmed return is a no-op rather than an error.
+     *
+     * ONLY ONCE THE WHOLE ORDER IS TAKEN BACK (Andrew, #237). Returning one line of three, or 4 units
+     * of 10, leaves goods the schedule still bills for; withdrawing it then would stop billing for
+     * what the customer kept. A partial reversal leaves the schedule for a person to re-shape.
+     */
+    private async cancelOriginInstalments(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        // One origin order may own several reversed lines; its schedule is cancelled once.
+        const seen = new Set<string>();
+        for (const line of lines) {
+            const context = reversals.get(uuidKey(line.ID));
+            if (!context?.OriginScheduled) continue;
+            const originOrder = uuidKey(context.Origin.OrderHeaderID ?? '');
+            if (!originOrder || seen.has(originOrder)) continue;
+            seen.add(originOrder);
+            if (!(await IsWholeOrderReversed(originOrder, provider, user))) continue;
+
+            for (const scheduleID of InstalmentsToCancel(context.ScheduleRows)) {
+                const row = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(
+                    ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+                    user,
+                );
+                if (!(await row.Load(scheduleID))) {
+                    throw new Error(`Instalment ${scheduleID} could not be loaded to cancel it for the reversal.`);
+                }
+                row.Status = 'Canceled';
+                if (!(await row.Save(options))) {
+                    throw new Error(
+                        row.LatestResult?.CompleteMessage ??
+                            `Instalment ${scheduleID} could not be cancelled for the reversal of order ${this.OrderNumber ?? this.ID}.`,
+                    );
+                }
+            }
+        }
+    }
+
+    /**
      * Take access away from what was sent back.
      *
      * A full return revokes; a partial return reduces the quantity proportionally. Uncountable grants
@@ -1552,20 +1847,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async revokeEntitlementsForReversals(
         lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
         options?: EntitySaveOptions,
     ): Promise<void> {
-        const reversals = lines.filter(
-            (l) => l.ReversesOrderLineID,
-        );
-        if (!reversals.length) return;
-
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
-        for (const line of reversals) {
+        for (const line of lines) {
+            const context = reversals.get(uuidKey(line.ID));
+            if (!context) continue;
             const reverses = line.ReversesOrderLineID;
-            const context = await LoadReversalContext(reverses, provider, user, [line.ID]);
-            if (!context) continue; // applyReversalOrigin already refused anything unresolvable
 
             await RevokeGrantsForReturn(
                 reverses,
@@ -1647,6 +1938,41 @@ export class OrderEntityServer extends OrderHeaderEntity {
         );
         if (refusal) {
             throw new Error(`Order line ${line.LineNumber}: ${refusal}`);
+        }
+
+        // Due as of the REVERSAL's date, not today: a return back-dated to November names the
+        // instalment that was due in November (Andrew, #237).
+        const asOfDay = ToISODate(this.OrderDate) ?? Today();
+
+        // NOT DATED BEFORE A CONFIRMED REVERSAL OF THE SAME LINE (Andrew, #237 third pass). That
+        // reversal kept as earned the months up to its own date; one dated earlier would credit them
+        // back again. Scheduled origins only — the memo is where it over-credits.
+        const earlier = context.OriginScheduled ? RefuseEarlierThanPriorReversal(context.PriorReversals, asOfDay) : null;
+        if (earlier) {
+            throw new Error(`Order line ${line.LineNumber}: ${earlier}`);
+        }
+
+        // EARNED BUT NOT BILLED IS REFUSED, NOT REVERSED AROUND (D92 §6). The origin line's
+        // RecognizedToDate running ahead of its BilledToDate is a contract asset sitting in Unbilled
+        // Receivable; crediting the customer while it stands would leave that balance with no
+        // contract behind it and nothing downstream to notice. Refused here, with the rest of the
+        // line's validation, so the reversal never reaches booking rather than unwinding inside it.
+        // Zero for every line written before D92, and for advance-billed orders, which is nearly all
+        // of them — see ContractBalance.RefuseEarnedNotBilled.
+        const stranded = RefuseEarnedNotBilled(
+            [
+                {
+                    OrderLineID: context.Origin.ID,
+                    LineNumber: context.Origin.LineNumber ?? null,
+                    BilledToDate: Number(context.Origin.BilledToDate ?? 0),
+                    RecognizedToDate: Number(context.Origin.RecognizedToDate ?? 0),
+                },
+            ],
+            context.ScheduleRows,
+            asOfDay,
+        );
+        if (stranded) {
+            throw new Error(`Order line ${line.LineNumber}: ${stranded}`);
         }
 
         // Inherit the origin's terms, unless the caller stated their own. Same rule as pricing: a
@@ -1835,7 +2161,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             OrdersEngine.Instance.Products.map((p) => [uuidKey(p.ID), p]),
         );
         const eventStarts = await this.loadEventStarts(lines.map((l) => l.ProductID));
-        const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();
+        // A calendar day (#209): the dimension defaults this resolves are effective-dated against
+        // `date` columns, so an instant answers the UTC day and an evening confirm would read
+        // tomorrow's tags.
+        const asOf = await CalendarDayOrToday(this.OrderDate, provider, user);
 
         const existing = await this.loadLineDimensionRows(lines.map((l) => l.ID));
 
@@ -2046,6 +2375,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
         lines: mjBizAppsOrdersOrderLineEntity[],
         options?: EntitySaveOptions,
         subs?: SubscriptionMaterialization,
+        /** The schedule, already read for the tie check — it decides the Unbilled/AR split (D89). */
+        scheduleRows?: ScheduleTimingFacts[],
+        reversals: Map<string, ReversalContext> = new Map(),
     ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
@@ -2062,7 +2394,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
             user,
         );
 
-        const drafts = await factory.BuildDrafts(this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine);
+        // WHICH REVERSING LINES UNWIND A SCHEDULED ORIGIN (D92 §6). Read here, not in the factory:
+        // the origin sits on a different order, so the factory would have to query for it. Empty
+        // for an order that reverses nothing.
+        const creditMemoByLine = this.creditMemosForReversals(unbooked, reversals);
+        const drafts = await factory.BuildDrafts(
+            this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows, creditMemoByLine,
+        );
         // An order can legitimately produce NO entries: every line fully comped, so nothing to
         // debit or credit. Accounting refuses an empty draft set, quite correctly, so the call is
         // skipped rather than the order being refused for having no ledger impact.
@@ -2086,6 +2424,37 @@ export class OrderEntityServer extends OrderHeaderEntity {
         }
 
         await this.stampJournalEntryIDs(drafts, result, options);
+
+        // ADVANCE BOTH TOTALS IN THIS TRANSACTION (D92) — the totals are the ledger's summary of
+        // itself, and a separate writer is how they drift from the journal lines they summarise.
+        //
+        // BilledToDate matters here for the ORDINARY order, the one with no schedule: booking IS
+        // its invoice, so nothing else will ever advance it. Left at zero, rule 2 would read "no
+        // deferred balance" and every monthly subscription release would debit Unbilled Receivable
+        // instead of relieving the Deferred that booking created — a contract asset invented on the
+        // commonest order in the system, with the entry balancing either way.
+        const billedAtBooking = factory.DrainBilled();
+        const recognizedAtBooking = factory.DrainRecognized();
+        for (const orderLineID of new Set([...billedAtBooking.keys(), ...recognizedAtBooking.keys()])) {
+            const billed = billedAtBooking.get(orderLineID) ?? 0;
+            const recognized = recognizedAtBooking.get(orderLineID) ?? 0;
+            if (billed === 0 && recognized === 0) continue;
+            const line = this.Lines.Items.find((l) => UUIDsEqual(l.ID, orderLineID));
+            const target = line ?? (await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user));
+            // Not on this order: a reversal's credit memo un-bills the ORIGIN line (D92 §6).
+            if (!line) MarkAsOrdersOwnWrite(target);
+            if (!line && !(await target.Load(orderLineID))) {
+                throw new Error(`Order line ${orderLineID} could not be loaded to advance its RecognizedToDate.`);
+            }
+            target.BilledToDate = Number(target.BilledToDate ?? 0) + billed;
+            target.RecognizedToDate = Number(target.RecognizedToDate ?? 0) + recognized;
+            if (!(await target.Save(options))) {
+                throw new Error(
+                    target.LatestResult?.CompleteMessage ??
+                        `The running totals could not be advanced on order line ${orderLineID}.`,
+                );
+            }
+        }
     }
 
     /**
@@ -2234,6 +2603,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private async materializeSubscriptions(
         lines: mjBizAppsOrdersOrderLineEntity[],
         decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+        reversals: Map<string, ReversalContext>,
         options?: EntitySaveOptions,
     ): Promise<SubscriptionMaterialization> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
@@ -2243,7 +2613,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // REVERSALS FIRST, and OUTSIDE the early return below: a return order buys nothing, so it has
         // no decisions at all and every line of the loop that follows is skipped for it — but its
         // schedule still has to mirror the one it unwinds, and that needs a cadence.
-        await this.inheritReversalCadence(lines, out);
+        await this.inheritReversalCadence(lines, reversals, out);
 
         if (decisions.size === 0) return out;
 
@@ -2399,6 +2769,22 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // "create" — see PENDING_SIBLING_ID.
         const pendingSiblings = new Map<string, ExistingSubscription>();
 
+        // The order's booking day, as a calendar day (#209). `Decide` reduces it with `utcDay` and
+        // the settled term reaches `SubscriptionTerm.StartDate`/`EndDate`, both `DATE NOT NULL`, so
+        // an instant taken at 9 PM Eastern would start coverage tomorrow.
+        //
+        // Resolved ONCE for the whole confirm rather than per line: it cannot vary by line, and
+        // this method runs inside the transaction `confirm` opens, where the fallback's metadata
+        // read is least welcome. That read stays unlikely for the reason the initial-payment site
+        // gives — `OrderDate` is defaulted at `NewRecord()` since #168 — and `CalendarDayOrToday`
+        // skips it entirely whenever the day is stated, which is the normal case. Hoisting it out
+        // of the transaction would mean restructuring `confirm`, which is not this issue's job.
+        const purchaseDay = await CalendarDayOrToday(
+            this.OrderDate,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
             let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
@@ -2436,7 +2822,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
             const decision = behavior.Decide({
                 Rules: rules,
-                PurchaseDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                PurchaseDate: purchaseDay,
                 // The line is not saved yet, so `LineTotalNet` is not computed — derive the same
                 // figure OrderLineEntityServer will: quantity × price, less the discount.
                 Amount: this.pendingLineNet(line),
@@ -2527,7 +2913,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (!subscriber.PersonID) return subscriber;
         if (!OrdersSettings.AutoPopulateOrganizationFromPerson) return subscriber;
 
-        const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();
+        // The affiliation question is asked AS OF a calendar day, and the `Relationship` rows it
+        // reads carry `StartDate`/`EndDate` `date` columns (#209). An instant answers the UTC day,
+        // so an evening confirm asked about tomorrow — and a person who changes employer overnight
+        // would be filed against the wrong organization on the order.
+        const asOf = await CalendarDayOrToday(
+            this.OrderDate,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
         const inferred = await this.organizationAsOf(subscriber.PersonID, asOf);
         return inferred ? { ...subscriber, OrganizationID: inferred } : subscriber;
     }
@@ -2680,22 +3074,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async inheritReversalCadence(
         lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
         out: SubscriptionMaterialization,
     ): Promise<void> {
-        const reversals = lines.filter((l) => l.ReversesOrderLineID);
-        if (!reversals.length) return;
-
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
-        // Reuse the ONE loader. The already-reversed total it also computes is redundant here, but a
-        // second query shaped just for this would be a second place for the origin lookup to drift.
+        // The contexts the confirm already loaded, one per reversing line.
         const subscriptionIDByLine = new Map<string, string>();
-        for (const line of reversals) {
-            const context = await LoadReversalContext(line.ReversesOrderLineID!, provider, user, [line.ID]);
-            const subscriptionID = context?.Origin.SubscriptionID;
-            // Unresolvable origins are not this method's to refuse — `applyReversalOrigin` already
-            // threw on them long before booking, so anything reaching here has an origin.
+        for (const line of lines) {
+            const subscriptionID = reversals.get(uuidKey(line.ID))?.Origin.SubscriptionID;
             if (subscriptionID) subscriptionIDByLine.set(uuidKey(line.ID), subscriptionID);
         }
         if (!subscriptionIDByLine.size) return;
@@ -2717,7 +3105,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             if (row.SubscriptionTypeID) typeBySubscription.set(uuidKey(row.ID), row.SubscriptionTypeID);
         }
 
-        for (const line of reversals) {
+        for (const line of lines) {
             const subscriptionID = subscriptionIDByLine.get(uuidKey(line.ID));
             if (!subscriptionID) continue;
             const typeID = typeBySubscription.get(uuidKey(subscriptionID));
@@ -3081,7 +3469,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
         payment.ReceivingCompanyID = this.CompanyID;
         payment.BillToOrganizationID = this.BillToOrganizationID;
         payment.BillToPersonID = this.BillToPersonID;
-        payment.PaymentDate = this.OrderDate ?? new Date();
+        // The order's own day, or today's business day when it has none (#209). `OrderDate` is
+        // defaulted at `NewRecord()` since #168, so the fallback is very likely unreachable — but a
+        // `DATE` column fed `new Date()` is dated tomorrow for the whole American evening, and the
+        // next caller to reach this method with no order date should not discover that. Keeping the
+        // stated day matters just as much: a backdated order's payment must carry the same date.
+        payment.PaymentDate = await CalendarDayOrToday(this.OrderDate, provider, user);
         payment.PaymentTypeID = this.InitialPaymentTypeID;
         payment.Amount = amount;
         payment.PaymentDetailID = paymentDetailID;
@@ -3175,19 +3568,25 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
-     * Refuse a confirm whose payment schedule does not tie to its lines, naming the shortfall.
+     * Refuse a confirm whose payment schedule does not tie to its lines, naming the shortfall, and
+     * hand back the rows that survived the check.
      *
      * Treating an unscheduled remainder as "due on the header date" would silently under-bill —
      * the failure `InvoiceBehavior` already names. The check itself is `ScheduleShortfalls`, shared
      * with `Orders.IssueInstalmentInvoice` so both refuse for the same reason in the same words.
+     *
+     * The rows are RETURNED because booking needs them too (D89): which instalments are still
+     * future-dated is what decides how much of each line's debit is a contract asset rather than a
+     * receivable. One read, at the one place that already owns the transaction — the factory is
+     * handed the facts rather than querying for them.
      */
-    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
+    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<ScheduleTimingFacts[]> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const rows = await rv.RunView<{ CompanyID: string; Company?: string; Amount: number; Status: string }>(
+        const rows = await rv.RunView<ScheduleTimingFacts & { Company?: string }>(
             {
                 EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
                 ExtraFilter: `OrderHeaderID='${RequireUUID(this.ID, 'ID')}'`,
-                Fields: ['CompanyID', 'Company', 'Amount', 'Status'],
+                Fields: ['ID', 'CompanyID', 'Company', 'Amount', 'Status', 'DueDate', 'InstallmentNumber'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -3200,9 +3599,51 @@ export class OrderEntityServer extends OrderHeaderEntity {
             rows.Results ?? [],
             lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
         );
-        if (!shortfalls.length) return;
+        if (!shortfalls.length) return rows.Results ?? [];
         const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
         throw new Error(ExplainShortfalls(this.OrderNumber ?? '', shortfalls, (id) => String(names.get(id) ?? id)));
+    }
+
+    /**
+     * Bill every instalment already due on the order's effective date (D92).
+     *
+     * ORDER MATTERS AND IS STABLE: rows are issued in `InstallmentNumber` order, so a company with
+     * two instalments due on day one numbers them the way a person would and the slices are taken
+     * against the same sibling list in the same sequence every time.
+     *
+     * A refusal here THROWS. Confirm is all-or-none — the tie check above already refused a
+     * schedule that does not add up — so an instalment that cannot be issued must take the whole
+     * confirm down rather than leave an order booked with a bill it could not raise.
+     */
+    private async issueDueInstalments(scheduleRows: ScheduleTimingFacts[]): Promise<void> {
+        if (!scheduleRows.length) return;
+        // The order's own day, or today's BUSINESS day (#209). This decides which instalments are
+        // due — it is compared against `DueDate`, a `date` column — and `toISOString()` reads the
+        // UTC day, so an evening confirm would bill tomorrow's instalment a day early.
+        const effectiveDate = ToISODate(
+            await CalendarDayOrToday(
+                this.OrderDate,
+                this.ProviderToUse as unknown as IMetadataProvider,
+                this.ContextCurrentUser as UserInfo,
+            ),
+        ) as string;
+
+        const due = scheduleRows
+            .filter((r) => r.Status === 'Scheduled' && ToISODate(r.DueDate) !== null && ToISODate(r.DueDate)! <= effectiveDate)
+            .sort((a, b) => Number(a.InstallmentNumber ?? 0) - Number(b.InstallmentNumber ?? 0));
+        if (!due.length) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        for (const row of due) {
+            const outcome = await IssueInstalment(String(row.ID), provider, user);
+            if (!outcome.Success) {
+                throw new Error(
+                    `Order ${this.OrderNumber} could not issue instalment ${row.InstallmentNumber}, which is ` +
+                        `due on or before the order date: ${outcome.Message}`,
+                );
+            }
+        }
     }
 
     private async loadLinesForBooking(): Promise<mjBizAppsOrdersOrderLineEntity[]> {

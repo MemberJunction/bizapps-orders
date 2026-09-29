@@ -266,7 +266,17 @@ export const InvoicingChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        const orderID = await sell(ctx, { amount: 200 });
+        // Voided from a Draft, the only way an order reaches Voided: trigger 51014 refuses a
+        // Confirmed order leaving Confirmed, even by direct SQL.
+        const f = Fx();
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 200 }],
+        });
+        built.Order.Status = "Draft";
+        Assert(await built.Order.Save(), "the draft saved");
+        const orderID = built.Order.ID as string;
         await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET Status='Voided' WHERE ID='${orderID}'`);
 
         const run = await invoice(ctx, { OrderID: orderID });

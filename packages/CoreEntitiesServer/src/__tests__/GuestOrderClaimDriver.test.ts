@@ -13,33 +13,40 @@ import {
     type MJIdentityClaimEntity
 } from '../identityClaimContracts.js';
 
-const mockOrderSave = vi.fn().mockResolvedValue(true);
-const mockOrderLoad = vi.fn().mockResolvedValue(true);
-const mockGrantSave = vi.fn().mockResolvedValue(true);
-const mockGrantLoad = vi.fn().mockResolvedValue(true);
+// Hoisted with the mocks: the driver imports `IsBooked` from orders-entities at runtime, so the
+// module factory below runs before ordinary top-level declarations exist.
+const { mockOrderSave, mockOrderLoad, mockGrantSave, mockGrantLoad, MockOrderHeader, MockEntitlementGrant } = vi.hoisted(() => {
+    const mockOrderSave = vi.fn().mockResolvedValue(true);
+    const mockOrderLoad = vi.fn().mockResolvedValue(true);
+    const mockGrantSave = vi.fn().mockResolvedValue(true);
+    const mockGrantLoad = vi.fn().mockResolvedValue(true);
 
-class MockOrderHeader {
-    ID = 'order-100';
-    OrderNumber = 'ORD-100';
-    BillToPersonID: string | null = null;
-    ShipToPersonID: string | null = null;
-    LatestResult = { Success: true, Message: '' };
+    class MockOrderHeader {
+        ID = 'order-100';
+        OrderNumber = 'ORD-100';
+        Status: 'Draft' | 'Quoted' | 'Confirmed' | 'Voided' = 'Confirmed';
+        BillToPersonID: string | null = null;
+        ShipToPersonID: string | null = null;
+        LatestResult = { Success: true, Message: '' };
 
-    Load = mockOrderLoad;
-    Save = mockOrderSave;
-}
+        Load = mockOrderLoad;
+        Save = mockOrderSave;
+    }
 
-class MockEntitlementGrant {
-    ID = 'grant-100';
-    BeneficiaryPersonID: string | null = null;
-    ProductEntitlementID = 'pe-200';
-    Status: 'Active' | 'Expired' | 'Revoked' | 'Pending' = 'Pending';
-    ProvisionedAt: Date | null = null;
-    LatestResult = { Success: true, Message: '' };
+    class MockEntitlementGrant {
+        ID = 'grant-100';
+        BeneficiaryPersonID: string | null = null;
+        ProductEntitlementID = 'pe-200';
+        Status: 'Active' | 'Expired' | 'Revoked' | 'Pending' = 'Pending';
+        ProvisionedAt: Date | null = null;
+        LatestResult = { Success: true, Message: '' };
 
-    Load = mockGrantLoad;
-    Save = mockGrantSave;
-}
+        Load = mockGrantLoad;
+        Save = mockGrantSave;
+    }
+
+    return { mockOrderSave, mockOrderLoad, mockGrantSave, mockGrantLoad, MockOrderHeader, MockEntitlementGrant };
+});
 
 const mockOrderInstance = new MockOrderHeader();
 const mockGrantInstance = new MockEntitlementGrant();
@@ -84,6 +91,7 @@ vi.mock('@mj-biz-apps/orders-entities', () => ({
     mjBizAppsOrdersEntitlementGrantEntity: MockEntitlementGrant,
     LoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
     OrdersEngine: { Instance: {} },
+    IsBooked: (status: string) => status === 'Confirmed',
 }));
 
 import { GuestOrderClaimDriver } from '../GuestOrderClaimDriver.js';
@@ -98,6 +106,7 @@ describe('GuestOrderClaimDriver', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockOrderInstance.ID = 'order-100';
+        mockOrderInstance.Status = 'Confirmed';
         mockOrderInstance.BillToPersonID = null;
         mockOrderInstance.ShipToPersonID = null;
         mockOrderSave.mockResolvedValue(true);
@@ -148,6 +157,38 @@ describe('GuestOrderClaimDriver', () => {
             expect(mockGrantInstance.Status).toBe('Active');
             expect(mockGrantInstance.ProvisionedAt).toBeInstanceOf(Date);
             expect(mockGrantSave).toHaveBeenCalled();
+        });
+
+        // Checkout stamps the payer Person as bill-to before it confirms, so a claimed guest order
+        // normally arrives with a bill-to already set. Trigger 51013 refuses re-pointing it once the
+        // order is booked, so the claim must leave it and still succeed (golive #262).
+        it('keeps a set bill-to on a booked order, re-points ship-to, and still succeeds', async () => {
+            mockOrderInstance.BillToPersonID = 'person-checkout-payer';
+            mockOrderInstance.ShipToPersonID = 'person-checkout-payer';
+            const context: ClaimRedeemContext = {
+                Claim: { ID: 'claim-5', RecordID: 'order-100', Status: 'Pending' } as unknown as MJIdentityClaimEntity,
+                User: mockUser
+            };
+
+            const result = await driver.OnClaim(context);
+            expect(result.Success).toBe(true);
+            expect(mockOrderInstance.BillToPersonID).toBe('person-checkout-payer');
+            expect(mockOrderInstance.ShipToPersonID).toBe('person-88');
+            expect(mockOrderSave).toHaveBeenCalled();
+            expect(result.Data?.CascadedGrants).toEqual(['grant-100']);
+        });
+
+        it.each(['Draft', 'Quoted'] as const)('re-points a set bill-to while the order is %s', async (status) => {
+            mockOrderInstance.Status = status;
+            mockOrderInstance.BillToPersonID = 'person-checkout-payer';
+            const context: ClaimRedeemContext = {
+                Claim: { ID: 'claim-6', RecordID: 'order-100', Status: 'Pending' } as unknown as MJIdentityClaimEntity,
+                User: mockUser
+            };
+
+            const result = await driver.OnClaim(context);
+            expect(result.Success).toBe(true);
+            expect(mockOrderInstance.BillToPersonID).toBe('person-88');
         });
 
         it('extracts OrderID from PayloadJSON if RecordID is not set', async () => {

@@ -34,8 +34,9 @@ export interface OverdueWorklistRow {
      */
     AvailableCredit: number;
     /**
-     * Set when a failed subscription renewal put this into grace. Grace extends
-     * ACCESS, never revenue — the two are different dates.
+     * The last day a past-due renewal keeps access before the payment-gated cutoff
+     * (Orders setting RenewalAccessCutoffDaysPastDue) suspends it. Set only while that
+     * day is still ahead. Grace extends ACCESS, never revenue — the two are different dates.
      */
     GraceThroughDate?: string | null;
     SubscriptionID?: string | null;

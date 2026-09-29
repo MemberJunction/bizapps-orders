@@ -712,6 +712,32 @@ export const mjBizAppsOrdersEntitlementGrantSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    GrantTimingApplied: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnFirstPayment'), z.literal('OnPaidInFull')]).nullable().describe(`
+        * * Field Name: GrantTimingApplied
+        * * Display Name: Grant Timing Applied
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * OnActivation
+    *   * OnConfirm
+    *   * OnFirstPayment
+    *   * OnPaidInFull
+        * * Description: The grant timing that produced this grant (OnConfirm, OnPaidInFull, OnFirstPayment, OnActivation), resolved at confirm from product, category and product type. Access is re-decided from this when the order's payments change. NULL on grants written before the column existed.`),
+    SuspendedAt: z.date().nullable().describe(`
+        * * Field Name: SuspendedAt
+        * * Display Name: Suspended At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the grant was last suspended. Set together with SuspensionReason and cleared when the grant becomes Active again.`),
+    SuspensionReason: z.union([z.literal('AwaitingActivation'), z.literal('AwaitingPayment'), z.literal('PastDue')]).nullable().describe(`
+        * * Field Name: SuspensionReason
+        * * Display Name: Suspension Reason
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AwaitingActivation
+    *   * AwaitingPayment
+    *   * PastDue
+        * * Description: Why the grant is suspended: AwaitingPayment (a new purchase whose first payment has not been received), PastDue (a renewal past the configured cutoff), or AwaitingActivation. AwaitingPayment and PastDue are lifted automatically when payment arrives.`),
     ProductEntitlement: z.string().nullable().describe(`
         * * Field Name: ProductEntitlement
         * * Display Name: Product Entitlement Name
@@ -957,6 +983,18 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: DimensionValueID
         * * Display Name: Dimension Value ID
         * * SQL Data Type: uniqueidentifier`),
+    BilledToDate: z.number().describe(`
+        * * Field Name: BilledToDate
+        * * Display Name: Billed To Date
+        * * SQL Data Type: decimal(18, 2)`),
+    RecognizedToDate: z.number().describe(`
+        * * Field Name: RecognizedToDate
+        * * Display Name: Recognized To Date
+        * * SQL Data Type: decimal(18, 2)`),
+    ShipToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: ShipToAddressSnapshot
+        * * Display Name: Ship To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)`),
     Person: z.string().describe(`
         * * Field Name: Person
         * * Display Name: Person
@@ -1796,6 +1834,22 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
     *   * Pending
     *   * Returned
         * * Description: Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`),
+    BillToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: BillToAddressSnapshot
+        * * Display Name: Bill To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
+    ShipToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: ShipToAddressSnapshot
+        * * Display Name: Ship To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
+    ConfirmedByUserID: z.string().nullable().describe(`
+        * * Field Name: ConfirmedByUserID
+        * * Display Name: Confirmed By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ConfirmedByFrozenAfterBooking, 51017).`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -1851,6 +1905,10 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
     SourceCheckoutWidget: z.string().nullable().describe(`
         * * Field Name: SourceCheckoutWidget
         * * Display Name: Source Checkout Widget
+        * * SQL Data Type: nvarchar(100)`),
+    ConfirmedByUser: z.string().nullable().describe(`
+        * * Field Name: ConfirmedByUser
+        * * Display Name: Confirmed By User
         * * SQL Data Type: nvarchar(100)`),
     __mj_Latitude_BillToAddressID: z.number().nullable().describe(`
         * * Field Name: __mj_Latitude_BillToAddressID
@@ -2000,6 +2058,120 @@ export const mjBizAppsOrdersOrderLinePriceComponentSchema = z.object({
 });
 
 export type mjBizAppsOrdersOrderLinePriceComponentEntityType = z.infer<typeof mjBizAppsOrdersOrderLinePriceComponentSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Order Line Progress Measurements
+ */
+export const mjBizAppsOrdersOrderLineProgressMeasurementSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderLineID: z.string().describe(`
+        * * Field Name: OrderLineID
+        * * Display Name: Order Line ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+        * * Description: The percentage-of-completion order line this observation is about.`),
+    MeasurementDate: z.date().describe(`
+        * * Field Name: MeasurementDate
+        * * Display Name: Measurement Date
+        * * SQL Data Type: date
+        * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.`),
+    PercentComplete: z.number().describe(`
+        * * Field Name: PercentComplete
+        * * Display Name: Percent Complete
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.`),
+    MethodCode: z.string().describe(`
+        * * Field Name: MethodCode
+        * * Display Name: Method Code
+        * * SQL Data Type: nvarchar(40)
+        * * Description: The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.`),
+    MeasureNumerator: z.number().nullable().describe(`
+        * * Field Name: MeasureNumerator
+        * * Display Name: Measure Numerator
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Optional quantitative input behind the percent (cost incurred, units delivered), kept for audit. PercentComplete drives the entry regardless.`),
+    MeasureDenominator: z.number().nullable().describe(`
+        * * Field Name: MeasureDenominator
+        * * Display Name: Measure Denominator
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Optional quantitative denominator behind the percent (estimated total cost, total units), kept for audit.`),
+    AttestedByUserID: z.string().nullable().describe(`
+        * * Field Name: AttestedByUserID
+        * * Display Name: Attested By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: Who signed this observation. Every recognition entry names the observation and the person who signed it.`),
+    SourceEntityID: z.string().nullable().describe(`
+        * * Field Name: SourceEntityID
+        * * Display Name: Source Entity ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Entities (vwEntities.ID)
+        * * Description: Where a derived number came from, when it was derived (entity). NULL for a plain attestation.`),
+    SourceRecordID: z.string().nullable().describe(`
+        * * Field Name: SourceRecordID
+        * * Display Name: Source Record ID
+        * * SQL Data Type: nvarchar(400)
+        * * Description: Where a derived number came from, when it was derived (record). NULL for a plain attestation.`),
+    Notes: z.string().nullable().describe(`
+        * * Field Name: Notes
+        * * Display Name: Notes
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: Free text from the signer.`),
+    RecognizedToDateBefore: z.number().nullable().describe(`
+        * * Field Name: RecognizedToDateBefore
+        * * Display Name: Recognized To Date Before
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Revenue recognised on the line before this observation posted. Materialised for the audit chain; agrees with the sum of posted recognition entries for the line.`),
+    RecognizedToDateAfter: z.number().nullable().describe(`
+        * * Field Name: RecognizedToDateAfter
+        * * Display Name: Recognized To Date After
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Revenue recognised on the line after this observation posted: LineTotalNet × PercentComplete, rounded to the cent. At 100% it is the line amount exactly.`),
+    RecognitionAmount: z.number().nullable().describe(`
+        * * Field Name: RecognitionAmount
+        * * Display Name: Recognition Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The delta this observation posted: After − Before. NEGATIVE on a backward slide (the entry is mirrored, Dr Sales / Cr Deferred Revenue). Zero when the observation moved nothing, in which case no entry was written.`),
+    JournalEntryID: z.string().nullable().describe(`
+        * * Field Name: JournalEntryID
+        * * Display Name: Journal Entry ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: The RevenueRecognition journal entry this observation produced. Soft reference into accounting. NULL when the delta was zero.`),
+    Status: z.union([z.literal('Draft'), z.literal('Posted')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Draft
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Draft
+    *   * Posted
+        * * Description: Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    AttestedByUser: z.string().nullable().describe(`
+        * * Field Name: AttestedByUser
+        * * Display Name: Attested By User
+        * * SQL Data Type: nvarchar(100)`),
+    SourceEntity: z.string().nullable().describe(`
+        * * Field Name: SourceEntity
+        * * Display Name: Source Entity
+        * * SQL Data Type: nvarchar(255)`),
+});
+
+export type mjBizAppsOrdersOrderLineProgressMeasurementEntityType = z.infer<typeof mjBizAppsOrdersOrderLineProgressMeasurementSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Lines
@@ -2196,6 +2368,23 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Dimension Values (vwDimensionValues.ID)
         * * Description: The value of DimensionID this line is tagged with, from __mj_BizAppsAccounting.DimensionValue. Carried with DimensionID onto every journal entry line the order line produces. Set together with DimensionID (CK_OrderLine_DimensionPair).`),
+    BilledToDate: z.number().describe(`
+        * * Field Name: BilledToDate
+        * * Display Name: Billed To Date
+        * * SQL Data Type: decimal(18, 2)
+        * * Default Value: 0
+        * * Description: Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`),
+    RecognizedToDate: z.number().describe(`
+        * * Field Name: RecognizedToDate
+        * * Display Name: Recognized To Date
+        * * SQL Data Type: decimal(18, 2)
+        * * Default Value: 0
+        * * Description: Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. ADVANCED FOR UP-FRONT AND ATTESTED LINES ONLY. A deferred driver stages its monthly releases as forward-dated entries at confirm; those credit Sales on their own dates without passing through rule 2, so they leave this total untouched. A subscription line therefore depends on its instalments being invoiced on time for the gap between the two totals to mean anything. Routing the staged releases through rule 2 is orders #241, parked. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`),
+    ShipToAddressSnapshot: z.string().nullable().describe(`
+        * * Field Name: ShipToAddressSnapshot
+        * * Display Name: Ship To Address Snapshot
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header Display
@@ -2565,6 +2754,15 @@ export const mjBizAppsOrdersPaymentHeaderSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    ReversalSource: z.union([z.literal('BankReturn'), z.literal('Refund')]).nullable().describe(`
+        * * Field Name: ReversalSource
+        * * Display Name: Reversal Source
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * BankReturn
+    *   * Refund
+        * * Description: Who took the money back on a reversal: Refund (the seller chose to, via Orders.RefundPayment) or BankReturn (the bank reversed a debit). Set on every reversal and on nothing else. A bank return removes payment-gated access; a refund does not.`),
     ReceivingCompany: z.string().describe(`
         * * Field Name: ReceivingCompany
         * * Display Name: Receiving Company Name
@@ -3355,7 +3553,7 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Display Name: Default Tax Category
         * * SQL Data Type: nvarchar(50)
         * * Description: Default taxability key for products in this category, matched against accounting's TaxRate.TaxCategory. NULL means the walk continues up the category tree and then to the product type.`),
-    DefaultEntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnPaidInFull')]).nullable().describe(`
+    DefaultEntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnFirstPayment'), z.literal('OnPaidInFull')]).nullable().describe(`
         * * Field Name: DefaultEntitlementGrantTiming
         * * Display Name: Default Entitlement Grant Timing
         * * SQL Data Type: nvarchar(20)
@@ -3363,6 +3561,7 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull`),
     DefaultEntitlementQuantityMode: z.union([z.literal('Flat'), z.literal('PerUnit')]).nullable().describe(`
         * * Field Name: DefaultEntitlementQuantityMode
@@ -3761,7 +3960,7 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 1
         * * Description: Whether this type is active and selectable.`),
-    DefaultEntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnPaidInFull')]).describe(`
+    DefaultEntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnFirstPayment'), z.literal('OnPaidInFull')]).describe(`
         * * Field Name: DefaultEntitlementGrantTiming
         * * Display Name: Default Entitlement Grant Timing
         * * SQL Data Type: nvarchar(20)
@@ -3770,6 +3969,7 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull`),
     DefaultEntitlementQuantityMode: z.union([z.literal('Flat'), z.literal('PerUnit')]).describe(`
         * * Field Name: DefaultEntitlementQuantityMode
@@ -3916,7 +4116,7 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Tax Category
         * * SQL Data Type: nvarchar(50)
         * * Description: Taxability key, matched against accounting's TaxRate.TaxCategory. A string rather than a lookup table because accounting already keys taxability by string, and a table here would need syncing to it and could drift.`),
-    EntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnPaidInFull')]).nullable().describe(`
+    EntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnFirstPayment'), z.literal('OnPaidInFull')]).nullable().describe(`
         * * Field Name: EntitlementGrantTiming
         * * Display Name: Entitlement Grant Timing
         * * SQL Data Type: nvarchar(20)
@@ -3924,6 +4124,7 @@ export const mjBizAppsOrdersProductSchema = z.object({
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull`),
     EntitlementQuantityMode: z.union([z.literal('Flat'), z.literal('PerUnit')]).nullable().describe(`
         * * Field Name: EntitlementQuantityMode
@@ -4369,6 +4570,16 @@ export const mjBizAppsOrdersRevenueRecognitionTypeSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    ScheduleBasis: z.union([z.literal('AtBooking'), z.literal('OnMeasurement')]).describe(`
+        * * Field Name: ScheduleBasis
+        * * Display Name: Schedule Basis
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: AtBooking
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AtBooking
+    *   * OnMeasurement
+        * * Description: AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.`),
 });
 
 export type mjBizAppsOrdersRevenueRecognitionTypeEntityType = z.infer<typeof mjBizAppsOrdersRevenueRecognitionTypeSchema>;
@@ -7276,6 +7487,56 @@ export class mjBizAppsOrdersEntitlementGrantEntity extends BaseEntity<mjBizAppsO
     }
 
     /**
+    * * Field Name: GrantTimingApplied
+    * * Display Name: Grant Timing Applied
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * OnActivation
+    *   * OnConfirm
+    *   * OnFirstPayment
+    *   * OnPaidInFull
+    * * Description: The grant timing that produced this grant (OnConfirm, OnPaidInFull, OnFirstPayment, OnActivation), resolved at confirm from product, category and product type. Access is re-decided from this when the order's payments change. NULL on grants written before the column existed.
+    */
+    get GrantTimingApplied(): 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null {
+        return this.Get('GrantTimingApplied');
+    }
+    set GrantTimingApplied(value: 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null) {
+        this.Set('GrantTimingApplied', value);
+    }
+
+    /**
+    * * Field Name: SuspendedAt
+    * * Display Name: Suspended At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the grant was last suspended. Set together with SuspensionReason and cleared when the grant becomes Active again.
+    */
+    get SuspendedAt(): Date | null {
+        return this.Get('SuspendedAt');
+    }
+    set SuspendedAt(value: Date | null) {
+        this.Set('SuspendedAt', value);
+    }
+
+    /**
+    * * Field Name: SuspensionReason
+    * * Display Name: Suspension Reason
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AwaitingActivation
+    *   * AwaitingPayment
+    *   * PastDue
+    * * Description: Why the grant is suspended: AwaitingPayment (a new purchase whose first payment has not been received), PastDue (a renewal past the configured cutoff), or AwaitingActivation. AwaitingPayment and PastDue are lifted automatically when payment arrives.
+    */
+    get SuspensionReason(): 'AwaitingActivation' | 'AwaitingPayment' | 'PastDue' | null {
+        return this.Get('SuspensionReason');
+    }
+    set SuspensionReason(value: 'AwaitingActivation' | 'AwaitingPayment' | 'PastDue' | null) {
+        this.Set('SuspensionReason', value);
+    }
+
+    /**
     * * Field Name: ProductEntitlement
     * * Display Name: Product Entitlement Name
     * * SQL Data Type: nvarchar(200)
@@ -7980,6 +8241,45 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
     set DimensionValueID(value: string | null) {
         this.Set('DimensionValueID', value);
+    }
+
+    /**
+    * * Field Name: BilledToDate
+    * * Display Name: Billed To Date
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get BilledToDate(): number {
+        return this.Get('BilledToDate');
+    }
+    set BilledToDate(value: number) {
+        this.Set('BilledToDate', value);
+    }
+
+    /**
+    * * Field Name: RecognizedToDate
+    * * Display Name: Recognized To Date
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get RecognizedToDate(): number {
+        return this.Get('RecognizedToDate');
+    }
+    set RecognizedToDate(value: number) {
+        this.Set('RecognizedToDate', value);
+    }
+
+    /**
+    * * Field Name: ShipToAddressSnapshot
+    * * Display Name: Ship To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ShipToAddressSnapshot(): string | null {
+        return this.Get('ShipToAddressSnapshot');
+    }
+    set ShipToAddressSnapshot(value: string | null) {
+        this.Set('ShipToAddressSnapshot', value);
     }
 
     /**
@@ -10474,6 +10774,46 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: BillToAddressSnapshot
+    * * Display Name: Bill To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.
+    */
+    get BillToAddressSnapshot(): string | null {
+        return this.Get('BillToAddressSnapshot');
+    }
+    set BillToAddressSnapshot(value: string | null) {
+        this.Set('BillToAddressSnapshot', value);
+    }
+
+    /**
+    * * Field Name: ShipToAddressSnapshot
+    * * Display Name: Ship To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.
+    */
+    get ShipToAddressSnapshot(): string | null {
+        return this.Get('ShipToAddressSnapshot');
+    }
+    set ShipToAddressSnapshot(value: string | null) {
+        this.Set('ShipToAddressSnapshot', value);
+    }
+
+    /**
+    * * Field Name: ConfirmedByUserID
+    * * Display Name: Confirmed By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ConfirmedByFrozenAfterBooking, 51017).
+    */
+    get ConfirmedByUserID(): string | null {
+        return this.Get('ConfirmedByUserID');
+    }
+    set ConfirmedByUserID(value: string | null) {
+        this.Set('ConfirmedByUserID', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
@@ -10597,6 +10937,15 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     */
     get SourceCheckoutWidget(): string | null {
         return this.Get('SourceCheckoutWidget');
+    }
+
+    /**
+    * * Field Name: ConfirmedByUser
+    * * Display Name: Confirmed By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get ConfirmedByUser(): string | null {
+        return this.Get('ConfirmedByUser');
     }
 
     /**
@@ -10985,6 +11334,292 @@ export class mjBizAppsOrdersOrderLinePriceComponentEntity extends BaseEntity<mjB
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: SourceEntity
+    * * Display Name: Source Entity
+    * * SQL Data Type: nvarchar(255)
+    */
+    get SourceEntity(): string | null {
+        return this.Get('SourceEntity');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Order Line Progress Measurements - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OrderLineProgressMeasurement
+ * * Base View: vwOrderLineProgressMeasurements
+ * * @description One attested progress observation on a percentage-of-completion order line (D90). PercentComplete is CUMULATIVE; Orders.RecordProgress posts the difference between the target it implies and what is already recognised, so a backward slide reverses through the same subtraction. A Posted row is immutable — corrections happen forward, in the next observation.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Line Progress Measurements')
+export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntity<mjBizAppsOrdersOrderLineProgressMeasurementEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Order Line Progress Measurements record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Line Progress Measurements record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOrderLineProgressMeasurementEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderLineID
+    * * Display Name: Order Line ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    * * Description: The percentage-of-completion order line this observation is about.
+    */
+    get OrderLineID(): string {
+        return this.Get('OrderLineID');
+    }
+    set OrderLineID(value: string) {
+        this.Set('OrderLineID', value);
+    }
+
+    /**
+    * * Field Name: MeasurementDate
+    * * Display Name: Measurement Date
+    * * SQL Data Type: date
+    * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.
+    */
+    get MeasurementDate(): Date {
+        return this.Get('MeasurementDate');
+    }
+    set MeasurementDate(value: Date) {
+        this.Set('MeasurementDate', value);
+    }
+
+    /**
+    * * Field Name: PercentComplete
+    * * Display Name: Percent Complete
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.
+    */
+    get PercentComplete(): number {
+        return this.Get('PercentComplete');
+    }
+    set PercentComplete(value: number) {
+        this.Set('PercentComplete', value);
+    }
+
+    /**
+    * * Field Name: MethodCode
+    * * Display Name: Method Code
+    * * SQL Data Type: nvarchar(40)
+    * * Description: The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.
+    */
+    get MethodCode(): string {
+        return this.Get('MethodCode');
+    }
+    set MethodCode(value: string) {
+        this.Set('MethodCode', value);
+    }
+
+    /**
+    * * Field Name: MeasureNumerator
+    * * Display Name: Measure Numerator
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Optional quantitative input behind the percent (cost incurred, units delivered), kept for audit. PercentComplete drives the entry regardless.
+    */
+    get MeasureNumerator(): number | null {
+        return this.Get('MeasureNumerator');
+    }
+    set MeasureNumerator(value: number | null) {
+        this.Set('MeasureNumerator', value);
+    }
+
+    /**
+    * * Field Name: MeasureDenominator
+    * * Display Name: Measure Denominator
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Optional quantitative denominator behind the percent (estimated total cost, total units), kept for audit.
+    */
+    get MeasureDenominator(): number | null {
+        return this.Get('MeasureDenominator');
+    }
+    set MeasureDenominator(value: number | null) {
+        this.Set('MeasureDenominator', value);
+    }
+
+    /**
+    * * Field Name: AttestedByUserID
+    * * Display Name: Attested By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: Who signed this observation. Every recognition entry names the observation and the person who signed it.
+    */
+    get AttestedByUserID(): string | null {
+        return this.Get('AttestedByUserID');
+    }
+    set AttestedByUserID(value: string | null) {
+        this.Set('AttestedByUserID', value);
+    }
+
+    /**
+    * * Field Name: SourceEntityID
+    * * Display Name: Source Entity ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Entities (vwEntities.ID)
+    * * Description: Where a derived number came from, when it was derived (entity). NULL for a plain attestation.
+    */
+    get SourceEntityID(): string | null {
+        return this.Get('SourceEntityID');
+    }
+    set SourceEntityID(value: string | null) {
+        this.Set('SourceEntityID', value);
+    }
+
+    /**
+    * * Field Name: SourceRecordID
+    * * Display Name: Source Record ID
+    * * SQL Data Type: nvarchar(400)
+    * * Description: Where a derived number came from, when it was derived (record). NULL for a plain attestation.
+    */
+    get SourceRecordID(): string | null {
+        return this.Get('SourceRecordID');
+    }
+    set SourceRecordID(value: string | null) {
+        this.Set('SourceRecordID', value);
+    }
+
+    /**
+    * * Field Name: Notes
+    * * Display Name: Notes
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: Free text from the signer.
+    */
+    get Notes(): string | null {
+        return this.Get('Notes');
+    }
+    set Notes(value: string | null) {
+        this.Set('Notes', value);
+    }
+
+    /**
+    * * Field Name: RecognizedToDateBefore
+    * * Display Name: Recognized To Date Before
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Revenue recognised on the line before this observation posted. Materialised for the audit chain; agrees with the sum of posted recognition entries for the line.
+    */
+    get RecognizedToDateBefore(): number | null {
+        return this.Get('RecognizedToDateBefore');
+    }
+    set RecognizedToDateBefore(value: number | null) {
+        this.Set('RecognizedToDateBefore', value);
+    }
+
+    /**
+    * * Field Name: RecognizedToDateAfter
+    * * Display Name: Recognized To Date After
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Revenue recognised on the line after this observation posted: LineTotalNet × PercentComplete, rounded to the cent. At 100% it is the line amount exactly.
+    */
+    get RecognizedToDateAfter(): number | null {
+        return this.Get('RecognizedToDateAfter');
+    }
+    set RecognizedToDateAfter(value: number | null) {
+        this.Set('RecognizedToDateAfter', value);
+    }
+
+    /**
+    * * Field Name: RecognitionAmount
+    * * Display Name: Recognition Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The delta this observation posted: After − Before. NEGATIVE on a backward slide (the entry is mirrored, Dr Sales / Cr Deferred Revenue). Zero when the observation moved nothing, in which case no entry was written.
+    */
+    get RecognitionAmount(): number | null {
+        return this.Get('RecognitionAmount');
+    }
+    set RecognitionAmount(value: number | null) {
+        this.Set('RecognitionAmount', value);
+    }
+
+    /**
+    * * Field Name: JournalEntryID
+    * * Display Name: Journal Entry ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: The RevenueRecognition journal entry this observation produced. Soft reference into accounting. NULL when the delta was zero.
+    */
+    get JournalEntryID(): string | null {
+        return this.Get('JournalEntryID');
+    }
+    set JournalEntryID(value: string | null) {
+        this.Set('JournalEntryID', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Draft
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Draft
+    *   * Posted
+    * * Description: Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.
+    */
+    get Status(): 'Draft' | 'Posted' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Draft' | 'Posted') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: AttestedByUser
+    * * Display Name: Attested By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get AttestedByUser(): string | null {
+        return this.Get('AttestedByUser');
     }
 
     /**
@@ -11680,6 +12315,47 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set DimensionValueID(value: string | null) {
         this.Set('DimensionValueID', value);
+    }
+
+    /**
+    * * Field Name: BilledToDate
+    * * Display Name: Billed To Date
+    * * SQL Data Type: decimal(18, 2)
+    * * Default Value: 0
+    * * Description: Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.
+    */
+    get BilledToDate(): number {
+        return this.Get('BilledToDate');
+    }
+    set BilledToDate(value: number) {
+        this.Set('BilledToDate', value);
+    }
+
+    /**
+    * * Field Name: RecognizedToDate
+    * * Display Name: Recognized To Date
+    * * SQL Data Type: decimal(18, 2)
+    * * Default Value: 0
+    * * Description: Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. ADVANCED FOR UP-FRONT AND ATTESTED LINES ONLY. A deferred driver stages its monthly releases as forward-dated entries at confirm; those credit Sales on their own dates without passing through rule 2, so they leave this total untouched. A subscription line therefore depends on its instalments being invoiced on time for the gap between the two totals to mean anything. Routing the staged releases through rule 2 is orders #241, parked. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.
+    */
+    get RecognizedToDate(): number {
+        return this.Get('RecognizedToDate');
+    }
+    set RecognizedToDate(value: number) {
+        this.Set('RecognizedToDate', value);
+    }
+
+    /**
+    * * Field Name: ShipToAddressSnapshot
+    * * Display Name: Ship To Address Snapshot
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).
+    */
+    get ShipToAddressSnapshot(): string | null {
+        return this.Get('ShipToAddressSnapshot');
+    }
+    set ShipToAddressSnapshot(value: string | null) {
+        this.Set('ShipToAddressSnapshot', value);
     }
 
     /**
@@ -12744,6 +13420,23 @@ export class mjBizAppsOrdersPaymentHeaderEntity extends BaseEntity<mjBizAppsOrde
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ReversalSource
+    * * Display Name: Reversal Source
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * BankReturn
+    *   * Refund
+    * * Description: Who took the money back on a reversal: Refund (the seller chose to, via Orders.RefundPayment) or BankReturn (the bank reversed a debit). Set on every reversal and on nothing else. A bank return removes payment-gated access; a refund does not.
+    */
+    get ReversalSource(): 'BankReturn' | 'Refund' | null {
+        return this.Get('ReversalSource');
+    }
+    set ReversalSource(value: 'BankReturn' | 'Refund' | null) {
+        this.Set('ReversalSource', value);
     }
 
     /**
@@ -15143,12 +15836,13 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull
     */
-    get DefaultEntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnPaidInFull' | null {
+    get DefaultEntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null {
         return this.Get('DefaultEntitlementGrantTiming');
     }
-    set DefaultEntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnPaidInFull' | null) {
+    set DefaultEntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null) {
         this.Set('DefaultEntitlementGrantTiming', value);
     }
 
@@ -16342,12 +17036,13 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull
     */
-    get DefaultEntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnPaidInFull' {
+    get DefaultEntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' {
         return this.Get('DefaultEntitlementGrantTiming');
     }
-    set DefaultEntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnPaidInFull') {
+    set DefaultEntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull') {
         this.Set('DefaultEntitlementGrantTiming', value);
     }
 
@@ -16801,12 +17496,13 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     * * Possible Values 
     *   * OnActivation
     *   * OnConfirm
+    *   * OnFirstPayment
     *   * OnPaidInFull
     */
-    get EntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnPaidInFull' | null {
+    get EntitlementGrantTiming(): 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null {
         return this.Get('EntitlementGrantTiming');
     }
-    set EntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnPaidInFull' | null) {
+    set EntitlementGrantTiming(value: 'OnActivation' | 'OnConfirm' | 'OnFirstPayment' | 'OnPaidInFull' | null) {
         this.Set('EntitlementGrantTiming', value);
     }
 
@@ -18038,6 +18734,24 @@ export class mjBizAppsOrdersRevenueRecognitionTypeEntity extends BaseEntity<mjBi
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ScheduleBasis
+    * * Display Name: Schedule Basis
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: AtBooking
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AtBooking
+    *   * OnMeasurement
+    * * Description: AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.
+    */
+    get ScheduleBasis(): 'AtBooking' | 'OnMeasurement' {
+        return this.Get('ScheduleBasis');
+    }
+    set ScheduleBasis(value: 'AtBooking' | 'OnMeasurement') {
+        this.Set('ScheduleBasis', value);
     }
 }
 

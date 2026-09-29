@@ -28,7 +28,7 @@
  *   PT1   a stated DueDate survives confirm untouched
  *   PT2   stated terms derive the date from NetDays
  *   PT3   the buyer's CustomerPaymentTerms beat the company default
- *   PT4   the selling company's AccountingCompanyProfile default is used when nothing else applies
+ *   PT4   the selling company's OrderCompanyPolicy default is used when nothing else applies
  *   PT5   an order with nothing configured is due on receipt, with a real date
  *   PT6   a confirmed order past its due date reaches Orders.GetOverdueWorklist
  *   PT7   customer terms are effective on the ORDER date, not on today
@@ -37,6 +37,14 @@
  *   PT10  expired terms stop applying and the walk falls through to the next rung
  *   PT11  inactive terms are ignored
  *   PT12  the most recently started terms win among equally specific ones
+ *   PT13  a confirmed order's DueDate is corrected without approval, and every correction is recorded
+ *   PT14  a change to a confirmed order's PaymentTermsTypeID is recorded
+ *
+ * PT13 and PT14 rely on MJ's own change tracking: `Order Headers` has `TrackRecordChanges` on, so
+ * every header save writes a `MJ: Record Changes` row carrying the old and new value of each changed
+ * column, who saved it and when. There is no Orders-owned change table. What these checks guard is
+ * that the header-only save a booked order takes (`OrderEntityServer.Save`'s ordinary path) still
+ * reaches that write — and that the flag stays on (#267, #309).
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -44,7 +52,7 @@
  *   CODE: PaymentTermsBehavior · OrderEntityServer.resolveDueDate · GetOverdueWorklistOperation
  *   DATA: metadata/payment-terms-types/.payment-terms-types.json
  */
-import { BaseRemotableOperation } from "@memberjunction/core";
+import { BaseRemotableOperation, Metadata } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
 import {
   Assert,
@@ -60,11 +68,13 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  SameID,
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import { CUSTOMER_PAYMENT_TERMS_ENTITY } from "../entity-names.js";
+import { OrderHeaderEntity } from "@mj-biz-apps/orders-entities";
+import { CUSTOMER_PAYMENT_TERMS_ENTITY, ORDER_HEADER_ENTITY } from "../entity-names.js";
 import { ConfirmOrder, type OrderSpec } from "../order-builder.js";
 
 /** A seeded terms row by code — these come from metadata, so they are committed and stable. */
@@ -117,6 +127,37 @@ async function setCompanyDefault(ctx: IntegrationCheckContext, companyID: string
      ELSE
        INSERT INTO ${ORDERS_SCHEMA}.OrderCompanyPolicy (ID, DefaultPaymentTermsTypeID) VALUES ('${companyID}', '${paymentTermsTypeID}');`,
   );
+}
+
+/** One field's entry in a Record Change's `ChangesJSON`. */
+type FieldChange = { field: string; oldValue: unknown; newValue: unknown };
+
+/** The `MJ: Record Changes` rows written for one order header, oldest first. */
+async function headerChanges(ctx: IntegrationCheckContext, orderID: string) {
+  const rows = await TxQuery<{ UserID: string; Type: string; ChangesJSON: string | null }>(
+    ctx,
+    `SELECT rc.UserID, rc.Type, rc.ChangesJSON
+       FROM __mj.RecordChange rc
+       JOIN __mj.Entity e ON e.ID = rc.EntityID
+      WHERE e.Name = '${ORDER_HEADER_ENTITY}'
+        AND rc.RecordID = CONCAT('ID|', UPPER('${orderID}'))
+      ORDER BY rc.ChangedAt`,
+  );
+  return rows.map((r) => ({
+    UserID: r.UserID,
+    Type: r.Type,
+    Changes: (r.ChangesJSON ? JSON.parse(r.ChangesJSON) : {}) as Record<string, FieldChange | undefined>,
+  }));
+}
+
+/** A diffed date value as a calendar day, whichever form the diff serialized it in. */
+const asDay = (v: unknown) => (v == null ? null : new Date(v as string).toISOString().slice(0, 10));
+
+/** Reload a confirmed order as a fresh entity object — the object a form save rebuilds. */
+async function reloadHeader(ctx: IntegrationCheckContext, orderID: string): Promise<OrderHeaderEntity> {
+  const header = await new Metadata().GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
+  Assert(await header.Load(orderID), "the confirmed order reloads");
+  return header;
 }
 
 export const PaymentTermsChecks: NamedCheck[] = [
@@ -385,6 +426,77 @@ export const PaymentTermsChecks: NamedCheck[] = [
         const stored = await headerTerms(ctx, order.Order.ID as string);
         AssertEqual(stored.DueDate, "2026-08-15", "forty-five days from the later negotiation");
         AssertEqual(String(stored.PaymentTermsTypeID).toLowerCase(), net45.toLowerCase(), "the newer terms");
+      }),
+  },
+  {
+    Id: "payment-terms.PT13",
+    Name: "PT13: a confirmed order's DueDate is corrected without approval, and each correction is recorded",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // A due-date correction is not a commercial concession: it needs a record, not an approval
+        // (#309). The date is what aging and the collections worklist read, so a change nobody can
+        // trace is a receivable whose age moved for no stated reason.
+        const order = await sell(ctx, { PaymentTermsTypeID: await termsID(ctx, "Net30") } as Partial<OrderSpec>);
+        const orderID = order.Order.ID as string;
+        AssertEqual((await headerTerms(ctx, orderID)).DueDate, "2026-07-31", "confirmed with Net30");
+        const before = (await headerChanges(ctx, orderID)).length;
+
+        // Two corrections, each through a fresh load and a header-only save, which is the path a
+        // form takes. Both must land, and both must be on record — "every change", not the latest.
+        const first = await reloadHeader(ctx, orderID);
+        AssertEqual(first.Status, "Confirmed", "the order is booked");
+        first.DueDate = new Date("2026-08-14T00:00:00Z");
+        Assert(await first.Save(), `the first correction saves: ${first.LatestResult?.CompleteMessage ?? ""}`);
+
+        const second = await reloadHeader(ctx, orderID);
+        second.DueDate = new Date("2026-08-21T00:00:00Z");
+        Assert(await second.Save(), `the second correction saves: ${second.LatestResult?.CompleteMessage ?? ""}`);
+
+        AssertEqual((await headerTerms(ctx, orderID)).DueDate, "2026-08-21", "the latest correction is stored");
+
+        const dueDateChanges = (await headerChanges(ctx, orderID))
+          .slice(before)
+          .filter((c) => c.Type === "Update" && c.Changes.DueDate);
+        AssertEqual(dueDateChanges.length, 2, "one change record per correction");
+
+        const [a, b] = dueDateChanges;
+        AssertEqual(asDay(a.Changes.DueDate!.oldValue), "2026-07-31", "the first record holds the confirmed date");
+        AssertEqual(asDay(a.Changes.DueDate!.newValue), "2026-08-14", "and the first correction");
+        AssertEqual(asDay(b.Changes.DueDate!.oldValue), "2026-08-14", "the second record starts where the first ended");
+        AssertEqual(asDay(b.Changes.DueDate!.newValue), "2026-08-21", "and holds the second correction");
+        for (const c of dueDateChanges) {
+          Assert(SameID(c.UserID, ctx.User.ID), `each record names who made the change (got ${c.UserID})`);
+        }
+      }),
+  },
+  {
+    Id: "payment-terms.PT14",
+    Name: "PT14: a change to a confirmed order's payment terms is recorded",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Asserts the RECORD, not the permission. A direct edit to a booked order's terms still saves
+        // today; #309 will require an approved Terms concession for it, and this check then moves to
+        // that path. Whichever path applies the change, the change has to be on record.
+        const net30 = await termsID(ctx, "Net30");
+        const net60 = await termsID(ctx, "Net60");
+        const order = await sell(ctx, { PaymentTermsTypeID: net30 } as Partial<OrderSpec>);
+        const orderID = order.Order.ID as string;
+        const before = (await headerChanges(ctx, orderID)).length;
+
+        const header = await reloadHeader(ctx, orderID);
+        header.PaymentTermsTypeID = net60;
+        Assert(await header.Save(), `the terms change saves: ${header.LatestResult?.CompleteMessage ?? ""}`);
+
+        const termsChanges = (await headerChanges(ctx, orderID))
+          .slice(before)
+          .filter((c) => c.Type === "Update" && c.Changes.PaymentTermsTypeID);
+        AssertEqual(termsChanges.length, 1, "the change is recorded once");
+        const change = termsChanges[0].Changes.PaymentTermsTypeID!;
+        Assert(SameID(String(change.oldValue), net30), `the record holds the old terms (got ${change.oldValue})`);
+        Assert(SameID(String(change.newValue), net60), `and the new terms (got ${change.newValue})`);
+        Assert(SameID(termsChanges[0].UserID, ctx.User.ID), "and who changed them");
       }),
   },
 ];

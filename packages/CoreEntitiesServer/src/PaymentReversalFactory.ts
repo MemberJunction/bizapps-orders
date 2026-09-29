@@ -6,8 +6,10 @@
  *   `Orders.RefundPayment`   somebody DECIDED to give the money back
  *   `PaymentSettlement`      the BANK took it back, days after we booked it as received
  *
- * They differ entirely in why they happen and not at all in what they must write. Both produce a new
- * `PaymentHeader` with `Status='Refunded'` and `ReversesPaymentHeaderID` pointing at the original,
+ * They differ entirely in why they happen and in one column of what they write — `ReversalSource`,
+ * which payment-gated access reads, because a bank return takes access away and a refund does not.
+ * Otherwise the shape is the same. Both produce a new `PaymentHeader` with `Status='Refunded'` and
+ * `ReversesPaymentHeaderID` pointing at the original,
  * carrying negative `PaymentLine`s that un-apply the cash from the orders the original settled. That
  * shape is not incidental — `Status='Refunded'` is precisely what makes `PaymentHeaderEntityServer`
  * book the MIRROR of the capture entry (D53), and the negative lines are what move each order's
@@ -37,9 +39,11 @@ import {
     type IRunViewProvider,
     type UserInfo,
 } from '@memberjunction/core';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersPaymentLineEntity,
+    TodayAsDateValue,
 } from '@mj-biz-apps/orders-entities';
 import type { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 
@@ -60,14 +64,31 @@ export interface ReversiblePayment {
     PaymentDetailID: string | null;
 }
 
-/** One order the original payment was applied to, and by how much. */
+/**
+ * One line of the original payment: the order it settled, by how much, and what it named.
+ *
+ * The line and the instalment it named ride onto the reversing line, so the refund un-applies the
+ * cash from exactly where the capture put it. Without them a refund of cash that named a Scheduled
+ * instalment lands as unnamed, the cascade places it on no row, the named row keeps its deposit, and
+ * the refund debits AR for money that was booked to Customer Deposits.
+ */
 export interface AppliedAllocation {
     OrderHeaderID: string;
+    OrderLineID: string | null;
+    OrderHeaderPaymentScheduleID: string | null;
     Amount: number;
 }
 
+/** Who took the money back: the seller deciding to (`Refund`), or the bank (`BankReturn`). */
+export type ReversalSource = 'Refund' | 'BankReturn';
+
 /** Why this reversal is being written, and what to stamp on it. */
 export interface PaymentReversalRequest {
+    /**
+     * Stamped on the reversal as `ReversalSource`. Required, because access reads it: a bank return
+     * takes access away with the cash, a refund does not (`EntitlementBehavior.DecideGrantStatus`).
+     */
+    Source: ReversalSource;
     /** Positive magnitude, as `Amount` is stored on both a capture and a reversal. */
     Amount: number;
     Reason: string | null;
@@ -99,7 +120,7 @@ export async function LoadAppliedAllocations(
         {
             EntityName: PAYMENT_LINE_ENTITY,
             ExtraFilter: `PaymentHeaderID='${paymentID}'`,
-            Fields: ['OrderHeaderID', 'Amount'],
+            Fields: ['OrderHeaderID', 'OrderLineID', 'OrderHeaderPaymentScheduleID', 'Amount'],
             ResultType: 'simple',
             // The lines may have been written moments ago by the capture this is reversing, and a
             // cached read that missed them would spread the reversal across too few orders.
@@ -111,7 +132,8 @@ export async function LoadAppliedAllocations(
 }
 
 /**
- * Un-apply the reversed cash from the orders the original settled.
+ * Un-apply the reversed cash from the lines the original settled, each keeping the order line and
+ * instalment its original named.
  *
  * PROPORTIONAL, so a payment split across three orders reverses across the same three rather than
  * dumping the whole thing on whichever happened to be first — which would leave two orders looking
@@ -141,6 +163,8 @@ export async function BuildUnapplyLines(
         const line = await provider.GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
         line.NewRecord();
         line.OrderHeaderID = app.OrderHeaderID;
+        line.OrderLineID = app.OrderLineID ?? null;
+        line.OrderHeaderPaymentScheduleID = app.OrderHeaderPaymentScheduleID ?? null;
         // NEGATIVE: this removes cash from the order, which is what moves Balance back up.
         line.Amount = -share;
         line.AllocatedAt = new Date();
@@ -222,18 +246,29 @@ export async function CreateReversingPayment(
     request: PaymentReversalRequest,
     lines: mjBizAppsOrdersPaymentLineEntity[],
 ): Promise<PaymentReversalResult> {
+    // Warmed before `NextPaymentNumber`, which takes an UPDLOCK/HOLDLOCK on the single global
+    // `PaymentSequence` row: on a cold engine a metadata read after that point would serialise
+    // every other payment-number mint behind it. Both callers have already opened a transaction,
+    // so this cannot be hoisted out of one entirely — but it can be hoisted out of the lock.
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+
     const reversal = await provider.GetEntityObject<PaymentHeaderEntityServer>(PAYMENT_HEADER_ENTITY, user);
     reversal.NewRecord();
     reversal.PaymentNumber = await NextPaymentNumber(provider);
     reversal.ReceivingCompanyID = original.ReceivingCompanyID;
     reversal.BillToOrganizationID = original.BillToOrganizationID;
     reversal.BillToPersonID = original.BillToPersonID;
-    reversal.PaymentDate = new Date();
+    // The business calendar day, not the instant (#209). `PaymentDate` is a SQL `DATE`, and
+    // `new Date()` is an instant that serialises in UTC — a refund issued at 9 PM Eastern was
+    // dated tomorrow, which files the reversal in the wrong period from the one it reverses.
+    // Today rather than the original's day on purpose: a reversal is its own cash event.
+    reversal.PaymentDate = TodayAsDateValue();
     reversal.PaymentTypeID = original.PaymentTypeID;
     reversal.Amount = request.Amount;
     reversal.ProcessingFeeAmount = 0;
     reversal.ReversesPaymentHeaderID = original.ID;
     reversal.ReversalReason = request.Reason ?? null;
+    reversal.ReversalSource = request.Source;
     reversal.ProviderRefundID = request.ProviderRefundID ?? null;
     reversal.Status = 'Refunded';
     reversal.Description = request.Description ?? `Refund of ${original.PaymentNumber}`;

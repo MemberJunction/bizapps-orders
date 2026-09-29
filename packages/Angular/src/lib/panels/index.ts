@@ -31,6 +31,7 @@ export * from './status-stepper.component';
 export * from './chips.component';
 export * from './aging-bar.component';
 export * from './journal-entry-preview.component';
+export * from './line-price-picker.component';
 
 import { MJOMoneyStripComponent } from './money-strip.component';
 import { MJODecompositionLadderComponent } from './decomposition-ladder.component';

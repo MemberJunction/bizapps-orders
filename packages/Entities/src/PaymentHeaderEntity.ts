@@ -5,8 +5,8 @@
  * instrument snapshot (D39 copy-on-use). `PaymentHeaderEntityServer` extends
  * this class. Remove the declaration when CodeGen emits it from metadata.
  */
-import { BaseEntity, EmbeddedRecord, ValidationErrorInfo, ValidationErrorType, ValidationResult } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
+import { BaseEntity, EmbeddedRecord, EntitySaveOptions, ValidationErrorInfo, ValidationErrorType, ValidationResult } from '@memberjunction/core';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
     mjBizAppsOrdersPaymentHeaderEntity,
     mjBizAppsOrdersPaymentDetailEntity,
@@ -63,6 +63,43 @@ export class PaymentHeaderEntity extends mjBizAppsOrdersPaymentHeaderEntity {
             !detail.ProviderCustomerRef?.trim() &&
             !detail.StoredValueAccountID
         );
+    }
+
+    public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+        this.SyncPaymentDetailFromHeader();
+        return super.Save(options);
+    }
+
+    /**
+     * Move to `status` by saving, and put the previous status back if the save is refused
+     * (golive #283).
+     *
+     * Without the restore a refused capture stays on the object as an unsaved edit: the screen
+     * reads Captured and locks, though nothing was written. The reason is on `LatestResult`.
+     */
+    public async SaveStatus(status: PaymentHeaderEntity['Status']): Promise<boolean> {
+        const previous = this.Status;
+        this.Status = status;
+        const saved = await this.Save();
+        if (!saved) this.Status = previous;
+        return saved;
+    }
+
+    /**
+     * The detail's company and tender are the header's, so copy them at save time rather than
+     * only when the detail is first created (golive #283). The detail is created by the first
+     * instrument field typed; a reference entered before the Receiving Company was chosen left
+     * the detail's `CompanyID` null for good, and the save failed on the detail.
+     */
+    public SyncPaymentDetailFromHeader(): void {
+        const detail = this.PaymentDetailID_Object;
+        if (!detail) return;
+        if (this.ReceivingCompanyID && !UUIDsEqual(detail.CompanyID, this.ReceivingCompanyID)) {
+            detail.CompanyID = this.ReceivingCompanyID;
+        }
+        if (this.PaymentTypeID && !UUIDsEqual(detail.PaymentTypeID, this.PaymentTypeID)) {
+            detail.PaymentTypeID = this.PaymentTypeID;
+        }
     }
 
     public override Validate(): ValidationResult {

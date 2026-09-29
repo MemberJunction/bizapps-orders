@@ -3,8 +3,14 @@
 // bootstraps Angular or instantiates the component.
 import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { MJOOrderLinesEditorComponent, PRICE_PICK_DEFAULT } from '../order-lines-editor.component';
+import {
+    PRICE_PICK_DEFAULT,
+    type ApplicablePrice,
+    type LinePriceChange,
+    type mjBizAppsOrdersOrderLineEntity,
+} from '@mj-biz-apps/orders-entities';
+import { MJOOrderLinesEditorComponent } from '../order-lines-editor.component';
+import { MJOLinePricePickerComponent } from '../../../panels/line-price-picker.component';
 
 /**
  * What the picker WRITES on a saved, overridden line — golive #253 item 2, the review's hole.
@@ -16,8 +22,9 @@ import { MJOOrderLinesEditorComponent, PRICE_PICK_DEFAULT } from '../order-lines
  * return-to-default path has to stamp the engine's answer instead, and when that answer is not
  * known for a saved line, leave the line alone.
  *
- * `price-pick.test.ts` covers the decisions; this covers the stamps. Real field semantics are
- * modelled (Value/OldValue/Dirty/RestoreOldValue) because `stamp` and `clearOverride` depend on them.
+ * `price-pick.test.ts` covers the decisions; this covers the stamps, through the shared picker and
+ * through the editor's own Use Default Price button. Real field semantics are modelled
+ * (Value/OldValue/Dirty/RestoreOldValue) because the stamps depend on them.
  */
 
 const BASE = 'a1b2c3d4-0000-4000-8000-000000000001';
@@ -73,22 +80,34 @@ function savedLine(stored: Stored) {
 /** The stored concession from the review: $1,100 against a $1,200 default, flagged, with a reason. */
 const CONCESSION: Stored = { UnitPrice: 1100, ProductPriceID: null, PriceOverridden: true, PriceOverrideReason: 'Board rate' };
 
-function component(opts: { engineKnown: boolean; applicable?: Array<{ ID: string; Name: string; UnitPrice: number }> }) {
+function picker(opts: { engineKnown: boolean; applicable?: Array<{ ID: string; Name: string; UnitPrice: number }> }) {
+    const c = Object.create(MJOLinePricePickerComponent.prototype) as MJOLinePricePickerComponent;
+    const changes: LinePriceChange[] = [];
+    Object.assign(c as object, {
+        customAmountOpen: true,
+        Applicable: (opts.applicable ?? []) as ApplicablePrice[],
+        OverrideKind: 'any',
+        AllowCustomAmount: true,
+        EngineDefault: opts.engineKnown ? engine : undefined,
+        DefaultUnit: 1200,
+        PriceSource: 'stated',
+        PricedUnit: 1100,
+        PriceChanged: { emit: (change: LinePriceChange) => changes.push(change) },
+    });
+    return { c, changes };
+}
+
+function editor(opts: { engineKnown: boolean }) {
     const c = Object.create(MJOOrderLinesEditorComponent.prototype) as MJOOrderLinesEditorComponent;
     const pricingCalls = { count: 0 };
     Object.assign(c as object, {
-        customAmountLineIds: new Set(['L1']),
         overrideEditorLineIds: new Set(['L1']),
-        defaultUnitByLine: new Map(),
-        applicableByLine: new Map([['L1', opts.applicable ?? []]]),
-        OverrideKind: 'any',
         cdr: { detectChanges: () => undefined },
         PricedLine: () => ({ UnitPrice: 1100, PriceSource: 'stated', Default: opts.engineKnown ? engine : undefined }),
         schedulePricing: () => {
             pricingCalls.count += 1;
         },
     });
-    Object.defineProperty(c, 'CanOverride', { value: true });
     return { c, pricingCalls };
 }
 
@@ -130,27 +149,29 @@ function expectUntouched(fields: Record<string, Field>) {
 describe('typing the default amount into a saved overridden line', () => {
     // THE REVIEW'S REPRODUCTION.
     it('lands on the engine default with the flag off, not on the stored override with the flag off', () => {
-        const { c } = component({ engineKnown: true });
+        const { c, changes } = picker({ engineKnown: true });
         const { line, fields } = savedLine(CONCESSION);
         c.TypeAmount(line, { target: new Input('1200') } as unknown as Event);
         expectOnDefault(fields);
         expect(c.IsOverridden(line)).toBe(false);
+        expect(changes).toEqual(['restored']);
     });
 
     it('keeps a different amount as an override and leaves the reason for the user to keep or change', () => {
-        const { c } = component({ engineKnown: true });
+        const { c, changes } = picker({ engineKnown: true });
         const { line, fields } = savedLine(CONCESSION);
         c.TypeAmount(line, { target: new Input('1150') } as unknown as Event);
         expect(fields.UnitPrice.Value).toBe(1150);
         expect(fields.PriceOverridden.Value).toBe(true);
         expect(fields.PriceOverrideReason.Value).toBe('Board rate');
         expect(c.IsOverridden(line)).toBe(true);
+        expect(changes).toEqual(['pinned']);
     });
 });
 
 describe('the Default row on a saved overridden line', () => {
     it('stamps the engine default and clears the flag and reason', () => {
-        const { c } = component({ engineKnown: true });
+        const { c } = picker({ engineKnown: true });
         const { line, fields } = savedLine(CONCESSION);
         c.PickNamedPrice(line, { target: new Select(PRICE_PICK_DEFAULT) } as unknown as Event);
         expectOnDefault(fields);
@@ -158,43 +179,45 @@ describe('the Default row on a saved overridden line', () => {
     });
 
     it('is not offered, and does nothing, while the engine default is unknown', () => {
-        const { c, pricingCalls } = component({ engineKnown: false });
+        const { c, changes } = picker({ engineKnown: false });
         const { line, fields } = savedLine(CONCESSION);
         expect(c.CanRestoreDefault(line)).toBe(false);
         c.PickNamedPrice(line, { target: new Select(PRICE_PICK_DEFAULT) } as unknown as Event);
         expectUntouched(fields);
         expect(c.IsOverridden(line)).toBe(true);
-        expect(pricingCalls.count).toBe(0);
+        expect(changes).toEqual([]);
     });
 
     it('is offered once the engine default is known', () => {
-        const { c } = component({ engineKnown: true });
+        const { c } = picker({ engineKnown: true });
         expect(c.CanRestoreDefault(savedLine(CONCESSION).line)).toBe(true);
     });
 });
 
 describe('the Use Default Price button on a saved overridden line', () => {
     it('stamps the engine default and closes the editor', () => {
-        const { c } = component({ engineKnown: true });
+        const { c, pricingCalls } = editor({ engineKnown: true });
         const { line, fields } = savedLine(CONCESSION);
         c.ResetOverride(line);
         expectOnDefault(fields);
         expect(c.IsOverrideEditorOpen(line)).toBe(false);
+        expect(pricingCalls.count).toBe(1);
     });
 
     it('leaves the line and the editor alone while the engine default is unknown', () => {
-        const { c } = component({ engineKnown: false });
+        const { c, pricingCalls } = editor({ engineKnown: false });
         const { line, fields } = savedLine(CONCESSION);
         c.ResetOverride(line);
         expectUntouched(fields);
         expect(c.IsOverrideEditorOpen(line)).toBe(true);
+        expect(pricingCalls.count).toBe(0);
     });
 });
 
 describe('a named rule equal to the default on a saved overridden line', () => {
     it('is treated as a return to the default, not a fresh override', () => {
         const applicable = [{ ID: BASE, Name: 'Base list price', UnitPrice: 1200 }];
-        const { c } = component({ engineKnown: true, applicable });
+        const { c } = picker({ engineKnown: true, applicable });
         const { line, fields } = savedLine(CONCESSION);
         c.PickNamedPrice(line, { target: new Select(BASE) } as unknown as Event);
         expectOnDefault(fields);
@@ -203,8 +226,31 @@ describe('a named rule equal to the default on a saved overridden line', () => {
 
 describe('an unsaved line', () => {
     it('can always be put back on the default: its baseline is unpriced and the engine fills it at save', () => {
-        const { c } = component({ engineKnown: false });
+        const { c } = picker({ engineKnown: false });
         const line = { ID: 'L1', IsSaved: false } as unknown as mjBizAppsOrdersOrderLineEntity;
         expect(c.CanRestoreDefault(line)).toBe(true);
+    });
+});
+
+describe('where the screen disallows a typed amount (golive #270)', () => {
+    it('ignores a typed amount outright', () => {
+        const { c, changes } = picker({ engineKnown: true });
+        Object.assign(c as object, { AllowCustomAmount: false, customAmountOpen: false });
+        const { line, fields } = savedLine(CONCESSION);
+        c.TypeAmount(line, { target: new Input('900') } as unknown as Event);
+        expectUntouched(fields);
+        expect(changes).toEqual([]);
+    });
+
+    it('still lets a named rule be picked', () => {
+        const member = 'a1b2c3d4-0000-4000-8000-000000000002';
+        const { c, changes } = picker({ engineKnown: true, applicable: [{ ID: member, Name: 'Member', UnitPrice: 950 }] });
+        Object.assign(c as object, { AllowCustomAmount: false, customAmountOpen: false });
+        const { line, fields } = savedLine(CONCESSION);
+        c.PickNamedPrice(line, { target: new Select(member) } as unknown as Event);
+        expect(fields.UnitPrice.Value).toBe(950);
+        expect(fields.ProductPriceID.Value).toBe(member);
+        expect(fields.PriceOverridden.Value).toBe(true);
+        expect(changes).toEqual(['pinned']);
     });
 });

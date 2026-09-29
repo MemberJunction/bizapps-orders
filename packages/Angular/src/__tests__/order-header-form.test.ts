@@ -255,19 +255,20 @@ describe('order header link wiring', () => {
             join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
             'utf8',
         );
-        const ts = readFileSync(
-            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.ts'),
-            'utf8',
-        );
+        // The picker itself is shared with the deal line editor (golive #270), and the stamps it
+        // makes are the entity layer's, so each is asserted where it now lives.
+        const picker = readFileSync(join(here, '../lib/panels/line-price-picker.component.ts'), 'utf8');
+        const rules = readFileSync(join(here, '../../../Entities/src/pricing/linePricePick.ts'), 'utf8');
         expect(lines).toContain('mjo-ol-price__pencil');
         expect(lines).toContain('ToggleOverrideEditor(line)');
         expect(lines).toContain('IsOverrideEditorOpen(line)');
-        expect(lines).toContain('Override Explanation');
-        expect(lines).toContain('(input)="SetOverrideReason(line, $event)"');
+        expect(lines).toContain('<mjo-line-price-picker');
         expect(lines).toContain('Use Default Price');
-        expect(ts).toContain("this.stamp(line, 'PriceOverridden', true)");
-        expect(ts).toContain("this.stamp(line, 'PriceOverrideReason', reason === '' ? null : reason)");
-        expect(ts).toContain("this.stamp(line, 'PriceOverridden', false)");
+        expect(picker).toContain('Override Explanation');
+        expect(picker).toContain('(input)="SetOverrideReason(Line, $event)"');
+        expect(rules).toContain("stamp(line, 'PriceOverridden', true)");
+        expect(rules).toContain("stamp(line, 'PriceOverrideReason', trimmed === '' ? null : trimmed)");
+        expect(rules).toContain("stamp(line, 'PriceOverridden', false)");
     });
 
     it('IsOverridden reads PriceOverridden, and ShowsForeignRevenue hides same-company revenue', () => {

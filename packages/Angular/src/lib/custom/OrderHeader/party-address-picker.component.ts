@@ -10,7 +10,7 @@ import {
 } from '@mj-biz-apps/common-entities';
 import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
-import { FormatPartyAddress } from './order-header-prefs';
+import { FormatPartyAddress, FormatSoldAddress } from './order-header-prefs';
 
 export type PartyAddressSide = 'ship' | 'bill';
 
@@ -78,6 +78,9 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
      * on the order view — not a second Address RunView).
      */
     public get SelectedAddressText(): string {
+        // A confirmed order shows the address it was sold to, which the Address row may no longer say.
+        const sold = FormatSoldAddress(() => (this.Side === 'ship' ? this.Order.ShipToAddressAsSold : this.Order.BillToAddressAsSold));
+        if (sold) return sold;
         const embedded = this.CustomAddress;
         if (embedded) {
             const formatted = FormatPartyAddress(embedded);

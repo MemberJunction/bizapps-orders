@@ -54,7 +54,8 @@ import {
     mjBizAppsOrdersSubscriptionTermEntity,
 } from '@mj-biz-apps/orders-entities';
 import type { OrderEntityServer } from './OrderEntityServer.js';
-import { RequireUUID } from './sql-guards.js';
+import { RequireOptionalDay, RequireUUID } from './sql-guards.js';
+import { CalendarDayOrToday } from './calendar-day.js';
 import { RevokeGrantsForCanceledSubscription } from './EntitlementEngine.js';
 import {
     SubscriptionBehavior,
@@ -62,6 +63,7 @@ import {
     type SubscriptionTypeRules,
 } from './SubscriptionBehavior.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
+import { LoadReversalContext } from './ReversalResolver.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
@@ -141,7 +143,26 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         // at the boundary, so every frame below this one can trust them.
         RequireUUID(input.SubscriptionID, 'SubscriptionID');
 
-        const requestDate = input.RequestDate ? new Date(input.RequestDate) : new Date();
+        // The day the cancellation is REQUESTED for, as a calendar day (#209). `DecideCancellation`
+        // reduces this with `utcDay`, and its `EffectiveDate` is written to three `date` columns —
+        // `OrderHeader.OrderDate` on the reversal, `OrderLine.ServicePeriodStart`, and
+        // `SubscriptionTerm.CancellationEffectiveDate` — as well as driving the refund proration.
+        // An instant taken at 9 PM Eastern reduces to tomorrow, so an evening cancellation refunded
+        // a day the customer had not reached yet. Computed before `BeginTransaction` below, so the
+        // fallback's metadata read never lands inside the write transaction.
+        // A day that arrived over the wire is text until something says otherwise, and the sibling
+        // field three lines up is already validated here for the same reason. Without this,
+        // `2026-02-30` passes the shape check inside `AsDateValue` and comes back as a `RangeError`
+        // from a helper, not as this operation's own refusal. An invalid `Date` is refused too
+        // (#272): `CalendarDayOrToday` would read it as no day and cancel as of today.
+        let requestedDay: Date | string | null;
+        try {
+            requestedDay = RequireOptionalDay(input.RequestDate, 'RequestDate');
+        } catch (e) {
+            return { Success: false, Message: String((e as Error).message) };
+        }
+
+        const requestDate = await CalendarDayOrToday(requestedDay, provider, user);
 
         const subscription = await this.loadSubscription(provider, user, input.SubscriptionID);
         if (!subscription) {
@@ -320,6 +341,21 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
             throw new Error(
                 `The order line that bought term ${term.TermNumber} (${term.OrderLineID}) no longer exists, ` +
                     `so the cancellation cannot be reversed against it.`,
+            );
+        }
+
+        // NOT FOR AN ORDER BILLED BY INSTALMENT, YET (D92 §6). This reversal covers only the rest of
+        // the term, from the effective date, while the credit memo and the releases it mirrors are
+        // worked out against the origin's own window. Booked here they would disagree by the months
+        // already earned. Refused, so nothing half-right reaches the ledger; reverse the order line
+        // itself, which inherits the origin's window.
+        const context = await LoadReversalContext(original.ID, provider, user);
+        if (context?.OriginScheduled) {
+            throw new Error(
+                `Term ${term.TermNumber} was sold on order ${context.Origin.OrderNumber ?? original.OrderHeaderID}, ` +
+                    `which is billed by instalment. Cancelling part of a term on an instalment-billed order is ` +
+                    `not supported yet. Reverse the order line instead: that credits back what was billed and ` +
+                    `not yet earned, and once the whole order is reversed it withdraws the instalments nobody was invoiced for.`,
             );
         }
 

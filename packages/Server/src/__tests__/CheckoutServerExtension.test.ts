@@ -149,6 +149,26 @@ describe('CheckoutServerExtension', () => {
         ]);
     });
 
+    it('serves the element bundle and its source map to any origin', async () => {
+        const { app, routes } = mockApp();
+        await new CheckoutServerExtension().Initialize(app, {
+            Enabled: true,
+            DriverClass: 'OrdersCheckoutEdge',
+            RootPath: '/checkout',
+            Settings: { ServeElementSourceMap: true },
+        });
+        for (const route of ['/checkout/element/main.js', '/checkout/element/main.js.map']) {
+            const res = Object.assign(mockRes(), {
+                type: vi.fn().mockReturnThis(),
+                sendFile: vi.fn(),
+            });
+            routes.get[route]({ headers: { origin: 'https://host.example' } } as unknown as Request, res as unknown as Response);
+            expect(res.headers['access-control-allow-origin']).toBe('*');
+            expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
+            expect(res.sendFile).toHaveBeenCalledOnce();
+        }
+    });
+
     it('GET 404s reserved slugs without looking up a distribution', async () => {
         const { app, routes } = mockApp();
         await new CheckoutServerExtension().Initialize(app, {
