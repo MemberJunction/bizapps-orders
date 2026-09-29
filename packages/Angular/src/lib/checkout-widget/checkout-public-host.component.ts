@@ -17,6 +17,7 @@ import {
     inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { AccountMessage, CheckPasswordEntry, MayRedirect, ReadCheckoutAccount, type CheckoutAccountView } from './checkout-account';
 import {
     MJCheckoutWidgetComponent,
     type CheckoutSubmissionEvent,
@@ -75,6 +76,18 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public loadError: string | null = null;
     public successMessage: string | null = null;
     public orderNumber: string | null = null;
+
+    /** The post-payment account step, when the host registered one (#292). */
+    public account: CheckoutAccountView | null = null;
+    public password = '';
+    public passwordConfirmation = '';
+    public passwordError: string | null = null;
+    public passwordBusy = false;
+    public passwordSet = false;
+
+    public get accountMessage(): string | null {
+        return this.account ? AccountMessage(this.account, this.passwordSet) : null;
+    }
 
     private stripe: StripeInstance | null = null;
     private card: StripeCard | null = null;
@@ -228,10 +241,54 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.successMessage =
             this.config?.successMessage ||
             (this.orderNumber ? `Thank you. Order ${this.orderNumber} is confirmed.` : 'Thank you. Your order is confirmed.');
-        if (this.config?.redirectUrl) {
+        this.account = ReadCheckoutAccount(done.Account);
+        this.leaveIfDone();
+        this.cdr.detectChanges();
+    }
+
+    /** Sends the new account's password. The host's policy decides; its message is shown when it refuses. */
+    public async submitPassword(): Promise<void> {
+        const problem = CheckPasswordEntry(this.password, this.passwordConfirmation);
+        if (problem) {
+            this.passwordError = problem;
+            return;
+        }
+        this.passwordBusy = true;
+        this.passwordError = null;
+        try {
+            const res = await this.post('/account/password', {
+                sessionId: this.sessionId,
+                clientSessionKey: this.sessionKey,
+                password: this.password,
+            });
+            this.account = ReadCheckoutAccount(res.Account) ?? this.account;
+            if (res.Success) {
+                this.passwordSet = true;
+                this.password = '';
+                this.passwordConfirmation = '';
+                this.leaveIfDone();
+            } else {
+                this.passwordError = this.str(res.ErrorMessage, 'That password could not be set. Please try another.');
+            }
+        } catch {
+            this.passwordError = 'That password could not be set right now. Please try again.';
+        } finally {
+            this.passwordBusy = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /** Leaves the password for later: the buyer can reset it at sign-in. */
+    public skipPassword(): void {
+        if (this.account) this.account = { ...this.account, CanSetPassword: false };
+        this.leaveIfDone();
+    }
+
+    /** Follows the widget's redirect once nothing is left for the buyer to do here. */
+    private leaveIfDone(): void {
+        if (this.config?.redirectUrl && MayRedirect(this.account)) {
             window.location.href = this.config.redirectUrl;
         }
-        this.cdr.detectChanges();
     }
 
     private async mountStripe(mount: HTMLElement): Promise<void> {
