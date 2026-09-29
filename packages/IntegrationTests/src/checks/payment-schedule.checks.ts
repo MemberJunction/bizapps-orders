@@ -47,6 +47,8 @@
  *   PS-O  an event ticket 60 days out books at confirm with no default row
  *   PS-P  a product type's InvoiceLeadDays (60) applies when no category in the chain states one
  *   PS-Q  a product's own InvoiceLeadDays (10) wins over its category (90) and its type (60)
+ *   PS-R  a future-start order with a payment entered at confirm gets no default row; AR at confirm, the payment settles it
+ *   PS-S  an online checkout of a future-start service paid by card gets no default row; the card payment settles AR
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -81,8 +83,8 @@ import {
     upsertViaEntity,
 } from '../fixture.js';
 import { World } from '../world/world.js';
-import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, PRODUCT_CATEGORY_ENTITY, PRODUCT_ENTITY, PRODUCT_TYPE_ENTITY } from '../entity-names.js';
-import { BuildOrder, ConfirmOrder } from '../order-builder.js';
+import { CHECKOUT_WIDGET_ENTITY, ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, PRODUCT_CATEGORY_ENTITY, PRODUCT_ENTITY, PRODUCT_TYPE_ENTITY } from '../entity-names.js';
+import { BuildOrder, ConfirmOrder, type OrderSpec } from '../order-builder.js';
 import type { RequestedCharge } from '@mj-biz-apps/orders-core-entities-server';
 import { CreatePayment } from '../payment-builder.js';
 
@@ -379,9 +381,15 @@ const FUTURE = [
  * (orders #342). DeferredA is EvenOverTime and takes its period from the line, in BCP's SERVICES
  * category, which states no InvoiceLeadDays — so the lead is the 30-day default unless a check sets one.
  */
-async function unscheduledFutureOrder(ctx: IntegrationCheckContext, start: string, extraLines: Array<{ ProductID: string; Quantity: number; UnitPrice: number; ServicePeriodStart?: string }> = []) {
+async function unscheduledFutureOrder(
+    ctx: IntegrationCheckContext,
+    start: string,
+    extraLines: Array<{ ProductID: string; Quantity: number; UnitPrice: number; ServicePeriodStart?: string }> = [],
+    over: Partial<OrderSpec> = {},
+) {
     const f = Fx();
     const result = await ConfirmOrder(ctx.User, {
+        ...over,
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
         OrderDate: new Date('2026-07-01T00:00:00Z'),
@@ -407,6 +415,33 @@ async function withLead(ctx: IntegrationCheckContext, entityName: string, id: st
         await upsertViaEntity(ctx, entityName, id, { InvoiceLeadDays: null });
         await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
     }
+}
+
+/**
+ * Every ledger line the payments allocated to this order produced, found through D25 provenance
+ * (each allocation's entry links to its PaymentLine) — the payment-deposit bundle's lookup.
+ */
+const paymentLedger = (ctx: IntegrationCheckContext, orderID: string) =>
+    TxQuery<LedgerLine>(
+        ctx,
+        `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
+           FROM ${ORDERS_SCHEMA}.PaymentLine pl
+           JOIN ${ACCT_SCHEMA}.vwJournalEntries je ON LOWER(je.LinkedRecordID) = LOWER(CAST(pl.ID AS NVARCHAR(400)))
+           JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+           JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+          WHERE pl.OrderHeaderID = '${orderID}'`,
+    );
+
+/** Paid at confirm: no default row, AR for the whole order at confirm, and the payment clears it without touching Customer Deposits. */
+async function assertBookedAsBeforeAndSettled(ctx: IntegrationCheckContext, orderID: string): Promise<void> {
+    AssertEqual((await schedule(ctx, orderID)).length, 0, 'no default row for an order paid at confirm');
+    AssertEqual(netOn(await bookingLedger(ctx, orderID), AR_CODE), 1200, 'the whole order is a receivable at confirm, as before D92');
+    const paid = await paymentLedger(ctx, orderID);
+    Assert(paid.length > 0, 'the payment posted an allocation entry');
+    assertBalanced(paid, 'the payment entry');
+    AssertEqual(netOn(paid, AR_CODE), -1200, 'the payment settles the receivable');
+    AssertEqual(netOn(paid, DEPOSITS_CODE), 0, 'and nothing lands in Customer Deposits');
+    AssertEqual(Number((await header(ctx, orderID)).Balance), 0, 'the order is paid in full');
 }
 
 /** BCP's SERVICES category, DeferredA's own. */
@@ -1156,6 +1191,55 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                         }),
                     ),
                 );
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-R',
+        Name: 'PS-R: a future-start order with a payment entered at confirm gets no default row; AR at confirm, the payment settles it',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Andrew's #344 review: a default row here books no AR, so the payment `createInitialPayment`
+                // records would land in Customer Deposits and the paid customer would be invoiced later.
+                const cash = Fx().PaymentTypeIDs.get('Cash');
+                Assert(cash != null, "PaymentType 'Cash' missing — push the orders app metadata");
+                const orderID = await unscheduledFutureOrder(ctx, '2027-01-01', [], { InitialPaymentTypeID: cash!, InitialPaymentAmount: 1200 });
+                await assertBookedAsBeforeAndSettled(ctx, orderID);
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-S',
+        Name: 'PS-S: an online checkout of a future-start service paid by card gets no default row; the card payment settles AR',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // CheckoutSessionService.CompleteCheckout's two acts on the order, minus the gateway: confirm a
+                // Widget-origin order, then book the card through Orders.CapturePayment with the full amount.
+                const f = Fx();
+                const widgetID = await createViaEntity(ctx, CHECKOUT_WIDGET_ENTITY, { Name: 'PS-S widget', CompanyID: f.CoA.ID, Status: 'Active' });
+                const built = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [{ ProductID: f.Products.DeferredA, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: '2027-01-01', ServicePeriodEnd: '2027-12-31' }],
+                } as OrderSpec);
+                built.Order.Origin = 'Widget';
+                built.Order.SourceCheckoutWidgetID = widgetID;
+                await built.Order.Confirm();
+                const orderID = built.Order.ID as string;
+
+                const captured = await operation<Record<string, unknown>, { Success: boolean; Message?: string }>('Orders.CapturePayment').Execute(
+                    {
+                        Amount: 1200,
+                        ReceivingCompanyID: f.CoA.ID,
+                        BillToOrganizationID: f.Customers.OrganizationID,
+                        TenderCode: 'CreditCard',
+                        Allocations: [{ OrderHeaderID: orderID, Amount: 1200 }],
+                    },
+                    { provider: ctx.Provider, user: ctx.User },
+                );
+                Assert(captured.Success && captured.Output?.Success, `card capture: ${captured.ErrorMessage ?? captured.Output?.Message ?? 'unknown'}`);
+                await assertBookedAsBeforeAndSettled(ctx, orderID);
             }),
     },
 ];

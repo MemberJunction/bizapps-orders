@@ -88,7 +88,7 @@ import {
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
-import { DefaultScheduleRows, ExplainShortfalls, ResolveInvoiceLeadDays, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { DecideDefaultSchedule, DefaultScheduleRows, ExplainShortfalls, ResolveInvoiceLeadDays, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
@@ -622,10 +622,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // An order with no schedule rows has nothing to check and books exactly as before.
                 let scheduleRows = await this.verifyScheduleTies(lines);
 
-                // NO SCHEDULE AND A FUTURE SERVICE START: one row per company, due lead-days before
-                // the start (orders #342). Written here, inside the transaction and before booking,
-                // so D92 books it like any hand-entered schedule; re-read so the tie check covers it.
-                if (!scheduleRows.length && (await this.writeDefaultSchedule(lines))) {
+                // NO SCHEDULE, NOT PAID AT CONFIRM, A FUTURE SERVICE START: one row per company, due
+                // lead-days before the start (orders #342). Written here, inside the transaction and
+                // before booking, so D92 books it like any hand-entered schedule; re-read so the tie
+                // check covers it. `createInitialPayment` below and a checkout's post-commit capture
+                // are the payments that make an order paid at confirm.
+                const defaultSchedule = DecideDefaultSchedule({
+                    HasSchedule: scheduleRows.length > 0,
+                    IsReversal: lines.some((l) => l.ReversesOrderLineID),
+                    PaidAtConfirm: (Boolean(this.InitialPaymentTypeID) && (this.InitialPaymentAmount ?? 0) > 0) || Boolean(this.SourceCheckoutWidgetID),
+                    HasDatedLines: lines.some((l) => l.ServicePeriodStart != null),
+                });
+                if (defaultSchedule.Write && (await this.writeDefaultSchedule(lines))) {
                     scheduleRows = await this.verifyScheduleTies(lines);
                 }
 
@@ -3622,12 +3630,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * The rule is {@link DefaultScheduleRows}; the lead comes from each line's product, then its
      * category and that category's ancestors (the pricing walk, `OrdersEngine.CategoryChain`), then its
      * product type, then `DefaultInvoiceLeadDays` ({@link invoiceLeadDaysFor}).
-     * A reversal order never gets one: it settles against its origin, not on a schedule of its own.
+     * The caller gates it with {@link DecideDefaultSchedule} (no schedule, no reversal, not paid at
+     * confirm, some dated line).
      * An EVENT line never triggers one either: tickets are paid at registration, so its event dates
      * are not a reason to hold the invoice back. It still counts toward its company's gross.
      */
     private async writeDefaultSchedule(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<boolean> {
-        if (lines.some((l) => l.ReversesOrderLineID)) return false;
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         await LoadOrdersEngine(provider, user);

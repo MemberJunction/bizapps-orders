@@ -186,6 +186,36 @@ export function DefaultScheduleRows(lines: DefaultScheduleLineFacts[], orderDay:
     return out;
 }
 
+/** What the confirm knows when it decides whether to write a default schedule (orders #342). */
+export interface DefaultScheduleGateFacts {
+    /** The order already carries schedule rows (hand-entered, or a spawned renewal's). */
+    HasSchedule: boolean;
+    /** Any line reverses an earlier line: the order settles against its origin. */
+    IsReversal: boolean;
+    /** A payment accompanies the confirm: one entered on the order, or an online checkout. */
+    PaidAtConfirm: boolean;
+    /** Any line carries a `ServicePeriodStart`. */
+    HasDatedLines: boolean;
+}
+
+export type DefaultScheduleGate =
+    | { Write: true }
+    | { Write: false; Reason: 'HasSchedule' | 'Reversal' | 'PaidAtConfirm' | 'NoDatedLines' };
+
+/**
+ * Whether the confirm should run {@link DefaultScheduleRows} at all. An order paid at confirm books
+ * as it did before D92 (Andrew, #344 review): full AR at confirm, which the payment then settles. A
+ * default row would book no AR, so the payment would land in Customer Deposits (or be refused where
+ * the company has none) and the paid customer would later be invoiced from the worklist.
+ */
+export function DecideDefaultSchedule(facts: DefaultScheduleGateFacts): DefaultScheduleGate {
+    if (facts.HasSchedule) return { Write: false, Reason: 'HasSchedule' };
+    if (facts.IsReversal) return { Write: false, Reason: 'Reversal' };
+    if (facts.PaidAtConfirm) return { Write: false, Reason: 'PaidAtConfirm' };
+    if (!facts.HasDatedLines) return { Write: false, Reason: 'NoDatedLines' };
+    return { Write: true };
+}
+
 /**
  * When a spawned renewal's instalment is due (orders #305 review): the invoice day plus the
  * customer's payment terms, never later than the order date (the new term's start).

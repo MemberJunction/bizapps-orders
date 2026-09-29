@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609290100 — InvoiceLeadDays on ProductType, ProductCategory and Product
+-- V202609291100 — InvoiceLeadDays on ProductType, ProductCategory and Product
 --                 (orders #342)
 -- =============================================================================
 -- How many days before a line's service start its invoice goes out. An order
@@ -12,7 +12,8 @@
 -- NULL inherits, most specific first: the Product's own value, else its
 -- category's, else the nearest ancestor category's, else its ProductType's, else
 -- the Orders application setting DefaultInvoiceLeadDays (30 unless configured).
--- Orders that carry their own schedule are untouched.
+-- Orders that carry their own schedule, and orders paid at confirm (a payment
+-- entered on the order, or an online checkout), are untouched.
 --
 -- RUN CODEGEN AFTER THIS so the three base views, their CRUD procs and the
 -- entity subclasses pick up the column; that output is folded below the banner.

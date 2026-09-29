@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     AddMonths,
     BuildPaymentSchedule,
+    DecideDefaultSchedule,
     DefaultScheduleRows,
     DefaultScheduleWeights,
     ExplainShortfalls,
@@ -304,5 +305,29 @@ describe('DefaultScheduleRows', () => {
         for (const lead of [0, 30, 90]) {
             expect(DefaultScheduleRows([line({ ServicePeriodStart: '2027-01-01', LeadDays: lead })], '2027-01-01')).toEqual([]);
         }
+    });
+});
+
+describe('DecideDefaultSchedule (#344 review)', () => {
+    const base = { HasSchedule: false, IsReversal: false, PaidAtConfirm: false, HasDatedLines: true };
+
+    it('writes only for an unscheduled, unpaid, non-reversal order with a dated line', () => {
+        expect(DecideDefaultSchedule(base)).toEqual({ Write: true });
+    });
+
+    it('skips each blocking input on its own, naming it', () => {
+        expect(DecideDefaultSchedule({ ...base, HasSchedule: true })).toEqual({ Write: false, Reason: 'HasSchedule' });
+        expect(DecideDefaultSchedule({ ...base, IsReversal: true })).toEqual({ Write: false, Reason: 'Reversal' });
+        expect(DecideDefaultSchedule({ ...base, PaidAtConfirm: true })).toEqual({ Write: false, Reason: 'PaidAtConfirm' });
+        expect(DecideDefaultSchedule({ ...base, HasDatedLines: false })).toEqual({ Write: false, Reason: 'NoDatedLines' });
+    });
+
+    it('writes for exactly one of all sixteen input combinations', () => {
+        const bools = [false, true];
+        let writes = 0;
+        for (const HasSchedule of bools) for (const IsReversal of bools) for (const PaidAtConfirm of bools) for (const HasDatedLines of bools) {
+            if (DecideDefaultSchedule({ HasSchedule, IsReversal, PaidAtConfirm, HasDatedLines }).Write) writes++;
+        }
+        expect(writes).toBe(1);
     });
 });

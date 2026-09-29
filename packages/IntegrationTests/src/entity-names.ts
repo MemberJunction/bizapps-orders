@@ -63,6 +63,7 @@ export const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 export const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
 export const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
 export const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
+export const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
 
 // ── Accounting (peer app; we resolve THROUGH these, so we build them properly) ────────────────────
@@ -129,6 +130,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PAYMENT_PROVIDER_ENTITY,
     PAYMENT_PROVIDER_TYPE_ENTITY,
     PAYMENT_INTENT_ENTITY,
+    CHECKOUT_WIDGET_ENTITY,
     ORDER_LINE_DIMENSION_ENTITY,
     GL_ACCOUNT_ENTITY,
     GL_ACCOUNT_ROLE_ENTITY,
