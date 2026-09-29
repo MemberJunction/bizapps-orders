@@ -48,6 +48,7 @@ import {
     buildCheckoutDraftLine,
     formatStripeError,
     intentAlreadyCollected,
+    memberDiscountNotice,
     stripeConfirmAlreadyCollected,
 } from './checkout-draft-line';
 
@@ -87,6 +88,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     @Input() public slug = '';
     @Input() public apiRoot = '/checkout';
+    /** A host-signed membership token, verified server-side on /draft and never stored (#324). */
+    @Input() public memberToken = '';
 
     public config: CheckoutWidgetConfig | null = null;
     public sessionKey = '';
@@ -123,6 +126,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     private card: StripeCard | null = null;
     private cardMounted = false;
     private destroyed = false;
+    private memberNoticeShown = false;
     private state: CheckoutElementState | null = null;
     /** Bumped by Cancel: the template re-creates the widget, which clears everything the buyer entered. */
     public formGeneration = 0;
@@ -298,9 +302,16 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                     ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
                     : {}),
                 choices: event.choices,
+                ...(this.memberToken ? { memberToken: this.memberToken } : {}),
             });
             if (!draft?.Success) {
                 throw new Error(this.str(draft?.ErrorMessage, 'Could not price this checkout.'));
+            }
+            const notice = memberDiscountNotice(draft, this.memberNoticeShown);
+            if (notice) {
+                this.memberNoticeShown = true;
+                this.errorMessage = notice;
+                return;
             }
             if (!draft.RequiresPayment) {
                 await this.finish();
@@ -568,6 +579,10 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         const apiRoot = el.getAttribute('api-root') || el.getAttribute('data-api-root');
         if (apiRoot) {
             this.apiRoot = apiRoot.replace(/\/+$/, '');
+        }
+        const memberToken = el.getAttribute('member-token') || el.getAttribute('data-member-token');
+        if (memberToken) {
+            this.memberToken = memberToken;
         }
         this.readConversationAttributes();
         el.addEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);

@@ -312,6 +312,39 @@ describe('CheckoutServerExtension', () => {
         expect(mockRunView.mock.calls[0][0].ExtraFilter).toContain("Slug = 'summit_2027'");
     });
 
+    it('passes a member token from the /draft body to UpdateDraft, and omits it when absent or not a string (#324)', async () => {
+        mockRunView.mockResolvedValue({ Success: true, Results: [] });
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({
+            Success: true, SessionID: 'sess-1', Subtotal: 0, Tax: 0, Adjustments: 0, TotalGross: 0, RequiresPayment: false, Lines: [],
+        });
+        const { app, routes } = mockApp();
+        await new CheckoutServerExtension().Initialize(app, {
+            Enabled: true,
+            DriverClass: 'OrdersCheckoutEdge',
+            RootPath: '/checkout',
+            Settings: {},
+        });
+        const handler = routes.post['/checkout/draft'][1] as (req: Request, res: Response, next: () => void) => void;
+        const post = async (body: Record<string, unknown>) => {
+            handler(
+                { path: '/checkout/draft', body, headers: {}, socket: { remoteAddress: '127.0.0.1' } } as unknown as Request,
+                mockRes() as unknown as Response,
+                () => undefined
+            );
+            await vi.waitFor(() => expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalled());
+            const call = vi.mocked(CheckoutSessionService.UpdateDraft).mock.calls[0];
+            vi.mocked(CheckoutSessionService.UpdateDraft).mockClear();
+            return call;
+        };
+
+        const withToken = await post({ sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.test', lines: [], memberToken: 'signed.token' });
+        expect((withToken[5] as { MemberToken?: string })?.MemberToken).toBe('signed.token');
+        const without = await post({ sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.test', lines: [] });
+        expect((without[5] as { MemberToken?: string })?.MemberToken).toBeUndefined();
+        const notString = await post({ sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.test', lines: [], memberToken: { forged: true } });
+        expect((notString[5] as { MemberToken?: string })?.MemberToken).toBeUndefined();
+    });
+
     it('does not key rate limits on a spoofed leftmost X-Forwarded-For (default TrustedProxyHops=0)', async () => {
         const { app, routes } = mockApp();
         const ext = new CheckoutServerExtension();

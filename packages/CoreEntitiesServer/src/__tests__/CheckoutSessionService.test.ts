@@ -144,8 +144,14 @@ const mocks = vi.hoisted(() => {
         Quantity = 1;
         LineNumber = 1;
         UnitPrice = 0;
+        DiscountAmount = 0;
         LineTotalGross = 0;
         Description: string | null = null;
+        // Mirrors OrderLineEntityServer.PrepareForSave: the line total nets out DiscountAmount.
+        PrepareForSave = vi.fn().mockImplementation(() => {
+            this.LineTotalGross = (this.UnitPrice ?? 0) * this.Quantity - (this.DiscountAmount ?? 0);
+            return Promise.resolve();
+        });
         extensionInstance = new MockExtensionEntity();
         Extension = {
             EnsureEntity: vi.fn().mockImplementation(() => Promise.resolve(this.extensionInstance))
@@ -174,6 +180,7 @@ const mocks = vi.hoisted(() => {
         TotalGross = 0;
         AmountPaid = 0;
         OrderDate: Date | null = null;
+        PromotionCodes = { Codes: [] as string[] };
         LatestResult = { Success: true, Message: '', CompleteMessage: '' };
         NewRecord = vi.fn();
         Load = mockOrderLoad;
@@ -264,6 +271,8 @@ const mocks = vi.hoisted(() => {
         lastRunViewParams: undefined as { EntityName?: string; MaxRows?: number; Fields?: string[]; ExtraFilter?: string } | undefined,
         sessionRunViewResults: undefined as Array<{ ID: string }> | undefined,
         mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
+        mockMemberResolve: vi.fn(),
+        mockLookupMemberResolver: vi.fn(),
         mockProductBySKU: vi.fn((sku: string | null | undefined) => {
             const wanted = sku?.trim().toLowerCase();
             if (wanted === 'conf-2027') return { ID: 'prod-1', SKU: 'CONF-2027' };
@@ -291,6 +300,11 @@ const describeMocks = vi.hoisted(() => ({
 vi.mock('../IntentDescription.js', () => ({
     DescribeCheckoutSnapshot: (...args: unknown[]) => describeMocks.mockDescribeCheckoutSnapshot(...args),
     SendOrderDescriptionToGateway: (...args: unknown[]) => describeMocks.mockSendOrderDescription(...args),
+}));
+
+vi.mock('../CheckoutMemberDiscountResolver.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../CheckoutMemberDiscountResolver.js')>()),
+    ResolveCheckoutMemberDiscountResolver: (key: string) => mocks.mockLookupMemberResolver(key)
 }));
 
 vi.mock('../PaymentIntentService.js', () => ({
@@ -435,6 +449,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
 });
 
 import { CheckoutSessionService } from '../CheckoutSessionService.js';
+import { CheckoutMemberDiscountNotConfiguredError } from '../CheckoutMemberDiscountResolver.js';
 import { Metadata } from '@memberjunction/core';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
 import { ToISODate } from '@mj-biz-apps/orders-entities';
@@ -462,6 +477,9 @@ describe('CheckoutSessionService', () => {
         mocks.mockOrderInstance.BillToPersonID = null;
         mocks.mockOrderInstance.ShipToPersonID = null;
         mocks.mockOrderInstance.Lines.Items = [];
+        mocks.mockOrderInstance.PromotionCodes.Codes = [];
+        mocks.mockLookupMemberResolver.mockImplementation(() => ({ Resolve: mocks.mockMemberResolve }));
+        mocks.mockMemberResolve.mockReset();
         mocks.mockOrderInstance.CheckoutAnswers.Items = [];
         mocks.mockWidgetInstance.Configuration = mocks.DEFAULT_WIDGET_CONFIG;
         mocks.mockWidgetInstance.CompanyID = 'comp-10';
@@ -1461,6 +1479,155 @@ describe('CheckoutSessionService', () => {
             // latch or — if it observed the winner's Confirmed state — replays the same order.)
             expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalledTimes(1);
             expect(res1.Success || res2.Success).toBe(true);
+        });
+    });
+
+    describe('Verified-member discount (#324)', () => {
+        const MEMBER_CONFIG = JSON.stringify({ productId: 'prod-1', memberDiscountResolver: 'TEST-MEMBER' });
+        const TOKEN = 'signed.member.token';
+
+        // Prices every line at 100, and takes 20 off each when the member code is presented —
+        // the shape the promotion engine leaves behind (DiscountAmount on the line).
+        const priceWithMemberCode = (unusable: Array<{ Code: string; Reason: string }> = []) =>
+            (ctx: { PromotionCodes: string[]; Lines: Array<{ UnitPrice: number; Quantity: number; DiscountAmount: number; LineTotalGross: number }> }) => {
+                const applies = ctx.PromotionCodes.includes('MEMBER20') && unusable.length === 0;
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = 100;
+                    line.DiscountAmount = applies ? 20 : 0;
+                    line.LineTotalGross = 100 * line.Quantity;
+                }
+                return Promise.resolve({ UnusableCodes: unusable });
+            };
+
+        beforeEach(() => {
+            mocks.mockWidgetInstance.Configuration = MEMBER_CONFIG;
+        });
+
+        it('a verified token drafts the discounted total and snapshots the code, never the token', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20' });
+            mocks.mockPricingPrice.mockImplementationOnce(priceWithMemberCode());
+
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, { MemberToken: TOKEN });
+
+            expect(res.Success).toBe(true);
+            expect(res.TotalGross).toBe(80);
+            expect(res.MemberDiscountApplied).toBe(true);
+            expect(res.MemberDiscountMessage).toBeUndefined();
+            expect(mocks.mockLookupMemberResolver).toHaveBeenCalledWith('TEST-MEMBER');
+            expect(mocks.mockMemberResolve.mock.calls[0][0]).toMatchObject({
+                MemberToken: TOKEN, CheckoutWidgetID: 'widget-1', CompanyID: 'comp-10', SessionID: 'sess-123', Email: 'member@example.com'
+            });
+            expect(mocks.mockPricingPrice.mock.calls[0][0].PromotionCodes).toEqual(['MEMBER20']);
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON!);
+            expect(snapshot.MemberPromotionCode).toBe('MEMBER20');
+            expect(snapshot.TotalGross).toBe(80);
+            expect(mocks.mockSessionInstance.MetadataJSON).not.toContain(TOKEN);
+        });
+
+        it('a rejected token prices at full rate with the resolver message', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: null, Message: 'Membership has lapsed.' });
+            mocks.mockPricingPrice.mockImplementationOnce(priceWithMemberCode());
+
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, { MemberToken: TOKEN });
+
+            expect(res.Success).toBe(true);
+            expect(res.TotalGross).toBe(100);
+            expect(res.MemberDiscountApplied).toBe(false);
+            expect(res.MemberDiscountMessage).toBe('Membership has lapsed.');
+            expect(mocks.mockPricingPrice.mock.calls[0][0].PromotionCodes).toEqual([]);
+            expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON!).MemberPromotionCode).toBeNull();
+        });
+
+        it('a resolver that throws prices at full rate with a generic message instead of failing the draft', async () => {
+            mocks.mockMemberResolve.mockRejectedValue(new Error('verifier unreachable'));
+            mocks.mockPricingPrice.mockImplementationOnce(priceWithMemberCode());
+
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, { MemberToken: TOKEN });
+
+            expect(res.Success).toBe(true);
+            expect(res.TotalGross).toBe(100);
+            expect(res.MemberDiscountApplied).toBe(false);
+            expect(res.MemberDiscountMessage).toMatch(/could not be verified/);
+        });
+
+        it('a code the promotion engine declines prices at full rate, says why, and is not snapshotted', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20' });
+            mocks.mockPricingPrice.mockImplementationOnce(priceWithMemberCode([{ Code: 'member20', Reason: 'the code is outside its valid dates' }]));
+
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, { MemberToken: TOKEN });
+
+            expect(res.TotalGross).toBe(100);
+            expect(res.MemberDiscountApplied).toBe(false);
+            expect(res.MemberDiscountMessage).toContain('the code is outside its valid dates');
+            expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON!).MemberPromotionCode).toBeNull();
+        });
+
+        it('no token prices at full rate with no member fields and no resolver call', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce(priceWithMemberCode());
+
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'guest@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser);
+
+            expect(res.TotalGross).toBe(100);
+            expect(res.MemberDiscountApplied).toBeUndefined();
+            expect(res.MemberDiscountMessage).toBeUndefined();
+            expect(mocks.mockLookupMemberResolver).not.toHaveBeenCalled();
+        });
+
+        it('refuses a token sent to a widget with no member discount resolver configured', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1' });
+
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, { MemberToken: TOKEN });
+
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/not configured to verify member tokens/);
+            expect(mocks.mockPricingPrice).not.toHaveBeenCalled();
+        });
+
+        it('refuses a token when the configured resolver is not registered', async () => {
+            mocks.mockLookupMemberResolver.mockImplementation(() => {
+                throw new CheckoutMemberDiscountNotConfiguredError('nothing registered');
+            });
+
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, { MemberToken: TOKEN });
+
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/not configured to verify member tokens/);
+        });
+
+        it('/complete re-prices from the snapshot code, carries it on the order, and charges the discounted total', async () => {
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }],
+                TotalGross: 80,
+                MemberPromotionCode: 'MEMBER20'
+            });
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.mockPaymentIntentInstance.Amount = 80;
+            mocks.mockPricingPrice.mockImplementationOnce(priceWithMemberCode());
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(true);
+            expect(res.TotalGross).toBe(80);
+            expect(mocks.mockOrderInstance.PromotionCodes.Codes).toEqual(['MEMBER20']);
+            expect(mocks.mockPricingPrice.mock.calls[0][0].PromotionCodes).toEqual(['MEMBER20']);
+            expect(mocks.mockMemberResolve).not.toHaveBeenCalled();
+            const captureInput = mocks.mockCaptureExecute.mock.calls[0][0] as { Amount: number };
+            expect(captureInput.Amount).toBe(80);
+        });
+
+        it('/complete without a snapshot code carries no promotion code', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }], TotalGross: 100 });
+            mocks.mockPricingPrice.mockImplementationOnce(priceWithMemberCode());
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(true);
+            expect(res.TotalGross).toBe(100);
+            expect(mocks.mockOrderInstance.PromotionCodes.Codes).toEqual([]);
         });
     });
 

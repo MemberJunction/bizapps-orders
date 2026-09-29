@@ -170,6 +170,12 @@ export interface CheckoutWidgetConfiguration {
      */
     requireTurnstile?: boolean;
     /**
+     * `@RegisterClass` key of the `BaseCheckoutMemberDiscountResolver` that verifies a host's
+     * member token and names the promotion code it earns. Server-side only. A draft that carries a
+     * member token is refused when this is unset or names an unregistered class.
+     */
+    memberDiscountResolver?: string;
+    /**
      * Custom UI section containing JS hooks, scoped CSS, theme tokens, and component overrides.
      */
     customUI?: CustomUIConfiguration;

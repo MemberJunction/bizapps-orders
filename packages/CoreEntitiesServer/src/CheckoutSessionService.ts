@@ -52,6 +52,10 @@ import {
     OrderSellsSubscription,
     SaveCheckoutInstrumentForRenewals,
 } from './CheckoutSavedInstrument.js';
+import {
+    CheckoutMemberDiscountNotConfiguredError,
+    ResolveCheckoutMemberDiscountResolver,
+} from './CheckoutMemberDiscountResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
 import { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
 import { CheckoutStepLog, type CheckoutStepAttempt, type CheckoutStepSource } from './CheckoutStepLog.js';
@@ -152,7 +156,29 @@ export interface UpdateDraftResult {
     TotalGross: number;
     RequiresPayment: boolean;
     Lines: CheckoutLineSummary[];
+    /** True when a member token earned a discount that this draft is priced with. */
+    MemberDiscountApplied?: boolean;
+    /** Why a member token earned no discount, for the buyer. Absent when no token was sent. */
+    MemberDiscountMessage?: string;
 }
+
+/** The session snapshot a draft writes and `/complete` re-prices from. */
+interface CheckoutSessionSnapshot {
+    Lines?: CheckoutLineInput[];
+    TotalGross?: number;
+    /** Promotion code a verified member token earned. The token itself is never stored. */
+    MemberPromotionCode?: string | null;
+}
+
+/** Outcome of resolving a draft's member token. */
+interface MemberDiscountResolution {
+    PromotionCode: string | null;
+    Message?: string;
+    /** Set when the widget cannot verify tokens at all — the draft is refused. */
+    Refusal?: string;
+}
+
+const MEMBER_DISCOUNT_UNAVAILABLE = 'Your member discount could not be verified, so this checkout is priced at the standard rate.';
 
 /** Outcome of booking CapturePayment after a checkout order is already confirmed. */
 export interface BookCheckoutPaymentResult {
@@ -771,6 +797,78 @@ export class CheckoutSessionService {
     /**
      * Creates an order line entity instance attached to the order's Lines collection.
      */
+    /**
+     * Turns a draft's member token into the promotion code it earns (#324). No token prices at
+     * full rate with no message; a rejected token, or a verifier that throws, prices at full rate
+     * with a message. A token sent to a widget that cannot verify one is refused — a host that
+     * expects member pricing must not silently charge full price.
+     */
+    private static async resolveMemberDiscount(
+        memberToken: string | undefined,
+        widgetConfig: CheckoutWidgetConfiguration,
+        widget: mjBizAppsOrdersCheckoutWidgetEntity,
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        email: string,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<MemberDiscountResolution> {
+        const token = typeof memberToken === 'string' ? memberToken.trim() : '';
+        if (!token) {
+            return { PromotionCode: null };
+        }
+        const key = typeof widgetConfig.memberDiscountResolver === 'string' ? widgetConfig.memberDiscountResolver.trim() : '';
+        if (!key) {
+            return { PromotionCode: null, Refusal: 'This checkout is not configured to verify member tokens.' };
+        }
+
+        let resolver;
+        try {
+            resolver = ResolveCheckoutMemberDiscountResolver(key);
+        } catch (err) {
+            if (err instanceof CheckoutMemberDiscountNotConfiguredError) {
+                LogError(`[CheckoutSessionService] ${err.message}`);
+                return { PromotionCode: null, Refusal: 'This checkout is not configured to verify member tokens.' };
+            }
+            throw err;
+        }
+
+        try {
+            const decision = await resolver.Resolve(
+                {
+                    MemberToken: token,
+                    CheckoutWidgetID: widget.ID,
+                    CompanyID: widget.CompanyID,
+                    SessionID: session.ID,
+                    Email: email || null,
+                },
+                md as unknown as IMetadataProvider,
+                contextUser
+            );
+            const code = typeof decision?.PromotionCode === 'string' ? decision.PromotionCode.trim() : '';
+            if (code) {
+                return { PromotionCode: code };
+            }
+            return { PromotionCode: null, Message: decision?.Message || MEMBER_DISCOUNT_UNAVAILABLE };
+        } catch (err) {
+            LogError(`[CheckoutSessionService] Member discount resolver '${key}' failed: ${err instanceof Error ? err.message : String(err)}`);
+            return { PromotionCode: null, Message: MEMBER_DISCOUNT_UNAVAILABLE };
+        }
+    }
+
+    /**
+     * Computes each line's totals the way its save would, so a discount the pricing walk wrote to
+     * `DiscountAmount` reaches the checkout total. Same hoisted call `OrderEntityServer` makes
+     * before companion validation; idempotent.
+     */
+    private static async settleLineTotals(order: OrderHeaderEntity): Promise<void> {
+        for (const line of order.Lines.Items) {
+            const serverLine = line as unknown as { PrepareForSave?: () => Promise<void> };
+            if (typeof serverLine.PrepareForSave === 'function') {
+                await serverLine.PrepareForSave();
+            }
+        }
+    }
+
     private static async createOrderLine(
         order: OrderHeaderEntity,
         targetExtensionEntity: string | null,
@@ -902,7 +1000,7 @@ export class CheckoutSessionService {
         email: string,
         lines: CheckoutLineInput[],
         contextUser?: UserInfo,
-        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput }
+        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput; MemberToken?: string }
     ): Promise<UpdateDraftResult> {
         const failed = (message: string): UpdateDraftResult => ({
             Success: false,
@@ -1114,6 +1212,13 @@ export class CheckoutSessionService {
             return failed('This checkout is not configured correctly (its choices cannot be recorded on this item).');
         }
 
+        const memberDiscount = await this.resolveMemberDiscount(
+            options?.MemberToken, widgetConfig, widget, session, normalizedEmail, md, contextUser
+        );
+        if (memberDiscount.Refusal) {
+            return failed(memberDiscount.Refusal);
+        }
+
         // Price the draft order in memory
         try {
             const pricingService = new OrderPricingService({
@@ -1121,7 +1226,7 @@ export class CheckoutSessionService {
                 User: contextUser ?? (order.ContextCurrentUser as UserInfo),
             });
 
-            await pricingService.Price({
+            const priced = await pricingService.Price({
                 OrderHeaderID: order.ID || null,
                 CompanyID: widget.CompanyID,
                 BillToPersonID: order.BillToPersonID ?? null,
@@ -1141,11 +1246,22 @@ export class CheckoutSessionService {
                 ),
                 ShipToAddressID: order.ShipToAddressID ?? null,
                 Lines: [...order.Lines.Items],
-                PromotionCodes: [],
+                PromotionCodes: memberDiscount.PromotionCode ? [memberDiscount.PromotionCode] : [],
                 ManualDiscounts: [],
                 Charges: [],
             });
 
+            // The engine may still decline the code (dates, limits, qualifier). Price at full rate
+            // and say why, rather than snapshotting a code `/complete` would also decline.
+            const declined = memberDiscount.PromotionCode
+                ? (priced?.UnusableCodes ?? []).find((u) => u.Code.toLowerCase() === memberDiscount.PromotionCode!.toLowerCase())
+                : undefined;
+            if (declined) {
+                memberDiscount.PromotionCode = null;
+                memberDiscount.Message = `Your member discount does not apply to this order: ${declined.Reason}.`;
+            }
+
+            await this.settleLineTotals(order);
             let sumGross = 0;
             for (const line of order.Lines.Items) {
                 const extPrice = line.LineTotalGross ?? ((line.UnitPrice ?? 0) * (line.Quantity ?? 1));
@@ -1204,6 +1320,7 @@ export class CheckoutSessionService {
             Answers: this.answersForStorage(draftAnswers.Answers),
             ...(attribution ? { Attribution: attribution } : {}),
             Choices: ChoicesForStorage(draftChoices.Choices),
+            MemberPromotionCode: memberDiscount.PromotionCode,
             UpdatedAt: new Date().toISOString()
         });
         const sessionSaved = await session.Save();
@@ -1221,7 +1338,9 @@ export class CheckoutSessionService {
             Adjustments: 0,
             TotalGross: order.TotalGross ?? 0,
             RequiresPayment: (order.TotalGross ?? 0) > 0,
-            Lines: lineSummaries
+            Lines: lineSummaries,
+            ...(options?.MemberToken ? { MemberDiscountApplied: !!memberDiscount.PromotionCode } : {}),
+            ...(memberDiscount.Message ? { MemberDiscountMessage: memberDiscount.Message } : {})
         };
     }
 
@@ -1510,11 +1629,15 @@ export class CheckoutSessionService {
             await widget.Load(session.CheckoutWidgetID);
 
             let linesInput: CheckoutLineInput[] = [];
+            let memberPromotionCode: string | null = null;
             if (session.MetadataJSON) {
                 try {
-                    const parsed = JSON.parse(session.MetadataJSON) as { Lines?: CheckoutLineInput[] };
+                    const parsed = JSON.parse(session.MetadataJSON) as CheckoutSessionSnapshot;
                     if (parsed.Lines && Array.isArray(parsed.Lines)) {
                         linesInput = parsed.Lines;
+                    }
+                    if (typeof parsed.MemberPromotionCode === 'string' && parsed.MemberPromotionCode) {
+                        memberPromotionCode = parsed.MemberPromotionCode;
                     }
                 } catch {
                     // Ignore metadata parse error
@@ -1699,6 +1822,10 @@ export class CheckoutSessionService {
                 }
             }
 
+            // The draft's member discount rides on the order, so the re-price inside Confirm()'s save
+            // applies the same code this pre-check does — the charged total and the booked total match.
+            order.PromotionCodes.Codes = memberPromotionCode ? [memberPromotionCode] : [];
+
             // Price lines before confirmation
             const pricingService = new OrderPricingService({
                 Provider: (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
@@ -1725,11 +1852,12 @@ export class CheckoutSessionService {
                 ),
                 ShipToAddressID: order.ShipToAddressID ?? null,
                 Lines: [...order.Lines.Items],
-                PromotionCodes: [],
+                PromotionCodes: order.PromotionCodes.Codes,
                 ManualDiscounts: [],
                 Charges: [],
             });
 
+            await this.settleLineTotals(order);
             let sumGross = 0;
             for (const line of order.Lines.Items) {
                 const extPrice = line.LineTotalGross ?? ((line.UnitPrice ?? 0) * (line.Quantity ?? 1));

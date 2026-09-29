@@ -405,6 +405,28 @@ When a user adds items or inputs coupon codes:
 - Returns the computed pricing to the client while storing the snapshot in `CheckoutSession.MetadataJSON`.
 - **Zero draft rows are written to the `OrderHeader` database table.**
 
+### Verified-member discount
+A host can price members of a partner organisation without a typed code. The host page sets a signed
+token on the element (`<mj-orders-checkout slug="…" member-token="…">`), the element sends it as
+`memberToken` on `/draft`, and the widget's registered resolver verifies it server-side:
+
+```typescript
+@RegisterClass(BaseCheckoutMemberDiscountResolver, 'PARTNER-MEMBER')
+export class PartnerMemberResolver extends BaseCheckoutMemberDiscountResolver {
+    public async Resolve(ctx: CheckoutMemberDiscountContext): Promise<CheckoutMemberDiscountDecision> {
+        const member = await verifyHostToken(ctx.MemberToken); // the host's own verification
+        return member ? { PromotionCode: 'PARTNER-RATE' } : { PromotionCode: null, Message: 'Membership could not be confirmed.' };
+    }
+}
+```
+
+The widget names it with `Configuration.memberDiscountResolver: "PARTNER-MEMBER"` (server-side only).
+
+- The resolver returns a **promotion code**, priced through the ordinary promotion engine — dates, qualifiers and redemption limits apply as they do to any code.
+- The session snapshot keeps only the resolved code (`MemberPromotionCode`); **the token is never stored**. `/complete` re-prices from the snapshot and carries the code on the order, so the booked total equals the charged total.
+- A rejected token, a resolver that throws, or a code the engine declines prices at the standard rate and returns `MemberDiscountMessage`. The element stops once on that message before payment; submitting again pays the standard rate.
+- A token sent to a widget with no `memberDiscountResolver`, or one naming an unregistered class, is refused.
+
 ### Confirmation & Booking Phase
 When the user clicks **Pay & Register**:
 ```typescript
@@ -684,7 +706,7 @@ Initializes a new checkout session (or reuses the caller's open, unexpired one).
 ```
 
 ### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines, contextUser?, options?)`
-Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Choices` carries their picks from its `choiceGroups` (see [Choice Groups at Checkout](#choice-groups-at-checkout-choicegroups)); `options.Attribution` carries the checkout's source. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
+Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Choices` carries their picks from its `choiceGroups` (see [Choice Groups at Checkout](#choice-groups-at-checkout-choicegroups)); `options.Attribution` carries the checkout's source; `options.MemberToken` applies a [verified-member discount](#verified-member-discount), and the response then carries `MemberDiscountApplied` and, when no discount applied, `MemberDiscountMessage`. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
 
 **Request Parameters:**
 ```json
