@@ -69,6 +69,7 @@ import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBil
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
@@ -677,6 +678,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // Adopt the row's values before the transaction closes, or the entity handed back to the
             // caller carries a NULL Balance that renders as a dash and erases itself on the next save.
             await this.refreshRolledUpTotals();
+
+            // THE OUTBOUND EVENT, LAST AND INSIDE (#293). Written in this transaction so it exists
+            // exactly when the confirm commits; sent after it, by the dispatcher. First confirm only:
+            // `booking` is false on every later save of a confirmed order, so a re-save never fires.
+            if (booking) await this.recordOrderConfirmedEvent(options);
 
             await dbProvider.CommitTransaction();
             return true;
@@ -3647,6 +3653,45 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
         }
+    }
+
+    /** The `OrderConfirmed` outbound event: the order as consumers need it, lines included. */
+    private async recordOrderConfirmedEvent(options?: EntitySaveOptions): Promise<void> {
+        if (!HasOutboundConsumers('OrderConfirmed')) return;
+        const lines = await this.loadLinesForBooking();
+        const day = (d: Date | null | undefined): string | null => (d ? new Date(d).toISOString().slice(0, 10) : null);
+        await RecordOutboundEvent(
+            {
+                EventType: 'OrderConfirmed',
+                OrderHeaderID: this.ID,
+                Payload: {
+                    OrderID: this.ID,
+                    OrderNumber: this.OrderNumber ?? null,
+                    OrderType: this.OrderType ?? null,
+                    OrderDate: day(this.OrderDate),
+                    CompanyID: this.CompanyID ?? null,
+                    Origin: this.Origin ?? null,
+                    BillToPersonID: this.BillToPersonID ?? null,
+                    BillToOrganizationID: this.BillToOrganizationID ?? null,
+                    TotalGross: this.TotalGross ?? null,
+                    IsRenewal: lines.some((l) => !!l.RenewsSubscriptionID),
+                    Lines: lines.map((l) => ({
+                        OrderLineID: l.ID,
+                        ProductID: l.ProductID,
+                        Quantity: l.Quantity,
+                        UnitPrice: l.UnitPrice ?? null,
+                        LineTotalGross: l.LineTotalGross ?? null,
+                        RenewsSubscriptionID: l.RenewsSubscriptionID ?? null,
+                        ReversesOrderLineID: l.ReversesOrderLineID ?? null,
+                        ShipToPersonID: l.ShipToPersonID ?? null,
+                        ShipToOrganizationID: l.ShipToOrganizationID ?? null,
+                    })),
+                },
+            },
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+            options,
+        );
     }
 
     private async loadLinesForBooking(): Promise<mjBizAppsOrdersOrderLineEntity[]> {

@@ -19,6 +19,7 @@ import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
 import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
 import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-gated-access.action.js';
+import { LoadDispatchOutboundEventsAction } from './custom/dispatch-outbound-events.action.js';
 import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
 import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
 
@@ -30,6 +31,7 @@ import {
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
     LoadOrderEntityServer,
+    LoadEntitlementGrantEntityServer,
     LoadOrderLineEntityServer,
     LoadPaymentHeaderEntityServer,
     LoadPaymentLineEntityServer,
@@ -117,6 +119,7 @@ export function LoadBizAppsOrdersServer(): void {
     // Static imports above ensure all classes are registered; these anchor the server-only
     // subclasses against tree-shaking (booking lives in OrderEntityServer.Save).
     LoadOrderEntityServer();
+    LoadEntitlementGrantEntityServer(); // records a GrantStatusChanged outbound event with each grant change (#293)
     LoadOrderLineEntityServer();
     LoadPaymentHeaderEntityServer();  // books the cash leg on capture/refund (D18)
     LoadPaymentLineEntityServer();    // the over-application guard
@@ -170,6 +173,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
     LoadSpawnRenewalsAction();         // 'Orders.SpawnRenewals' — the scheduler's way in to the renewal operation
     LoadEnforcePaymentGatedAccessAction(); // 'Orders.EnforcePaymentGatedAccess' — nightly renewal cutoff and restore (#223)
+    LoadDispatchOutboundEventsAction(); // 'Orders.DispatchOutboundEvents' — sends recorded outbound events (#293)
     LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
     LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll
 

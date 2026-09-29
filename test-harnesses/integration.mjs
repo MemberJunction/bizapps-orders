@@ -129,6 +129,7 @@ const ALL_BUNDLES = [
     'contract-reversal',
     'party-roster',
     'progress-measurement',
+    'outbound-events',
     'volume',
 ];
 
