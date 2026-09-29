@@ -417,18 +417,14 @@ migrations-pg/                    ←  PG, produced by `npx mj sql-convert`
 
 At runtime `mj migrate` reads `DB_PLATFORM` and picks the right directory (`sqlserver` → `migrations/`, `postgresql` → `migrations-pg/`). CI applies the PG set to a fresh `postgres:17` container on every PR that touches migrations. Note the standing pre-production practice: schema changes **edit the original baseline migration in place** (clean rebuild + CodeGen re-run) — no incremental fix-up migrations until publish *(plan §2)*.
 
-Editing the baseline in place is only safe because rebuilding from zero is routine:
+To build a new empty database from zero:
 
 ```bash
-scripts/rebuild-db.sh                      # drop → MJ core → common → accounting → orders → seed metadata
-pnpm run mj:codegen                        # regenerate entity metadata + SQL objects
-scripts/append-codegen.sh                  # fold that output back BELOW the migration's banner
-pnpm exec mj sync push --dir metadata      # this app's lookup tables
+scripts/rebuild-db.sh   # drop → MJ core → common → tasks → accounting → orders → seed metadata
 ```
 
-> The `append-codegen.sh` step is not optional. The generated half of the baseline — entity/field
-> metadata, base views, CRUD procs, permissions — is what makes a fresh `mj migrate` produce a
-> **working** database rather than bare tables. Skipping it after a CodeGen run silently discards it.
+The migrations are applied as committed, with their CodeGen output, so no CodeGen run is needed
+afterwards.
 
 ---
 

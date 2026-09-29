@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 #
-# Rebuild the local development database from scratch.
+# Build a brand-new database from nothing: drop, then apply every migration as committed.
 #
-# WHY THIS EXISTS: the standing pre-production practice is that schema changes EDIT THE BASELINE
-# MIGRATION IN PLACE rather than adding fix-up migrations (README "Database Support"). That is only
-# safe if rebuilding from zero is routine — otherwise the baseline drifts from what anyone actually
-# has installed. This script is that routine.
+# Not a development loop. Schema changes are new migrations (docs/database-migrations.md); this is
+# for standing up an empty database, such as one for the integration suite.
 #
 # WHAT IT DOES
 #   1. drop + recreate the database
@@ -17,13 +15,9 @@
 #                         Decisions and Task Decision Outcomes by entity name, so accounting is not
 #                         functional without these tables even though orders never names them
 #   5. bizapps-accounting — `mj migrate --schema`, pointed at the sibling checkout
-#   6. this app's migrations
-#   7. accounting's seed metadata (currencies, GL account roles) — booking needs both
-#
-# AFTER THIS, still by hand (they need judgement, not automation):
-#   pnpm run mj:codegen                     # regenerate entity metadata + SQL objects
-#   scripts/append-codegen.sh              # append the generated SQL below the migration's banner
-#   pnpm exec mj sync push --dir metadata   # seed the lookup tables
+#   6. this app's migrations, as committed (they carry their CodeGen output)
+#   7. seed metadata: common's query categories, accounting's currencies and GL account roles,
+#      then this app's metadata/
 #
 # Usage: scripts/rebuild-db.sh
 set -euo pipefail
@@ -32,7 +26,9 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 set -a; . ./.env; set +a
 
-MJ_VERSION="${MJ_CORE_VERSION:-v6.1.0-edge.1}"
+# The LTS release (npm dist-tag lts-6.1). It must satisfy every repo's mjVersionRange; accounting's
+# starts at 6.1.0-edge.7, and common's migrations call core procedures with parameters older tags lack.
+MJ_VERSION="${MJ_CORE_VERSION:-v6.1.4}"
 COMMON_REPO="${BIZAPPS_COMMON_REPO:-$ROOT/../bizapps-common}"
 ACCOUNTING_REPO="${BIZAPPS_ACCOUNTING_REPO:-$ROOT/../bizapps-accounting}"
 TASKS_REPO="${BIZAPPS_TASKS_REPO:-$ROOT/../bizapps-tasks}"
@@ -74,10 +70,16 @@ say "3/7  bizapps-common"
 #
 # Each file is checked individually because sqlcmd returns 0 for a failed batch unless -b is set, and
 # a silent partial install here is exactly what cost the last rebuild.
+#
+# The substituted SQL goes through a temp file, not a pipe: the ODBC sqlcmd (mssql-tools18) does not
+# read `-i /dev/stdin`. -I turns QUOTED_IDENTIFIER on, which the filtered indexes need (Msg 1934).
+COMMON_SQL=$(mktemp)
+trap 'rm -f "$COMMON_SQL"' EXIT
 for f in "$COMMON_REPO"/migrations/*.sql; do
     printf '  %s\n' "$(basename "$f")"
-    sed 's/\${flyway:defaultSchema}/__mj_BizAppsCommon/g; s/\${mjSchema}/__mj/g' "$f" \
-        | $SQLCMD -b -d "${DB_DATABASE}" -i /dev/stdin
+    sed 's/\${flyway:defaultSchema}/__mj_BizAppsCommon/g; s/\${mjSchema}/__mj/g' "$f" > "$COMMON_SQL"
+    $SQLCMD -b -I -d "${DB_DATABASE}" -i "$COMMON_SQL" \
+        || { printf 'FAILED: %s\n' "$(basename "$f")" >&2; exit 1; }
 done
 
 say "4/7  bizapps-tasks"
@@ -90,55 +92,30 @@ $MJ migrate --schema __mj_BizAppsTasks --dir "$TASKS_REPO/migrations"
 say "5/7  bizapps-accounting"
 $MJ migrate --schema __mj_BizAppsAccounting --dir "$ACCOUNTING_REPO/migrations"
 
-# TRIM THE GENERATED HALF BEFORE APPLYING. Once CodeGen output lives in the baseline, a rebuild
-# produces a database whose entity metadata is ALREADY current — so the next CodeGen run has nothing
-# to do and emits only a delta, which append-codegen.sh then refuses (rightly) as a partial. The
-# cycle is only self-consistent if the rebuild applies the hand-authored DDL alone and CodeGen
-# regenerates the rest from scratch. This is what makes "edit the baseline in place" safe.
-say "6/7  bizapps-orders (hand-authored DDL only)"
-MARKER='CODEGEN OUTPUT — GENERATED CODE BELOW THIS LINE'
-ORDERS_MIGRATION=$(grep -rl "$MARKER" "$ROOT/migrations"/*.sql | head -1)
-if [[ -n "$ORDERS_MIGRATION" ]]; then
-    MARKER_LINE=$(grep -n "$MARKER" "$ORDERS_MIGRATION" | head -1 | cut -d: -f1)
-    BANNER_END=$(awk -v s="$MARKER_LINE" 'NR>=s && /^-- =+$/ { print NR; exit }' "$ORDERS_MIGRATION")
-    GENERATED_LINES=$(( $(wc -l < "$ORDERS_MIGRATION") - BANNER_END ))
-    if (( GENERATED_LINES > 0 )); then
-        printf '  trimming %s lines of generated output (CodeGen will regenerate them)\n' "$GENERATED_LINES"
-        head -n "$BANNER_END" "$ORDERS_MIGRATION" > "$ORDERS_MIGRATION.tmp"
-        mv "$ORDERS_MIGRATION.tmp" "$ORDERS_MIGRATION"
-        # RECORD WHAT WE TRIMMED, so append-codegen.sh has something to compare against.
-        # Its shrink guard exists to catch a partial/incremental CodeGen run being appended over a
-        # full one — but it compares the incoming output against what is CURRENTLY below the banner,
-        # and by this point that is zero. In the normal flow (rebuild → codegen → append) the guard
-        # could therefore never fire, which is the one flow it was written for.
-        printf '%s\n' "$GENERATED_LINES" > "$ROOT/migrations/codegen/.previous-generated-lines"
-    fi
-fi
-
-# STALE EMITS ARE DEBRIS, AND THEY ACCUMULATE INTO THE BASELINE. append-codegen.sh concatenates
-# EVERY file in migrations/codegen/, so runs left over from previous rebuilds are appended again on
-# the next one. That is not hypothetical: the baseline reached 309k lines carrying EIGHT stacked
-# copies of every view and procedure before anyone noticed, because each copy is valid SQL and the
-# last one wins. Clearing here means the emits appended are exactly the ones this rebuild produced.
-find "$ROOT/migrations/codegen" -maxdepth 1 -name '*.sql' -delete 2>/dev/null || true
-
+say "6/7  bizapps-orders"
 # --schema is REQUIRED, not optional. Without it `mj migrate` uses the CORE schema's flyway history,
 # which already carries a SQL_BASELINE from step 2 — so flyway skips this app's `B` baseline
 # entirely and reports "0 applied" while creating nothing.
 $MJ migrate --schema __mj_BizAppsOrders --dir "$ROOT/migrations"
 
-say "7/7  Dependency seed metadata"
+say "7/7  Seed metadata"
 # Accounting's currencies and GL account roles are seed METADATA, not migration DDL — booking needs
 # both (a company profile names a functional currency; the resolver looks up roles by name), so a
 # rebuild that stops at the migrations produces a database where every confirm fails at fixture time.
-$MJ sync push --dir "$ACCOUNTING_REPO/metadata"
+# Common's query categories come first because this app's queries look up 'Party Signals' by name.
+#
+# Only these folders are pushed from the dependencies. Pushing their whole metadata/ fails on a fresh
+# database: https://github.com/MemberJunction/bizapps-accounting/issues/222 (ML folders out of order)
+# and https://github.com/MemberJunction/bizapps-common/issues/196 (Tag records without DisplayName).
+$MJ sync push --ci --dir "$COMMON_REPO/metadata" --include query-categories
+$MJ sync push --ci --dir "$ACCOUNTING_REPO/metadata" --include currencies,gl-account-roles
+# ML models and their scoring bindings are left out: the models reference trained artifact files that
+# no fresh database has (https://github.com/MemberJunction/bizapps-orders/issues/364).
+$MJ sync push --ci --dir "$ROOT/metadata" --exclude ml-models,ml-model-scoring-bindings
 
 say "Done"
 cat <<'NEXT'
 Next, in order:
-  pnpm run mj:codegen
-  scripts/append-codegen.sh
-  pnpm exec mj sync push --dir metadata
   pnpm run build
-  node test-harnesses/integration.mjs
+  RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs
 NEXT
