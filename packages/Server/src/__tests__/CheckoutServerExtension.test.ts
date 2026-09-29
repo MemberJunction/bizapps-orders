@@ -164,6 +164,22 @@ describe('CheckoutServerExtension', () => {
         ]);
     });
 
+    it('passes the buyer’s promotion codes through to the draft, unmodified', async () => {
+        const { app } = mockApp();
+        const ext = new CheckoutServerExtension();
+        await ext.Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({ Success: true } as never);
+        const res = mockRes();
+        const body = { sessionId: 's-1', clientSessionKey: 'k', email: 'a@b.com', lines: [], promotionCodes: ['SAVE10'] };
+        await (ext as unknown as { handleDraft(req: Request, res: Response): Promise<void> }).handleDraft(
+            { body, headers: {}, socket: {} } as unknown as Request,
+            res as unknown as Response,
+        );
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('s-1', 'k', 'a@b.com', [], expect.anything(), {
+            PromotionCodes: ['SAVE10'],
+        });
+    });
+
     it('serves the element bundle and its source map to any origin', async () => {
         const { app, routes } = mockApp();
         await new CheckoutServerExtension().Initialize(app, {

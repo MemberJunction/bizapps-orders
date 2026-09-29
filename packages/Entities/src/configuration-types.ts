@@ -116,6 +116,12 @@ export interface CheckoutWidgetConfiguration {
      * checkbox.
      */
     autoRenewConsentText?: string;
+    /**
+     * When true, the widget shows a promotion-code field and the anonymous draft accepts one code
+     * (validated, priced and booked server-side by the promotion engine). Absent or false: codes are
+     * refused.
+     */
+    allowCoupons?: boolean;
     successMessage?: string;
     redirectUrl?: string;
     extensionEntityName?: string;

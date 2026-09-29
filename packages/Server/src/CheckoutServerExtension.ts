@@ -565,10 +565,13 @@ export class CheckoutServerExtension extends BaseServerExtension {
         // Passed through unchecked: UpdateDraft keeps the attribution only when it reads as one, and
         // judges the answers and choices against the widget's own questions and choice groups. The
         // member token is verified server-side by the widget's registered resolver and never stored (#324).
+        // Promotion codes are passed as sent; the service normalises and bounds them
+        // (NormalizeCheckoutPromotionCodes).
         const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user, {
             Attribution: req.body?.attribution,
             Answers: req.body?.answers as CheckoutAnswersInput | undefined,
             Choices: req.body?.choices as CheckoutChoicesInput | undefined,
+            PromotionCodes: req.body?.promotionCodes,
             MemberToken: typeof req.body?.memberToken === 'string' ? req.body.memberToken : undefined,
         });
         res.status(result.Success ? 200 : 400).json(result);

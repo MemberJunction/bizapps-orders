@@ -41,6 +41,8 @@ import {
 } from './checkout-events';
 import {
     MJCheckoutWidgetComponent,
+    type CheckoutAppliedPromotion,
+    type CheckoutServerPricedTotal,
     type CheckoutSubmissionEvent,
     type CheckoutWidgetConfig,
 } from './checkout-widget.component';
@@ -101,6 +103,12 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public loadError: string | null = null;
     public successMessage: string | null = null;
     public orderNumber: string | null = null;
+    /** The code the server last priced, fed back to the widget so it shows the discounted total. */
+    public appliedPromotion: CheckoutAppliedPromotion | null = null;
+    /** Why the last code could not be used. */
+    public promotionError: string | null = null;
+    /** The total the server last priced the draft at, fed back so the widget charges what it shows. */
+    public serverPricedTotal: CheckoutServerPricedTotal | null = null;
 
     /** The post-payment account step, when the host registered one (#292). */
     public account: CheckoutAccountView | null = null;
@@ -211,6 +219,68 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
+    /** The buyer pressed Apply: price the form with the code and show what it does. */
+    public async onPromotionCodeApplied(event: CheckoutSubmissionEvent): Promise<void> {
+        if (this.processing || !this.config?.productId || !event.promotionCode) {
+            return;
+        }
+        this.processing = true;
+        this.promotionError = null;
+        try {
+            const draft = await this.post('/draft', {
+                sessionId: this.sessionId,
+                clientSessionKey: this.sessionKey,
+                email: event.email,
+                lines: [buildCheckoutDraftLine(this.config.productId, event)],
+                answers: event.answers,
+                choices: event.choices,
+                ...(this.attributionSource
+                    ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
+                    : {}),
+                ...(this.memberToken ? { memberToken: this.memberToken } : {}),
+                promotionCodes: [event.promotionCode],
+            });
+            this.applyPromotionOutcome(draft, event);
+        } catch {
+            this.promotionError = 'The code could not be checked. Please try again.';
+        } finally {
+            this.processing = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * Read a draft's verdict on the buyer's code into the widget's inputs. Returns true when the
+     * draft priced the code (or no code was sent), false when the code was refused.
+     */
+    private applyPromotionOutcome(draft: Record<string, unknown> | null | undefined, event: CheckoutSubmissionEvent): boolean {
+        if (!event.promotionCode) {
+            this.appliedPromotion = null;
+            return true;
+        }
+        if (!draft?.Success) {
+            this.appliedPromotion = null;
+            this.promotionError = this.str(draft?.ErrorMessage, 'That code could not be applied.');
+            return false;
+        }
+        const unusable = Array.isArray(draft.UnusablePromotionCodes)
+            ? (draft.UnusablePromotionCodes as Array<{ Code?: unknown; Reason?: unknown }>)
+            : [];
+        if (unusable.length > 0) {
+            this.appliedPromotion = null;
+            this.promotionError = `${this.str(unusable[0].Code, event.promotionCode)} can't be used: ${this.str(unusable[0].Reason, 'not valid for this order')}.`;
+            return false;
+        }
+        const applied = Array.isArray(draft.AppliedPromotionCodes) ? (draft.AppliedPromotionCodes as unknown[]) : [];
+        this.appliedPromotion = {
+            code: this.str(applied[0], event.promotionCode),
+            discount: Number(draft.Discount ?? 0),
+            total: Number(draft.TotalGross ?? 0),
+            quantity: event.quantity,
+        };
+        return true;
+    }
+
     /**
      * Cancel resets the checkout to a blank form and tells the host page, which may close the modal
      * the checkout sits in. The widget is re-created, so every field the buyer filled in is cleared,
@@ -272,6 +342,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     private resetForm(): void {
         this.errorMessage = null;
         this.stripePaymentMethodId = null;
+        this.serverPricedTotal = null;
         try {
             this.card?.destroy?.();
         } catch {
@@ -303,14 +374,31 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                     : {}),
                 choices: event.choices,
                 ...(this.memberToken ? { memberToken: this.memberToken } : {}),
+                promotionCodes: event.promotionCode ? [event.promotionCode] : [],
             });
+            if (!this.applyPromotionOutcome(draft, event)) {
+                // The code was refused: say why and stop before any payment, so the buyer can remove
+                // it or try another rather than pay a price they did not expect.
+                return;
+            }
             if (!draft?.Success) {
                 throw new Error(this.str(draft?.ErrorMessage, 'Could not price this checkout.'));
             }
+            // The widget cannot price a member discount itself, so it is told the server's total; a
+            // second press of Pay then carries that total and passes the check below.
+            this.serverPricedTotal = { total: Number(draft.TotalGross ?? 0), quantity: event.quantity };
             const notice = memberDiscountNotice(draft, this.memberNoticeShown);
             if (notice) {
                 this.memberNoticeShown = true;
                 this.errorMessage = notice;
+                return;
+            }
+            // The server's total is the one charged. If it differs from what the buyer was shown
+            // (a code typed but never applied, or a price that changed), show it and ask for a
+            // second press rather than charge a different amount than the button said.
+            const serverTotal = Math.round(Number(draft.TotalGross ?? 0) * 100);
+            if (draft.RequiresPayment && serverTotal !== Math.round(Number(event.totalGross ?? 0) * 100)) {
+                this.errorMessage = `Your total is now ${(serverTotal / 100).toFixed(2)} ${(this.config.currency ?? 'USD').toUpperCase()}. Press Pay again to continue.`;
                 return;
             }
             if (!draft.RequiresPayment) {

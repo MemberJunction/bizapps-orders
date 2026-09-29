@@ -68,6 +68,10 @@
             [stripePaymentMethodId]="stripePaymentMethodId"
             [prefillEmail]="prefillEmail"
             [errorMessage]="errorMessage"
+            [appliedPromotion]="appliedPromotion"
+            [serverPricedTotal]="serverPricedTotal"
+            [promotionError]="promotionError"
+            (promotionCodeApplied)="onPromotionCodeApplied($event)"
             (submitted)="onSubmitted($event)"
             (cancelled)="onCancelled()">
         </mj-checkout-widget>

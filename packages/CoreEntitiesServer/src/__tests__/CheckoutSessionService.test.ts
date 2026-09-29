@@ -169,6 +169,7 @@ const mocks = vi.hoisted(() => {
 
     class MockOrderHeader {
         ID = 'order-999';
+        PromotionCodes = { Codes: [] as string[] };
         OrderNumber = 'ORD-2026-0001';
         CompanyID = 'comp-10';
         Status = 'Draft';
@@ -454,7 +455,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     };
 });
 
-import { CheckoutSessionService } from '../CheckoutSessionService.js';
+import { CheckoutSessionService, NormalizeCheckoutPromotionCodes } from '../CheckoutSessionService.js';
 import { CheckoutMemberDiscountNotConfiguredError } from '../CheckoutMemberDiscountResolver.js';
 import { Metadata } from '@memberjunction/core';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
@@ -640,6 +641,116 @@ describe('CheckoutSessionService', () => {
             expect(res.Configuration?.paymentProviderId).toBeUndefined();
             expect(res.Configuration?.signingKey).toBeUndefined();
             expect(res.Configuration?.allowAnyProduct).toBeUndefined();
+        });
+    });
+
+    describe('UpdateDraft — promotion codes', () => {
+        type PricedLine = { UnitPrice: number; LineTotalGross: number; Quantity: number; DiscountAmount?: number };
+        /** Price each line at 599; a usable SAVE10 takes 59.90 off; anything else comes back unusable. */
+        const priceWithCodes = (ctx: { Lines: PricedLine[]; PromotionCodes: string[] }) => {
+            const unusable: Array<{ Code: string; Reason: string }> = [];
+            for (const line of ctx.Lines) {
+                line.UnitPrice = 599;
+                line.DiscountAmount = 0;
+                line.LineTotalGross = 599 * line.Quantity;
+            }
+            for (const code of ctx.PromotionCodes) {
+                if (code.toUpperCase() === 'SAVE10') {
+                    ctx.Lines[0].DiscountAmount = 59.9;
+                    ctx.Lines[0].LineTotalGross -= 59.9;
+                } else {
+                    unusable.push({ Code: code, Reason: 'no such code' });
+                }
+            }
+            return Promise.resolve({ UnusableCodes: unusable });
+        };
+
+        beforeEach(() => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', allowCoupons: true });
+            mocks.mockPricingPrice.mockImplementation(priceWithCodes);
+        });
+
+        afterEach(() => {
+            mocks.mockPricingPrice.mockImplementation((ctx: { Lines: PricedLine[] }) => {
+                for (const line of ctx.Lines) {
+                    line.LineTotalGross = (line.UnitPrice ?? 0) * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+        });
+
+        it('prices the draft with a usable code, reports the discount, and keeps the code in the snapshot', async () => {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: [' SAVE10 '],
+            });
+            expect(res.Success).toBe(true);
+            expect(res.TotalGross).toBe(539.1);
+            expect(res.Discount).toBe(59.9);
+            expect(res.Subtotal).toBe(599);
+            expect(res.Adjustments).toBe(-59.9);
+            expect(res.AppliedPromotionCodes).toEqual(['SAVE10']);
+            expect(res.UnusablePromotionCodes).toEqual([]);
+            const priced = mocks.mockPricingPrice.mock.calls[0][0] as { PromotionCodes: string[] };
+            expect(priced.PromotionCodes).toEqual(['SAVE10']);
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON!) as { PromotionCodes: string[]; TotalGross: number };
+            expect(snapshot.PromotionCodes).toEqual(['SAVE10']);
+            expect(snapshot.TotalGross).toBe(539.1);
+        });
+
+        it('prices at full price and says why when the code cannot be used, and does not keep it', async () => {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: ['NOPE'],
+            });
+            expect(res.Success).toBe(true);
+            expect(res.TotalGross).toBe(599);
+            expect(res.UnusablePromotionCodes).toEqual([{ Code: 'NOPE', Reason: 'no such code' }]);
+            expect(res.AppliedPromotionCodes).toEqual([]);
+            expect((JSON.parse(mocks.mockSessionInstance.MetadataJSON!) as { PromotionCodes: string[] }).PromotionCodes).toEqual([]);
+        });
+
+        it('refuses a code when the widget does not take codes', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1' });
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: ['SAVE10'],
+            });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/does not take promotion codes/i);
+            expect(mocks.mockPricingPrice).not.toHaveBeenCalled();
+        });
+
+        it('refuses more than one code', async () => {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: ['SAVE10', 'OTHER'],
+            });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/only 1 promotion code/i);
+        });
+
+        it('does not quote an undiscounted price when pricing fails with a code in play', async () => {
+            mocks.mockPricingPrice.mockRejectedValueOnce(new Error('promotion lookup failed'));
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: ['SAVE10'],
+            });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/could not be applied/i);
+        });
+
+        it('completes with the snapshot code: prices and books the order with it', async () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }],
+                PromotionCodes: ['SAVE10'],
+                TotalGross: 539.1,
+            });
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.mockPaymentIntentInstance.Amount = 539.1;
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const priced = mocks.mockPricingPrice.mock.calls.at(-1)![0] as { PromotionCodes: string[] };
+            expect(priced.PromotionCodes).toEqual(['SAVE10']);
+            expect(mocks.mockOrderInstance.PromotionCodes.Codes).toEqual(['SAVE10']);
         });
     });
 
@@ -2223,5 +2334,22 @@ describe('CheckoutSessionService', () => {
                 configSpy.mockRestore();
             }
         });
+    });
+});
+
+describe('NormalizeCheckoutPromotionCodes', () => {
+    it('trims, drops empties and de-duplicates case-insensitively', () => {
+        expect(NormalizeCheckoutPromotionCodes([' save10 ', '', 'SAVE10'])).toEqual({ Codes: ['save10'] });
+    });
+
+    it('treats a missing list as no codes', () => {
+        expect(NormalizeCheckoutPromotionCodes(undefined)).toEqual({ Codes: [] });
+    });
+
+    it('refuses a non-list, a non-string, an over-long code and more than one code', () => {
+        expect(NormalizeCheckoutPromotionCodes('SAVE10')).toHaveProperty('Error');
+        expect(NormalizeCheckoutPromotionCodes([42])).toHaveProperty('Error');
+        expect(NormalizeCheckoutPromotionCodes(['X'.repeat(61)])).toHaveProperty('Error');
+        expect(NormalizeCheckoutPromotionCodes(['A', 'B'])).toHaveProperty('Error');
     });
 });
