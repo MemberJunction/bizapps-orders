@@ -58,6 +58,13 @@ describe('stripe confirm retry helpers', () => {
         expect(intentAlreadyCollected('RequiresPayment')).toBe(false);
         expect(stripeConfirmAlreadyCollected({ code: 'payment_intent_unexpected_state', message: 'A processing error occurred.' })).toBe(true);
         expect(stripeConfirmAlreadyCollected({ code: 'card_declined', message: 'Your card was declined.' })).toBe(false);
-        expect(formatStripeError({ message: 'A processing error occurred.', code: 'payment_intent_unexpected_state' })).toContain('payment_intent_unexpected_state');
+    });
+
+    it('shows the buyer the gateway message without its error code', () => {
+        expect(formatStripeError({ message: 'Your card has been declined.', code: 'card_declined' })).toBe('Your card has been declined.');
+        expect(formatStripeError({ message: 'We are unable to authenticate your payment method.', code: 'payment_intent_authentication_failure' }))
+            .not.toContain('payment_intent_authentication_failure');
+        expect(formatStripeError({ message: '  ', code: 'card_declined' })).toBe('Payment failed.');
+        expect(formatStripeError(null)).toBe('Payment failed.');
     });
 });
