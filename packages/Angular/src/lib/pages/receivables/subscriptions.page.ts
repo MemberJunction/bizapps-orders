@@ -11,6 +11,7 @@ import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/account
 import {
     GetSubscriptionEvents,
     GetSubscriptionTerms,
+    GetSubscriptionTypeRenewalLeadDays,
     LoadSubscriptionRevRec,
     type SubscriptionTermLookup,
 } from '../../data/orders-queries';
@@ -32,6 +33,8 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
     StartDate: DateCell;
     EndDate: DateCell;
     AutoRenew: boolean;
+    RenewalLeadDays?: number | null;
+    SubscriptionTypeID?: string | null;
     OrderLineID?: string | null;
     Product?: string | null;
     HolderOrganization?: string | null;
@@ -151,7 +154,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                                         <tr [class.is-current]="isCurrentTerm(term)">
                                             <td class="small">{{ term['TermNumber'] }}</td>
                                             <td class="small">
-                                                {{ dateOf(term['StartDate']) }} → {{ dateOf(term['EndDate']) }}
+                                                {{ termDateOf(term['StartDate']) }} → {{ termDateOf(term['EndDate']) }}
                                                 @if (term['IsProrated']) {
                                                     <span class="mj-chip mj-chip--outline">prorated</span>
                                                 }
@@ -194,11 +197,18 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                             <h3>Revenue recognition</h3>
                         </div>
                         <div class="mj-card-pad">
-                            <mj-deferred-revenue-waterfall
-                                [JournalEntries]="RecognitionEntries"
-                                [Title]="'Subscription deferred revenue'"
-                                [TermLookup]="RecognitionTermLookup">
-                            </mj-deferred-revenue-waterfall>
+                            @if (CanReadRecognition) {
+                                <mj-deferred-revenue-waterfall
+                                    [JournalEntries]="RecognitionEntries"
+                                    [Title]="'Subscription deferred revenue'"
+                                    [TermLookup]="RecognitionTermLookup">
+                                </mj-deferred-revenue-waterfall>
+                            } @else {
+                                <div class="small muted">
+                                    You do not have permission to view journal entries, so the recognition
+                                    schedule cannot be shown.
+                                </div>
+                            }
 
                             <div class="small muted mjo-sub__note">
                                 Recognition entries are created at booking with future dates and post when their
@@ -310,6 +320,9 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     public Events: mjBizAppsOrdersSubscriptionEventEntity[] = [];
     public RecognitionEntries: mjBizAppsAccountingJournalEntryEntity[] = [];
     public RecognitionTermLookup: SubscriptionTermLookup = {};
+    public CanReadRecognition = true;
+    /** The subscription type's lead days, the engine's fallback when the subscription sets none. */
+    public TypeRenewalLeadDays: number | null = null;
 
     public async Select(row: MJOSubscriptionRow): Promise<void> {
         this.SelectedID = row.ID;
@@ -318,25 +331,40 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     }
 
     /**
-     * Terms, history and recognition entries for one subscription.
+     * Terms, history, recognition entries and renewal lead days for one subscription.
      *
-     * Fetched on selection, and every await settles before anything is assigned —
+     * Recognition waits for the terms so they are read once; the other reads run
+     * alongside. Every await settles before anything is assigned —
      * assigning between awaits is what puts the view into the NG0100 freeze. A
      * result that lands after the user has selected another subscription is
      * dropped, so one subscription's schedule never renders under another's header.
      */
     private async loadDetail(subscriptionID: string): Promise<void> {
         const row = this.AllRows.find((r) => r.ID === subscriptionID);
-        const [terms, events, recognition] = await Promise.all([
-            GetSubscriptionTerms(subscriptionID),
+        const termsAndRecognition = (async () => {
+            const terms = await GetSubscriptionTerms(subscriptionID);
+            const recognition = await LoadSubscriptionRevRec(
+                { ID: subscriptionID, OrderLineID: row?.OrderLineID ?? null },
+                Metadata.Provider,
+                terms,
+            );
+            return { terms, recognition };
+        })();
+        const typeLeadDays = row?.RenewalLeadDays == null && row?.SubscriptionTypeID
+            ? GetSubscriptionTypeRenewalLeadDays(row.SubscriptionTypeID)
+            : Promise.resolve(null);
+        const [{ terms, recognition }, events, leadDays] = await Promise.all([
+            termsAndRecognition,
             GetSubscriptionEvents(subscriptionID),
-            LoadSubscriptionRevRec({ ID: subscriptionID, OrderLineID: row?.OrderLineID ?? null }, Metadata.Provider),
+            typeLeadDays,
         ]);
         if (this.SelectedID !== subscriptionID) return;
         this.Terms = terms;
         this.Events = events;
         this.RecognitionEntries = recognition.Entries;
         this.RecognitionTermLookup = recognition.TermLookup;
+        this.CanReadRecognition = recognition.CanRead;
+        this.TypeRenewalLeadDays = leadDays;
         this.cdr.detectChanges();
     }
 
@@ -373,6 +401,20 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     protected dateOf(value: unknown): string {
         if (value instanceof Date || typeof value === 'string') return FormatDate(value);
         return '—';
+    }
+
+    /**
+     * A term's start or end date.
+     *
+     * TERM DATES ARE CALENDAR DAYS, NOT INSTANTS. They arrive as midnight UTC, and
+     * `dateOf` reads local parts, so west of Greenwich Jan 1 rendered as Dec 31 and
+     * a renewal term appeared to overlap the one before it by a day. `ToISODate`
+     * reads the stored day, the same way `CoveredThrough` does. History timestamps
+     * are real instants and stay on `dateOf`.
+     */
+    protected termDateOf(value: unknown): string {
+        const day = ToISODate(value);
+        return day ? FormatDate(day) : '—';
     }
 
     /**
@@ -423,9 +465,22 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         return -DaysSince(end, Today());
     }
 
-    /** Within the lead window, and consented to. */
+    /**
+     * Whether the renewal engine will renew this subscription soon.
+     *
+     * Mirrors the engine's due query: auto-renew on, subscription Active or
+     * Trialing (a paused one does not renew), latest term Scheduled or Active, and
+     * the term end inside the lead window — the subscription's own lead days,
+     * falling back to its type's, then 0.
+     */
     public get RenewalDue(): boolean {
-        return !!this.Selected?.AutoRenew && this.DaysToRenewal > 0 && this.DaysToRenewal <= 45;
+        const subscription = this.Selected;
+        if (!subscription?.AutoRenew) return false;
+        if (subscription.Status !== 'Active' && subscription.Status !== 'Trialing') return false;
+        const latest = this.Terms[this.Terms.length - 1];
+        if (latest && latest.Status !== 'Scheduled' && latest.Status !== 'Active') return false;
+        const leadDays = subscription.RenewalLeadDays ?? this.TypeRenewalLeadDays ?? 0;
+        return this.DaysToRenewal > 0 && this.DaysToRenewal <= leadDays;
     }
 
     protected statusClass(row: MJOSubscriptionRow): string {

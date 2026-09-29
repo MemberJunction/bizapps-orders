@@ -1723,34 +1723,40 @@ export type SubscriptionTermLookup = Record<string, { TermNumber: number; Label:
  * over the subscription's terms as well as the subscription and its originating order line. The
  * subscription form and the Receivables subscription panel both read the schedule through here, so
  * the two cannot disagree about what is scheduled.
+ *
+ * Pass `terms` when the caller has already loaded them, so they are not read a second time. Lines
+ * for every entry come back in one batched query (`IncludeRelatedRecords`), not one per entry.
+ *
+ * `CanRead` is false when the user has no read permission on journal entries; nothing is queried
+ * then, so the caller can say why the schedule is empty instead of showing an empty chart.
  */
 export async function LoadSubscriptionRevRec(
     record: { ID: string; OrderLineID?: string | null },
     provider: IMetadataProvider,
+    terms?: ReadonlyArray<{ ID: string; TermNumber?: number | null }>,
 ): Promise<{
     Entries: mjBizAppsAccountingJournalEntryEntity[];
     TermLookup: SubscriptionTermLookup;
     TermIDs: string[];
+    CanRead: boolean;
 }> {
     const rv = RunView.FromMetadataProvider(provider);
     const user = provider.CurrentUser;
-    const termsRes = await rv.RunView<{ ID: string; TermNumber?: number }>({
-        EntityName: MJO_ENTITIES.SubscriptionTerm,
-        ExtraFilter: `SubscriptionID = '${record.ID}'`,
-        OrderBy: 'TermNumber ASC',
-        Fields: ['ID', 'TermNumber'],
-        ResultType: 'simple',
-        MaxRows: 200,
-    }, user);
-    const terms = termsRes.Success && termsRes.Results ? termsRes.Results : [];
-    const termIds = terms.map((t) => t.ID);
+    const loadedTerms = terms ?? (await loadTermKeys(rv, record.ID, user));
+    const termIds = loadedTerms.map((t) => t.ID);
     const lookup: SubscriptionTermLookup = {};
-    terms.forEach((term, index) => {
+    loadedTerms.forEach((term, index) => {
         const num = term.TermNumber ?? index + 1;
         const label = `Term ${num}`;
         lookup[term.ID.toLowerCase()] = { TermNumber: num, Label: label };
         lookup[term.ID.toUpperCase()] = { TermNumber: num, Label: label };
     });
+
+    const journalEntity = provider.Entities?.find((e) => e.Name === MJO_ACCOUNTING_ENTITIES.JournalEntry);
+    const canRead = !journalEntity || !user || journalEntity.GetUserPermisions(user).CanRead;
+    if (!canRead) {
+        return { Entries: [], TermLookup: lookup, TermIDs: termIds, CanRead: false };
+    }
 
     const targets = [...termIds, record.ID];
     if (record.OrderLineID) targets.push(record.OrderLineID);
@@ -1760,26 +1766,55 @@ export async function LoadSubscriptionRevRec(
         ExtraFilter: `LinkedRecordID IN (${quoted})`,
         OrderBy: 'EffectiveDate ASC',
         ResultType: 'entity_object',
+        IncludeRelatedRecords: ['Lines'],
         MaxRows: 500,
     }, user);
     const all = jeRes.Success && jeRes.Results ? jeRes.Results : [];
-    await Promise.all(all.map((je) => LoadJournalLines(je)));
     const recognized = FilterRecognitionEntries(all, termIds);
     return {
         Entries: recognized.length > 0 ? recognized : all,
         TermLookup: lookup,
         TermIDs: termIds,
+        CanRead: true,
     };
 }
 
-async function LoadJournalLines(entry: mjBizAppsAccountingJournalEntryEntity): Promise<void> {
-    try {
-        if (entry.Lines && typeof entry.Lines.Load === 'function') {
-            await entry.Lines.Load();
-        }
-    } catch {
-        // Waterfall still renders the header without lines.
-    }
+async function loadTermKeys(
+    rv: RunView,
+    subscriptionID: string,
+    user: UserInfo | undefined,
+): Promise<Array<{ ID: string; TermNumber?: number }>> {
+    const termsRes = await rv.RunView<{ ID: string; TermNumber?: number }>({
+        EntityName: MJO_ENTITIES.SubscriptionTerm,
+        ExtraFilter: `SubscriptionID = '${subscriptionID}'`,
+        OrderBy: 'TermNumber ASC',
+        Fields: ['ID', 'TermNumber'],
+        ResultType: 'simple',
+        MaxRows: 200,
+    }, user);
+    return termsRes.Success && termsRes.Results ? termsRes.Results : [];
+}
+
+/**
+ * The subscription type's renewal lead days — the fallback the renewal engine uses when the
+ * subscription does not set its own. Null when the type has none or cannot be read.
+ */
+export async function GetSubscriptionTypeRenewalLeadDays(
+    subscriptionTypeID: string,
+    user?: UserInfo,
+): Promise<number | null> {
+    if (!UUID_PATTERN.test(subscriptionTypeID)) return null;
+    const result = await new RunView().RunView<{ RenewalLeadDays: number | null }>(
+        {
+            EntityName: MJO_ENTITIES.SubscriptionType,
+            ExtraFilter: `ID = '${subscriptionTypeID}'`,
+            Fields: ['ID', 'RenewalLeadDays'],
+            ResultType: 'simple',
+            MaxRows: 1,
+        },
+        user ?? currentUser(),
+    );
+    return result.Success ? (result.Results?.[0]?.RenewalLeadDays ?? null) : null;
 }
 
 function FilterRecognitionEntries(
