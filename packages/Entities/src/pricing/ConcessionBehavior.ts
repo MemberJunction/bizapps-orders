@@ -13,6 +13,11 @@
  *   Duration  a term extended at no charge          term amount × added days ÷ term days
  *   Seats     quantity added at no charge           unit price × added quantity
  *
+ * TERMS ARE THE EXCEPTION. A change to a booked order's payment terms moves when the cash arrives, not
+ * how much, so it has no currency figure: its value is the change in days to payment, and it carries no
+ * SalesAuthority limit. It always goes to approval (`ConcessionAlwaysEscalates`), whichever way the days
+ * move, and the requester cannot decide it.
+ *
  * AUTHORITY. A percentage cap still applies to the forms that are price reductions, as it always
  * has. The two non-percentage limits apply to every form, and for the forms a percentage cannot
  * express at all — Duration and Seats — an unset limit is NO authority rather than an unlimited
@@ -36,7 +41,7 @@
 import { Money } from './PricingBehavior.js';
 
 /** How the value was given. Mirrors `CK_OrderConcession_DeliveryForm`. */
-export type ConcessionDeliveryForm = 'Price' | 'Duration' | 'Scope' | 'Seats';
+export type ConcessionDeliveryForm = 'Price' | 'Duration' | 'Scope' | 'Seats' | 'Terms';
 
 /** Why it was given. Mirrors `CK_OrderConcession_ReasonCategory`. */
 export type ConcessionReasonCategory = 'Retention' | 'Referral' | 'Other';
@@ -130,6 +135,22 @@ export function ConcessionShare(totalConcessionValue: number, orderNetTotal: num
     const net = Number(orderNetTotal);
     if (!(net > 0)) return null;
     return Math.max(0, Number(totalConcessionValue)) / net;
+}
+
+/**
+ * Days to payment a change of terms moves by: positive when the customer pays later, negative when sooner.
+ * Terms with no `NetDays`, or no terms at all, are due on receipt.
+ */
+export function PaymentTermsDaysChange(priorNetDays: number | null, newNetDays: number | null): number {
+    return Math.round(Number(newNetDays ?? 0)) - Math.round(Number(priorNetDays ?? 0));
+}
+
+/**
+ * Forms that go to approval whatever the requester's authority, and that the requester cannot decide
+ * even when they hold the approving role.
+ */
+export function ConcessionAlwaysEscalates(form: ConcessionDeliveryForm): boolean {
+    return form === 'Terms';
 }
 
 /** One figure for a concession, whatever form it was delivered in. */

@@ -17,6 +17,11 @@
  * the approval's own transaction by ./TermExtension.ts: the term's end, the recognition schedule, access and an
  * acknowledgment task for accounting. If the extension cannot be applied, the approval does not happen.
  *
+ * AN APPROVED TERMS CONCESSION CHANGES A CONFIRMED ORDER'S PAYMENT TERMS (#309). It records the prior and new
+ * terms, and its value is the change in days to payment rather than a currency figure. It always goes to
+ * approval, whatever the requester's authority, and the requester cannot decide it even when they hold the
+ * approving role. ./PaymentTermsChange.ts applies it in the approval's own transaction.
+ *
  * ITS APPROVERS ARE TOLD (golive #274). A Pending concession raises its own approval task in the tasks
  * app, assigned to the rule's role holders, in the same transaction as the row. Deciding it on this record,
  * or withdrawing it, closes that task.
@@ -31,6 +36,7 @@
  *   READS:  ./ConcessionGate.ts (authority, rule, line price) · Subscription Terms · Order Lines
  *   TASKS:  ./ConcessionApprovalTask.ts (raise, close) · ./ConcessionApprovalListener.ts (decide from task)
  *   APPLY:  ./TermExtension.ts (a Duration concession reaching Approved)
+ *           ./PaymentTermsChange.ts (a Terms concession reaching Approved)
  *   GATE:   OrderEntityServer (confirm) and the send-document action refuse while one is Pending
  */
 import {
@@ -45,9 +51,10 @@ import {
     type IMetadataProvider,
     type UserInfo,
 } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
     AssessConcession,
+    ConcessionAlwaysEscalates,
     ConcessionShare,
     ConcessionValue,
     InclusiveDays,
@@ -58,6 +65,7 @@ import {
     type ConcessionValuation,
 } from '@mj-biz-apps/orders-entities';
 import {
+    ActiveRoleHolderIDs,
     CloseConcessionTasks,
     ConcessionSummary,
     RouteConcessionToApproval,
@@ -72,6 +80,7 @@ import {
     OrderNetTotal,
 } from './ConcessionGate.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { ApplyTermsChange, CheckTermsChange } from './PaymentTermsChange.js';
 import { RequireUUID } from './sql-guards.js';
 import { ApplyTermExtension, CheckTermExtension, type ApprovedDurationConcession } from './TermExtension.js';
 
@@ -89,6 +98,8 @@ const AUTHORED_FIELDS = [
     'Reason',
     'AddedDays',
     'AddedQuantity',
+    'PriorPaymentTermsTypeID',
+    'NewPaymentTermsTypeID',
     'ComputedValue',
     'OrderNetTotal',
     'CumulativeShare',
@@ -143,13 +154,26 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         // transaction as the approval, so a concession is never Approved on a term it did not extend.
         const deciding = !recording && this.GetFieldByName('Status')?.Dirty === true;
         const extending = this.DeliveryForm === 'Duration' && this.Status === 'Approved' && (recording || deciding);
+        // An approved Terms concession changes the order's payment terms the same way (#309). It is never
+        // Approved on save, so only a decision applies it.
+        const changingTerms = this.DeliveryForm === 'Terms' && this.Status === 'Approved' && deciding;
         // A decision made through the task leaves the task to the tasks app, which closes it itself.
         const closing =
             deciding && !this.DecidedThroughTask && (this.Status === 'Approved' || this.Status === 'Rejected') ? this.Status : null;
-        if (extending || closing) {
+        if (extending || changingTerms || closing) {
             return this.withApprovalTask(recording ? 'create' : 'update', () => super.Save(options), async (ctx) => {
                 if (closing) await CloseConcessionTasks(this.ID, this.OrderHeaderID, closing, ctx);
                 if (extending) await ApplyTermExtension(this.asApprovedExtension(), ctx);
+                if (changingTerms) {
+                    await ApplyTermsChange(
+                        {
+                            OrderHeaderID: this.OrderHeaderID,
+                            PriorPaymentTermsTypeID: this.PriorPaymentTermsTypeID,
+                            NewPaymentTermsTypeID: this.NewPaymentTermsTypeID!,
+                        },
+                        ctx,
+                    );
+                }
             });
         }
         return super.Save(options);
@@ -276,6 +300,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.DecidedAt = null;
         this.approvingRole = null;
 
+        if (ConcessionAlwaysEscalates(this.DeliveryForm)) return this.escalate(user);
+
         const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
         const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.termDateChangeDays, share);
         if (assessment.WithinAuthority && authority) {
@@ -309,6 +335,37 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return null;
     }
 
+    /**
+     * Route a form that always needs approval to the ConcessionLimit rule's role, whatever the requester's
+     * authority. The requester cannot decide it, so someone else must hold the role.
+     */
+    private async escalate(user: UserInfo): Promise<string | null> {
+        const rule = await FindConcessionLimitRule(this.provider(), user);
+        if (!rule?.ApprovalRequiredRoleID) {
+            return (
+                `A ${this.DeliveryForm} concession always needs approval, and no active SalesRule of type ` +
+                `'ConcessionLimit' names an approving role, so no one could approve it. Configure a ConcessionLimit ` +
+                `rule with an ApprovalRequiredRoleID.`
+            );
+        }
+        const holders = await ActiveRoleHolderIDs(rule.ApprovalRequiredRoleID, { Provider: this.provider(), User: user });
+        if (!holders.some((id) => !UUIDsEqual(id, user.ID))) {
+            return (
+                `A ${this.DeliveryForm} concession cannot be decided by the person who asked for it, and no other active ` +
+                `user holds the role the ConcessionLimit rule names. Assign that role to another approver.`
+            );
+        }
+        this.SalesRuleID = rule.ID;
+        this.Status = 'Pending';
+        this.approvingRole = rule.ApprovalRequiredRoleID;
+        this.approvalSummary = ConcessionSummary({
+            DeliveryForm: this.DeliveryForm,
+            ComputedValue: Number(this.ComputedValue ?? 0),
+            AddedDays: this.AddedDays,
+        });
+        return null;
+    }
+
     /** Value the concession from its own line or term, and stamp the order it belongs to. */
     private async valueByForm(user: UserInfo): Promise<ConcessionValuation | string> {
         switch (this.DeliveryForm) {
@@ -319,6 +376,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
                 return this.valueLinePrice(user);
             case 'Seats':
                 return this.valueSeats(user);
+            case 'Terms':
+                return this.valueTerms(user);
             default:
                 return `'${String(this.DeliveryForm)}' is not a concession form.`;
         }
@@ -388,6 +447,24 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return ConcessionValue({ Form: 'Seats', UnitPrice: Number(line.UnitPrice), AddedQuantity: added });
     }
 
+    /** A change of payment terms is worth the change in days to payment, held in `AddedDays`; it has no currency value. */
+    private async valueTerms(user: UserInfo): Promise<ConcessionValuation | string> {
+        if (!this.OrderHeaderID) return 'A Terms concession must name the order whose payment terms it changes.';
+        if (!this.NewPaymentTermsTypeID) return 'A Terms concession must name the new payment terms.';
+        const checked = await CheckTermsChange(
+            { OrderHeaderID: this.OrderHeaderID, NewPaymentTermsTypeID: this.NewPaymentTermsTypeID },
+            { Provider: this.provider(), User: user },
+        );
+        if (typeof checked === 'string') return checked;
+
+        this.OrderLineID = null;
+        this.SubscriptionTermID = null;
+        this.AddedQuantity = null;
+        this.PriorPaymentTermsTypeID = checked.PriorPaymentTermsTypeID;
+        this.AddedDays = checked.DaysChange;
+        return { Value: 0, Percent: null };
+    }
+
     private async requireLine(user: UserInfo): Promise<LineRow | string> {
         if (!this.OrderLineID) return `A ${this.DeliveryForm} concession must name the order line it applies to.`;
         const line = await this.loadLine(this.OrderLineID, user);
@@ -419,6 +496,9 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             return 'A Pending concession can only be Approved or Rejected.';
         }
         if (!user?.ID) return 'A decision must be attributable to a user, and no user was supplied.';
+        if (ConcessionAlwaysEscalates(this.DeliveryForm) && UUIDsEqual(user.ID, this.RequestedByUserID)) {
+            return `A ${this.DeliveryForm} concession cannot be decided by the person who asked for it.`;
+        }
 
         const roleID = await this.ApprovingRoleID(user);
         if (!roleID) {

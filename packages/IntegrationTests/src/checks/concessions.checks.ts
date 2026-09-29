@@ -28,6 +28,14 @@
  *   CS19      a decision the concession refuses puts it back in front of its approvers on a fresh task
  *   CS20      withdrawing a concession cancels its task; deciding one on its record completes its task
  *
+ * A confirmed order's payment terms change only through a Terms concession (#309):
+ *
+ *   CS21      a direct edit to a confirmed order's terms is refused by the entity; its due date stays correctable
+ *   CS22      the database refuses the same edit made by direct SQL (51018)
+ *   CS23      a Terms concession is Pending even for a holder of the approving role, who cannot decide their own
+ *   CS24      approving one changes the terms and due date; the approval cannot be replayed by direct SQL
+ *   CS25      Orders.AmendArrangement previews a change of terms without writing, then records it Pending
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -43,10 +51,12 @@ import {
   type IntegrationCheckContext,
   type NamedCheck,
 } from "@memberjunction/testing-integration";
-import { BaseEntity, Metadata } from "@memberjunction/core";
+import { BaseEntity, BaseRemotableOperation, Metadata } from "@memberjunction/core";
+import { MJGlobal } from "@memberjunction/global";
 import { FindUnapprovedConcessions, ORDERS_SETTING, OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
 import type {
   mjBizAppsOrdersOrderConcessionEntity,
+  mjBizAppsOrdersOrderHeaderEntity,
   mjBizAppsOrdersOrderLineEntity,
   mjBizAppsOrdersSalesRuleEntity,
   mjBizAppsOrdersSubscriptionTermEntity,
@@ -66,6 +76,7 @@ import {
 } from "../fixture.js";
 import {
   ORDER_CONCESSION_ENTITY,
+  ORDER_HEADER_ENTITY,
   ORDER_LINE_ENTITY,
   SALES_AUTHORITY_ENTITY,
   SALES_RULE_ENTITY,
@@ -272,6 +283,83 @@ async function recordConcession(
   if (input.AddedQuantity != null) entity.AddedQuantity = input.AddedQuantity;
   const saved = await entity.Save();
   return { Saved: saved, Message: entity.LatestResult?.CompleteMessage ?? "", Entity: entity };
+}
+
+/** A seeded terms row by code. */
+async function termsOf(ctx: IntegrationCheckContext, code: string): Promise<{ ID: string; NetDays: number }> {
+  return TxOne<{ ID: string; NetDays: number }>(ctx,
+    `SELECT ID, NetDays FROM ${ORDERS_SCHEMA}.PaymentTermsType WHERE Code = '${code}'`);
+}
+
+/** Confirm a one-line order on Net30, dated 2026-07-01; returns its ID. */
+async function bookOnNet30(ctx: IntegrationCheckContext): Promise<string> {
+  const f = Fx();
+  const result = await ConfirmOrder(ctx.User, {
+    CompanyID: f.CoA.ID,
+    BillToOrganizationID: f.Customers.OrganizationID,
+    OrderDate: new Date("2026-07-01T00:00:00Z"),
+    PaymentTermsTypeID: (await termsOf(ctx, "Net30")).ID,
+    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 300 }],
+  });
+  Assert(result.Saved, `the order did not confirm: ${result.Message}`);
+  return result.Order.ID as string;
+}
+
+const storedTerms = (ctx: IntegrationCheckContext, orderID: string) =>
+  TxOne<{ PaymentTermsTypeID: string | null; DueDate: string | null }>(ctx,
+    `SELECT PaymentTermsTypeID, CONVERT(varchar(10), DueDate, 23) AS DueDate
+       FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`);
+
+/** A role this user holds that some other active user holds too, so someone else can decide what this user asks for. */
+async function roleSharedWithAnother(ctx: IntegrationCheckContext): Promise<string> {
+  const roleID = await roleTheUserHolds(ctx);
+  const others = await TxQuery<{ UserID: string }>(ctx,
+    `SELECT TOP 1 ur.UserID FROM __mj.UserRole ur JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1
+      WHERE ur.RoleID = '${roleID}' AND ur.UserID <> '${ctx.User.ID}'`);
+  let otherID = others[0]?.UserID;
+  if (!otherID) {
+    otherID = (await TxOne<{ ID: string }>(ctx,
+      `SELECT TOP 1 ID FROM __mj.[User] WHERE IsActive = 1 AND ID <> '${ctx.User.ID}'`)).ID;
+    await createViaEntity(ctx, "MJ: User Roles", { UserID: otherID, RoleID: roleID });
+  }
+  // The concession's approval task is assigned to its approvers' person records.
+  await personFor(ctx, otherID);
+  return roleID;
+}
+
+/** Another active user, to stand as the requester of a concession this user decides. */
+async function anotherUser(ctx: IntegrationCheckContext): Promise<string> {
+  return (await TxOne<{ ID: string }>(ctx,
+    `SELECT TOP 1 ID FROM __mj.[User] WHERE IsActive = 1 AND ID <> '${ctx.User.ID}'`)).ID;
+}
+
+/** Run a write the database must refuse, and return the refusal's message. */
+async function refusedBy(ctx: IntegrationCheckContext, sql: string): Promise<string> {
+  try {
+    await TxQuery(ctx, sql);
+  } catch (e) {
+    return (e as Error).message;
+  }
+  throw new Error(`the database accepted a write it must refuse: ${sql}`);
+}
+
+interface AmendTermsOutput {
+  Success: boolean;
+  Message?: string;
+  DaysChange?: number;
+  NewDueDate?: string | null;
+  CurrentDueDate?: string | null;
+  OrderConcessionID?: string;
+  Status?: string;
+}
+
+async function amendTerms(ctx: IntegrationCheckContext, input: Record<string, unknown>): Promise<AmendTermsOutput> {
+  const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<Record<string, unknown>, AmendTermsOutput>>(
+    BaseRemotableOperation, "Orders.AmendArrangement");
+  Assert(op != null, "'Orders.AmendArrangement' is not registered");
+  const result = await op!.Execute(input, { provider: ctx.Provider, user: ctx.User });
+  Assert(result.Success, `Orders.AmendArrangement did not execute: ${result.ErrorMessage ?? result.ResultCode ?? "unknown"}`);
+  return result.Output as AmendTermsOutput;
 }
 
 export const ConcessionChecks: NamedCheck[] = [
@@ -838,6 +926,145 @@ export const ConcessionChecks: NamedCheck[] = [
         const completed = await TxOne<{ Status: string }>(ctx,
           `SELECT Status FROM __mj_BizAppsTasks.Task WHERE ID = '${decidedTask.Task.ID}'`);
         AssertEqual(completed.Status, "Completed", "approved on its record, so its task is complete");
+      }),
+  },
+  {
+    Id: "concessions.CS21",
+    Name: "CS21: a confirmed order's payment terms are not edited directly; its due date is",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const orderID = await bookOnNet30(ctx);
+        const order = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
+        Assert(await order.Load(orderID), "the order did not load");
+        order.PaymentTermsTypeID = (await termsOf(ctx, "Net60")).ID;
+        Assert(!(await order.Save()), "a direct change to a confirmed order's terms must be refused");
+        Assert(/Orders\.AmendArrangement/.test(order.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should point at the amendment, got: ${order.LatestResult?.CompleteMessage}`);
+
+        const fresh = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
+        Assert(await fresh.Load(orderID), "the order did not reload");
+        fresh.DueDate = new Date("2026-08-14T00:00:00Z");
+        Assert(await fresh.Save(), `a due-date correction needs no approval: ${fresh.LatestResult?.CompleteMessage}`);
+        AssertEqual((await storedTerms(ctx, orderID)).DueDate, "2026-08-14", "the corrected date is stored");
+      }),
+  },
+  {
+    Id: "concessions.CS22",
+    Name: "CS22: the database refuses a direct change to a confirmed order's payment terms (51018)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // One guard per check: the trigger's refusal dooms the enclosing transaction.
+        const orderID = await bookOnNet30(ctx);
+        const net60 = await termsOf(ctx, "Net60");
+        const refusal = await refusedBy(ctx,
+          `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET PaymentTermsTypeID = '${net60.ID}' WHERE ID = '${orderID}'`);
+        Assert(/approved Terms concession/.test(refusal), `refused by 51018: ${refusal}`);
+      }),
+  },
+  {
+    Id: "concessions.CS23",
+    Name: "CS23: a Terms concession waits for someone other than the requester",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const orderID = await bookOnNet30(ctx);
+        await grantAuthority(ctx, { maxPct: 1, maxValue: 1_000_000, maxDays: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleSharedWithAnother(ctx));
+
+        const entity = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
+        entity.NewRecord();
+        entity.DeliveryForm = "Terms";
+        entity.OrderHeaderID = orderID;
+        entity.NewPaymentTermsTypeID = (await termsOf(ctx, "Net60")).ID;
+        entity.ReasonCategory = "Retention";
+        entity.Reason = "keep the account";
+        Assert(await entity.Save(), `recording failed: ${entity.LatestResult?.CompleteMessage}`);
+        AssertEqual(entity.Status, "Pending", "within every limit, and holding the role, the requester still waits");
+        AssertEqual(Number(entity.AddedDays), 30, "its value is the change in days to payment");
+        AssertEqual(Number(entity.ComputedValue), 0, "with no currency value");
+
+        const [task] = await approvalTasksOf(ctx, entity.ID);
+        Assert(task != null, "the concession raised its approval task");
+        Assert(task.Assignees.length > 0, "the task is assigned to someone");
+        const requesterPersons = await TxQuery<{ ID: string }>(ctx,
+          `SELECT ID FROM __mj_BizAppsCommon.Person WHERE LinkedUserID = '${ctx.User.ID}'`);
+        Assert(!task.Assignees.some((a) => requesterPersons.some((p) => sameID(p.ID, a.AssigneeRecordID))),
+          "but not to the requester");
+
+        entity.Status = "Approved";
+        Assert(!(await entity.Save()), "the requester must not approve their own change of terms");
+        Assert(/person who asked for it/.test(entity.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should say why, got: ${entity.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS24",
+    Name: "CS24: approving a Terms concession changes the terms and due date, once",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const orderID = await bookOnNet30(ctx);
+        const net30 = await termsOf(ctx, "Net30");
+        const net60 = await termsOf(ctx, "Net60");
+        const ruleID = await addRule(ctx, "ConcessionLimit", await roleTheUserHolds(ctx));
+
+        // Recorded by someone else, as the harness runs as one user: this user is the approver.
+        const requester = await anotherUser(ctx);
+        const row = await TxOne<{ ID: string }>(ctx,
+          `DECLARE @id TABLE (ID UNIQUEIDENTIFIER);
+           INSERT INTO ${ORDERS_SCHEMA}.OrderConcession
+             (OrderHeaderID, DeliveryForm, ReasonCategory, Reason, AddedDays, ComputedValue, Status,
+              RequestedByUserID, SalesRuleID, PriorPaymentTermsTypeID, NewPaymentTermsTypeID)
+           OUTPUT inserted.ID INTO @id
+           VALUES ('${orderID}', 'Terms', 'Retention', 'keep the account', ${net60.NetDays - net30.NetDays}, 0, 'Pending',
+                   '${requester}', '${ruleID}', '${net30.ID}', '${net60.ID}');
+           SELECT ID FROM @id;`);
+
+        const entity = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
+        Assert(await entity.Load(row.ID), "the concession did not load");
+        entity.Status = "Approved";
+        entity.DecisionNotes = "cash-flow relief approved";
+        Assert(await entity.Save(), `the approval failed: ${entity.LatestResult?.CompleteMessage}`);
+
+        const stored = await storedTerms(ctx, orderID);
+        AssertEqual(String(stored.PaymentTermsTypeID).toLowerCase(), net60.ID.toLowerCase(), "the order is on the new terms");
+        AssertEqual(stored.DueDate, "2026-08-30", "due on the order date plus the new terms' days");
+
+        const refusal = await refusedBy(ctx,
+          `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET PaymentTermsTypeID = '${net30.ID}' WHERE ID = '${orderID}'`);
+        Assert(/approved Terms concession/.test(refusal), `an applied approval does not admit another change: ${refusal}`);
+      }),
+  },
+  {
+    Id: "concessions.CS25",
+    Name: "CS25: Orders.AmendArrangement previews a change of terms, then records it Pending",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const orderID = await bookOnNet30(ctx);
+        const net60 = await termsOf(ctx, "Net60");
+        await addRule(ctx, "ConcessionLimit", await roleSharedWithAnother(ctx));
+        const input = { OrderHeaderID: orderID, NewPaymentTermsTypeID: net60.ID, ReasonCategory: "Other", Reason: "customer request" };
+
+        const preview = await amendTerms(ctx, { ...input, Preview: true });
+        Assert(preview.Success, `the preview failed: ${preview.Message}`);
+        AssertEqual(preview.DaysChange, 30, "thirty days later");
+        AssertEqual(preview.NewDueDate, "2026-08-30", "and the due date it would move to");
+        const none = await TxQuery<{ ID: string }>(ctx,
+          `SELECT ID FROM ${ORDERS_SCHEMA}.OrderConcession WHERE OrderHeaderID = '${orderID}'`);
+        AssertEqual(none.length, 0, "a preview writes nothing");
+
+        const recorded = await amendTerms(ctx, input);
+        Assert(recorded.Success, `recording failed: ${recorded.Message}`);
+        AssertEqual(recorded.Status, "Pending", "it waits for approval");
+        const stored = await storedTerms(ctx, orderID);
+        AssertEqual(String(stored.PaymentTermsTypeID).toLowerCase(), (await termsOf(ctx, "Net30")).ID.toLowerCase(),
+          "and the order keeps its terms until then");
+
+        const second = await amendTerms(ctx, input);
+        Assert(!second.Success && /awaiting approval/.test(second.Message ?? ""), `a second change must wait: ${second.Message}`);
       }),
   },
 ];

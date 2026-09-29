@@ -89,6 +89,7 @@ import {
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
+import { PaymentTermsChangeGranted } from './PaymentTermsSanction.js';
 import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
@@ -229,6 +230,11 @@ interface CreateJournalEntriesResult {
 
 @RegisterClass(BaseEntity, ORDER_ENTITY)
 export class OrderEntityServer extends OrderHeaderEntity {
+    /** An approved Terms concession, applied by ./PaymentTermsChange.ts, is the only change to a confirmed order's terms. */
+    protected override PaymentTermsChangeSanctioned(): boolean {
+        return PaymentTermsChangeGranted(this);
+    }
+
     /** Price decompositions produced during this save, written once the lines have IDs (D69). */
     private _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */

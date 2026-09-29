@@ -135,6 +135,11 @@ export function ConcessionSummary(facts: ConcessionSummaryFacts): string {
             const seats = Number(facts.AddedQuantity ?? 0);
             return `${seats} added seat${seats === 1 ? '' : 's'}, ${amount}`;
         }
+        case 'Terms': {
+            // Valued in days to payment, not currency: AddedDays holds the change.
+            const days = Number(facts.AddedDays ?? 0);
+            return `payment terms ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ${days < 0 ? 'sooner' : 'later'}`;
+        }
         default:
             return `${facts.DeliveryForm} concession, ${amount}`;
     }

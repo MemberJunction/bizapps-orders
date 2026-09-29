@@ -50,6 +50,11 @@ describe('ApprovalTaskName', () => {
         expect(ConcessionSummary({ DeliveryForm: 'Scope', ComputedValue: 40, Percent: 0.4 })).toBe('40% scope concession, 40.00');
         expect(ConcessionSummary({ DeliveryForm: 'Price', ComputedValue: 50, Percent: null })).toBe('price concession, 50.00');
     });
+
+    it('describes a change of payment terms in days to payment, since it has no currency value', () => {
+        expect(ConcessionSummary({ DeliveryForm: 'Terms', ComputedValue: 0, AddedDays: 30 })).toBe('payment terms 30 days later');
+        expect(ConcessionSummary({ DeliveryForm: 'Terms', ComputedValue: 0, AddedDays: -15 })).toBe('payment terms 15 days sooner');
+    });
 });
 
 describe('ApproverAssignees', () => {

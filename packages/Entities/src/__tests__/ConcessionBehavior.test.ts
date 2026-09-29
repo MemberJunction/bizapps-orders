@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
     AssessConcession,
+    ConcessionAlwaysEscalates,
     ConcessionShare,
     ConcessionValue,
     DaysAdded,
+    PaymentTermsDaysChange,
     InclusiveDays,
     TermDateChangeDays,
     type ConcessionAuthority,
@@ -157,6 +159,25 @@ describe('AssessConcession', () => {
 
     it('grants nothing to a requester with no SalesAuthority', () => {
         expect(AssessConcession('Seats', { Value: 1, Percent: null }, null, null).WithinAuthority).toBe(false);
+    });
+});
+
+describe('a change of payment terms (#309)', () => {
+    it('is worth the change in days to payment, positive when the customer pays later', () => {
+        expect(PaymentTermsDaysChange(30, 60)).toBe(30);
+        expect(PaymentTermsDaysChange(60, 30)).toBe(-30);
+    });
+
+    it('reads terms with no NetDays, or no terms at all, as due on receipt', () => {
+        expect(PaymentTermsDaysChange(null, 45)).toBe(45);
+        expect(PaymentTermsDaysChange(30, null)).toBe(-30);
+    });
+
+    it('always escalates, unlike every other form', () => {
+        expect(ConcessionAlwaysEscalates('Terms')).toBe(true);
+        for (const form of ['Price', 'Duration', 'Scope', 'Seats'] as const) {
+            expect(ConcessionAlwaysEscalates(form)).toBe(false);
+        }
     });
 });
 

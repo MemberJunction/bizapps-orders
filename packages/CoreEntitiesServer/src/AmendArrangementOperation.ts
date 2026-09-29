@@ -10,8 +10,13 @@
  *
  * A change of amount (case A) is refused until its credit-memo path exists.
  *
+ * A confirmed order's payment terms (#309): the caller names the order and its new terms instead of a term. It
+ * records a Terms `OrderConcession`, which always waits for someone other than the requester to approve it; the
+ * terms and the due date change when it is approved (see ./PaymentTermsChange.ts). `Preview` returns the change in
+ * days to payment and the new due date.
+ *
  * CONNECTS TO:
- *   PLAN:    ./TermExtension.ts (CheckTermExtension)
+ *   PLAN:    ./TermExtension.ts (CheckTermExtension) · ./PaymentTermsChange.ts (CheckTermsChange)
  *   RECORDS: OrderConcessionEntityServer (value, approval, application)
  */
 import {
@@ -30,15 +35,20 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY } from './entity-names.js';
 import { RequireOptionalDay, RequireUUID } from './sql-guards.js';
+import { CheckTermsChange } from './PaymentTermsChange.js';
 import { CheckTermExtension } from './TermExtension.js';
 
 export type AmendmentReasonCategory = 'Retention' | 'Referral' | 'Other';
 
 export interface AmendArrangementInput {
-    /** The booked term to amend. */
-    SubscriptionTermID: string;
+    /** The booked term to amend. Not given with `NewPaymentTermsTypeID`. */
+    SubscriptionTermID?: string;
     /** The term's new end date. Must be later than its current end. */
-    NewEndDate: string;
+    NewEndDate?: string;
+    /** The confirmed order whose payment terms change. Given with `NewPaymentTermsTypeID`. */
+    OrderHeaderID?: string;
+    /** The order's new payment terms. */
+    NewPaymentTermsTypeID?: string;
     /** A change of amount. Not supported yet; refused. */
     NewAmount?: number;
     ReasonCategory: AmendmentReasonCategory;
@@ -67,6 +77,13 @@ export interface AmendArrangementOutput {
     Respread?: number;
     Offsets?: AmendArrangementEntry[];
     NewSchedule?: AmendArrangementEntry[];
+    /** A change of payment terms: the terms before and after, by name. */
+    CurrentPaymentTerms?: string | null;
+    NewPaymentTerms?: string;
+    /** Days to payment the new terms move by: positive when the customer pays later. */
+    DaysChange?: number;
+    CurrentDueDate?: string | null;
+    NewDueDate?: string | null;
     /** Set when recorded: the concession, and whether it is Approved (applied) or Pending (awaiting approval). */
     OrderConcessionID?: string;
     Status?: string;
@@ -83,9 +100,20 @@ export class AmendArrangementOperation extends BaseRemotableOperation<AmendArran
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<AmendArrangementOutput> {
+        if (!REASON_CATEGORIES.includes(input.ReasonCategory)) {
+            return { Success: false, Message: `ReasonCategory must be one of ${REASON_CATEGORIES.join(', ')}.` };
+        }
+        if (!input.Reason?.trim()) return { Success: false, Message: 'An amendment must state its reason.' };
+        if (input.NewPaymentTermsTypeID != null || input.OrderHeaderID != null) {
+            if (input.SubscriptionTermID != null || input.NewEndDate != null || input.NewAmount != null) {
+                return { Success: false, Message: 'A change of payment terms is amended on its own, without a term, end date or amount.' };
+            }
+            return this.amendPaymentTerms(input, provider, user);
+        }
+
         let newEnd: Date | null;
         try {
-            RequireUUID(input.SubscriptionTermID, 'SubscriptionTermID');
+            RequireUUID(input.SubscriptionTermID as string, 'SubscriptionTermID');
             newEnd = AsDateValue(RequireOptionalDay(input.NewEndDate, 'NewEndDate'));
         } catch (e) {
             return { Success: false, Message: String((e as Error).message) };
@@ -94,17 +122,14 @@ export class AmendArrangementOperation extends BaseRemotableOperation<AmendArran
             return { Success: false, Message: 'Changing the amount of a booked arrangement is not supported yet.' };
         }
         if (!newEnd) return { Success: false, Message: 'NewEndDate is required.' };
-        if (!REASON_CATEGORIES.includes(input.ReasonCategory)) {
-            return { Success: false, Message: `ReasonCategory must be one of ${REASON_CATEGORIES.join(', ')}.` };
-        }
-        if (!input.Reason?.trim()) return { Success: false, Message: 'An amendment must state its reason.' };
+        const termID = input.SubscriptionTermID as string;
 
-        const current = await this.currentEnd(input.SubscriptionTermID, provider, user);
+        const current = await this.currentEnd(termID, provider, user);
         if (typeof current === 'string') return { Success: false, Message: current };
         const addedDays = Math.round((newEnd.getTime() - current.getTime()) / 86_400_000);
 
         const checked = await CheckTermExtension(
-            { SubscriptionTermID: input.SubscriptionTermID, AddedDays: addedDays, RequestedByUserID: user.ID },
+            { SubscriptionTermID: termID, AddedDays: addedDays, RequestedByUserID: user.ID },
             { Provider: provider, User: user },
         );
         if (typeof checked === 'string') return { Success: false, Message: checked };
@@ -135,7 +160,7 @@ export class AmendArrangementOperation extends BaseRemotableOperation<AmendArran
         const concession = await provider.GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, user);
         concession.NewRecord();
         concession.DeliveryForm = 'Duration';
-        concession.SubscriptionTermID = input.SubscriptionTermID;
+        concession.SubscriptionTermID = termID;
         concession.AddedDays = addedDays;
         concession.ReasonCategory = input.ReasonCategory;
         concession.Reason = input.Reason.trim();
@@ -151,6 +176,58 @@ export class AmendArrangementOperation extends BaseRemotableOperation<AmendArran
                 concession.Status === 'Approved'
                     ? `Term extended to ${summary.NewEndDate}. Accounting has been asked to confirm the re-cut.`
                     : `The extension to ${summary.NewEndDate} is awaiting approval; it takes effect when approved.`,
+        };
+    }
+
+    private async amendPaymentTerms(
+        input: AmendArrangementInput,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<AmendArrangementOutput> {
+        let checked: Awaited<ReturnType<typeof CheckTermsChange>>;
+        try {
+            checked = await CheckTermsChange(
+                {
+                    OrderHeaderID: RequireUUID(input.OrderHeaderID as string, 'OrderHeaderID'),
+                    NewPaymentTermsTypeID: RequireUUID(input.NewPaymentTermsTypeID as string, 'NewPaymentTermsTypeID'),
+                },
+                { Provider: provider, User: user },
+            );
+        } catch (e) {
+            return { Success: false, Message: String((e as Error).message) };
+        }
+        if (typeof checked === 'string') return { Success: false, Message: checked };
+
+        const summary: AmendArrangementOutput = {
+            Success: true,
+            CurrentPaymentTerms: checked.PriorTermsName,
+            NewPaymentTerms: checked.NewTermsName,
+            DaysChange: checked.DaysChange,
+            CurrentDueDate: checked.CurrentDueDate,
+            NewDueDate: checked.NewDueDate,
+        };
+        if (input.Preview) {
+            return {
+                ...summary,
+                Message: `Order ${checked.OrderNumber} would move to ${checked.NewTermsName}, due ${checked.NewDueDate ?? 'on receipt'}.`,
+            };
+        }
+
+        const concession = await provider.GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, user);
+        concession.NewRecord();
+        concession.DeliveryForm = 'Terms';
+        concession.OrderHeaderID = checked.OrderHeaderID;
+        concession.NewPaymentTermsTypeID = checked.NewPaymentTermsTypeID;
+        concession.ReasonCategory = input.ReasonCategory;
+        concession.Reason = (input.Reason ?? '').trim();
+        if (!(await concession.Save())) {
+            return { Success: false, Message: concession.LatestResult?.CompleteMessage ?? 'The amendment could not be recorded.' };
+        }
+        return {
+            ...summary,
+            OrderConcessionID: concession.ID,
+            Status: concession.Status,
+            Message: `The change to ${checked.NewTermsName} is awaiting approval; it takes effect when approved.`,
         };
     }
 
