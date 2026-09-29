@@ -48,6 +48,7 @@ import {
     isCaptureRefusalRetryable,
     isTerminalCapturePrecheck,
 } from './checkoutCaptureRetry.js';
+import { DescribeCheckoutSnapshot, SendOrderDescriptionToGateway } from './IntentDescription.js';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
@@ -1241,6 +1242,9 @@ export class CheckoutSessionService {
             return failed('No metadata provider is available to open a payment intent.');
         }
 
+        // Products only: the order, and so its number, does not exist until completion.
+        const description = await DescribeCheckoutSnapshot(session.MetadataJSON, mdProvider, contextUser);
+
         const openResult = await OpenPaymentIntent({
             PaymentProviderID: paymentProviderId,
             Amount: snapshotTotal,
@@ -1249,7 +1253,8 @@ export class CheckoutSessionService {
             // Stable per-session idempotency key: reopening for the same session+amount
             // returns the SAME gateway intent instead of minting a fresh one per retry.
             IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}`,
-            Metadata: { CheckoutSessionID: sessionID }
+            Metadata: { CheckoutSessionID: sessionID },
+            Description: description
         }, mdProvider, contextUser);
 
         if (!openResult.Success || !openResult.PaymentIntentID) {
@@ -1834,6 +1839,11 @@ export class CheckoutSessionService {
 
         if (!intent.OrderHeaderID) {
             intent.OrderHeaderID = order.ID;
+            // Second step of the gateway description: the intent was opened before the order existed.
+            const mdForGateway = Metadata.Provider as IMetadataProvider | undefined;
+            if (mdForGateway) {
+                await SendOrderDescriptionToGateway(intent, order.ID, mdForGateway, contextUser);
+            }
         }
         if (!intent.BillToPersonID && order.BillToPersonID) {
             intent.BillToPersonID = order.BillToPersonID;

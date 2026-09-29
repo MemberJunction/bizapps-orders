@@ -274,6 +274,16 @@ vi.mock('../identityClaimContracts.js', async (importOriginal) => ({
     }
 }));
 
+const describeMocks = vi.hoisted(() => ({
+    mockDescribeCheckoutSnapshot: vi.fn(),
+    mockSendOrderDescription: vi.fn(),
+}));
+
+vi.mock('../IntentDescription.js', () => ({
+    DescribeCheckoutSnapshot: (...args: unknown[]) => describeMocks.mockDescribeCheckoutSnapshot(...args),
+    SendOrderDescriptionToGateway: (...args: unknown[]) => describeMocks.mockSendOrderDescription(...args),
+}));
+
 vi.mock('../PaymentIntentService.js', () => ({
     OpenPaymentIntent: (request: unknown, provider: unknown, user: unknown) => mocks.mockOpenPaymentIntent(request, provider, user)
 }));
@@ -445,6 +455,8 @@ describe('CheckoutSessionService', () => {
         mocks.mockSessionSave.mockResolvedValue(true);
         mocks.mockClaimCreate.mockResolvedValue({ ID: 'claim-1' });
         mocks.mockLoadOrdersEngine.mockResolvedValue(undefined);
+        describeMocks.mockDescribeCheckoutSnapshot.mockResolvedValue(null);
+        describeMocks.mockSendOrderDescription.mockResolvedValue(undefined);
         mocks.mockProductBySKU.mockImplementation((sku: string | null | undefined) => {
             const wanted = sku?.trim().toLowerCase();
             if (wanted === 'conf-2027') return { ID: 'prod-1', SKU: 'CONF-2027' };
@@ -877,6 +889,17 @@ describe('CheckoutSessionService', () => {
             expect(request.Amount).toBe(100);
             expect(request.PaymentProviderID).toBe('pp-1');
         });
+
+        it('describes the charge from the snapshot, since the order does not exist yet (#327)', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100 });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', currency: 'USD' });
+            describeMocks.mockDescribeCheckoutSnapshot.mockResolvedValue('Annual Membership +1 more');
+
+            await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(describeMocks.mockDescribeCheckoutSnapshot.mock.calls[0][0]).toBe(mocks.mockSessionInstance.MetadataJSON);
+            const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as { Description?: string | null };
+            expect(request.Description).toBe('Annual Membership +1 more');
+        });
     });
 
     describe('CompleteCheckout', () => {
@@ -977,6 +1000,31 @@ describe('CheckoutSessionService', () => {
             expect(captureInput.Allocations).toEqual([{ OrderHeaderID: 'order-999', Amount: 100 }]);
             expect(captureInput.PaymentDetail).toEqual({ PaymentProviderID: 'pp-1' });
             expect(mocks.mockPaymentIntentInstance.OrderHeaderID).toBe('order-999');
+            // Second step of the gateway description (#327): the order number exists only now.
+            expect(describeMocks.mockSendOrderDescription).toHaveBeenCalledTimes(1);
+            expect(describeMocks.mockSendOrderDescription.mock.calls[0][0]).toBe(mocks.mockPaymentIntentInstance);
+            expect(describeMocks.mockSendOrderDescription.mock.calls[0][1]).toBe('order-999');
+        });
+
+        it('does not resend the gateway description for an intent already stamped with its order (#327)', async () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.mockPaymentIntentInstance.OrderHeaderID = 'order-999';
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = 100;
+                    line.LineTotalGross = 100 * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+            expect(describeMocks.mockSendOrderDescription).not.toHaveBeenCalled();
         });
 
         it('still confirms the order when CapturePayment fails after commit', async () => {

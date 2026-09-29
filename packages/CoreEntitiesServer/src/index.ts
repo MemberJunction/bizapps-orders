@@ -438,6 +438,8 @@ export type {
     RetrieveIntentResult,
     RefundRequest,
     RefundResult,
+    UpdateIntentRequest,
+    UpdateIntentResult,
     WebhookEvent,
 } from './BasePaymentProvider.js';
 
