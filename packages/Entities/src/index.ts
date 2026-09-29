@@ -123,6 +123,7 @@ export * from './overdue';
 export * from './configuration-types';
 export * from './checkout-questions';
 export * from './checkout-attribution';
+export * from './checkout-choices';
 export * from './base-entity-augmentation';
 
 // Pure decisions for money arriving on an external rail (Bill.com) — read by Orders.PollExternalPayments.

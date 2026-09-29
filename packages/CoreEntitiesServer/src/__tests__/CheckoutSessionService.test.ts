@@ -150,6 +150,14 @@ const mocks = vi.hoisted(() => {
             EnsureEntity: vi.fn().mockImplementation(() => Promise.resolve(this.extensionInstance))
         };
         EnsureISAChild = vi.fn().mockImplementation(() => Promise.resolve(this.extensionInstance));
+        Choices = {
+            Items: [] as Array<{ GroupKey?: string; GroupLabel?: string; OptionValue?: string; OptionLabel?: string }>,
+            Create: vi.fn().mockImplementation(() => {
+                const row = {};
+                this.Choices.Items.push(row);
+                return Promise.resolve(row);
+            })
+        };
     }
 
     class MockOrderHeader {
@@ -1393,6 +1401,136 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(true);
             expect(answersAtConfirm).toEqual([
                 { QuestionKey: 'source', QuestionLabel: 'How did you hear about us?', Answer: 'Other', OtherText: 'A podcast' },
+            ]);
+        });
+    });
+
+    describe('checkout choice groups (#291)', () => {
+        const DEPARTMENT_GROUP = {
+            key: 'department',
+            label: 'Choose your departments',
+            options: [
+                { value: 'marketing', label: 'Marketing' },
+                { value: 'membership', label: 'Membership' },
+                { value: 'finance', label: 'Finance' },
+            ],
+            min: 2,
+            max: 2,
+        };
+        const withGroups = (extra: Record<string, unknown> = {}) => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', choiceGroups: [DEPARTMENT_GROUP], ...extra });
+        };
+        const storedChoices = (choices?: Record<string, string[]>) =>
+            JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }], TotalGross: 100, Choices: choices });
+        const draft = (choices?: unknown, lines = [{ ProductID: 'prod-1', Quantity: 1 }]) =>
+            CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', lines, undefined, { Choices: choices as Record<string, string[]> });
+
+        it('ships the choice groups to the client with the configuration', async () => {
+            withGroups();
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            expect(res.Configuration?.choiceGroups).toEqual([DEPARTMENT_GROUP]);
+        });
+
+        it('stores a draft with fewer picks than the minimum, so the checkout can be priced first', async () => {
+            withGroups();
+            const res = await draft({ department: ['finance'] });
+            expect(res.Success).toBe(true);
+            expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Choices).toEqual({ department: ['finance'] });
+        });
+
+        it('stores the picks in option order, with a repeat counted once', async () => {
+            withGroups();
+            const res = await draft({ department: ['finance', 'marketing', 'finance'] });
+            expect(res.Success).toBe(true);
+            expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Choices).toEqual({ department: ['marketing', 'finance'] });
+        });
+
+        it('refuses a draft with more picks than the maximum', async () => {
+            withGroups();
+            const res = await draft({ department: ['marketing', 'membership', 'finance'] });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('Please choose exactly 2 for "Choose your departments".');
+            expect(mocks.mockSessionSave).not.toHaveBeenCalled();
+        });
+
+        it('refuses a draft picking an option the group does not offer', async () => {
+            withGroups();
+            const res = await draft({ department: ['marketing', 'legal'] });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('"legal" is not one of the options');
+        });
+
+        it('refuses a draft picking from a group the widget does not offer', async () => {
+            withGroups();
+            const res = await draft({ forged: ['x'] });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('does not offer');
+        });
+
+        it('refuses a draft when the choice groups are malformed', async () => {
+            withGroups({ choiceGroups: [{ ...DEPARTMENT_GROUP, max: 5 }] });
+            const res = await draft({});
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('choices are invalid');
+        });
+
+        it('refuses a draft of more than one line when the widget has choice groups', async () => {
+            withGroups();
+            const res = await draft({}, [
+                { ProductID: 'prod-1', Quantity: 1 },
+                { ProductID: 'prod-1', Quantity: 1 },
+            ]);
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('This checkout sells one item at a time.');
+        });
+
+        it('opens no payment intent until the group has its minimum', async () => {
+            withGroups({ paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.MetadataJSON = storedChoices({ department: ['finance'] });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('Please choose exactly 2 for "Choose your departments".');
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('opens the payment intent once the picks are complete', async () => {
+            withGroups({ paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.MetadataJSON = storedChoices({ department: ['marketing', 'finance'] });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOpenPaymentIntent).toHaveBeenCalled();
+        });
+
+        it('refuses completion before creating the payer when the picks are incomplete', async () => {
+            withGroups();
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = storedChoices(undefined);
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toBe('Please choose exactly 2 for "Choose your departments".');
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+        });
+
+        it('records each pick on the line, with its labels, before the order confirms', async () => {
+            withGroups();
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = storedChoices({ department: ['finance', 'marketing'] });
+            let choicesAtConfirm: unknown[] = [];
+            mocks.mockOrderInstance.Confirm.mockImplementationOnce(() => {
+                choicesAtConfirm = mocks.mockOrderInstance.Lines.Items.map((l) => [...l.Choices.Items]);
+                mocks.mockOrderInstance.Status = 'Confirmed';
+                return Promise.resolve();
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+            expect(res.Success).toBe(true);
+            expect(choicesAtConfirm).toEqual([
+                [
+                    { GroupKey: 'department', GroupLabel: 'Choose your departments', OptionValue: 'marketing', OptionLabel: 'Marketing' },
+                    { GroupKey: 'department', GroupLabel: 'Choose your departments', OptionValue: 'finance', OptionLabel: 'Finance' },
+                ],
             ]);
         });
     });

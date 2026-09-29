@@ -64,6 +64,7 @@ const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+const ORDER_LINE_CHOICE_ENTITY = 'MJ_BizApps_Orders: Order Line Choices';
 
 export interface SpawnRenewalsInput {
     /** Treat this as "today". Defaults to now. */
@@ -361,6 +362,17 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             // Attached rather than assigned — see the note in CancelSubscriptionOperation.
             order.Lines.Add(line);
 
+            // The buyer's choices carry forward (#291). A conditional entitlement is granted only on a
+            // line that carries its choice, so a renewal without them would silently drop the access
+            // the buyer chose. They ride in the line's graph and save with the draft.
+            for (const choice of await this.loadSourceChoices(provider, user, due.OrderLineID)) {
+                const row = await line.Choices.Create();
+                row.GroupKey = choice.GroupKey;
+                row.GroupLabel = choice.GroupLabel;
+                row.OptionValue = choice.OptionValue;
+                row.OptionLabel = choice.OptionLabel;
+            }
+
             // DRAFT FIRST, THEN THE SCHEDULE, THEN CONFIRM (#305). The renewal is invoiced on the day
             // this pass runs, not on its term start, so it carries a one-row schedule due today and
             // D92 books it that way: no AR at confirm, and the instalment — due on or before the
@@ -466,6 +478,27 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             user,
         );
         return result?.Results?.[0] ?? null;
+    }
+
+    /** The choices recorded on the line that bought the expiring term, in group and option order. */
+    private async loadSourceChoices(
+        provider: IMetadataProvider,
+        user: UserInfo,
+        orderLineID: string,
+    ): Promise<Array<{ GroupKey: string; GroupLabel: string; OptionValue: string; OptionLabel: string }>> {
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const result = await rv.RunView<{ GroupKey: string; GroupLabel: string; OptionValue: string; OptionLabel: string }>(
+            {
+                EntityName: ORDER_LINE_CHOICE_ENTITY,
+                ExtraFilter: `OrderLineID='${orderLineID}'`,
+                Fields: ['GroupKey', 'GroupLabel', 'OptionValue', 'OptionLabel'],
+                OrderBy: 'GroupKey, OptionValue',
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        );
+        return result?.Results ?? [];
     }
 
     private async logEvent(

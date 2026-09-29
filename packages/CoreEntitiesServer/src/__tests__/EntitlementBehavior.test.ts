@@ -24,6 +24,7 @@ import {
     ResolveGrantQuantity,
     ResolveValidityWindow,
     ShouldRevokeGrantsOnCancel,
+    TemplateAppliesToLineChoices,
     type GrantAccessFacts,
     type PolicyCategoryLevel,
     type PolicyTypeDefaults,
@@ -188,6 +189,30 @@ describe('ResolveGrantQuantity', () => {
         // A Feature or AccessLevel is not countable. Zero would read as 'granted none of it'.
         expect(ResolveGrantQuantity(null, 3, 'PerUnit')).toBeNull();
         expect(ResolveGrantQuantity(null, 3, 'Flat')).toBeNull();
+    });
+});
+
+describe('TemplateAppliesToLineChoices (#291)', () => {
+    const unconditional = { ChoiceGroupKey: null, ChoiceOptionValue: null };
+    const marketing = { ChoiceGroupKey: 'department', ChoiceOptionValue: 'marketing' };
+    const picked = [
+        { GroupKey: 'department', OptionValue: 'marketing' },
+        { GroupKey: 'department', OptionValue: 'finance' },
+    ];
+
+    it('applies an unconditional template to every line, picks or none', () => {
+        expect(TemplateAppliesToLineChoices(unconditional, [])).toBe(true);
+        expect(TemplateAppliesToLineChoices(unconditional, picked)).toBe(true);
+    });
+
+    it('applies a conditional template only when the line carries its group and option', () => {
+        expect(TemplateAppliesToLineChoices(marketing, picked)).toBe(true);
+        expect(TemplateAppliesToLineChoices({ ChoiceGroupKey: 'department', ChoiceOptionValue: 'legal' }, picked)).toBe(false);
+        expect(TemplateAppliesToLineChoices(marketing, [])).toBe(false);
+    });
+
+    it('does not match the option value under a different group', () => {
+        expect(TemplateAppliesToLineChoices(marketing, [{ GroupKey: 'track', OptionValue: 'marketing' }])).toBe(false);
     });
 });
 

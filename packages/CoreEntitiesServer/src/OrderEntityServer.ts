@@ -1401,6 +1401,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 ShipToPersonID: l.ShipToPersonID ?? null,
                 ShipToOrganizationID: l.ShipToOrganizationID ?? null,
                 RenewsSubscriptionID: l.RenewsSubscriptionID ?? null,
+                // Choices added to the line in this graph are the truth before they commit; a line
+                // holding none here is left for the engine to read.
+                Choices: l.Choices?.Count
+                    ? l.Choices.Items.map((c) => ({ GroupKey: c.GroupKey, OptionValue: c.OptionValue }))
+                    : undefined,
             })),
             subs.TermsByLine,
             provider,
