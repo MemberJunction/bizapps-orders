@@ -29,6 +29,12 @@
         "DriverClass": "OrdersCheckoutEdge",
         "RootPath": "/checkout",
         "Settings": {}
+      },
+      {
+        "Enabled": true,
+        "DriverClass": "OrdersBillComWebhook",
+        "RootPath": "/webhooks/billcom",
+        "Settings": {}
       }
     ]
   },
