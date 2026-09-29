@@ -176,6 +176,27 @@ const lineTotals = (ctx: IntegrationCheckContext, orderID: string) =>
        FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}'`,
   );
 
+/** Tax charged on an order, per jurisdiction, lowercased ID order. */
+const taxByJurisdiction = (ctx: IntegrationCheckContext, orderID: string) =>
+  TxQuery<{ J: string; Amount: number }>(
+    ctx,
+    `SELECT LOWER(CONVERT(varchar(36), c.TaxJurisdictionID)) AS J, SUM(c.Amount) AS Amount
+       FROM ${ORDERS_SCHEMA}.OrderCharge c
+       JOIN ${ORDERS_SCHEMA}.ChargeType t ON t.ID = c.ChargeTypeID
+      WHERE c.OrderHeaderID = '${orderID}' AND t.Category = 'Tax'
+      GROUP BY c.TaxJurisdictionID
+      ORDER BY 1`,
+  );
+
+/**
+ * The refund one of `units` returns for each jurisdiction: that jurisdiction's tax share, rounded to
+ * the cent half away from zero, negated. Per jurisdiction and not on the total, because each
+ * jurisdiction's refund is rounded on its own; rounding a quarter of the combined tax lands a cent
+ * off whenever two layers both end in a half cent.
+ */
+const firstShareBack = (sold: { J: string; Amount: number }[], units: number) =>
+  sold.map((r) => ({ J: r.J, Amount: -Math.round((Math.abs(Number(r.Amount)) / units) * 100) / 100 }));
+
 export const ReturnsChecks: NamedCheck[] = [
   {
     Id: "returns.RT1",
@@ -342,11 +363,19 @@ export const ReturnsChecks: NamedCheck[] = [
         const back = await lineTotals(ctx, ret.Order.ID as string);
         // A quarter of the units, so a quarter of the tax. Returning the WHOLE tax on a partial
         // return is the plausible-looking bug: it balances, and it hands back money never collected.
+        const expected = firstShareBack(await taxByJurisdiction(ctx, sale.Order.ID as string), 4);
+        const backJ = await taxByJurisdiction(ctx, ret.Order.ID as string);
+        AssertEqual(
+          JSON.stringify(backJ.map((r) => [r.J, Number(r.Amount)])),
+          JSON.stringify(expected.map((r) => [r.J, r.Amount])),
+          "one of four units returns a quarter of each jurisdiction's tax",
+        );
         AssertEqual(
           Math.round(Number(back.Tax) * 100) / 100,
-          Math.round(-Number(sold.Tax) / 4 * 100) / 100,
-          "one of four units returns a quarter of the tax",
+          Math.round(expected.reduce((t, r) => t + r.Amount, 0) * 100) / 100,
+          "and the line's tax is their sum",
         );
+        Assert(Math.abs(Number(back.Tax)) < Math.abs(Number(sold.Tax)) / 2, "a quarter, not the whole tax");
       }),
   },
   {
@@ -703,7 +732,6 @@ export const ReturnsChecks: NamedCheck[] = [
         const f = Fx();
         await grantNexus(ctx, ["CA", "CA-SANTACLARA", "MD"]);
         const sale = await sell(ctx, { price: 100, quantity: 4, addressKey: "SantaClara" });
-        const sold = await lineTotals(ctx, sale.Order.ID as string);
 
         // Maryland taxes at 6%; Santa Clara at 9.125%. Re-resolving would refund Maryland's rate.
         const ret = await returnAgainst(ctx, sale.Lines[0].ID as string, {
@@ -714,27 +742,23 @@ export const ReturnsChecks: NamedCheck[] = [
         Assert(ret.Saved, `confirm failed: ${ret.Message}`);
 
         const back = await lineTotals(ctx, ret.Order.ID as string);
-        AssertEqual(
-          Math.round(Number(back.Tax) * 100) / 100,
-          Math.round(-Number(sold.Tax) / 4 * 100) / 100,
-          "a quarter of the tax the sale collected, not a quarter of Maryland's",
-        );
-        const byJurisdiction = (orderID: string) =>
-          TxQuery<{ J: string; Amount: number }>(
-            ctx,
-            `SELECT LOWER(CONVERT(varchar(36), c.TaxJurisdictionID)) AS J, SUM(c.Amount) AS Amount
-               FROM ${ORDERS_SCHEMA}.OrderCharge c
-               JOIN ${ORDERS_SCHEMA}.ChargeType t ON t.ID = c.ChargeTypeID
-              WHERE c.OrderHeaderID = '${orderID}' AND t.Category = 'Tax'
-              GROUP BY c.TaxJurisdictionID
-              ORDER BY 1`,
-          );
-        const soldJ = await byJurisdiction(sale.Order.ID as string);
-        const backJ = await byJurisdiction(ret.Order.ID as string);
+        const soldJ = await taxByJurisdiction(ctx, sale.Order.ID as string);
+        const backJ = await taxByJurisdiction(ctx, ret.Order.ID as string);
         AssertEqual(
           backJ.map((r) => r.J).join(","),
           soldJ.map((r) => r.J).join(","),
           "the refund is recorded against the jurisdictions that collected the tax",
+        );
+        const expected = firstShareBack(soldJ, 4);
+        AssertEqual(
+          JSON.stringify(backJ.map((r) => Number(r.Amount))),
+          JSON.stringify(expected.map((r) => r.Amount)),
+          "a quarter of each jurisdiction's tax the sale collected, not a quarter of Maryland's",
+        );
+        AssertEqual(
+          Math.round(Number(back.Tax) * 100) / 100,
+          Math.round(expected.reduce((t, r) => t + r.Amount, 0) * 100) / 100,
+          "and the line's tax is their sum",
         );
       }),
   },
