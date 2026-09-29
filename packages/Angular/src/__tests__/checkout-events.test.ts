@@ -82,7 +82,7 @@ describe('CheckoutPublicHostComponent events', () => {
         const target = new EventTarget();
         host = Object.assign(target, { getAttribute: () => null });
         seen = [];
-        for (const type of ['checkout-state-change', 'checkout-complete', 'checkout-error', 'checkout-cancel', 'checkout-close']) {
+        for (const type of ['checkout-state-change', 'checkout-complete', 'checkout-error', 'checkout-cancel', 'checkout-close', 'checkout-reset-refused']) {
             host.addEventListener(type, (e) => seen.push({ type, detail: (e as CustomEvent).detail }));
         }
         responses = {
@@ -200,6 +200,82 @@ describe('CheckoutPublicHostComponent events', () => {
             seen = [];
             await c.onSubmitted(submission());
             expect(seen.map((e) => e.type)).toEqual(['checkout-state-change', 'checkout-state-change', 'checkout-complete']);
+        });
+    });
+
+    describe('embedded in another widget', () => {
+        let attrs: Record<string, string>;
+        let removed: string[];
+        let drafts: Array<Record<string, unknown>>;
+        let inits: number;
+
+        beforeEach(() => {
+            attrs = {};
+            removed = [];
+            drafts = [];
+            inits = 0;
+            host.getAttribute = (name: string) => attrs[name] ?? null;
+            vi.stubGlobal('sessionStorage', { getItem: () => null, setItem: () => undefined, removeItem: (k: string) => removed.push(k) });
+            const base = vi.mocked(fetch).getMockImplementation()!;
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockImplementation((url: string, init?: { body?: string }) => {
+                    if (url.endsWith('/draft')) drafts.push(JSON.parse(init?.body ?? '{}'));
+                    if (url.endsWith('/initialize')) inits++;
+                    return base(url, init);
+                })
+            );
+        });
+
+        it('passes the known e-mail to the form and the attribution to the draft', async () => {
+            attrs = { email: 'caller@example.com', source: 'voice_agent', 'source-ref': 'conv-9' };
+            const c = create();
+            await c.ngOnInit();
+            expect(c.prefillEmail).toBe('caller@example.com');
+            await c.onSubmitted(submission());
+            expect(drafts[0].attribution).toEqual({ source: 'voice_agent', reference: 'conv-9' });
+        });
+
+        it('sends no attribution when the host names no source', async () => {
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(drafts[0]).not.toHaveProperty('attribution');
+        });
+
+        it('resets on checkout-reset without the Cancel events', async () => {
+            responses['/draft'] = { Success: false, ErrorMessage: 'Could not price this checkout.' };
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            const before = c.formGeneration;
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            expect(c.errorMessage).toBeNull();
+            expect(c.formGeneration).toBe(before + 1);
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'CHECKOUT' } }]);
+        });
+
+        it('refuses a reset while a payment is in flight', async () => {
+            const c = create();
+            await c.ngOnInit();
+            c.processing = true;
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            expect(seen).toEqual([{ type: 'checkout-reset-refused', detail: { state: 'CHECKOUT' } }]);
+        });
+
+        it('after a completed sale, starts over with a new session', async () => {
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(c.successMessage).toBeTruthy();
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
+            expect(removed).toEqual(['mj-checkout-key:annual']);
+            expect(inits).toBe(2);
+            expect(c.successMessage).toBeNull();
+            expect(c.config).not.toBeNull();
         });
     });
 });

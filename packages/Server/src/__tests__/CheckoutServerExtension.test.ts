@@ -322,4 +322,20 @@ describe('CheckoutServerExtension', () => {
         expect(await hit('2.2.2.2')).toBe(200);
         expect(await hit('3.3.3.3')).toBe(429);
     });
+
+    it('passes the draft body attribution through to UpdateDraft', async () => {
+        const user = { ID: 'svc-1', Email: 'svc@example.com' };
+        mockGetSystemUser.mockReturnValue(user);
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({
+            Success: true, SessionID: 'sess-1', Subtotal: 0, Tax: 0, Adjustments: 0, TotalGross: 0, RequiresPayment: false, Lines: [],
+        });
+        const ext = new CheckoutServerExtension();
+        const res = mockRes();
+        const attribution = { source: 'voice_agent', reference: 'conv-9' };
+        await (ext as unknown as { handleDraft(req: Request, res: Response): Promise<void> }).handleDraft(
+            { body: { sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.com', lines: [], attribution } } as unknown as Request,
+            res as unknown as Response
+        );
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('sess-1', 'k', 'a@b.com', [], user, { Attribution: attribution });
+    });
 });

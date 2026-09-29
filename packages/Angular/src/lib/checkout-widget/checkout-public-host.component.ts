@@ -21,6 +21,8 @@ import {
     BuildCheckoutCompleteDetail,
     CHECKOUT_CANCEL_EVENT,
     CHECKOUT_CLOSE_EVENT,
+    CHECKOUT_RESET_REFUSED_EVENT,
+    CHECKOUT_RESET_REQUEST_EVENT,
     CHECKOUT_COMPLETE_EVENT,
     CHECKOUT_ERROR_EVENT,
     CHECKOUT_STATE_CHANGE_EVENT,
@@ -95,6 +97,12 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     /** Bumped by Cancel: the template re-creates the widget, which clears everything the buyer entered. */
     public formGeneration = 0;
 
+    /** From the element's attributes, for a host that embeds the checkout in its own panel. */
+    public prefillEmail: string | null = null;
+    private attributionSource: string | null = null;
+    private attributionReference: string | null = null;
+    private readonly onResetRequested = (): void => this.resetRequested();
+
     public get isFree(): boolean {
         return (this.config?.unitPrice ?? 0) <= 0;
     }
@@ -158,6 +166,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     public ngOnDestroy(): void {
         this.destroyed = true;
+        (this.hostEl?.nativeElement as HTMLElement | undefined)?.removeEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);
         try {
             this.card?.unmount?.();
         } catch {
@@ -174,6 +183,41 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         if (this.processing) {
             return;
         }
+        this.resetForm();
+        this.dispatch(CHECKOUT_CANCEL_EVENT, {});
+        this.dispatch(CHECKOUT_CLOSE_EVENT, {});
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * A reset the embedding host asked for, by dispatching `checkout-reset` on the element (a voice
+     * or chat agent closing its panel, say). Refused while a payment is in flight — resetting then
+     * would strand a charge the buyer cannot see. Unlike Cancel it sends no `checkout-cancel` or
+     * `checkout-close`: the host started it.
+     */
+    private resetRequested(): void {
+        if (this.processing) {
+            this.dispatch(CHECKOUT_RESET_REFUSED_EVENT, { state: this.state });
+            return;
+        }
+        if (this.successMessage) {
+            // The last purchase is confirmed and its session closed: the next one needs a new
+            // session, so forget this one's key and start from the beginning.
+            this.successMessage = null;
+            this.orderNumber = null;
+            this.config = null;
+            this.sessionId = '';
+            this.forgetClientKey();
+            this.resetForm();
+            void this.ngOnInit();
+            return;
+        }
+        this.resetForm();
+        this.cdr.detectChanges();
+    }
+
+    /** Back to a blank form: every field, the error banner and the card entry. The session stays open. */
+    private resetForm(): void {
         this.errorMessage = null;
         this.stripePaymentMethodId = null;
         try {
@@ -186,9 +230,6 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.isPaymentReady = !this.config?.stripePublishableKey;
         this.formGeneration++;
         this.setState('CHECKOUT');
-        this.dispatch(CHECKOUT_CANCEL_EVENT, {});
-        this.dispatch(CHECKOUT_CLOSE_EVENT, {});
-        this.cdr.detectChanges();
     }
 
     public async onSubmitted(event: CheckoutSubmissionEvent): Promise<void> {
@@ -205,6 +246,9 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 clientSessionKey: this.sessionKey,
                 email: event.email,
                 lines: [line],
+                ...(this.attributionSource
+                    ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
+                    : {}),
             });
             if (!draft?.Success) {
                 throw new Error(this.str(draft?.ErrorMessage, 'Could not price this checkout.'));
@@ -365,9 +409,23 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         if (apiRoot) {
             this.apiRoot = apiRoot.replace(/\/+$/, '');
         }
+        // For a host that embeds the checkout in its own panel: an e-mail it already knows, and
+        // where the checkout came from. The server keeps the attribution only if it reads as one.
+        this.prefillEmail = el.getAttribute('email') || el.getAttribute('data-email') || null;
+        this.attributionSource = el.getAttribute('source') || el.getAttribute('data-source') || null;
+        this.attributionReference = el.getAttribute('source-ref') || el.getAttribute('data-source-ref') || null;
+        el.addEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);
     }
 
-    private clientKey(): string {
+    private forgetClientKey(): void {
+        try {
+            sessionStorage.removeItem(`mj-checkout-key:${this.slug}`);
+        } catch {
+            /* private mode */
+        }
+    }
+
+        private clientKey(): string {
         const storageKey = `mj-checkout-key:${this.slug}`;
         try {
             const existing = sessionStorage.getItem(storageKey);

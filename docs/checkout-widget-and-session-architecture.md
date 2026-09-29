@@ -453,6 +453,7 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 | `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
 | `checkout-cancel` | the buyer pressed Cancel; the form has been reset to blank | `{}` |
 | `checkout-close` | sent with `checkout-cancel`, for a container such as a modal to close itself | `{}` |
+| `checkout-reset-refused` | a host's `checkout-reset` arrived while a payment was in flight | `{ state }` |
 
 Cancel clears every field, the error banner and the card entry; the checkout session stays open, so the buyer can start again. It is ignored while a payment is in flight.
 
@@ -462,6 +463,26 @@ No detail carries the buyer's e-mail, name or any other personal data: the event
 document.addEventListener('checkout-complete', (e) => {
     window.dataLayer?.push({ event: 'purchase', value: e.detail.amount, currency: e.detail.currency, coupon: e.detail.coupon });
 });
+```
+
+### Embedding the checkout inside another widget
+
+A host that opens the checkout inside its own panel (a chat or voice agent, say) can pass what it already knows and control the element:
+
+```html
+<mj-orders-checkout slug="annual-plan-voice" api-root="https://api.example.com/checkout"
+    email="caller@example.com" source="voice_agent" source-ref="conv-8f2c"></mj-orders-checkout>
+```
+
+- **`slug`** picks the distribution, and with it the widget and product. Give each channel its own distribution to tell sales apart by slug.
+- **`email`** fills the e-mail field while it is empty; the buyer can still change it.
+- **`source`** and **`source-ref`** say where the checkout came from. They are kept on the checkout session as `MetadataJSON.Attribution` `{ Source, Reference }`, and the session's `DraftOrderID` names the order once it confirms — so an outbound consumer handling `OrderConfirmed` can read them by order. `source` is letters, digits and `_ - . :` up to 50 characters, `source-ref` up to 200 printable characters; an attribution that cannot be read is dropped, never a reason to refuse the checkout.
+- **Reset:** dispatch `checkout-reset` on the element to return it to a blank form (no `checkout-cancel` / `checkout-close`, since the host started it). While a payment is in flight it is refused with `checkout-reset-refused` `{ state }`. After a completed sale it starts over with a new session.
+
+```javascript
+const el = document.querySelector('mj-orders-checkout');
+el.addEventListener('checkout-reset-refused', () => { /* keep the panel open */ });
+el.dispatchEvent(new CustomEvent('checkout-reset'));
 ```
 
 ### 3. Headless & Custom Frontend Integration — the anonymous checkout edge
