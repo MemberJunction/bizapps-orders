@@ -417,6 +417,85 @@ export function ReconcileGrantStatus(current: GrantStatusFacts, decided: GrantSt
     return decided;
 }
 
+/** The two exceptions to payment-gated access a person may approve (bizapps-orders#268). */
+export type AccessOverrideType = 'WaivePaymentHold' | 'DeferCutoff';
+
+/** The suspension each override type lifts. Neither lifts anything else. */
+export const ACCESS_OVERRIDE_LIFTS: Readonly<Record<AccessOverrideType, SuspensionReason>> = {
+    WaivePaymentHold: 'AwaitingPayment',
+    DeferCutoff: 'PastDue',
+};
+
+/** An approved override on the grant's order, for {@link ApplyAccessOverrides}. */
+export interface AccessOverrideFacts {
+    OverrideType: AccessOverrideType;
+    /** Last day the override holds, `YYYY-MM-DD`, inclusive. */
+    EffectiveThrough: string;
+}
+
+/**
+ * The payment rule's decision, with any approved override on the grant's order applied.
+ *
+ * An override does not change the rule; it answers Active in place of the one suspension it names,
+ * for as long as it runs. The payment rule is still asked first, so a grant whose payment arrives
+ * needs no override, and an override that has run out leaves the rule's answer standing. The caller
+ * passes only APPROVED overrides on the grant's own order — scope is decided there.
+ *
+ * @param asOfDay - `YYYY-MM-DD`; an override is in force through its `EffectiveThrough` day.
+ */
+export function ApplyAccessOverrides(
+    decided: GrantStatusDecision,
+    overrides: readonly AccessOverrideFacts[],
+    asOfDay: string,
+): GrantStatusDecision {
+    if (decided.Status !== 'Suspended' || decided.Reason == null) return decided;
+    const lifted = overrides.some((o) => ACCESS_OVERRIDE_LIFTS[o.OverrideType] === decided.Reason && o.EffectiveThrough >= asOfDay);
+    return lifted ? ACTIVE : decided;
+}
+
+/**
+ * Whether an override of this type could lift anything on an order holding these grants: some grant
+ * must follow a rule that can impose the suspension the type names. `AwaitingPayment` comes from
+ * `OnPaidInFull`, and from `OnFirstPayment` on a new purchase; `PastDue` only from `OnFirstPayment`
+ * on a renewal. See {@link DecideGrantStatus}.
+ */
+export function AccessOverrideCanApply(
+    type: AccessOverrideType,
+    grants: ReadonlyArray<{ Timing: GrantTiming; IsRenewal: boolean }>,
+): boolean {
+    return grants.some((g) =>
+        type === 'DeferCutoff'
+            ? g.Timing === 'OnFirstPayment' && g.IsRenewal
+            : g.Timing === 'OnPaidInFull' || (g.Timing === 'OnFirstPayment' && !g.IsRenewal),
+    );
+}
+
+/** Where an override's approval task has got to, for {@link ResolveAccessOverrideOutcome}. */
+export interface AccessOverrideTaskFacts {
+    TaskStatus: string;
+    /** The most recent terminal decision on the task; null when there is none. */
+    Decision: { IsApproval: boolean } | null;
+}
+
+/**
+ * The status a Requested override moves to, given its approval task — or null while the task is open.
+ *
+ *   Completed with an approving decision   → Approved
+ *   Cancelled with a rejecting decision    → Rejected
+ *   closed any other way                   → Withdrawn
+ *
+ * A closed task always closes the override, so a task closed without a decision does not leave the
+ * order blocked for a new request.
+ */
+export function ResolveAccessOverrideOutcome(facts: AccessOverrideTaskFacts): 'Approved' | 'Rejected' | 'Withdrawn' | null {
+    if (facts.TaskStatus !== 'Completed' && facts.TaskStatus !== 'Cancelled') return null;
+    if (facts.Decision) {
+        if (facts.TaskStatus === 'Completed' && facts.Decision.IsApproval) return 'Approved';
+        if (facts.TaskStatus === 'Cancelled' && !facts.Decision.IsApproval) return 'Rejected';
+    }
+    return 'Withdrawn';
+}
+
 /**
  * How much of a grant survives a partial return.
  *
