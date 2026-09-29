@@ -44,6 +44,7 @@ import {
     AssessConcession,
     ConcessionValue,
     InclusiveDays,
+    TermDateChangeDays,
     UserHoldsRole,
     mjBizAppsOrdersOrderConcessionEntity,
     type ConcessionValuation,
@@ -146,6 +147,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
     /** The ConcessionLimit rule's role, kept by `prepareNew` for routing a Pending concession. */
     private approvingRole: string | null = null;
+    /** How far this concession moves its term's dates, set when a Duration concession is valued. */
+    private termDateChangeDays: number | null = null;
 
     /**
      * Set only by `OrderEntityServer` when it deletes a removed DRAFT line's dependents. A booked order
@@ -214,6 +217,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!user?.ID) return 'A concession must be attributable to a user, and no user was supplied.';
         if (!this.Reason?.trim()) return 'A concession must state its reason.';
 
+        this.termDateChangeDays = null;
         const valued = await this.valueByForm(user);
         if (typeof valued === 'string') return valued;
 
@@ -226,7 +230,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.approvingRole = null;
 
         const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
-        const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.AddedDays);
+        const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.termDateChangeDays);
         if (assessment.WithinAuthority && authority) {
             this.AuthorizedBySalesAuthorityID = authority.ID;
             this.decide('Approved', user);
@@ -294,6 +298,10 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         this.OrderHeaderID = line.OrderHeaderID;
         this.OrderLineID = line.ID;
+        this.termDateChangeDays = TermDateChangeDays(
+            { StartDate: applicable.TermStartDate, EndDate: applicable.CurrentEndDate },
+            { StartDate: applicable.TermStartDate, EndDate: applicable.NewEndDate },
+        );
         return ConcessionValue({
             Form: 'Duration',
             TermAmount: Number(term.Amount),

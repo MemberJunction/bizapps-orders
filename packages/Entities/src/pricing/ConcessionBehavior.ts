@@ -19,6 +19,10 @@
  * one. Absence is not permission; it is the same rule `AuthorizeManualDiscount` applies to a user
  * with no `SalesAuthority` row.
  *
+ * TERM DATES. `MaxTermExtensionDays` limits any change to a term's dates, not only days added.
+ * Shortening a term or shifting it moves when its revenue is recognised as much as extending it, so a
+ * change is measured as the larger of how far its start and its end move (`TermDateChangeDays`).
+ *
  * CONNECTS TO:
  *   CALLER: ./PromotionEngine.ts (AuthorizeManualDiscount — the absolute-value trigger)
  *   CALLER: OrderConcessionEntityServer, OrderEntityServer (confirm gate) in CoreEntitiesServer
@@ -95,6 +99,22 @@ export function DaysAdded(previousEnd: Date, newEnd: Date): number {
     return Math.round((utcDay(newEnd) - utcDay(previousEnd)) / DAY_MS);
 }
 
+/** A term's start and end. */
+export interface TermDates {
+    StartDate: Date;
+    EndDate: Date;
+}
+
+/**
+ * How far a change moves a term's dates: the larger of how far its start and its end move, in whole
+ * days, in either direction. An extension, a shortening and a shift of N days each measure N.
+ */
+export function TermDateChangeDays(previous: TermDates, next: TermDates): number {
+    const start = Math.abs(utcDay(next.StartDate) - utcDay(previous.StartDate));
+    const end = Math.abs(utcDay(next.EndDate) - utcDay(previous.EndDate));
+    return Math.round(Math.max(start, end) / DAY_MS);
+}
+
 /** One figure for a concession, whatever form it was delivered in. */
 export function ConcessionValue(facts: ConcessionFacts): ConcessionValuation {
     switch (facts.Form) {
@@ -124,12 +144,15 @@ export function ConcessionValue(facts: ConcessionFacts): ConcessionValuation {
 /**
  * Whether a rep's authority covers a concession. Every limit is checked and every breach reported,
  * so the person asking for approval sees all of what the approver will be deciding.
+ *
+ * `termDateChangeDays` is the concession's `TermDateChangeDays`. It is checked against
+ * `MaxTermExtensionDays` for a Duration concession, and for any other form that changes a term's dates.
  */
 export function AssessConcession(
     form: ConcessionDeliveryForm,
     valuation: ConcessionValuation,
     authority: ConcessionAuthority | null,
-    addedDays?: number | null,
+    termDateChangeDays?: number | null,
 ): ConcessionAssessment {
     if (!authority) {
         return { WithinAuthority: false, Breaches: ['the requester has no active SalesAuthority'] };
@@ -154,13 +177,13 @@ export function AssessConcession(
         breaches.push('the SalesAuthority sets no MaxConcessionValue, so it grants no authority for this concession');
     }
 
-    if (form === 'Duration') {
-        const days = Math.max(0, Number(addedDays ?? 0));
+    const days = Math.abs(Number(termDateChangeDays ?? 0));
+    if (form === 'Duration' || days > 0) {
         if (authority.MaxTermExtensionDays == null) {
-            breaches.push('the SalesAuthority sets no MaxTermExtensionDays, so it grants no authority to extend a term');
+            breaches.push("the SalesAuthority sets no MaxTermExtensionDays, so it grants no authority to change a term's dates");
         } else if (days >= Number(authority.MaxTermExtensionDays)) {
             // At or above: the limit is the length that needs approval, so it reads as the policy does.
-            breaches.push(`a ${days}-day extension is at or above the ${authority.MaxTermExtensionDays}-day limit`);
+            breaches.push(`a ${days}-day change to the term's dates is at or above the ${authority.MaxTermExtensionDays}-day limit`);
         }
     }
 

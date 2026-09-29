@@ -4,6 +4,7 @@ import {
     ConcessionValue,
     DaysAdded,
     InclusiveDays,
+    TermDateChangeDays,
     type ConcessionAuthority,
 } from '../pricing/ConcessionBehavior';
 
@@ -66,7 +67,7 @@ describe('AssessConcession', () => {
         expect(result.WithinAuthority).toBe(false);
         expect(result.Breaches).toHaveLength(2);
         expect(result.Breaches.join(' ')).toMatch(/concession limit/);
-        expect(result.Breaches.join(' ')).toMatch(/90-day extension is at or above the 31-day limit/);
+        expect(result.Breaches.join(' ')).toMatch(/90-day change to the term's dates is at or above the 31-day limit/);
     });
 
     it('lets a rep grant an extension inside both limits', () => {
@@ -79,7 +80,7 @@ describe('AssessConcession', () => {
         const at = ConcessionValue({ Form: 'Duration', TermAmount: 1200, TermDays: 365, AddedDays: 30 });
         const under = ConcessionValue({ Form: 'Duration', TermAmount: 1200, TermDays: 365, AddedDays: 29 });
         expect(AssessConcession('Duration', at, limit, 30).Breaches).toEqual([
-            'a 30-day extension is at or above the 30-day limit',
+            "a 30-day change to the term's dates is at or above the 30-day limit",
         ]);
         expect(AssessConcession('Duration', under, limit, 29).WithinAuthority).toBe(true);
     });
@@ -90,6 +91,46 @@ describe('AssessConcession', () => {
         const result = AssessConcession('Duration', small, noLimits, 1);
         expect(result.WithinAuthority).toBe(false);
         expect(result.Breaches).toHaveLength(2);
+    });
+
+    describe('any change to a term\'s dates, not only days added — #307', () => {
+        // A 12-month term, and the same term extended, shortened and shifted by `days`.
+        const term = { StartDate: new Date('2026-01-01'), EndDate: new Date('2026-12-31') };
+        const moved = (startDays: number, endDays: number) => ({
+            StartDate: new Date(term.StartDate.getTime() + startDays * 86_400_000),
+            EndDate: new Date(term.EndDate.getTime() + endDays * 86_400_000),
+        });
+        const changes = {
+            extension: (days: number) => moved(0, days),
+            shortening: (days: number) => moved(0, -days),
+            shift: (days: number) => moved(days, days),
+        };
+        const limit = authority({ MaxTermExtensionDays: 30 });
+        const none = { Value: 0, Percent: null };
+
+        for (const [name, change] of Object.entries(changes)) {
+            it(`measures a ${name} of N days as N`, () => {
+                expect(TermDateChangeDays(term, change(30))).toBe(30);
+            });
+
+            it(`escalates a ${name} of N days at a limit of N, and passes one of N − 1`, () => {
+                expect(AssessConcession('Duration', none, limit, TermDateChangeDays(term, change(30))).Breaches).toEqual([
+                    "a 30-day change to the term's dates is at or above the 30-day limit",
+                ]);
+                expect(AssessConcession('Duration', none, limit, TermDateChangeDays(term, change(29))).WithinAuthority).toBe(true);
+            });
+        }
+
+        it('measures a change as the larger of how far the start and the end move', () => {
+            expect(TermDateChangeDays(term, moved(-10, 25))).toBe(25);
+            expect(TermDateChangeDays(term, moved(-40, 5))).toBe(40);
+        });
+
+        it('checks a date change made through a concession of another form', () => {
+            const price = { Value: 0, Percent: 0 };
+            expect(AssessConcession('Price', price, limit, 30).WithinAuthority).toBe(false);
+            expect(AssessConcession('Price', price, limit, 0).WithinAuthority).toBe(true);
+        });
     });
 
     it('escalates a price concession on EITHER the percentage or the absolute value', () => {
