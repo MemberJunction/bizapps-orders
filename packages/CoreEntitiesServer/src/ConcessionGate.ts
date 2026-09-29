@@ -23,6 +23,13 @@
  * Nor is a reversal — a line with a `ReversesOrderLineID` or a negative quantity. Its price is the
  * origin line's, which was settled when that line was sold, and pricing refuses a negative quantity.
  *
+ *   3. on an order not yet confirmed, concessions that were approved on the requester's own
+ *      authority when the order's concessions, as a share of its net total, now reach that
+ *      authority's `MaxConcessionPctOfContract`. The share is measured when a concession is
+ *      recorded; a draft that loses lines afterwards raises it, and the approval on authority no
+ *      longer covers what the order now gives away. An approver who decided a concession at this
+ *      share or higher has already seen it, so that covers it too.
+ *
  * Confirmed orders are checked for (1) only. Their lines' prices were settled at booking, and lines
  * converted from the previous system carry overrides nobody recorded a concession for.
  *
@@ -32,14 +39,16 @@
  */
 import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import {
+    ConcessionShare,
     ConcessionValue,
     ResolveLinePriceStanding,
+    ShareBreach,
     type ConcessionAuthority,
     type ConcessionValuation,
     type PricedLineFacts,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
-import { RequireUUID } from './sql-guards.js';
+import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
@@ -58,7 +67,7 @@ export async function LoadConcessionAuthority(
         {
             EntityName: SALES_AUTHORITY_ENTITY,
             ExtraFilter: `SalesRepUserID = '${RequireUUID(userID, 'UserID')}' AND IsActive = 1`,
-            Fields: ['ID', 'MaxDiscountPct', 'MaxConcessionValue', 'MaxTermExtensionDays'],
+            Fields: ['ID', 'MaxDiscountPct', 'MaxConcessionValue', 'MaxTermExtensionDays', 'MaxConcessionPctOfContract'],
             ResultType: 'simple',
             BypassCache: true,
         },
@@ -100,6 +109,8 @@ export interface ConcessionLineFacts extends PricedLineFacts {
      * `OrderPricingService.applyResolvedPrice` uses, since 0 is a legitimate price for a free line.
      */
     PriceStated: boolean;
+    /** The line after discounts, before tax and charges. The caller computes it for a line it holds. */
+    LineTotalNet?: number | null;
 }
 
 /** What a line's typed price gives away, when it gives anything away. */
@@ -162,6 +173,11 @@ export async function FindUnapprovedConcessions(
 
     if (!includeLinePrices) return problems;
 
+    if (orderHeaderID) {
+        const shareProblem = await shareNoLongerCovered(orderHeaderID, rows, inMemoryLines, provider, user);
+        if (shareProblem) problems.push(shareProblem);
+    }
+
     for (const line of await statedPriceLines(orderHeaderID, inMemoryLines, provider, user)) {
         const concession = await LinePriceConcessionFor(line, provider, user);
         if (!concession) continue;
@@ -193,12 +209,118 @@ export async function FindUnapprovedConcessions(
     return problems;
 }
 
+/**
+ * The order's net total: its lines after discounts, before tax and charges. Reversal lines are left
+ * out, since they give back what another order sold. A bundle's rollup parent stores zero and its
+ * components carry the money, so neither is counted twice.
+ *
+ * @param inMemoryLines  lines the caller holds, which win over their persisted copies.
+ */
+export async function OrderNetTotal(
+    orderHeaderID: string,
+    inMemoryLines: readonly ConcessionLineFacts[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<number> {
+    const held = new Set(inMemoryLines.map((l) => (l.ID ?? '').toLowerCase()).filter(Boolean));
+    let total = 0;
+    for (const line of inMemoryLines) {
+        if (!isReversal(line)) total += Number(line.LineTotalNet ?? 0);
+    }
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<{ ID: string; ReversesOrderLineID: string | null; Quantity: number; LineTotalNet: number | null }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
+            Fields: ['ID', 'ReversesOrderLineID', 'Quantity', 'LineTotalNet'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    for (const row of res?.Results ?? []) {
+        if (held.has(row.ID.toLowerCase()) || isReversal(row)) continue;
+        total += Number(row.LineTotalNet ?? 0);
+    }
+    return Math.round(total * 100) / 100;
+}
+
+/** What every concession on the order that is not Rejected comes to, in currency. */
+export async function OrderConcessionTotal(
+    orderHeaderID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<number> {
+    return concessionTotal(await loadConcessions(orderHeaderID, provider, user));
+}
+
+/**
+ * Check (3) in the header: the reason, if any, that approvals on the requesters' own authority no
+ * longer cover the order's concessions as a share of its net total.
+ */
+async function shareNoLongerCovered(
+    orderHeaderID: string,
+    rows: readonly ConcessionRow[],
+    inMemoryLines: readonly ConcessionLineFacts[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string | null> {
+    const onAuthority = rows.filter((r) => r.Status === 'Approved' && !r.SalesRuleID && !!r.AuthorizedBySalesAuthorityID);
+    if (onAuthority.length === 0) return null;
+
+    const net = await OrderNetTotal(orderHeaderID, inMemoryLines, provider, user);
+    const share = ConcessionShare(concessionTotal(rows), net);
+
+    // Stored to four places, so compare within that rounding.
+    const approverSaw = rows
+        .filter((r) => r.Status === 'Approved' && !!r.SalesRuleID && r.CumulativeShare != null)
+        .map((r) => Number(r.CumulativeShare));
+    if (share !== null && approverSaw.some((seen) => share <= seen + 5e-5)) return null;
+
+    const limits = await loadShareLimits(
+        [...new Set(onAuthority.map((r) => String(r.AuthorizedBySalesAuthorityID).toLowerCase()))],
+        provider,
+        user,
+    );
+    const breach = limits.map((limit) => ShareBreach(share, limit)).find((b) => b !== null);
+    if (!breach) return null;
+
+    return (
+        `${breach} (${concessionTotal(rows).toFixed(2)} on a net total of ${net.toFixed(2)}), and ` +
+        `${onAuthority.length} concession(s) on it were approved on the requester's own authority when the order ` +
+        `was measured differently. Withdraw them and record them again, so they are measured against the order ` +
+        `as it is now and routed for approval`
+    );
+}
+
+async function loadShareLimits(authorityIDs: string[], provider: IMetadataProvider, user: UserInfo): Promise<(number | null)[]> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<{ MaxConcessionPctOfContract: number | null }>(
+        {
+            EntityName: SALES_AUTHORITY_ENTITY,
+            ExtraFilter: `ID IN (${RequireUUIDs(authorityIDs, 'SalesAuthorityID').map((id) => `'${id}'`).join(',')})`,
+            Fields: ['MaxConcessionPctOfContract'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    return (res?.Results ?? []).map((r) => (r.MaxConcessionPctOfContract == null ? null : Number(r.MaxConcessionPctOfContract)));
+}
+
+function concessionTotal(rows: readonly ConcessionRow[]): number {
+    return rows.filter((r) => r.Status !== 'Rejected').reduce((sum, r) => sum + Number(r.ComputedValue ?? 0), 0);
+}
+
 interface ConcessionRow {
     Status: string;
     DeliveryForm: string;
     ReasonCategory: string;
     ComputedValue: number;
     OrderLineID: string | null;
+    AuthorizedBySalesAuthorityID: string | null;
+    SalesRuleID: string | null;
+    CumulativeShare: number | null;
 }
 
 async function loadConcessions(
@@ -211,7 +333,16 @@ async function loadConcessions(
         {
             EntityName: ORDER_CONCESSION_ENTITY,
             ExtraFilter: `OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
-            Fields: ['Status', 'DeliveryForm', 'ReasonCategory', 'ComputedValue', 'OrderLineID'],
+            Fields: [
+                'Status',
+                'DeliveryForm',
+                'ReasonCategory',
+                'ComputedValue',
+                'OrderLineID',
+                'AuthorizedBySalesAuthorityID',
+                'SalesRuleID',
+                'CumulativeShare',
+            ],
             ResultType: 'simple',
             BypassCache: true,
         },
@@ -264,7 +395,11 @@ async function statedPriceLines(
 }
 
 function isComponentOrReversal(line: ConcessionLineFacts): boolean {
-    return !!line.ParentOrderLineID || !!line.ReversesOrderLineID || Number(line.Quantity ?? 0) < 0;
+    return !!line.ParentOrderLineID || isReversal(line);
+}
+
+function isReversal(line: { ReversesOrderLineID: string | null; Quantity: number | null }): boolean {
+    return !!line.ReversesOrderLineID || Number(line.Quantity ?? 0) < 0;
 }
 
 function sameID(a: string | null | undefined, b: string | null | undefined): boolean {

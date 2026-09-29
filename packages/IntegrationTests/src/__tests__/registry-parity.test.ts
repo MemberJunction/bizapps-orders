@@ -120,7 +120,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'contract-reversal': 9,
     'party-roster': 2,
     'progress-measurement': 17,
-    concessions: 11,
+    concessions: 16,
 };
 
 /**

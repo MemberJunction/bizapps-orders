@@ -21,6 +21,8 @@ export {
     FindUnapprovedConcessions,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
+    OrderConcessionTotal,
+    OrderNetTotal,
     type ConcessionLineFacts,
     type LinePriceConcession,
 } from './ConcessionGate.js';

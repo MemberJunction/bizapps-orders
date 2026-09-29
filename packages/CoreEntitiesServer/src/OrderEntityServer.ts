@@ -923,6 +923,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ProductPriceID: line.ProductPriceID,
             PriceStated:
                 line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0,
+            LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
         }));
         const problems = await FindUnapprovedConcessions(
             this.IsSaved ? this.ID : null,
