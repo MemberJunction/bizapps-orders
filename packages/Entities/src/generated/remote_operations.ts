@@ -458,7 +458,7 @@ export interface JournalEntryPreview {
  * Input for `Orders.CheckEntitlement`.
  *
  * Asked by capability Code, not SKU. PersonID is authoritative; email is a convenience
- * resolution (normalised, ambiguous-if-duplicate). AsOf is diagnostics only (historical
+ * resolution (normalised; several Persons sharing it resolve by the checkout's rule). AsOf is diagnostics only (historical
  * audit). The trust path omits it. Future values are rejected. CacheUntil is always
  * issued from wall-clock now, never from AsOf.
  *
@@ -467,7 +467,7 @@ export interface JournalEntryPreview {
 export interface CheckEntitlementInput {
     /** Authoritative person key. When present, Email is ignored. */
     PersonID?: string;
-    /** Convenience. Normalised; more than one matching person is treated as no grant. */
+    /** Convenience. Normalised; several matching Persons resolve to one by `ResolvePersonByEmail` (Orders history, then oldest). */
     Email?: string;
     /** `ProductEntitlement.Code` — unique per product, not globally. Convention: APP_AREA_TIER. */
     Code: string;
@@ -1676,7 +1676,7 @@ export class OrdersCapturePaymentOperation extends BaseRemotableOperation<Orders
 // ============================================================
 /**
  * Check Entitlement
- * Does this person currently have this entitlement? Asked by Code (the capability), not SKU. PersonID is authoritative; email is a convenience and is refused when it matches more than one person. Access is evaluated (status + window + subscription access-through), never read off EntitlementGrant.Status. Unknown person and known person without access return the same shape. Fail closed. v1 evaluates person grants only.
+ * Does this person currently have this entitlement? Asked by Code (the capability), not SKU. PersonID is authoritative; email is a convenience, resolved to one Person by the same rule the checkout uses when several share it (Orders history, then oldest). Access is evaluated (status + window + subscription access-through), never read off EntitlementGrant.Status. Unknown person and known person without access return the same shape. Fail closed. v1 evaluates person grants only.
  * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
  * under 'Orders.CheckEntitlement'. This generated base provides the typed contract only (client-safe).
  */

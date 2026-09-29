@@ -320,7 +320,7 @@
       "Name": "Check Entitlement",
       "OperationKey": "Orders.CheckEntitlement",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Entitlements",
-      "Description": "Does this person currently have this entitlement? Asked by Code (the capability), not SKU. PersonID is authoritative; email is a convenience and is refused when it matches more than one person. Access is evaluated (status + window + subscription access-through), never read off EntitlementGrant.Status. Unknown person and known person without access return the same shape. Fail closed. v1 evaluates person grants only.",
+      "Description": "Does this person currently have this entitlement? Asked by Code (the capability), not SKU. PersonID is authoritative; email is a convenience, resolved to one Person by the same rule the checkout uses when several share it (Orders history, then oldest). Access is evaluated (status + window + subscription access-through), never read off EntitlementGrant.Status. Unknown person and known person without access return the same shape. Fail closed. v1 evaluates person grants only.",
       "InputTypeName": "CheckEntitlementInput",
       "InputTypeDefinition": "@file:types/orders-check-entitlement.input.ts",
       "InputTypeIsArray": false,
