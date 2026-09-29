@@ -60,7 +60,7 @@ import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
-import { LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import { DepositReleasedByCompany, PlanLineDeposits, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { RequireUUID } from './sql-guards.js';
@@ -85,6 +85,7 @@ interface PaymentContext {
     ReceivingCompanyID: string;
     Status: string;
     PaymentDate: Date;
+    PaymentDetailID: string | null;
 }
 
 /** Cents of slack, so decimal rounding never trips the guard on an exact-payment case. */
@@ -224,6 +225,11 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             PaymentDate: payment.PaymentDate,
             // A negative allocation un-applies cash, and a refunded payment reverses: both mirror.
             IsReversal: isReversal,
+            GiftCardSale: await LoadGiftCardSale(
+                provider as unknown as IRunViewProvider,
+                user,
+                payment.PaymentDetailID,
+            ),
         });
 
         const result = await this.createJournalEntries(Drafts, provider, user);
@@ -251,11 +257,12 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             ReceivingCompanyID: string;
             Status: string;
             PaymentDate: string;
+            PaymentDetailID: string | null;
         }>(
             {
                 EntityName: PAYMENT_HEADER_ENTITY,
                 ExtraFilter: `ID='${this.PaymentHeaderID}'`,
-                Fields: ['PaymentNumber', 'ReceivingCompanyID', 'Status', 'PaymentDate'],
+                Fields: ['PaymentNumber', 'ReceivingCompanyID', 'Status', 'PaymentDate', 'PaymentDetailID'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -267,6 +274,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             PaymentNumber: row.PaymentNumber,
             ReceivingCompanyID: row.ReceivingCompanyID,
             Status: row.Status,
+            PaymentDetailID: row.PaymentDetailID,
             // A day, not an instant (#209) — it becomes the allocation entry's `EffectiveDate`.
             PaymentDate: await CalendarDayOrToday(
                 row.PaymentDate,

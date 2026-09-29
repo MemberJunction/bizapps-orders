@@ -31,6 +31,8 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 
+import { UUIDsEqual } from '@memberjunction/global';
+
 import { SplitExactly } from './BundleBehavior.js';
 
 const Money = (n: number): number => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -373,6 +375,40 @@ export function PaymentStatusLabel(gross: number, paid: number): string {
 export function DocumentNumber(orderNumber: string, index: number, total: number): string {
     if (total <= 1) return orderNumber;
     return `${orderNumber}-${String.fromCharCode(65 + index)}`;
+}
+
+/** What `ExternalInvoice.DocumentNumber` and `OrderHeader.ExternalDocumentNumber` can hold. */
+export const MAX_DOCUMENT_NUMBER_LENGTH = 40;
+
+/**
+ * The number a RE-ISSUE carries after a cancel — `ORD-1234-R1`, then `-R2`, `ORD-1234-A-R1` when the
+ * order is also split by company.
+ *
+ * WHY A SUFFIX AND NOT THE OLD NUMBER AGAIN. Craig ruled this on golive #242 for traceability, and
+ * the sandbox says he was right for a sharper reason than the one first written down here.
+ *
+ * This comment used to claim Bill.com keeps an archived invoice's number and refuses the duplicate, so
+ * a re-issue HAD to be renumbered. That is false, and it was never tested: spike S4 proved a duplicate
+ * against a LIVE invoice is refused and the conclusion about archived ones was extrapolated. Probed
+ * directly on 2026-09-29 — create, archive, create the same number again — Bill.com **accepts** it.
+ * Live duplicate: "Duplicate invoice number for 00e…". Archived duplicate: 201, a second invoice.
+ *
+ * Which makes the suffix MORE necessary, not less. If the rail freely reissues the number, then an
+ * order cancelled after its invoice went out leaves the customer holding ORD-1234, and a re-issue
+ * without a suffix puts a second, different ORD-1234 in front of them. Nothing on either side would
+ * flag it. The cancelled invoice stays on file as history, exactly as a cancelled instalment does, and
+ * the number has no ledger effect because the receivable was booked when the order was confirmed.
+ *
+ * `attempts` counts rail invoices this unit has ALREADY SPENT A NUMBER ON — rows carrying an
+ * `ExternalInvoiceRef` — not rows that merely failed. A send the rail refused outright created nothing
+ * and consumed nothing, so its number is still free and re-issuing reuses it; a send that was created
+ * and then archived (a cancel, or a tie check that withdrew it) did consume one.
+ *
+ * INSTALMENTS NEVER COME HERE. They are refused a re-issue outright (`DecideInvoiceable`): a cancelled
+ * instalment is replaced by a new schedule row under the next instalment number, not renumbered.
+ */
+export function ReissueDocumentNumber(baseNumber: string, attempts: number): string {
+    return attempts > 0 ? `${baseNumber}-R${attempts}` : baseNumber;
 }
 
 /**
@@ -878,5 +914,8 @@ export function BuildDocuments(input: {
         });
     });
 
-    return input.OnlyCompanyID ? documents.filter((d) => d.CompanyID === input.OnlyCompanyID) : documents;
+    // UUIDsEqual, not ===: SQL Server returns uppercase ids while callers routinely carry lower-cased
+    // copies, and a case-sensitive match here drops every document and reports the order as having no
+    // lines for the company — a wrong answer that looks like a data problem.
+    return input.OnlyCompanyID ? documents.filter((d) => UUIDsEqual(d.CompanyID, input.OnlyCompanyID!)) : documents;
 }
