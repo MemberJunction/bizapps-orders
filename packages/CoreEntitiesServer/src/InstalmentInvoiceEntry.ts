@@ -7,6 +7,15 @@
  *         Cr  Deferred Revenue         the rest — billing that runs ahead of performance
  *         Cr  each charge and tax      its share of each
  *
+ *     Dr  Customer Deposits            what the customer had already paid ahead of this bill
+ *         Cr  Accounts Receivable      the same, so the prepaid part of the bill is settled
+ *
+ * THE INVOICE POSTS AT FULL VALUE and the deposit is cleared by its own pair of lines (#234
+ * review, item 7). An earlier revision netted the prepayment off both sides of the billing entry;
+ * that hid the receivable the invoice raises and let the deposit and its netting land on different
+ * Deferred accounts. Both legs of the application resolve through the same product walk as the
+ * rest of the entry, so the deposit taken at capture and the one cleared here are the same account.
+ *
  * THE DISCOUNT IS NOT HERE. It is booked once, with the revenue it reduces. See the long note at
  * its removal site below; the short version is that an entry crediting Deferred gross while the
  * recognition entry credits Sales gross double-debits Sales Discounts, and both entries balance.
@@ -40,13 +49,14 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import type { mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
+import { ToISODate, type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
 
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, SubmitJournalEntryDrafts } from './AccountingBridge.js';
 import { SplitExactly } from './BundleBehavior.js';
 import {
     GL_ROLE,
     IsRoleNotLinked,
+    RefuseUnlinkedCustomerDeposits,
     UnbilledReceivableNotLinkedError,
     type GLAccountResolver,
 } from './GLAccountResolver.js';
@@ -72,8 +82,14 @@ import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 const INVOICE_ENTRY_TYPE = 'InstalmentInvoice';
 const INVOICE_ENTRY_TYPE_FALLBACK = 'OrderBooking';
 
-/** The entry type to name on the draft, given what this database actually has seeded. */
-async function resolveEntryType(provider: IMetadataProvider, user: UserInfo): Promise<string> {
+/**
+ * The entry type to name on the draft, given what this database actually has seeded.
+ *
+ * Exported because the reversal's credit memo classifies itself the same way (D92 §6): it is the
+ * other half of an instalment's life, and a second copy of this lookup is how the two would drift
+ * into disagreeing about which database has the type seeded.
+ */
+export async function ResolveInstalmentEntryType(provider: IMetadataProvider, user: UserInfo): Promise<string> {
     const engine = await LoadAccountingEngine(provider, user);
     if (engine.JournalEntryTypeByCode(INVOICE_ENTRY_TYPE)) return INVOICE_ENTRY_TYPE;
     console.warn(
@@ -146,25 +162,71 @@ export interface InstalmentInvoiceContext {
     InstallmentNumber: number;
     DocumentNumber: string;
     Amount: number;
-    InvoicedAt: Date;
-    /** Already paid against this row at the moment of invoicing — a deposit taken before billing. */
-    AmountPaid: number;
+    /** The business day it was invoiced, pinned to midnight UTC (`CalendarDayOrToday`) — the entry's date (#209). */
+    InvoiceDay: Date;
+    /**
+     * Customer deposits this issue turns into settlement of the new receivable: how much the rows'
+     * held deposits fell when the row became billed (`DepositReleasedByCompany`), read by the caller
+     * around the save that stamps the row. Zero when nothing was prepaid.
+     */
+    DepositApplied: number;
     /** The company's live rows in `InstallmentNumber` order, including this one. */
     Siblings: InstalmentSibling[];
     /** The company's lines on this order. */
     Lines: InstalmentLineFacts[];
 }
 
-/** This row's index among its siblings, and the weights every slice is taken with. */
-function sliceWeights(context: InstalmentInvoiceContext): { index: number; weights: number[] } {
-    const weights = context.Siblings.map((s) => Math.max(0, Number(s.Amount ?? 0)));
-    const index = context.Siblings.findIndex((s) => s.ID.toLowerCase() === context.OrderHeaderPaymentScheduleID.toLowerCase());
-    return { index, weights };
+/** This row's index among its siblings. */
+function rowIndex(context: InstalmentInvoiceContext): number {
+    return context.Siblings.findIndex((s) => s.ID.toLowerCase() === context.OrderHeaderPaymentScheduleID.toLowerCase());
 }
 
-/** This instalment's exact share of `total`, by the company's instalment amounts. */
-const slice = (total: number, index: number, weights: number[]): number =>
-    weights.length ? SplitExactly(Math.abs(total), weights)[index] : 0;
+/**
+ * This instalment's piece of every amount, TIED BOTH WAYS (#234 third review, item 1): the pieces
+ * of one instalment sum to its schedule row, and each amount's pieces across all instalments sum to
+ * that amount.
+ *
+ * Slicing each amount independently by the row weights keeps the second property but not the
+ * first: lines of 1,000 and 250 in three instalments bill 416.68 / 416.66 / 416.66 against rows of
+ * 416.67 / 416.67 / 416.66, and a deposit sized from the row then meets a bill a cent short. Here
+ * each instalment in turn splits ITS ROW across what is still unbilled of each amount, and the last
+ * takes the remainder. The remainders are what makes it tie by construction; splitting the row
+ * against what is left (rather than the original totals) is what keeps every piece between zero and
+ * the amount it comes from, so no instalment ever carries a negative piece of a positive line.
+ *
+ * `totals` are signed (a reversal line's amounts are negative); `rows` are the live rows in
+ * `InstallmentNumber` order. Pure; every earlier instalment is replayed, so the answer depends only
+ * on the schedule and the lines, not on what was issued before.
+ */
+export function TiedSlice(totals: number[], rows: number[], index: number): number[] {
+    const toCents = (n: number): number => Math.round(Number(n) * 100);
+    const rowCents = rows.map(toCents);
+    if (!(index >= 0 && index < rowCents.length)) throw new Error(`TiedSlice: instalment index ${index} is outside ${rowCents.length} rows.`);
+    if (rowCents.some((r) => r < 0)) throw new Error('TiedSlice: a schedule row is negative.');
+    let remaining = totals.map(toCents);
+    const owed = rowCents.reduce((t, r) => t + r, 0);
+    const held = remaining.reduce((t, r) => t + r, 0);
+    if (owed !== held) {
+        throw new Error(
+            `The schedule rows total ${owed / 100} but the lines they bill total ${held / 100}, so the ` +
+                `instalments cannot be sliced to tie to their rows. Nothing was posted.`,
+        );
+    }
+    const splitRow = (row: number, left: number[]): number[] =>
+        SplitExactly(row / 100, left).map((p) => Math.round(p * 100));
+    for (let i = 0; i < index; i++) {
+        const pieces = splitRow(rowCents[i], remaining);
+        remaining = remaining.map((r, j) => r - pieces[j]);
+    }
+    const mine = index === rowCents.length - 1 ? remaining : splitRow(rowCents[index], remaining);
+    const original = totals.map(toCents);
+    mine.forEach((p, j) => {
+        if (p * original[j] < 0 || Math.abs(p) > Math.abs(original[j])) {
+            throw new Error(`TiedSlice: piece ${p / 100} of amount ${original[j] / 100} is out of range.`);
+        }
+    });
+    return mine.map((c) => c / 100);
+}
 
 /**
  * The company's Unbilled Receivable account, or a refusal when nobody has linked one.
@@ -224,7 +286,7 @@ export async function EmitInstalmentInvoiceEntry(
         return { JournalEntryID: null, BilledByLine: new Map() };
     }
 
-    const { index, weights } = sliceWeights(context);
+    const index = rowIndex(context);
     if (index < 0) {
         throw new Error(
             `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} was not found ` +
@@ -233,18 +295,36 @@ export async function EmitInstalmentInvoiceEntry(
     }
 
     const resolver = await BuildGLAccountResolver(provider, user);
-    const asOf = new Date(context.InvoicedAt);
-    const deferredByLine = new Map<string, string>();
+    const asOf = context.InvoiceDay;
     const billedByLine = new Map<string, number>();
+    const receivables: LineReceivable[] = [];
     const lines: JELineDraft[] = [];
 
+    // Every amount the entry posts, per line and signed by the line: its net, then whatever of its
+    // tax and charges no charge credit covers (zero when the allocations are complete), then each
+    // charge credit. Sliced together so the instalment's AR debit is exactly its row.
+    const layout = context.Lines.map((line) => {
+        const sign = line.Quantity < 0 ? -1 : 1;
+        const credited = money(line.ChargeCredits.reduce((t, c) => t + c.Amount, 0));
+        const amounts = [line.Net, money(line.Tax + line.Charges - credited), ...line.ChargeCredits.map((c) => c.Amount)];
+        return amounts.map((a) => sign * a);
+    });
+    const allPieces = TiedSlice(
+        layout.flat(),
+        context.Siblings.map((s) => money(Number(s.Amount ?? 0))),
+        index,
+    );
+    let at = 0;
+
     for (const line of context.Lines) {
+        // Magnitudes: a reversal line is mirrored once at the end, as booking does (D16).
+        const [netPiece, uncreditedPiece, ...creditPieces] = allPieces.slice(at, at + 2 + line.ChargeCredits.length).map((p) => Math.abs(p));
+        at += 2 + line.ChargeCredits.length;
         const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]): Promise<string> =>
             resolver.Resolve(role, line.ProductID, line.ProductCategoryID, context.CompanyID, asOf, line.ProductTypeID);
 
         const arAccount = await resolve(GL_ROLE.AccountsReceivable);
         const deferredAccount = await resolve(GL_ROLE.DeferredRevenue);
-        deferredByLine.set(line.ID, deferredAccount);
 
         // THE DISCOUNT IS NOT BOOKED HERE — it is booked ONCE, when revenue is recognised.
         //
@@ -259,17 +339,18 @@ export async function EmitInstalmentInvoiceEntry(
         // a null discount account is what makes BuildValueEntryLines credit net and emit no
         // discount line; the shared builder is otherwise identical to booking's.
 
-        // Every amount sliced against the SAME weights, so each line's pieces sum across all
-        // instalments to that line's full amount. Slicing a discount would have needed care —
-        // `net + discount = gross` must hold WITHIN a slice, and three independently rounded splits
-        // do not preserve it (the counter-example is in ValueEntryLines.test.ts, and booking still
-        // relies on that invariant). Not booking the discount here sidesteps it entirely.
-        const netPiece = slice(line.Net, index, weights);
+        // Every amount comes from ONE tied slice (TiedSlice above), so each line's pieces sum across
+        // all instalments to that line's full amount AND this instalment's pieces sum to its row.
+        // Slicing a discount would have needed care — `net + discount = gross` must hold WITHIN a
+        // slice (the counter-example is in ValueEntryLines.test.ts, and booking still relies on that
+        // invariant). Not booking the discount here sidesteps it entirely.
         const built = BuildValueEntryLines(
             {
                 Net: netPiece,
-                Tax: slice(line.Tax, index, weights),
-                Charges: slice(line.Charges, index, weights),
+                // The builder only ever reads Tax + Charges as one sum (the AR debit), and the
+                // credits below are those same pieces, so the two sides agree to the cent.
+                Tax: money(uncreditedPiece + creditPieces.reduce((t, p) => t + p, 0)),
+                Charges: 0,
                 // Both zero, and Gross equals Net, because this entry books no discount: with a
                 // null discount account the builder credits Net and emits no contra line.
                 Discount: 0,
@@ -284,10 +365,7 @@ export async function EmitInstalmentInvoiceEntry(
                 Credit: deferredAccount,
                 CreditLabel: 'Deferred revenue',
                 Discount: null,
-                ChargeCredits: line.ChargeCredits.map((c) => ({
-                    ...c,
-                    Amount: slice(c.Amount, index, weights),
-                })),
+                ChargeCredits: line.ChargeCredits.map((c, k) => ({ ...c, Amount: creditPieces[k] })),
             },
             line.ProductName,
             line.Dimensions,
@@ -344,6 +422,11 @@ export async function EmitInstalmentInvoiceEntry(
         // subtract what its origin added.
         billedByLine.set(line.ID, line.Quantity < 0 ? money(-netPiece) : netPiece);
 
+        if (line.Quantity >= 0) {
+            const arDebit = money(built.reduce((t, l) => (l.GLAccountID === arAccount ? t + (l.DebitAmount ?? 0) : t), 0));
+            receivables.push({ Line: line, ARAccount: arAccount, ARDebit: arDebit });
+        }
+
         // A reversal line mirrors, exactly as booking mirrors it (D16): the same accounts with the
         // sides swapped at a positive amount, never a negative debit.
         lines.push(
@@ -353,14 +436,13 @@ export async function EmitInstalmentInvoiceEntry(
         );
     }
 
-    applyPrepayment(context, lines, deferredByLine);
+    lines.push(...(await depositApplicationLines(context, receivables, resolver, asOf)));
 
     const posted = lines.filter((l) => money(l.DebitAmount ?? 0) !== 0 || money(l.CreditAmount ?? 0) !== 0);
     if (posted.length < 2) {
         console.warn(
-            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} bills nothing ` +
-                `(${money(context.AmountPaid)} was already paid against it), so no journal entry was ` +
-                `posted. The document number and the Invoiced stamp still stand.`,
+            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} bills nothing, so no ` +
+                `journal entry was posted. The document number and the Invoiced stamp still stand.`,
         );
         return { JournalEntryID: null, BilledByLine: billedByLine };
     }
@@ -369,8 +451,8 @@ export async function EmitInstalmentInvoiceEntry(
     const outcome = await SubmitJournalEntryDrafts(
         [
             {
-                EffectiveDate: asOf.toISOString().slice(0, 10),
-                EntryType: await resolveEntryType(provider, user),
+                EffectiveDate: ToISODate(asOf) as string,
+                EntryType: await ResolveInstalmentEntryType(provider, user),
                 Description:
                     `Order ${context.OrderNumber} instalment ${context.InstallmentNumber} invoiced as ` +
                     `${context.DocumentNumber} — billing entry`,
@@ -396,48 +478,68 @@ export async function EmitInstalmentInvoiceEntry(
     return { JournalEntryID: journalEntryID, BilledByLine: billedByLine };
 }
 
-/**
- * CASH TAKEN BEFORE THE BILL RAISES NO RECEIVABLE.
- *
- * A deposit already posted `Dr Cash / Cr Deferred Revenue` — it never touched AR, because there was
- * nothing to relieve. So the amount already paid against this row must come off BOTH sides of the
- * billing entry: the AR debit that would otherwise claim money we already hold, and the Deferred
- * credit that would otherwise count the same obligation twice.
- *
- * Reduced pro-rata across the lines by `SplitExactly`, so the two sides stay equal and the entry
- * balances by construction. Where a line's Deferred credit would go negative the sign flips to a
- * debit, which is the same account running the other way rather than an illegal negative credit.
- */
-function applyPrepayment(
-    context: InstalmentInvoiceContext,
-    lines: JELineDraft[],
-    deferredByLine: Map<string, string>,
-): void {
-    const prepaid = money(context.AmountPaid);
-    if (!(prepaid > 0)) return;
-
-    const arLines = lines.filter((l) => (l.DebitAmount ?? 0) > 0 && l.Description?.startsWith('AR — '));
-    const deferredAccounts = new Set(deferredByLine.values());
-    const creditLines = lines.filter((l) => (l.CreditAmount ?? 0) > 0 && deferredAccounts.has(l.GLAccountID));
-
-    reduce(arLines, prepaid, 'DebitAmount');
-    reduce(creditLines, prepaid, 'CreditAmount');
+/** One billed line's receivable: where its AR debit went and how much, for the deposit application. */
+interface LineReceivable {
+    Line: InstalmentLineFacts;
+    ARAccount: string;
+    ARDebit: number;
 }
 
-/** Take `total` off `field` across `lines`, pro-rata, flipping the side if one would go negative. */
-function reduce(lines: JELineDraft[], total: number, field: 'DebitAmount' | 'CreditAmount'): void {
-    if (!lines.length) return;
-    const other = field === 'DebitAmount' ? 'CreditAmount' : 'DebitAmount';
-    const shares = SplitExactly(total, lines.map((l) => Number(l[field] ?? 0)));
-    lines.forEach((l, i) => {
-        const after = money(Number(l[field] ?? 0) - shares[i]);
-        if (after >= 0) {
-            l[field] = after;
-        } else {
-            l[field] = 0;
-            l[other] = money(Number(l[other] ?? 0) + Math.abs(after));
-        }
-    });
+/**
+ * CASH TAKEN BEFORE THE BILL SETTLES PART OF IT: `Dr Customer Deposits / Cr AR` (#234 review, item 7).
+ *
+ * The capture credited Customer Deposits because there was no receivable yet. The invoice above has
+ * just raised one at full value, so the deposit now settles it. Spread over the lines by their AR
+ * debit with `SplitExactly`, so each line's application clears its own receivable on its own AR
+ * account, and Customer Deposits resolves per line through the same walk the capture used.
+ *
+ * Nothing prepaid → no lines and the role is never resolved, so a company that has not linked
+ * Customer Deposits can still bill. A deposit with no linked account is refused.
+ */
+async function depositApplicationLines(
+    context: InstalmentInvoiceContext,
+    receivables: LineReceivable[],
+    resolver: GLAccountResolver,
+    asOf: Date,
+): Promise<JELineDraft[]> {
+    const applied = money(context.DepositApplied);
+    if (!(applied > 0)) return [];
+    const billed = money(receivables.reduce((t, r) => t + r.ARDebit, 0));
+    if (applied > billed) {
+        throw new Error(
+            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber}: ${applied} of deposits ` +
+                `would settle a bill of ${billed}. A deposit cannot settle more than the instalment bills; ` +
+                `nothing was posted.`,
+        );
+    }
+
+    const pieces = SplitExactly(applied, receivables.map((r) => r.ARDebit));
+    const out: JELineDraft[] = [];
+    for (let i = 0; i < receivables.length; i++) {
+        if (!(pieces[i] > 0)) continue;
+        const { Line: line, ARAccount } = receivables[i];
+        const depositAccount = await RefuseUnlinkedCustomerDeposits(
+            () => resolver.Resolve(GL_ROLE.CustomerDeposits, line.ProductID, line.ProductCategoryID, context.CompanyID, asOf, line.ProductTypeID),
+            `Order ${context.OrderNumber} instalment ${context.InstallmentNumber}`,
+            context.CompanyID,
+            applied,
+        );
+        out.push(
+            {
+                GLAccountID: depositAccount,
+                DebitAmount: pieces[i],
+                Description: `Customer deposit applied — ${line.ProductName}`,
+                Dimensions: line.Dimensions,
+            },
+            {
+                GLAccountID: ARAccount,
+                CreditAmount: pieces[i],
+                Description: `AR settled by customer deposit — ${line.ProductName}`,
+                Dimensions: line.Dimensions,
+            },
+        );
+    }
+    return out;
 }
 
 /** The entry must balance before it is sent, with a message naming the instalment rather than a trigger. */

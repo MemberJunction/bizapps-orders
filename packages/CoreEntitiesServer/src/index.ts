@@ -17,6 +17,16 @@ export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } 
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
+export { BeginInstalmentIssue, EndInstalmentIssue, IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
+// Percentage-of-completion (AIDP-26, plan D90): the attestation, the catch-up entry, the worklist.
+export { RecordProgressOperation, LoadRecordProgressOperation } from './RecordProgressOperation.js';
+export {
+    OrderLineProgressMeasurementEntityServer,
+    LoadOrderLineProgressMeasurementEntityServer,
+} from './OrderLineProgressMeasurementEntityServer.js';
+export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from './GetProgressWorklistOperation.js';
+export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
+export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
     AddMonths,
     BuildPaymentSchedule,
@@ -51,7 +61,7 @@ export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from '
 export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
-export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 
 export { MergeOrderRollups, ORDER_ROLLUP_FIELDS } from './OrderRollupBehavior.js';
 export type { OrderRollupField, OrderRollups, ResolvedOrderRollups } from './OrderRollupBehavior.js';
@@ -71,8 +81,11 @@ export {
     EvenOverTimeDriver,
     AllBackEndDriver,
     LoadRevenueRecognitionDrivers,
+    ProgressRecognitionDriver,
+    ManualAttestationDriver,
+    ComputeCatchUp,
 } from './RevenueRecognition.js';
-export type { RevRecContext, RevRecEntry, RevRecSchedule } from './RevenueRecognition.js';
+export type { RevRecContext, RevRecEntry, RevRecSchedule, ProgressMeasurement, CatchUp } from './RevenueRecognition.js';
 
 export {
     SubscriptionBehavior,
@@ -168,7 +181,7 @@ export type { PriceRule, PriceTierRule, PriceContext, PricingModel, Inapplicable
 export { RemainingReturnable, ValidateReversal, InheritedTerms } from './ReversalBehavior.js';
 export type { ReversalOrigin, ReversalRequest } from './ReversalBehavior.js';
 export { LoadReversalContext } from './ReversalResolver.js';
-export type { ReversalContext } from './ReversalResolver.js';
+export type { PriorReversal, ReversalContext } from './ReversalResolver.js';
 
 // Entitlements (D27/D76) — the pure policy resolution and the engine that applies it.
 export {
@@ -322,6 +335,65 @@ export type {
 
 export { StripePaymentProvider, LoadStripePaymentProvider, ToFormBody } from './StripePaymentProvider.js';
 export { StripeACHPaymentProvider, LoadStripeACHPaymentProvider } from './StripeACHPaymentProvider.js';
+export { BillComPaymentProvider, LoadBillComPaymentProvider } from './BillComPaymentProvider.js';
+export { BaseInvoiceRail, LoadBaseInvoiceRail } from './BaseInvoiceRail.js';
+export type {
+    RailCustomerFacts,
+    RailInvoiceLine,
+    RailInvoiceFacts,
+    RailInvoiceSnapshot,
+    RailPaymentRecord,
+    RailResult,
+    InvoiceRailConfig,
+} from './BaseInvoiceRail.js';
+export {
+    BuildInvoiceRail,
+    ResolveInvoiceRail,
+    FindInvoiceRailForCompany,
+    FindInvoiceRailProviderID,
+    ListInvoiceRailProviderIDs,
+    InvoiceRailNotConfiguredError,
+    INVOICE_RAIL_TYPE_CODES,
+} from './InvoiceRailResolver.js';
+export { BillComInvoiceRail, LoadBillComInvoiceRail, NormalizeReceivablePayment, BILLCOM_TRANSIENT } from './BillComInvoiceRail.js';
+export { BillComGateway, DefaultBillComGateway, UseBillComGatewaySeams, CurrentBillComGatewaySeams } from './BillComGateway.js';
+export type { BillComGatewaySeams } from './BillComGateway.js';
+export { BILLCOM_SIGNATURE_HEADER, SignBillComPayload, VerifyBillComSignature, ParseBillComWebhookEvent, IsPaymentRelevant } from './BillComWebhook.js';
+export type { BillComWebhookEvent } from './BillComWebhook.js';
+export {
+    BuildExternalInvoicePayload,
+    DecideInvoiceable,
+    DecideCancel,
+    ClassifyIssueFailure,
+} from './ExternalInvoiceBehavior.js';
+export type {
+    BillingUnitKey,
+    ExternalInvoiceStatus,
+    ExternalInvoiceUnitFacts,
+    ExternalInvoiceLine,
+    ExternalInvoicePayload,
+    InvoiceableDecision,
+    InvoiceableCode,
+    CancelCode,
+} from './ExternalInvoiceBehavior.js';
+export {
+    IssueExternalInvoiceOperation,
+    LoadIssueExternalInvoiceOperation,
+    IssueOneUnit,
+    ScheduleSupported,
+    LoadExternalInvoiceForUnit,
+    LoadExternalInvoicesByRef,
+} from './IssueExternalInvoiceOperation.js';
+export type { ExternalInvoiceRow, IssueUnitOptions } from './IssueExternalInvoiceOperation.js';
+export { AdoptExternalInvoiceOperation, LoadAdoptExternalInvoiceOperation } from './AdoptExternalInvoiceOperation.js';
+export { CancelExternalInvoiceOperation, LoadCancelExternalInvoiceOperation, paidOnUnit } from './CancelExternalInvoiceOperation.js';
+export {
+    GetExternalInvoicingWorklistOperation,
+    LoadGetExternalInvoicingWorklistOperation,
+    BuildExternalInvoicingWorklist,
+} from './GetExternalInvoicingWorklistOperation.js';
+export { SendExternalInvoicesOperation, LoadSendExternalInvoicesOperation } from './SendExternalInvoicesOperation.js';
+export { PollExternalPaymentsOperation, LoadPollExternalPaymentsOperation } from './PollExternalPaymentsOperation.js';
 export { ManualPaymentProvider, LoadManualPaymentProvider } from './ManualPaymentProvider.js';
 export {
     StoredValuePaymentProvider,
@@ -359,7 +431,7 @@ export type {
 } from './BaseDeliveryChannel.js';
 export { EmailDeliveryChannel, LoadEmailDeliveryChannel } from './EmailDeliveryChannel.js';
 export { ResolveDeliveryChannel, DeliveryChannelNotConfiguredError } from './DeliveryResolver.js';
-export { LoadOrderDeliveryContacts, LoadOrderStatus } from './DeliveryRecipientResolver.js';
+export { LoadOrderDeliveryContacts, LoadOrderStatus, LoadExternallyInvoiced } from './DeliveryRecipientResolver.js';
 
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
 export { OpenPaymentIntent } from './PaymentIntentService.js';

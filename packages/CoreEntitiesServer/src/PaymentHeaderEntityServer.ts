@@ -71,11 +71,19 @@ import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
-import { PaymentAllocationFactory } from './PaymentAllocationFactory.js';
-import { LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
+import { LoadGiftCardAccountID, LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import {
+    DepositReleasedByCompany,
+    PlanLineDeposits,
+    type DepositWorking,
+    type InstalmentCashFacts,
+} from './PaymentScheduleBehavior.js';
+import { MoveGiftCardBalance } from './GiftCardEngine.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
+import { RequireUUID } from './sql-guards.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -129,6 +137,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         await this.deferCaptureWhenSettlementIsLate();
 
         const capturing = this.willBookOnThisSave();
+        // Only the transition moves a gift card's balance. A re-save that books a late line is still
+        // `capturing`, and spending the card again there would charge it twice (#302).
+        const entering = this.entersBookedStatus();
 
         // A Pending payment with no new lines is an ordinary row save — nothing to co-ordinate.
         if (!capturing && !this.Lines.Dirty) {
@@ -149,7 +160,14 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             // they have to be set before `super.Save()` persists it. Calling this afterwards computed
             // the right fee and threw it away — the row kept its zero, and the only reason anyone
             // noticed was that PV4 asserted the fee rather than just the status.
-            if (capturing) await this.settleWithProvider();
+            const giftCardID = entering
+                ? await LoadGiftCardAccountID(
+                      this.ProviderToUse as unknown as IRunViewProvider,
+                      this.ContextCurrentUser as UserInfo,
+                      this.PaymentDetailID,
+                  )
+                : null;
+            if (capturing) await this.settleWithProvider(giftCardID);
 
             // COMPLETE THE ALLOCATIONS BEFORE THE HEADER SAVE, because `Lines` is a companion and MJ
             // validates companions from the PARENT's save — before any line's own Save() runs.
@@ -174,12 +192,26 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             for (const line of this.Lines.Items) {
                 line.PaymentHeaderID = this.ID;
             }
+
+            // THE PRE-PAYMENT SCHEDULE, READ BEFORE ANYTHING OF THIS PAYMENT IS WRITTEN (D91). Two
+            // writes move `AmountPaid` on the very instalments the split is computed from: saving a
+            // line (trg_PaymentLine_RollupTotals), and changing this header's status
+            // (trg_PaymentHeader_RollupTotals). The second is the webhook: a Pending payment promoted
+            // to Captured arrives with its lines already persisted and none in memory, so the read
+            // has to come before the header save and has to include the persisted unbooked lines.
+            // Reading after either write would count this payment's own cash as already-settled
+            // billing and credit AR for it (#234 review, item 2). Keyed by order.
+            const scheduleFactsByOrder = capturing ? await this.loadScheduleFacts() : new Map<string, InstalmentCashFacts[]>();
+
             if (!(await super.Save({ ...options, SkipRelatedCollections: true }))) {
                 throw new Error(
                     `Failed to save payment ${this.PaymentNumber}: ` +
                         `${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
+            // Spend the card (or put a refund back on it) now the driver has settled `Amount` and the
+            // header exists, so the card's ledger row can name this payment.
+            if (giftCardID) await this.moveGiftCardBalance(giftCardID, options);
 
             // The lines go down BEFORE the invariant is checked, because the check reads what is
             // actually persisted rather than what this object happens to be holding — a line that
@@ -198,7 +230,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
 
             if (capturing) {
                 // Book journal entries for all unbooked allocations of this payment in one atomic batch.
-                await this.bookAllocations(options);
+                await this.bookAllocations(scheduleFactsByOrder, options);
                 await this.assertAllocationInvariant();
                 // Only reach the fee builder when there IS a fee AND this tender books one inline.
                 // OFF BY DEFAULT (D82).
@@ -261,11 +293,38 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      */
     private willBookOnThisSave(): boolean {
         if (!BOOKED_STATUSES.has(this.Status)) return false;
+        if (this.entersBookedStatus()) return true;
+        return this.Lines.Items.some((l) => !l.BookedAt);
+    }
+
+    /** True when this save moves the payment INTO Captured/Refunded: a new row, or a status change. */
+    private entersBookedStatus(): boolean {
+        if (!BOOKED_STATUSES.has(this.Status)) return false;
         if (!this.IsSaved) return true;
         const previousStatus = this.GetFieldByName('Status')?.OldValue as string | undefined;
-        if (previousStatus !== this.Status) return true;
-        if (this.Lines.Items.some((l) => !l.BookedAt)) return true;
-        return false;
+        return previousStatus !== this.Status;
+    }
+
+    /**
+     * A capture spends the gift card it was tendered with (`Redeem`); a refund puts it back (`Refund`).
+     * `Amount` is a positive magnitude on both, so the sign comes from the status, as the booking's
+     * mirror does (D53). Account credit needs nothing here: it lives on the order's balance (#302).
+     */
+    private async moveGiftCardBalance(giftCardID: string, options?: EntitySaveOptions): Promise<void> {
+        const amount = Math.round(Number(this.Amount ?? 0) * 100) / 100;
+        const refund = this.Status === 'Refunded';
+        // The order the card was spent on, when the payment settles exactly one; null for a split.
+        const orders = new Set(this.Lines.Items.map((l) => l.OrderHeaderID).filter((id): id is string => !!id));
+        await MoveGiftCardBalance(
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+            giftCardID,
+            refund ? 'Refund' : 'Redeem',
+            refund ? amount : -amount,
+            this.ID,
+            orders.size === 1 ? [...orders][0] : null,
+            options,
+        );
     }
 
     /**
@@ -354,7 +413,61 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      * submitted to Accounting.CreateJournalEntries in one batch inside the payment transaction, and
      * stamped with BookedAt.
      */
-    private async bookAllocations(options?: EntitySaveOptions): Promise<void> {
+    /**
+     * The pre-payment instalment picture for every order this payment's unbooked lines settle.
+     *
+     * Read before any line is written; see LoadInstalmentCashFacts for why after is too late.
+     */
+    private async loadScheduleFacts(): Promise<Map<string, InstalmentCashFacts[]>> {
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const orderIDs = new Set<string>();
+        for (const line of this.Lines.Items) {
+            if (!line.BookedAt && line.OrderHeaderID) orderIDs.add(String(line.OrderHeaderID).toLowerCase());
+        }
+        // The webhook's header comes without its lines; the ones it books are already in the table.
+        if (this.IsSaved && this.ID) {
+            const rv = new RunView(provider);
+            const res = await rv.RunView<{ OrderHeaderID: string }>(
+                {
+                    EntityName: PAYMENT_LINE_ENTITY,
+                    ExtraFilter: `PaymentHeaderID='${RequireUUID(this.ID, 'PaymentHeaderID')}' AND BookedAt IS NULL`,
+                    Fields: ['OrderHeaderID'],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                user,
+            );
+            if (!res?.Success) {
+                throw new Error(`Could not read payment ${this.PaymentNumber}'s allocations: ${res?.ErrorMessage ?? 'unknown error'}`);
+            }
+            for (const row of res.Results ?? []) orderIDs.add(String(row.OrderHeaderID).toLowerCase());
+        }
+        const byOrder = new Map<string, InstalmentCashFacts[]>();
+        for (const orderID of orderIDs) {
+            byOrder.set(orderID, await LoadInstalmentCashFacts(provider, user, orderID));
+        }
+        return byOrder;
+    }
+
+    /**
+     * Where each order's deposit planning starts: the pre-payment schedule, plus — when this payment
+     * takes cash back — what that took out of the rows' deposits, read now that every line is down.
+     */
+    private async depositWorkingFor(orderID: string, before: InstalmentCashFacts[], reversing: boolean): Promise<DepositWorking> {
+        if (!reversing || !before.length) return { Facts: before, Released: new Map() };
+        const after = await LoadInstalmentCashFacts(
+            this.ProviderToUse as unknown as IRunViewProvider,
+            this.ContextCurrentUser as UserInfo,
+            orderID,
+        );
+        return { Facts: before, Released: DepositReleasedByCompany(before, after) };
+    }
+
+    private async bookAllocations(
+        scheduleFactsByOrder: Map<string, InstalmentCashFacts[]>,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
@@ -399,6 +512,14 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         );
 
         const allDrafts: PaymentJEDraft[] = [];
+        // Per order: what the lines planned so far have left, so a second allocation on the same
+        // payment and order neither credits AR for the same invoice nor returns the same deposit twice.
+        const workingByOrder = new Map<string, DepositWorking>();
+        const giftCardSale = await LoadGiftCardSale(
+            provider as unknown as IRunViewProvider,
+            user,
+            this.PaymentDetailID,
+        );
 
         for (const line of unbookedLines) {
             const orderLines = await LoadOrderLineShares(
@@ -414,6 +535,24 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             }
             const orderNumber = await this.loadOrderNumber(line.OrderHeaderID);
 
+            const orderKey = String(line.OrderHeaderID).toLowerCase();
+            const before = scheduleFactsByOrder.get(orderKey);
+            if (!before) {
+                throw new Error(
+                    `Payment ${this.PaymentNumber}: order ${line.OrderHeaderID}'s schedule was not read before ` +
+                        `the payment was written, so the deposit split cannot be decided. Nothing was booked.`,
+                );
+            }
+            const isReversal = this.Status === 'Refunded' || (line.Amount ?? 0) < 0;
+            const working = workingByOrder.get(orderKey) ?? (await this.depositWorkingFor(orderKey, before, isReversal));
+            const plan = PlanLineDeposits(
+                AllocateByCompany(Math.abs(line.Amount ?? 0), orderLines, line.OrderLineID ?? null),
+                isReversal,
+                line.OrderHeaderPaymentScheduleID ?? null,
+                working,
+            );
+            workingByOrder.set(orderKey, plan.Working);
+
             const { Drafts } = await factory.BuildAllocationDrafts({
                 PaymentLineID: line.ID,
                 PaymentNumber: this.PaymentNumber,
@@ -422,10 +561,12 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 ReceivingCompanyID: this.ReceivingCompanyID,
                 OrderLines: orderLines,
                 TargetOrderLineID: line.OrderLineID ?? null,
+                Deposits: plan.Deposits,
                 // The allocation entry's `EffectiveDate` comes from this (#209): a day, so the
                 // fallback has to be a day too, not the instant the booking happened to run at.
                 PaymentDate: await CalendarDayOrToday(this.PaymentDate, provider, user),
-                IsReversal: this.Status === 'Refunded' || (line.Amount ?? 0) < 0,
+                IsReversal: isReversal,
+                GiftCardSale: giftCardSale,
             });
 
             allDrafts.push(...Drafts);
@@ -541,7 +682,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      * before the fee leg is built, so a nonsensical fee is refused here rather than producing an entry
      * that will not balance three calls later.
      */
-    private async settleWithProvider(): Promise<void> {
+    private async settleWithProvider(giftCardID: string | null): Promise<void> {
         const providerID = this.PaymentProviderID;
         if (!providerID) return;
 
@@ -550,6 +691,11 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
+        // A RAIL THAT ALREADY MOVED THE MONEY HAS NOTHING TO CAPTURE. Bill.com payments are polled
+        // after they clear and RECORDED here with the provider kept for attribution; asking that
+        // driver for an intent would refuse every one of them (golive #148).
+        const driver = await ResolvePaymentProvider(providerID, provider, user);
+        if (!driver.CollectsAtCapture) return;
 
         // THE GATEWAY'S INTENT STRING LIVES ON `PaymentIntent`, NOT HERE. `PaymentHeader.PaymentIntentID`
         // is a foreign key to our row; `PaymentIntent.ProviderIntentID` is what Stripe calls it. Reading
@@ -565,12 +711,12 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             );
         }
 
-        const driver = await ResolvePaymentProvider(providerID, provider, user);
-
         const capture = await driver.Capture({
             ProviderIntentID: intent,
             Amount: this.Amount ?? 0,
             CurrencyCode: await this.functionalCurrency(),
+            // The card being spent, so the stored-value driver checks ITS balance. Other drivers ignore it.
+            StoredValueAccountID: giftCardID,
         });
 
         if (!capture.Success) {

@@ -7,16 +7,14 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockContext, mockTax, mockInstalment } = vi.hoisted(() => ({
+const { mockContext, mockTax } = vi.hoisted(() => ({
     mockContext: vi.fn(),
     mockTax: vi.fn(),
-    mockInstalment: vi.fn(),
 }));
 
 vi.mock('../ReversalResolver.js', () => ({
     LoadReversalContext: (...args: unknown[]) => mockContext(...args),
     LoadOriginTaxCharges: (...args: unknown[]) => mockTax(...args),
-    OriginBilledByInstalment: (...args: unknown[]) => mockInstalment(...args),
 }));
 
 const { OrderEntityServer } = await import('../OrderEntityServer.js');
@@ -61,6 +59,7 @@ function orderWith(lines: FakeLine[]): Settling {
     for (const [name, value] of Object.entries({
         Lines: { Items: lines },
         MoneyLocked: false,
+        OrderDate: new Date('2026-10-01T00:00:00Z'),
         ProviderToUse: {},
         ContextCurrentUser: { ID: 'user-1' },
         _settledTax: new Map(),
@@ -77,13 +76,14 @@ const CITY = { Code: 'SalesTax', Amount: 1, TaxJurisdictionID: 'jur-city', TaxRa
 beforeEach(() => {
     mockContext.mockReset();
     mockTax.mockReset();
-    mockInstalment.mockReset();
     mockContext.mockResolvedValue({
         Origin: { ID: ORIGIN_LINE, ProductID: 'prod-1', Quantity: 3, UnitPrice: 33.33, DiscountPct: 0, LineTax: 9.25, OrderHeaderID: 'o-1', CompanyID: 'co-1' },
         AlreadyReversed: 0,
+        ScheduleRows: [],
+        PriorReversals: [],
+        OriginScheduled: false,
     });
     mockTax.mockResolvedValue([STATE, CITY]);
-    mockInstalment.mockResolvedValue(false);
 });
 
 describe('OrderEntityServer.applyReversalOrigin — settled tax', () => {
@@ -115,7 +115,7 @@ describe('OrderEntityServer.applyReversalOrigin — settled tax', () => {
     });
 
     it('settles no tax when the origin was billed by instalment, and does not read its charges', async () => {
-        mockInstalment.mockResolvedValue(true);
+        mockContext.mockResolvedValue({ ...(await mockContext()), OriginScheduled: true });
         const line = reversal(1, -1);
         const order = orderWith([line]);
 

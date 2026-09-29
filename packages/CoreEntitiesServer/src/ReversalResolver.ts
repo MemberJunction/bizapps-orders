@@ -18,13 +18,14 @@
  *   CALLER: OrderEntityServer.savePendingLines (before pricing — see there for why)
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import { ToISODate } from '@mj-biz-apps/orders-entities';
+import type { ReversalScheduleRow } from './ContractBalance.js';
 import type { OriginTaxCharge, ReversalOrigin } from './ReversalBehavior.js';
-import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
-import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
 const ORDER_CHARGE_ENTITY = 'MJ_BizApps_Orders: Order Charges';
 const ORDER_CHARGE_ALLOCATION_ENTITY = 'MJ_BizApps_Orders: Order Charge Allocations';
 const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
@@ -35,6 +36,39 @@ const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
 export interface ReversalContext {
     Origin: ReversalOrigin;
     AlreadyReversed: number;
+    /**
+     * The origin ORDER's instalments, cancelled ones included (D92 §6). Empty for an order with no
+     * schedule. The rules that act on rows skip `Canceled` themselves.
+     */
+    ScheduleRows: ReversalScheduleRow[];
+    /**
+     * The origin line's company bills this order by instalment (D92 §6) — so the reversal books a
+     * credit memo, or nothing at all, and never the mirrored value entry. Read from the ORIGIN
+     * order's schedule, cancelled rows included: the reversal order has no schedule of its own, and
+     * a second reversal after the first withdrew every instalment is still reversing a scheduled
+     * order.
+     */
+    OriginScheduled: boolean;
+    /**
+     * The earlier reversals counted in `AlreadyReversed`, with what the credit memo needs to rebuild
+     * the releases each one mirrored: its net (a magnitude), its window and its order date.
+     */
+    PriorReversals: PriorReversal[];
+}
+
+/** An earlier, counted reversal of the same origin line. */
+export interface PriorReversal {
+    ID: string;
+    /** For the refusal of an earlier-dated reversal. */
+    OrderNumber: string | null;
+    Net: number;
+    /**
+     * `YYYY-MM-DD` — the reversal's order date, which its mirrored releases start after. `null` when
+     * its header could not be read; the credit memo refuses rather than guess (the count still holds).
+     */
+    OrderDate: string | null;
+    ServicePeriodStart: Date | null;
+    ServicePeriodEnd: Date | null;
 }
 
 /**
@@ -67,7 +101,6 @@ export async function LoadReversalContext(
     type LineRow = {
         ID: string;
         OrderHeaderID: string;
-        CompanyID?: string | null;
         ProductID: string;
         Quantity: number;
         UnitPrice: number;
@@ -76,6 +109,11 @@ export async function LoadReversalContext(
         ServicePeriodStart?: Date | string | null;
         ServicePeriodEnd?: Date | string | null;
         SubscriptionID?: string | null;
+        LineNumber?: number | null;
+        CompanyID?: string | null;
+        BilledToDate?: number | null;
+        RecognizedToDate?: number | null;
+        LineTotalNet?: number | null;
         LineTax?: number | null;
         ShipToAddressID?: string | null;
         ShipToAddressSnapshot?: string | null;
@@ -99,10 +137,15 @@ export async function LoadReversalContext(
 
     // The order-line view does not carry its header's Status, and the status is what decides
     // whether a prior reversal counts — so the headers have to be fetched. One view, not one per.
+    // The ORIGIN's header rides along: its number is what a refusal and a credit memo have to name,
+    // and fetching it separately would be a second round trip for one string.
     const statusByOrder = new Map<string, string>();
-    if (priors.length) {
-        const ids = [...new Set(priors.map((p) => `'${p.OrderHeaderID}'`))].join(',');
-        const headers = await rv.RunView<{ ID: string; Status: string; OrderNumber: string | null }>(
+    const numberByOrder = new Map<string, string | null>();
+    const dateByOrder = new Map<string, string | null>();
+    {
+        const wanted = [...new Set([origin.OrderHeaderID, ...priors.map((p) => p.OrderHeaderID)])];
+        const ids = wanted.map((id) => `'${id}'`).join(',');
+        const headers = await rv.RunView<{ ID: string; Status: string; OrderNumber: string | null; OrderDate: Date | string | null }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
                 ExtraFilter: `ID IN (${ids})`,
@@ -112,6 +155,8 @@ export async function LoadReversalContext(
         );
         for (const h of headers?.Results ?? []) {
             statusByOrder.set(String(h.ID).toLowerCase(), String(h.Status ?? ''));
+            numberByOrder.set(String(h.ID).toLowerCase(), h.OrderNumber ?? null);
+            dateByOrder.set(String(h.ID).toLowerCase(), ToISODate(h.OrderDate));
         }
     }
 
@@ -130,9 +175,11 @@ export async function LoadReversalContext(
         user,
     );
     const subscriptionID = terms?.Results?.[0]?.SubscriptionID ?? origin.SubscriptionID ?? null;
+    const scheduleRows = await loadScheduleRows(rv, user, origin.OrderHeaderID);
 
     const excluded = new Set(excludeLineIDs.map((id) => id.toLowerCase()));
     let alreadyReversed = 0;
+    const priorReversals: PriorReversal[] = [];
     for (const prior of priors) {
         if (excluded.has(String(prior.ID).toLowerCase())) continue;
         // A Draft return has not taken anything yet and a Voided one has given it back. Anything
@@ -143,6 +190,14 @@ export async function LoadReversalContext(
         // `ABS` because reversal quantities are stored negative, and a signed sum here would let a
         // reversal and a re-sale cancel out into a fresh allowance.
         alreadyReversed += Math.abs(Number(prior.Quantity ?? 0));
+        priorReversals.push({
+            ID: String(prior.ID),
+            OrderNumber: numberByOrder.get(String(prior.OrderHeaderID).toLowerCase()) ?? null,
+            Net: Math.abs(Number(prior.LineTotalNet ?? 0)),
+            OrderDate: dateByOrder.get(String(prior.OrderHeaderID).toLowerCase()) ?? null,
+            ServicePeriodStart: prior.ServicePeriodStart ? new Date(prior.ServicePeriodStart) : null,
+            ServicePeriodEnd: prior.ServicePeriodEnd ? new Date(prior.ServicePeriodEnd) : null,
+        });
     }
 
     return {
@@ -153,9 +208,7 @@ export async function LoadReversalContext(
             UnitPrice: Number(origin.UnitPrice ?? 0),
             DiscountPct: Number(origin.DiscountPct ?? 0),
             DiscountAmount: Number(origin.DiscountAmount ?? 0),
-            OrderNumber: null,
-            OrderHeaderID: origin.OrderHeaderID,
-            CompanyID: origin.CompanyID ?? null,
+            OrderNumber: numberByOrder.get(String(origin.OrderHeaderID).toLowerCase()) ?? null,
             ShipToAddressID: origin.ShipToAddressID ?? null,
             ShipToAddressSnapshot: origin.ShipToAddressSnapshot ?? null,
             LineTax: Number(origin.LineTax ?? 0),
@@ -165,8 +218,22 @@ export async function LoadReversalContext(
             ServicePeriodStart: origin.ServicePeriodStart ? new Date(origin.ServicePeriodStart) : null,
             ServicePeriodEnd: origin.ServicePeriodEnd ? new Date(origin.ServicePeriodEnd) : null,
             SubscriptionID: subscriptionID,
+            OrderHeaderID: origin.OrderHeaderID,
+            LineNumber: origin.LineNumber ?? null,
+            CompanyID: origin.CompanyID ?? null,
+            // The contract position the reversal has to respect (D92 §6): what this line has been
+            // billed and what it has earned. Read from the ORIGIN, never from the reversing line,
+            // which has neither yet.
+            BilledToDate: Number(origin.BilledToDate ?? 0),
+            RecognizedToDate: Number(origin.RecognizedToDate ?? 0),
+            LineTotalNet: Number(origin.LineTotalNet ?? 0),
         },
         AlreadyReversed: Math.round(alreadyReversed * 1e4) / 1e4,
+        ScheduleRows: scheduleRows,
+        PriorReversals: priorReversals,
+        OriginScheduled: scheduleRows.some(
+            (r) => r.CompanyID.toLowerCase() === String(origin.CompanyID ?? '').toLowerCase(),
+        ),
     };
 }
 
@@ -230,37 +297,68 @@ export async function LoadOriginTaxCharges(
 }
 
 /**
- * Was the origin line's company billed by instalment on its order (D92)?
+ * The origin order's instalments, for the reversal rules in `ContractBalance`.
  *
- * A company on instalments credits Sales Tax Payable one slice at a time, as each instalment is
- * invoiced, so the tax recorded on its lines is the whole contract's and not what reached the
- * ledger. Refunding a share of it debits tax that was never credited. The test is the ledger's own,
- * `ScheduledCompanyIDs`, so a return and the booking cannot disagree about which lines were billed
- * this way. A failed read throws: guessing "not scheduled" refunds tax that was never invoiced.
+ * Read for every reversal rather than only for scheduled orders: an order with no schedule returns
+ * an empty array. Cancelled rows are kept, because "was this order billed by instalment" must
+ * still be true after an earlier reversal withdrew them all. One view, no join.
  */
-export async function OriginBilledByInstalment(
-    origin: Pick<ReversalOrigin, 'OrderHeaderID' | 'CompanyID'>,
-    provider: IMetadataProvider,
+async function loadScheduleRows(
+    rv: RunView,
     user: UserInfo,
-): Promise<boolean> {
-    if (!origin.OrderHeaderID || !origin.CompanyID) return false;
-    if (!UUID_PATTERN.test(origin.OrderHeaderID)) {
-        throw new Error(`'${origin.OrderHeaderID}' is not a valid order identifier, so its payment schedule cannot be read.`);
-    }
-    const rv = new RunView(provider as unknown as IRunViewProvider);
-    const res = await rv.RunView<ScheduleTimingFacts>(
+    orderHeaderID: string,
+): Promise<ReversalScheduleRow[]> {
+    const res = await rv.RunView<ReversalScheduleRow & { DueDate: string }>(
         {
             EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
-            ExtraFilter: `OrderHeaderID = '${origin.OrderHeaderID}'`,
-            Fields: ['CompanyID', 'Status', 'DueDate', 'Amount'],
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}'`,
+            Fields: ['ID', 'CompanyID', 'InstallmentNumber', 'DueDate', 'Status', 'DocumentNumber'],
+            OrderBy: 'DueDate, InstallmentNumber',
             ResultType: 'simple',
         },
         user,
     );
-    if (!res?.Success) {
-        throw new Error(
-            `Could not read the payment schedule of the order being reversed: ${res?.ErrorMessage ?? 'unknown error'}`,
-        );
+    return (res?.Results ?? []).map((r) => ({
+        ID: String(r.ID),
+        CompanyID: String(r.CompanyID),
+        InstallmentNumber: Number(r.InstallmentNumber ?? 0),
+        DueDate: ToISODate(r.DueDate) ?? String(r.DueDate).slice(0, 10),
+        Status: String(r.Status),
+        DocumentNumber: r.DocumentNumber ? String(r.DocumentNumber) : null,
+    }));
+}
+
+/**
+ * Every sale line on an order has been taken back in full, counting reversals already confirmed —
+ * which is when a reversal may withdraw the order's unissued instalments (Andrew, #237).
+ *
+ * A reversal of one line of three, or 4 units of 10, leaves lines that the schedule still bills
+ * for, so withdrawing the instalments would stop billing for goods the customer kept. Reads each
+ * line through {@link LoadReversalContext} so "already reversed" means exactly what the quantity
+ * guard means by it; the reversal being booked counts, because its header is already Confirmed.
+ */
+export async function IsWholeOrderReversed(
+    orderHeaderID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<boolean> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const sales = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND ReversesOrderLineID IS NULL AND Quantity > 0`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    if (!sales?.Success) {
+        throw new Error(`The lines of order ${orderHeaderID} could not be read: ${sales?.ErrorMessage ?? 'unknown error'}`);
     }
-    return ScheduledCompanyIDs(res.Results ?? []).has(String(origin.CompanyID).toLowerCase());
+    for (const sale of sales.Results) {
+        const context = await LoadReversalContext(String(sale.ID), provider, user);
+        if (!context) throw new Error(`Order line ${sale.ID} vanished while its order was being reversed.`);
+        if (context.AlreadyReversed < context.Origin.Quantity) return false;
+    }
+    return sales.Results.length > 0;
 }

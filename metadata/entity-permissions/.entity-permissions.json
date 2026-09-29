@@ -1,0 +1,53 @@
+[
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements",
+      "RoleID": "@lookup:MJ: Roles.Name=Engagement Lead",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "C0B68E6D-5088-4853-B3C1-06238739E7DD"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T21:24:42.389Z",
+      "checksum": "cac2de970b791399d46c9a2cb5c0239afa5402de010cb5259473f6a333ef0c57"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers",
+      "RoleID": "@lookup:MJ: Roles.Name=Engagement Lead",
+      "CanCreate": false,
+      "CanRead": true,
+      "CanUpdate": false,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "2E4096AE-0173-4CFE-8235-DC1478487F5D"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T21:24:42.431Z",
+      "checksum": "2f8dd1dec22b3d6cdc17c43aaf6e5aeb46a3215f4d91efbc209bea47c0cc4f47"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines",
+      "RoleID": "@lookup:MJ: Roles.Name=Engagement Lead",
+      "CanCreate": false,
+      "CanRead": true,
+      "CanUpdate": false,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "4948AFC8-966D-4317-873A-C500071C283E"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T21:24:42.627Z",
+      "checksum": "f520ff9bc7c58d0826392a64afd9d0b4f4560e0a5370f0b881a8d8a4bb276221"
+    }
+  }
+]

@@ -35,7 +35,7 @@
  *   PS-C  invoicing a later instalment posts rule 1 and advances BilledToDate
  *   PS-D  every instalment issued sums, per account, to what a non-scheduled order books
  *   PS-E  invoicing twice does not post twice
- *   PS-F  a row already paid in full posts nothing at invoice, and still takes its number
+ *   PS-F  a prepaid instalment on a line with an Unbilled balance posts Dr Customer Deposits / Cr Unbilled
  *   PS-G  Scenario 3: an UpFront line earns in full at confirm, the unbilled part to the contract asset
  *   PS-H  a line carrying an Unbilled balance is invoiced against Unbilled FIRST, then Deferred
  *   PS-I  a discount spanning a due AND a future instalment is booked ONCE, at recognition
@@ -161,6 +161,8 @@ export async function scheduledOrder(
          * what the schedule must tie to — is `gross × (1 − discountPct)`.
          */
         discountPct?: number;
+        /** `YYYY-MM-DD` coverage window, for a product whose recognition needs one (EvenOverTime). */
+        servicePeriod?: { Start: string; End: string };
     } = {},
 ) {
     const f = Fx();
@@ -177,6 +179,7 @@ export async function scheduledOrder(
                 Quantity: 1,
                 UnitPrice: gross,
                 ...(over.discountPct ? { DiscountPct: over.discountPct } : {}),
+                ...(over.servicePeriod ? { ServicePeriodStart: over.servicePeriod.Start, ServicePeriodEnd: over.servicePeriod.End } : {}),
             },
         ],
         ...(over.charges ? { Charges: over.charges } : {}),
@@ -259,6 +262,8 @@ const AR_CODE = '11201';
 const DEFERRED_CODE = '21301';
 const SALES_CODE = '40100';
 const UNBILLED_CODE = '11300';
+/** Blue Cypress Press's company-level Customer Deposits account (world/data/gl-accounts.csv). */
+const DEPOSITS_CODE = '21400';
 /** Linked on ONE product (WORKSHOP → `Products.DiscountedA`), so only PS-I books a discount contra. */
 const DISCOUNT_CODE = '41000';
 
@@ -277,6 +282,17 @@ const bookingLedger = (ctx: IntegrationCheckContext, orderID: string) =>
            JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ol.JournalEntryID
            JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
           WHERE ol.OrderHeaderID = '${orderID}'`,
+    );
+
+/** The lines of ONE instalment's billing entry. */
+const instalmentEntryLines = (ctx: IntegrationCheckContext, scheduleID: string) =>
+    TxQuery<LedgerLine>(
+        ctx,
+        `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
+           FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule ps
+           JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ps.JournalEntryID
+           JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+          WHERE ps.ID = '${scheduleID}'`,
     );
 
 /** Every ledger line the order's INSTALMENT BILLING entries carry, across all its schedule rows. */
@@ -792,22 +808,41 @@ export const PaymentScheduleChecks: NamedCheck[] = [
     },
     {
         Id: 'payment-schedule.PS-F',
-        Name: 'PS-F: a row already paid in full posts nothing at invoice, and still takes its number',
+        Name: 'PS-F: a prepaid instalment on a line with an Unbilled balance posts Dr Customer Deposits / Cr Unbilled',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
-                // Cash before a bill raised no receivable — the deposit posted Dr Cash / Cr Deferred
-                // and never touched AR. Billing it would claim money already held.
+                // Carried over from #225's review. WidgetA is UpFront, so confirm earns all 300 and
+                // bills 100: the line carries 200 of Unbilled. Instalment 2 is then prepaid. Issuing
+                // it used to net the prepayment off the bill and post nothing, while BilledToDate
+                // still moved — the Unbilled balance was never relieved. Now the bill posts at full
+                // value (Dr AR / Cr Unbilled, rule 1) and the deposit clears against it (Dr Customer
+                // Deposits / Cr AR), so the entry's net effect is Dr Customer Deposits / Cr Unbilled.
+                // Andrew wrote it as Dr Deferred because deposits sat there before this PR; with the
+                // role linked to Deferred Revenue the two read the same.
                 const { orderID, ids, saved, message } = await scheduledOrder(ctx, THREE);
                 Assert(saved, `confirm: ${message}`);
                 Assert((await pay(ctx, orderID, 100, ids[1])).Saved, 'prepay instalment 2 before issuing it');
 
                 const arBefore = netOn(await allLedger(ctx, orderID), AR_CODE);
+                const billedBefore = Number((await lineTotals(ctx, orderID))[0].BilledToDate);
                 const issued = await issue(ctx, ids[1]);
                 Assert(issued.Success, `issue the prepaid row: ${issued.Message}`);
-                Assert(issued.DocumentNumber != null, 'it still takes a document number');
-                AssertEqual(issued.JournalEntryID ?? null, null, 'but posts no billing entry');
-                AssertEqual(netOn(await allLedger(ctx, orderID), AR_CODE), arBefore, 'and raises no receivable');
+                Assert(issued.DocumentNumber != null, 'it takes a document number');
+                Assert(issued.JournalEntryID != null, 'and now posts its billing entry');
+
+                const bill = await instalmentEntryLines(ctx, ids[1]);
+                assertBalanced(bill, 'the prepaid billing entry');
+                AssertEqual(netOn(bill, UNBILLED_CODE), -100, 'Cr Unbilled 100: the contract asset is relieved');
+                AssertEqual(netOn(bill, DEPOSITS_CODE), 100, 'Dr Customer Deposits 100: the prepayment is applied');
+                AssertEqual(netOn(bill, AR_CODE), 0, 'the receivable it raises is settled in the same entry');
+                AssertEqual(netOn(bill, DEFERRED_CODE), 0, 'and nothing is deferred');
+                AssertEqual(netOn(await allLedger(ctx, orderID), AR_CODE), arBefore, 'so AR is where it was');
+                AssertEqual(
+                    Number((await lineTotals(ctx, orderID))[0].BilledToDate),
+                    billedBefore + 100,
+                    'BilledToDate moves by the instalment, as the entry now does too',
+                );
             }),
     },
     {

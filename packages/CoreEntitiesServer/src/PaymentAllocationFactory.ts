@@ -54,7 +54,8 @@
  *   CALLER:   PaymentLineEntityServer (./PaymentLineEntityServer.ts)
  *   DOC:      plans/archive/intercompany-balancing.md
  */
-import { GL_ROLE, type GLAccountResolver } from './GLAccountResolver.js';
+import { GL_ROLE, IsRoleNotLinked, RefuseUnlinkedCustomerDeposits, type GLAccountResolver } from './GLAccountResolver.js';
+import { SplitExactly } from './BundleBehavior.js';
 import type { PaymentJEDraft, PaymentJELine, PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 
 /** One order line's contribution, as far as allocation is concerned. */
@@ -74,6 +75,13 @@ export interface OrderLineShare {
      * any dimension, which makes the tag on the booking side useless for reconciliation.
      */
     Dimensions?: PaymentJELineDimension[];
+    /**
+     * Where the line's product sits in the role walk. A deposit resolves Customer Deposits through
+     * it — product, category tree, product type, then company — the same walk the instalment invoice
+     * entry uses, so the deposit and the application that later clears it land on one account.
+     * Omitted, the role resolves at company level.
+     */
+    Product?: { ProductID: string; ProductCategoryID: string | null; ProductTypeID: string | null };
 }
 
 /** What one company is owed out of a single payment line. */
@@ -128,6 +136,28 @@ export interface PaymentLineAllocationContext {
     PaymentDate: Date;
     /** True when un-applying (a refund or a negative allocation) — every entry mirrors. */
     IsReversal: boolean;
+    /**
+     * How much of each company's share is a customer deposit rather than a receivable, keyed by
+     * lower-cased company id — `PlanLineDeposits` decides it from the schedule. A company absent
+     * from the map has no deposit, which is every company of an order with no schedule, and its
+     * credit is the single AR credit it has always been.
+     */
+    Deposits?: ReadonlyMap<string, number>;
+    /**
+     * Set when the tender is a GIFT CARD (`PaymentDetail.StoredValueAccountID`): the product and
+     * company of the order line that sold the card. No cash arrives at redemption, so the debit
+     * relieves Gift Card Liability instead of debiting Cash (issue #300), resolved by the same
+     * product walk the sale used. Account credit and every other tender leave it unset.
+     */
+    GiftCardSale?: GiftCardSaleLine | null;
+}
+
+/** What the sale's Gift Card Liability lookup walked from: the selling line's product and company. */
+export interface GiftCardSaleLine {
+    CompanyID: string;
+    ProductID: string | null;
+    ProductCategoryID: string | null;
+    ProductTypeID: string | null;
 }
 
 export interface PaymentAllocationResult {
@@ -344,6 +374,30 @@ export function SliceByDimensions(
     return slices.filter((s) => s.Amount !== 0);
 }
 
+/**
+ * The order lines a slice was built from: the targeted line, or the company's lines carrying the
+ * slice's tag set. Pure and exported with its sibling so the deposit spread is testable.
+ *
+ * Never empty — a slice exists because some line produced it — and asserted, because an empty list
+ * would silently drop the slice's deposit from the entry.
+ */
+export function LinesInSlice(
+    share: CompanyShare,
+    slice: DimensionSlice,
+    orderLines: OrderLineShare[],
+    targetOrderLineID?: string | null,
+): OrderLineShare[] {
+    const mine = targetOrderLineID
+        ? orderLines.filter((l) => key(l.OrderLineID) === key(targetOrderLineID))
+        : orderLines.filter((l) => key(l.CompanyID) === key(share.CompanyID));
+    const k = dimKey(slice.Dimensions);
+    const out = mine.filter((l) => dimKey(l.Dimensions) === k);
+    if (!out.length) {
+        throw new Error(`No order line of company ${share.CompanyID} carries the tag set of a slice it produced.`);
+    }
+    return out;
+}
+
 export class PaymentAllocationFactory {
     constructor(
         private readonly _resolver: GLAccountResolver,
@@ -367,7 +421,11 @@ export class PaymentAllocationFactory {
 
         const shares = AllocateByCompany(total, ctx.OrderLines, ctx.TargetOrderLineID);
         const asOf = new Date(ctx.PaymentDate);
-        const receiving = ctx.ReceivingCompanyID;
+        // A gift card is relieved on the books of the company whose line sold it, so that company
+        // stands in for the collector: it owns the debit, and any other company's share goes through
+        // the same Due To / Due From pair a cash collection would use. Equal to ReceivingCompanyID in
+        // the ordinary single-company case.
+        const receiving = ctx.GiftCardSale?.CompanyID || ctx.ReceivingCompanyID;
         const label = ctx.IsReversal ? 'Refund' : 'Payment';
 
         const ownShare = shares.find((s) => key(s.CompanyID) === key(receiving));
@@ -376,7 +434,10 @@ export class PaymentAllocationFactory {
         // ── The receiving company's entry ────────────────────────────────────
         // Payments are company-level: there is no product to walk from, so the company default is
         // both the start and the end of resolution (D12).
-        const cashAccount = await this._resolver.Resolve(GL_ROLE.Cash, null, null, receiving, asOf);
+        const debitAccount = ctx.GiftCardSale
+            ? await this.resolveGiftCardLiability(ctx.GiftCardSale, asOf, ctx)
+            : await this._resolver.Resolve(GL_ROLE.Cash, null, null, receiving, asOf);
+        const debitWhat = ctx.GiftCardSale ? 'gift card redeemed' : 'cash';
 
         // Every share, split again by the tags of the lines it settles (issue #238). An order whose
         // lines carry no dimensions yields one slice per company, and the entries below are then
@@ -384,27 +445,84 @@ export class PaymentAllocationFactory {
         const slicesFor = (share: CompanyShare): DimensionSlice[] =>
             SliceByDimensions(share, ctx.OrderLines, ctx.TargetOrderLineID);
 
+        /**
+         * The customer's credit, per dimension slice, divided between the receivable it settles and
+         * the deposit it holds or returns (D91, #234 review). A company with no deposit gets its
+         * whole share on AR and no deposit line at all, so an unscheduled order's entry is unchanged.
+         *
+         * The division is decided once for the company and spread across its slices with
+         * `SplitExactly`: the receivable is a fact about the company's billing, and dimensions are a
+         * fact about which lines the cash touched. The deposit part of each slice is then spread
+         * across that slice's own lines, because Customer Deposits resolves per product (item 6).
+         */
+        const customerCreditLines = async (share: CompanyShare, sliceList: DimensionSlice[]): Promise<PaymentJELine[]> => {
+            const deposit = money(ctx.Deposits?.get(key(share.CompanyID)) ?? 0);
+            if (deposit < 0 || deposit > share.Amount) {
+                throw new Error(
+                    `Payment ${ctx.PaymentNumber} on order ${ctx.OrderNumber}: a deposit of ${deposit} cannot ` +
+                        `come out of company ${share.CompanyID}'s share of ${share.Amount}.`,
+                );
+            }
+            const arAccount = await this._resolver.Resolve(GL_ROLE.AccountsReceivable, null, null, share.CompanyID, asOf);
+            const arPieces = SplitExactly(money(share.Amount - deposit), sliceList.map((sl) => sl.Amount));
+            const lines: PaymentJELine[] = [];
+
+            sliceList.forEach((slice, i) => {
+                if (arPieces[i] > 0) {
+                    lines.push({
+                        GLAccountID: arAccount,
+                        CreditAmount: arPieces[i],
+                        Description: `${label} ${ctx.PaymentNumber} — clear receivable on order ${ctx.OrderNumber}`,
+                        ...dims(slice.Dimensions),
+                    });
+                }
+            });
+            for (let i = 0; i < sliceList.length; i++) {
+                const slice = sliceList[i];
+                const sliceDeposit = money(slice.Amount - arPieces[i]);
+                if (sliceDeposit <= 0) continue;
+                lines.push(...(await depositLines(share, slice, sliceDeposit)));
+            }
+            return lines;
+        };
+
+        /** One slice's deposit, spread over the slice's lines and grouped by the account each resolves. */
+        const depositLines = async (share: CompanyShare, slice: DimensionSlice, amount: number): Promise<PaymentJELine[]> => {
+            const sliceLines = LinesInSlice(share, slice, ctx.OrderLines, ctx.TargetOrderLineID);
+            const pieces = SplitExactly(amount, sliceLines.map((l) => Math.abs(l.Amount ?? 0)));
+            const byAccount = new Map<string, number>();
+            for (let i = 0; i < sliceLines.length; i++) {
+                if (!(pieces[i] > 0)) continue;
+                const p = sliceLines[i].Product;
+                const account = await RefuseUnlinkedCustomerDeposits(
+                    () => this._resolver.Resolve(GL_ROLE.CustomerDeposits, p?.ProductID ?? null, p?.ProductCategoryID ?? null, share.CompanyID, asOf, p?.ProductTypeID ?? null),
+                    `${label} ${ctx.PaymentNumber} on order ${ctx.OrderNumber}`,
+                    share.CompanyID,
+                    amount,
+                );
+                byAccount.set(account, money((byAccount.get(account) ?? 0) + pieces[i]));
+            }
+            return [...byAccount].map(([account, credit]) => ({
+                GLAccountID: account,
+                CreditAmount: credit,
+                Description: `${label} ${ctx.PaymentNumber} — customer deposit on order ${ctx.OrderNumber}`,
+                ...dims(slice.Dimensions),
+            }));
+        };
+
         // Cash is ONE debit for the whole payment line, but it stands for every settled line —
         // including the other companies' — so it splits across all of their tag sets. Leaving it
         // bare while the credits are tagged would unbalance every dimension-filtered trial balance
         // the tags exist to produce.
         const receivingLines: PaymentJELine[] = groupSlices(shares.flatMap(slicesFor)).map((slice) => ({
-            GLAccountID: cashAccount,
+            GLAccountID: debitAccount,
             DebitAmount: slice.Amount,
-            Description: `${label} ${ctx.PaymentNumber} — cash for order ${ctx.OrderNumber}`,
+            Description: `${label} ${ctx.PaymentNumber} — ${debitWhat} for order ${ctx.OrderNumber}`,
             ...dims(slice.Dimensions),
         }));
 
         if (ownShare) {
-            const arAccount = await this._resolver.Resolve(GL_ROLE.AccountsReceivable, null, null, receiving, asOf);
-            for (const slice of slicesFor(ownShare)) {
-                receivingLines.push({
-                    GLAccountID: arAccount,
-                    CreditAmount: slice.Amount,
-                    Description: `${label} ${ctx.PaymentNumber} — clear receivable on order ${ctx.OrderNumber}`,
-                    ...dims(slice.Dimensions),
-                });
-            }
+            receivingLines.push(...(await customerCreditLines(ownShare, slicesFor(ownShare))));
         }
         // No `else` and no error: a shared-services entity collecting purely on others' behalf owns
         // no line, so it has no receivable to clear. Its entry is Dr Cash / Cr Due To …, which is
@@ -443,14 +561,8 @@ export class PaymentAllocationFactory {
                 });
             }
 
-            // …and the owner's customer receivable becomes a receivable from the collector.
-            const otherAR = await this._resolver.Resolve(
-                GL_ROLE.AccountsReceivable,
-                null,
-                null,
-                share.CompanyID,
-                asOf,
-            );
+            // …and the owner's customer receivable becomes a receivable from the collector — or, when
+            // the owner is a scheduled company that has not billed this much yet, a deposit it holds.
             const lines: PaymentJELine[] = [];
             for (const slice of shareSlices) {
                 lines.push({
@@ -460,14 +572,7 @@ export class PaymentAllocationFactory {
                     ...dims(mergeDimensions(pair.DueFromDimensions, slice.Dimensions)),
                 });
             }
-            for (const slice of shareSlices) {
-                lines.push({
-                    GLAccountID: otherAR,
-                    CreditAmount: slice.Amount,
-                    Description: `${label} ${ctx.PaymentNumber} — clear receivable on order ${ctx.OrderNumber}`,
-                    ...dims(slice.Dimensions),
-                });
-            }
+            lines.push(...(await customerCreditLines(share, shareSlices)));
             otherDrafts.push(this.toDraft(ctx, mirrorIf(ctx.IsReversal, lines), share.CompanyID));
         }
 
@@ -476,6 +581,32 @@ export class PaymentAllocationFactory {
 
         for (const draft of drafts) this.assertBalanced(draft, ctx);
         return { Drafts: drafts, Shares: shares };
+    }
+
+    /**
+     * Gift Card Liability, or Deferred Revenue when none is linked, resolved exactly as
+     * `OrderJournalEntryFactory` did at sale: product → category → product type → company, from the
+     * line that sold the card. That is the sale's account unless links changed in between. Only
+     * "nothing linked" falls back; a cross-company refusal or any other failure is rethrown.
+     */
+    private async resolveGiftCardLiability(
+        sale: GiftCardSaleLine,
+        asOf: Date,
+        ctx: PaymentLineAllocationContext,
+    ): Promise<string> {
+        const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
+            this._resolver.Resolve(role, sale.ProductID, sale.ProductCategoryID, sale.CompanyID, asOf, sale.ProductTypeID);
+        try {
+            return await resolve(GL_ROLE.GiftCardLiability);
+        } catch (err) {
+            if (!IsRoleNotLinked(err)) throw err;
+            console.warn(
+                `Payment ${ctx.PaymentNumber}: no 'Gift Card Liability' GL account is linked for company ` +
+                    `${sale.CompanyID}, so the gift card redemption relieves Deferred Revenue instead — the ` +
+                    `account the sale fell back to. Link a Gift Card Liability account.`,
+            );
+            return resolve(GL_ROLE.DeferredRevenue);
+        }
     }
 
     private toDraft(ctx: PaymentLineAllocationContext, lines: PaymentJELine[], companyID: string): PaymentJEDraft {

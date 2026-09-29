@@ -203,7 +203,7 @@
                             </div>
 
                             <!-- TENDER-SPECIFIC INSTRUMENT CAPTURE (PaymentDetail) -->
-                            @if (PaymentTypeCode === 'check' || (SelectedPaymentType?.RequiresReference && !RequiresInstrument)) {
+                            @if (PaymentTypeCode === 'check') {
                                 <div class="mjo-instrument-box">
                                     <div class="mjo-instrument-box__title">
                                         <i class="fa-solid fa-money-check"></i> Check details
@@ -220,6 +220,38 @@
                                         <div class="mjo-field col-span-full">
                                             <label class="mjo-label">Bank Name</label>
                                             <input type="text" class="mj-input" [(ngModel)]="BankName" [disabled]="!ComposeMode" placeholder="e.g. Chase, Bank of America" />
+                                        </div>
+                                    </div>
+                                </div>
+                            } @else if (PaymentTypeCode === 'ach') {
+                                <div class="mjo-instrument-box">
+                                    <div class="mjo-instrument-box__title">
+                                        <i class="fa-solid fa-building-columns"></i> Bank transfer / ACH details
+                                    </div>
+                                    <div class="mjo-instrument-box__grid">
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Bank Name</label>
+                                            <input type="text" class="mj-input" [(ngModel)]="BankName" [disabled]="!ComposeMode" placeholder="e.g. Wells Fargo" />
+                                        </div>
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Account Type</label>
+                                            <select class="mj-input" [(ngModel)]="BankAccountType" [disabled]="!ComposeMode">
+                                                <option [ngValue]="null">Select Type</option>
+                                                <option value="Checking">Checking</option>
+                                                <option value="Savings">Savings</option>
+                                            </select>
+                                        </div>
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Routing Last 4</label>
+                                            <input type="text" class="mj-input font-mono" maxlength="4" [(ngModel)]="RoutingLast4" [disabled]="!ComposeMode" placeholder="1234" />
+                                        </div>
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Account Last 4</label>
+                                            <input type="text" class="mj-input font-mono" maxlength="4" [(ngModel)]="AccountLast4" [disabled]="!ComposeMode" placeholder="5678" />
+                                        </div>
+                                        <div class="mjo-field col-span-full">
+                                            <label class="mjo-label">Trace / Reference №</label>
+                                            <input type="text" class="mj-input" [(ngModel)]="ReferenceNumber" [disabled]="!ComposeMode" placeholder="Trace #" />
                                         </div>
                                     </div>
                                 </div>
@@ -261,38 +293,6 @@
                                         </div>
                                     </div>
                                 </div>
-                            } @else if (PaymentTypeCode === 'ach') {
-                                <div class="mjo-instrument-box">
-                                    <div class="mjo-instrument-box__title">
-                                        <i class="fa-solid fa-building-columns"></i> Bank transfer / ACH details
-                                    </div>
-                                    <div class="mjo-instrument-box__grid">
-                                        <div class="mjo-field">
-                                            <label class="mjo-label">Bank Name</label>
-                                            <input type="text" class="mj-input" [(ngModel)]="BankName" [disabled]="!ComposeMode" placeholder="e.g. Wells Fargo" />
-                                        </div>
-                                        <div class="mjo-field">
-                                            <label class="mjo-label">Account Type</label>
-                                            <select class="mj-input" [(ngModel)]="BankAccountType" [disabled]="!ComposeMode">
-                                                <option [ngValue]="null">Select Type</option>
-                                                <option value="Checking">Checking</option>
-                                                <option value="Savings">Savings</option>
-                                            </select>
-                                        </div>
-                                        <div class="mjo-field">
-                                            <label class="mjo-label">Routing Last 4</label>
-                                            <input type="text" class="mj-input font-mono" maxlength="4" [(ngModel)]="RoutingLast4" [disabled]="!ComposeMode" placeholder="1234" />
-                                        </div>
-                                        <div class="mjo-field">
-                                            <label class="mjo-label">Account Last 4</label>
-                                            <input type="text" class="mj-input font-mono" maxlength="4" [(ngModel)]="AccountLast4" [disabled]="!ComposeMode" placeholder="5678" />
-                                        </div>
-                                        <div class="mjo-field col-span-full">
-                                            <label class="mjo-label">Trace / Reference №</label>
-                                            <input type="text" class="mj-input" [(ngModel)]="ReferenceNumber" [disabled]="!ComposeMode" placeholder="Trace #" />
-                                        </div>
-                                    </div>
-                                </div>
                             } @else if (RequiresReference) {
                                 <div class="mjo-instrument-box">
                                     <div class="mjo-instrument-box__title">
@@ -308,7 +308,7 @@
                             <mj-form-field
                                 [Record]="record"
                                 [ShowLabel]="true"
-                                DisplayNameOverride="Receiving Co."
+                                DisplayNameOverride="Receiving Company"
                                 FieldName="ReceivingCompanyID"
                                 Type="textbox"
                                 LinkType="Record"
@@ -316,6 +316,9 @@
                                 [FormContext]="formContext"
                                 (Navigate)="OnFormNavigate($event)">
                             </mj-form-field>
+                            @if (ReceivingCompanyMissing && !record.ReceivingCompanyID) {
+                                <div class="mjo-field-hint mjo-field-hint--error">Required before Capture &amp; Book.</div>
+                            }
 
                             <mj-form-field
                                 [Record]="record"
@@ -488,7 +491,10 @@
                                                 }
                                             </td>
                                             <td class="text-right font-mono" [class.text-muted]="CalculateLeavesBalance(order) === 0">
-                                                ${{ CalculateLeavesBalance(order).toFixed(2) }}
+                                                {{ FormatLeavesBalance(order) }}
+                                                @if (FormatLeavesCredit(order)) {
+                                                    <div class="mjo-subtext text-info">Creates {{ FormatLeavesCredit(order) }} credit</div>
+                                                }
                                             </td>
                                             <td class="text-right">
                                                 @if (!IsCaptured) {
