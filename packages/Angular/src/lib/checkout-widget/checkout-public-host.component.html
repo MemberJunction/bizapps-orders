@@ -13,6 +13,7 @@
     } @else if (!config) {
         <p class="mj-checkout-public__status" role="status">Loading checkout…</p>
     } @else {
+        @for (generation of [formGeneration]; track generation) {
         <mj-checkout-widget
             [config]="config"
             [distributionSlug]="slug"
@@ -24,5 +25,6 @@
             (submitted)="onSubmitted($event)"
             (cancelled)="onCancelled()">
         </mj-checkout-widget>
+        }
     }
 </div>
