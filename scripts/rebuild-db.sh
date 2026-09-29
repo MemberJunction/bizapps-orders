@@ -18,6 +18,7 @@
 #   6. this app's migrations, as committed (they carry their CodeGen output)
 #   7. seed metadata: common's query categories, accounting's currencies and GL account roles,
 #      then this app's metadata/
+#   8. integration-suite users: a human user, and the Account Director role for the Owner
 #
 # Usage: scripts/rebuild-db.sh
 set -euo pipefail
@@ -32,12 +33,13 @@ MJ_VERSION="${MJ_CORE_VERSION:-v6.1.4}"
 COMMON_REPO="${BIZAPPS_COMMON_REPO:-$ROOT/../bizapps-common}"
 ACCOUNTING_REPO="${BIZAPPS_ACCOUNTING_REPO:-$ROOT/../bizapps-accounting}"
 TASKS_REPO="${BIZAPPS_TASKS_REPO:-$ROOT/../bizapps-tasks}"
+INTEGRATION_USER_EMAIL="${INTEGRATION_USER_EMAIL:-integration.user@example.com}"
 MJ="node $ROOT/node_modules/@memberjunction/cli/bin/run.js"
 SQLCMD="sqlcmd -S ${DB_HOST},${DB_PORT:-1433} -U ${DB_USERNAME} -P ${DB_PASSWORD} -C -N o"
 
 say() { printf '\n\033[1m=== %s ===\033[0m\n' "$1"; }
 
-say "1/7  Recreating ${DB_DATABASE}"
+say "1/8  Recreating ${DB_DATABASE}"
 $SQLCMD -d master -Q "
     IF DB_ID('${DB_DATABASE}') IS NOT NULL
     BEGIN
@@ -46,10 +48,10 @@ $SQLCMD -d master -Q "
     END
     CREATE DATABASE [${DB_DATABASE}];"
 
-say "2/7  MJ core @ ${MJ_VERSION}"
+say "2/8  MJ core @ ${MJ_VERSION}"
 $MJ migrate -t "${MJ_VERSION}"
 
-say "3/7  bizapps-common"
+say "3/8  bizapps-common"
 # Applied directly rather than through `mj migrate` so the two placeholders can be substituted
 # differently, which they must be:
 #
@@ -82,23 +84,23 @@ for f in "$COMMON_REPO"/migrations/*.sql; do
         || { printf 'FAILED: %s\n' "$(basename "$f")" >&2; exit 1; }
 done
 
-say "4/7  bizapps-tasks"
+say "4/8  bizapps-tasks"
 # Orders never names a tasks entity, so this looks unnecessary from here. It is not: accounting's
 # TasksAppApprovalGate resolves 'MJ_BizApps_Tasks: Task Types' / 'Task Links' / 'Task Decisions' /
 # 'Task Decision Outcomes' through the metadata layer, so without these tables every accounting
 # approval path fails at runtime with an entity that does not exist.
 $MJ migrate --schema __mj_BizAppsTasks --dir "$TASKS_REPO/migrations"
 
-say "5/7  bizapps-accounting"
+say "5/8  bizapps-accounting"
 $MJ migrate --schema __mj_BizAppsAccounting --dir "$ACCOUNTING_REPO/migrations"
 
-say "6/7  bizapps-orders"
+say "6/8  bizapps-orders"
 # --schema is REQUIRED, not optional. Without it `mj migrate` uses the CORE schema's flyway history,
 # which already carries a SQL_BASELINE from step 2 — so flyway skips this app's `B` baseline
 # entirely and reports "0 applied" while creating nothing.
 $MJ migrate --schema __mj_BizAppsOrders --dir "$ROOT/migrations"
 
-say "7/7  Seed metadata"
+say "7/8  Seed metadata"
 # Accounting's currencies and GL account roles are seed METADATA, not migration DDL — booking needs
 # both (a company profile names a functional currency; the resolver looks up roles by name), so a
 # rebuild that stops at the migrations produces a database where every confirm fails at fixture time.
@@ -112,6 +114,21 @@ $MJ sync push --ci --dir "$ACCOUNTING_REPO/metadata" --include currencies,gl-acc
 # ML models and their scoring bindings are left out: the models reference trained artifact files that
 # no fresh database has (https://github.com/MemberJunction/bizapps-orders/issues/364).
 $MJ sync push --ci --dir "$ROOT/metadata" --exclude ml-models,ml-model-scoring-bindings
+
+say "8/8  Integration-suite users"
+# The suite runs as the Owner (System) and needs two things a fresh database does not have:
+#   - a human user, whom the world loader stamps as each company's ApprovalCFOUserID. Explorer
+#     creates one at first sign-in; a database built here has only System and Anonymous.
+#   - the price-override grant. Its fixtures place lines at stated prices, and only Account
+#     Director holds MJ.BizApps.Orders.Price.OverrideAny.
+$SQLCMD -b -d "${DB_DATABASE}" -Q "
+    SET NOCOUNT ON;
+    INSERT INTO __mj.[User] (Name, FirstName, LastName, Email, Type, IsActive, LinkedRecordType)
+    VALUES (N'${INTEGRATION_USER_EMAIL}', N'Integration', N'User', N'${INTEGRATION_USER_EMAIL}', N'User', 1, N'None');
+    INSERT INTO __mj.UserRole (UserID, RoleID)
+    SELECT u.ID, r.ID FROM __mj.[User] u CROSS JOIN __mj.Role r
+    WHERE u.Type = N'Owner' AND r.Name = N'Account Director';
+    IF @@ROWCOUNT <> 1 THROW 50000, 'expected one Owner and one Account Director role', 1;"
 
 say "Done"
 cat <<'NEXT'
