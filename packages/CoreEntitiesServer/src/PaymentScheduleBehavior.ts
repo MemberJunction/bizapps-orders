@@ -128,20 +128,27 @@ export function RenewalScheduleRows(lines: ScheduleLineFacts[], dueDate: string)
     return out;
 }
 
+/** Each level's stated `InvoiceLeadDays` for one product; null or undefined means "not set here". */
+export interface InvoiceLeadFacts {
+    Product: number | null | undefined;
+    /** The product's own category first, then each ancestor, nearest first. */
+    Categories: ReadonlyArray<number | null | undefined>;
+    Type: number | null | undefined;
+}
+
 /**
- * A line's invoice lead in days (orders #342): the nearest `InvoiceLeadDays` stated on its product
- * category or an ancestor, else `fallback` (the `DefaultInvoiceLeadDays` setting).
- *
- * @param chainLeads The category's own value first, then each ancestor's, nearest first.
+ * A line's invoice lead in days (orders #342): the most specific value stated, in the chain Amith set
+ * for product settings (Product -> its category -> each ancestor category -> Product Type), else
+ * `fallback` (the `DefaultInvoiceLeadDays` setting). Zero is a stated value, not "unset".
  */
-export function ResolveInvoiceLeadDays(chainLeads: ReadonlyArray<number | null | undefined>, fallback: number): number {
-    return chainLeads.find((d) => d != null) ?? fallback;
+export function ResolveInvoiceLeadDays(facts: InvoiceLeadFacts, fallback: number): number {
+    return [facts.Product, ...facts.Categories, facts.Type].find((d) => d != null) ?? fallback;
 }
 
 /** A line as the default-schedule rule reads it. */
 export interface DefaultScheduleLineFacts extends ScheduleLineFacts {
     ServicePeriodStart: DateCell;
-    /** {@link ResolveInvoiceLeadDays} for the line's category. */
+    /** {@link ResolveInvoiceLeadDays} for the line's product. */
     LeadDays: number;
 }
 

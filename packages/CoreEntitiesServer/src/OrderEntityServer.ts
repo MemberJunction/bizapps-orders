@@ -3619,8 +3619,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * Give an order confirmed with NO schedule the default one-row-per-company schedule when its
      * service starts further out than the invoice lead (orders #342). Returns whether it wrote any.
      *
-     * The rule is {@link DefaultScheduleRows}; the lead comes from each line's product category, then
-     * its ancestors (the pricing walk, `OrdersEngine.CategoryChain`), then `DefaultInvoiceLeadDays`.
+     * The rule is {@link DefaultScheduleRows}; the lead comes from each line's product, then its
+     * category and that category's ancestors (the pricing walk, `OrdersEngine.CategoryChain`), then its
+     * product type, then `DefaultInvoiceLeadDays` ({@link invoiceLeadDaysFor}).
      * A reversal order never gets one: it settles against its origin, not on a schedule of its own.
      * An EVENT line never triggers one either: tickets are paid at registration, so its event dates
      * are not a reason to hold the invoice back. It still counts toward its company's gross.
@@ -3640,10 +3641,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 CompanyID: String(l.CompanyID),
                 LineTotalGross: Number(l.LineTotalGross ?? 0),
                 ServicePeriodStart: engine.EventProductByID(l.ProductID) ? null : l.ServicePeriodStart,
-                LeadDays: ResolveInvoiceLeadDays(
-                    engine.CategoryChain(engine.ProductByID(l.ProductID)?.ProductCategoryID).map((id) => engine.ProductCategoryByID(id)?.InvoiceLeadDays),
-                    fallback,
-                ),
+                LeadDays: this.invoiceLeadDaysFor(engine, l.ProductID, fallback),
             })),
             orderDay,
         );
@@ -3663,6 +3661,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
         }
         return drafts.length > 0;
+    }
+
+    /** Gather one product's `InvoiceLeadDays` at every level and resolve it ({@link ResolveInvoiceLeadDays}). */
+    private invoiceLeadDaysFor(engine: OrdersEngine, productID: string, fallback: number): number {
+        const product = engine.ProductByID(productID);
+        return ResolveInvoiceLeadDays(
+            {
+                Product: product?.InvoiceLeadDays,
+                Categories: engine.CategoryChain(product?.ProductCategoryID).map((id) => engine.ProductCategoryByID(id)?.InvoiceLeadDays),
+                Type: product?.ProductTypeID ? engine.ProductTypeByID(product.ProductTypeID)?.InvoiceLeadDays : null,
+            },
+            fallback,
+        );
     }
 
     /**

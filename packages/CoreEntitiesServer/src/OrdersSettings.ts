@@ -48,8 +48,8 @@ export const ORDERS_SETTING = {
      */
     RenewalAccessCutoffDaysPastDue: 'RenewalAccessCutoffDaysPastDue',
     /**
-     * Days before a line's service start that its invoice goes out, when neither the line's product
-     * category nor any ancestor states `InvoiceLeadDays` (orders #342). Drives the one-row schedule
+     * Days before a line's service start that its invoice goes out, when none of the line's product,
+     * its category chain or its product type states `InvoiceLeadDays` (orders #342). Drives the one-row schedule
      * a hand-confirmed, future-dated order gets at confirm. A whole number of 0 or more.
      */
     DefaultInvoiceLeadDays: 'DefaultInvoiceLeadDays',

@@ -45,6 +45,8 @@
  *   PS-M  a category's InvoiceLeadDays (90) wins over the DefaultInvoiceLeadDays setting (30)
  *   PS-N  two companies on one order each get their own default row
  *   PS-O  an event ticket 60 days out books at confirm with no default row
+ *   PS-P  a product type's InvoiceLeadDays (60) applies when no category in the chain states one
+ *   PS-Q  a product's own InvoiceLeadDays (10) wins over its category (90) and its type (60)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -79,7 +81,7 @@ import {
     upsertViaEntity,
 } from '../fixture.js';
 import { World } from '../world/world.js';
-import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, PRODUCT_CATEGORY_ENTITY } from '../entity-names.js';
+import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, PRODUCT_CATEGORY_ENTITY, PRODUCT_ENTITY, PRODUCT_TYPE_ENTITY } from '../entity-names.js';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
 import type { RequestedCharge } from '@mj-biz-apps/orders-core-entities-server';
 import { CreatePayment } from '../payment-builder.js';
@@ -392,18 +394,33 @@ async function unscheduledFutureOrder(ctx: IntegrationCheckContext, start: strin
     return result.Order.ID as string;
 }
 
-/** Run `body` with BCP's SERVICES category stating `days`, through the entity so the catalog cache sees it. */
-async function withServicesLead(ctx: IntegrationCheckContext, days: number, body: () => Promise<void>): Promise<void> {
-    const categoryID = World().Categories['BCP:SERVICES'];
-    Assert(categoryID != null, "ORD-WORLD category 'BCP:SERVICES' was not loaded");
-    await upsertViaEntity(ctx, PRODUCT_CATEGORY_ENTITY, categoryID, { InvoiceLeadDays: days });
+/**
+ * Run `body` with one catalog row (a product type, category or product) stating `InvoiceLeadDays`, written
+ * through the entity so the catalog cache sees it. None of the fixture's rows state one, so it goes back to NULL.
+ */
+async function withLead(ctx: IntegrationCheckContext, entityName: string, id: string, days: number, body: () => Promise<void>): Promise<void> {
+    await upsertViaEntity(ctx, entityName, id, { InvoiceLeadDays: days });
     await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
     try {
         await body();
     } finally {
-        await upsertViaEntity(ctx, PRODUCT_CATEGORY_ENTITY, categoryID, { InvoiceLeadDays: null });
+        await upsertViaEntity(ctx, entityName, id, { InvoiceLeadDays: null });
         await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
     }
+}
+
+/** BCP's SERVICES category, DeferredA's own. */
+function servicesCategoryID(): string {
+    const categoryID = World().Categories['BCP:SERVICES'];
+    Assert(categoryID != null, "ORD-WORLD category 'BCP:SERVICES' was not loaded");
+    return categoryID!;
+}
+
+/** DeferredA's product type. */
+function deferredATypeID(): string {
+    const typeID = OrdersEngine.Instance.ProductByID(Fx().Products.DeferredA)?.ProductTypeID;
+    Assert(typeID != null, 'DeferredA has no product type in the catalog cache');
+    return typeID!;
 }
 
 export const PaymentScheduleChecks: NamedCheck[] = [
@@ -1056,7 +1073,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
-                await withServicesLead(ctx, 90, async () => {
+                await withLead(ctx, PRODUCT_CATEGORY_ENTITY, servicesCategoryID(), 90, async () => {
                     const orderID = await unscheduledFutureOrder(ctx, '2027-01-01');
                     const rows = await schedule(ctx, orderID);
                     AssertEqual(rows.length, 1, 'one default row');
@@ -1107,6 +1124,38 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 const orderID = result.Order.ID as string;
                 AssertEqual((await schedule(ctx, orderID)).length, 0, 'no default row for an event ticket');
                 AssertEqual(netOn(await bookingLedger(ctx, orderID), AR_CODE), 500, 'the ticket is a receivable at confirm, as before');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-P',
+        Name: "PS-P: a product type's InvoiceLeadDays (60) applies when no category in the chain states one",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                await withLead(ctx, PRODUCT_TYPE_ENTITY, deferredATypeID(), 60, async () => {
+                    const orderID = await unscheduledFutureOrder(ctx, '2027-01-01');
+                    const rows = await schedule(ctx, orderID);
+                    AssertEqual(rows.length, 1, 'one default row');
+                    AssertEqual(rows[0].DueDate, '2026-11-02', "due the type's 60 days before the start, not the setting's 30");
+                });
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-Q',
+        Name: "PS-Q: a product's own InvoiceLeadDays (10) wins over its category (90) and its type (60)",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                await withLead(ctx, PRODUCT_TYPE_ENTITY, deferredATypeID(), 60, () =>
+                    withLead(ctx, PRODUCT_CATEGORY_ENTITY, servicesCategoryID(), 90, () =>
+                        withLead(ctx, PRODUCT_ENTITY, Fx().Products.DeferredA, 10, async () => {
+                            const orderID = await unscheduledFutureOrder(ctx, '2027-01-01');
+                            const rows = await schedule(ctx, orderID);
+                            AssertEqual(rows.length, 1, 'one default row');
+                            AssertEqual(rows[0].DueDate, '2026-12-22', "due the product's 10 days before the start");
+                        }),
+                    ),
+                );
             }),
     },
 ];

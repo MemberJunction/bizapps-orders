@@ -193,18 +193,31 @@ describe('RenewalDueDate (#305 review)', () => {
 });
 
 describe('ResolveInvoiceLeadDays', () => {
-    it('takes the category\'s own lead first', () => {
-        expect(ResolveInvoiceLeadDays([90, 45], 30)).toBe(90);
+    const unset = { Product: null, Categories: [], Type: null };
+
+    it('the product wins over its category', () => {
+        expect(ResolveInvoiceLeadDays({ ...unset, Product: 10, Categories: [90], Type: 60 }, 30)).toBe(10);
     });
-    it('inherits the nearest ancestor that states one', () => {
-        expect(ResolveInvoiceLeadDays([null, undefined, 60, 45], 30)).toBe(60);
+    it('a sub-category wins over its parent category', () => {
+        expect(ResolveInvoiceLeadDays({ ...unset, Categories: [45, 90] }, 30)).toBe(45);
     });
-    it('falls back to the setting when no category in the tree states one', () => {
-        expect(ResolveInvoiceLeadDays([null, null], 30)).toBe(30);
-        expect(ResolveInvoiceLeadDays([], 30)).toBe(30);
+    it('an unset sub-category inherits the nearest ancestor that states one', () => {
+        expect(ResolveInvoiceLeadDays({ ...unset, Categories: [null, undefined, 60, 45] }, 30)).toBe(60);
     });
-    it('honours an explicit zero rather than skipping it', () => {
-        expect(ResolveInvoiceLeadDays([0, 90], 30)).toBe(0);
+    it('a category wins over the product type', () => {
+        expect(ResolveInvoiceLeadDays({ ...unset, Categories: [null, 90], Type: 60 }, 30)).toBe(90);
+    });
+    it('the product type wins over the setting', () => {
+        expect(ResolveInvoiceLeadDays({ ...unset, Categories: [null, null], Type: 60 }, 30)).toBe(60);
+    });
+    it('all unset falls to the setting', () => {
+        expect(ResolveInvoiceLeadDays({ Product: undefined, Categories: [null, null], Type: undefined }, 30)).toBe(30);
+        expect(ResolveInvoiceLeadDays(unset, 30)).toBe(30);
+    });
+    it('zero is a stated value at every level, not "unset"', () => {
+        expect(ResolveInvoiceLeadDays({ Product: 0, Categories: [90], Type: 60 }, 30)).toBe(0);
+        expect(ResolveInvoiceLeadDays({ ...unset, Categories: [0, 90], Type: 60 }, 30)).toBe(0);
+        expect(ResolveInvoiceLeadDays({ ...unset, Type: 0 }, 30)).toBe(0);
     });
 });
 
