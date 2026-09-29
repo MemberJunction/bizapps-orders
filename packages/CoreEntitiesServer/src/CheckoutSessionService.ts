@@ -29,7 +29,13 @@ import {
     mjBizAppsOrdersProductTypeEntity,
     TodayAsDateValue,
     type CheckoutWidgetConfiguration,
-    type ProductTypeConfiguration
+    type ProductTypeConfiguration,
+    CheckAnswersAgainstQuestions,
+    CheckCheckoutAnswers,
+    ReadCheckoutQuestions,
+    type CheckoutAnswersCheck,
+    type CheckoutAnswersInput,
+    type ResolvedCheckoutAnswer
 } from '@mj-biz-apps/orders-entities';
 import { EscapeText } from './sql-guards.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
@@ -317,6 +323,7 @@ export class CheckoutSessionService {
         'isEvent',
         'theme',
         'allowCoupons',
+        'questions',
     ]);
 
     private static sanitizeConfigurationForClient(configObj: CheckoutWidgetConfiguration): CheckoutWidgetConfiguration {
@@ -676,6 +683,42 @@ export class CheckoutSessionService {
         return null;
     }
 
+    /** Resolved answers as the session metadata stores them, keyed by question. */
+    private static answersForStorage(answers: ResolvedCheckoutAnswer[]): CheckoutAnswersInput {
+        const stored: CheckoutAnswersInput = {};
+        for (const a of answers) {
+            stored[a.QuestionKey] = a.OtherText === null ? { Value: a.Answer } : { Value: a.Answer, OtherText: a.OtherText };
+        }
+        return stored;
+    }
+
+    /**
+     * The session's stored answers, checked in full against the widget's CURRENT questions:
+     * required answers present, choices valid. Run where money moves or the order books.
+     */
+    private static checkSessionAnswers(
+        widget: mjBizAppsOrdersCheckoutWidgetEntity,
+        session: mjBizAppsOrdersCheckoutSessionEntity
+    ): CheckoutAnswersCheck {
+        let questions: unknown;
+        if (widget.Configuration) {
+            try {
+                questions = (JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration).questions;
+            } catch {
+                return { Answers: [], Error: 'Invalid widget configuration' };
+            }
+        }
+        let stored: unknown;
+        if (session.MetadataJSON) {
+            try {
+                stored = (JSON.parse(session.MetadataJSON) as { Answers?: unknown }).Answers;
+            } catch {
+                stored = undefined;
+            }
+        }
+        return CheckCheckoutAnswers(questions, stored);
+    }
+
     /**
      * Creates an order line entity instance attached to the order's Lines collection.
      */
@@ -809,7 +852,8 @@ export class CheckoutSessionService {
         clientSessionKey: string,
         email: string,
         lines: CheckoutLineInput[],
-        contextUser?: UserInfo
+        contextUser?: UserInfo,
+        answers?: CheckoutAnswersInput
     ): Promise<UpdateDraftResult> {
         const failed = (message: string): UpdateDraftResult => ({
             Success: false,
@@ -857,6 +901,22 @@ export class CheckoutSessionService {
                 return failed('Invalid widget configuration');
             }
         }
+
+        // Answers are stored as they stand, so a buyer can price the checkout before answering;
+        // a missing required answer is refused when the payment intent opens and at completion.
+        // What is sent must still be a well-formed answer to a question this widget asks.
+        const questions = ReadCheckoutQuestions(widgetConfig.questions);
+        if (questions.Error) {
+            return failed(questions.Error);
+        }
+        const draftAnswers = CheckAnswersAgainstQuestions(
+            questions.Questions.map((q) => ({ ...q, required: false })),
+            answers
+        );
+        if (draftAnswers.Error) {
+            return failed(draftAnswers.Error);
+        }
+
         const allowedProductIds = await this.resolveAllowedProductIds(widgetConfig, contextUser);
         const allowAnyProduct = widgetConfig.allowAnyProduct === true;
         if (!allowAnyProduct && allowedProductIds.size === 0) {
@@ -1055,6 +1115,7 @@ export class CheckoutSessionService {
             Lines: lines,
             PricedLines: lineSummaries,
             TotalGross: order.TotalGross,
+            Answers: this.answersForStorage(draftAnswers.Answers),
             UpdatedAt: new Date().toISOString()
         });
         const sessionSaved = await session.Save();
@@ -1135,6 +1196,11 @@ export class CheckoutSessionService {
         const widgetLoaded = await widget.Load(session.CheckoutWidgetID);
         if (!widgetLoaded) {
             return failed('The checkout widget for this session could not be loaded.');
+        }
+
+        const answersCheck = this.checkSessionAnswers(widget, session);
+        if (answersCheck.Error) {
+            return failed(answersCheck.Error);
         }
 
         let paymentProviderId: string | undefined;
@@ -1289,6 +1355,19 @@ export class CheckoutSessionService {
                 }
             }
 
+            // Refused before anything is written, so an unanswered checkout creates no Person.
+            const answersCheck = this.checkSessionAnswers(widget, session);
+            if (answersCheck.Error) {
+                await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
+                session.Status = 'Open';
+                return {
+                    Success: false,
+                    ErrorMessage: answersCheck.Error,
+                    SessionID: sessionID,
+                    Status: 'Open'
+                };
+            }
+
             // Resolve — creating if necessary — the payer Person. OrderHeaderEntity.Validate()
             // refuses to confirm an order without a customer, so a missing payer must fail
             // HERE with a clear message, not deep inside Confirm(). Contact fields come from
@@ -1424,6 +1503,16 @@ export class CheckoutSessionService {
                         await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser);
                     }
                 }
+            }
+
+            // The answers ride in the order's graph, so Confirm() writes them in the booking
+            // transaction: a refused confirm leaves none behind for a retry to duplicate.
+            for (const answer of answersCheck.Answers) {
+                const row = await order.CheckoutAnswers.Create();
+                row.QuestionKey = answer.QuestionKey;
+                row.QuestionLabel = answer.QuestionLabel;
+                row.Answer = answer.Answer;
+                row.OtherText = answer.OtherText;
             }
 
             // Price lines before confirmation

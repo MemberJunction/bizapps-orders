@@ -62,7 +62,7 @@ import {
     type ServerExtensionConfig,
 } from '@memberjunction/server-extensions-core';
 import { CheckoutSessionService, EscapeText, type CheckoutLineInput } from '@mj-biz-apps/orders-core-entities-server';
-import type { CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
+import type { CheckoutAnswersInput, CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -552,7 +552,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
         const email = typeof req.body?.email === 'string' ? req.body.email : '';
         const lines = Array.isArray(req.body?.lines) ? (req.body.lines as CheckoutLineInput[]) : [];
-        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user);
+        // Passed through unchecked: UpdateDraft judges the answers against the widget's own questions.
+        const answers = req.body?.answers as CheckoutAnswersInput | undefined;
+        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user, answers);
         res.status(result.Success ? 200 : 400).json(result);
     }
 

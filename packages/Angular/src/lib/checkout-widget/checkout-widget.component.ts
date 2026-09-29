@@ -32,6 +32,18 @@ import type {
     CustomUIThemeConfiguration,
     CheckoutWidgetConfiguration
 } from '@mj-biz-apps/orders-entities';
+// Deep import on purpose: this module has no dependencies, while the package root would pull every
+// entity class into the public checkout bundle. The server runs the same check.
+import {
+    CheckAnswersAgainstQuestions,
+    CheckoutAnswerMaxLength,
+    CheckoutQuestionOptionLabel,
+    CheckoutQuestionOptionValue,
+    ReadCheckoutQuestions,
+    type CheckoutAnswerInput,
+    type CheckoutAnswersInput,
+    type CheckoutQuestion
+} from '@mj-biz-apps/orders-entities/dist/checkout-questions.js';
 
 export interface CheckoutWidgetTheme extends CustomUIThemeConfiguration {
     primaryColor?: string;
@@ -93,6 +105,8 @@ export interface CheckoutSubmissionEvent {
         units?: Array<Record<string, unknown>>;
     };
     totalGross: number;
+    /** Answers to the widget's `questions`, keyed by question key. */
+    answers: CheckoutAnswersInput;
     paymentToken?: string;
     stripePaymentMethodId?: string;
     stripePaymentIntentId?: string;
@@ -156,6 +170,30 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     // Internal error message for client-side validation failures
     public internalErrorMessage = signal<string | null>(null);
     public displayErrorMessage = computed<string | null>(() => this._errorMessage() || this.internalErrorMessage());
+
+    /** The widget's questions. A malformed list shows none here; the server refuses the checkout. */
+    public questions = computed<CheckoutQuestion[]>(() => ReadCheckoutQuestions(this._config()?.questions).Questions);
+    public answers = signal<CheckoutAnswersInput>({});
+    public readonly optionValue = CheckoutQuestionOptionValue;
+    public readonly optionLabel = CheckoutQuestionOptionLabel;
+    public readonly answerMaxLength = CheckoutAnswerMaxLength;
+
+    public answerFor(key: string): CheckoutAnswerInput {
+        return this.answers()[key] ?? {};
+    }
+
+    public updateAnswer(key: string, patch: CheckoutAnswerInput): void {
+        this.answers.update((current) => ({ ...current, [key]: { ...current[key], ...patch } }));
+    }
+
+    /** True when the buyer chose the question's "Other" option, which needs a text answer. */
+    public isOtherChosen(question: CheckoutQuestion): boolean {
+        return question.otherOptionKey !== undefined && this.answerFor(question.key).Value === question.otherOptionKey;
+    }
+
+    private answersAreComplete(): boolean {
+        return !CheckAnswersAgainstQuestions(this.questions(), this.answers()).Error;
+    }
 
     // Form state signals
     public email = signal<string>('');
@@ -440,6 +478,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             const fn = this.firstName().trim();
             const ln = this.lastName().trim();
             if (!em || !em.includes('@') || !fn || !ln) return false;
+            if (!this.answersAreComplete()) return false;
             if (!this.isFree() && !this.isPaymentReady) return false;
             return true;
         }
@@ -473,6 +512,10 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             }
         }
 
+        if (!this.answersAreComplete()) {
+            return false;
+        }
+
         if (!this.isFree() && !this.isPaymentReady) {
             return false;
         }
@@ -498,6 +541,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
                 units: isPerUnit ? currentUnits : undefined
             },
             totalGross: this.totalGross(),
+            answers: this.answers(),
             stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? undefined),
             sessionKey: finalSessionKey
         };
