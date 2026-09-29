@@ -20,6 +20,7 @@
   "license": "BUSL-1.1",
   "devDependencies": {
     "@mj-biz-apps/accounting-core-entities-server": ">=0.5.0",
+    "@mj-biz-apps/tasks-entities": ">=1.4.1 <2.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.5",
     "vitest": "^4.0.18"
@@ -30,8 +31,7 @@
     "@memberjunction/integration-engine-base": "6.1.0-edge.5",
     "@mj-biz-apps/accounting-engine-base": ">=0.5.0",
     "@mj-biz-apps/common-entities": ">=5.46.0",
-    "@mj-biz-apps/orders-entities": "5.19.0",
-    "@mj-biz-apps/tasks-entities": ">=1.4.1"
+    "@mj-biz-apps/orders-entities": "5.19.0"
   },
   "peerDependencies": {
     "@memberjunction/communication-engine": "^6.1.0-edge.5",
@@ -42,7 +42,8 @@
     "@memberjunction/generic-database-provider": "^6.1.0-edge.5",
     "@memberjunction/global": "^6.1.0-edge.5",
     "@memberjunction/sqlserver-dataprovider": "^6.1.0-edge.5",
-    "@mj-biz-apps/accounting-core-entities-server": ">=0.5.0"
+    "@mj-biz-apps/accounting-core-entities-server": ">=0.5.0",
+    "@mj-biz-apps/tasks-entities": ">=1.4.1 <2.0.0"
   },
   "repository": {
     "type": "git",

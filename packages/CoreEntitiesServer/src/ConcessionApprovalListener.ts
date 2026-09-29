@@ -1,20 +1,24 @@
 /**
- * ConcessionApprovalListener — a decision recorded on an order's approval task decides its concessions
+ * ConcessionApprovalListener — a decision recorded on a concession's approval task decides that concession
  * (golive #274).
  *
  * The tasks app records a decision as a `TaskDecision` row and offers no typed callback, so this listens for
- * that row being created. A terminal outcome is applied to every Pending concession the task links, through
- * the concession's own Save: the role check, the decider stamp and the decision note are the ones deciding
- * the record applies. The decider is the user who recorded the decision.
+ * that row being created. A terminal outcome is applied to the Pending concession the task links (one per
+ * task), through the concession's own Save: the role check, the decider stamp and the decision note are the
+ * ones deciding the record applies. The decider is the user who recorded the decision.
  *
- * AFTER THE FACT. The decision is already saved when this runs, so a concession that refuses — its decider
- * does not hold the rule's role — stays Pending and the refusal is logged. The order stays held, which is
- * the safe side; the concession can still be decided on its record, and the next Pending concession on the
- * order raises a fresh task that links it again.
+ * AFTER THE FACT. The decision is already saved when this runs, and the tasks app closes the task. So when
+ * the concession refuses the decision — its decider does not hold the rule's role — or the outcome is one
+ * orders does not know, the concession stays Pending and is put back in front of its approvers: a fresh
+ * task is raised, the order points at it, and the reason is recorded on the refused task.
+ *
+ * No transaction is opened here: this runs while the tasks app is still closing the task on the same
+ * provider, and a transaction would take in those writes too.
  *
  * CONNECTS TO:
  *   EVENTS: MJGlobal BaseEntity 'save' of 'MJ_BizApps_Tasks: Task Decisions'
  *   WRITES: Order Concessions (Status, DecisionNotes) via OrderConcessionEntityServer
+ *           · a fresh approval task and the refusal note (./ConcessionApprovalTask.ts)
  *   READS:  Task Decision Outcomes · Task Links (./ConcessionApprovalTask.ts)
  */
 import { BaseEntity, LogError, type BaseEntityEvent, type IMetadataProvider } from '@memberjunction/core';
@@ -26,6 +30,8 @@ import type {
 import {
     ConcessionStatusForOutcome,
     LinkedConcessionIDs,
+    RaiseConcessionApprovalAgain,
+    ReleaseOrderFromTasks,
     requireSubclass,
     TASK_DECISION_ENTITY,
     TASK_DECISION_OUTCOME_ENTITY,
@@ -42,6 +48,8 @@ export interface ConcessionDecisionResult {
     ConcessionID: string;
     Applied: boolean;
     Message?: string;
+    /** The fresh approval task raised when the concession refused the decision. */
+    ReraisedTaskID?: string;
 }
 
 /** Subscribe once per process. Called from the orders server bootstrap. */
@@ -88,9 +96,6 @@ export async function ApplyTaskDecisionToConcessions(
     if (!(await outcome.Load(decision.OutcomeID))) throw new Error(`outcome ${decision.OutcomeID} was not found`);
     if (!outcome.IsTerminal) return [];
     const status = ConcessionStatusForOutcome(outcome.Code);
-    if (!status) {
-        throw new Error(`'${outcome.Code}' is not an outcome orders can apply to a concession; the concessions stay Pending`);
-    }
 
     const results: ConcessionDecisionResult[] = [];
     for (const id of concessionIDs) {
@@ -100,16 +105,43 @@ export async function ApplyTaskDecisionToConcessions(
         }
         if (!(await concession.Load(id)) || concession.Status !== 'Pending') continue;
 
-        concession.Status = status;
-        concession.DecisionNotes = decision.DecisionNotes;
-        concession.DecidedThroughTask = true;
-        if (await concession.Save()) {
-            results.push({ ConcessionID: id, Applied: true });
+        let refusal: string;
+        if (status) {
+            concession.Status = status;
+            concession.DecisionNotes = decision.DecisionNotes;
+            concession.DecidedThroughTask = true;
+            if (await concession.Save()) {
+                await ReleaseOrderFromTasks(concession.OrderHeaderID, [decision.TaskID], ctx);
+                results.push({ ConcessionID: id, Applied: true });
+                continue;
+            }
+            refusal = concession.LatestResult?.CompleteMessage ?? 'the concession refused the decision';
         } else {
-            const message = concession.LatestResult?.CompleteMessage ?? 'unknown error';
-            LogError(`${LOG_PREFIX} task ${decision.TaskID} decided concession ${id}, which refused: ${message}`);
-            results.push({ ConcessionID: id, Applied: false, Message: message });
+            refusal = `'${outcome.Code}' is not an outcome orders can apply to a concession.`;
         }
+        results.push(await routeAgain(concession, decision.TaskID, refusal, ctx));
     }
     return results;
+}
+
+/** Put a concession that did not take the task's decision back in front of its approvers. */
+async function routeAgain(
+    concession: OrderConcessionEntityServer,
+    refusedTaskID: string,
+    refusal: string,
+    ctx: ApprovalTaskContext,
+): Promise<ConcessionDecisionResult> {
+    LogError(`${LOG_PREFIX} task ${refusedTaskID} decided concession ${concession.ID}, which refused: ${refusal}`);
+    const roleID = await concession.ApprovingRoleID(ctx.User);
+    if (!roleID) {
+        throw new Error(`concession ${concession.ID} names no ConcessionLimit rule with an approving role, so it cannot be routed again`);
+    }
+    const reraised = await RaiseConcessionApprovalAgain(
+        { ID: concession.ID, OrderHeaderID: concession.OrderHeaderID, RequestedByUserID: concession.RequestedByUserID },
+        roleID,
+        refusedTaskID,
+        refusal,
+        ctx,
+    );
+    return { ConcessionID: concession.ID, Applied: false, Message: refusal, ReraisedTaskID: reraised };
 }

@@ -134,7 +134,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
     LoadOrderLineProgressMeasurementEntityServer(); // refuses a Posted observation the operation did not write
     LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
-    InitConcessionApprovalListener();      // a decision on an order's approval task decides its concessions (#274)
+    InitConcessionApprovalListener();      // a decision on a concession's approval task decides that concession (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
