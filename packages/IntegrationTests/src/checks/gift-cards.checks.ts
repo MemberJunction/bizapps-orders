@@ -25,11 +25,13 @@
  *   GC10  a partial return voids only that many cards
  *   GC11  an ordinary product issues nothing at all
  *   GC12  the issued card is spendable — it round-trips into a redemption
+ *   GC13  spending the card relieves the LIABILITY, not Cash — no cash arrived at redemption (#300)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
  * CONNECTS TO:
  *   CODE: GiftCardEngine · GiftCardBehavior · OrderJournalEntryFactory (the liability leg)
+ *         PaymentAllocationFactory (the redemption leg)
  *   PURE: packages/CoreEntitiesServer/src/__tests__/GiftCardBehavior.test.ts
  *   DOC:  plans/archive/bizapps-orders-master.md D4, D27, D44
  */
@@ -40,8 +42,10 @@ import {
   type IntegrationCheckContext,
   type NamedCheck,
 } from "@memberjunction/testing-integration";
+import { randomUUID } from "node:crypto";
 import {
   ACCT_SCHEMA,
+  createViaEntity,
   CreateOrdersFixture,
   Fx,
   InRolledBackTransaction,
@@ -52,6 +56,8 @@ import {
   TxQuery,
 } from "../fixture.js";
 import { ConfirmOrder } from "../order-builder.js";
+import { CreatePayment } from "../payment-builder.js";
+import { PAYMENT_DETAIL_ENTITY } from "../entity-names.js";
 
 interface CardRow {
   ID: string;
@@ -88,9 +94,9 @@ const ledgerOf = (ctx: IntegrationCheckContext, cardID: string) =>
 
 /** The ledger lines an order's booking produced, by account code. */
 const bookingLines = (ctx: IntegrationCheckContext, orderID: string) =>
-  TxQuery<{ Code: string; Name: string; DebitAmount: number; CreditAmount: number; EntryType: string; EffectiveDate: string | null }>(
+  TxQuery<{ GLAccountID: string; Code: string; Name: string; DebitAmount: number; CreditAmount: number; EntryType: string; EffectiveDate: string | null }>(
     ctx,
-    `SELECT gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount, je.EffectiveDate,
+    `SELECT jel.GLAccountID, gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount, je.EffectiveDate,
             (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType
        FROM ${ACCT_SCHEMA}.vwJournalEntries je
        JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
@@ -466,6 +472,81 @@ export const GiftCardChecks: NamedCheck[] = [
           `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.StoredValueAccount WHERE Code='${card.Code}'`,
         );
         AssertEqual(Number(dupes.N), 1, "and it is unique");
+      }),
+  },
+  {
+    Id: "gift-cards.GC13",
+    Name: "GC13: spending a card relieves the liability — the redemption debits no Cash",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const sale = await sellGiftCards(ctx, 1, 40);
+        const [card] = await cardsOf(ctx, sale.Order.ID as string);
+
+        const spend = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 50 }],
+        });
+        Assert(spend.Saved, `confirm failed: ${spend.Message}`);
+
+        // The card is the instrument: a PaymentDetail naming the StoredValueAccount, exactly the
+        // split StoredValuePaymentProvider makes between a gift card and account credit.
+        const giftCardType = f.PaymentTypeIDs.get("GiftCard");
+        Assert(!!giftCardType, "PaymentType 'GiftCard' missing — push the orders app metadata");
+        const detailID = await createViaEntity(ctx, PAYMENT_DETAIL_ENTITY, {
+          CompanyID: f.CoA.ID,
+          PaymentTypeID: giftCardType,
+          StoredValueAccountID: card.ID,
+        });
+        const paid = await CreatePayment(ctx.User, {
+          PaymentNumber: `IT-${randomUUID().slice(0, 8).toUpperCase()}`,
+          ReceivingCompanyID: f.CoA.ID,
+          PaymentTypeID: giftCardType!,
+          Amount: 40,
+          PaymentDetailID: detailID,
+          Allocations: [{ OrderHeaderID: spend.Order.ID as string, Amount: 40 }],
+        });
+        Assert(paid.Saved, `the gift card payment failed: ${paid.Message}`);
+
+        const lines = await TxQuery<{ GLAccountID: string; Code: string; Name: string; DebitAmount: number; CreditAmount: number }>(
+          ctx,
+          `SELECT jel.GLAccountID, gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount
+             FROM ${ORDERS_SCHEMA}.PaymentLine pl
+             JOIN ${ACCT_SCHEMA}.vwJournalEntries je
+               ON LOWER(je.LinkedRecordID) = LOWER(CAST(pl.ID AS NVARCHAR(400)))
+             JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+             JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+            WHERE pl.PaymentHeaderID = '${paid.Payment.ID}'`,
+        );
+        Assert(lines.length > 0, "the redemption booked something");
+
+        // No money arrived — the customer spent value the company already owed them. A Cash debit
+        // here overstates Cash by the face value and leaves the sale's liability open forever, and
+        // both entries still balance.
+        const cashDebit = lines
+          .filter((l) => /cash/i.test(l.Name))
+          .reduce((s, l) => s + Number(l.DebitAmount ?? 0), 0);
+        AssertEqual(cashDebit, 0, `a gift card redemption debits no Cash: ${JSON.stringify(lines)}`);
+
+        // The debit relieves an obligation account: the dedicated liability, or Deferred Revenue
+        // where accounting has not linked one.
+        const obligationDebit = lines
+          .filter((l) => /liability|deferred/i.test(l.Name))
+          .reduce((s, l) => s + Number(l.DebitAmount ?? 0), 0);
+        AssertEqual(obligationDebit, 40, `the liability is relieved by the face value: ${JSON.stringify(lines)}`);
+
+        // And it is the SAME account, found by the same product walk: a per-category or per-type
+        // deferral link would otherwise be credited at sale and never cleared (#301 review).
+        const saleCredits = (await bookingLines(ctx, sale.Order.ID as string)).filter(
+          (l) => /liability|deferred/i.test(l.Name) && Number(l.CreditAmount ?? 0) > 0,
+        );
+        AssertEqual(saleCredits.length, 1, `the sale credited one obligation account: ${JSON.stringify(saleCredits)}`);
+        const sameAccountDebit = lines
+          .filter((l) => l.GLAccountID.toLowerCase() === saleCredits[0].GLAccountID.toLowerCase())
+          .reduce((s, l) => s + Number(l.DebitAmount ?? 0), 0);
+        AssertEqual(sameAccountDebit, 40, `the redemption debits the account the sale credited: ${JSON.stringify(lines)}`);
       }),
   },
 ];
