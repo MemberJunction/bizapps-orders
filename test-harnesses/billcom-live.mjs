@@ -6,7 +6,7 @@
  * Environment (from ../.env, like invoice-live.mjs): DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD,
  * MJ_CORE_SCHEMA; plus
  *   BILLCOM_COMPANY_INTEGRATION_ID   the MJ: Company Integrations row whose credential is the SANDBOX Bill.com Session
- *   BILLCOM_PROBE                    login | customer | invoice | archive-put | payments | send-default | rail-issue | rail-poll
+ *   BILLCOM_PROBE                    login | customer | invoice | archive-put | payments | numbering | send-default | rail-issue | rail-poll
  *   BILLCOM_CUSTOMER_ID              (invoice probe) a 0cu… id from the customer probe
  *   BILLCOM_INVOICE_ID               (archive-put / send-default / record-payment) a 00e… id
  *   BILLCOM_AMOUNT                   (record-payment) the amount to record; BILLCOM_PAYMENT_TYPE defaults to CHECK
@@ -185,6 +185,131 @@ async function main() {
                 receivablesType: [...new Set(r.Records.map((x) => JSON.stringify(x.Fields.receivablesType)))],
                 sample: r.Records.slice(0, 3).map((x) => x.Fields),
             });
+            break;
+        }
+        case 'numbering': { // Re-issue suffix (golive #242, Craig) + the invoiceNumber length ceiling.
+            const cust = need('BILLCOM_CUSTOMER_ID');
+            const mk = async (invoiceNumber, note) => {
+                const r = await connector.CreateRecord({ ...base, ObjectName: 'invoices', Attributes: {
+                    invoiceNumber, invoiceDate: new Date().toISOString().slice(0, 10),
+                    customer: { id: cust }, invoiceLineItems: [{ description: note, quantity: 1, price: 10 }],
+                } });
+                return { note, invoiceNumber, len: invoiceNumber.length, ok: !!r.Success, id: r.ExternalID ?? null, error: r.Success ? null : String(r.ErrorMessage ?? '').slice(0, 220) };
+            };
+            const stamp = Date.now().toString().slice(-8);
+            const baseNum = `ORD-${stamp}`;
+
+            // 1. the original, then archive it — the cancel the ruling is about.
+            const first = await mk(baseNum, 'original');
+            log('1. original invoice', first);
+            if (first.id) {
+                const auth = await connector.Authenticate(ci, user);
+                const root = `${connector.GetBaseURL(ci, auth).replace(/\/+$/, '').replace(/\/v3$/, '')}/v3`;
+                const arch = await connector.MakeHTTPRequest(auth, `${root}/invoices/${first.id}/archive`, 'POST', connector.BuildHeaders(auth), undefined);
+                log('2. archive it', { Status: arch.Status });
+            }
+
+            // 3. THE CLAIM UNDER TEST: an archived invoice still owns its number.
+            log('3. reuse the number after archiving (expect REFUSED)', await mk(baseNum, 'reuse'));
+
+            // 4. and the suffix the ruling prescribes must be accepted.
+            log('4. the -R1 suffix (expect ACCEPTED)', await mk(`${baseNum}-R1`, 're-issue'));
+            log('5. the split-company form -A-R1 (expect ACCEPTED)', await mk(`${baseNum}-A-R1`, 'split re-issue'));
+
+            // 6. where does BILL stop accepting length? Our own column is NVARCHAR(40).
+            const ladder = [];
+            for (const len of [20, 40, 41, 50, 51, 64, 100, 256]) {
+                const n = (`L${len}-${stamp}-`).padEnd(len, 'X').slice(0, len);
+                ladder.push(await mk(n, `len ${len}`));
+            }
+            log('6. invoiceNumber length ladder — the ceiling Andrew asked for', ladder.map(({ len, ok, error }) => ({ len, ok, error })));
+            break;
+        }
+        case 'duplicate': { // Does an ARCHIVED invoice still own its number? S4 only ever tested a LIVE one.
+            const cust = need('BILLCOM_CUSTOMER_ID');
+            const auth = await connector.Authenticate(ci, user);
+            const root = `${connector.GetBaseURL(ci, auth).replace(/\/+$/, '').replace(/\/v3$/, '')}/v3`;
+            const mk = async (invoiceNumber) => {
+                const r = await connector.CreateRecord({ ...base, ObjectName: 'invoices', Attributes: {
+                    invoiceNumber, invoiceDate: new Date().toISOString().slice(0, 10),
+                    customer: { id: cust }, invoiceLineItems: [{ description: 'dup probe', quantity: 1, price: 10 }],
+                } });
+                return { ok: !!r.Success, id: r.ExternalID ?? null, error: r.Success ? null : String(r.ErrorMessage ?? '').slice(0, 200) };
+            };
+            const num = `DUP-${Date.now().toString().slice(-8)}`;
+            const a = await mk(num);
+            log(`A. create ${num}`, a);
+            log('B. SAME number while A is LIVE (S4 said refused)', await mk(num));
+            const arch = await connector.MakeHTTPRequest(auth, `${root}/invoices/${a.id}/archive`, 'POST', connector.BuildHeaders(auth), undefined);
+            log('C. archive A', { Status: arch.Status });
+            const back = await connector.GetRecord({ ...base, ObjectName: 'invoices', ExternalID: a.id });
+            log('   A now reads', { archived: back?.Fields?.archived, status: back?.Fields?.status });
+            log('D. SAME number now that A is ARCHIVED — the case that was never tested', await mk(num));
+            break;
+        }
+        case 'adopt': { // Orders.AdoptExternalInvoice against the real rail (review round 2, finding 2).
+            const orderID = need('BILLCOM_ORDER_ID');
+            const companyID = need('BILLCOM_COMPANY_ID');
+            const providerID = need('BILLCOM_PAYMENT_PROVIDER_ID');
+            const cust = need('BILLCOM_CUSTOMER_ID');
+            const { AdoptExternalInvoiceOperation } = await import('@mj-biz-apps/orders-core-entities-server');
+            const { Metadata } = await import('@memberjunction/core');
+            const md = Metadata.Provider;
+
+            const num = `ADOPT-${Date.now().toString().slice(-8)}`;
+            const amount = 123.45;
+            const mkInvoice = async (invoiceNumber, price) => {
+                const r = await connector.CreateRecord({ ...base, ObjectName: 'invoices', Attributes: {
+                    invoiceNumber, invoiceDate: new Date().toISOString().slice(0, 10),
+                    customer: { id: cust }, invoiceLineItems: [{ description: 'adopt probe', quantity: 1, price }],
+                } });
+                return r.ExternalID;
+            };
+            // A claimed row is what a timed-out send leaves behind; this makes one to resolve.
+            const claim = async () => {
+                const e = await md.GetEntityObject('MJ_BizApps_Orders: External Invoices', user);
+                e.NewRecord();
+                e.SetMany({ PaymentProviderID: providerID, OrderHeaderID: orderID, CompanyID: companyID, OrderHeaderPaymentScheduleID: null,
+                    DocumentNumber: num, Amount: amount, Status: 'Sending' }, true);
+                if (!(await e.Save())) throw new Error(`could not write the claim: ${e.LatestResult?.CompleteMessage}`);
+                return String(e.Get('ID'));
+            };
+            const run = async (id, ref) => {
+                const op = new AdoptExternalInvoiceOperation();
+                const r = await op.Execute({ ExternalInvoiceID: id, ExternalInvoiceRef: ref }, { provider: md, user });
+                return { ResultCode: r.Output?.ResultCode, Success: r.Output?.Success, Message: r.Output?.Message?.slice(0, 200) };
+            };
+            const statusOf = async (id) => {
+                const e = await md.GetEntityObject('MJ_BizApps_Orders: External Invoices', user);
+                const { CompositeKey } = await import('@memberjunction/core');
+                await e.InnerLoad(CompositeKey.FromID(id));
+                return { Status: e.Get('Status'), Ref: e.Get('ExternalInvoiceRef'), ExternalTotal: e.Get('ExternalTotal') };
+            };
+
+            // 1. the rail holds a DIFFERENT document at the same figure — the wrong-row paste.
+            const other = await mkInvoice(`${num}-OTHERDOC`, amount);
+            const c1 = await claim();
+            log('1. adopt a reference for a different document number', await run(c1, other));
+            log('   row untouched', await statusOf(c1));
+
+            // 2. the rail's invoice is ARCHIVED — the refusal the total cannot make.
+            const arch = await mkInvoice(`${num}-ARCH`, amount);
+            const auth = await connector.Authenticate(ci, user);
+            const root = `${connector.GetBaseURL(ci, auth).replace(/\/+$/, '').replace(/\/v3$/, '')}/v3`;
+            await connector.MakeHTTPRequest(auth, `${root}/invoices/${arch}/archive`, 'POST', connector.BuildHeaders(auth), undefined);
+            log('2. adopt an ARCHIVED invoice', await run(c1, arch));
+            log('   row untouched', await statusOf(c1));
+
+            // 3. the figure does not tie.
+            const wrong = await mkInvoice(`${num}`, amount + 10);
+            log('3. adopt an invoice whose total does not tie', await run(c1, wrong));
+            log('   row untouched', await statusOf(c1));
+
+            // 4. the real thing: same number, same figure, live.
+            await connector.MakeHTTPRequest(auth, `${root}/invoices/${wrong}/archive`, 'POST', connector.BuildHeaders(auth), undefined);
+            const right = await mkInvoice(num, amount);
+            log('4. adopt the invoice this unit actually raised', await run(c1, right));
+            log('   row now', await statusOf(c1));
             break;
         }
         case 'send-default': // S5

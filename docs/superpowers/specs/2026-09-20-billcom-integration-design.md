@@ -889,9 +889,12 @@ Full table in `2026-09-20-billcom-spike-results.md`. What it changed in this des
   `Archived`, never on `Status`, which `GetInvoice` already does. The gateway gained an `archiveInvoice`
   seam that borrows the connector's protected `Authenticate`/`GetBaseURL`/`BuildHeaders`/`MakeHTTPRequest`.
   When the connector grows the verb, only that seam changes.
-- **D-B7 hardens.** A duplicate `invoiceNumber` is refused (422) and an archived invoice keeps its
-  number, so a re-issue after cancel must carry a distinct number (`-R1` suffix, Task 12). Reuse is not
-  an option BILL offers.
+- **D-B7 hardens, but not for the reason first written.** A duplicate `invoiceNumber` is refused while
+  the invoice holding it is LIVE. The second half of this bullet — "an archived invoice keeps its
+  number" — was extrapolated, never probed, and is **wrong**: see S6 (2026-09-29), where the same
+  number is accepted once the first invoice is archived. The `-R1` suffix stays (Craig, golive #242),
+  and the corrected reasoning is stronger: reuse IS an option BILL offers, and taking it would put a
+  second, different `ORD-1234` in front of a customer who already holds the first.
 - **D-B12 stands.** Creating an invoice shows no sent indicator; the human gate remains BILL's Send.
 - **Filed and fixed upstream (2026-09-21).** Issues
   [#390](https://github.com/MemberJunction/Integrations/issues/390) (double `/v3`, array-shaped errors) and

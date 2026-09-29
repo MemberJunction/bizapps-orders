@@ -309,9 +309,10 @@ export async function IssueOneUnit(
         return refuse('ERROR', built.Message ?? `Order ${order.OrderNumber} produced no document for company ${companyID}.`);
     }
     const doc = built.Documents[0];
-    // A WHOLE-ORDER RE-ISSUE CANNOT REUSE THE NUMBER. Bill.com keeps it on the archived invoice and
-    // refuses the duplicate (spike S4), so without a suffix a cancelled order could never be invoiced
-    // through the rail again — the send was allowed by the rules and then refused by the rail, for ever.
+    // A WHOLE-ORDER RE-ISSUE IS RENUMBERED (Craig, golive #242). Not because the rail forces it — probed
+    // 2026-09-29, Bill.com ACCEPTS a number whose only other holder is archived — but because it does
+    // not: reusing it would put a second, different ORD-1234 in front of a customer who already holds
+    // the first, and neither side would say a word.
     const wholeOrderNumber = row
         ? null
         : ReissueDocumentNumber(
@@ -562,10 +563,11 @@ export async function LoadExternalInvoiceForUnit(
  * How many rail invoice numbers this unit has already SPENT — rows that reached the rail and were
  * given an `ExternalInvoiceRef`, whatever became of them afterwards.
  *
- * Bill.com keeps an archived invoice's number and refuses a duplicate, so this is the count a re-issue
- * has to step over. A row that never reached the rail (a refusal, a claim that was superseded) carries
- * no reference and is deliberately not counted: its number was never taken, so re-issuing reuses it
- * rather than skipping to `-R1` for a document nobody has ever seen.
+ * A row that never reached the rail (a refusal, a claim that was superseded) carries no reference and
+ * is deliberately not counted: nobody has ever seen that number, so re-issuing reuses it rather than
+ * skipping to `-R1` for a document that does not exist. A row that DID reach the rail was seen —
+ * possibly by the customer — so its number is spent whatever became of it afterwards. Note this is our
+ * rule, not the rail's: Bill.com would accept the old number once the invoice holding it is archived.
  */
 export async function CountRailNumbersSpent(
     paymentProviderID: string,

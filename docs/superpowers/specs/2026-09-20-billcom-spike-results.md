@@ -14,7 +14,7 @@ hand-crafted outside it except where the row says "raw".
 | S1 | Does `PUT /invoices/{id} {archived:true}` archive? | **400**: `customer: must not be null; invoiceLineItems: must not be null` — PUT is a full replace. Raw `POST /invoices/{id}/archive` → **200**, `archived: true`, `recordStatus: INACTIVE`, `status` stays `OPEN`; a second POST is also 200 (idempotent). | `CancelInvoice` uses the archive verb via `BillComGateway.archiveInvoice`, which borrows the connector's protected session helpers (spec §10 U1 "last resort"). Swap to a connector verb when U1 lands. |
 | S2 | `receivable-payments` status vocabulary | **Answered 2026-09-22.** Robert recorded an offline check in the sandbox; the poll returned one payment, `status: "PAID"`, `receivablesType: "CHECK"`, `onlinePayment: false`, `referenceNumber: "1234"`, `fundingAccount: {}`, `receivablesAccount.id` all-zeros. BILL's reference documents the **whole** enum: status is `PAID`, `VOID`, `SCHEDULED`, `CANCELED`, `ESCHEATED`, `UNDEFINED`; `receivablesType` is `CASH`, `CHECK`, `CREDIT_CARD`, `ACH`, `PAYPAL`, `OTHER`, `WALLET`, `VIRTUAL_CARD`, `UNDEFINED`. | `BILLCOM_PAYMENT_STATUS` rewritten to those six, dropping ten invented keys and adding `ESCHEATED` → Reversed. `UNDEFINED` deliberately unmapped so it Holds. `TenderFor` rewritten: see the two rows below. |
 | S3 | Fetch cost | Empty fetch round trip 1.5 s (login + one page). `newWatermark: null` on an empty result. | Hourly poll is fine. `NewWatermark` null on empty pages is already handled (`processedMax` keeps the prior watermark). |
-| S4 | Duplicate `invoiceNumber`; line item field names; total tie | Duplicate → **422** refused. Lines `{description, price, quantity, taxable}` accepted; BILL adds `id` per line. `totalAmount` 250.25 = 2×100 + 1×50.25 exactly; `dueAmount` 250.25, `scheduledAmount` 0, `creditAmount` 0, `salesTaxTotal` 0. `customerId` is returned on read even though `customer: {id}` is what create takes. | Re-issue after a cancel **cannot reuse** the number: the archived invoice still owns it. Task 12's re-issue numbering must suffix (`ORD-1234-R1`) or BILL refuses. Tie check at 0.005 holds. |
+| S4 | Duplicate `invoiceNumber`; line item field names; total tie | Duplicate → **422** refused. Lines `{description, price, quantity, taxable}` accepted; BILL adds `id` per line. `totalAmount` 250.25 = 2×100 + 1×50.25 exactly; `dueAmount` 250.25, `scheduledAmount` 0, `creditAmount` 0, `salesTaxTotal` 0. `customerId` is returned on read even though `customer: {id}` is what create takes. | ~~Re-issue after a cancel **cannot reuse** the number: the archived invoice still owns it.~~ **CORRECTED 2026-09-29, see S6 — that was extrapolated from a LIVE duplicate and is wrong.** Tie check at 0.005 holds. |
 | S2a | Is `status` the object the design assumed? | **No — a bare string.** `"status": "PAID"`, not `{value: …}`. §2 of the design said otherwise. | No code change: the `str()` helper already flattened both shapes, which is why this cost nothing. The design text is corrected. |
 | S2b | Does the tender mapping survive the real enum? | **No.** The old `TenderFor` short-circuited on `onlinePayment === true` and answered ACH, which would book an online card payment to the bank. It also branched on `WIRE`, which BILL cannot emit, and sent `CASH` to ACH although Orders has a `Cash` payment type. | `receivablesType` is now read first and `onlinePayment` only breaks a tie. `CASH`→Cash, `CHECK`→Check, `CREDIT_CARD`/`VIRTUAL_CARD`→CreditCard, `ACH`→ACH. `PAYPAL`/`WALLET`/`OTHER`/`UNDEFINED` still fall to ACH — **spec §12 q6, open for Finance**. Orders' `Wire` tender is unreachable from this rail. |
 | S2c | Does the poller work end to end on a real payment? | Yes. `Orders.PollExternalPayments` preview read the payment, classified `PAID` as cleared, and returned `Unmatched` because invoice `00e01DYPWKVDNSX9w76e` was created by the probe, not issued by Orders. Watermark advanced to `2026-09-22T13:04:32.000Z`, computed locally from `updatedTime` since the connector returns none (U2). | Correct behaviour on all three counts. The capture leg is still unproven: it needs a payment against an invoice Orders issued, which needs a Confirmed order in QA. |
@@ -79,3 +79,52 @@ both harnesses. Cascade Manufacturing also needed a billing email, which the rai
 | U1 — [#391](https://github.com/MemberJunction/Integrations/issues/391), fixed in PR [#392](https://github.com/MemberJunction/Integrations/pull/392) | Integrations `Finance/BillCom` | `ArchiveInvoice`/`RestoreInvoice` verbs (the catalog already declares `archivePath`/`restorePath`; nothing calls them). |
 | U2 — not filed | Integrations / engine | Honour `WatermarkValue` in `FetchChanges`. Unchanged. |
 | U3 — [#390](https://github.com/MemberJunction/Integrations/issues/390), fixed in PR [#392](https://github.com/MemberJunction/Integrations/pull/392) | Integrations `Finance/BillCom` | Fix the double `/v3`: either seed paths without the version prefix (base URL owns it) or override `BuildFullURL` to collapse `/v3/v3/`. Also read array-shaped error bodies in `ExtractErrorMessage`. |
+
+## S6 — does an ARCHIVED invoice still own its number? (2026-09-29)
+
+**No, and S4's conclusion was wrong.** S4 tested a duplicate against a **live** invoice and the
+conclusion about archived ones was extrapolated, never probed. Probed directly (`BILLCOM_PROBE=duplicate`):
+
+| Step | Result |
+|---|---|
+| A. create `DUP-55114830` | 201, `00e01NTYMHYXWXX9wr17` |
+| B. same number while A is **live** | **refused** — "Duplicate invoice number for 00e01NTYMHYXWXX9wr17." |
+| C. archive A | 200; A reads `archived: true`, `status: OPEN` |
+| D. same number now A is **archived** | **201 — accepted**, a second invoice `00e01NQKIVLFFLX9wr18` |
+
+**What this changes: nothing in the code, everything in the reasoning.** The `-R1` suffix stays,
+because Craig ruled it on golive #242 for traceability — but it is no longer a workaround for a rail
+that refuses. It is the thing that STOPS the rail doing something worse: reusing the number would put
+a second, different `ORD-1234` in front of a customer who already holds the first, and neither side
+would flag it. Every comment claiming "BILL refuses the duplicate, so we must suffix" has been
+corrected; the rule lives in our code precisely because it does not live in the rail's.
+
+## S7 — the `invoiceNumber` length ceiling (2026-09-29)
+
+**100 characters.** A ladder of 20 / 40 / 41 / 50 / 51 / 64 / 100 / 256 was accepted up to 100 and
+refused at 256 with `invoiceNumber: size must be between 0 and 100`. Our own
+`ExternalInvoice.DocumentNumber NVARCHAR(40)` is therefore the binding constraint, and the longest
+form this app generates — `ORD-1234-A-R1`, 13 characters — is comfortably inside both. The issue path
+refuses rather than truncates anything that would exceed the column.
+
+## S8 — `OTHER` means Wire, end to end (2026-09-29)
+
+Jeremy's convention, proven through the rail rather than assumed. A payment recorded with
+`paymentType: OTHER` (`POST /v3/invoices/record-payment`, 200, `0rp01GBNUEXXZPZ5q6kj`) comes back to
+the poller as **`receivablesType: "OTHER"`**, and `TenderFor` maps that to Orders' **`Wire`**. The
+other values are unchanged: `CHECK`→Check, `ACH`→ACH, `CASH`→Cash, `CREDIT_CARD`/`VIRTUAL_CARD`→CreditCard,
+`PAYPAL`/`WALLET`/`UNDEFINED`→ACH (unreachable — Finance uses none of them, which is what freed `OTHER`).
+
+## S9 — `Orders.AdoptExternalInvoice` against the real rail (2026-09-29)
+
+All four paths, against a claimed (`Sending`) row and live sandbox invoices:
+
+| Case | Result | Row after |
+|---|---|---|
+| Reference for a **different document number**, right figure | `TIE_FAILED` | untouched (`Sending`) |
+| Reference for an **archived** invoice, right figure | `NOT_FOUND_ON_RAIL` | untouched (`Sending`) |
+| Reference whose **total does not tie** (133.45 vs 123.45) | `TIE_FAILED` | untouched (`Sending`) |
+| The invoice this unit actually raised | `ADOPTED` | `Sent`, ref recorded, `ExternalTotal` 123.45 |
+
+The archived case is the one no total check could have caught — a cancelled invoice for the same unit
+ties to the penny by construction. Every refusal named the provider from its own row, not "the rail".

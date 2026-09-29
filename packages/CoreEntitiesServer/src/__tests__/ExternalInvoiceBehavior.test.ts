@@ -61,8 +61,8 @@ describe('DecideInvoiceable — an interrupted send', () => {
 /**
  * Craig ruled on golive #242 (2026-09-22) and Jeremy agreed: an instalment is never re-issued.
  * Cancelling one raises a credit memo and a REPLACEMENT row with the next number. The old number
- * cannot come back anyway — Bill.com keeps it on the archived invoice and refuses a duplicate with
- * 422 — so offering a re-issue promised something that could only fail at the rail.
+ * is replaced by a new schedule row under the next number. The rail would accept the old number
+ * once the cancelled invoice is archived (spike S6), so this refusal is ours to make, not the rail's.
  */
 describe('DecideInvoiceable — a cancelled unit', () => {
     const decide = (over: Partial<Parameters<typeof DecideInvoiceable>[0]> = {}) =>
@@ -306,7 +306,9 @@ describe('DecideAdoption', () => {
 
 describe('ReissueDocumentNumber', () => {
     // Craig's ruling on golive #242, and the only way a cancelled whole-order unit can be billed at
-    // all: Bill.com keeps the archived invoice's number and refuses the duplicate with 422 (spike S4).
+    // all: reusing it would hand a customer who already holds ORD-1234 a second, different ORD-1234.
+    // Note the rail would ALLOW that — it refuses a duplicate only while the first invoice is live
+    // (spike S6, 2026-09-29) — so this rule exists here because it exists nowhere else.
     it('leaves a first send alone', () => {
         expect(ReissueDocumentNumber('ORD-1234', 0)).toBe('ORD-1234');
     });

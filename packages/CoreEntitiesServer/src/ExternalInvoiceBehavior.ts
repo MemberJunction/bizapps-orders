@@ -219,10 +219,12 @@ export function DecideInvoiceable(i: {
             break;
         case 'Canceled':
             // AN INSTALMENT IS NEVER RE-ISSUED — Craig's ruling on golive #242, Jeremy agreeing. The
-            // replacement comes from a new `Scheduled` row carrying the next instalment number. The
-            // old number cannot come back anyway: Bill.com keeps it on the archived invoice and
-            // refuses a duplicate with 422, so `AllowReissue` here only ever produced a refusal from
-            // the rail, after telling the person it would work.
+            // replacement comes from a new `Scheduled` row carrying the next instalment number.
+            //
+            // This used to add that the old number "cannot come back anyway" because the rail refuses a
+            // duplicate. It does not: probed 2026-09-29, Bill.com accepts a number once the invoice
+            // holding it is archived. So nothing technical stops a re-issue under the frozen number —
+            // which is precisely why this refusal has to be here rather than left to the rail to make.
             if (i.ScheduleRowNamed) {
                 return {
                     Verdict: 'Refuse',

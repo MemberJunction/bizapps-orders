@@ -2,11 +2,15 @@
  * The number a re-issue carries after a cancel, through the code that counts, not just the rule.
  *
  * WHY THE PURE TEST IS NOT ENOUGH. `ReissueDocumentNumber` is trivially right; the part that can be
- * wrong is WHICH prior rows count as having spent a number. Bill.com keeps an archived invoice's
- * `invoiceNumber` and refuses a duplicate (spike S4), so a row that reached the rail consumes its
- * number for ever — but a row that never reached it consumed nothing, and counting those would skip
- * a perfectly free number and hand the customer `ORD-1234-R1` for a document nobody has ever seen.
- * That distinction lives in a SQL filter, which only this kind of test can look at.
+ * wrong is WHICH prior rows count as having spent a number. A row that reached the rail was seen —
+ * possibly by the customer — so its number is spent whatever became of it; a row that never reached it
+ * consumed nothing, and counting those would skip a free number and hand the customer `ORD-1234-R1`
+ * for a document nobody has ever seen. That distinction lives in a SQL filter, which only this kind of
+ * test can look at.
+ *
+ * NOTE THE RULE IS OURS, NOT THE RAIL'S. Bill.com accepts a number once the invoice holding it is
+ * archived (spike S6, 2026-09-29) — it refuses only while that invoice is live. So nothing outside
+ * this code stops a re-issue reusing the old number, which is exactly why it is enforced here.
  */
 import { describe, expect, it, vi } from 'vitest';
 

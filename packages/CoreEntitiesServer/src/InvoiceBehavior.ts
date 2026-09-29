@@ -384,12 +384,20 @@ export const MAX_DOCUMENT_NUMBER_LENGTH = 40;
  * The number a RE-ISSUE carries after a cancel — `ORD-1234-R1`, then `-R2`, `ORD-1234-A-R1` when the
  * order is also split by company.
  *
- * THE OLD NUMBER CANNOT COME BACK. Bill.com keeps an archived invoice's `invoiceNumber` and refuses a
- * duplicate with 422 (spike S4), so a whole-order unit cancelled before any money was recorded could
- * be re-issued by the rules and then never actually sent — the customer could not be invoiced through
- * the rail at all. Craig ruled the suffix on golive #242; the cancelled invoice stays on file as
- * history, exactly as a cancelled instalment does, and the number has no ledger effect because the
- * receivable was booked when the order was confirmed.
+ * WHY A SUFFIX AND NOT THE OLD NUMBER AGAIN. Craig ruled this on golive #242 for traceability, and
+ * the sandbox says he was right for a sharper reason than the one first written down here.
+ *
+ * This comment used to claim Bill.com keeps an archived invoice's number and refuses the duplicate, so
+ * a re-issue HAD to be renumbered. That is false, and it was never tested: spike S4 proved a duplicate
+ * against a LIVE invoice is refused and the conclusion about archived ones was extrapolated. Probed
+ * directly on 2026-09-29 — create, archive, create the same number again — Bill.com **accepts** it.
+ * Live duplicate: "Duplicate invoice number for 00e…". Archived duplicate: 201, a second invoice.
+ *
+ * Which makes the suffix MORE necessary, not less. If the rail freely reissues the number, then an
+ * order cancelled after its invoice went out leaves the customer holding ORD-1234, and a re-issue
+ * without a suffix puts a second, different ORD-1234 in front of them. Nothing on either side would
+ * flag it. The cancelled invoice stays on file as history, exactly as a cancelled instalment does, and
+ * the number has no ledger effect because the receivable was booked when the order was confirmed.
  *
  * `attempts` counts rail invoices this unit has ALREADY SPENT A NUMBER ON — rows carrying an
  * `ExternalInvoiceRef` — not rows that merely failed. A send the rail refused outright created nothing

@@ -11,8 +11,10 @@
  * AN INSTALMENT'S RAIL FACTS STAY AS HISTORY. This used to clear the instalment's `SentAt` and
  * `ExternalInvoiceRef` so it read as unsent and could be re-issued. Craig ruled otherwise on golive
  * #242 and Jeremy agreed: an issued instalment is never re-issued — cancelling it raises a credit
- * memo and a REPLACEMENT row under the next number. The old behaviour could not have worked anyway,
- * because Bill.com keeps the number on the archived invoice and refuses the duplicate. A unit billed
+ * memo and a REPLACEMENT row under the next number. (An earlier note here said the old behaviour
+ * could not have worked anyway because the rail refuses the duplicate; probed 2026-09-29, it does
+ * not — Bill.com accepts a number once the invoice holding it is archived, which is why the rule
+ * lives in our code and not in the rail's.) A unit billed
  * as a whole has no replacement row, so it does read as unsent again, and re-issuing it is a
  * deliberate act (`AllowReissue`, design D-B7), never the sweep's.
  *
@@ -75,10 +77,11 @@ export class CancelExternalInvoiceOperation extends OrdersCancelExternalInvoiceO
             // Instalment numbers are never reused.
             //
             // This used to clear the schedule row's rail facts so the instalment read as unsent again,
-            // and told the person to re-issue it. That could not work: the frozen number goes back to
-            // Bill.com, which refuses a duplicate with 422, so the instalment could never be sent again
-            // and the message promised something impossible. The rail facts now stay as HISTORY —
-            // the rail did hold this invoice, and the credit memo references it by number.
+            // and told the person to re-issue it under the frozen number. The rail would in fact have
+            // ACCEPTED that (probed 2026-09-29: an archived invoice does not hold its number), which is
+            // worse than the refusal first assumed — the customer would have received a second document
+            // numbered like the one they already hold. The rail facts now stay as HISTORY: the rail did
+            // hold this invoice, and the credit memo references it by number.
             const instalment = !!row.OrderHeaderPaymentScheduleID;
             if (!instalment) {
                 // A whole-order unit has no replacement row to come from, and no ruling yet on what a
