@@ -155,11 +155,14 @@ export interface DefaultScheduleLineFacts extends ScheduleLineFacts {
 /**
  * The one-row schedule a hand-confirmed order with NO schedule gets (orders #342, Jeremy's ruling).
  *
- * Per company: the earliest `ServicePeriodStart` among its lines that have one, less the lowest lead
- * among those same lines. When that day falls AFTER `orderDay`, the company gets one row for its
- * whole line gross, due that day, so D92 books no receivable at confirm and the instalment is billed
- * when it falls due. Otherwise the company gets nothing and books as it always has. A company with no
- * dated line, or whose lines come to nothing, gets nothing.
+ * Per company: the earliest of each dated line's own `ServicePeriodStart` less that line's own lead
+ * (#344 review, Robert: pairing the earliest start with the lowest lead from different lines billed
+ * a long-lead line later than its lead allows). When that day falls AFTER `orderDay`, the company
+ * gets one row for its whole line gross, due that day, so D92 books no receivable at confirm and the
+ * instalment is billed when it falls due. Otherwise the company gets nothing and books as it always
+ * has. A company with no dated line, or whose lines come to nothing, gets nothing — and on a
+ * multi-company order the confirm re-verifies only the companies that got a row (see
+ * {@link ScheduleShortfalls}' `only`).
  *
  * @param orderDay The order's business day, `YYYY-MM-DD`. Compared as a string, which is a calendar
  *   comparison for ISO dates.
@@ -175,8 +178,7 @@ export function DefaultScheduleRows(lines: DefaultScheduleLineFacts[], orderDay:
     for (const companyLines of byCompany.values()) {
         const dated = companyLines.filter((l) => ToISODate(l.ServicePeriodStart) != null);
         if (!dated.length) continue;
-        const start = dated.map((l) => ToISODate(l.ServicePeriodStart) as string).sort()[0];
-        const due = AddDays(start, -Math.min(...dated.map((l) => l.LeadDays))) as string;
+        const due = dated.map((l) => AddDays(ToISODate(l.ServicePeriodStart) as string, -l.LeadDays) as string).sort()[0];
         if (due <= orderDay) continue;
         const total = Money(companyLines.reduce((sum, l) => sum + Number(l.LineTotalGross ?? 0), 0));
         if (total <= 0) continue;
@@ -267,8 +269,14 @@ const LIVE_STATUSES = new Set(['Scheduled', 'Invoiced', 'Paid', 'WrittenOff']);
  *
  * Every company with lines OR rows is checked, so a company that has lines and no schedule while
  * another company on the same order has rows is reported rather than silently unbilled.
+ *
+ * `only` narrows the check to those companies (lower-cased IDs). Two callers pass it (#344 review,
+ * Robert): the confirm's re-check after {@link DefaultScheduleRows}, which names the companies that
+ * got a default row — a company that did not qualify has no rows by design and books at confirm —
+ * and instalment issuing, which names the companies that have any row at all. A hand-entered
+ * schedule at confirm passes nothing and gets the strict every-company check.
  */
-export function ScheduleShortfalls(rows: ScheduleRowFacts[], lines: ScheduleLineFacts[]): ScheduleShortfall[] {
+export function ScheduleShortfalls(rows: ScheduleRowFacts[], lines: ScheduleLineFacts[], only?: ReadonlySet<string>): ScheduleShortfall[] {
     const live = rows.filter((r) => LIVE_STATUSES.has(r.Status));
     if (!live.length) return [];
 
@@ -278,7 +286,7 @@ export function ScheduleShortfalls(rows: ScheduleRowFacts[], lines: ScheduleLine
     const lineGross = new Map<string, number>();
     for (const l of lines) lineGross.set(key(l.CompanyID), Money((lineGross.get(key(l.CompanyID)) ?? 0) + Number(l.LineTotalGross ?? 0)));
 
-    const companies = [...new Set([...scheduled.keys(), ...lineGross.keys()])].sort();
+    const companies = [...new Set([...scheduled.keys(), ...lineGross.keys()])].filter((c) => !only || only.has(c)).sort();
     const out: ScheduleShortfall[] = [];
     for (const company of companies) {
         const s = scheduled.get(company) ?? 0;

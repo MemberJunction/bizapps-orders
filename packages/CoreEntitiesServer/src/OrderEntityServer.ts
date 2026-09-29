@@ -625,17 +625,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // NO SCHEDULE, NOT PAID AT CONFIRM, A FUTURE SERVICE START: one row per company, due
                 // lead-days before the start (orders #342). Written here, inside the transaction and
                 // before booking, so D92 books it like any hand-entered schedule; re-read so the tie
-                // check covers it. `createInitialPayment` below and a checkout's post-commit capture
-                // are the payments that make an order paid at confirm.
+                // check covers it — for the companies that got a row only (Robert, #344 review): a
+                // company that did not qualify has no rows by design and books at confirm as before.
+                // `createInitialPayment` below and a checkout's post-commit capture are the payments
+                // that make an order paid at confirm.
                 const defaultSchedule = DecideDefaultSchedule({
                     HasSchedule: scheduleRows.length > 0,
                     IsReversal: lines.some((l) => l.ReversesOrderLineID),
                     PaidAtConfirm: (Boolean(this.InitialPaymentTypeID) && (this.InitialPaymentAmount ?? 0) > 0) || Boolean(this.SourceCheckoutWidgetID),
                     HasDatedLines: lines.some((l) => l.ServicePeriodStart != null),
                 });
-                if (defaultSchedule.Write && (await this.writeDefaultSchedule(lines))) {
-                    scheduleRows = await this.verifyScheduleTies(lines);
-                }
+                const defaulted = defaultSchedule.Write ? await this.writeDefaultSchedule(lines) : new Set<string>();
+                if (defaulted.size) scheduleRows = await this.verifyScheduleTies(lines, defaulted);
 
                 // Subscriptions before booking: a term must exist so recognition entries can anchor
                 // to it (D46) and use its anchored/prorated window rather than raw line dates.
@@ -3598,8 +3599,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * future-dated is what decides how much of each line's debit is a contract asset rather than a
      * receivable. One read, at the one place that already owns the transaction — the factory is
      * handed the facts rather than querying for them.
+     *
+     * @param only Check just these companies (lower-cased); omitted, every company is checked.
      */
-    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<ScheduleTimingFacts[]> {
+    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[], only?: ReadonlySet<string>): Promise<ScheduleTimingFacts[]> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const rows = await rv.RunView<ScheduleTimingFacts & { Company?: string }>(
             {
@@ -3617,6 +3620,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const shortfalls = ScheduleShortfalls(
             rows.Results ?? [],
             lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
+            only,
         );
         if (!shortfalls.length) return rows.Results ?? [];
         const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
@@ -3625,7 +3629,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
     /**
      * Give an order confirmed with NO schedule the default one-row-per-company schedule when its
-     * service starts further out than the invoice lead (orders #342). Returns whether it wrote any.
+     * service starts further out than the invoice lead (orders #342). Returns the companies it wrote
+     * a row for, lower-cased — the ones the confirm then re-verifies.
      *
      * The rule is {@link DefaultScheduleRows}; the lead comes from each line's product, then its
      * category and that category's ancestors (the pricing walk, `OrdersEngine.CategoryChain`), then its
@@ -3635,7 +3640,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * An EVENT line never triggers one either: tickets are paid at registration, so its event dates
      * are not a reason to hold the invoice back. It still counts toward its company's gross.
      */
-    private async writeDefaultSchedule(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<boolean> {
+    private async writeDefaultSchedule(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<Set<string>> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         await LoadOrdersEngine(provider, user);
@@ -3668,7 +3673,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
         }
-        return drafts.length > 0;
+        return new Set(drafts.map((d) => d.CompanyID.toLowerCase()));
     }
 
     /** Gather one product's `InvoiceLeadDays` at every level and resolve it ({@link ResolveInvoiceLeadDays}). */

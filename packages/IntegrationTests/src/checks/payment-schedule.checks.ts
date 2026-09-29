@@ -49,6 +49,8 @@
  *   PS-Q  a product's own InvoiceLeadDays (10) wins over its category (90) and its type (60)
  *   PS-R  a future-start order with a payment entered at confirm gets no default row; AR at confirm, the payment settles it
  *   PS-S  an online checkout of a future-start service paid by card gets no default row; the card payment settles AR
+ *   PS-T  two companies, only one qualifies: confirm succeeds, the qualifier gets one row, the other books AR at confirm
+ *   PS-U  mixed leads on one company, the long-lead line already inside its lead: no default row, full AR at confirm
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -285,15 +287,15 @@ interface LedgerLine {
     CreditAmount: number;
 }
 
-/** Every ledger line the order's BOOKING entries carry — the per-line entries confirm produced. */
-const bookingLedger = (ctx: IntegrationCheckContext, orderID: string) =>
+/** Every ledger line the order's BOOKING entries carry — the per-line entries confirm produced. `companyID` narrows to one company's lines. */
+const bookingLedger = (ctx: IntegrationCheckContext, orderID: string, companyID?: string) =>
     TxQuery<LedgerLine>(
         ctx,
         `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
            FROM ${ORDERS_SCHEMA}.OrderLine ol
            JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ol.JournalEntryID
            JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
-          WHERE ol.OrderHeaderID = '${orderID}'`,
+          WHERE ol.OrderHeaderID = '${orderID}'${companyID ? ` AND ol.CompanyID = '${companyID}'` : ''}`,
     );
 
 /** The lines of ONE instalment's billing entry. */
@@ -1240,6 +1242,57 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 );
                 Assert(captured.Success && captured.Output?.Success, `card capture: ${captured.ErrorMessage ?? captured.Output?.Message ?? 'unknown'}`);
                 await assertBookedAsBeforeAndSettled(ctx, orderID);
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-T',
+        Name: 'PS-T: two companies, only one qualifies: confirm succeeds, the qualifier gets one row, the other books AR at confirm',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Robert's #344 reproduction: BCP's 1,200 starts 2027-01-01, CoB's 300 widget is undated. The
+                // re-check after the default rows used to cover every company, found CoB with lines and no row,
+                // and rolled the confirm back. It now covers only the companies that got a row.
+                const f = Fx();
+                const orderID = await unscheduledFutureOrder(ctx, '2027-01-01', [{ ProductID: f.Products.WidgetB, Quantity: 1, UnitPrice: 300 }]);
+
+                const rows = await schedule(ctx, orderID);
+                AssertEqual(rows.length, 1, `one default row, for BCP only: ${JSON.stringify(rows)}`);
+                AssertEqual(rows[0].CompanyID.toLowerCase(), f.CoA.ID.toLowerCase(), 'the row is BCP\'s');
+                AssertEqual([rows[0].DueDate, Number(rows[0].Amount)].join(' '), '2026-12-02 1200', 'its own gross, due 30 days before its start');
+
+                const bGross = await TxOne<{ Gross: number }>(
+                    ctx,
+                    `SELECT SUM(LineTotalGross) AS Gross FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}' AND CompanyID='${f.CoB.ID}'`,
+                );
+                Assert(Number(bGross?.Gross) > 0, 'CoB has a line on the order');
+                AssertEqual(netOn(await bookingLedger(ctx, orderID, f.CoA.ID), AR_CODE), 0, 'BCP: no receivable at confirm (D92)');
+                AssertEqual(netOn(await bookingLedger(ctx, orderID, f.CoB.ID), AR_CODE), round2(Number(bGross!.Gross)), 'CoB: its whole gross is a receivable at confirm, as before');
+
+                // Issuing BCP's row runs the same tie check; CoB, with no rows, must not block it either.
+                const issued = await issue(ctx, rows[0].ID);
+                Assert(issued.Success, `issue: ${issued.Message}`);
+                AssertEqual(netOn(await instalmentLedger(ctx, orderID), AR_CODE), 1200, 'BCP\'s receivable appears when its instalment is issued');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-U',
+        Name: 'PS-U: mixed leads on one company, the long-lead line already inside its lead: no default row, full AR at confirm',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Robert's #344 reproduction: a 90-day line starting 2026-08-10 was due 2026-05-12, before the
+                // 2026-07-01 order day; a 30-day line starts 2027-01-17. The old earliest-start/lowest-lead rule
+                // wrote one 1,500 row due 2026-07-11, billing the 90-day line after its own lead. Per line, the
+                // earliest due day has passed, so nothing is deferred.
+                const f = Fx();
+                await withLead(ctx, PRODUCT_ENTITY, f.Products.DiscountedA, 90, async () => {
+                    const orderID = await unscheduledFutureOrder(ctx, '2027-01-17', [
+                        { ProductID: f.Products.DiscountedA, Quantity: 1, UnitPrice: 300, ServicePeriodStart: '2026-08-10' },
+                    ]);
+                    AssertEqual((await schedule(ctx, orderID)).length, 0, 'no default row');
+                    AssertEqual(netOn(await bookingLedger(ctx, orderID), AR_CODE), 1500, 'the whole order is a receivable at confirm, as before');
+                });
             }),
     },
 ];

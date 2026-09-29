@@ -259,14 +259,24 @@ describe('DefaultScheduleRows', () => {
         expect(rows.map((r) => r.Amount)).toEqual([1250.5]);
     });
 
-    it('takes the earliest start and the lowest lead among the dated lines', () => {
+    it('is due on the earliest of each dated line\'s own start less its own lead', () => {
         const rows = DefaultScheduleRows(
-            [line({ ServicePeriodStart: '2027-06-01', LeadDays: 90 }), line({ ServicePeriodStart: '2027-03-01', LeadDays: 30 })],
+            [line({ ServicePeriodStart: '2027-03-01', LeadDays: 30 }), line({ ServicePeriodStart: '2027-04-01', LeadDays: 90 })],
             '2026-09-26',
         );
-        // earliest start 2027-03-01, lowest lead 30 (not the 90 on the later line)
-        expect(rows[0].DueDate).toBe('2027-01-30');
+        // 2027-03-01 − 30 = 2027-01-30; 2027-04-01 − 90 = 2027-01-01. The old earliest-start/lowest-lead
+        // pairing said 2027-01-30, billing the 90-day line after its own lead.
+        expect(rows[0].DueDate).toBe('2027-01-01');
         expect(rows[0].Amount).toBe(11000);
+    });
+
+    it('Robert #344 (2): a long-lead line already inside its lead holds the whole company to confirm', () => {
+        const lines = [
+            line({ LineTotalGross: 1200, ServicePeriodStart: '2026-08-10', LeadDays: 90 }), // own due 2026-05-12, already passed
+            line({ LineTotalGross: 300, ServicePeriodStart: '2027-01-17', LeadDays: 30 }), // own due 2026-12-18
+        ];
+        // The old rule wrote one 1,500 row due 2026-07-11. Now: no row, both book at confirm.
+        expect(DefaultScheduleRows(lines, '2026-07-01')).toEqual([]);
     });
 
     it('90 on the category moves the due date 90 days ahead of the start', () => {
@@ -305,6 +315,35 @@ describe('DefaultScheduleRows', () => {
         for (const lead of [0, 30, 90]) {
             expect(DefaultScheduleRows([line({ ServicePeriodStart: '2027-01-01', LeadDays: lead })], '2027-01-01')).toEqual([]);
         }
+    });
+});
+
+describe('mixed companies, only some qualify (Robert #344 (1))', () => {
+    const orderDay = '2026-07-01';
+    const lines = (bStart: string | null) => [
+        { CompanyID: CO_A, LineTotalGross: 1200, ServicePeriodStart: '2027-01-01', LeadDays: 30 },
+        { CompanyID: CO_B, LineTotalGross: 300, ServicePeriodStart: bStart, LeadDays: 30 },
+    ];
+
+    for (const [label, bStart] of [['undated', null], ['within its lead', '2026-07-15']] as const) {
+        it(`B ${label}: A gets one row due 2026-12-02, B none, and the scoped re-check passes`, () => {
+            const drafts = DefaultScheduleRows(lines(bStart), orderDay);
+            expect(drafts).toEqual([{ InstallmentNumber: 1, DueDate: '2026-12-02', Amount: 1200, CompanyID: CO_A }]);
+
+            const rows = drafts.map((d) => ({ CompanyID: d.CompanyID, Amount: d.Amount, Status: 'Scheduled', DueDate: d.DueDate }));
+            const defaulted = new Set(drafts.map((d) => d.CompanyID.toLowerCase()));
+            // Confirm re-verifies only the companies that got a row: nothing short, so confirm goes ahead.
+            expect(ScheduleShortfalls(rows, lines(bStart), defaulted)).toEqual([]);
+            // B is not billed by instalment, so the factory books its receivable at confirm as before.
+            expect([...ScheduledCompanyIDs(rows)]).toEqual([CO_A]);
+            // The strict every-company check (hand-entered schedules) still names B.
+            expect(ScheduleShortfalls(rows, lines(bStart))).toEqual([{ CompanyID: CO_B, Scheduled: 0, Lines: 300, Difference: 300 }]);
+        });
+    }
+
+    it('the scoped check still refuses a defaulted company that does not tie', () => {
+        const rows = [{ CompanyID: CO_A, Amount: 1100, Status: 'Scheduled' }];
+        expect(ScheduleShortfalls(rows, lines(null), new Set([CO_A]))).toEqual([{ CompanyID: CO_A, Scheduled: 1100, Lines: 1200, Difference: 100 }]);
     });
 });
 
