@@ -765,6 +765,15 @@ export type {
     OpenSessionPaymentIntentResult,
     BookCheckoutPaymentResult,
 } from './CheckoutSessionService.js';
+// The host seam for refusing a checkout (#323): subclass and register `CheckoutPrePurchaseCheck`.
+export { ALREADY_SUBSCRIBED_REASON, CheckoutPrePurchaseCheck, RunPrePurchaseChecks } from './CheckoutPrePurchaseCheck.js';
+export type {
+    CheckoutRefusal,
+    PrePurchaseContext,
+    PrePurchaseLine,
+    PrePurchaseRefusal,
+    PrePurchaseVerdict,
+} from './CheckoutPrePurchaseCheck.js';
 
 // SQL boundary guards — the sanctioned escaping/validation helpers for remote-caller input
 // (see the repo CLAUDE.md "SQL Safety" rule). Exported so the Server package's edge can use

@@ -53,11 +53,12 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 7. [Questions at Checkout (`questions`)](#questions-at-checkout-questions)
 8. [Choice Groups at Checkout (`choiceGroups`)](#choice-groups-at-checkout-choicegroups)
 9. [Zero-DB-Draft In-Memory Pricing & Atomic Booking](#zero-db-draft-in-memory-pricing--atomic-booking)
-10. [Post-Payment Step Record, Review Queue and Replay](#post-payment-step-record-review-queue-and-replay)
-11. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
-12. [Account Step After Payment (`CheckoutAccountStep`)](#account-step-after-payment-checkoutaccountstep)
-13. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
-14. [Server API & Service Reference](#server-api--service-reference)
+10. [Pre-Purchase Checks](#pre-purchase-checks)
+11. [Post-Payment Step Record, Review Queue and Replay](#post-payment-step-record-review-queue-and-replay)
+12. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
+13. [Account Step After Payment (`CheckoutAccountStep`)](#account-step-after-payment-checkoutaccountstep)
+14. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
+15. [Server API & Service Reference](#server-api--service-reference)
 
 ---
 
@@ -437,6 +438,48 @@ if (!confirmed) {
 
 ---
 
+## Pre-Purchase Checks
+
+`UpdateDraft` refuses a purchase before pricing it when either check says no, and `OpenPaymentIntentForSession` runs both again before any money moves. A refused draft persists nothing.
+
+1. **Built in.** The Person the e-mail resolves to already holds an `Active` or `Trialing` subscription (as its beneficiary) to a product on the draft. This applies whatever the subscription type's `ConcurrencyMode` says. A buyer the system does not know yet holds nothing, so the rule is skipped.
+2. **Host.** Subclass `CheckoutPrePurchaseCheck` from `@mj-biz-apps/orders-core-entities-server` and register it. The highest-priority registration runs; with none, only the built-in rule applies.
+
+```typescript
+import { RegisterClass } from '@memberjunction/global';
+import { ALREADY_SUBSCRIBED_REASON, CheckoutPrePurchaseCheck, type PrePurchaseContext, type PrePurchaseVerdict } from '@mj-biz-apps/orders-core-entities-server';
+
+@RegisterClass(CheckoutPrePurchaseCheck)
+export class HeldElsewhereCheck extends CheckoutPrePurchaseCheck {
+    public override async Check(ctx: PrePurchaseContext): Promise<PrePurchaseVerdict> {
+        // ctx: Email, PersonID (null for a new buyer), CompanyID, Lines, ContextUser
+        const held = await lookUpInOtherSystem(ctx.Email, ctx.Lines);
+        return held.length === 0
+            ? { Allowed: true }
+            : { Allowed: false, Message: 'You already subscribe to this.', Reason: ALREADY_SUBSCRIBED_REASON, ProductIDs: held };
+    }
+}
+```
+
+Reference the class from the server bootstrap so the decorator is not tree-shaken away. A check that throws, or a subscription lookup that fails, refuses the purchase with a generic message (`Refusal.Code = 'Unverified'`).
+
+A refused response carries `Success: false`, the buyer's message in `ErrorMessage`, and:
+
+```json
+{ "Refusal": { "Code": "AlreadySubscribed", "Source": "built-in", "ProductIDs": ["79b4a2c1-..."] } }
+```
+
+`Code` is `AlreadySubscribed` (built in, or a host refusal with `Reason: 'already-subscribed'`), `HostRefused` (any other host refusal) or `Unverified`.
+
+The widget shows the message. For `AlreadySubscribed` only, `<mj-orders-checkout>` also dispatches a `checkout-already-subscribed` DOM event. Its `detail` is `{ productIds, source }` and carries no e-mail or other personal data:
+
+```javascript
+document.querySelector('mj-orders-checkout')
+    .addEventListener('checkout-already-subscribed', (e) => showManageSubscriptionLink(e.detail.productIds));
+```
+
+---
+
 ## Post-Payment Step Record, Review Queue and Replay
 
 Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row per session (`CheckoutStepLog.ts`):
@@ -684,7 +727,7 @@ Initializes a new checkout session (or reuses the caller's open, unexpired one).
 ```
 
 ### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines, contextUser?, options?)`
-Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Choices` carries their picks from its `choiceGroups` (see [Choice Groups at Checkout](#choice-groups-at-checkout-choicegroups)); `options.Attribution` carries the checkout's source. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
+Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Choices` carries their picks from its `choiceGroups` (see [Choice Groups at Checkout](#choice-groups-at-checkout-choicegroups)); `options.Attribution` carries the checkout's source. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts, and resolves it again when the email changes; runs the [pre-purchase checks](#pre-purchase-checks); detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
 
 **Request Parameters:**
 ```json
@@ -712,7 +755,7 @@ Recalculates draft pricing in memory and persists the priced snapshot to the ses
 ```
 
 ### 3. `OpenPaymentIntentForSession(sessionID, clientSessionKey)`
-Refuses while a required question is unanswered. Opens (or idempotently re-opens) a payment intent for the session's **current server-priced total**. The amount comes from the session's own priced snapshot; the provider from the widget's `Configuration.paymentProviderId`. Returns the gateway `ClientSecret` (never persisted) for Stripe.js confirmation and stamps `session.PaymentIntentID`.
+Refuses while a required question is unanswered. Opens (or idempotently re-opens) a payment intent for the session's **current server-priced total**. The amount comes from the session's own priced snapshot; the provider from the widget's `Configuration.paymentProviderId`. Returns the gateway `ClientSecret` (never persisted) for Stripe.js confirmation and stamps `session.PaymentIntentID`. Runs the [pre-purchase checks](#pre-purchase-checks) again against the drafted lines first.
 
 **Response:**
 ```json
