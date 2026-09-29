@@ -46,6 +46,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { EscapeText } from './sql-guards.js';
 import { RunPrePurchaseChecks, type CheckoutRefusal, type PrePurchaseRefusal } from './CheckoutPrePurchaseCheck.js';
+import { ResolvePersonByEmail } from './PersonByEmail.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
@@ -640,16 +641,15 @@ export class CheckoutSessionService {
 
         const normalized = email.trim().toLowerCase();
         const rv = new RunView();
-        const escaped = EscapeText(normalized);
         try {
-            const personRes = await rv.RunView<{ ID: string }>({
-                EntityName: PERSON_ENTITY,
-                ExtraFilter: `Email = '${escaped}'`,
-                ResultType: 'simple'
-            }, contextUser);
-
-            if (personRes?.Success && personRes.Results && personRes.Results.length > 0) {
-                return personRes.Results[0].ID;
+            // Several Persons can share an e-mail; the shared rule picks the same one every time
+            // (the one with Orders history, then the oldest), and the one CheckEntitlement answers for.
+            const found = await ResolvePersonByEmail(normalized, rv, contextUser);
+            if (found.PersonID) {
+                return found.PersonID;
+            }
+            if (!found.Success) {
+                console.warn('[CheckoutSessionService] Person lookup error:', found.ErrorMessage);
             }
         } catch (err) {
             console.warn('[CheckoutSessionService] RunView Person lookup error:', err);

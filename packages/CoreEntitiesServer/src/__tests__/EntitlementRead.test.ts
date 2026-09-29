@@ -2,7 +2,7 @@
  * Entitlement read I/O: identity, code lookup, fail-closed faults, SQL guards on caller text.
  *
  * The evaluator itself is covered in EntitlementBehavior.test.ts. These tests pin the
- * contract around it: email is ambiguous-if-duplicate, unknown person looks like no grant,
+ * contract around it: a shared email resolves by the checkout's rule, unknown person looks like no grant,
  * Code is escaped, and a lookup fault does not throw an existence leak.
  */
 import { readFileSync } from 'node:fs';
@@ -21,6 +21,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
         LogError: vi.fn(),
         RunView: class {
             RunView = (...args: unknown[]) => runViewImpl(...args);
+            RunViews = (params: unknown[], ...rest: unknown[]) => Promise.all(params.map((p) => runViewImpl(p, ...rest)));
         },
     };
 });
@@ -145,20 +146,43 @@ describe('CheckPersonEntitlement — no existence leak', () => {
         }
     });
 
-    it('ambiguous email (two people) is NoGrant, never first-match', async () => {
-        byEntity({
-            'MJ_BizApps_Common: People': [{ ID: PERSON }, { ID: 'ffffffff-ffff-4fff-8fff-ffffffffffff' }],
+    it('a shared email answers for the Person the checkout would pick: the one with Orders history', async () => {
+        const OTHER = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+        runViewImpl.mockImplementation(async (params: { EntityName: string; ExtraFilter?: string }) => {
+            if (params.EntityName === 'MJ_BizApps_Common: People') {
+                // The newer row holds the history, so it wins over the older one.
+                return ok([
+                    { ID: OTHER, __mj_CreatedAt: '2020-01-01T00:00:00Z' },
+                    { ID: PERSON, __mj_CreatedAt: '2025-01-01T00:00:00Z' },
+                ]);
+            }
+            if (params.EntityName === 'MJ_BizApps_Orders: Subscriptions' && params.ExtraFilter?.startsWith('BeneficiaryPersonID IN (')) {
+                return ok([{ BeneficiaryPersonID: PERSON }]);
+            }
+            if (params.EntityName === 'MJ_BizApps_Orders: Product Entitlements') {
+                return ok([{ ID: TEMPLATE, ProductID: PRODUCT, Code: 'LEARNING_HUB_PREMIUM' }]);
+            }
+            return ok([]);
         });
-        const r = await CheckPersonEntitlement(
-            { Email: 'shared@example.com', Code: 'LEARNING_HUB_PREMIUM', AsOf: ASOF },
-            provider,
-            user,
-        );
+        await CheckPersonEntitlement({ Email: 'shared@example.com', Code: 'LEARNING_HUB_PREMIUM', AsOf: ASOF }, provider, user);
+        const grantFilters = runViewImpl.mock.calls
+            .map((c: { EntityName: string; ExtraFilter?: string }[]) => c[0])
+            .filter((p) => p.EntityName === 'MJ_BizApps_Orders: Entitlement Grants' && !p.ExtraFilter?.startsWith('BeneficiaryPersonID IN ('))
+            .map((p) => p.ExtraFilter ?? '');
+        expect(grantFilters.length).toBeGreaterThan(0);
+        expect(grantFilters.every((f) => f.includes(PERSON) && !f.includes(OTHER))).toBe(true);
+    });
+
+    it('a lookup fault while choosing among shared-email Persons is NoGrant', async () => {
+        runViewImpl.mockImplementation(async (params: { EntityName: string }) => {
+            if (params.EntityName === 'MJ_BizApps_Common: People') {
+                return ok([{ ID: PERSON }, { ID: 'ffffffff-ffff-4fff-8fff-ffffffffffff' }]);
+            }
+            if (params.EntityName === 'MJ_BizApps_Orders: Order Headers') return fail();
+            return ok([]);
+        });
+        const r = await CheckPersonEntitlement({ Email: 'shared@example.com', Code: 'LEARNING_HUB_PREMIUM', AsOf: ASOF }, provider, user);
         expect(r.Decision).toBe('NoGrant');
-        expect(r.HasAccess).toBe(false);
-        // Must not have gone on to load grants — that would be first-match.
-        const entities = runViewImpl.mock.calls.map((c: { EntityName: string }[]) => c[0].EntityName);
-        expect(entities).not.toContain('MJ_BizApps_Orders: Entitlement Grants');
     });
 });
 

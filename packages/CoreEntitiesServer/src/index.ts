@@ -722,6 +722,7 @@ export type { CustomerTermsFacts, TermsFacts, TermsResolution, TermsResolutionIn
 export { EntitlementGrantClaimDriver, LoadEntitlementGrantClaimDriver } from './EntitlementGrantClaimDriver.js';
 export { GuestOrderClaimDriver, LoadGuestOrderClaimDriver } from './GuestOrderClaimDriver.js';
 export { resolvePersonID } from './claimDriverHelpers.js';
+export { ResolvePersonByEmail, ChoosePersonForEmail, NormalizePersonEmail, MAX_PERSON_EMAIL_LENGTH, type PersonCandidate, type ResolvePersonByEmailResult } from './PersonByEmail.js';
 export { CheckoutSessionService } from './CheckoutSessionService.js';
 export {
     CheckoutAccountStep,
