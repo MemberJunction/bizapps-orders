@@ -42,6 +42,8 @@ import { mjBizAppsOrdersOrderLineDimensionFormComponent } from "./Entities/mjBiz
 import { mjBizAppsOrdersOrderLineFormComponent } from "./Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component";
 import { mjBizAppsOrdersOrderLinePriceComponentFormComponent } from "./Entities/mjBizAppsOrdersOrderLinePriceComponent/mjbizappsordersorderlinepricecomponent.form.component";
 import { mjBizAppsOrdersOrderSequenceFormComponent } from "./Entities/mjBizAppsOrdersOrderSequence/mjbizappsordersordersequence.form.component";
+import { mjBizAppsOrdersOutboundDeliveryFormComponent } from "./Entities/mjBizAppsOrdersOutboundDelivery/mjbizappsordersoutbounddelivery.form.component";
+import { mjBizAppsOrdersOutboundEventFormComponent } from "./Entities/mjBizAppsOrdersOutboundEvent/mjbizappsordersoutboundevent.form.component";
 import { mjBizAppsOrdersPaymentDetailFormComponent } from "./Entities/mjBizAppsOrdersPaymentDetail/mjbizappsorderspaymentdetail.form.component";
 import { mjBizAppsOrdersPaymentHeaderFormComponent } from "./Entities/mjBizAppsOrdersPaymentHeader/mjbizappsorderspaymentheader.form.component";
 import { mjBizAppsOrdersPaymentIntentFormComponent } from "./Entities/mjBizAppsOrdersPaymentIntent/mjbizappsorderspaymentintent.form.component";
@@ -176,6 +178,8 @@ export class GeneratedForms_SubModule_4 { }
 @NgModule({
 declarations: [
     mjBizAppsOrdersCustomerPaymentMethodFormComponent,
+    mjBizAppsOrdersOutboundDeliveryFormComponent,
+    mjBizAppsOrdersOutboundEventFormComponent,
     mjBizAppsOrdersPaymentDetailFormComponent
 ],
 imports: [

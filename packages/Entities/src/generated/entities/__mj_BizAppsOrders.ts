@@ -3135,6 +3135,153 @@ export const mjBizAppsOrdersOrderSequenceSchema = z.object({
 export type mjBizAppsOrdersOrderSequenceEntityType = z.infer<typeof mjBizAppsOrdersOrderSequenceSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Outbound Deliveries
+ */
+export const mjBizAppsOrdersOutboundDeliverySchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OutboundEventID: z.string().describe(`
+        * * Field Name: OutboundEventID
+        * * Display Name: Outbound Event ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Outbound Events (vwOutboundEvents.ID)
+        * * Description: The event being delivered.`),
+    ConsumerKey: z.string().describe(`
+        * * Field Name: ConsumerKey
+        * * Display Name: Consumer Key
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The registration key of the consumer (an OrdersOutboundConsumer subclass).`),
+    GatesAccess: z.boolean().describe(`
+        * * Field Name: GatesAccess
+        * * Display Name: Gates Access
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: True when this consumer's delivery decides whether the buyer's access is ready, as declared by the consumer when the event was recorded.`),
+    Status: z.union([z.literal('DeadLettered'), z.literal('Delivered'), z.literal('Pending')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * DeadLettered
+    *   * Delivered
+    *   * Pending
+        * * Description: Pending until the consumer accepts it (Delivered), or until DeadlineAt passes without success (DeadLettered). Setting a DeadLettered row back to Pending sends it again.`),
+    Attempts: z.number().describe(`
+        * * Field Name: Attempts
+        * * Display Name: Attempts
+        * * SQL Data Type: int
+        * * Default Value: 0
+        * * Description: How many times delivery has been tried.`),
+    NextAttemptAt: z.date().describe(`
+        * * Field Name: NextAttemptAt
+        * * Display Name: Next Attempt At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: The earliest time the dispatcher tries this row again.`),
+    DeadlineAt: z.date().describe(`
+        * * Field Name: DeadlineAt
+        * * Display Name: Deadline At
+        * * SQL Data Type: datetimeoffset
+        * * Description: After this time a failed attempt dead-letters the row instead of scheduling another.`),
+    LeaseUntil: z.date().nullable().describe(`
+        * * Field Name: LeaseUntil
+        * * Display Name: Lease Until
+        * * SQL Data Type: datetimeoffset
+        * * Description: Set while a dispatcher pass holds the row, so another pass does not send it at the same time. A lease that runs out frees the row.`),
+    LastAttemptAt: z.date().nullable().describe(`
+        * * Field Name: LastAttemptAt
+        * * Display Name: Last Attempt At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When delivery was last tried.`),
+    LastError: z.string().nullable().describe(`
+        * * Field Name: LastError
+        * * Display Name: Last Error
+        * * SQL Data Type: nvarchar(2000)
+        * * Description: The consumer's error from the last failed attempt.`),
+    DeliveredAt: z.date().nullable().describe(`
+        * * Field Name: DeliveredAt
+        * * Display Name: Delivered At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the consumer accepted the event.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersOutboundDeliveryEntityType = z.infer<typeof mjBizAppsOrdersOutboundDeliverySchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Outbound Events
+ */
+export const mjBizAppsOrdersOutboundEventSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    EventType: z.union([z.literal('GrantStatusChanged'), z.literal('OrderConfirmed')]).describe(`
+        * * Field Name: EventType
+        * * Display Name: Event Type
+        * * SQL Data Type: nvarchar(40)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * GrantStatusChanged
+    *   * OrderConfirmed
+        * * Description: OrderConfirmed (first confirmation of an order, renewals included) or GrantStatusChanged (a grant created, or its Status changed).`),
+    OrderHeaderID: z.string().nullable().describe(`
+        * * Field Name: OrderHeaderID
+        * * Display Name: Order Header ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+        * * Description: The order the event is about. Set on both event types, so deliveries can be read by order.`),
+    EntitlementGrantID: z.string().nullable().describe(`
+        * * Field Name: EntitlementGrantID
+        * * Display Name: Entitlement Grant ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Entitlement Grants (vwEntitlementGrants.ID)
+        * * Description: The grant a GrantStatusChanged event is about. NULL for OrderConfirmed.`),
+    PayloadJSON: z.string().describe(`
+        * * Field Name: PayloadJSON
+        * * Display Name: Payload JSON
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The event as consumers receive it, fixed when the event was recorded.`),
+    OccurredAt: z.date().describe(`
+        * * Field Name: OccurredAt
+        * * Display Name: Occurred At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: When the change that caused the event was saved.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    OrderHeader: z.string().nullable().describe(`
+        * * Field Name: OrderHeader
+        * * Display Name: Order Header
+        * * SQL Data Type: nvarchar(40)`),
+});
+
+export type mjBizAppsOrdersOutboundEventEntityType = z.infer<typeof mjBizAppsOrdersOutboundEventSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Payment Details
  */
 export const mjBizAppsOrdersPaymentDetailSchema = z.object({
@@ -14959,6 +15106,370 @@ export class mjBizAppsOrdersOrderSequenceEntity extends BaseEntity<mjBizAppsOrde
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Outbound Deliveries - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OutboundDelivery
+ * * Base View: vwOutboundDeliveries
+ * * @description One outbound event to one registered consumer: whether it has been delivered, and when it will be tried next.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Outbound Deliveries')
+export class mjBizAppsOrdersOutboundDeliveryEntity extends BaseEntity<mjBizAppsOrdersOutboundDeliveryEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Outbound Deliveries record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Outbound Deliveries record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOutboundDeliveryEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OutboundEventID
+    * * Display Name: Outbound Event ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Outbound Events (vwOutboundEvents.ID)
+    * * Description: The event being delivered.
+    */
+    get OutboundEventID(): string {
+        return this.Get('OutboundEventID');
+    }
+    set OutboundEventID(value: string) {
+        this.Set('OutboundEventID', value);
+    }
+
+    /**
+    * * Field Name: ConsumerKey
+    * * Display Name: Consumer Key
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The registration key of the consumer (an OrdersOutboundConsumer subclass).
+    */
+    get ConsumerKey(): string {
+        return this.Get('ConsumerKey');
+    }
+    set ConsumerKey(value: string) {
+        this.Set('ConsumerKey', value);
+    }
+
+    /**
+    * * Field Name: GatesAccess
+    * * Display Name: Gates Access
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: True when this consumer's delivery decides whether the buyer's access is ready, as declared by the consumer when the event was recorded.
+    */
+    get GatesAccess(): boolean {
+        return this.Get('GatesAccess');
+    }
+    set GatesAccess(value: boolean) {
+        this.Set('GatesAccess', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * DeadLettered
+    *   * Delivered
+    *   * Pending
+    * * Description: Pending until the consumer accepts it (Delivered), or until DeadlineAt passes without success (DeadLettered). Setting a DeadLettered row back to Pending sends it again.
+    */
+    get Status(): 'DeadLettered' | 'Delivered' | 'Pending' {
+        return this.Get('Status');
+    }
+    set Status(value: 'DeadLettered' | 'Delivered' | 'Pending') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: Attempts
+    * * Display Name: Attempts
+    * * SQL Data Type: int
+    * * Default Value: 0
+    * * Description: How many times delivery has been tried.
+    */
+    get Attempts(): number {
+        return this.Get('Attempts');
+    }
+    set Attempts(value: number) {
+        this.Set('Attempts', value);
+    }
+
+    /**
+    * * Field Name: NextAttemptAt
+    * * Display Name: Next Attempt At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: The earliest time the dispatcher tries this row again.
+    */
+    get NextAttemptAt(): Date {
+        return this.Get('NextAttemptAt');
+    }
+    set NextAttemptAt(value: Date) {
+        this.Set('NextAttemptAt', value);
+    }
+
+    /**
+    * * Field Name: DeadlineAt
+    * * Display Name: Deadline At
+    * * SQL Data Type: datetimeoffset
+    * * Description: After this time a failed attempt dead-letters the row instead of scheduling another.
+    */
+    get DeadlineAt(): Date {
+        return this.Get('DeadlineAt');
+    }
+    set DeadlineAt(value: Date) {
+        this.Set('DeadlineAt', value);
+    }
+
+    /**
+    * * Field Name: LeaseUntil
+    * * Display Name: Lease Until
+    * * SQL Data Type: datetimeoffset
+    * * Description: Set while a dispatcher pass holds the row, so another pass does not send it at the same time. A lease that runs out frees the row.
+    */
+    get LeaseUntil(): Date | null {
+        return this.Get('LeaseUntil');
+    }
+    set LeaseUntil(value: Date | null) {
+        this.Set('LeaseUntil', value);
+    }
+
+    /**
+    * * Field Name: LastAttemptAt
+    * * Display Name: Last Attempt At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When delivery was last tried.
+    */
+    get LastAttemptAt(): Date | null {
+        return this.Get('LastAttemptAt');
+    }
+    set LastAttemptAt(value: Date | null) {
+        this.Set('LastAttemptAt', value);
+    }
+
+    /**
+    * * Field Name: LastError
+    * * Display Name: Last Error
+    * * SQL Data Type: nvarchar(2000)
+    * * Description: The consumer's error from the last failed attempt.
+    */
+    get LastError(): string | null {
+        return this.Get('LastError');
+    }
+    set LastError(value: string | null) {
+        this.Set('LastError', value);
+    }
+
+    /**
+    * * Field Name: DeliveredAt
+    * * Display Name: Delivered At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the consumer accepted the event.
+    */
+    get DeliveredAt(): Date | null {
+        return this.Get('DeliveredAt');
+    }
+    set DeliveredAt(value: Date | null) {
+        this.Set('DeliveredAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Outbound Events - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OutboundEvent
+ * * Base View: vwOutboundEvents
+ * * @description An event Orders tells registered consumers about: an order confirmed, or an entitlement grant's status changed. Written in the same transaction as the change, so it exists exactly when the change committed. Its ID is the stable event id consumers dedupe on.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Outbound Events')
+export class mjBizAppsOrdersOutboundEventEntity extends BaseEntity<mjBizAppsOrdersOutboundEventEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Outbound Events record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Outbound Events record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOutboundEventEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: EventType
+    * * Display Name: Event Type
+    * * SQL Data Type: nvarchar(40)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * GrantStatusChanged
+    *   * OrderConfirmed
+    * * Description: OrderConfirmed (first confirmation of an order, renewals included) or GrantStatusChanged (a grant created, or its Status changed).
+    */
+    get EventType(): 'GrantStatusChanged' | 'OrderConfirmed' {
+        return this.Get('EventType');
+    }
+    set EventType(value: 'GrantStatusChanged' | 'OrderConfirmed') {
+        this.Set('EventType', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderID
+    * * Display Name: Order Header ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+    * * Description: The order the event is about. Set on both event types, so deliveries can be read by order.
+    */
+    get OrderHeaderID(): string | null {
+        return this.Get('OrderHeaderID');
+    }
+    set OrderHeaderID(value: string | null) {
+        this.Set('OrderHeaderID', value);
+    }
+
+    /**
+    * * Field Name: EntitlementGrantID
+    * * Display Name: Entitlement Grant ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Entitlement Grants (vwEntitlementGrants.ID)
+    * * Description: The grant a GrantStatusChanged event is about. NULL for OrderConfirmed.
+    */
+    get EntitlementGrantID(): string | null {
+        return this.Get('EntitlementGrantID');
+    }
+    set EntitlementGrantID(value: string | null) {
+        this.Set('EntitlementGrantID', value);
+    }
+
+    /**
+    * * Field Name: PayloadJSON
+    * * Display Name: Payload JSON
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The event as consumers receive it, fixed when the event was recorded.
+    */
+    get PayloadJSON(): string {
+        return this.Get('PayloadJSON');
+    }
+    set PayloadJSON(value: string) {
+        this.Set('PayloadJSON', value);
+    }
+
+    /**
+    * * Field Name: OccurredAt
+    * * Display Name: Occurred At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: When the change that caused the event was saved.
+    */
+    get OccurredAt(): Date {
+        return this.Get('OccurredAt');
+    }
+    set OccurredAt(value: Date) {
+        this.Set('OccurredAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: OrderHeader
+    * * Display Name: Order Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get OrderHeader(): string | null {
+        return this.Get('OrderHeader');
     }
 }
 
