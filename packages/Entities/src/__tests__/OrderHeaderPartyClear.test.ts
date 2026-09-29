@@ -3,8 +3,8 @@
  *
  * Picking a bill-to person copies them into an empty ship-to and stamps their employer as the
  * organization on each side. Clearing the person left those copies behind, and the server save's
- * `ApplyPersonPartyDefaults()` then copied the ship-to person straight back into the bill-to, so
- * the clear never reached the database.
+ * party defaults then copied the ship-to person straight back into the bill-to, so the clear
+ * never reached the database.
  *
  * Each test drives the real entity methods in the order the form and the server call them:
  * pick → (clear | replace) → server save.
@@ -31,6 +31,7 @@ function order(options: { onDisk?: Values; employers?: Record<string, string> } 
 
     const o = Object.create(OrderHeaderEntity.prototype) as OrderHeaderEntity;
     Object.defineProperty(o, 'partyFills', { value: new Map() });
+    Object.defineProperty(o, 'partyCopiesCleared', { value: new Set() });
     Object.defineProperty(o, 'Get', { value: (f: string) => values[f] ?? null });
     Object.defineProperty(o, 'Set', { value: (f: string, v: unknown) => { values[f] = v; } });
     Object.defineProperty(o, 'GetFieldByName', {
@@ -50,7 +51,9 @@ function order(options: { onDisk?: Values; employers?: Record<string, string> } 
         },
     });
     Object.defineProperty(o, 'ContextCurrentUser', { value: { ID: 'user-1' } });
-    return { o, values };
+    /** What a successful save leaves behind: the values are now what is on disk. */
+    const commit = () => Object.assign(onDisk, values);
+    return { o, values, commit };
 }
 
 /** What the order form does when the user changes a person field (MJ's form field has already set it). */
@@ -63,7 +66,7 @@ async function changePerson(o: OrderHeaderEntity, side: 'BillTo' | 'ShipTo', per
 }
 
 /** What `OrderEntityServer.Save()` runs before writing. */
-const serverSave = (o: OrderHeaderEntity) => o.ApplyPersonPartyDefaults();
+const serverSave = (o: OrderHeaderEntity) => o.ApplySavePartyDefaults();
 
 describe('clearing the bill-to person on a new order', () => {
     it('stays cleared through the server save', async () => {
@@ -171,5 +174,84 @@ describe('the server save', () => {
         await serverSave(o);
 
         expect(values).toMatchObject({ ShipToPersonID: PERSON, BillToOrganizationID: EMPLOYER, ShipToOrganizationID: EMPLOYER });
+    });
+});
+
+describe('a later save', () => {
+    it('does not refill a bill-to person cleared by an earlier save', async () => {
+        const { o, values, commit } = order({ onDisk: { BillToPersonID: PERSON, ShipToPersonID: OTHER_PERSON } });
+        await changePerson(o, 'BillTo', null);
+        await serverSave(o);
+        commit();
+
+        o.Set('Notes', 'edited');
+        await serverSave(o);
+        commit();
+        o.Set('Status', 'Quoted');
+        await serverSave(o);
+
+        expect(values.BillToPersonID).toBeNull();
+    });
+
+    it('does not refill a ship-to person cleared by an earlier save', async () => {
+        const { o, values, commit } = order({ onDisk: { BillToPersonID: PERSON, ShipToPersonID: PERSON } });
+        await changePerson(o, 'ShipTo', null);
+        await serverSave(o);
+        commit();
+
+        o.Set('Notes', 'edited');
+        await serverSave(o);
+
+        expect(values).toMatchObject({ BillToPersonID: PERSON, ShipToPersonID: null });
+    });
+
+    it('does not restamp an organization cleared by an earlier save', async () => {
+        const { o, values } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: null } });
+        o.Set('Notes', 'edited');
+        await serverSave(o);
+
+        expect(values.BillToOrganizationID).toBeNull();
+    });
+});
+
+describe('the ship-to person is never copied into the bill-to by the server save', () => {
+    it('leaves a new order\'s cleared bill-to empty when the user set the ship-to', async () => {
+        const { o, values } = order();
+        await changePerson(o, 'ShipTo', OTHER_PERSON);
+        await changePerson(o, 'BillTo', PERSON);
+        await changePerson(o, 'BillTo', null);
+        await serverSave(o);
+
+        expect(values).toMatchObject({ BillToPersonID: null, ShipToPersonID: OTHER_PERSON });
+    });
+});
+
+describe('replacing the bill-to person on a saved order', () => {
+    const saved = { BillToPersonID: PERSON, ShipToPersonID: PERSON };
+
+    it('copies the new person into the ship-to', async () => {
+        const { o, values } = order({ onDisk: saved });
+        await changePerson(o, 'BillTo', OTHER_PERSON);
+        await serverSave(o);
+
+        expect(values).toMatchObject({ BillToPersonID: OTHER_PERSON, ShipToPersonID: OTHER_PERSON });
+    });
+
+    it('copies the new person when the old one is cleared first', async () => {
+        const { o, values } = order({ onDisk: saved });
+        await changePerson(o, 'BillTo', null);
+        await changePerson(o, 'BillTo', OTHER_PERSON);
+        await serverSave(o);
+
+        expect(values).toMatchObject({ BillToPersonID: OTHER_PERSON, ShipToPersonID: OTHER_PERSON });
+    });
+
+    it('leaves a ship-to the user emptied in this edit empty', async () => {
+        const { o, values } = order({ onDisk: saved });
+        await changePerson(o, 'ShipTo', null);
+        await changePerson(o, 'BillTo', OTHER_PERSON);
+        await serverSave(o);
+
+        expect(values).toMatchObject({ BillToPersonID: OTHER_PERSON, ShipToPersonID: null });
     });
 });

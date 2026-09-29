@@ -614,33 +614,64 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     private readonly partyFills = new Map<string, { Value: string; FromPersonID: string }>();
 
     /**
-     * Person-level party defaults after a bill-to / ship-to person is set.
+     * Party person fields {@link ClearPersonParty} emptied because they were copies of the person
+     * being cleared. They count as filled-in, not as emptied by the user, so a replacement person
+     * can bring their own copy. A field leaves the set when the user changes it directly.
+     */
+    private readonly partyCopiesCleared = new Set<string>();
+
+    /**
+     * Person-level party defaults after the user sets a bill-to / ship-to person on the form.
      *
-     * 1. Copy person bill-to ↔ ship-to when the other side's person is null.
+     * 1. Copy the person to the other side when that side's person is null.
      * 2. For each side that has a person and no org, stamp the longest-lasting
      *    active Employee relationship's organization.
      *
      * Does not overwrite an org the user already chose, and does not refill a party field the
-     * user emptied in this save. Skips booked/voided orders.
+     * user emptied in this save. Skips booked/voided orders. The server save runs
+     * {@link ApplySavePartyDefaults} instead.
      */
-    public async ApplyPersonPartyDefaults(changed: 'BillTo' | 'ShipTo' | 'Both' = 'Both'): Promise<void> {
+    public async ApplyPersonPartyDefaults(changed: 'BillTo' | 'ShipTo'): Promise<void> {
         if (this.Status === 'Voided' || this.IsBookedOrder) return;
 
-        if (changed === 'BillTo' || changed === 'Both') {
-            if (this.BillToPersonID && !this.ShipToPersonID && !this.wasClearedThisSave('ShipToPersonID')) {
-                this.ShipToPersonID = this.BillToPersonID;
-                this.partyFills.set('ShipToPersonID', { Value: this.BillToPersonID, FromPersonID: this.BillToPersonID });
-            }
-        }
-        if (changed === 'ShipTo' || changed === 'Both') {
-            if (this.ShipToPersonID && !this.BillToPersonID && !this.wasClearedThisSave('BillToPersonID')) {
-                this.BillToPersonID = this.ShipToPersonID;
-                this.partyFills.set('BillToPersonID', { Value: this.ShipToPersonID, FromPersonID: this.ShipToPersonID });
-            }
-        }
+        this.copyPersonAcross(changed, changed === 'BillTo' ? 'ShipTo' : 'BillTo');
 
         await this.AutoPopulateEmployerOrganization('BillTo');
         await this.AutoPopulateEmployerOrganization('ShipTo');
+    }
+
+    /**
+     * Party defaults the server save applies, for writers that do not go through the form —
+     * checkout, renewals, a guest claim, an API call.
+     *
+     * Works only from what changed in this save, so a party field emptied by an earlier save is
+     * never refilled by a later one:
+     *
+     * 1. Copy the bill-to person into an empty ship-to when the bill-to person changed in this
+     *    save. Never the other way: an empty ship-to already means "same as bill to", while
+     *    filling an empty bill-to would change who pays.
+     * 2. Stamp the employer organization only on a side whose person changed in this save.
+     *
+     * Skips booked/voided orders.
+     */
+    public async ApplySavePartyDefaults(): Promise<void> {
+        if (this.Status === 'Voided' || this.IsBookedOrder) return;
+
+        if (this.isChangedThisSave('BillToPersonID')) this.copyPersonAcross('BillTo', 'ShipTo');
+
+        for (const side of ['BillTo', 'ShipTo'] as const) {
+            if (this.isChangedThisSave(`${side}PersonID`)) await this.AutoPopulateEmployerOrganization(side);
+        }
+    }
+
+    /** Copy `from`'s person into `to` when `to` has none and the user did not empty it in this save. */
+    private copyPersonAcross(from: 'BillTo' | 'ShipTo', to: 'BillTo' | 'ShipTo'): void {
+        const personID = this.Get(`${from}PersonID`) as string | null;
+        const toField = `${to}PersonID`;
+        if (!personID || this.Get(toField) || this.wasClearedThisSave(toField)) return;
+        this.Set(toField, personID);
+        this.partyFills.set(toField, { Value: personID, FromPersonID: personID });
+        this.partyCopiesCleared.delete(toField);
     }
 
     /**
@@ -656,6 +687,8 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * Values the user set are never touched. Skips booked/voided orders.
      */
     public ClearPersonParty(side: 'BillTo' | 'ShipTo', clearedPersonID: string | null): void {
+        // The user changed this side directly, so an empty value here is now theirs.
+        this.partyCopiesCleared.delete(`${side}PersonID`);
         if (!clearedPersonID || this.Status === 'Voided' || this.IsBookedOrder) return;
 
         const other = side === 'BillTo' ? 'ShipTo' : 'BillTo';
@@ -666,7 +699,10 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         this.partyFills.delete(`${side}PersonID`);
         const otherIsCopy = !clearedWasCopy && (this.wasFilledFrom(otherPersonField, clearedPersonID)
             || (side === 'BillTo' && UUIDsEqual(this.Get(otherPersonField) as string | null, clearedPersonID)));
-        if (otherIsCopy) this.clearPartyField(otherPersonField);
+        if (otherIsCopy) {
+            this.clearPartyField(otherPersonField);
+            this.partyCopiesCleared.add(otherPersonField);
+        }
 
         for (const s of ['BillTo', 'ShipTo'] as const) {
             const orgField = `${s}OrganizationID`;
@@ -689,10 +725,20 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         this.partyFills.delete(idField);
     }
 
-    /** True when `field` had a value on disk and this save empties it — the user cleared it. */
+    /**
+     * True when `field` had a value on disk and this save empties it — the user cleared it. A
+     * copy {@link ClearPersonParty} took away does not count.
+     */
     private wasClearedThisSave(field: string): boolean {
+        if (this.partyCopiesCleared.has(field)) return false;
         const f = this.GetFieldByName(field);
         return !!f && f.Dirty && f.Value == null && f.OldValue != null;
+    }
+
+    /** True when this save sets `field` to a value it did not have on disk. */
+    private isChangedThisSave(field: string): boolean {
+        const f = this.GetFieldByName(field);
+        return !!f && f.Dirty && f.Value != null;
     }
 
     /**

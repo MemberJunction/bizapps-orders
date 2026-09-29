@@ -394,7 +394,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // has now found three times.
         if (!this.passesStatusTransition()) return false;
 
-        await this.ApplyPersonPartyDefaults();
+        await this.ApplySavePartyDefaults();
 
         const booking = this.willBookOnThisSave();
 
