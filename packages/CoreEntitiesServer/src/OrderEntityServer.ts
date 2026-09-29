@@ -100,6 +100,7 @@ import {
     ResolveSubscriptionTypeID,
     SubscriptionTypeRulesFrom,
     type SubscriberIdentity,
+    type SubscriberMatch,
     type ExistingSubscription,
     type SubscriptionDecision,
     type SubscriptionTypeRules,
@@ -2828,13 +2829,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const behavior = this.behaviorFor(rules);
             let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
             const identity = behavior.DedupeIdentity(rules, subscriber);
+            const match = behavior.DedupeMatch(rules, subscriber);
             const dedupeKey = `${product.ID}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
             // An explicitly named subscription wins; then a sibling line of THIS order;
             // then one already in the database for this subscriber and product (D62).
             const existing = line.RenewsSubscriptionID
                 ? await this.loadSubscriptionState(`ID='${line.RenewsSubscriptionID}'`)
                 : (pendingSiblings.get(dedupeKey) ??
-                   (await this.findExistingSubscription(product.ID, identity)));
+                   (await this.findExistingSubscription(product.ID, match)));
 
             // NAMING a subscription IS the statement of who the subscriber is. Requiring the line to
             // restate it would make renewing a seat impossible without repeating the person, and any
@@ -2890,7 +2892,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 const familyKey = `${product.SubscriptionFamily.trim().toLowerCase()}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
                 const siblings = (pendingFamily.get(familyKey) ?? []).filter((s) => !UUIDsEqual(s.ProductID, product.ID));
                 const overlaps = OverlappingCoverage(
-                    [...siblings, ...(await this.loadFamilyCoverage(product, identity, decision.Term.StartDate, decision.Term.EndDate))],
+                    [...siblings, ...(await this.loadFamilyCoverage(product, match, decision.Term.StartDate, decision.Term.EndDate))],
                     decision.Term.StartDate,
                     decision.Term.EndDate,
                 );
@@ -3208,27 +3210,29 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async findExistingSubscription(
         productID: string,
-        identity: SubscriberIdentity,
+        match: SubscriberMatch,
     ): Promise<ExistingSubscription | null> {
-        const holder = this.holderFilter(identity);
+        const holder = this.holderFilter(match);
         if (!holder) return null;
         return this.loadSubscriptionState(`ProductID='${productID}' AND ${holder}`);
     }
 
     /**
-     * The subscription filter for a dedupe identity, or null when it names nobody.
+     * The subscription filter for a dedupe match, or null when it names nobody.
      *
-     * Match on exactly the axes the BenefitModel says define a duplicate. An org-members type
-     * ignores the person entirely (one company membership, however many employees); a seat type
-     * matches BOTH, so two seats for two people never collide.
+     * Match on exactly the axes the BenefitModel says define a duplicate (`DedupeMatch`). An
+     * org-held type ignores the stored person entirely (one company membership, however many
+     * employees, whoever the order named as its contact); a seat type matches BOTH, so two seats
+     * for two people never collide.
      */
-    private holderFilter(identity: SubscriberIdentity): string | null {
-        if (!identity.OrganizationID && !identity.PersonID) return null;
-        const org = identity.OrganizationID
-            ? `HolderOrganizationID='${RequireUUID(identity.OrganizationID, 'HolderOrganizationID')}'`
+    private holderFilter(match: SubscriberMatch): string | null {
+        if (!match.OrganizationID && !match.PersonID) return null;
+        const org = match.OrganizationID
+            ? `HolderOrganizationID='${RequireUUID(match.OrganizationID, 'HolderOrganizationID')}'`
             : `HolderOrganizationID IS NULL`;
-        const person = identity.PersonID
-            ? `BeneficiaryPersonID='${RequireUUID(identity.PersonID, 'BeneficiaryPersonID')}'`
+        if (match.PersonID === 'Any') return org;
+        const person = match.PersonID
+            ? `BeneficiaryPersonID='${RequireUUID(match.PersonID, 'BeneficiaryPersonID')}'`
             : `BeneficiaryPersonID IS NULL`;
         return `${org} AND ${person}`;
     }
@@ -3244,11 +3248,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async loadFamilyCoverage(
         product: ProductRow,
-        identity: SubscriberIdentity,
+        match: SubscriberMatch,
         start: Date,
         end: Date,
     ): Promise<FamilyCoverageTerm[]> {
-        const holder = this.holderFilter(identity);
+        const holder = this.holderFilter(match);
         const family = product.SubscriptionFamily?.trim().toLowerCase();
         if (!holder || !family) return [];
 
@@ -3322,13 +3326,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 ExtraFilter: filter,
                 Fields: ['ID', 'Status', 'HolderOrganizationID', 'BeneficiaryPersonID'],
                 OrderBy: '__mj_CreatedAt DESC',
-                MaxRows: 1,
                 ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
-        const sub = res?.Results?.[0];
+        // A live subscription before the newest one. An org-held match ignores the stored person, so
+        // an org can match several, and a newer canceled one must not hide the one still running.
+        const rows = res?.Results ?? [];
+        const sub = rows.find((s) => s.Status === 'Active' || s.Status === 'Trialing') ?? rows[0];
         if (!sub) return null;
 
         const terms = await rv.RunView<{ EndDate: string; TermNumber: number }>(

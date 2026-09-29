@@ -1,5 +1,5 @@
 /**
- * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS8).
+ * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS14).
  *
  * Subscriptions were a HEADER concern: the flow read `OrderHeader.HolderOrganizationID` and every
  * line on an order therefore had the same subscriber. An association buying ten memberships for ten
@@ -25,6 +25,8 @@
  *   LS11 several affiliations → most recent wins; none → it stays a personal order
  *   LS12 the app setting governs it, including which relationship types qualify
  *   LS9  ACROSS orders the dedupe scope bites: a different person is new, the same person is refused
+ *   LS13 an org-held subscription bought with a contact person is found again — a re-order extends it
+ *   LS14 …and a RejectDuplicate org-held type refuses that re-order
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -607,6 +609,81 @@ LineSubscriberChecks.push({
       Assert(
         /second concurrent subscription/i.test(repeat.Message),
         `the refusal should name the concurrency rule, got: ${repeat.Message}`,
+      );
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS13",
+  Name: "LS13: an org-held subscription bought with a contact person is found again — a re-order extends it",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      // The reverse of LS5: the FIRST purchase names a contact, so the stored subscription carries
+      // that person. The lookup required the stored person to be empty and missed it (#317), so the
+      // re-order created a second membership for the same dates.
+      const contact = await makePerson(ctx, "Contact");
+      const first = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        BillToPersonID: contact,
+        Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 1, UnitPrice: 1200 }],
+        OrderDate: new Date("2026-07-01T00:00:00Z"),
+      });
+      Assert(first.Saved, `first confirm failed: ${first.Message}`);
+      const [firstSub] = await subscriptionsOf(ctx, first.Order.ID as string);
+      Assert(SameID(firstSub.BeneficiaryPersonID, contact), "the first subscription stores the contact");
+
+      const second = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 1, UnitPrice: 1200 }],
+        OrderDate: new Date("2026-08-01T00:00:00Z"),
+      });
+      Assert(second.Saved, `second confirm failed: ${second.Message}`);
+      const [secondSub] = await subscriptionsOf(ctx, second.Order.ID as string);
+      Assert(SameID(firstSub.ID, secondSub.ID), "the re-order extends the organization's membership");
+
+      const all = await TxQuery(
+        ctx,
+        `SELECT ID FROM ${ORDERS_SCHEMA}.Subscription
+         WHERE ProductID='${f.Products.SubCalendar}'
+           AND HolderOrganizationID='${f.Customers.OrganizationID}'`,
+      );
+      AssertEqual(all.length, 1, "still exactly one company membership");
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS14",
+  Name: "LS14: a RejectDuplicate org-held type refuses a re-order when the first purchase named a contact",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      // SubFiscal is Holder + RejectDuplicate. Held by an org, the contact is not part of who holds
+      // it, so the second purchase is the same subscription and must be refused (#317).
+      const contact = await makePerson(ctx, "Contact");
+      const first = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        BillToPersonID: contact,
+        Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 900 }],
+        OrderDate: new Date("2026-07-01T00:00:00Z"),
+      });
+      Assert(first.Saved, `first confirm failed: ${first.Message}`);
+
+      const second = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 900 }],
+        OrderDate: new Date("2026-08-01T00:00:00Z"),
+      });
+      Assert(!second.Saved, "the re-order must be refused by ConcurrencyMode=RejectDuplicate");
+      Assert(
+        /second concurrent subscription/i.test(second.Message),
+        `the refusal should name the concurrency rule, got: ${second.Message}`,
       );
     }),
 });

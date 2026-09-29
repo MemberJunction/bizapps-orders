@@ -16,3 +16,5 @@ Confirm found an existing subscription by product, so a holder with coverage und
 - `Orders.CheckCoverageOverlap` (new, read-only): runs the same check over a saved draft. The order lines editor calls it after each save and shows the result on the line, with the acknowledgment checkbox where it applies.
 
 Products with no family behave as before.
+
+An organization-held subscription bought with a contact person is now found again at confirm (#317). The subscription stores that person, and the lookup required it to be empty, so a re-order of the same product booked a second subscription without `ConcurrencyMode` running. Under `Organization`, and under `Holder` when an organization holds it, the lookup now matches the organization whatever person is stored. Seats under `Individual` still match the exact organization and person. The same rule applies to the family check above, and a live subscription is chosen over a newer canceled one.

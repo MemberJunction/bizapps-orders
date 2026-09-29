@@ -208,6 +208,12 @@ export interface SubscriberIdentity {
     PersonID?: string | null;
 }
 
+/** How a stored subscription is matched on each side: a value, `null` for empty, or `'Any'`. */
+export interface SubscriberMatch {
+    OrganizationID: string | null;
+    PersonID: string | null | 'Any';
+}
+
 export interface SubscriptionPurchaseContext {
     Rules: SubscriptionTypeRules;
     /** Order date — when the purchase happened. */
@@ -443,6 +449,25 @@ export class SubscriptionBehavior {
                 // person as the key.
                 return { OrganizationID: subscriber.OrganizationID ?? null, PersonID: subscriber.PersonID };
         }
+    }
+
+    /**
+     * What a stored subscription must carry to count as the same one as `DedupeIdentity` (#317).
+     *
+     * A subscription stores the subscriber as resolved, so an org-held one also carries whatever
+     * person the order named — a ship-to or bill-to contact. Where the identity drops the person,
+     * that stored person is not part of who holds it, and the lookup must not require it to be
+     * empty: doing so missed every org-held subscription bought with a contact, and a re-order
+     * booked a second subscription for the same dates without `ConcurrencyMode` ever running.
+     *
+     * A seat under `Individual` keeps its person, so seats for different people stay distinct. A
+     * personal subscription keeps `HolderOrganizationID IS NULL`, so it never matches an org's.
+     */
+    public DedupeMatch(rules: SubscriptionTypeRules, subscriber: SubscriberIdentity): SubscriberMatch {
+        const identity = this.DedupeIdentity(rules, subscriber);
+        const organizationID = identity.OrganizationID ?? null;
+        const personID = identity.PersonID ?? null;
+        return { OrganizationID: organizationID, PersonID: organizationID && !personID ? 'Any' : personID };
     }
 
     protected ChooseAction(ctx: SubscriptionPurchaseContext): SubscriptionDecision['Action'] {

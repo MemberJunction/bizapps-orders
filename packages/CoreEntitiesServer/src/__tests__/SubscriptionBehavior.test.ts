@@ -424,6 +424,33 @@ describe('benefit model (D62)', () => {
                 .toEqual({ OrganizationID: ORG, PersonID: null });
         });
     });
+
+    describe('dedupe match — how a stored subscription is found (#317)', () => {
+        const subscriber = { OrganizationID: ORG, PersonID: PERSON };
+
+        it('Organization matches the org whatever person the stored subscription carries', () => {
+            // A subscription stores the contact the order named. Requiring it to be empty missed
+            // every org-held subscription bought with one, so a re-order booked a second.
+            expect(behavior.DedupeMatch(rules({ BenefitModel: 'Organization' }), subscriber))
+                .toEqual({ OrganizationID: ORG, PersonID: 'Any' });
+        });
+
+        it('Holder held by an org matches the org whatever person is stored', () => {
+            expect(behavior.DedupeMatch(rules(), subscriber)).toEqual({ OrganizationID: ORG, PersonID: 'Any' });
+            expect(behavior.DedupeMatch(rules(), { OrganizationID: ORG })).toEqual({ OrganizationID: ORG, PersonID: 'Any' });
+        });
+
+        it('Holder held by a person matches only a personal subscription, never an org-held one', () => {
+            expect(behavior.DedupeMatch(rules(), { PersonID: PERSON })).toEqual({ OrganizationID: null, PersonID: PERSON });
+        });
+
+        it('Individual matches the exact pair, so seats for different people stay distinct', () => {
+            expect(behavior.DedupeMatch(rules({ BenefitModel: 'Individual' }), subscriber))
+                .toEqual({ OrganizationID: ORG, PersonID: PERSON });
+            expect(behavior.DedupeMatch(rules({ BenefitModel: 'Individual' }), { PersonID: PERSON }))
+                .toEqual({ OrganizationID: null, PersonID: PERSON });
+        });
+    });
 });
 
 describe('recognition cadence', () => {
