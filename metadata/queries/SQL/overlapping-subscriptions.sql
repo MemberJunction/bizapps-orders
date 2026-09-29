@@ -30,7 +30,12 @@
 --
 -- COVERAGE IS SubscriptionTerm, not Subscription.StartDate/EndDate. A term counts unless it is
 -- Canceled or Lapsed; Completed terms count, because a past overlap was still billed twice. A
--- subscription counts unless it is Canceled or Migrated.
+-- subscription counts unless it is Migrated.
+--
+-- A CANCELED SUBSCRIPTION IS NOT LEFT OUT. Cancelling marks the whole subscription Canceled at once
+-- but stamps only the term it affects: a term cut short becomes Canceled (and drops out here), a term
+-- ridden to its end becomes Completed, and later terms already booked stay as they were, still billed.
+-- Leaving out every Canceled subscription would hide those, so the term status alone decides.
 --
 -- ONE ROW PER PAIR. The pair is ordered by creation, so LaterSubscription is the one the overlap
 -- created and LaterOrderNumber is the order that booked it. OverlapStart/OverlapEnd span every
@@ -61,7 +66,7 @@ WITH live AS (
     FROM [__mj_BizAppsOrders].vwSubscriptions s
     INNER JOIN [__mj_BizAppsOrders].Product p
             ON p.ID = s.ProductID
-    WHERE s.Status NOT IN (N'Canceled', N'Migrated')
+    WHERE s.Status <> N'Migrated'
       {% if CompanyID %}
       AND s.CompanyID = {{ CompanyID | sqlString }}
       {% endif %}
