@@ -891,7 +891,7 @@ describe('CheckoutSessionService', () => {
         });
 
         it('describes the charge from the snapshot, since the order does not exist yet (#327)', async () => {
-            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100 });
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' } });
             mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', currency: 'USD' });
             describeMocks.mockDescribeCheckoutSnapshot.mockResolvedValue('Annual Membership +1 more');
 
@@ -1010,6 +1010,7 @@ describe('CheckoutSessionService', () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' },
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
             mocks.mockPaymentIntentInstance.OrderHeaderID = 'order-999';
