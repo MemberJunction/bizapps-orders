@@ -82,7 +82,7 @@ describe('CheckoutPublicHostComponent events', () => {
         const target = new EventTarget();
         host = Object.assign(target, { getAttribute: () => null });
         seen = [];
-        for (const type of ['checkout-state-change', 'checkout-complete', 'checkout-error']) {
+        for (const type of ['checkout-state-change', 'checkout-complete', 'checkout-error', 'checkout-cancel', 'closed']) {
             host.addEventListener(type, (e) => seen.push({ type, detail: (e as CustomEvent).detail }));
         }
         responses = {
@@ -161,5 +161,45 @@ describe('CheckoutPublicHostComponent events', () => {
         await c.onSubmitted(submission());
         expect(seen[0]).toEqual({ type: 'checkout-state-change', detail: { state: 'PROCESSING' } });
         expect(seen.some((e) => e.type === 'checkout-complete')).toBe(true);
+    });
+
+    describe('Cancel (#297)', () => {
+        it('resets the form, clears the error and tells the host page to close', async () => {
+            responses['/draft'] = { Success: false, ErrorMessage: 'Could not price this checkout.' };
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(c.errorMessage).toBe('Could not price this checkout.');
+            const before = c.formGeneration;
+            seen = [];
+
+            c.onCancelled();
+
+            expect(c.errorMessage).toBeNull();
+            expect(c.formGeneration).toBe(before + 1);
+            expect(seen).toEqual([
+                { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+                { type: 'checkout-cancel', detail: {} },
+                { type: 'closed', detail: {} },
+            ]);
+        });
+
+        it('does nothing while a payment is in flight', async () => {
+            const c = create();
+            await c.ngOnInit();
+            c.processing = true;
+            seen = [];
+            c.onCancelled();
+            expect(seen).toEqual([]);
+        });
+
+        it('lets the buyer check out again after cancelling', async () => {
+            const c = create();
+            await c.ngOnInit();
+            c.onCancelled();
+            seen = [];
+            await c.onSubmitted(submission());
+            expect(seen.map((e) => e.type)).toEqual(['checkout-state-change', 'checkout-state-change', 'checkout-complete']);
+        });
     });
 });
