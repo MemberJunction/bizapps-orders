@@ -398,6 +398,7 @@ A host that needs the buyer to leave checkout with a login on its own identity p
 export class MyAccountStep extends CheckoutAccountStep {
     public override async EnsureAccount(ctx: CheckoutAccountContext): Promise<CheckoutAccountResult> {
         // find or create the login for ctx.Email; never change an existing one
+        // 'NotApplicable' when this checkout is not one you make logins for (another company's widget)
         return { Outcome: 'Created' }; // or 'Exists' / 'Failed', with an optional buyer-facing Message
     }
     public override async SetPassword(ctx: CheckoutAccountContext & { Password: string }): Promise<CheckoutPasswordResult> {
@@ -413,10 +414,11 @@ Reference the class from the server bootstrap so the decorator is not tree-shake
 1. `POST /checkout/complete` confirms the order, then calls `EnsureAccount` with the buyer's e-mail, name, Person, order, company and when the session began. The response gains `Account: { Outcome, Message?, CanSetPassword }`. A step that fails or throws is reported as `Failed`; it never changes the confirmed order.
 2. `Created`: the widget shows a password form. `POST /checkout/account/password` with `{ sessionId, clientSessionKey, password }` passes the password to `SetPassword`. The password is never stored or logged.
 3. `Exists` or `Failed`: the widget shows the step's message (or a default telling the buyer to sign in). The widget's `redirectUrl` is followed once no password form is showing, or when the buyer chooses "Not now".
+4. `NotApplicable`: the session has no account step. The response carries no `Account`, exactly as when no step is registered.
 
 **Rules.**
-- The outcome is recorded in the session's `MetadataJSON`. `Created` and `Exists` are final; asking again (`POST /checkout/account`) returns them without calling the host. Only `Failed` is asked again, for example when the buyer returns after a webhook confirmed the order.
-- A password is accepted only for a confirmed session whose outcome is `Created`, with the session's client key, once. A password the host refuses counts as an attempt; after 5 the form closes.
+- The outcome is recorded in the session's `MetadataJSON`. `Created`, `Exists` and `NotApplicable` are final; asking again (`POST /checkout/account`) returns them without calling the host. Only `Failed` is asked again, for example when the buyer returns after a webhook confirmed the order.
+- A password is accepted only for a confirmed session whose outcome is `Created`, with the session's client key, once, and within the step's `PasswordWindowMinutes` of the `Created` answer (default 5; override the getter to change it). After the window the buyer is told to reset the password with the host. A password the host refuses counts as an attempt; after 5 the form closes.
 - Orders cannot see the identity provider, so refusing to change an account the checkout did not create is the host's rule to hold, in both methods.
 
 ---

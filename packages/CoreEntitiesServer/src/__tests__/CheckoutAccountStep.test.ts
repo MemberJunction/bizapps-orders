@@ -140,7 +140,15 @@ describe('checkout account step', () => {
             expect(res.Account?.Message).not.toContain('identity provider');
         });
 
-        it('treats an answer outside the three outcomes as Failed', async () => {
+        it('records NotApplicable and answers as if no step were registered, without asking again', async () => {
+            host.ensure.mockResolvedValue({ Outcome: 'NotApplicable' });
+            expect(await EnsureCheckoutAccount(SID, KEY)).toEqual({ Success: true });
+            expect(stored().Outcome).toBe('NotApplicable');
+            expect(await EnsureCheckoutAccount(SID, KEY)).toEqual({ Success: true });
+            expect(host.ensure).toHaveBeenCalledTimes(1);
+        });
+
+        it('treats an answer outside the known outcomes as Failed', async () => {
             host.ensure.mockResolvedValue({ Outcome: 'Maybe' } as unknown as CheckoutAccountResult);
             expect((await EnsureCheckoutAccount(SID, KEY)).Account?.Outcome).toBe('Failed');
         });
@@ -253,6 +261,50 @@ describe('checkout account step', () => {
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('could not be set');
             expect(stored().PasswordAttempts).toBe(1);
+        });
+
+        it('refuses a session the step does not apply to', async () => {
+            host.ensure.mockResolvedValue({ Outcome: 'NotApplicable' });
+            await EnsureCheckoutAccount(SID, KEY);
+            const res = await SetCheckoutAccountPassword(SID, KEY, 'pw');
+            expect(res.Success).toBe(false);
+            expect(res.Account).toBeUndefined();
+            expect(host.setPassword).not.toHaveBeenCalled();
+        });
+
+        it('closes the password once the window has passed', async () => {
+            vi.useFakeTimers({ now: new Date('2026-09-29T12:10:00Z'), toFake: ['Date'] });
+            try {
+                const created = await EnsureCheckoutAccount(SID, KEY);
+                expect(created.Account?.CanSetPassword).toBe(true);
+                vi.setSystemTime(new Date('2026-09-29T12:14:59Z'));
+                expect((await EnsureCheckoutAccount(SID, KEY)).Account?.CanSetPassword).toBe(true);
+                vi.setSystemTime(new Date('2026-09-29T12:15:01Z'));
+                expect((await EnsureCheckoutAccount(SID, KEY)).Account?.CanSetPassword).toBe(false);
+                const res = await SetCheckoutAccountPassword(SID, KEY, 'correct horse battery');
+                expect(res.Success).toBe(false);
+                expect(res.ErrorMessage).toContain('has passed');
+                expect(host.setPassword).not.toHaveBeenCalled();
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('uses the host step\'s own window', async () => {
+            class LongWindowStep extends TestAccountStep {
+                public override get PasswordWindowMinutes(): number {
+                    return 30;
+                }
+            }
+            createInstance.mockReturnValue(new LongWindowStep());
+            vi.useFakeTimers({ now: new Date('2026-09-29T12:00:00Z'), toFake: ['Date'] });
+            try {
+                await EnsureCheckoutAccount(SID, KEY);
+                vi.setSystemTime(new Date('2026-09-29T12:20:00Z'));
+                expect((await SetCheckoutAccountPassword(SID, KEY, 'correct horse battery')).Success).toBe(true);
+            } finally {
+                vi.useRealTimers();
+            }
         });
 
         it('with no step registered, refuses', async () => {

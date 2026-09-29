@@ -8,6 +8,8 @@
  *   - `Created` — a new account; the buyer may set its password in the widget, once.
  *   - `Exists`  — an account was already there; it is never touched, and the buyer is told to sign in.
  *   - `Failed`  — the host could not answer; the buyer is shown the host's message.
+ *   - `NotApplicable` — this checkout is not one the host makes accounts for (another company's
+ *     widget, say); the session has no account step, exactly as if no host were registered.
  *
  * With nothing registered the ClassFactory returns this base class itself, which means the step is
  * off: the checkout behaves exactly as it did before the step existed.
@@ -30,8 +32,13 @@ const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 export const MAX_CHECKOUT_PASSWORD_ATTEMPTS = 5;
 /** Longest password passed to the host. The host's own policy decides what is acceptable. */
 export const MAX_CHECKOUT_PASSWORD_LENGTH = 256;
+/** Default minutes after the account is created during which the buyer may set its password here. */
+export const DEFAULT_CHECKOUT_PASSWORD_WINDOW_MINUTES = 5;
 
+/** What the buyer can be shown. */
 export type CheckoutAccountOutcome = 'Created' | 'Exists' | 'Failed';
+/** What a host can answer: a buyer-facing outcome, or that the step does not apply to this checkout. */
+export type CheckoutAccountHostOutcome = CheckoutAccountOutcome | 'NotApplicable';
 
 /** Everything the host is told about the buyer. */
 export interface CheckoutAccountContext {
@@ -53,7 +60,7 @@ export interface CheckoutAccountContext {
 
 /** The host's answer to {@link CheckoutAccountStep.EnsureAccount}. */
 export interface CheckoutAccountResult {
-    Outcome: CheckoutAccountOutcome;
+    Outcome: CheckoutAccountHostOutcome;
     /** Shown to the buyer. Worded for the buyer, never containing secrets. */
     Message?: string;
 }
@@ -70,11 +77,20 @@ export interface CheckoutPasswordResult {
  * class from the server bootstrap so the decorator is not tree-shaken away. The highest-priority
  * registration wins.
  *
- * `SetPassword` is only called for a session whose `EnsureAccount` answered `Created`. A host must
+ * `SetPassword` is only called for a session whose `EnsureAccount` answered `Created`, within
+ * `PasswordWindowMinutes` of that answer. A host must
  * still refuse to set a password on an account it did not create for this purchase: Orders cannot
  * see the identity provider, so that rule is the host's to hold.
  */
 export class CheckoutAccountStep {
+    /**
+     * How long after `Created` the buyer may set the password in the widget. After it, the buyer
+     * signs in or resets the password through the host instead.
+     */
+    public get PasswordWindowMinutes(): number {
+        return DEFAULT_CHECKOUT_PASSWORD_WINDOW_MINUTES;
+    }
+
     public async EnsureAccount(_context: CheckoutAccountContext): Promise<CheckoutAccountResult> {
         return { Outcome: 'Failed' };
     }
@@ -95,7 +111,7 @@ export function ResolveCheckoutAccountStep(): CheckoutAccountStep | null {
 
 /** What the session remembers about its account step. */
 interface StoredAccountState {
-    Outcome: CheckoutAccountOutcome;
+    Outcome: CheckoutAccountHostOutcome;
     Message?: string;
     DecidedAt: string;
     PasswordSet?: boolean;
@@ -150,13 +166,29 @@ async function saveAccountState(session: mjBizAppsOrdersCheckoutSessionEntity, s
     }
 }
 
-function toStatus(state: StoredAccountState): CheckoutAccountStatus {
+/** True while `now` is inside the step's password window, counted from when the outcome was decided. */
+function withinPasswordWindow(state: StoredAccountState, step: CheckoutAccountStep, now: Date = new Date()): boolean {
+    const decided = Date.parse(state.DecidedAt);
+    const minutes = step.PasswordWindowMinutes;
+    if (!Number.isFinite(decided) || !Number.isFinite(minutes) || minutes <= 0) return false;
+    return now.getTime() <= decided + minutes * 60 * 1000;
+}
+
+function toStatus(state: StoredAccountState & { Outcome: CheckoutAccountOutcome }, step: CheckoutAccountStep): CheckoutAccountStatus {
     return {
         Outcome: state.Outcome,
         Message: state.Message,
         CanSetPassword:
-            state.Outcome === 'Created' && !state.PasswordSet && (state.PasswordAttempts ?? 0) < MAX_CHECKOUT_PASSWORD_ATTEMPTS,
+            state.Outcome === 'Created' &&
+            !state.PasswordSet &&
+            (state.PasswordAttempts ?? 0) < MAX_CHECKOUT_PASSWORD_ATTEMPTS &&
+            withinPasswordWindow(state, step),
     };
+}
+
+/** The recorded state, unless the step does not apply to this session. */
+function buyerFacing(state: StoredAccountState | null): (StoredAccountState & { Outcome: CheckoutAccountOutcome }) | null {
+    return state && state.Outcome !== 'NotApplicable' ? (state as StoredAccountState & { Outcome: CheckoutAccountOutcome }) : null;
 }
 
 /** The session, when the key matches and the checkout has confirmed its order; otherwise the refusal. */
@@ -216,9 +248,9 @@ async function buildContext(session: mjBizAppsOrdersCheckoutSessionEntity, conte
 /**
  * Run the account step for a confirmed checkout, or return the outcome it already reached.
  *
- * `Created` and `Exists` are final: asking again returns the recorded answer rather than asking the
- * host, which would now find the account this checkout created and call it existing. Only `Failed`
- * is asked again. A host step that throws is recorded as `Failed`; it never affects the paid order.
+ * `Created`, `Exists` and `NotApplicable` are final: asking again returns the recorded answer rather
+ * than asking the host, which would now find the account this checkout created and call it
+ * existing. Only `Failed` is asked again. `NotApplicable` is answered as if no step were registered. A host step that throws is recorded as `Failed`; it never affects the paid order.
  */
 export async function EnsureCheckoutAccount(
     sessionID: string,
@@ -233,8 +265,10 @@ export async function EnsureCheckoutAccount(
     const session = loaded.Session;
 
     const existing = readAccountState(session);
-    if (existing && existing.Outcome !== 'Failed') {
-        return { Success: true, Account: toStatus(existing) };
+    if (existing?.Outcome === 'NotApplicable') return { Success: true };
+    const shown = buyerFacing(existing);
+    if (shown && shown.Outcome !== 'Failed') {
+        return { Success: true, Account: toStatus(shown, step) };
     }
 
     const context = await buildContext(session, contextUser);
@@ -249,8 +283,14 @@ export async function EnsureCheckoutAccount(
             result = { Outcome: 'Failed' };
         }
     }
-    const outcome: CheckoutAccountOutcome = ['Created', 'Exists', 'Failed'].includes(result?.Outcome) ? result.Outcome : 'Failed';
-    const state: StoredAccountState = {
+    const outcome: CheckoutAccountHostOutcome = ['Created', 'Exists', 'Failed', 'NotApplicable'].includes(result?.Outcome)
+        ? result.Outcome
+        : 'Failed';
+    if (outcome === 'NotApplicable') {
+        await saveAccountState(session, { Outcome: outcome, DecidedAt: new Date().toISOString() });
+        return { Success: true };
+    }
+    const state: StoredAccountState & { Outcome: CheckoutAccountOutcome } = {
         Outcome: outcome,
         Message: result?.Message ?? (outcome === 'Failed' ? GENERIC_FAILURE : undefined),
         DecidedAt: new Date().toISOString(),
@@ -258,14 +298,14 @@ export async function EnsureCheckoutAccount(
         PasswordAttempts: 0,
     };
     await saveAccountState(session, state);
-    return { Success: true, Account: toStatus(state) };
+    return { Success: true, Account: toStatus(state, step) };
 }
 
 /**
  * Set the password of the account this checkout created.
  *
- * Refused unless the session's recorded outcome is `Created`, no password has been set yet, and the
- * buyer has attempts left. A refusal by the host (its password policy) counts as an attempt.
+ * Refused unless the session's recorded outcome is `Created`, no password has been set yet, the
+ * buyer has attempts left, and the step's password window has not closed. A refusal by the host (its password policy) counts as an attempt.
  */
 export async function SetCheckoutAccountPassword(
     sessionID: string,
@@ -280,16 +320,19 @@ export async function SetCheckoutAccountPassword(
     if ('Refusal' in loaded) return loaded.Refusal;
     const session = loaded.Session;
 
-    const state = readAccountState(session);
-    if (!state || !toStatus(state).CanSetPassword) {
+    const state = buyerFacing(readAccountState(session));
+    if (!state || !toStatus(state, step).CanSetPassword) {
+        const expired = state?.Outcome === 'Created' && !state.PasswordSet && !withinPasswordWindow(state, step);
         return {
             Success: false,
-            ErrorMessage: 'A password cannot be set here. Sign in, or reset your password, with the e-mail you used.',
-            Account: state ? toStatus(state) : undefined,
+            ErrorMessage: expired
+                ? 'The time to set a password here has passed. Reset your password with the e-mail you used to sign in.'
+                : 'A password cannot be set here. Sign in, or reset your password, with the e-mail you used.',
+            Account: state ? toStatus(state, step) : undefined,
         };
     }
     if (typeof password !== 'string' || password.length === 0 || password.length > MAX_CHECKOUT_PASSWORD_LENGTH) {
-        return { Success: false, ErrorMessage: 'Please enter a password.', Account: toStatus(state) };
+        return { Success: false, ErrorMessage: 'Please enter a password.', Account: toStatus(state, step) };
     }
 
     let result: CheckoutPasswordResult;
@@ -300,17 +343,17 @@ export async function SetCheckoutAccountPassword(
         result = { Success: false };
     }
 
-    const next: StoredAccountState = {
+    const next: StoredAccountState & { Outcome: CheckoutAccountOutcome } = {
         ...state,
         PasswordSet: result?.Success === true,
         PasswordAttempts: (state.PasswordAttempts ?? 0) + 1,
     };
     await saveAccountState(session, next);
     return result?.Success === true
-        ? { Success: true, Account: toStatus(next) }
+        ? { Success: true, Account: toStatus(next, step) }
         : {
               Success: false,
               ErrorMessage: result?.Message ?? 'That password could not be set. Please try another.',
-              Account: toStatus(next),
+              Account: toStatus(next, step),
           };
 }
