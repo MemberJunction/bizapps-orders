@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609282340 — Checkout step record (bizapps-orders#326)
+-- V202609291300 — Checkout step record (bizapps-orders#326)
 -- =============================================================================
 -- After payment a checkout confirms the order (booking and entitlement grants,
 -- one transaction) and captures the payment. A failure in either is logged, but

@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609291000 — Restore the OrderLine.JournalEntryID guard (51008)
+-- V202609291301 — Restore the OrderLine.JournalEntryID guard (51008)
 -- (bizapps-orders#262)
 -- =============================================================================
 -- The baseline gave trg_OrderLine_ImmutableAfterConfirm three checks: 51002 (no
