@@ -415,12 +415,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             return;
         }
 
-        // Parsed as UTC midnight from the input's own `yyyy-MM-dd`. `new Date('2026-08-01')` is
-        // already UTC, but building from parts states it rather than relying on that, and keeps the
-        // browser's zone from moving a date the user typed as a calendar day.
-        const [year, month, day] = target.value.split('-').map(Number);
-        if (!year || !month || !day) return;
-        line.ServicePeriodStart = new Date(Date.UTC(year, month - 1, day));
+        const start = this.parseDateInput(target.value);
+        if (!start) return;
+        line.ServicePeriodStart = start;
 
         // NOT priced again: the term start moves no money on the client. A CalendarAnchored type
         // can prorate a partial first period, but that is settled inside the confirm transaction
@@ -431,6 +428,62 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public ResetTermStart(line: mjBizAppsOrdersOrderLineEntity): void {
         if (!this.EditMode) return;
         line.ServicePeriodStart = null;
+    }
+
+    /* ── Service period: deferred lines that nothing else dates ──
+     *
+     * A recognition type with `RequiresServicePeriod` earns against a window — evenly across it, or
+     * all on its last day. Event lines take the window from the event and subscription lines from
+     * the term, both at confirm. Any other such line has no source for it, so it is asked for here,
+     * and Confirm stays disabled until both dates are set.
+     */
+
+    /** True when this line's service period has to be typed in. */
+    public NeedsStatedServicePeriod(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return OrdersEngine.Instance.ServicePeriodSource(line.ProductID) === 'Line';
+    }
+
+    /** Editable until the order is booked; a booked line's window is part of what was booked. */
+    public CanEditServicePeriod(): boolean {
+        return this.EditMode && !this._order?.MoneyLocked;
+    }
+
+    public ServicePeriodValue(line: mjBizAppsOrdersOrderLineEntity, end: 'Start' | 'End'): string {
+        return this.dateInputValue(end === 'Start' ? line.ServicePeriodStart : line.ServicePeriodEnd);
+    }
+
+    /** Shown on the line as it is typed; the line's own validation refuses it at save. */
+    public ServicePeriodBackwards(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const start = line.ServicePeriodStart;
+        const end = line.ServicePeriodEnd;
+        return !!start && !!end && new Date(end).getTime() < new Date(start).getTime();
+    }
+
+    public ServicePeriodMissing(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !line.ServicePeriodStart || !line.ServicePeriodEnd;
+    }
+
+    /** An emptied field clears that end of the window. */
+    public SetServicePeriod(line: mjBizAppsOrdersOrderLineEntity, end: 'Start' | 'End', event: Event): void {
+        if (!this.CanEditServicePeriod()) return;
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const value = target.value ? this.parseDateInput(target.value) : null;
+        if (target.value && !value) return;
+        if (end === 'Start') line.ServicePeriodStart = value;
+        else line.ServicePeriodEnd = value;
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Parsed as UTC midnight from the input's own `yyyy-MM-dd`. `new Date('2026-08-01')` is already
+     * UTC, but building from parts states it rather than relying on that, and keeps the browser's
+     * zone from moving a date the user typed as a calendar day.
+     */
+    private parseDateInput(value: string): Date | null {
+        const [year, month, day] = value.split('-').map(Number);
+        if (!year || !month || !day) return null;
+        return new Date(Date.UTC(year, month - 1, day));
     }
 
     /** `<input type="date">` speaks `yyyy-MM-dd` and nothing else. */

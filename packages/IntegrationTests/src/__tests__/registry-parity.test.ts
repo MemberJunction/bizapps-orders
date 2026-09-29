@@ -63,7 +63,10 @@ import '../checks/payment-providers.checks.js';
 import '../checks/ach-settlement.checks.js';
 import '../checks/embedded-payment-detail.checks.js';
 import '../checks/payment-schedule.checks.js';
+import '../checks/payment-deposit.checks.js';
+import '../checks/contract-reversal.checks.js';
 import '../checks/party-roster.checks.js';
+import '../checks/progress-measurement.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -79,10 +82,10 @@ const registry = IntegrationCheckRegistry.Instance;
 const EXPECTED_BUNDLES: Record<string, number> = {
     'catalog-world': 1,
     'order-booking': 24,
-    'revenue-recognition': 7,
+    'revenue-recognition': 8,
     subscriptions: 15,
     'subscription-cancellation': 10,
-    'subscription-renewal': 14,
+    'subscription-renewal': 17,
     'payments-rollups': 9,
     'payment-ledger': 12,
     intercompany: 14,
@@ -95,14 +98,14 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     tax: 15,
     composition: 10,
     returns: 14,
-    'gift-cards': 12,
+    'gift-cards': 14,
     bundles: 12,
     fulfillment: 12,
     'capture-payment': 12,
     'advance-order-state': 11,
     invoicing: 15,
     'order-status': 8,
-    'payment-terms': 12,
+    'payment-terms': 14,
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,
@@ -112,7 +115,10 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'ach-settlement': 17,
     'embedded-payment-detail': 14,
     'payment-schedule': 22,
+    'payment-deposit': 15,
+    'contract-reversal': 9,
     'party-roster': 2,
+    'progress-measurement': 17,
 };
 
 /**

@@ -11,7 +11,7 @@
  * startup, once.
  *
  * WHAT BELONGS HERE. `*Type` tables, plus the product catalog (`Products`, `Product Prices`,
- * `Product Categories`). Those are read-mostly, mutated through `BaseEntity.Save()`, and
+ * `Product Categories`, `Event Products`). Those are read-mostly, mutated through `BaseEntity.Save()`, and
  * `BaseEngine` refreshes the in-memory arrays on save/delete (and on remote-invalidate when the
  * GraphQL subscription carries `RecordData`). Transactional rows — orders, payments, subscriptions —
  * still do NOT belong here.
@@ -33,6 +33,7 @@ import { BaseEngine, RegisterForStartup, type IMetadataProvider, type IRunViewPr
 import type { Observable } from 'rxjs';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
+    mjBizAppsOrdersEventProductEntity,
     mjBizAppsOrdersPaymentProviderTypeEntity,
     mjBizAppsOrdersPaymentTermsTypeEntity,
     mjBizAppsOrdersPaymentTypeEntity,
@@ -45,6 +46,13 @@ import type {
 } from '../generated/entity_subclasses';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
+
+/** Same codes the server reads: `GIFT_CARD_PRODUCT_TYPE_CODE`, and the IS-A child an event product carries. */
+const GIFT_CARD_TYPE_CODE = 'giftcard';
+const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
+
+/** See {@link OrdersEngine.ServicePeriodSource}. */
+export type ServicePeriodSource = 'NotRequired' | 'Event' | 'Subscription' | 'Line';
 
 /**
  * The lookup + catalog cache for BizApps Orders.
@@ -67,6 +75,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     private _products: mjBizAppsOrdersProductEntity[] = [];
     private _productPrices: mjBizAppsOrdersProductPriceEntity[] = [];
     private _productCategories: mjBizAppsOrdersProductCategoryEntity[] = [];
+    private _eventProducts: mjBizAppsOrdersEventProductEntity[] = [];
 
     /**
      * Load (or refresh) the cache.
@@ -87,6 +96,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
                 { Type: 'entity', PropertyName: '_products', EntityName: 'MJ_BizApps_Orders: Products' },
                 { Type: 'entity', PropertyName: '_productPrices', EntityName: 'MJ_BizApps_Orders: Product Prices' },
                 { Type: 'entity', PropertyName: '_productCategories', EntityName: 'MJ_BizApps_Orders: Product Categories' },
+                { Type: 'entity', PropertyName: '_eventProducts', EntityName: EVENT_PRODUCT_ENTITY },
             ],
             provider as IMetadataProvider,
             forceRefresh,
@@ -123,6 +133,11 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
     public get ProductCategories(): mjBizAppsOrdersProductCategoryEntity[] {
         return this.GetConfigData<mjBizAppsOrdersProductCategoryEntity>('_productCategories');
+    }
+
+    /** The event record each event product carries (IS-A child of Product, sharing its ID). */
+    public get EventProducts(): mjBizAppsOrdersEventProductEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersEventProductEntity>('_eventProducts');
     }
 
     public get Products$(): Observable<mjBizAppsOrdersProductEntity[]> {
@@ -180,6 +195,9 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         if (explicit) return explicit;
         return this.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID?.trim() || null;
     }
+    public EventProductByID(id: string | null | undefined): mjBizAppsOrdersEventProductEntity | undefined {
+        return byID(this.EventProducts, id);
+    }
     public ProductByID(id: string | null | undefined): mjBizAppsOrdersProductEntity | undefined {
         return byID(this.Products, id);
     }
@@ -206,6 +224,34 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         const product = this.ProductByID(productID);
         if (!product) return false;
         return !!this.ProductTypeByID(product.ProductTypeID)?.RequiresFulfillment;
+    }
+
+    /**
+     * Where a line of this product gets the service period its recognition type needs.
+     *
+     * `NotRequired` — the recognition type does not ask for one (`RequiresServicePeriod = 0`), or the
+     * product is a gift card, which recognises when the card is spent rather than on dates.
+     * `Event` — the product has an Event Products row, and the order save stamps it from those dates.
+     * `Subscription` — the order save stamps it from the subscription term.
+     * `Line` — nothing supplies it: the person entering the order has to.
+     *
+     * Unknown product → `NotRequired`, so a screen whose cache has not loaded does not refuse a confirm
+     * the server would accept. The server's refusal is the recognition driver at confirm
+     * (`RequireServicePeriod`), which runs after the stamping.
+     */
+    public ServicePeriodSource(productID: string | null | undefined): ServicePeriodSource {
+        const product = this.ProductByID(productID);
+        if (!product) return 'NotRequired';
+        const type = this.ProductTypeByID(product.ProductTypeID);
+        if ((type?.Code ?? '').trim().toLowerCase() === GIFT_CARD_TYPE_CODE) return 'NotRequired';
+        const revRec = this.RevenueRecognitionTypeByID(this.ResolveRevenueRecognitionTypeID(productID));
+        if (!revRec?.RequiresServicePeriod) return 'NotRequired';
+        if (product.SubscriptionTypeID) return 'Subscription';
+        // The ROW, not the product type: the order save stamps the window from the Event Products row
+        // (`applyEventServicePeriod`), so an event-type product loaded without one has no dates to
+        // stamp and has to be asked for them like any other line.
+        if (this.EventProductByID(productID)) return 'Event';
+        return 'Line';
     }
 
     /** Active base-channel (no list) prices on a product, highest priority first. */

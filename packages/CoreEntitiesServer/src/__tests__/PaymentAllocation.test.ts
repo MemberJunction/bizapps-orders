@@ -18,7 +18,7 @@
  *   TESTS: ../PaymentAllocationFactory.ts
  *   DOC:   plans/archive/intercompany-balancing.md §3
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
     AllocateByCompany,
     PaymentAllocationFactory,
@@ -26,7 +26,7 @@ import {
     type IntercompanyLookup,
     type OrderLineShare,
 } from '../PaymentAllocationFactory.js';
-import { GL_ROLE } from '../GLAccountResolver.js';
+import { GL_ROLE, GLAccountResolutionError } from '../GLAccountResolver.js';
 
 const A = 'company-a';
 const B = 'company-b';
@@ -298,5 +298,180 @@ describe('BuildAllocationDrafts — a missing intercompany pair is fatal', () =>
 
     it('refuses a zero-amount allocation', async () => {
         await expect(factory().BuildAllocationDrafts(ctx({ Amount: 0 }) as never)).rejects.toThrow(/nothing/i);
+    });
+});
+
+describe('PaymentAllocationFactory — customer deposits (#234 review)', () => {
+    /** Customer Deposits linked on product p-own; everything else resolves at company level. */
+    const depositResolver = {
+        Resolve: async (role: string, productID: string | null, _c: unknown, companyID: string) => {
+            if (role === GL_ROLE.CustomerDeposits && productID === 'p-own') return `deposits-own@${companyID}`;
+            return acct(role, companyID);
+        },
+    } as never;
+    const withProduct = (id: string, amount: number, productID: string): OrderLineShare => ({
+        ...line(id, A, amount),
+        Product: { ProductID: productID, ProductCategoryID: null, ProductTypeID: null },
+    });
+
+    it('credits the deposit part to Customer Deposits and the rest to AR', async () => {
+        const f = new PaymentAllocationFactory(depositResolver, intercompany, 'ple');
+        const { Drafts } = await f.BuildAllocationDrafts(
+            ctx({ Amount: 150, OrderLines: [withProduct('l1', 300, 'p-plain')], Deposits: new Map([[A, 50]]) }) as never,
+        );
+        const lines = Drafts[0].Lines;
+        expect(creditOn(lines, acct(GL_ROLE.AccountsReceivable, A))).toBe(100);
+        expect(creditOn(lines, acct(GL_ROLE.CustomerDeposits, A))).toBe(50);
+        expect(debitOn(lines, acct(GL_ROLE.Cash, A))).toBe(150);
+    });
+
+    it('resolves the deposit per line through the product, splitting by line weight', async () => {
+        const f = new PaymentAllocationFactory(depositResolver, intercompany, 'ple');
+        const { Drafts } = await f.BuildAllocationDrafts(
+            ctx({
+                Amount: 90,
+                OrderLines: [withProduct('l1', 100, 'p-own'), withProduct('l2', 200, 'p-plain')],
+                Deposits: new Map([[A, 90]]),
+            }) as never,
+        );
+        const lines = Drafts[0].Lines;
+        expect(creditOn(lines, `deposits-own@${A}`)).toBe(30);
+        expect(creditOn(lines, acct(GL_ROLE.CustomerDeposits, A))).toBe(60);
+        expect(creditOn(lines, acct(GL_ROLE.AccountsReceivable, A))).toBeUndefined();
+    });
+
+    it('a refund mirrors: Dr AR / Dr Customer Deposits / Cr Cash', async () => {
+        const f = new PaymentAllocationFactory(depositResolver, intercompany, 'ple');
+        const { Drafts } = await f.BuildAllocationDrafts(
+            ctx({ Amount: 150, OrderLines: [withProduct('l1', 300, 'p-plain')], Deposits: new Map([[A, 50]]), IsReversal: true }) as never,
+        );
+        const lines = Drafts[0].Lines;
+        expect(debitOn(lines, acct(GL_ROLE.AccountsReceivable, A))).toBe(100);
+        expect(debitOn(lines, acct(GL_ROLE.CustomerDeposits, A))).toBe(50);
+        expect(creditOn(lines, acct(GL_ROLE.Cash, A))).toBe(150);
+    });
+
+    it('refuses a deposit larger than the share', async () => {
+        const f = new PaymentAllocationFactory(depositResolver, intercompany, 'ple');
+        await expect(
+            f.BuildAllocationDrafts(ctx({ Amount: 50, OrderLines: [line('l1', A, 300)], Deposits: new Map([[A, 60]]) }) as never),
+        ).rejects.toThrow(/cannot come out of/);
+    });
+
+    it('refuses an unlinked Customer Deposits role, naming the role and the company', async () => {
+        const { GLAccountResolutionError } = await import('../GLAccountResolver.js');
+        const unlinked = {
+            Resolve: async (role: string, _p: unknown, _c: unknown, companyID: string) => {
+                if (role === GL_ROLE.CustomerDeposits) {
+                    throw new GLAccountResolutionError(role, '', 'NotLinked', `No GL account is linked for role '${role}' at the company level for company ${companyID}.`);
+                }
+                return acct(role, companyID);
+            },
+        } as never;
+        const f = new PaymentAllocationFactory(unlinked, intercompany, 'ple');
+        await expect(
+            f.BuildAllocationDrafts(ctx({ Amount: 50, OrderLines: [line('l1', A, 300)], Deposits: new Map([[A, 50]]) }) as never),
+        ).rejects.toThrow(new RegExp(`'${GL_ROLE.CustomerDeposits}'.*company ${A}.*Nothing was posted`));
+    });
+
+    it('a cross-company refusal is not rewritten as "not linked"', async () => {
+        const { GLAccountResolutionError } = await import('../GLAccountResolver.js');
+        const cross = {
+            Resolve: async (role: string, _p: unknown, _c: unknown, companyID: string) => {
+                if (role === GL_ROLE.CustomerDeposits) throw new GLAccountResolutionError(role, '', 'CrossCompany', 'GL account X resolved for role belongs to company Z');
+                return acct(role, companyID);
+            },
+        } as never;
+        const f = new PaymentAllocationFactory(cross, intercompany, 'ple');
+        await expect(
+            f.BuildAllocationDrafts(ctx({ Amount: 50, OrderLines: [line('l1', A, 300)], Deposits: new Map([[A, 50]]) }) as never),
+        ).rejects.toThrow(/belongs to company Z/);
+    });
+
+    it('no deposit never resolves the role — an unscheduled order is untouched', async () => {
+        const f = new PaymentAllocationFactory(resolver, intercompany, 'ple');
+        const { Drafts } = await f.BuildAllocationDrafts(ctx({ Amount: 100, OrderLines: [line('l1', A, 100)] }) as never);
+        expect(Drafts[0].Lines.map((l) => l.GLAccountID).sort()).toEqual([acct(GL_ROLE.AccountsReceivable, A), acct(GL_ROLE.Cash, A)].sort());
+    });
+});
+
+describe('BuildAllocationDrafts — gift card redemption (issue #300)', () => {
+    const sale = (companyID: string) => ({ CompanyID: companyID, ProductID: 'gc-product', ProductCategoryID: 'gc-cat', ProductTypeID: 'gc-type' });
+    const single = { ReceivingCompanyID: A, OrderLines: [line('l1', A, 300)], GiftCardSale: sale(A) };
+
+    /** A resolver whose Gift Card Liability role fails with `failure`; every other role resolves. */
+    const failingLiability = (failure: 'NotLinked' | 'CrossCompany') =>
+        new PaymentAllocationFactory(
+            {
+                Resolve: async (role: string, _p: unknown, _c: unknown, companyID: string) => {
+                    if (role === GL_ROLE.GiftCardLiability) throw new GLAccountResolutionError(role, '', failure, 'none');
+                    return acct(role, companyID);
+                },
+            } as never,
+            intercompany,
+            'payment-line-entity',
+        );
+
+    it('debits the issuer’s Gift Card Liability, not Cash, and still credits AR', async () => {
+        const { Drafts } = await factory().BuildAllocationDrafts(ctx(single) as never);
+        expect(Drafts).toHaveLength(1);
+        expect(debitOn(Drafts[0].Lines, acct(GL_ROLE.GiftCardLiability, A))).toBe(300);
+        expect(Drafts[0].Lines.some((l) => l.GLAccountID === acct(GL_ROLE.Cash, A))).toBe(false);
+        expect(creditOn(Drafts[0].Lines, acct(GL_ROLE.AccountsReceivable, A))).toBe(300);
+    });
+
+    it('a refund mirrors it: Cr liability, Dr AR', async () => {
+        const { Drafts } = await factory().BuildAllocationDrafts(ctx({ ...single, IsReversal: true }) as never);
+        expect(creditOn(Drafts[0].Lines, acct(GL_ROLE.GiftCardLiability, A))).toBe(300);
+        expect(debitOn(Drafts[0].Lines, acct(GL_ROLE.AccountsReceivable, A))).toBe(300);
+    });
+
+    it('falls back to Deferred Revenue, with a warning, when no liability account is linked', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const { Drafts } = await failingLiability('NotLinked').BuildAllocationDrafts(ctx(single) as never);
+        expect(debitOn(Drafts[0].Lines, acct(GL_ROLE.DeferredRevenue, A))).toBe(300);
+        expect(warn).toHaveBeenCalledOnce();
+        warn.mockRestore();
+    });
+
+    it('rethrows any failure other than "nothing linked"', async () => {
+        await expect(failingLiability('CrossCompany').BuildAllocationDrafts(ctx(single) as never)).rejects.toThrow(
+            GLAccountResolutionError,
+        );
+    });
+
+    it('books on the issuer’s books when another company received it, with the intercompany pair', async () => {
+        // Card sold on A's line, payment recorded against B's order by B.
+        const { Drafts } = await factory().BuildAllocationDrafts(
+            ctx({ ReceivingCompanyID: B, OrderLines: [line('l1', B, 300)], GiftCardSale: sale(A) }) as never,
+        );
+        expect(debitOn(Drafts[0].Lines, acct(GL_ROLE.GiftCardLiability, A))).toBe(300);
+        expect(creditOn(Drafts[0].Lines, `dueTo:${A}->${B}`)).toBe(300);
+        expect(creditOn(Drafts[1].Lines, acct(GL_ROLE.AccountsReceivable, B))).toBe(300);
+    });
+
+    it('walks the selling line’s product, category and type, as the sale did', async () => {
+        // The sale's deferral account is linked on the gift card product type (2410); the company
+        // default (2400) must not be what the redemption clears.
+        const walked = new PaymentAllocationFactory(
+            {
+                Resolve: async (role: string, p: string | null, c: string | null, companyID: string, _d: Date, t?: string | null) => {
+                    if (role === GL_ROLE.GiftCardLiability) throw new GLAccountResolutionError(role, '', 'NotLinked', 'none');
+                    if (role === GL_ROLE.DeferredRevenue && p === 'gc-product' && c === 'gc-cat' && t === 'gc-type') return '2410';
+                    return acct(role, companyID);
+                },
+            } as never,
+            intercompany,
+            'payment-line-entity',
+        );
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const { Drafts } = await walked.BuildAllocationDrafts(ctx(single) as never);
+        warn.mockRestore();
+        expect(debitOn(Drafts[0].Lines, '2410')).toBe(300);
+    });
+
+    it('a non-gift-card tender still debits Cash', async () => {
+        const { Drafts } = await factory().BuildAllocationDrafts(ctx({ ...single, GiftCardSale: null }) as never);
+        expect(debitOn(Drafts[0].Lines, acct(GL_ROLE.Cash, A))).toBe(300);
     });
 });

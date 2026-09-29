@@ -99,6 +99,8 @@ export interface CaptureRequest {
     /** Omit for the full authorised amount. Major units. */
     Amount?: number;
     CurrencyCode: string;
+    /** The gift card being spent, when the tender is one. Only the stored-value driver reads it. */
+    StoredValueAccountID?: string | null;
 }
 
 export interface RetrieveIntentRequest {
@@ -224,6 +226,17 @@ export class BasePaymentProvider {
      */
     public get SettlesAsynchronously(): boolean {
         return false;
+    }
+
+    /**
+     * Whether capturing a payment against this provider means asking the gateway to MOVE money.
+     * True for a till (Stripe): capture calls the gateway and needs an intent. False for a rail that
+     * collected the money on its own (Bill.com): the payment is RECORDED, not collected, so there is no
+     * intent and nothing to capture — `PaymentHeaderEntityServer` books it like a check, but keeps
+     * `PaymentProviderID` so the money stays attributed to the rail it arrived on.
+     */
+    public get CollectsAtCapture(): boolean {
+        return true;
     }
 
     public async CreateIntent(_request: CreateIntentRequest): Promise<CreateIntentResult> {

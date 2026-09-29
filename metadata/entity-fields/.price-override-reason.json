@@ -13,6 +13,10 @@
     },
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Lines&Name=PriceOverrideReason"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T21:24:42.158Z",
+      "checksum": "4b0a1d272dbac19ebd683ef2539045d4ca7f69d542fb185689bea94ed2f0a28f"
     }
   }
 ]

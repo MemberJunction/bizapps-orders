@@ -38,6 +38,7 @@ import { ResolveActiveEmployerOrganization } from './PartyAffiliationBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
+import { OrdersEngine } from './pricing/OrdersEngine';
 import { anyFieldIsDirty } from './field-dirty';
 import { AsDateValue, TodayAsDateValue } from './date-cell';
 import { ParseAddressSnapshot, type OrderAddressSnapshot } from './order-address-snapshot';
@@ -560,12 +561,37 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         if (this.Lines.Count === 0 && (!this.IsSaved || this.Lines.IsLoaded)) {
             return { Allowed: false, Reason: 'Need a line.' };
         }
+        const undated = this.LinesMissingServicePeriod();
+        if (undated.length > 0) {
+            const numbers = undated.map((l) => l.LineNumber).filter((n) => n != null);
+            const which = numbers.length > 0 ? `Line ${numbers.join(', ')}` : 'A line';
+            return {
+                Allowed: false,
+                Reason: `${which} needs a service period (start and end date) before this can be confirmed.`,
+            };
+        }
         return { Allowed: true };
     }
 
-    /** True when {@link Confirm} is a legal next move from what is on this object. */
-    public get CanConfirm(): boolean {
-        return this.ConfirmEligibility().Allowed;
+    /**
+     * Lines whose recognition type needs a service period (`RequiresServicePeriod`), that nothing
+     * will date, and that do not have both dates.
+     *
+     * Event lines are left out because the save stamps them from the event, and subscription lines
+     * because it stamps them from the term. What remains has no source but the person entering the
+     * order. The browser asks this before offering Confirm, so the user is told before the server's
+     * recognition driver refuses the booking.
+     *
+     * Reads `OrdersEngine`; the caller loads it. With the cache empty nothing counts, which leaves
+     * the decision to the server.
+     */
+    public LinesMissingServicePeriod(): OrderHeaderEntity['Lines']['Items'] {
+        const engine = OrdersEngine.Instance;
+        return this.Lines.Items.filter(
+            (line) =>
+                !(line.ServicePeriodStart && line.ServicePeriodEnd) &&
+                engine.ServicePeriodSource(line.ProductID) === 'Line',
+        );
     }
 
     /**
@@ -583,9 +609,24 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         if (this.IsSaved && !this.Lines.IsLoaded) {
             await this.Lines.Load();
         }
-        this.Status = 'Confirmed';
+        await this.SaveStatus('Confirmed', 'The order could not be confirmed.');
+    }
+
+    /**
+     * Move to `status` by saving, and put the previous status back if the save is refused.
+     *
+     * Without the restore a refused transition stays on the object as an unsaved edit: the screen
+     * reads the new status, `IsBookedOrder` hides the verbs that depend on it, and every later save
+     * re-sends the same transition and is refused the same way, whatever else changed.
+     *
+     * Throws with the server's reason.
+     */
+    public async SaveStatus(status: OrderHeaderEntity['Status'], fallbackMessage: string): Promise<void> {
+        const previous = this.Status;
+        this.Status = status;
         if (!(await this.Save())) {
-            throw new Error(this.LatestResult?.CompleteMessage?.trim() || 'The order could not be confirmed.');
+            this.Status = previous;
+            throw new Error(this.LatestResult?.CompleteMessage?.trim() || fallbackMessage);
         }
     }
 

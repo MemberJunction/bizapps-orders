@@ -1,12 +1,12 @@
 import { Component, inject, ChangeDetectorRef } from '@angular/core';
-import { CompositeKey } from '@memberjunction/core';
+import { CompositeKey, Metadata } from '@memberjunction/core';
 import type { RunViewParams } from '@memberjunction/core';
 import { UserInfoEngine } from '@memberjunction/core-entities';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
-import { OrderHeaderEntity, type DateCell, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
+import { LoadOrdersEngine, OrderHeaderEntity, type DateCell, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
 import {
     BuildOrderJournalEntryRows,
@@ -119,7 +119,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public AccountingBasis: OrderJournalDateBasis = 'effective';
 
     public Confirming = false;
-    public ConfirmError: string | null = null;
+    public StatusError: string | null = null;
     public PaymentTypes: mjBizAppsOrdersPaymentTypeEntity[] = [];
 
     public get ContextTabs(): TabConfig[] {
@@ -164,6 +164,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             await this.record.Lines.Load();
         }
         this.updateLineBadge();
+        // `ConfirmEligibility` reads the catalog to tell which lines need a service period.
+        await LoadOrdersEngine(Metadata.Provider, new Metadata().CurrentUser);
         await this.loadPaymentTypes();
         await this.refreshAccountingIfNeeded();
 
@@ -202,10 +204,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
                 return !ord?.IsBookedOrder && ord?.Status !== 'Voided' && !!ord?.IsSaved;
             },
             OnClick: async () => {
-                if (!this.record) return;
-                this.record.Status = 'Voided';
-                await this.record.Save();
-                this.cdr.detectChanges();
+                await this.RunStatusChange('Voided', 'The order could not be voided.');
             },
         });
 
@@ -221,10 +220,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
                 return ord?.Status === 'Voided' && !!ord?.IsSaved;
             },
             OnClick: async () => {
-                if (!this.record) return;
-                this.record.Status = 'Draft';
-                await this.record.Save();
-                this.cdr.detectChanges();
+                await this.RunStatusChange('Draft', 'The order could not be reopened as a draft.');
             },
         });
 
@@ -275,7 +271,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public SetPaymentReference(value: string): void {
         if (!this.record) return;
         this.record.InitialPaymentReference = value;
-        this.ConfirmError = null;
+        this.StatusError = null;
     }
 
     public get ShowConfirm(): boolean {
@@ -293,15 +289,30 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return verdict.Allowed ? null : (verdict.Reason ?? 'Cannot confirm this order.');
     }
 
+    /** Void or reopen. A refusal leaves the previous status in place and shows the reason. */
+    public async RunStatusChange(status: OrderHeaderEntity['Status'], fallbackMessage: string): Promise<void> {
+        if (!this.record) return;
+        this.StatusError = null;
+        try {
+            await this.record.SaveStatus(status, fallbackMessage);
+        } catch (error) {
+            this.StatusError = error instanceof Error ? error.message : String(error);
+        } finally {
+            this.cdr.detectChanges();
+        }
+    }
+
     public async RunConfirm(): Promise<void> {
         if (!this.record || this.Confirming || !this.ShowConfirm) return;
         this.Confirming = true;
-        this.ConfirmError = null;
+        this.StatusError = null;
         try {
             if (this.record.Dirty) {
                 const saveResult = await this.record.Save();
                 if (!saveResult) {
-                    throw new Error(this.record.LatestResult?.Message ?? 'Failed to save order changes before confirming.');
+                    throw new Error(
+                        this.record.LatestResult?.CompleteMessage?.trim() || 'Failed to save order changes before confirming.',
+                    );
                 }
             }
             await this.record.Confirm();
@@ -310,7 +321,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
                 this.EditMode = false;
             }
         } catch (error) {
-            this.ConfirmError = error instanceof Error ? error.message : String(error);
+            this.StatusError = error instanceof Error ? error.message : String(error);
         } finally {
             this.Confirming = false;
             this.updateLineBadge();

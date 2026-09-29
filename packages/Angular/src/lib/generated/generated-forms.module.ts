@@ -32,6 +32,7 @@ import { mjBizAppsOrdersOrderChargeAllocationFormComponent } from "./Entities/mj
 import { mjBizAppsOrdersOrderChargeFormComponent } from "./Entities/mjBizAppsOrdersOrderCharge/mjbizappsordersordercharge.form.component";
 import { mjBizAppsOrdersOrderCompanyPolicyFormComponent } from "./Entities/mjBizAppsOrdersOrderCompanyPolicy/mjbizappsordersordercompanypolicy.form.component";
 import { mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent } from "./Entities/mjBizAppsOrdersOrderHeaderPaymentSchedule/mjbizappsordersorderheaderpaymentschedule.form.component";
+import { mjBizAppsOrdersOrderLineProgressMeasurementFormComponent } from "./Entities/mjBizAppsOrdersOrderLineProgressMeasurement/mjbizappsordersorderlineprogressmeasurement.form.component";
 import { mjBizAppsOrdersOrderHeaderFormComponent } from "./Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component";
 import { mjBizAppsOrdersOrderLineDimensionFormComponent } from "./Entities/mjBizAppsOrdersOrderLineDimension/mjbizappsordersorderlinedimension.form.component";
 import { mjBizAppsOrdersOrderLineFormComponent } from "./Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component";
@@ -42,6 +43,10 @@ import { mjBizAppsOrdersPaymentHeaderFormComponent } from "./Entities/mjBizAppsO
 import { mjBizAppsOrdersPaymentIntentFormComponent } from "./Entities/mjBizAppsOrdersPaymentIntent/mjbizappsorderspaymentintent.form.component";
 import { mjBizAppsOrdersPaymentLineFormComponent } from "./Entities/mjBizAppsOrdersPaymentLine/mjbizappsorderspaymentline.form.component";
 import { mjBizAppsOrdersPaymentProviderFormComponent } from "./Entities/mjBizAppsOrdersPaymentProvider/mjbizappsorderspaymentprovider.form.component";
+import { mjBizAppsOrdersExternalCustomerFormComponent } from "./Entities/mjBizAppsOrdersExternalCustomer/mjbizappsordersexternalcustomer.form.component";
+import { mjBizAppsOrdersExternalInvoiceFormComponent } from "./Entities/mjBizAppsOrdersExternalInvoice/mjbizappsordersexternalinvoice.form.component";
+import { mjBizAppsOrdersExternalPaymentFormComponent } from "./Entities/mjBizAppsOrdersExternalPayment/mjbizappsordersexternalpayment.form.component";
+import { mjBizAppsOrdersPaymentProviderSyncStateFormComponent } from "./Entities/mjBizAppsOrdersPaymentProviderSyncState/mjbizappsorderspaymentprovidersyncstate.form.component";
 import { mjBizAppsOrdersPaymentProviderTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentProviderType/mjbizappsorderspaymentprovidertype.form.component";
 import { mjBizAppsOrdersPaymentSequenceFormComponent } from "./Entities/mjBizAppsOrdersPaymentSequence/mjbizappsorderspaymentsequence.form.component";
 import { mjBizAppsOrdersPaymentTermsTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentTermsType/mjbizappsorderspaymenttermstype.form.component";
@@ -471,6 +476,10 @@ export class GeneratedForms_SubModule_25 { }
 @NgModule({
 declarations: [
     mjBizAppsOrdersPaymentProviderFormComponent,
+    mjBizAppsOrdersExternalCustomerFormComponent,
+    mjBizAppsOrdersExternalInvoiceFormComponent,
+    mjBizAppsOrdersExternalPaymentFormComponent,
+    mjBizAppsOrdersPaymentProviderSyncStateFormComponent,
     mjBizAppsOrdersPaymentSequenceFormComponent,
     mjBizAppsOrdersStoredValueAccountFormComponent
 ],
@@ -568,7 +577,8 @@ export class GeneratedForms_SubModule_30 { }
 declarations: [
     mjBizAppsOrdersCustomerTaxExemptionFormComponent,
     mjBizAppsOrdersPaymentIntentFormComponent,
-    mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent
+    mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent,
+    mjBizAppsOrdersOrderLineProgressMeasurementFormComponent
 ],
 imports: [
     CommonModule,
