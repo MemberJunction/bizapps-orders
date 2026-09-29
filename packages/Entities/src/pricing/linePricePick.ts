@@ -61,19 +61,22 @@ export function IsLinePriceOverridden(
 /**
  * The unit price a pricing pass must HOLD for this line, or null when the engine is to resolve one.
  *
- * A price is held while it is being edited, and for as long as the stored `PriceOverridden` flag
- * says it was set by hand. Reading only the edit is what golive #275 was: once the override was
- * saved and the order reopened, nothing was dirty, the engine re-resolved list price, and the
- * screen showed that as the line total while the stored line and its journal entries carried the
- * override.
+ * The same test the save walk applies (`OrderPricingService.applyResolvedPrice`): a price being
+ * edited, or any positive stored price, is held. A saved line carrying a price therefore shows what
+ * it books, whether the price was typed as an override, written through the API, carried in by a
+ * conversion, apportioned from a bundle, or resolved from a rule that has since changed. Re-resolving
+ * such a line on screen is what golive #275 was: the screen showed today's rules price as the line
+ * total while the stored line and its journal entry carried the stored one.
+ *
+ * The rules' answer for a held line is still reported as the engine default, which is what the
+ * picker's Default row offers.
  *
  * Null is not zero. Zero would pin the line as deliberately free.
  */
 export function StatedLineUnitPrice(line: mjBizAppsOrdersOrderLineEntity): number | null {
-    const flag = line.GetFieldByName('PriceOverridden')?.Value;
-    const flagged = flag === true || flag === 1 || flag === '1';
-    if (!flagged && !anyFieldIsDirty(line, ['UnitPrice'])) return null;
-    return Number(line.UnitPrice ?? 0);
+    const unit = Number(line.UnitPrice ?? 0);
+    if (!anyFieldIsDirty(line, ['UnitPrice']) && !(unit > 0)) return null;
+    return unit;
 }
 
 /**

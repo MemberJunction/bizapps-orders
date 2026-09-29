@@ -120,7 +120,7 @@ describe('IsLinePriceOverridden', () => {
 });
 
 describe('StatedLineUnitPrice', () => {
-    // golive #275: a saved override reopened with nothing dirty must still hold its price.
+    // golive #275: a saved price reopened with nothing dirty must still hold, as the save walk holds it.
     it('holds a saved override that has not been edited since', () => {
         const { line, fields } = lineOf(CONCESSION, true);
         expect(fields.UnitPrice.Dirty).toBe(false);
@@ -133,8 +133,12 @@ describe('StatedLineUnitPrice', () => {
         expect(StatedLineUnitPrice(line)).toBe(1100);
     });
 
-    it('lets the engine resolve a clean, unflagged line', () => {
-        expect(StatedLineUnitPrice(lineOf({ ...UNPRICED, UnitPrice: 1200 }, true).line)).toBeNull();
+    it('holds a saved, unflagged line at its stored price, as the save walk does', () => {
+        expect(StatedLineUnitPrice(lineOf({ ...UNPRICED, UnitPrice: 1000 }, true).line)).toBe(1000);
+    });
+
+    it('lets the engine resolve a saved line stored at zero and not being edited', () => {
+        expect(StatedLineUnitPrice(lineOf({ ...UNPRICED, UnitPrice: 0 }, true).line)).toBeNull();
     });
 
     it('lets the engine resolve an unsaved line nobody priced, rather than pinning it at zero', () => {

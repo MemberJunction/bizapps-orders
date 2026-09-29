@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Metadata, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { CanPriceOrderLocally, NetAfterDiscount, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, StatedLineUnitPrice, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { CanPriceOrderLocally, NetAfterDiscount, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, IsLinePriceOverridden, StatedLineUnitPrice, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
 
@@ -423,6 +423,11 @@ export class MJOPricingScheduler {
             const line = order.Lines.Items[i];
             // The same test that decided whether the engine was told to hold the price.
             const stated = line ? StatedLineUnitPrice(line) != null : false;
+            // Held is not overridden: a saved line keeps its stored price whether or not anyone set
+            // it by hand, and only one set by hand is labelled 'stated'. Every other held line keeps
+            // the rule's name, which the walk reports as the engine default when it did not resolve.
+            const overridden = line ? IsLinePriceOverridden(line, priced.Default ?? null) : false;
+            const rule = WinningRuleLabel(priced.Components) ?? (priced.Default?.PriceName?.trim() || 'base price');
             const extended = round(Number(priced.UnitPrice) * Number(line?.Quantity ?? 0));
             return {
                 // Positional: an unsaved line has no id, and the engine answers by position.
@@ -435,7 +440,7 @@ export class MJOPricingScheduler {
                 Error: null,
                 // Null means "priced and found nothing", which the badge renders as *no price rule*.
                 // A resolved price with no list is base pricing, and must not read as unpriced.
-                PriceSource: priced.UnitPrice > 0 ? (stated ? 'stated' : (WinningRuleLabel(priced.Components) ?? 'base price')) : null,
+                PriceSource: priced.UnitPrice > 0 ? (overridden ? 'stated' : rule) : null,
                 Components: (priced.Components ?? []) as unknown as PreviewComponent[],
                 WasStated: stated,
                 ProductPriceID: priced.ProductPriceID ?? null,
