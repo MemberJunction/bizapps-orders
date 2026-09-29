@@ -635,6 +635,12 @@ export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { EntitlementGrantEntityServer, LoadEntitlementGrantEntityServer } from './EntitlementGrantEntityServer.js';
 export {
+    GetCheckoutAccessStatus,
+    SummarizeAccessDeliveries,
+    type CheckoutAccessState,
+    type CheckoutAccessStatusResult,
+} from './CheckoutAccessStatus.js';
+export {
     OrdersOutboundConsumer,
     RecordOutboundEvent,
     DispatchOutboundDeliveries,

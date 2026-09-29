@@ -124,6 +124,15 @@ export interface CheckoutWidgetConfiguration {
     allowCoupons?: boolean;
     successMessage?: string;
     /**
+     * What the success screen says about the buyer's access while it is provisioned after the
+     * confirm (#325). Shown only when a registered outbound consumer gates access; each has a default.
+     */
+    accessMessages?: {
+        pending?: string;
+        ready?: string;
+        failed?: string;
+    };
+    /**
      * Where the public checkout sends the buyer once the order is confirmed. The order number is
      * appended as `order=<number>`, so the landing page knows which order completed.
      */

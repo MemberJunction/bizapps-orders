@@ -409,6 +409,7 @@ export class CheckoutSessionService {
         'stripePublishableKey',
         'autoRenewConsentText',
         'successMessage',
+        'accessMessages',
         'redirectUrl',
         'extensionEntityName',
         'extensionFields',
