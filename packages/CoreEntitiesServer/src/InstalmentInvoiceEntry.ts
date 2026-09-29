@@ -49,7 +49,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import type { mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
+import { ToISODate, type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
 
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, SubmitJournalEntryDrafts } from './AccountingBridge.js';
 import { SplitExactly } from './BundleBehavior.js';
@@ -162,7 +162,8 @@ export interface InstalmentInvoiceContext {
     InstallmentNumber: number;
     DocumentNumber: string;
     Amount: number;
-    InvoicedAt: Date;
+    /** The business day it was invoiced, pinned to midnight UTC (`CalendarDayOrToday`) — the entry's date (#209). */
+    InvoiceDay: Date;
     /**
      * Customer deposits this issue turns into settlement of the new receivable: how much the rows'
      * held deposits fell when the row became billed (`DepositReleasedByCompany`), read by the caller
@@ -294,7 +295,7 @@ export async function EmitInstalmentInvoiceEntry(
     }
 
     const resolver = await BuildGLAccountResolver(provider, user);
-    const asOf = new Date(context.InvoicedAt);
+    const asOf = context.InvoiceDay;
     const billedByLine = new Map<string, number>();
     const receivables: LineReceivable[] = [];
     const lines: JELineDraft[] = [];
@@ -450,7 +451,7 @@ export async function EmitInstalmentInvoiceEntry(
     const outcome = await SubmitJournalEntryDrafts(
         [
             {
-                EffectiveDate: asOf.toISOString().slice(0, 10),
+                EffectiveDate: ToISODate(asOf) as string,
                 EntryType: await ResolveInstalmentEntryType(provider, user),
                 Description:
                     `Order ${context.OrderNumber} instalment ${context.InstallmentNumber} invoiced as ` +

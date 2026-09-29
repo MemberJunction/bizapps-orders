@@ -51,6 +51,7 @@ import { InstalmentDocumentNumber } from './InvoiceBehavior.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
 import { RequireUUID } from './sql-guards.js';
+import { CalendarDayOrToday } from './calendar-day.js';
 
 /** Order statuses that carry a booked receivable. */
 const BOOKED_STATUSES = new Set(['Confirmed', 'Posted', 'Fulfilled']);
@@ -209,6 +210,10 @@ export async function IssueInstalment(
             );
         }
         const invoicedAt = new Date();
+        // The entry is dated by the BUSINESS day (#209), not the UTC day of `invoicedAt`: the
+        // renewal job runs at 3 AM UTC, which is still the evening before in the Americas, and a
+        // UTC-dated entry lands a month-end invoice in the next period. `InvoicedAt` keeps the instant.
+        const invoiceDay = await CalendarDayOrToday(null, provider, user);
 
         // THE BILLING ENTRY'S FACTS, READ HERE (D92). The emitter queries nothing; every number it
         // posts is decided by the factory's own arithmetic, so it is built here and handed over.
@@ -231,7 +236,7 @@ export async function IssueInstalment(
         );
         let instalmentLines: InstalmentLineFacts[];
         try {
-            instalmentLines = await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], row.CompanyID, invoicedAt);
+            instalmentLines = await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], row.CompanyID, invoiceDay);
         } catch (err) {
             return refuse(err instanceof Error ? err.message : String(err), echo);
         }
@@ -276,7 +281,7 @@ export async function IssueInstalment(
                     InstallmentNumber: Number(row.InstallmentNumber),
                     DocumentNumber: documentNumber,
                     Amount: Number(row.Amount),
-                    InvoicedAt: invoicedAt,
+                    InvoiceDay: invoiceDay,
                     DepositApplied: depositApplied,
                     // `live` is this company's non-Canceled rows; the billing slice is taken
                     // against them in InstallmentNumber order so every instalment's pieces of a
