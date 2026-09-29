@@ -296,4 +296,13 @@ describe('DefaultScheduleRows', () => {
     it('refuses an order day that is not YYYY-MM-DD', () => {
         expect(() => DefaultScheduleRows([line()], '9/26/2026')).toThrow(/YYYY-MM-DD/);
     });
+
+    // A spawned renewal (#305) is dated its term start and already carries its own row before
+    // confirm, so confirm skips the default. Even without that row, a line starting on the order
+    // date can never clear the lead, so the default can never add a second row to a renewal.
+    it('a renewal-shaped order (service starts on the order date) gets nothing at any lead, including zero', () => {
+        for (const lead of [0, 30, 90]) {
+            expect(DefaultScheduleRows([line({ ServicePeriodStart: '2027-01-01', LeadDays: lead })], '2027-01-01')).toEqual([]);
+        }
+    });
 });
