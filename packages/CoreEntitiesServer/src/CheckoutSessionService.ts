@@ -1503,6 +1503,7 @@ export class CheckoutSessionService {
         let paymentProviderId: string | undefined;
         let currencyCode: string | undefined;
         let autoRenewConsentText: string | undefined;
+        let sendReceipt = false;
         if (widget.Configuration) {
             try {
                 const configObj = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
@@ -1512,6 +1513,7 @@ export class CheckoutSessionService {
                     typeof configObj.autoRenewConsentText === 'string' && configObj.autoRenewConsentText.trim()
                         ? configObj.autoRenewConsentText.trim()
                         : undefined;
+                sendReceipt = configObj.sendReceipt === true;
             } catch {
                 // Malformed configuration already fails InitializeSession; treat as unset here.
             }
@@ -1543,6 +1545,17 @@ export class CheckoutSessionService {
         // CheckoutSavedInstrument. Fail-soft: a card that cannot be kept must not block the sale.
         const saveForRenewal = await this.resolveCustomerForRenewal(session, paymentProviderId, mdProvider, contextUser);
 
+        // The gateway's own receipt, when the widget asks for one, goes to the e-mail the buyer
+        // entered. It is part of the request, and a gateway refuses a repeated idempotency key sent
+        // with different parameters, so a changed e-mail must not reuse the key: a short hash of the
+        // address goes into it.
+        const receiptEmail = sendReceipt && session.Email ? session.Email.trim().toLowerCase() : null;
+        let receiptKey = '';
+        if (receiptEmail) {
+            const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(receiptEmail)));
+            receiptKey = `-r${Array.from(digest.slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('')}`;
+        }
+
         const openResult = await OpenPaymentIntent({
             PaymentProviderID: paymentProviderId,
             Amount: snapshotTotal,
@@ -1552,11 +1565,12 @@ export class CheckoutSessionService {
             SaveInstrumentForReuse: !!saveForRenewal,
             // Stable per-session idempotency key: reopening for the same session+amount
             // returns the SAME gateway intent instead of minting a fresh one per retry. A
-            // card-keeping intent gets its own key, because the gateway refuses a repeated key
-            // whose request parameters differ.
-            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}${saveForRenewal ? '-keep' : ''}`,
+            // card-keeping intent, and a receipt to a given e-mail, each get their own key, because the
+            // gateway refuses a repeated key whose request parameters differ.
+            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}${saveForRenewal ? '-keep' : ''}${receiptKey}`,
             Metadata: { CheckoutSessionID: sessionID },
-            Description: description
+            Description: description,
+            ReceiptEmail: receiptEmail
         }, mdProvider, contextUser);
 
         if (!openResult.Success || !openResult.PaymentIntentID) {

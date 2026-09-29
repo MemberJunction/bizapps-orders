@@ -17,6 +17,7 @@ import {
     inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { WithOrderReference } from './checkout-redirect';
 import {
     ACCOUNT_STEP_FAILED,
     AccountMessage,
@@ -588,7 +589,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     /** Follows the widget's redirect once nothing is left for the buyer to do here. */
     private leaveIfDone(): void {
         if (this.config?.redirectUrl && !this.accountLoading && MayRedirect(this.account, this.accountDismissed)) {
-            window.location.href = this.config.redirectUrl;
+            // The landing page learns which order completed from `?order=` (#295).
+            window.location.href = WithOrderReference(this.config.redirectUrl, this.orderNumber, window.location.href);
         }
     }
 

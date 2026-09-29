@@ -156,6 +156,28 @@ describe('StripePaymentProvider — the stub', () => {
         }
     });
 
+    it('sends receipt_email when the request names one, and nothing otherwise (#295)', async () => {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const bodies: URLSearchParams[] = [];
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+            bodies.push(new URLSearchParams(String(init?.body ?? '')));
+            return new Response(JSON.stringify({ id: 'pi_1', client_secret: 'cs_1', status: 'requires_payment_method' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }) as typeof fetch;
+        try {
+            await driver.CreateIntent({ Amount: 10, CurrencyCode: 'USD', ReceiptEmail: 'buyer@example.com' });
+            await driver.CreateIntent({ Amount: 10, CurrencyCode: 'USD' });
+            expect(bodies[0].get('receipt_email')).toBe('buyer@example.com');
+            expect(bodies[1].has('receipt_email')).toBe(false);
+        } finally {
+            globalThis.fetch = orig;
+        }
+    });
+
     it('stripeCaptureAlreadyCollected recognises Stripe automatic-capture refusals', () => {
         expect(
             stripeCaptureAlreadyCollected('This PaymentIntent could not be captured because it has already been captured.', {

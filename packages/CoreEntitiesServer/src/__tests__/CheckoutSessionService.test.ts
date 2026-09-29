@@ -1069,6 +1069,38 @@ describe('CheckoutSessionService', () => {
             const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as { Description?: string | null };
             expect(request.Description).toBe('Annual Membership +1 more');
         });
+
+        describe('gateway receipt (#295)', () => {
+            const open = async (config: Record<string, unknown>, email: string | null) => {
+                mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100 });
+                mocks.mockSessionInstance.Email = email;
+                mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', currency: 'USD', ...config });
+                mocks.mockOpenPaymentIntent.mockClear();
+                await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+                return mocks.mockOpenPaymentIntent.mock.calls[0][0] as { ReceiptEmail?: string | null; IdempotencyKey: string };
+            };
+
+            it('asks for no receipt unless the widget sets sendReceipt', async () => {
+                const request = await open({}, 'Buyer@Example.com');
+                expect(request.ReceiptEmail).toBeNull();
+                expect(request.IdempotencyKey).toBe('checkout-sess-123-10000');
+            });
+
+            it("sends the receipt to the buyer's e-mail when the widget asks", async () => {
+                const request = await open({ sendReceipt: true }, ' Buyer@Example.com ');
+                expect(request.ReceiptEmail).toBe('buyer@example.com');
+            });
+
+            it('gives a different e-mail a different idempotency key, so the gateway does not refuse the reopen', async () => {
+                const first = await open({ sendReceipt: true }, 'a@example.com');
+                const second = await open({ sendReceipt: true }, 'b@example.com');
+                const again = await open({ sendReceipt: true }, 'A@example.com');
+                expect(first.IdempotencyKey).toMatch(/^checkout-sess-123-10000-r[0-9a-f]{12}$/);
+                expect(second.IdempotencyKey).not.toBe(first.IdempotencyKey);
+                expect(again.IdempotencyKey).toBe(first.IdempotencyKey);
+                expect(first.IdempotencyKey).not.toContain('example');
+            });
+        });
     });
 
     describe('OpenPaymentIntentForSession — automatic renewal', () => {

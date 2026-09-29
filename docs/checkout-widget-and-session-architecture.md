@@ -258,7 +258,8 @@ export interface CheckoutWidgetConfiguration {
     maxQuantity?: number;
     stripePublishableKey?: string;
     successMessage?: string;
-    redirectUrl?: string;
+    redirectUrl?: string;          // followed after confirmation, with ?order=<order number> appended
+    sendReceipt?: boolean;         // ask the gateway to e-mail its own receipt to the buyer (Stripe receipt_email); off by default
     extensionEntityName?: string;
     extensionFields?: ExtensionFieldDef[];
     /**
