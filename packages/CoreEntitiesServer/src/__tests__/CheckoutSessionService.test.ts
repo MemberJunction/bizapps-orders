@@ -1202,6 +1202,41 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('ReapExpiredOpenSessions', () => {
+        it('passes MaxRows so the bound is in the query, not after an unbounded fetch', async () => {
+            mocks.mockSessionLoad.mockImplementation(async () => {
+                mocks.mockSessionInstance.Status = 'Open';
+                return true;
+            });
+            mocks.sessionRunViewResults = Array.from({ length: 3 }, (_, i) => ({ ID: `expired-${i}` }));
+            const n = await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 50);
+            expect(mocks.lastRunViewParams?.MaxRows).toBe(50);
+            expect(mocks.lastRunViewParams?.Fields).toEqual(['ID']);
+            expect(mocks.lastRunViewParams?.ExtraFilter).toMatch(/Status = 'Open'/);
+            expect(n).toBe(3);
+        });
+
+        it('honours a smaller limit both as MaxRows and as the process cap', async () => {
+            mocks.mockSessionLoad.mockImplementation(async () => {
+                mocks.mockSessionInstance.Status = 'Open';
+                return true;
+            });
+            mocks.sessionRunViewResults = Array.from({ length: 10 }, (_, i) => ({ ID: `expired-${i}` }));
+            const n = await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 2);
+            expect(mocks.lastRunViewParams?.MaxRows).toBe(2);
+            expect(n).toBe(2);
+        });
+    });
+
+    /**
+     * bc-aidp-next-golive#168: `order.OrderDate = new Date()` at both call sites stamped an INSTANT,
+     * which serialises in UTC — an order entered at 9 PM Eastern on the 27th was dated the 28th.
+     * Unlike the source-text check in `order-header-default-date.test.ts` (Entities package), these
+     * two tests drive the REAL, unmocked `CheckoutSessionService.UpdateDraft` / `CompleteCheckout`
+     * code (only the entity/service CLASSES are mocked — see the `...actual` spread on the
+     * `@mj-biz-apps/orders-entities` mock above) and assert on the VALUE the mock order instance
+     * actually receives, so a regression back to `new Date()` fails them, not just the text check.
+     */
     describe('post-payment step record (#326)', () => {
         const pricedAt100 = (ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
             for (const line of ctx.Lines) {
@@ -1315,41 +1350,6 @@ describe('CheckoutSessionService', () => {
         });
     });
 
-    describe('ReapExpiredOpenSessions', () => {
-        it('passes MaxRows so the bound is in the query, not after an unbounded fetch', async () => {
-            mocks.mockSessionLoad.mockImplementation(async () => {
-                mocks.mockSessionInstance.Status = 'Open';
-                return true;
-            });
-            mocks.sessionRunViewResults = Array.from({ length: 3 }, (_, i) => ({ ID: `expired-${i}` }));
-            const n = await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 50);
-            expect(mocks.lastRunViewParams?.MaxRows).toBe(50);
-            expect(mocks.lastRunViewParams?.Fields).toEqual(['ID']);
-            expect(mocks.lastRunViewParams?.ExtraFilter).toMatch(/Status = 'Open'/);
-            expect(n).toBe(3);
-        });
-
-        it('honours a smaller limit both as MaxRows and as the process cap', async () => {
-            mocks.mockSessionLoad.mockImplementation(async () => {
-                mocks.mockSessionInstance.Status = 'Open';
-                return true;
-            });
-            mocks.sessionRunViewResults = Array.from({ length: 10 }, (_, i) => ({ ID: `expired-${i}` }));
-            const n = await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 2);
-            expect(mocks.lastRunViewParams?.MaxRows).toBe(2);
-            expect(n).toBe(2);
-        });
-    });
-
-    /**
-     * bc-aidp-next-golive#168: `order.OrderDate = new Date()` at both call sites stamped an INSTANT,
-     * which serialises in UTC — an order entered at 9 PM Eastern on the 27th was dated the 28th.
-     * Unlike the source-text check in `order-header-default-date.test.ts` (Entities package), these
-     * two tests drive the REAL, unmocked `CheckoutSessionService.UpdateDraft` / `CompleteCheckout`
-     * code (only the entity/service CLASSES are mocked — see the `...actual` spread on the
-     * `@mj-biz-apps/orders-entities` mock above) and assert on the VALUE the mock order instance
-     * actually receives, so a regression back to `new Date()` fails them, not just the text check.
-     */
     describe('OrderDate defaults come from the business day (bc-aidp-next-golive#168)', () => {
         const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
         const originalEngine = { rows: engine._configurations, loaded: engine._loaded };
