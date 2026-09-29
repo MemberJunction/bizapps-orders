@@ -668,6 +668,56 @@
         }
     </mj-collapsible-panel>
 
+    <!-- Order Header Payment Schedules Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderHeaderPaymentSchedules"
+        SectionName="Order Header Payment Schedules"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderHeaderPaymentSchedules')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Header Payment Schedules','OrderHeaderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Header Payment Schedules','OrderHeaderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderHeaderPaymentSchedules')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderHeaderPaymentSchedules', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- External Invoices Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersExternalInvoices"
+        SectionName="External Invoices"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersExternalInvoices')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: External Invoices','OrderHeaderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: External Invoices','OrderHeaderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersExternalInvoices')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalInvoices', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 </mj-record-form-container>
         

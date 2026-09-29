@@ -46,8 +46,10 @@ export function stripeConfirmAlreadyCollected(error: { code?: string; message?: 
     return msg.includes('already succeeded') || msg.includes('already been confirmed') || msg.includes('already been captured');
 }
 
-export function formatStripeError(error: { code?: string; message?: string } | null | undefined): string {
-    const msg = error?.message?.trim() || 'Payment failed.';
-    const code = error?.code?.trim();
-    return code && !msg.includes(code) ? `${msg} (${code})` : msg;
+/**
+ * Buyer-facing text for a failed Stripe confirmation: the gateway's message only.
+ * The error code is for support, and the host logs the full error to the console.
+ */
+export function formatStripeError(error: { message?: string } | null | undefined): string {
+    return error?.message?.trim() || 'Payment failed.';
 }
