@@ -16,6 +16,8 @@
     "product-types",
     "remote-operation-categories",
     "remote-operations",
+    "api-scopes",
+    "api-application-scopes",
     "applications",
     "application-settings",
     "action-categories",
