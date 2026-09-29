@@ -88,6 +88,19 @@ describe('ResolveRecipients — no fallback, ever', () => {
 
 // ─── The decision ──────────────────────────────────────────────────────────────────────────────
 
+describe('DecideDelivery — externally invoiced', () => {
+    it('refuses a document whose unit is invoiced through Bill.com, before recipients are even considered', () => {
+        const d = DecideDelivery({ Document: facts({ ExternallyInvoiced: true }), Recipients: [billing('ap@acme.test')] });
+        expect(d.Verdict).toBe('Refuse');
+        expect(d.Code).toBe('EXTERNALLY_INVOICED');
+        expect(d.Reason).toMatch(/Bill\.com/);
+        expect(d.Reason).toMatch(/two invoices/);
+    });
+    it('does not change the answer for a unit that is not on a rail', () => {
+        expect(DecideDelivery({ Document: facts({ ExternallyInvoiced: false }), Recipients: [billing('ap@acme.test')] }).Verdict).toBe('Send');
+    });
+});
+
 describe('DecideDelivery — what may be sent', () => {
     it('sends a confirmed order to a billing contact', () => {
         const d = DecideDelivery({ Document: facts(), Recipients: [billing('ap@contoso.com')] });

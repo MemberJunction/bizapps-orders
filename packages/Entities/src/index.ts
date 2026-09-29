@@ -124,3 +124,5 @@ export * from './base-entity-augmentation';
  * without one.
  */
 export * from './billing-location';
+// Pure decisions for money arriving on an external rail (Bill.com) — read by Orders.PollExternalPayments.
+export * from './ExternalPaymentBehavior.js';

@@ -1,0 +1,250 @@
+/**
+ * The poller's decisions, with no I/O. The failures these guard are the expensive kind: the same
+ * Bill.com payment captured twice, a payment applied to the wrong order because one of its invoices
+ * was unknown, and a status nobody anticipated being read as "cleared".
+ */
+import { describe, expect, it } from 'vitest';
+import {
+    AllocateInvoicePayments,
+    ClassifyPaymentStatus,
+    DecideExternalPayment,
+    ExternalPaymentIdempotencyKey,
+    TenderFor,
+    type PaymentSeen,
+    type UnitRef,
+} from '../ExternalPaymentBehavior.js';
+
+describe('ClassifyPaymentStatus', () => {
+    it('knows the vocabulary case-insensitively and admits what it does not know', () => {
+        expect(ClassifyPaymentStatus('PAID')).toBe('Cleared');
+        expect(ClassifyPaymentStatus('paid')).toBe('Cleared');
+        expect(ClassifyPaymentStatus('SCHEDULED')).toBe('Pending');
+        expect(ClassifyPaymentStatus('VOID')).toBe('Reversed');
+        expect(ClassifyPaymentStatus('MYSTERY')).toBe('Unknown');
+        expect(ClassifyPaymentStatus(null)).toBe('Unknown');
+    });
+});
+
+describe('DecideExternalPayment', () => {
+    const seen = (Status: string | null, PriorDisposition: Parameters<typeof DecideExternalPayment>[0]['PriorDisposition'] = null) => ({ ExternalPaymentRef: '0rp1', Status, PriorDisposition });
+
+    it('a cleared payment never seen captures', () => expect(DecideExternalPayment(seen('PAID')).Action).toBe('Capture'));
+    it('a pending payment holds', () => expect(DecideExternalPayment(seen('SCHEDULED')).Action).toBe('Hold'));
+    it('an unknown status holds and says so', () => {
+        const d = DecideExternalPayment(seen('MYSTERY'));
+        expect(d.Action).toBe('Hold');
+        expect(d.Reason).toMatch(/unknown/i);
+        expect(d.Reason).toContain('MYSTERY');
+    });
+    it('a reversed payment never captured is ignored', () => expect(DecideExternalPayment(seen('VOID')).Action).toBe('Ignore'));
+    it('already captured and still cleared ignores', () => expect(DecideExternalPayment(seen('PAID', 'Captured')).Action).toBe('Ignore'));
+    it('already captured and now reversed needs a reversal', () => expect(DecideExternalPayment(seen('VOID', 'Captured')).Action).toBe('ReversalNeeded'));
+    it('held then cleared captures on the later pass', () => expect(DecideExternalPayment(seen('PAID', 'Held')).Action).toBe('Capture'));
+    it('unmatched then cleared tries again — the invoice may have been mapped since', () => expect(DecideExternalPayment(seen('PAID', 'Unmatched')).Action).toBe('Capture'));
+    it('a reversal already flagged stays flagged', () => expect(DecideExternalPayment(seen('VOID', 'ReversalNeeded')).Action).toBe('Ignore'));
+    it('a row a person set aside stays Ignored even when the rail says cleared', () => expect(DecideExternalPayment(seen('PAID', 'Ignored')).Action).toBe('Ignore'));
+    it('a refused capture is tried again next pass — the configuration may have been fixed', () => expect(DecideExternalPayment(seen('PAID', 'Refused')).Action).toBe('Capture'));
+});
+
+/**
+ * Bill.com lets Finance re-apply a receipt after we have recorded it: 700.00 against invoice A becomes
+ * 300.00 on A and 400.00 on B, or moves to invoice C. The payment total never changes, so "already
+ * captured" swallowed it and Orders kept showing the wrong invoices settled, silently and for ever.
+ */
+describe('a captured payment that the rail has re-applied', () => {
+    const seen = (over: Partial<Parameters<typeof DecideExternalPayment>[0]> = {}) => ({
+        ExternalPaymentRef: '0rp1',
+        Status: 'PAID',
+        PriorDisposition: 'Captured' as const,
+        ...over,
+    });
+
+    it('is reported for a person, not ignored', () => {
+        const d = DecideExternalPayment(seen({ ApplicationsChanged: true }));
+        expect(d.Action).toBe('Reapplied');
+        expect(d.Reason).toMatch(/different invoices/i);
+        expect(d.Reason).toMatch(/nothing is changed automatically/i);
+    });
+
+    it('is still ignored when the applications match', () => {
+        expect(DecideExternalPayment(seen({ ApplicationsChanged: false })).Action).toBe('Ignore');
+    });
+
+    it('is ignored when nothing checked — an unchecked payment must not look re-applied', () => {
+        expect(DecideExternalPayment(seen()).Action).toBe('Ignore');
+    });
+
+    it('still prefers a reversal when the rail voided it, re-applied or not', () => {
+        expect(DecideExternalPayment(seen({ Status: 'VOID', ApplicationsChanged: true })).Action).toBe('ReversalNeeded');
+    });
+
+    it('does not fire for a payment that was never captured', () => {
+        expect(DecideExternalPayment(seen({ PriorDisposition: 'Held', ApplicationsChanged: true })).Action).toBe('Capture');
+    });
+});
+
+describe('AllocateInvoicePayments', () => {
+    const unit = (OrderHeaderID: string, OrderHeaderPaymentScheduleID: string | null = null, CompanyID = 'c'): UnitRef => ({
+        OrderHeaderID, CompanyID, OrderHeaderPaymentScheduleID, BillToOrganizationID: 'org', BillToPersonID: null,
+    });
+    const units: Record<string, UnitRef> = { '00e1': unit('o1'), '00e2': unit('o2', 's2'), '00eB': unit('o3', null, 'other-company') };
+    const lookup = (ref: string) => units[ref];
+
+    it('fans one payment across the units its invoices belong to, in order', () => {
+        const r = AllocateInvoicePayments([{ ExternalInvoiceRef: '00e1', Amount: 60 }, { ExternalInvoiceRef: '00e2', Amount: 40 }], lookup);
+        expect(r.OK).toBe(true);
+        if (!r.OK) return;
+        expect(r.Allocations).toEqual([
+            { OrderHeaderID: 'o1', Amount: 60, OrderHeaderPaymentScheduleID: null },
+            { OrderHeaderID: 'o2', Amount: 40, OrderHeaderPaymentScheduleID: 's2' },
+        ]);
+        expect(r.Payer).toEqual({ BillToOrganizationID: 'org', BillToPersonID: null });
+        expect(r.CompanyID).toBe('c');
+        expect(r.Total).toBe(100);
+    });
+
+    it('one unknown invoice makes the whole payment Unmatched — nothing is captured', () => {
+        const r = AllocateInvoicePayments([{ ExternalInvoiceRef: '00e1', Amount: 60 }, { ExternalInvoiceRef: '00eX', Amount: 40 }], lookup);
+        expect(r.OK).toBe(false);
+        if (!r.OK) { expect(r.Unmatched).toEqual(['00eX']); expect(r.Reason).toContain('00eX'); }
+    });
+
+    it('no invoices at all is Unmatched', () => expect(AllocateInvoicePayments([], lookup).OK).toBe(false));
+
+    it('an order with both an organisation and a person bill-to pays as the organisation', () => {
+        const both: UnitRef = { ...unit('o9'), BillToOrganizationID: 'org', BillToPersonID: 'person' };
+        const r = AllocateInvoicePayments([{ ExternalInvoiceRef: '00e9', Amount: 5 }], () => both);
+        expect(r.OK && r.Payer).toEqual({ BillToOrganizationID: 'org', BillToPersonID: null });
+        const personOnly: UnitRef = { ...unit('o9'), BillToOrganizationID: null, BillToPersonID: 'person' };
+        const r2 = AllocateInvoicePayments([{ ExternalInvoiceRef: '00e9', Amount: 5 }], () => personOnly);
+        expect(r2.OK && r2.Payer).toEqual({ BillToOrganizationID: null, BillToPersonID: 'person' });
+    });
+
+    it('invoices for two receiving companies cannot be one payment', () => {
+        const r = AllocateInvoicePayments([{ ExternalInvoiceRef: '00e1', Amount: 1 }, { ExternalInvoiceRef: '00eB', Amount: 1 }], lookup);
+        expect(r.OK).toBe(false);
+        if (!r.OK) expect(r.Reason).toMatch(/compan/i);
+    });
+
+    it('a zero or negative share is refused rather than allocated', () => {
+        expect(AllocateInvoicePayments([{ ExternalInvoiceRef: '00e1', Amount: 0 }], lookup).OK).toBe(false);
+    });
+});
+
+/**
+ * BILL documents exactly six status values. These pin the whole enum so a future edit that reintroduces
+ * an invented key (the provisional table had ten that BILL cannot emit) fails here.
+ */
+describe('Bill.com payment status vocabulary', () => {
+    it('classifies every documented status', () => {
+        expect(ClassifyPaymentStatus('PAID')).toBe('Cleared');
+        expect(ClassifyPaymentStatus('SCHEDULED')).toBe('Pending');
+        expect(ClassifyPaymentStatus('VOID')).toBe('Reversed');
+        expect(ClassifyPaymentStatus('CANCELED')).toBe('Reversed');
+        expect(ClassifyPaymentStatus('ESCHEATED')).toBe('Reversed');
+    });
+
+    it("holds on UNDEFINED rather than deciding — BILL not knowing is not a reason for us to know", () => {
+        expect(ClassifyPaymentStatus('UNDEFINED')).toBe('Unknown');
+    });
+
+    it('holds on anything outside the enum, including the keys the provisional table invented', () => {
+        for (const s of ['CLEARED', 'PROCESSING', 'PENDING', 'VOIDED', 'FAILED', 'RETURNED', '', null, undefined]) {
+            expect(ClassifyPaymentStatus(s)).toBe('Unknown');
+        }
+    });
+
+    it('reads the bare string BILL actually sends, case-insensitively', () => {
+        // Confirmed live 2026-09-22: status is a bare string "PAID", not the object the design assumed.
+        expect(ClassifyPaymentStatus('paid')).toBe('Cleared');
+        expect(ClassifyPaymentStatus(' PAID ')).toBe('Cleared');
+    });
+
+    it('an escheated payment already captured needs a person, not a silent pass', () => {
+        const d = DecideExternalPayment({ ExternalPaymentRef: '0rp1', Status: 'ESCHEATED', PriorDisposition: 'Captured' });
+        expect(d.Action).toBe('ReversalNeeded');
+    });
+});
+
+describe('idempotency key and tender', () => {
+    it('keys are lower-cased type code plus the rail id', () => {
+        expect(ExternalPaymentIdempotencyKey('BillCom', '0rp1')).toBe('billcom:0rp1');
+    });
+    it('follows the receivables type, whoever moved the money', () => {
+        // The old rule short-circuited on OnlinePayment and answered ACH, which would book an online
+        // card payment to the bank. BILL reports the method on online payments too, so it wins.
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'CREDIT_CARD' })).toBe('CreditCard');
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'ACH' })).toBe('ACH');
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: 'CHECK' })).toBe('Check');
+    });
+
+    it("maps BILL's whole documented receivablesType enum", () => {
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: 'CASH' })).toBe('Cash');
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: 'CHECK' })).toBe('Check');
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'CREDIT_CARD' })).toBe('CreditCard');
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'VIRTUAL_CARD' })).toBe('CreditCard');
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'ACH' })).toBe('ACH');
+    });
+
+    it('reads OTHER as a wire, which is the convention Finance agreed (spec §13 A)', () => {
+        // BILL has no WIRE type and wires are real and recurring, so Finance marks them Other when
+        // marking the invoice paid. Jeremy settled this on PR #235, 2026-09-25. Before it, every wire
+        // was recorded in Orders as ACH and Finance's own classification was lost at the boundary.
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: 'OTHER' })).toBe('Wire');
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: ' other ' })).toBe('Wire');
+        // A wire is marked by hand, but the flag must not override the agreed convention.
+        expect(TenderFor({ OnlinePayment: true, ReceivablesType: 'OTHER' })).toBe('Wire');
+    });
+
+    it('leaves the tenders Finance says cannot occur falling to ACH', () => {
+        // Unreachable rather than a guess: AIDP uses no PayPal or wallet, which is what freed OTHER
+        // for wires in the first place. Recorded as a test so the day one DOES arrive, this is a
+        // deliberate decision somebody changed rather than an oversight.
+        for (const t of ['PAYPAL', 'WALLET', 'UNDEFINED']) {
+            expect(TenderFor({ OnlinePayment: true, ReceivablesType: t })).toBe('ACH');
+        }
+        expect(TenderFor({ OnlinePayment: null, ReceivablesType: null })).toBe('ACH');
+    });
+
+    it('tolerates case and padding, since the value is echoed vendor text', () => {
+        expect(TenderFor({ OnlinePayment: false, ReceivablesType: ' check ' })).toBe('Check');
+    });
+});
+
+describe('a Reapplied payment on a LATER pass', () => {
+    // The defect this covers: `Reapplied` is deliberately not in the poller's FINAL set, so every pass
+    // re-decides it. With no branch for it here the decision fell through to the status switch and
+    // answered Capture; the capture returned WasRetry on the idempotency key and the poller wrote
+    // `Captured` back over the row, so the exception disappeared an hour after it was raised.
+    const seen = (over: Partial<PaymentSeen> = {}): PaymentSeen => ({
+        ExternalPaymentRef: '0rp01',
+        Status: 'PAID',
+        PriorDisposition: 'Reapplied',
+        ...over,
+    });
+
+    it('is never captured again — the cash is already recorded', () => {
+        expect(DecideExternalPayment(seen()).Action).not.toBe('Capture');
+        expect(DecideExternalPayment(seen({ ApplicationsChanged: true })).Action).not.toBe('Capture');
+        expect(DecideExternalPayment(seen({ ApplicationsChanged: false })).Action).not.toBe('Capture');
+    });
+
+    it('keeps reporting while the allocation is still wrong', () => {
+        expect(DecideExternalPayment(seen({ ApplicationsChanged: true })).Action).toBe('Reapplied');
+    });
+
+    it('holds the flag when the comparison could not be made, rather than retiring it', () => {
+        // undefined = not compared. Silence here would clear an exception nobody has acted on.
+        expect(DecideExternalPayment(seen()).Action).toBe('Reapplied');
+    });
+
+    it('clears itself once a person has re-allocated and the two sides match again', () => {
+        const d = DecideExternalPayment(seen({ ApplicationsChanged: false }));
+        expect(d.Action).toBe('Ignore');
+        expect(d.Reason).toMatch(/matches again/i);
+    });
+
+    it('still reports a reversal ahead of the allocation, which is the worse fact', () => {
+        expect(DecideExternalPayment(seen({ Status: 'VOID', ApplicationsChanged: true })).Action).toBe('ReversalNeeded');
+    });
+});

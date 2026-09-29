@@ -90,6 +90,25 @@
 
     </mj-collapsible-panel>
 
+    <!-- Details Section -->
+    <mj-collapsible-panel
+        SectionKey="details"
+        SectionName="Details"
+        Icon="fa fa-align-left"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
+            FieldName="CompanyIntegrationID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
     <!-- System Metadata Section -->
     <mj-collapsible-panel
         SectionKey="systemMetadata"
@@ -216,6 +235,106 @@
                 [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentDetails', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Payment Provider Sync States Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPaymentProviderSyncStates"
+        SectionName="Payment Provider Sync States"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentProviderSyncStates')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Provider Sync States','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Provider Sync States','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentProviderSyncStates')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentProviderSyncStates', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- External Payments Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersExternalPayments"
+        SectionName="External Payments"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersExternalPayments')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: External Payments','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: External Payments','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersExternalPayments')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalPayments', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- External Customers Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersExternalCustomers"
+        SectionName="External Customers"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersExternalCustomers')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: External Customers','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: External Customers','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersExternalCustomers')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalCustomers', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- External Invoices Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersExternalInvoices"
+        SectionName="External Invoices"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersExternalInvoices')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: External Invoices','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: External Invoices','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersExternalInvoices')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalInvoices', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
