@@ -1248,7 +1248,7 @@ describe('CheckoutSessionService', () => {
         const paidCheckout = () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
-            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' }, Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
             mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
         };
         const confirmedUnpaid = (billTo: string | null = 'person-new-1') => {
@@ -1273,7 +1273,7 @@ describe('CheckoutSessionService', () => {
 
         it('records nothing for a $0 checkout: no payment, so no post-payment step', async () => {
             mocks.mockSessionInstance.Email = 'guest@example.com';
-            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' }, Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
             expect(res.Success).toBe(true);
             expect(stepMocks.Begin).not.toHaveBeenCalled();
