@@ -42,6 +42,7 @@ import {
     FindUnapprovedConcessions,
     LoadOrderDeliveryContacts,
     LoadOrderStatus,
+    LoadExternallyInvoiced,
     ResolveDeliveryChannel,
     ResolveRecipients,
     type DeliverableFacts,
@@ -207,6 +208,8 @@ export class SendDocumentAction extends BaseAction {
         const outcomes: DocumentDeliveryOutcome[] = [];
         for (const doc of rendered.Documents) {
             const facts = this.toFacts(doc, orderStatus);
+            // A unit invoiced through Bill.com must not also go out natively (golive #146 AC5).
+            facts.ExternallyInvoiced = await LoadExternallyInvoiced(orderID, doc.CompanyID, provider, user);
             const decision = DecideDelivery({
                 Document: facts,
                 Recipients: contacts,

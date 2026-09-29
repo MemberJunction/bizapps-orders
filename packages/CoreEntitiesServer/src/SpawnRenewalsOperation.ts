@@ -14,9 +14,11 @@
  * flow, not a booking one, and does not belong here.
  *
  * The order is placed at LEAD TIME, not on the expiry date, which is how subscription billing
- * actually works: the invoice goes out before the period it covers. Revenue is not affected — the
- * booking entry credits Deferred Revenue and the recognition entries are dated into the new term's
- * own window (D14).
+ * actually works: the invoice goes out before the period it covers. The order carries a one-row
+ * payment schedule due on the pass's day, so under D92 the receivable is raised by that instalment's
+ * invoice, dated when it is issued, not on the term start (#305). Revenue is not affected — the
+ * invoice credits Deferred Revenue and the recognition entries are dated into the new term's own
+ * window (D14).
  *
  * IDEMPOTENCY, which a scheduled job makes non-negotiable
  * Two independent guards, because this runs unattended and a double-spawn double-bills a customer:
@@ -31,7 +33,7 @@
  *            so extension, term creation, GL resolution and recognition are all the SAME code
  *   POLICY:  SubscriptionBehavior (IsRenewal bypasses ConcurrencyMode — a renewal is not a second
  *            concurrent subscription, it is this one continuing)
- *   TABLES:  __mj_BizAppsOrders.{Subscription,SubscriptionTerm,SubscriptionType,OrderHeader,OrderLine}
+ *   TABLES:  __mj_BizAppsOrders.{Subscription,SubscriptionTerm,SubscriptionType,OrderHeader,OrderLine,OrderHeaderPaymentSchedule}
  */
 import {
     BaseEntity,
@@ -45,6 +47,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersSubscriptionEventEntity,
 } from '@mj-biz-apps/orders-entities';
@@ -52,6 +55,8 @@ import type { OrderEntityServer } from './OrderEntityServer.js';
 import { RequireOptionalDay, RequireOptionalUUID } from './sql-guards.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
+import { RenewalDueDate, RenewalScheduleRows } from './PaymentScheduleBehavior.js';
+import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
@@ -186,7 +191,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             }
 
             try {
-                const order = await this.placeRenewal(provider, user, due);
+                const order = await this.placeRenewal(provider, user, due, asOf.toISOString().slice(0, 10));
                 candidate.OrderID = order.ID;
                 candidate.OrderNumber = order.Number;
                 out.Placed++;
@@ -298,11 +303,15 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
      * extension, the new term, GL resolution, the recognition schedule and the all-or-none
      * guarantee are the same code that handles a customer purchase. A bespoke renewal writer would
      * be a second implementation of booking, drifting from the first.
+     *
+     * `invoiceDay` is the pass's as-of day, `YYYY-MM-DD`: the renewal invoice date. The one-row
+     * schedule the order carries is due that day plus the customer's terms, capped at the order date (#305).
      */
     private async placeRenewal(
         provider: IMetadataProvider,
         user: UserInfo,
         due: DueRow,
+        invoiceDay: string,
     ): Promise<{ ID: string; Number: string }> {
         const source = await this.loadSourceLine(provider, user, due.OrderLineID);
         if (!source) {
@@ -351,11 +360,30 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
 
             // Attached rather than assigned — see the note in CancelSubscriptionOperation.
             order.Lines.Add(line);
-            order.Status = 'Confirmed';
 
+            // DRAFT FIRST, THEN THE SCHEDULE, THEN CONFIRM (#305). The renewal is invoiced on the day
+            // this pass runs, not on its term start, so it carries a one-row schedule due today and
+            // D92 books it that way: no AR at confirm, and the instalment — due on or before the
+            // order date — is issued inside the same confirm, dated when it is issued. The row must
+            // tie to the line's gross, and that gross exists only once pricing has written the line,
+            // which is what the draft save does. All of it sits in this transaction.
+            order.Status = 'Draft';
             if (!(await order.Save())) {
                 throw new Error(
-                    `Failed to book the renewal order: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    `Failed to save the renewal order as a draft: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+            // Due on the invoice day plus the customer's terms, capped at the order date (#305
+            // review). `resolveDueDate` is the confirm's own terms walk, run now so the row can use
+            // it; confirm then sees the date already set and leaves it.
+            await order.resolveDueDate();
+            const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate);
+            await this.addRenewalSchedule(provider, user, order.ID, order.Lines.Items, rowDueDate);
+
+            order.Status = 'Confirmed';
+            if (!(await order.Save())) {
+                throw new Error(
+                    `Failed to book renewal order ${order.OrderNumber} of ${due.SubscriptionNumber}: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
 
@@ -369,6 +397,38 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
                 LogError(`Rollback failed after renewal spawn error: ${rollbackErr}`);
             }
             throw err;
+        }
+    }
+
+    /** Write the renewal's one-row-per-company schedule, due on `dueDate`. */
+    private async addRenewalSchedule(
+        provider: IMetadataProvider,
+        user: UserInfo,
+        orderID: string,
+        lines: readonly mjBizAppsOrdersOrderLineEntity[],
+        dueDate: string,
+    ): Promise<void> {
+        const drafts = RenewalScheduleRows(
+            lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
+            dueDate,
+        );
+        for (const draft of drafts) {
+            const row = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity>(
+                ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+                user,
+            );
+            row.NewRecord();
+            row.OrderHeaderID = orderID;
+            row.CompanyID = draft.CompanyID;
+            row.InstallmentNumber = draft.InstallmentNumber;
+            row.DueDate = new Date(`${draft.DueDate}T00:00:00Z`);
+            row.Amount = draft.Amount;
+            row.Status = 'Scheduled';
+            if (!(await row.Save())) {
+                throw new Error(
+                    `Failed to write the renewal's payment schedule: ${row.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
         }
     }
 

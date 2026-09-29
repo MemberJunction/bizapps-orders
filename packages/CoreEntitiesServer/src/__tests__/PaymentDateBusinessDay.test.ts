@@ -101,6 +101,7 @@ import { CancelSubscriptionOperation } from '../CancelSubscriptionOperation.js';
 import { CapturePaymentOperation } from '../CapturePaymentOperation.js';
 import { PreviewPriceOperation } from '../PreviewPriceOperation.js';
 import { SpawnRenewalsOperation } from '../SpawnRenewalsOperation.js';
+import { CalendarDayOrToday } from '../calendar-day.js';
 
 /** 01:00 UTC on the 28th = 21:00 EDT on the 27th. The bug report's own scenario. */
 const BUG_INSTANT = '2026-08-28T01:00:00.000Z';
@@ -665,6 +666,30 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
                 /PaymentDate: await CalendarDayOrToday\(this\.PaymentDate, provider, user\)/g,
             );
             expect(matches).toHaveLength(2);
+        });
+    });
+
+    describe('the instalment invoice entry (IssueInstalment, #305 review)', () => {
+        it('dates a 3 AM UTC month-end issue by the business day, not the next period', async () => {
+            // The renewal job's own hour: 03:00 UTC on Nov 1 is 23:00 EDT on Oct 31. The operation
+            // dates the entry with exactly this call, so the receivable stays in October.
+            vi.setSystemTime(new Date('2026-11-01T03:00:00.000Z'));
+            const invoiceDay = await CalendarDayOrToday(null, {} as IMetadataProvider, {} as UserInfo);
+            expect(ToISODate(invoiceDay)).toBe('2026-10-31');
+            expect(new Date().toISOString().slice(0, 10)).toBe('2026-11-01');
+        });
+
+        it('IssueInstalmentInvoiceOperation takes the business day and hands it to the entry', () => {
+            const op = source('IssueInstalmentInvoiceOperation.ts');
+            expect(op).toMatch(/const invoiceDay = await CalendarDayOrToday\(null, provider, user\);/);
+            expect(op).toMatch(/InvoiceDay: invoiceDay,/);
+            expect(op).toMatch(/BuildInstalmentLineFacts\(lineEntities\.Results \?\? \[\], row\.CompanyID, invoiceDay\)/);
+        });
+
+        it('InstalmentInvoiceEntry dates the entry by that day, not by the UTC day of an instant', () => {
+            const entry = source('InstalmentInvoiceEntry.ts');
+            expect(entry).toMatch(/const asOf = context\.InvoiceDay;/);
+            expect(entry).toMatch(/EffectiveDate: ToISODate\(asOf\) as string,/);
         });
     });
 

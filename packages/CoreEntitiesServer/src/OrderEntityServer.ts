@@ -578,7 +578,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
 
             if (booking) {
-                this.ConfirmedAt = new Date();
+                this.stampConfirmation();
             }
             if (!headerAlreadyPersisted && !this.OrderNumber) {
                 this.OrderNumber = await this.assignOrderNumber();
@@ -737,8 +737,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * A failure here does not fail the confirm. Booking is the irreversible step and money has
      * already moved in the ledger; refusing it because a lookup could not be read would be a far
      * worse outcome than an order that falls back to due-on-receipt and says so in the log.
+     *
+     * Public so `Orders.SpawnRenewals` can settle the terms on its draft before writing the renewal's
+     * schedule row, which is due on the invoice day plus these same terms (#305).
      */
-    private async resolveDueDate(): Promise<void> {
+    public async resolveDueDate(): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         const orderDate = this.OrderDate ? new Date(this.OrderDate).toISOString().slice(0, 10) : null;
@@ -946,6 +949,28 @@ export class OrderEntityServer extends OrderHeaderEntity {
     // `bookingInFlight` and `willBookOnThisSave()` moved to OrderHeaderEntity (both `protected`),
     // because the rules that consult them — must have a payer, must have something to book — are
     // decidable without the database and now run on both tiers.
+
+    /**
+     * WHEN AND BY WHOM this order was booked, written by the booking save and by nothing else.
+     *
+     * The confirmer is the save's context user, never a value the caller sent: a graph save overlays
+     * the client's fields onto the row (`SaveEntityGraphOperation.rebuildRoot`), so a
+     * `ConfirmedByUserID` arriving on the payload is overwritten here rather than trusted. The
+     * finance exception review uses it to keep a person from clearing an exception raised against an
+     * order they confirmed themselves (golive #279).
+     *
+     * A booking run by an unattended process records whichever user that process runs as — the
+     * renewal job's user for a renewal, for instance. With no context user at all it records NULL
+     * rather than failing the booking: a reader already has to treat NULL as "not known", because
+     * every order booked before the column existed carries it.
+     *
+     * Once `ConfirmedAt` is set both are final: `ConfirmedByUserID` is refused at `Validate()`
+     * (ORDER_HEADER_MONEY_FIELDS) and by trigger 51017.
+     */
+    protected stampConfirmation(): void {
+        this.ConfirmedAt = new Date();
+        this.ConfirmedByUserID = this.ContextCurrentUser?.ID ?? null;
+    }
 
     /**
      * Settle every line's money IN MEMORY. Writes nothing.
