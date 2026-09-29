@@ -2689,7 +2689,8 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
     ShipToAddressID: z.string().nullable().describe(`
         * * Field Name: ShipToAddressID
         * * Display Name: Ship To Address
-        * * SQL Data Type: uniqueidentifier`),
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)`),
     ShipToOrganizationID: z.string().nullable().describe(`
         * * Field Name: ShipToOrganizationID
         * * Display Name: Ship To Organization
@@ -13598,6 +13599,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     * * Field Name: ShipToAddressID
     * * Display Name: Ship To Address
     * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
     */
     get ShipToAddressID(): string | null {
         return this.Get('ShipToAddressID');
