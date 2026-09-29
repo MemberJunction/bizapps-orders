@@ -2549,6 +2549,55 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
 export type mjBizAppsOrdersOrderHeaderEntityType = z.infer<typeof mjBizAppsOrdersOrderHeaderSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Order Line Choices
+ */
+export const mjBizAppsOrdersOrderLineChoiceSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderLineID: z.string().describe(`
+        * * Field Name: OrderLineID
+        * * Display Name: Order Line ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+        * * Description: The order line the option was chosen for.`),
+    GroupKey: z.string().describe(`
+        * * Field Name: GroupKey
+        * * Display Name: Group Key
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The choice group's key in the widget's Configuration. Matched by ProductEntitlement.ChoiceGroupKey.`),
+    GroupLabel: z.string().describe(`
+        * * Field Name: GroupLabel
+        * * Display Name: Group Label
+        * * SQL Data Type: nvarchar(500)
+        * * Description: The choice group as the buyer saw it, copied at order time.`),
+    OptionValue: z.string().describe(`
+        * * Field Name: OptionValue
+        * * Display Name: Option Value
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The value of the option chosen. Matched by ProductEntitlement.ChoiceOptionValue.`),
+    OptionLabel: z.string().describe(`
+        * * Field Name: OptionLabel
+        * * Display Name: Option Label
+        * * SQL Data Type: nvarchar(500)
+        * * Description: The option as the buyer saw it, copied at order time.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersOrderLineChoiceEntityType = z.infer<typeof mjBizAppsOrdersOrderLineChoiceSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Line Dimensions
  */
 export const mjBizAppsOrdersOrderLineDimensionSchema = z.object({
@@ -4396,6 +4445,16 @@ export const mjBizAppsOrdersProductEntitlementSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    ChoiceGroupKey: z.string().nullable().describe(`
+        * * Field Name: ChoiceGroupKey
+        * * Display Name: Choice Group Key
+        * * SQL Data Type: nvarchar(100)
+        * * Description: With ChoiceOptionValue, makes this entitlement conditional: it is granted only on an order line that carries this choice (an OrderLineChoice row with this GroupKey and OptionValue). NULL grants it on every line of the product.`),
+    ChoiceOptionValue: z.string().nullable().describe(`
+        * * Field Name: ChoiceOptionValue
+        * * Display Name: Choice Option Value
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The option value, within ChoiceGroupKey, that the line must carry for this entitlement to be granted. Set together with ChoiceGroupKey or not at all.`),
     Product: z.string().describe(`
         * * Field Name: Product
         * * Display Name: Product Name
@@ -13188,6 +13247,137 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
 
 /**
+ * MJ_BizApps_Orders: Order Line Choices - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OrderLineChoice
+ * * Base View: vwOrderLineChoices
+ * * @description One option the buyer chose from a choice group at checkout, recorded on the order line it was chosen for. The choice groups are defined in the checkout widget's Configuration. A renewal copies the choices onto its line, so conditional entitlements follow them.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Line Choices')
+export class mjBizAppsOrdersOrderLineChoiceEntity extends BaseEntity<mjBizAppsOrdersOrderLineChoiceEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Order Line Choices record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Line Choices record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOrderLineChoiceEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderLineID
+    * * Display Name: Order Line ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    * * Description: The order line the option was chosen for.
+    */
+    get OrderLineID(): string {
+        return this.Get('OrderLineID');
+    }
+    set OrderLineID(value: string) {
+        this.Set('OrderLineID', value);
+    }
+
+    /**
+    * * Field Name: GroupKey
+    * * Display Name: Group Key
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The choice group's key in the widget's Configuration. Matched by ProductEntitlement.ChoiceGroupKey.
+    */
+    get GroupKey(): string {
+        return this.Get('GroupKey');
+    }
+    set GroupKey(value: string) {
+        this.Set('GroupKey', value);
+    }
+
+    /**
+    * * Field Name: GroupLabel
+    * * Display Name: Group Label
+    * * SQL Data Type: nvarchar(500)
+    * * Description: The choice group as the buyer saw it, copied at order time.
+    */
+    get GroupLabel(): string {
+        return this.Get('GroupLabel');
+    }
+    set GroupLabel(value: string) {
+        this.Set('GroupLabel', value);
+    }
+
+    /**
+    * * Field Name: OptionValue
+    * * Display Name: Option Value
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The value of the option chosen. Matched by ProductEntitlement.ChoiceOptionValue.
+    */
+    get OptionValue(): string {
+        return this.Get('OptionValue');
+    }
+    set OptionValue(value: string) {
+        this.Set('OptionValue', value);
+    }
+
+    /**
+    * * Field Name: OptionLabel
+    * * Display Name: Option Label
+    * * SQL Data Type: nvarchar(500)
+    * * Description: The option as the buyer saw it, copied at order time.
+    */
+    get OptionLabel(): string {
+        return this.Get('OptionLabel');
+    }
+    set OptionLabel(value: string) {
+        this.Set('OptionLabel', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Order Line Dimensions - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: OrderLineDimension
@@ -18635,6 +18825,32 @@ export class mjBizAppsOrdersProductEntitlementEntity extends BaseEntity<mjBizApp
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ChoiceGroupKey
+    * * Display Name: Choice Group Key
+    * * SQL Data Type: nvarchar(100)
+    * * Description: With ChoiceOptionValue, makes this entitlement conditional: it is granted only on an order line that carries this choice (an OrderLineChoice row with this GroupKey and OptionValue). NULL grants it on every line of the product.
+    */
+    get ChoiceGroupKey(): string | null {
+        return this.Get('ChoiceGroupKey');
+    }
+    set ChoiceGroupKey(value: string | null) {
+        this.Set('ChoiceGroupKey', value);
+    }
+
+    /**
+    * * Field Name: ChoiceOptionValue
+    * * Display Name: Choice Option Value
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The option value, within ChoiceGroupKey, that the line must carry for this entitlement to be granted. Set together with ChoiceGroupKey or not at all.
+    */
+    get ChoiceOptionValue(): string | null {
+        return this.Get('ChoiceOptionValue');
+    }
+    set ChoiceOptionValue(value: string | null) {
+        this.Set('ChoiceOptionValue', value);
     }
 
     /**
