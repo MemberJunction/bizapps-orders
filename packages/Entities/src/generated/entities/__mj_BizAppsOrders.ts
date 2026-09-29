@@ -1215,10 +1215,6 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: ShipToAddressSnapshot
         * * Display Name: Ship To Address Snapshot
         * * SQL Data Type: nvarchar(MAX)`),
-    AcknowledgesCoverageOverlap: z.boolean().describe(`
-        * * Field Name: AcknowledgesCoverageOverlap
-        * * Display Name: Acknowledges Coverage Overlap
-        * * SQL Data Type: bit`),
     Person: z.string().describe(`
         * * Field Name: Person
         * * Display Name: Person
@@ -1374,10 +1370,6 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: MaxQuantityPerLine
         * * Display Name: Max Quantity Per Line
         * * SQL Data Type: decimal(18, 4)`),
-    SubscriptionFamily: z.string().nullable().describe(`
-        * * Field Name: SubscriptionFamily
-        * * Display Name: Subscription Family
-        * * SQL Data Type: nvarchar(40)`),
     VenueAddress: z.string().nullable().describe(`
         * * Field Name: VenueAddress
         * * Display Name: Venue Address Details
@@ -3045,12 +3037,6 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Display Name: Ship To Address Snapshot
         * * SQL Data Type: nvarchar(MAX)
         * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`),
-    AcknowledgesCoverageOverlap: z.boolean().describe(`
-        * * Field Name: AcknowledgesCoverageOverlap
-        * * Display Name: Acknowledges Coverage Overlap
-        * * SQL Data Type: bit
-        * * Default Value: 0
-        * * Description: True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under an ExtendExisting type, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header Display
@@ -4908,11 +4894,6 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Max Quantity Per Line
         * * SQL Data Type: decimal(18, 4)
         * * Description: Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`),
-    SubscriptionFamily: z.string().nullable().describe(`
-        * * Field Name: SubscriptionFamily
-        * * Display Name: Subscription Family
-        * * SQL Data Type: nvarchar(40)
-        * * Description: Code shared by the products that are bands of one subscription offering (for example a standard and a premium tier). At confirm, a line for one band is checked against live subscriptions the same holder has to any other product with the same code, and overlapping coverage is refused or allowed according to the subscription type's ConcurrencyMode. NULL means the product has no other bands.`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
         * * Display Name: Product Type Name
@@ -9550,19 +9531,6 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
-    * * Field Name: AcknowledgesCoverageOverlap
-    * * Display Name: Acknowledges Coverage Overlap
-    * * SQL Data Type: bit
-    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
-    */
-    get AcknowledgesCoverageOverlap(): boolean {
-        return this.Get('AcknowledgesCoverageOverlap');
-    }
-    set AcknowledgesCoverageOverlap(value: boolean) {
-        this.Set('AcknowledgesCoverageOverlap', value);
-    }
-
-    /**
     * * Field Name: Person
     * * Display Name: Person
     * * SQL Data Type: nvarchar(201)
@@ -10061,19 +10029,6 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     }
     set MaxQuantityPerLine(value: number | null) {
         this.Set('MaxQuantityPerLine', value);
-    }
-
-    /**
-    * * Field Name: SubscriptionFamily
-    * * Display Name: Subscription Family
-    * * SQL Data Type: nvarchar(40)
-    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
-    */
-    get SubscriptionFamily(): string | null {
-        return this.Get('SubscriptionFamily');
-    }
-    set SubscriptionFamily(value: string | null) {
-        this.Set('SubscriptionFamily', value);
     }
 
     /**
@@ -14730,20 +14685,6 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set ShipToAddressSnapshot(value: string | null) {
         this.Set('ShipToAddressSnapshot', value);
-    }
-
-    /**
-    * * Field Name: AcknowledgesCoverageOverlap
-    * * Display Name: Acknowledges Coverage Overlap
-    * * SQL Data Type: bit
-    * * Default Value: 0
-    * * Description: True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under an ExtendExisting type, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.
-    */
-    get AcknowledgesCoverageOverlap(): boolean {
-        return this.Get('AcknowledgesCoverageOverlap');
-    }
-    set AcknowledgesCoverageOverlap(value: boolean) {
-        this.Set('AcknowledgesCoverageOverlap', value);
     }
 
     /**
@@ -20174,19 +20115,6 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
     set MaxQuantityPerLine(value: number | null) {
         this.Set('MaxQuantityPerLine', value);
-    }
-
-    /**
-    * * Field Name: SubscriptionFamily
-    * * Display Name: Subscription Family
-    * * SQL Data Type: nvarchar(40)
-    * * Description: Code shared by the products that are bands of one subscription offering (for example a standard and a premium tier). At confirm, a line for one band is checked against live subscriptions the same holder has to any other product with the same code, and overlapping coverage is refused or allowed according to the subscription type's ConcurrencyMode. NULL means the product has no other bands.
-    */
-    get SubscriptionFamily(): string | null {
-        return this.Get('SubscriptionFamily');
-    }
-    set SubscriptionFamily(value: string | null) {
-        this.Set('SubscriptionFamily', value);
     }
 
     /**

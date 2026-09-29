@@ -2796,9 +2796,6 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @Field({nullable: true}) 
     ShipToAddressSnapshot?: string;
         
-    @Field(() => Boolean) 
-    AcknowledgesCoverageOverlap: boolean;
-        
     @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
@@ -2967,9 +2964,6 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     @Field({ nullable: true })
     ShipToAddressSnapshot: string | null;
 
-    @Field(() => Boolean, { nullable: true })
-    AcknowledgesCoverageOverlap?: boolean;
-
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3129,9 +3123,6 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     ShipToAddressSnapshot?: string | null;
-
-    @Field(() => Boolean, { nullable: true })
-    AcknowledgesCoverageOverlap?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -3344,10 +3335,6 @@ export class mjBizAppsOrdersEventProduct_ {
     MaxQuantityPerLine?: number;
         
     @Field({nullable: true}) 
-    @MaxLength(40)
-    SubscriptionFamily?: string;
-        
-    @Field({nullable: true}) 
     @MaxLength(255)
     VenueAddress?: string;
         
@@ -3448,9 +3435,6 @@ export class CreatemjBizAppsOrdersEventProductInput {
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine: number | null;
 
-    @Field({ nullable: true })
-    SubscriptionFamily: string | null;
-
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3547,9 +3531,6 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine?: number | null;
-
-    @Field({ nullable: true })
-    SubscriptionFamily?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -7526,9 +7507,6 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field({nullable: true, description: `The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`}) 
     ShipToAddressSnapshot?: string;
         
-    @Field(() => Boolean, {description: `True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under an ExtendExisting type, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`}) 
-    AcknowledgesCoverageOverlap: boolean;
-        
     @Field({nullable: true}) 
     @Field(() => Float, {description: `Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
     BilledToDate: number;
@@ -7712,9 +7690,6 @@ export class CreatemjBizAppsOrdersOrderLineInput {
     @Field({ nullable: true })
     ShipToAddressSnapshot: string | null;
 
-    @Field(() => Boolean, { nullable: true })
-    AcknowledgesCoverageOverlap?: boolean;
-
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -7832,9 +7807,6 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field({ nullable: true })
     ShipToAddressSnapshot?: string | null;
-
-    @Field(() => Boolean, { nullable: true })
-    AcknowledgesCoverageOverlap?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -12526,10 +12498,6 @@ export class mjBizAppsOrdersProduct_ {
     @Field(() => Float, {nullable: true, description: `Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`}) 
     MaxQuantityPerLine?: number;
         
-    @Field({nullable: true, description: `Code shared by the products that are bands of one subscription offering (for example a standard and a premium tier). At confirm, a line for one band is checked against live subscriptions the same holder has to any other product with the same code, and overlapping coverage is refused or allowed according to the subscription type's ConcurrencyMode. NULL means the product has no other bands.`}) 
-    @MaxLength(40)
-    SubscriptionFamily?: string;
-        
     @Field({nullable: true}) 
     @MaxLength(100)
     ProductType?: string;
@@ -12627,9 +12595,6 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine: number | null;
 
-    @Field({ nullable: true })
-    SubscriptionFamily: string | null;
-
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -12702,9 +12667,6 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine?: number | null;
-
-    @Field({ nullable: true })
-    SubscriptionFamily?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
