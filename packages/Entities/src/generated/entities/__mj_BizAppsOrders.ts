@@ -1861,6 +1861,59 @@ export const mjBizAppsOrdersOrderChargeSchema = z.object({
 export type mjBizAppsOrdersOrderChargeEntityType = z.infer<typeof mjBizAppsOrdersOrderChargeSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Order Checkout Answers
+ */
+export const mjBizAppsOrdersOrderCheckoutAnswerSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderHeaderID: z.string().describe(`
+        * * Field Name: OrderHeaderID
+        * * Display Name: Order Header ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+        * * Description: The order the checkout confirmed.`),
+    QuestionKey: z.string().describe(`
+        * * Field Name: QuestionKey
+        * * Display Name: Question Key
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The question's key in the widget's Configuration. Stable across label edits, so answers to the same question can be reported together.`),
+    QuestionLabel: z.string().describe(`
+        * * Field Name: QuestionLabel
+        * * Display Name: Question Label
+        * * SQL Data Type: nvarchar(500)
+        * * Description: The question as the buyer saw it, copied at order time.`),
+    Answer: z.string().describe(`
+        * * Field Name: Answer
+        * * Display Name: Answer
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: The answer. For a select question, the value of the option the buyer chose; for a text question, the text entered.`),
+    OtherText: z.string().nullable().describe(`
+        * * Field Name: OtherText
+        * * Display Name: Other Text
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: The free-text answer the buyer gave after choosing the question's "Other" option. NULL for any other answer.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    OrderHeader: z.string().describe(`
+        * * Field Name: OrderHeader
+        * * Display Name: Order Header
+        * * SQL Data Type: nvarchar(40)`),
+});
+
+export type mjBizAppsOrdersOrderCheckoutAnswerEntityType = z.infer<typeof mjBizAppsOrdersOrderCheckoutAnswerSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Company Policies
  */
 export const mjBizAppsOrdersOrderCompanyPolicySchema = z.object({
@@ -11163,6 +11216,146 @@ export class mjBizAppsOrdersOrderChargeEntity extends BaseEntity<mjBizAppsOrders
     */
     get ChargeType(): string {
         return this.Get('ChargeType');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Order Checkout Answers - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OrderCheckoutAnswer
+ * * Base View: vwOrderCheckoutAnswers
+ * * @description The buyer's answer to one question a checkout widget asked before payment, recorded on the order the checkout confirmed. The questions are defined in the widget's Configuration.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Checkout Answers')
+export class mjBizAppsOrdersOrderCheckoutAnswerEntity extends BaseEntity<mjBizAppsOrdersOrderCheckoutAnswerEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Order Checkout Answers record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Checkout Answers record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOrderCheckoutAnswerEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderID
+    * * Display Name: Order Header ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+    * * Description: The order the checkout confirmed.
+    */
+    get OrderHeaderID(): string {
+        return this.Get('OrderHeaderID');
+    }
+    set OrderHeaderID(value: string) {
+        this.Set('OrderHeaderID', value);
+    }
+
+    /**
+    * * Field Name: QuestionKey
+    * * Display Name: Question Key
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The question's key in the widget's Configuration. Stable across label edits, so answers to the same question can be reported together.
+    */
+    get QuestionKey(): string {
+        return this.Get('QuestionKey');
+    }
+    set QuestionKey(value: string) {
+        this.Set('QuestionKey', value);
+    }
+
+    /**
+    * * Field Name: QuestionLabel
+    * * Display Name: Question Label
+    * * SQL Data Type: nvarchar(500)
+    * * Description: The question as the buyer saw it, copied at order time.
+    */
+    get QuestionLabel(): string {
+        return this.Get('QuestionLabel');
+    }
+    set QuestionLabel(value: string) {
+        this.Set('QuestionLabel', value);
+    }
+
+    /**
+    * * Field Name: Answer
+    * * Display Name: Answer
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: The answer. For a select question, the value of the option the buyer chose; for a text question, the text entered.
+    */
+    get Answer(): string {
+        return this.Get('Answer');
+    }
+    set Answer(value: string) {
+        this.Set('Answer', value);
+    }
+
+    /**
+    * * Field Name: OtherText
+    * * Display Name: Other Text
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: The free-text answer the buyer gave after choosing the question's "Other" option. NULL for any other answer.
+    */
+    get OtherText(): string | null {
+        return this.Get('OtherText');
+    }
+    set OtherText(value: string | null) {
+        this.Set('OtherText', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: OrderHeader
+    * * Display Name: Order Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get OrderHeader(): string {
+        return this.Get('OrderHeader');
     }
 }
 

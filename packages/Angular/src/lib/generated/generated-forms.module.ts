@@ -31,6 +31,7 @@ import { mjBizAppsOrdersOrderAdjustmentAllocationFormComponent } from "./Entitie
 import { mjBizAppsOrdersOrderAdjustmentFormComponent } from "./Entities/mjBizAppsOrdersOrderAdjustment/mjbizappsordersorderadjustment.form.component";
 import { mjBizAppsOrdersOrderChargeAllocationFormComponent } from "./Entities/mjBizAppsOrdersOrderChargeAllocation/mjbizappsordersorderchargeallocation.form.component";
 import { mjBizAppsOrdersOrderChargeFormComponent } from "./Entities/mjBizAppsOrdersOrderCharge/mjbizappsordersordercharge.form.component";
+import { mjBizAppsOrdersOrderCheckoutAnswerFormComponent } from "./Entities/mjBizAppsOrdersOrderCheckoutAnswer/mjbizappsordersordercheckoutanswer.form.component";
 import { mjBizAppsOrdersOrderCompanyPolicyFormComponent } from "./Entities/mjBizAppsOrdersOrderCompanyPolicy/mjbizappsordersordercompanypolicy.form.component";
 import { mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent } from "./Entities/mjBizAppsOrdersOrderHeaderPaymentSchedule/mjbizappsordersorderheaderpaymentschedule.form.component";
 import { mjBizAppsOrdersOrderLineProgressMeasurementFormComponent } from "./Entities/mjBizAppsOrdersOrderLineProgressMeasurement/mjbizappsordersorderlineprogressmeasurement.form.component";
@@ -345,7 +346,8 @@ export class GeneratedForms_SubModule_18 { }
 @NgModule({
 declarations: [
     mjBizAppsOrdersCheckoutWidgetFormComponent,
-    mjBizAppsOrdersOrderChargeFormComponent
+    mjBizAppsOrdersOrderChargeFormComponent,
+    mjBizAppsOrdersOrderCheckoutAnswerFormComponent
 ],
 imports: [
     CommonModule,
