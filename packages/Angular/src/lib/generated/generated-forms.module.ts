@@ -24,6 +24,7 @@ import { mjBizAppsOrdersCustomerPaymentMethodFormComponent } from "./Entities/mj
 import { mjBizAppsOrdersCustomerPaymentTermsFormComponent } from "./Entities/mjBizAppsOrdersCustomerPaymentTerms/mjbizappsorderscustomerpaymentterms.form.component";
 import { mjBizAppsOrdersCustomerTaxExemptionFormComponent } from "./Entities/mjBizAppsOrdersCustomerTaxExemption/mjbizappsorderscustomertaxexemption.form.component";
 import { mjBizAppsOrdersDimensionDefaultFormComponent } from "./Entities/mjBizAppsOrdersDimensionDefault/mjbizappsordersdimensiondefault.form.component";
+import { mjBizAppsOrdersEntitlementAccessOverrideFormComponent } from "./Entities/mjBizAppsOrdersEntitlementAccessOverride/mjbizappsordersentitlementaccessoverride.form.component";
 import { mjBizAppsOrdersEntitlementGrantFormComponent } from "./Entities/mjBizAppsOrdersEntitlementGrant/mjbizappsordersentitlementgrant.form.component";
 import { mjBizAppsOrdersEventOrderLineFormComponent } from "./Entities/mjBizAppsOrdersEventOrderLine/mjbizappsorderseventorderline.form.component";
 import { mjBizAppsOrdersEventProductFormComponent } from "./Entities/mjBizAppsOrdersEventProduct/mjbizappsorderseventproduct.form.component";
@@ -116,6 +117,7 @@ export class GeneratedForms_SubModule_1 { }
 
 @NgModule({
 declarations: [
+    mjBizAppsOrdersEntitlementAccessOverrideFormComponent,
     mjBizAppsOrdersEntitlementGrantFormComponent
 ],
 imports: [

@@ -743,6 +743,31 @@
         }
     </mj-collapsible-panel>
 
+    <!-- Entitlement Access Overrides Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersEntitlementAccessOverrides"
+        SectionName="Entitlement Access Overrides"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersEntitlementAccessOverrides')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Access Overrides','OrderHeaderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Access Overrides','OrderHeaderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEntitlementAccessOverrides')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEntitlementAccessOverrides', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 </mj-record-form-container>
         

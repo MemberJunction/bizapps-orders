@@ -716,6 +716,122 @@ export const mjBizAppsOrdersDimensionDefaultSchema = z.object({
 export type mjBizAppsOrdersDimensionDefaultEntityType = z.infer<typeof mjBizAppsOrdersDimensionDefaultSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Entitlement Access Overrides
+ */
+export const mjBizAppsOrdersEntitlementAccessOverrideSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderHeaderID: z.string().describe(`
+        * * Field Name: OrderHeaderID
+        * * Display Name: Order Header ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+        * * Description: The order the override applies to. It does not carry to a later renewal or a revised order, which are different orders.`),
+    OverrideType: z.union([z.literal('DeferCutoff'), z.literal('WaivePaymentHold')]).describe(`
+        * * Field Name: OverrideType
+        * * Display Name: Override Type
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * DeferCutoff
+    *   * WaivePaymentHold
+        * * Description: WaivePaymentHold (lifts AwaitingPayment) or DeferCutoff (lifts PastDue).`),
+    Reason: z.string().describe(`
+        * * Field Name: Reason
+        * * Display Name: Reason
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: Why the exception is needed. Required.`),
+    EffectiveThrough: z.date().describe(`
+        * * Field Name: EffectiveThrough
+        * * Display Name: Effective Through
+        * * SQL Data Type: date
+        * * Description: The last day the override holds, inclusive. Required. After it the payment rule decides the grants again.`),
+    Status: z.union([z.literal('Approved'), z.literal('Expired'), z.literal('Rejected'), z.literal('Requested'), z.literal('Withdrawn')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Requested
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Approved
+    *   * Expired
+    *   * Rejected
+    *   * Requested
+    *   * Withdrawn
+        * * Description: Requested (awaiting approval), Approved (in force through EffectiveThrough), Rejected, Withdrawn (the approval task closed without a decision that could be applied), or Expired (EffectiveThrough has passed and the grants have been re-decided).`),
+    RequestedByUserID: z.string().describe(`
+        * * Field Name: RequestedByUserID
+        * * Display Name: Requested By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user who requested the override.`),
+    RequestedAt: z.date().describe(`
+        * * Field Name: RequestedAt
+        * * Display Name: Requested At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: When the override was requested.`),
+    ApprovalTaskID: z.string().nullable().describe(`
+        * * Field Name: ApprovalTaskID
+        * * Display Name: Approval Task ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Tasks: Tasks (vwTasks.ID)
+        * * Description: The Tasks approval request for this override.`),
+    ApprovalTaskRaisedAt: z.date().nullable().describe(`
+        * * Field Name: ApprovalTaskRaisedAt
+        * * Display Name: Approval Task Raised At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the approval task was raised. Set together with ApprovalTaskID.`),
+    DecidedByUserID: z.string().nullable().describe(`
+        * * Field Name: DecidedByUserID
+        * * Display Name: Decided By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user whose decision on the approval task approved or rejected the override.`),
+    DecidedAt: z.date().nullable().describe(`
+        * * Field Name: DecidedAt
+        * * Display Name: Decided At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the override was approved, rejected or withdrawn.`),
+    DecisionNotes: z.string().nullable().describe(`
+        * * Field Name: DecisionNotes
+        * * Display Name: Decision Notes
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: The notes recorded with the decision, or why a closed approval task was not applied.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    OrderHeader: z.string().describe(`
+        * * Field Name: OrderHeader
+        * * Display Name: Order Header
+        * * SQL Data Type: nvarchar(40)`),
+    RequestedByUser: z.string().describe(`
+        * * Field Name: RequestedByUser
+        * * Display Name: Requested By User
+        * * SQL Data Type: nvarchar(100)`),
+    ApprovalTask: z.string().nullable().describe(`
+        * * Field Name: ApprovalTask
+        * * Display Name: Approval Task
+        * * SQL Data Type: nvarchar(255)`),
+    DecidedByUser: z.string().nullable().describe(`
+        * * Field Name: DecidedByUser
+        * * Display Name: Decided By User
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersEntitlementAccessOverrideEntityType = z.infer<typeof mjBizAppsOrdersEntitlementAccessOverrideSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Entitlement Grants
  */
 export const mjBizAppsOrdersEntitlementGrantSchema = z.object({
@@ -7981,6 +8097,280 @@ export class mjBizAppsOrdersDimensionDefaultEntity extends BaseEntity<mjBizAppsO
     */
     get DimensionValue(): string {
         return this.Get('DimensionValue');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Entitlement Access Overrides - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: EntitlementAccessOverride
+ * * Base View: vwEntitlementAccessOverrides
+ * * @description An approved exception to payment-gated access on one order: WaivePaymentHold lifts the hold on a new purchase awaiting its first payment, DeferCutoff lifts the past-due cutoff on a renewal. In force only once approved through Tasks, and only through EffectiveThrough.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Entitlement Access Overrides')
+export class mjBizAppsOrdersEntitlementAccessOverrideEntity extends BaseEntity<mjBizAppsOrdersEntitlementAccessOverrideEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Entitlement Access Overrides record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Entitlement Access Overrides record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersEntitlementAccessOverrideEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderID
+    * * Display Name: Order Header ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+    * * Description: The order the override applies to. It does not carry to a later renewal or a revised order, which are different orders.
+    */
+    get OrderHeaderID(): string {
+        return this.Get('OrderHeaderID');
+    }
+    set OrderHeaderID(value: string) {
+        this.Set('OrderHeaderID', value);
+    }
+
+    /**
+    * * Field Name: OverrideType
+    * * Display Name: Override Type
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * DeferCutoff
+    *   * WaivePaymentHold
+    * * Description: WaivePaymentHold (lifts AwaitingPayment) or DeferCutoff (lifts PastDue).
+    */
+    get OverrideType(): 'DeferCutoff' | 'WaivePaymentHold' {
+        return this.Get('OverrideType');
+    }
+    set OverrideType(value: 'DeferCutoff' | 'WaivePaymentHold') {
+        this.Set('OverrideType', value);
+    }
+
+    /**
+    * * Field Name: Reason
+    * * Display Name: Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: Why the exception is needed. Required.
+    */
+    get Reason(): string {
+        return this.Get('Reason');
+    }
+    set Reason(value: string) {
+        this.Set('Reason', value);
+    }
+
+    /**
+    * * Field Name: EffectiveThrough
+    * * Display Name: Effective Through
+    * * SQL Data Type: date
+    * * Description: The last day the override holds, inclusive. Required. After it the payment rule decides the grants again.
+    */
+    get EffectiveThrough(): Date {
+        return this.Get('EffectiveThrough');
+    }
+    set EffectiveThrough(value: Date) {
+        this.Set('EffectiveThrough', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Requested
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Approved
+    *   * Expired
+    *   * Rejected
+    *   * Requested
+    *   * Withdrawn
+    * * Description: Requested (awaiting approval), Approved (in force through EffectiveThrough), Rejected, Withdrawn (the approval task closed without a decision that could be applied), or Expired (EffectiveThrough has passed and the grants have been re-decided).
+    */
+    get Status(): 'Approved' | 'Expired' | 'Rejected' | 'Requested' | 'Withdrawn' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Approved' | 'Expired' | 'Rejected' | 'Requested' | 'Withdrawn') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: RequestedByUserID
+    * * Display Name: Requested By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user who requested the override.
+    */
+    get RequestedByUserID(): string {
+        return this.Get('RequestedByUserID');
+    }
+    set RequestedByUserID(value: string) {
+        this.Set('RequestedByUserID', value);
+    }
+
+    /**
+    * * Field Name: RequestedAt
+    * * Display Name: Requested At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: When the override was requested.
+    */
+    get RequestedAt(): Date {
+        return this.Get('RequestedAt');
+    }
+    set RequestedAt(value: Date) {
+        this.Set('RequestedAt', value);
+    }
+
+    /**
+    * * Field Name: ApprovalTaskID
+    * * Display Name: Approval Task ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Tasks: Tasks (vwTasks.ID)
+    * * Description: The Tasks approval request for this override.
+    */
+    get ApprovalTaskID(): string | null {
+        return this.Get('ApprovalTaskID');
+    }
+    set ApprovalTaskID(value: string | null) {
+        this.Set('ApprovalTaskID', value);
+    }
+
+    /**
+    * * Field Name: ApprovalTaskRaisedAt
+    * * Display Name: Approval Task Raised At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the approval task was raised. Set together with ApprovalTaskID.
+    */
+    get ApprovalTaskRaisedAt(): Date | null {
+        return this.Get('ApprovalTaskRaisedAt');
+    }
+    set ApprovalTaskRaisedAt(value: Date | null) {
+        this.Set('ApprovalTaskRaisedAt', value);
+    }
+
+    /**
+    * * Field Name: DecidedByUserID
+    * * Display Name: Decided By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user whose decision on the approval task approved or rejected the override.
+    */
+    get DecidedByUserID(): string | null {
+        return this.Get('DecidedByUserID');
+    }
+    set DecidedByUserID(value: string | null) {
+        this.Set('DecidedByUserID', value);
+    }
+
+    /**
+    * * Field Name: DecidedAt
+    * * Display Name: Decided At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the override was approved, rejected or withdrawn.
+    */
+    get DecidedAt(): Date | null {
+        return this.Get('DecidedAt');
+    }
+    set DecidedAt(value: Date | null) {
+        this.Set('DecidedAt', value);
+    }
+
+    /**
+    * * Field Name: DecisionNotes
+    * * Display Name: Decision Notes
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: The notes recorded with the decision, or why a closed approval task was not applied.
+    */
+    get DecisionNotes(): string | null {
+        return this.Get('DecisionNotes');
+    }
+    set DecisionNotes(value: string | null) {
+        this.Set('DecisionNotes', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: OrderHeader
+    * * Display Name: Order Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get OrderHeader(): string {
+        return this.Get('OrderHeader');
+    }
+
+    /**
+    * * Field Name: RequestedByUser
+    * * Display Name: Requested By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get RequestedByUser(): string {
+        return this.Get('RequestedByUser');
+    }
+
+    /**
+    * * Field Name: ApprovalTask
+    * * Display Name: Approval Task
+    * * SQL Data Type: nvarchar(255)
+    */
+    get ApprovalTask(): string | null {
+        return this.Get('ApprovalTask');
+    }
+
+    /**
+    * * Field Name: DecidedByUser
+    * * Display Name: Decided By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get DecidedByUser(): string | null {
+        return this.Get('DecidedByUser');
     }
 }
 

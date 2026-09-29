@@ -34,7 +34,8 @@ export class mjBizAppsOrdersOrderHeaderFormComponent extends BaseFormComponent {
             { sectionKey: 'mJBizAppsOrdersCheckoutSessions', sectionName: 'Checkout Sessions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderHeaderPaymentSchedules', sectionName: 'Order Header Payment Schedules', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersExternalInvoices', sectionName: 'External Invoices', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderCheckoutAnswers', sectionName: 'Order Checkout Answers', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersOrderCheckoutAnswers', sectionName: 'Order Checkout Answers', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersEntitlementAccessOverrides', sectionName: 'Entitlement Access Overrides', isExpanded: false }
         ]);
     }
 }
