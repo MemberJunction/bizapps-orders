@@ -8,12 +8,13 @@
 -- price reduction escalated.
 --
 -- What this file does, in order:
---   1. SalesAuthority gains two non-percentage limits: an absolute concession value
---      and a term-extension length.
+--   1. SalesAuthority gains three non-percentage limits: an absolute concession
+--      value, a term-extension length, and a share of the order's net total.
 --   2. SalesRule.RuleType gains 'ConcessionLimit' — the rule naming the role that
 --      may approve a concession outside a rep's authority.
 --   3. OrderConcession — one row per concession, carrying its computed value, the
---      form it was delivered in, why it was granted, and the approval decision.
+--      form it was delivered in, why it was granted, the order total it was
+--      measured against, and the approval decision.
 --      An order may not be confirmed, and its documents may not be sent, while a
 --      concession on it is Pending.
 -- =============================================================================
@@ -25,7 +26,9 @@ ALTER TABLE [${flyway:defaultSchema}].[SalesAuthority] ADD
     [MaxConcessionValue]   DECIMAL(18,2) NULL
         CONSTRAINT [CK_SalesAuthority_MaxConcessionValue] CHECK ([MaxConcessionValue] >= 0),
     [MaxTermExtensionDays] INT           NULL
-        CONSTRAINT [CK_SalesAuthority_MaxTermExtensionDays] CHECK ([MaxTermExtensionDays] >= 0);
+        CONSTRAINT [CK_SalesAuthority_MaxTermExtensionDays] CHECK ([MaxTermExtensionDays] >= 0),
+    [MaxConcessionPctOfContract] DECIMAL(7,4) NULL
+        CONSTRAINT [CK_SalesAuthority_MaxConcessionPctOfContract] CHECK ([MaxConcessionPctOfContract] >= 0 AND [MaxConcessionPctOfContract] <= 1);
 GO
 
 EXEC sp_addextendedproperty
@@ -42,6 +45,14 @@ EXEC sp_addextendedproperty
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'SalesAuthority',
     @level2type = N'COLUMN', @level2name = N'MaxTermExtensionDays';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Share of the order''s net total, as a fraction (0.05 = 5%), at or above which the order''s concessions need approval. Every concession on the order that is not Rejected counts toward it, whatever form it takes. NULL sets no limit on the share.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'SalesAuthority',
+    @level2type = N'COLUMN', @level2name = N'MaxConcessionPctOfContract';
 GO
 
 -- -----------------------------------------------------------------------------
@@ -81,6 +92,11 @@ CREATE TABLE [${flyway:defaultSchema}].[OrderConcession] (
     [AddedQuantity]                DECIMAL(18,4)    NULL,
     -- Computed server-side at the arrangement's own rate, never authored.
     [ComputedValue]                DECIMAL(18,2)    NOT NULL,
+    -- What the concession was measured against when it was recorded: the order's net total, and
+    -- every concession on the order that is not Rejected, this one included, as a share of it.
+    -- NULL share when the net total is zero.
+    [OrderNetTotal]                DECIMAL(18,2)    NULL,
+    [CumulativeShare]              DECIMAL(9,4)     NULL,
     [Status]                       NVARCHAR(20)     NOT NULL CONSTRAINT [DF_OrderConcession_Status] DEFAULT (N'Pending'),
     [RequestedByUserID]            UNIQUEIDENTIFIER NOT NULL,
     -- Set when the requester's own authority covered the concession.
@@ -109,6 +125,7 @@ CREATE TABLE [${flyway:defaultSchema}].[OrderConcession] (
     CONSTRAINT [CK_OrderConcession_ReasonCategory] CHECK ([ReasonCategory] IN ('Retention','Referral','Other')),
     CONSTRAINT [CK_OrderConcession_Status] CHECK ([Status] IN ('Pending','Approved','Rejected')),
     CONSTRAINT [CK_OrderConcession_ComputedValue] CHECK ([ComputedValue] >= 0),
+    CONSTRAINT [CK_OrderConcession_CumulativeShare] CHECK ([CumulativeShare] >= 0),
     CONSTRAINT [CK_OrderConcession_Duration] CHECK ([DeliveryForm] <> 'Duration' OR ([SubscriptionTermID] IS NOT NULL AND [AddedDays] > 0)),
     CONSTRAINT [CK_OrderConcession_Seats] CHECK ([DeliveryForm] <> 'Seats' OR ([OrderLineID] IS NOT NULL AND [AddedQuantity] > 0)),
     CONSTRAINT [CK_OrderConcession_LineForm] CHECK ([DeliveryForm] NOT IN ('Price','Scope') OR [OrderLineID] IS NOT NULL),
@@ -193,6 +210,22 @@ EXEC sp_addextendedproperty
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'OrderConcession',
     @level2type = N'COLUMN', @level2name = N'ComputedValue';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'The order''s net total when the concession was recorded: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderConcession',
+    @level2type = N'COLUMN', @level2name = N'OrderNetTotal';
+GO
+
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal when it was recorded. This is what SalesAuthority.MaxConcessionPctOfContract is checked against. NULL when OrderNetTotal is zero. Computed on save; never authored.',
+    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
+    @level1type = N'TABLE',  @level1name = N'OrderConcession',
+    @level2type = N'COLUMN', @level2name = N'CumulativeShare';
 GO
 
 EXEC sp_addextendedproperty
@@ -520,6 +553,69 @@ GO
             4,
             10,
             0,
+            1,
+            NULL,
+            0,
+            1,
+            0,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'a5d859fb-5db7-46aa-8ad1-ba281609ca10' OR (EntityID = '29E748BF-E356-4AC1-BCE5-71E05279BAF8' AND Name = 'MaxConcessionPctOfContract')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'a5d859fb-5db7-46aa-8ad1-ba281609ca10',
+            '29E748BF-E356-4AC1-BCE5-71E05279BAF8', -- Entity: MJ_BizApps_Orders: Sales Authorities
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '29E748BF-E356-4AC1-BCE5-71E05279BAF8'),
+            'MaxConcessionPctOfContract',
+            'Max Concession Pct Of Contract',
+            'Share of the order''s net total, as a fraction (0.05 = 5%), at or above which the order''s concessions need approval. Every concession on the order that is not Rejected counts toward it, whatever form it takes. NULL sets no limit on the share.',
+            'decimal',
+            5,
+            7,
+            4,
             1,
             NULL,
             0,
@@ -1151,6 +1247,132 @@ GO
             18,
             2,
             0,
+            NULL,
+            0,
+            1,
+            0,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '543eee3c-def5-4bb3-854b-48478caa4d83' OR (EntityID = '0E13E45B-0FF1-4B09-8919-CE576829E178' AND Name = 'OrderNetTotal')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '543eee3c-def5-4bb3-854b-48478caa4d83',
+            '0E13E45B-0FF1-4B09-8919-CE576829E178', -- Entity: MJ_BizApps_Orders: Order Concessions
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '0E13E45B-0FF1-4B09-8919-CE576829E178'),
+            'OrderNetTotal',
+            'Order Net Total',
+            'The order''s net total when the concession was recorded: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.',
+            'decimal',
+            9,
+            18,
+            2,
+            1,
+            NULL,
+            0,
+            1,
+            0,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '8e9b946e-a25f-4071-b8b7-1fbdc5290d04' OR (EntityID = '0E13E45B-0FF1-4B09-8919-CE576829E178' AND Name = 'CumulativeShare')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            '8e9b946e-a25f-4071-b8b7-1fbdc5290d04',
+            '0E13E45B-0FF1-4B09-8919-CE576829E178', -- Entity: MJ_BizApps_Orders: Order Concessions
+            (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '0E13E45B-0FF1-4B09-8919-CE576829E178'),
+            'CumulativeShare',
+            'Cumulative Share',
+            'Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal when it was recorded. This is what SalesAuthority.MaxConcessionPctOfContract is checked against. NULL when OrderNetTotal is zero. Computed on save; never authored.',
+            'decimal',
+            5,
+            9,
+            4,
+            1,
             NULL,
             0,
             1,
@@ -2072,6 +2294,10 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateOrderConcession]
     @AddedQuantity_Clear bit = 0,
     @AddedQuantity decimal(18, 4) = NULL,
     @ComputedValue decimal(18, 2),
+    @OrderNetTotal_Clear bit = 0,
+    @OrderNetTotal decimal(18, 2) = NULL,
+    @CumulativeShare_Clear bit = 0,
+    @CumulativeShare decimal(9, 4) = NULL,
     @Status nvarchar(20) = NULL,
     @RequestedByUserID uniqueidentifier,
     @AuthorizedBySalesAuthorityID_Clear bit = 0,
@@ -2104,6 +2330,8 @@ BEGIN
                 [AddedDays],
                 [AddedQuantity],
                 [ComputedValue],
+                [OrderNetTotal],
+                [CumulativeShare],
                 [Status],
                 [RequestedByUserID],
                 [AuthorizedBySalesAuthorityID],
@@ -2125,6 +2353,8 @@ BEGIN
                 CASE WHEN @AddedDays_Clear = 1 THEN NULL ELSE ISNULL(@AddedDays, NULL) END,
                 CASE WHEN @AddedQuantity_Clear = 1 THEN NULL ELSE ISNULL(@AddedQuantity, NULL) END,
                 @ComputedValue,
+                CASE WHEN @OrderNetTotal_Clear = 1 THEN NULL ELSE ISNULL(@OrderNetTotal, NULL) END,
+                CASE WHEN @CumulativeShare_Clear = 1 THEN NULL ELSE ISNULL(@CumulativeShare, NULL) END,
                 ISNULL(@Status, 'Pending'),
                 @RequestedByUserID,
                 CASE WHEN @AuthorizedBySalesAuthorityID_Clear = 1 THEN NULL ELSE ISNULL(@AuthorizedBySalesAuthorityID, NULL) END,
@@ -2148,6 +2378,8 @@ BEGIN
                 [AddedDays],
                 [AddedQuantity],
                 [ComputedValue],
+                [OrderNetTotal],
+                [CumulativeShare],
                 [Status],
                 [RequestedByUserID],
                 [AuthorizedBySalesAuthorityID],
@@ -2168,6 +2400,8 @@ BEGIN
                 CASE WHEN @AddedDays_Clear = 1 THEN NULL ELSE ISNULL(@AddedDays, NULL) END,
                 CASE WHEN @AddedQuantity_Clear = 1 THEN NULL ELSE ISNULL(@AddedQuantity, NULL) END,
                 @ComputedValue,
+                CASE WHEN @OrderNetTotal_Clear = 1 THEN NULL ELSE ISNULL(@OrderNetTotal, NULL) END,
+                CASE WHEN @CumulativeShare_Clear = 1 THEN NULL ELSE ISNULL(@CumulativeShare, NULL) END,
                 ISNULL(@Status, 'Pending'),
                 @RequestedByUserID,
                 CASE WHEN @AuthorizedBySalesAuthorityID_Clear = 1 THEN NULL ELSE ISNULL(@AuthorizedBySalesAuthorityID, NULL) END,
@@ -2219,6 +2453,10 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderConcession]
     @AddedQuantity_Clear bit = 0,
     @AddedQuantity decimal(18, 4) = NULL,
     @ComputedValue decimal(18, 2) = NULL,
+    @OrderNetTotal_Clear bit = 0,
+    @OrderNetTotal decimal(18, 2) = NULL,
+    @CumulativeShare_Clear bit = 0,
+    @CumulativeShare decimal(9, 4) = NULL,
     @Status nvarchar(20) = NULL,
     @RequestedByUserID uniqueidentifier = NULL,
     @AuthorizedBySalesAuthorityID_Clear bit = 0,
@@ -2246,6 +2484,8 @@ BEGIN
         [AddedDays] = CASE WHEN @AddedDays_Clear = 1 THEN NULL ELSE ISNULL(@AddedDays, [AddedDays]) END,
         [AddedQuantity] = CASE WHEN @AddedQuantity_Clear = 1 THEN NULL ELSE ISNULL(@AddedQuantity, [AddedQuantity]) END,
         [ComputedValue] = ISNULL(@ComputedValue, [ComputedValue]),
+        [OrderNetTotal] = CASE WHEN @OrderNetTotal_Clear = 1 THEN NULL ELSE ISNULL(@OrderNetTotal, [OrderNetTotal]) END,
+        [CumulativeShare] = CASE WHEN @CumulativeShare_Clear = 1 THEN NULL ELSE ISNULL(@CumulativeShare, [CumulativeShare]) END,
         [Status] = ISNULL(@Status, [Status]),
         [RequestedByUserID] = ISNULL(@RequestedByUserID, [RequestedByUserID]),
         [AuthorizedBySalesAuthorityID] = CASE WHEN @AuthorizedBySalesAuthorityID_Clear = 1 THEN NULL ELSE ISNULL(@AuthorizedBySalesAuthorityID, [AuthorizedBySalesAuthorityID]) END,
@@ -2441,7 +2681,9 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateSalesAuthority]
     @MaxConcessionValue_Clear bit = 0,
     @MaxConcessionValue decimal(18, 2) = NULL,
     @MaxTermExtensionDays_Clear bit = 0,
-    @MaxTermExtensionDays int = NULL
+    @MaxTermExtensionDays int = NULL,
+    @MaxConcessionPctOfContract_Clear bit = 0,
+    @MaxConcessionPctOfContract decimal(7, 4) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2460,7 +2702,8 @@ BEGIN
                 [AllowedProductCategoryIDs],
                 [IsActive],
                 [MaxConcessionValue],
-                [MaxTermExtensionDays]
+                [MaxTermExtensionDays],
+                [MaxConcessionPctOfContract]
             )
         OUTPUT INSERTED.[ID] INTO @InsertedRow
         VALUES
@@ -2473,7 +2716,8 @@ BEGIN
                 CASE WHEN @AllowedProductCategoryIDs_Clear = 1 THEN NULL ELSE ISNULL(@AllowedProductCategoryIDs, NULL) END,
                 ISNULL(@IsActive, 1),
                 CASE WHEN @MaxConcessionValue_Clear = 1 THEN NULL ELSE ISNULL(@MaxConcessionValue, NULL) END,
-                CASE WHEN @MaxTermExtensionDays_Clear = 1 THEN NULL ELSE ISNULL(@MaxTermExtensionDays, NULL) END
+                CASE WHEN @MaxTermExtensionDays_Clear = 1 THEN NULL ELSE ISNULL(@MaxTermExtensionDays, NULL) END,
+                CASE WHEN @MaxConcessionPctOfContract_Clear = 1 THEN NULL ELSE ISNULL(@MaxConcessionPctOfContract, NULL) END
             )
     END
     ELSE
@@ -2488,7 +2732,8 @@ BEGIN
                 [AllowedProductCategoryIDs],
                 [IsActive],
                 [MaxConcessionValue],
-                [MaxTermExtensionDays]
+                [MaxTermExtensionDays],
+                [MaxConcessionPctOfContract]
             )
         OUTPUT INSERTED.[ID] INTO @InsertedRow
         VALUES
@@ -2500,7 +2745,8 @@ BEGIN
                 CASE WHEN @AllowedProductCategoryIDs_Clear = 1 THEN NULL ELSE ISNULL(@AllowedProductCategoryIDs, NULL) END,
                 ISNULL(@IsActive, 1),
                 CASE WHEN @MaxConcessionValue_Clear = 1 THEN NULL ELSE ISNULL(@MaxConcessionValue, NULL) END,
-                CASE WHEN @MaxTermExtensionDays_Clear = 1 THEN NULL ELSE ISNULL(@MaxTermExtensionDays, NULL) END
+                CASE WHEN @MaxTermExtensionDays_Clear = 1 THEN NULL ELSE ISNULL(@MaxTermExtensionDays, NULL) END,
+                CASE WHEN @MaxConcessionPctOfContract_Clear = 1 THEN NULL ELSE ISNULL(@MaxConcessionPctOfContract, NULL) END
             )
     END
     -- return the new record from the base view, which might have some calculated fields
@@ -2545,7 +2791,9 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateSalesAuthority]
     @MaxConcessionValue_Clear bit = 0,
     @MaxConcessionValue decimal(18, 2) = NULL,
     @MaxTermExtensionDays_Clear bit = 0,
-    @MaxTermExtensionDays int = NULL
+    @MaxTermExtensionDays int = NULL,
+    @MaxConcessionPctOfContract_Clear bit = 0,
+    @MaxConcessionPctOfContract decimal(7, 4) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2559,7 +2807,8 @@ BEGIN
         [AllowedProductCategoryIDs] = CASE WHEN @AllowedProductCategoryIDs_Clear = 1 THEN NULL ELSE ISNULL(@AllowedProductCategoryIDs, [AllowedProductCategoryIDs]) END,
         [IsActive] = ISNULL(@IsActive, [IsActive]),
         [MaxConcessionValue] = CASE WHEN @MaxConcessionValue_Clear = 1 THEN NULL ELSE ISNULL(@MaxConcessionValue, [MaxConcessionValue]) END,
-        [MaxTermExtensionDays] = CASE WHEN @MaxTermExtensionDays_Clear = 1 THEN NULL ELSE ISNULL(@MaxTermExtensionDays, [MaxTermExtensionDays]) END
+        [MaxTermExtensionDays] = CASE WHEN @MaxTermExtensionDays_Clear = 1 THEN NULL ELSE ISNULL(@MaxTermExtensionDays, [MaxTermExtensionDays]) END,
+        [MaxConcessionPctOfContract] = CASE WHEN @MaxConcessionPctOfContract_Clear = 1 THEN NULL ELSE ISNULL(@MaxConcessionPctOfContract, [MaxConcessionPctOfContract]) END
     WHERE
         [ID] = @ID
 

@@ -1888,6 +1888,16 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * Display Name: Computed Value
         * * SQL Data Type: decimal(18, 2)
         * * Description: What the concession is worth, in currency, at the arrangement's own rate. Computed on save from the line or term; never authored.`),
+    OrderNetTotal: z.number().nullable().describe(`
+        * * Field Name: OrderNetTotal
+        * * Display Name: Order Net Total
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The order's net total when the concession was recorded: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.`),
+    CumulativeShare: z.number().nullable().describe(`
+        * * Field Name: CumulativeShare
+        * * Display Name: Cumulative Share
+        * * SQL Data Type: decimal(9, 4)
+        * * Description: Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal when it was recorded. This is what SalesAuthority.MaxConcessionPctOfContract is checked against. NULL when OrderNetTotal is zero. Computed on save; never authored.`),
     Status: z.union([z.literal('Approved'), z.literal('Pending'), z.literal('Rejected')]).describe(`
         * * Field Name: Status
         * * Display Name: Status
@@ -5184,6 +5194,11 @@ export const mjBizAppsOrdersSalesAuthoritySchema = z.object({
         * * Display Name: Max Term Extension Days
         * * SQL Data Type: int
         * * Description: Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.`),
+    MaxConcessionPctOfContract: z.number().nullable().describe(`
+        * * Field Name: MaxConcessionPctOfContract
+        * * Display Name: Max Concession Pct Of Contract
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: Share of the order's net total, as a fraction (0.05 = 5%), at or above which the order's concessions need approval. Every concession on the order that is not Rejected counts toward it, whatever form it takes. NULL sets no limit on the share.`),
     SalesRepUser: z.string().describe(`
         * * Field Name: SalesRepUser
         * * Display Name: Sales Rep
@@ -11303,6 +11318,32 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
     set ComputedValue(value: number) {
         this.Set('ComputedValue', value);
+    }
+
+    /**
+    * * Field Name: OrderNetTotal
+    * * Display Name: Order Net Total
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The order's net total when the concession was recorded: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.
+    */
+    get OrderNetTotal(): number | null {
+        return this.Get('OrderNetTotal');
+    }
+    set OrderNetTotal(value: number | null) {
+        this.Set('OrderNetTotal', value);
+    }
+
+    /**
+    * * Field Name: CumulativeShare
+    * * Display Name: Cumulative Share
+    * * SQL Data Type: decimal(9, 4)
+    * * Description: Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal when it was recorded. This is what SalesAuthority.MaxConcessionPctOfContract is checked against. NULL when OrderNetTotal is zero. Computed on save; never authored.
+    */
+    get CumulativeShare(): number | null {
+        return this.Get('CumulativeShare');
+    }
+    set CumulativeShare(value: number | null) {
+        this.Set('CumulativeShare', value);
     }
 
     /**
@@ -20842,6 +20883,19 @@ export class mjBizAppsOrdersSalesAuthorityEntity extends BaseEntity<mjBizAppsOrd
     }
     set MaxTermExtensionDays(value: number | null) {
         this.Set('MaxTermExtensionDays', value);
+    }
+
+    /**
+    * * Field Name: MaxConcessionPctOfContract
+    * * Display Name: Max Concession Pct Of Contract
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: Share of the order's net total, as a fraction (0.05 = 5%), at or above which the order's concessions need approval. Every concession on the order that is not Rejected counts toward it, whatever form it takes. NULL sets no limit on the share.
+    */
+    get MaxConcessionPctOfContract(): number | null {
+        return this.Get('MaxConcessionPctOfContract');
+    }
+    set MaxConcessionPctOfContract(value: number | null) {
+        this.Set('MaxConcessionPctOfContract', value);
     }
 
     /**

@@ -5014,6 +5014,12 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field(() => Float, {description: `What the concession is worth, in currency, at the arrangement's own rate. Computed on save from the line or term; never authored.`}) 
     ComputedValue: number;
         
+    @Field(() => Float, {nullable: true, description: `The order's net total when the concession was recorded: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.`}) 
+    OrderNetTotal?: number;
+        
+    @Field(() => Float, {nullable: true, description: `Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal when it was recorded. This is what SalesAuthority.MaxConcessionPctOfContract is checked against. NULL when OrderNetTotal is zero. Computed on save; never authored.`}) 
+    CumulativeShare?: number;
+        
     @Field({description: `Pending | Approved | Rejected. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role.`}) 
     @MaxLength(20)
     Status: string;
@@ -5099,6 +5105,12 @@ export class CreatemjBizAppsOrdersOrderConcessionInput {
     @Field(() => Float, { nullable: true })
     ComputedValue?: number;
 
+    @Field(() => Float, { nullable: true })
+    OrderNetTotal: number | null;
+
+    @Field(() => Float, { nullable: true })
+    CumulativeShare: number | null;
+
     @Field({ nullable: true })
     Status?: string;
 
@@ -5159,6 +5171,12 @@ export class UpdatemjBizAppsOrdersOrderConcessionInput {
 
     @Field(() => Float, { nullable: true })
     ComputedValue?: number;
+
+    @Field(() => Float, { nullable: true })
+    OrderNetTotal?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    CumulativeShare?: number | null;
 
     @Field({ nullable: true })
     Status?: string;
@@ -13357,6 +13375,9 @@ export class mjBizAppsOrdersSalesAuthority_ {
     @Field(() => Int, {nullable: true, description: `Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.`}) 
     MaxTermExtensionDays?: number;
         
+    @Field(() => Float, {nullable: true, description: `Share of the order's net total, as a fraction (0.05 = 5%), at or above which the order's concessions need approval. Every concession on the order that is not Rejected counts toward it, whatever form it takes. NULL sets no limit on the share.`}) 
+    MaxConcessionPctOfContract?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     SalesRepUser?: string;
@@ -13398,6 +13419,9 @@ export class CreatemjBizAppsOrdersSalesAuthorityInput {
     @Field(() => Int, { nullable: true })
     MaxTermExtensionDays: number | null;
 
+    @Field(() => Float, { nullable: true })
+    MaxConcessionPctOfContract: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -13434,6 +13458,9 @@ export class UpdatemjBizAppsOrdersSalesAuthorityInput {
 
     @Field(() => Int, { nullable: true })
     MaxTermExtensionDays?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MaxConcessionPctOfContract?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
