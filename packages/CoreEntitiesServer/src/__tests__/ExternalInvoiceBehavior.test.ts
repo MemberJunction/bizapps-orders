@@ -286,6 +286,22 @@ describe('DecideAdoption', () => {
     it('reports the archive before the figure — it is the reason the figure is unhelpful', () => {
         expect(DecideAdoption({ ...base, RailArchived: true, RailTotal: 1 }).Code).toBe('ARCHIVED');
     });
+
+    it('names the provider in EVERY refusal, because no screen in this package says a vendor', () => {
+        // The caller used to patch the name in afterwards with a case-sensitive String.replace, which
+        // missed the one message opening with a capital and left it reading "The rail totals…".
+        const named = { ...base, RailName: 'Bill.com Sandbox' };
+        for (const over of [{ RailArchived: true }, { RailInvoiceNumber: 'ORD-9999' }, { RailTotal: 1 }]) {
+            const d = DecideAdoption({ ...named, ...over });
+            expect(d.OK).toBe(false);
+            expect(d.Reason).toContain('Bill.com Sandbox');
+            expect(d.Reason).not.toMatch(/\bthe rail\b/i);
+        }
+    });
+
+    it('falls back to a neutral phrase when the provider has no name to give', () => {
+        expect(DecideAdoption({ ...base, RailArchived: true }).Reason).toContain('the invoicing rail');
+    });
 });
 
 describe('ReissueDocumentNumber', () => {

@@ -110,6 +110,7 @@ export class AdoptExternalInvoiceOperation extends OrdersAdoptExternalInvoiceOpe
                 RailArchived: snap.Value.Archived,
                 RailInvoiceNumber: snap.Value.InvoiceNumber,
                 RailTotal: total,
+                RailName: rail.Config.Name,
             });
             if (!verdict.OK) {
                 return {
@@ -117,10 +118,7 @@ export class AdoptExternalInvoiceOperation extends OrdersAdoptExternalInvoiceOpe
                     // An archived invoice is the rail holding nothing LIVE for this unit, which is the
                     // re-issue answer; the other two are the tie check refusing a mismatch.
                     ResultCode: verdict.Code === 'ARCHIVED' ? 'NOT_FOUND_ON_RAIL' : 'TIE_FAILED',
-                    Message:
-                        verdict.Code === 'ARCHIVED'
-                            ? `${verdict.Reason} Send it again with AllowReissue.`
-                            : verdict.Reason.replace('the rail', rail.Config.Name),
+                    Message: verdict.Code === 'ARCHIVED' ? `${verdict.Reason} Send it again with AllowReissue.` : verdict.Reason,
                     ExternalInvoiceID: row.ID,
                     ExternalInvoiceRef: ref,
                     DocumentNumber: row.DocumentNumber,

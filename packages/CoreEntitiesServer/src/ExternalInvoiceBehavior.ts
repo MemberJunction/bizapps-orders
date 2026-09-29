@@ -340,17 +340,26 @@ export function DecideAdoption(i: {
     RailArchived: boolean;
     RailInvoiceNumber: string | null;
     RailTotal: number;
+    /**
+     * What the provider row calls itself, so the refusal a person reads names the system they are
+     * looking at. Taken as an argument rather than patched into the message afterwards: the caller
+     * used to do that with a case-sensitive `String.replace`, which silently missed the one message
+     * that opened with a capital and left it saying "The rail" — the generic word this package exists
+     * to keep off the screen.
+     */
+    RailName?: string;
 }): { OK: boolean; Code: AdoptCode; Reason: string } {
     const ref = i.ExternalInvoiceRef;
     const doc = (i.DocumentNumber ?? '').trim();
+    const rail = (i.RailName ?? '').trim() || 'the invoicing rail';
 
     if (i.RailArchived) {
         return {
             OK: false,
             Code: 'ARCHIVED',
             Reason:
-                `${ref} is archived on the rail — the customer does not hold it. Adopting it would mark ${doc || 'this unit'} sent ` +
-                `against a withdrawn document, and the unit would never be billed. If the rail holds nothing live for this unit, re-issue it instead.`,
+                `${ref} is archived on ${rail} — the customer does not hold it. Adopting it would mark ${doc || 'this unit'} sent ` +
+                `against a withdrawn document, and the unit would never be billed. If ${rail} holds nothing live for this unit, re-issue it instead.`,
         };
     }
 
@@ -360,7 +369,7 @@ export function DecideAdoption(i: {
             OK: false,
             Code: 'WRONG_DOCUMENT',
             Reason:
-                `${ref} is numbered ${railNumber} on the rail, not ${doc}. That is a different document — adopting it would point this ` +
+                `${ref} is numbered ${railNumber} on ${rail}, not ${doc}. That is a different document — adopting it would point this ` +
                 `receivable at somebody else's invoice, and the payment against it would be captured onto this order.`,
         };
     }
@@ -372,9 +381,9 @@ export function DecideAdoption(i: {
             OK: false,
             Code: 'TIE_FAILED',
             Reason:
-                `The rail totals ${ref} at ${total.toFixed(2)} but ${doc || 'this unit'} is ${amount.toFixed(2)}. ` +
+                `${rail} totals ${ref} at ${total.toFixed(2)} but ${doc || 'this unit'} is ${amount.toFixed(2)}. ` +
                 `Refusing rather than tying this receivable to a customer document for a different figure.`,
         };
     }
-    return { OK: true, Code: 'OK', Reason: `${ref} is live on the rail, numbered ${railNumber || doc}, and ties at ${total.toFixed(2)}.` };
+    return { OK: true, Code: 'OK', Reason: `${ref} is live on ${rail}, numbered ${railNumber || doc}, and ties at ${total.toFixed(2)}.` };
 }

@@ -3681,7 +3681,7 @@ export class mjBizAppsOrdersExternalPayment_ {
     @Field({nullable: true, description: `The rail's updatedTime as last seen — the watermark candidate.`}) 
     ExternalUpdatedAt?: Date;
         
-    @Field({description: `Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), ReversalNeeded (captured, and the rail now reports it reversed).`}) 
+    @Field({description: `Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), Reapplied (captured, and the rail has since applied it to different invoices), ReversalNeeded (captured, and the rail now reports it reversed).`}) 
     @MaxLength(20)
     Disposition: string;
         
