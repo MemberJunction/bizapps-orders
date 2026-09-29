@@ -23,7 +23,11 @@ export class mjBizAppsOrdersPaymentProviderFormComponent extends BaseFormCompone
             { sectionKey: 'mJBizAppsOrdersPaymentIntents', sectionName: 'Payment Intents', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentDetails', sectionName: 'Payment Details', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPaymentDetails', sectionName: 'Payment Details', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentProviderSyncStates', sectionName: 'Payment Provider Sync States', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersExternalPayments', sectionName: 'External Payments', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersExternalCustomers', sectionName: 'External Customers', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersExternalInvoices', sectionName: 'External Invoices', isExpanded: false }
         ]);
     }
 }

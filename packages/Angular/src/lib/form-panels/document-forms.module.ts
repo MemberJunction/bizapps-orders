@@ -1,10 +1,11 @@
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
-import { MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
 import { RelatedChipsComponent } from '@mj-biz-apps/common-ng';
 import { CustomFormsModule } from '../custom/custom-forms.module';
+import { ExternalInvoicesPanel } from './external-invoices.panel';
 import { PaymentHeaderPanel } from './payment-header.panel';
 import { PaymentJournalsPanel } from './payment-journals.panel';
 import { SubscriptionHeaderPanel } from './subscription-header.panel';
@@ -101,6 +102,7 @@ const PANELS = [
     StoredValueOverviewPanel,
     PaymentProviderOverviewPanel,
     PaymentTypeOverviewPanel,
+    ExternalInvoicesPanel,
 ];
 
 /**
@@ -112,6 +114,7 @@ const PANELS = [
     imports: [
         CommonModule,
         BaseFormsModule,
+        MJAlertComponent,
         MJButtonDirective,
         RelatedChipsComponent,
         DeferredRevenueWaterfallModule,
