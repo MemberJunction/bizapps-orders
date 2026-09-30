@@ -27,7 +27,9 @@ import {
     DispatchOutboundDeliveries,
     NextOutboundAttempt,
     OrdersOutboundConsumer,
+    OUTBOUND_DELIVER_TIMEOUT_MS,
     OUTBOUND_DELIVERY_DEADLINE_MS,
+    OUTBOUND_LEASE_MS,
     RecordOutboundEvent,
     RegisteredOutboundConsumers,
     type OutboundEventEnvelope,
@@ -87,7 +89,7 @@ function fakeProvider(claimed: string[] = []) {
         }),
         ExecuteSQL: vi.fn().mockImplementation((sql: string) => {
             provider.sql.push(sql);
-            return Promise.resolve(claimed.map((ID) => ({ ID })));
+            return Promise.resolve(provider.sql.length === 1 ? claimed.map((ID) => ({ ID })) : []);
         }),
     };
     return { provider, saved, deliveries };
@@ -225,10 +227,12 @@ describe('outbound events', () => {
         }
         const lastSave = (saved: Row[]) => saved[saved.length - 1];
 
-        it('claims due rows in one statement under a lease', async () => {
+        it('claims the oldest due rows in one statement under a lease', async () => {
             const { provider } = setUp('crm');
             await DispatchOutboundDeliveries({}, provider as never, undefined);
-            expect(provider.sql[0]).toMatch(/UPDATE TOP \(50\) d\s+SET d\.LeaseUntil/);
+            expect(provider.sql[0]).toMatch(/SELECT TOP \(50\) d\.ID/);
+            expect(provider.sql[0]).toMatch(/WITH \(ROWLOCK, UPDLOCK, READPAST\)/);
+            expect(provider.sql[0]).toMatch(/ORDER BY d\.NextAttemptAt\s+\)\s+UPDATE due\s+SET LeaseUntil/);
             expect(provider.sql[0]).toMatch(/d\.Status = 'Pending'/);
             expect(provider.sql[0]).toMatch(/d\.LeaseUntil IS NULL OR d\.LeaseUntil < SYSDATETIMEOFFSET\(\)/);
         });
@@ -258,6 +262,36 @@ describe('outbound events', () => {
             expect((lastSave(saved).NextAttemptAt as Date).getTime()).toBeGreaterThan(Date.now());
         });
 
+        it('fails a Deliver that has not settled within the timeout, and moves on', async () => {
+            vi.useFakeTimers();
+            deliver.crm.mockReturnValue(new Promise<void>(() => undefined));
+            const { provider, saved } = setUp('crm');
+            const pass = DispatchOutboundDeliveries({}, provider as never, undefined);
+            await vi.advanceTimersByTimeAsync(OUTBOUND_DELIVER_TIMEOUT_MS);
+            const out = await pass;
+            expect(out).toMatchObject({ Retrying: 1, Delivered: 0 });
+            expect(lastSave(saved)).toMatchObject({ Status: 'Pending', Attempts: 1, LeaseUntil: null });
+            expect(lastSave(saved).LastError).toMatch(/did not respond within 30 seconds/);
+        });
+
+        it('hands back rows it could not finish before the lease ends, unsent', async () => {
+            vi.useFakeTimers();
+            const SECOND_ID = '44444444-4444-4444-8444-444444444444';
+            const f = setUp('crm');
+            f.provider.ExecuteSQL.mockImplementation((sql: string) => {
+                f.provider.sql.push(sql);
+                return Promise.resolve(f.provider.sql.length === 1 ? [{ ID: DELIVERY_ID }, { ID: SECOND_ID }] : []);
+            });
+            // The first delivery runs until only a timeout's worth of lease is left.
+            deliver.crm.mockImplementationOnce(async () => {
+                vi.setSystemTime(Date.now() + OUTBOUND_LEASE_MS - OUTBOUND_DELIVER_TIMEOUT_MS);
+            });
+            const out = await DispatchOutboundDeliveries({}, f.provider as never, undefined);
+            expect(deliver.crm).toHaveBeenCalledTimes(1);
+            expect(out).toMatchObject({ Claimed: 2, Delivered: 1, Released: 1 });
+            expect(f.provider.sql[1]).toMatch(/SET LeaseUntil = NULL\s+WHERE ID IN \('44444444-4444-4444-8444-444444444444'\) AND Status = 'Pending'/);
+        });
+
         it('dead-letters a failure past the deadline', async () => {
             deliver.crm.mockRejectedValue(new Error('still down'));
             const { provider, saved } = setUp('crm', { Attempts: 8, DeadlineAt: new Date(Date.now() - 1000) });
@@ -276,7 +310,7 @@ describe('outbound events', () => {
             const { provider } = setUp('crm');
             await DispatchOutboundDeliveries({ OrderHeaderID: ORDER_ID, MaxCount: 5 }, provider as never, undefined);
             expect(provider.sql[0]).toContain(`e.OrderHeaderID = '${ORDER_ID}'`);
-            expect(provider.sql[0]).toContain('UPDATE TOP (5)');
+            expect(provider.sql[0]).toContain('SELECT TOP (5)');
             await expect(DispatchOutboundDeliveries({ OrderHeaderID: "x' OR 1=1 --" }, provider as never, undefined)).rejects.toThrow('UUID');
         });
 

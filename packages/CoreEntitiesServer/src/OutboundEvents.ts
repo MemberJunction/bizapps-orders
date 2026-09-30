@@ -1,5 +1,5 @@
 /**
- * @fileoverview The outbound hook (#293): tell registered consumers when an order confirms or an
+ * @fileoverview The outbound hook (#293): tell registered consumers when a sale confirms or an
  * entitlement grant changes.
  *
  * TWO HALVES, ON EITHER SIDE OF THE COMMIT.
@@ -11,8 +11,8 @@
  *      Pending rows with an atomic lease, calls each consumer, and records Delivered, or backs off
  *      and tries again until the row's deadline, when it is DeadLettered.
  *
- * Delivery is at least once: a consumer can see the same event twice (a lease that ran out while it
- * was still working, a crash between its success and our write). The event id is stable, so a
+ * Delivery is at least once: a consumer can see the same event twice (a timed-out call that later
+ * succeeded, a crash between its success and our write). The event id is stable, so a
  * consumer dedupes on it.
  *
  * With no consumer registered for an event type, nothing is recorded, and Orders behaves as before.
@@ -33,6 +33,11 @@ export const OUTBOUND_DELIVERY_DEADLINE_MS = 24 * 60 * 60 * 1000;
 export const OUTBOUND_RETRY_MINUTES: ReadonlyArray<number> = [1, 5, 15, 60, 240];
 /** How long a pass holds a claimed row before another pass may take it. */
 export const OUTBOUND_LEASE_MS = 5 * 60 * 1000;
+/**
+ * How long one `Deliver` call may take before it counts as a failed attempt. Well under the lease,
+ * so a hung consumer costs one attempt, not the pass.
+ */
+export const OUTBOUND_DELIVER_TIMEOUT_MS = 30 * 1000;
 const MAX_ERROR_LENGTH = 2000;
 
 /** What a consumer receives. `EventID` is stable across retries and is what a consumer dedupes on. */
@@ -51,7 +56,8 @@ export interface OutboundEventEnvelope {
  * key is recorded on each delivery row; for one key, the highest-priority registration wins.
  *
  * `Deliver` resolves when the consumer has accepted the event and throws when it has not; a throw is
- * retried. It may be called more than once for the same `EventID`.
+ * retried. A call still running after `OUTBOUND_DELIVER_TIMEOUT_MS` is also retried. It may be called
+ * more than once for the same `EventID`.
  */
 export class OrdersOutboundConsumer {
     /** The event types this consumer wants. Deliveries are created only for these. */
@@ -169,6 +175,8 @@ export interface DispatchOutboundOutput {
     Delivered: number;
     Retrying: number;
     DeadLettered: number;
+    /** Claimed rows handed back unsent because the pass ran short of lease; the next pass takes them. */
+    Released?: number;
 }
 
 interface ClaimedRow {
@@ -191,20 +199,26 @@ export async function DispatchOutboundDeliveries(
         : '';
 
     // THE CLAIM IS ONE STATEMENT, so two passes (the minute job and a checkout's kick) can never
-    // both take a row: whichever UPDATE runs second finds the lease already set. OUTPUT goes INTO a
-    // table variable because the table carries CodeGen's update trigger, and SQL Server refuses a
-    // bare OUTPUT on a table with triggers.
+    // both take a row: UPDLOCK holds the rows the CTE reads until the update, and READPAST skips rows
+    // another pass is claiming. Oldest due first. OUTPUT goes INTO a table variable because the table
+    // carries CodeGen's update trigger, and SQL Server refuses a bare OUTPUT on a table with triggers.
     const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
+    // Taken before the claim, so it is never later than the lease the database sets.
+    const leaseEnds = Date.now() + OUTBOUND_LEASE_MS;
     const claimed = (await db.ExecuteSQL(`
         DECLARE @claimed TABLE (ID UNIQUEIDENTIFIER NOT NULL);
-        UPDATE TOP (${maxCount}) d
-           SET d.LeaseUntil = DATEADD(MILLISECOND, ${OUTBOUND_LEASE_MS}, SYSDATETIMEOFFSET())
-        OUTPUT inserted.ID INTO @claimed (ID)
-          FROM __mj_BizAppsOrders.OutboundDelivery d
-         WHERE d.Status = 'Pending'
-           AND d.NextAttemptAt <= SYSDATETIMEOFFSET()
-           AND (d.LeaseUntil IS NULL OR d.LeaseUntil < SYSDATETIMEOFFSET())
-           ${orderFilter};
+        WITH due AS (
+            SELECT TOP (${maxCount}) d.ID, d.LeaseUntil
+              FROM __mj_BizAppsOrders.OutboundDelivery d WITH (ROWLOCK, UPDLOCK, READPAST)
+             WHERE d.Status = 'Pending'
+               AND d.NextAttemptAt <= SYSDATETIMEOFFSET()
+               AND (d.LeaseUntil IS NULL OR d.LeaseUntil < SYSDATETIMEOFFSET())
+               ${orderFilter}
+             ORDER BY d.NextAttemptAt
+        )
+        UPDATE due
+           SET LeaseUntil = DATEADD(MILLISECOND, ${OUTBOUND_LEASE_MS}, SYSDATETIMEOFFSET())
+        OUTPUT inserted.ID INTO @claimed (ID);
         SELECT ID FROM @claimed;
     `)) as ClaimedRow[] | null;
     const rows = Array.isArray(claimed) ? claimed : [];
@@ -215,7 +229,14 @@ export async function DispatchOutboundDeliveries(
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const events = new Map<string, mjBizAppsOrdersOutboundEventEntity>();
 
-    for (const row of rows) {
+    for (let i = 0; i < rows.length; i++) {
+        // A row whose Deliver could still be running when the lease ends is handed back instead, so
+        // another pass never sends a row this one is still sending.
+        if (Date.now() + OUTBOUND_DELIVER_TIMEOUT_MS >= leaseEnds) {
+            out.Released = await releaseClaims(db, rows.slice(i));
+            break;
+        }
+        const row = rows[i];
         const delivery = await provider.GetEntityObject<mjBizAppsOrdersOutboundDeliveryEntity>(OUTBOUND_DELIVERY_ENTITY, user);
         if (!(await delivery.Load(row.ID))) continue;
 
@@ -236,7 +257,7 @@ export async function DispatchOutboundDeliveries(
         else if (!consumer) failure = `No consumer is registered under '${delivery.ConsumerKey}'.`;
         else {
             try {
-                await consumer.Deliver(EnvelopeFor(event));
+                await deliverWithTimeout(consumer, EnvelopeFor(event));
             } catch (err) {
                 failure = err instanceof Error ? err.message : String(err);
             }
@@ -268,6 +289,33 @@ export async function DispatchOutboundDeliveries(
     }
     if (!out.Success) out.Message = 'Some delivery results could not be recorded; those rows are retried when their lease runs out.';
     return out;
+}
+
+/** `consumer.Deliver`, failed when it has not settled within `OUTBOUND_DELIVER_TIMEOUT_MS`. */
+async function deliverWithTimeout(consumer: OrdersOutboundConsumer, event: OutboundEventEnvelope): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+            () => reject(new Error(`${consumer.constructor.name} did not respond within ${OUTBOUND_DELIVER_TIMEOUT_MS / 1000} seconds.`)),
+            OUTBOUND_DELIVER_TIMEOUT_MS
+        );
+    });
+    try {
+        await Promise.race([consumer.Deliver(event), timeout]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+/** Clear the lease on claimed rows this pass will not send, so the next pass can take them now. */
+async function releaseClaims(db: { ExecuteSQL(sql: string): Promise<unknown> }, rows: ClaimedRow[]): Promise<number> {
+    const ids = rows.map((r) => `'${RequireUUID(r.ID, 'OutboundDeliveryID')}'`).join(', ');
+    await db.ExecuteSQL(`
+        UPDATE __mj_BizAppsOrders.OutboundDelivery
+           SET LeaseUntil = NULL
+         WHERE ID IN (${ids}) AND Status = 'Pending';
+    `);
+    return rows.length;
 }
 
 /** The envelope a consumer receives for an event row. */

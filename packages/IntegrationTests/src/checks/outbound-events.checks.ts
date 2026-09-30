@@ -3,7 +3,8 @@
  *
  * WHAT THE UNIT TESTS CANNOT SHOW. That the event rows really are written inside the booking
  * transaction (a failed confirm leaves none), that the grant hook's own transaction nests inside
- * booking's, and that the dispatcher's single-statement claim takes a row once and only once.
+ * booking's, that the dispatcher's single-statement claim takes a row once and only once, and that
+ * only a sale records OrderConfirmed.
  *
  * A TEST CONSUMER, switched on only while this bundle runs. Its registration is global, so it
  * answers "no event types" unless this bundle's Setup has turned it on; every other bundle books
@@ -272,6 +273,36 @@ export const OutboundEventsChecks: NamedCheck[] = [
         Assert(!doomed.Saved, "the order must fail to book");
         const eventsAfter = Number((await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OutboundEvent`)).N);
         AssertEqual(eventsAfter, eventsBefore, "no event, and so no delivery, survives a rolled-back confirm");
+      }),
+  },
+  {
+    Id: "outbound-events.OB6",
+    Name: "OB6: a return records no OrderConfirmed; its revocations reach consumers as GrantStatusChanged",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        resetProbe();
+        const f = Fx();
+        const saleID = await buyWidget(ctx);
+        const before = (await eventsFor(ctx, saleID)).length;
+        const line = await TxOne<{ ID: string }>(ctx,
+          `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${saleID}'`);
+
+        const ret = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderType: "Return",
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: -1, ReversesOrderLineID: line.ID }],
+        });
+        Assert(ret.Saved, `the return must confirm: ${ret.Message}`);
+
+        AssertEqual((await eventsFor(ctx, ret.Order.ID as string)).length, 0, "a return is not a purchase, so it records no OrderConfirmed");
+        const revoked = (await eventsFor(ctx, saleID))
+          .slice(before)
+          .filter((e) => e.EventType === "GrantStatusChanged")
+          .map((e) => JSON.parse(e.PayloadJSON));
+        AssertEqual(revoked.length, 2, `each of the sale's two grants records its revocation (${JSON.stringify(revoked)})`);
+        Assert(revoked.every((p) => p.ToStatus === "Revoked"), "as a move to Revoked");
       }),
   },
 ];

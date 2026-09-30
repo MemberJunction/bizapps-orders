@@ -682,7 +682,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // THE OUTBOUND EVENT, LAST AND INSIDE (#293). Written in this transaction so it exists
             // exactly when the confirm commits; sent after it, by the dispatcher. First confirm only:
             // `booking` is false on every later save of a confirmed order, so a re-save never fires.
-            if (booking) await this.recordOrderConfirmedEvent(options);
+            // Sales only, renewals included: a return, cancellation, amendment or credit is not a
+            // purchase, and its effect on access reaches consumers as GrantStatusChanged.
+            if (booking && this.OrderType === 'Sale') await this.recordOrderConfirmedEvent(options);
 
             await dbProvider.CommitTransaction();
             return true;
