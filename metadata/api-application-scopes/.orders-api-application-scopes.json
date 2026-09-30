@@ -1,0 +1,41 @@
+[
+  {
+    "_comments": [
+      "THE MJAPI CEILING FOR THE ORDERS SCOPES (#347). An API key's scopes are intersected with what its application",
+      "allows, so a scope with no application row is refused on every key. Include on every resource (`*`), as MJ",
+      "grants its own scopes; which keys carry them is the host's choice."
+    ],
+    "fields": {
+      "ApplicationID": "@lookup:MJ: API Applications.Name=MJAPI",
+      "ScopeID": "@lookup:MJ: API Scopes.FullPath=orders:entitlement-check",
+      "ResourcePattern": "*",
+      "PatternType": "Include",
+      "IsDeny": false,
+      "Priority": 0
+    },
+    "primaryKey": {
+      "ID": "6AAC64F9-A00C-4F9F-9F32-C9DD3230A69D"
+    },
+    "sync": {
+      "lastModified": "2026-09-29T17:25:54.758Z",
+      "checksum": "d1d4bf3ffbe5951a205e71ae89be6698f639b7f5482d3e0d14ec9e4706616b28"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: API Applications.Name=MJAPI",
+      "ScopeID": "@lookup:MJ: API Scopes.FullPath=orders:entitlement-read",
+      "ResourcePattern": "*",
+      "PatternType": "Include",
+      "IsDeny": false,
+      "Priority": 0
+    },
+    "primaryKey": {
+      "ID": "ACA9A012-0AC5-432C-A8B9-C387CA25813C"
+    },
+    "sync": {
+      "lastModified": "2026-09-29T17:25:54.771Z",
+      "checksum": "41fb1cbfe3797884264e132afa4d1c939d42e91ed622dd1d37bcee19bda57fcb"
+    }
+  }
+]

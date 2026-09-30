@@ -493,6 +493,24 @@ The Angular `<mj-checkout-widget>` remains the embeddable control for sites that
 
 When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@mj-biz-apps/orders-server`), MJ auto-loads `OrdersCheckoutEdge` from the package's `MJ_SERVER_EXTENSIONS` export — the host `mj.config.cjs` does not need to copy the extension block. Host `serverExtensions[]` is still the override layer (`Enabled`, `RootPath`, `Settings` such as `ServiceUserEmail`).
 
+### DOM events for the host page
+
+`<mj-orders-checkout>` dispatches `CustomEvent`s that bubble and are `composed`, so a host page, Google Tag Manager or GA4 can listen on the element or on `document`:
+
+| Event | When | `detail` |
+|---|---|---|
+| `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `ERROR` | `{ state }` |
+| `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units, `currency` upper-case, `coupon` the applied promotion code or `null` |
+| `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
+
+No detail carries the buyer's e-mail, name or any other personal data: the events reach every script on the host page. `productName` is the widget's `productName`, which `/initialize` fills from the product's name, or else its `title`.
+
+```javascript
+document.addEventListener('checkout-complete', (e) => {
+    window.dataLayer?.push({ event: 'purchase', value: e.detail.amount, currency: e.detail.currency, coupon: e.detail.coupon });
+});
+```
+
 ### 3. Headless & Custom Frontend Integration — the anonymous checkout edge
 
 The app ships its own public REST edge: **`CheckoutServerExtension`** (`@mj-biz-apps/orders-server`, DriverClass `OrdersCheckoutEdge`), mounted pre-auth via Open App `MJ_SERVER_EXTENSIONS` (host `serverExtensions[]` overlays). Default root path `/checkout`:
