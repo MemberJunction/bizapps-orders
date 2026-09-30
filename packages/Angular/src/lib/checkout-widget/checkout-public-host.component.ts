@@ -293,6 +293,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 clientSessionKey: this.sessionKey,
                 email: event.email,
                 lines: [line],
+                answers: event.answers,
                 ...(this.attributionSource
                     ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
                     : {}),

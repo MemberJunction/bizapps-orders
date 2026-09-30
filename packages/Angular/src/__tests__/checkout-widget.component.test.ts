@@ -238,6 +238,49 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(secondSessionKey).toBe(firstSessionKey);
         });
 
+        describe('questions (#322)', () => {
+            const QUESTIONS = [
+                {
+                    key: 'source',
+                    label: 'How did you hear about us?',
+                    type: 'select' as const,
+                    options: ['Search', 'Other'],
+                    required: true,
+                    otherOptionKey: 'Other',
+                },
+            ];
+            const fillBuyer = () => {
+                component.config = { unitPrice: 0, questions: QUESTIONS } as CheckoutWidgetConfig;
+                component.email.set('jane@example.com');
+                component.firstName.set('Jane');
+                component.lastName.set('Doe');
+            };
+
+            it('keeps Pay disabled until a required question is answered', () => {
+                fillBuyer();
+                expect(component.isFormValid()).toBe(false);
+                component.updateAnswer('source', { Value: 'Search' });
+                expect(component.isFormValid()).toBe(true);
+            });
+
+            it('requires the text answer when Other is chosen', () => {
+                fillBuyer();
+                component.updateAnswer('source', { Value: 'Other' });
+                expect(component.isOtherChosen(QUESTIONS[0])).toBe(true);
+                expect(component.isFormValid()).toBe(false);
+                component.updateAnswer('source', { OtherText: 'A podcast' });
+                expect(component.isFormValid()).toBe(true);
+            });
+
+            it('sends the answers with the submission', () => {
+                fillBuyer();
+                component.updateAnswer('source', { Value: 'Search' });
+                const emitSpy = vi.spyOn(component.submitted, 'emit');
+                component.handleSubmit();
+                expect(emitSpy.mock.calls[0][0].answers).toEqual({ source: { Value: 'Search' } });
+            });
+        });
+
         it('generates a unique per-instance widgetInstanceId', () => {
             const comp1 = new MJCheckoutWidgetComponent();
             const comp2 = new MJCheckoutWidgetComponent();
