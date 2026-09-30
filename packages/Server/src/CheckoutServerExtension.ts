@@ -61,7 +61,14 @@ import {
     type ExtensionInitResult,
     type ServerExtensionConfig,
 } from '@memberjunction/server-extensions-core';
-import { CheckoutSessionService, EscapeText, type CheckoutLineInput } from '@mj-biz-apps/orders-core-entities-server';
+import {
+    CheckoutSessionService,
+    EnsureCheckoutAccount,
+    EscapeText,
+    HasCheckoutAccountStep,
+    SetCheckoutAccountPassword,
+    type CheckoutLineInput,
+} from '@mj-biz-apps/orders-core-entities-server';
 import type { CheckoutAnswersInput, CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -209,6 +216,8 @@ export class CheckoutServerExtension extends BaseServerExtension {
             [`${root}/draft`, (req, res) => this.handleDraft(req, res)],
             [`${root}/payment-intent`, (req, res) => this.handlePaymentIntent(req, res)],
             [`${root}/complete`, (req, res) => this.handleComplete(req, res)],
+            [`${root}/account`, (req, res) => this.handleAccount(req, res)],
+            [`${root}/account/password`, (req, res) => this.handleAccountPassword(req, res)],
         ];
 
         for (const [path, handler] of routes) {
@@ -224,7 +233,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const hostPath = `${root}/:slug`;
         app.get(hostPath, (req: Request, res: Response) => this.handleGetHost(req, res));
 
-        LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete}`);
+        LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete,account,account/password}`);
         return {
             Success: true,
             Message: 'Orders anonymous checkout edge mounted (public GET host, rate-limited POSTs, origin-gated, optional Turnstile).',
@@ -579,7 +588,39 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
         const result = await CheckoutSessionService.CompleteCheckout(sessionId, clientSessionKey, user);
-        res.status(result.Success ? 200 : 409).json(result);
+        if (!result.Success) {
+            res.status(409).json(result);
+            return;
+        }
+        // The confirmation is answered without waiting on the host's identity provider. When a host
+        // registered an account step, the widget asks for it next through /checkout/account.
+        res.status(200).json(HasCheckoutAccountStep() ? { ...result, AccountStep: true } : result);
+    }
+
+    /** The account step's outcome for a completed checkout, asking the host again only after a failure. */
+    private async handleAccount(req: Request, res: Response): Promise<void> {
+        const user = this.resolveActingUser();
+        if (!user) {
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            return;
+        }
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+        const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const result = await EnsureCheckoutAccount(sessionId, clientSessionKey, user);
+        res.status(result.Success ? 200 : 400).json(result);
+    }
+
+    /** Sets the password of the account this checkout created. The password is passed on, never logged. */
+    private async handleAccountPassword(req: Request, res: Response): Promise<void> {
+        const user = this.resolveActingUser();
+        if (!user) {
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            return;
+        }
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+        const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const result = await SetCheckoutAccountPassword(sessionId, clientSessionKey, req.body?.password, user);
+        res.status(result.Success ? 200 : 400).json(result);
     }
 
     // ─── Infrastructure ──────────────────────────────────────────────────────
