@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609291200 — Concession guardrails: value a concession however it is delivered
+-- V202609301400 — Concession guardrails: value a concession however it is delivered
 -- (bc-aidp-next-golive#222)
 -- =============================================================================
 -- The sales guardrails valued a concession only as a percentage off price. A
