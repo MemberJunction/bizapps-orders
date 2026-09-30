@@ -65,6 +65,7 @@ import {
     CheckoutSessionService,
     EnsureCheckoutAccount,
     EscapeText,
+    HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
     type CheckoutLineInput,
 } from '@mj-biz-apps/orders-core-entities-server';
@@ -589,15 +590,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
             res.status(409).json(result);
             return;
         }
-        // The account step runs after the order is confirmed and never changes that outcome: a
-        // step that cannot answer is reported as the step's own Failed, not as a failed checkout.
-        let account: Awaited<ReturnType<typeof EnsureCheckoutAccount>>['Account'];
-        try {
-            account = (await EnsureCheckoutAccount(sessionId, clientSessionKey, user)).Account;
-        } catch (err) {
-            LogError(`[OrdersCheckoutEdge] account step failed after session ${sessionId} completed: ${err instanceof Error ? err.message : String(err)}`);
-        }
-        res.status(200).json(account ? { ...result, Account: account } : result);
+        // The confirmation is answered without waiting on the host's identity provider. When a host
+        // registered an account step, the widget asks for it next through /checkout/account.
+        res.status(200).json(HasCheckoutAccountStep() ? { ...result, AccountStep: true } : result);
     }
 
     /** The account step's outcome for a completed checkout, asking the host again only after a failure. */

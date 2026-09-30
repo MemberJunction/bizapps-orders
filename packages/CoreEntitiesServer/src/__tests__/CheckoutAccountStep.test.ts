@@ -27,7 +27,8 @@ const mocks = vi.hoisted(() => {
         InnerLoad: vi.fn().mockResolvedValue(true),
         Get: (name: string) => fields[name],
     });
-    return { session, record, sessionExists: true };
+    // What a Load reads back: only what a successful Save wrote.
+    return { session, record, sessionExists: true, persisted: null as string | null };
 });
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -70,7 +71,9 @@ class TestAccountStep extends CheckoutAccountStep {
     }
 }
 
-const stored = () => JSON.parse(mocks.session.MetadataJSON ?? '{}').Account;
+const stored = () => JSON.parse(mocks.persisted ?? '{}').Account;
+/** A host call that never answers. */
+const never = <T>() => new Promise<T>(() => undefined);
 
 describe('checkout account step', () => {
     let createInstance: ReturnType<typeof vi.spyOn>;
@@ -84,8 +87,15 @@ describe('checkout account step', () => {
             Email: 'buyer@example.com',
             MetadataJSON: JSON.stringify({ Lines: [{ ProductID: 'p', Quantity: 1 }] }),
         });
-        mocks.session.Load.mockReset().mockImplementation(() => Promise.resolve(mocks.sessionExists));
-        mocks.session.Save.mockReset().mockResolvedValue(true);
+        mocks.persisted = mocks.session.MetadataJSON;
+        mocks.session.Load.mockReset().mockImplementation(() => {
+            mocks.session.MetadataJSON = mocks.persisted;
+            return Promise.resolve(mocks.sessionExists);
+        });
+        mocks.session.Save.mockReset().mockImplementation(() => {
+            mocks.persisted = mocks.session.MetadataJSON;
+            return Promise.resolve(true);
+        });
         mocks.sessionExists = true;
         host.ensure.mockReset().mockResolvedValue({ Outcome: 'Created' });
         host.setPassword.mockReset().mockResolvedValue({ Success: true });
@@ -119,7 +129,7 @@ describe('checkout account step', () => {
                     SessionCreatedAt: new Date('2026-09-29T12:00:00Z'),
                 })
             );
-            expect(res.Account).toEqual({ Outcome: 'Created', Message: undefined, CanSetPassword: true });
+            expect(res.Account).toEqual({ Outcome: 'Created', Message: undefined, CanSetPassword: true, VerificationRequired: false });
             expect(stored()).toMatchObject({ Outcome: 'Created', PasswordSet: false, PasswordAttempts: 0 });
             // What the checkout stored before is kept.
             expect(JSON.parse(mocks.session.MetadataJSON ?? '{}').Lines).toEqual([{ ProductID: 'p', Quantity: 1 }]);
@@ -128,7 +138,41 @@ describe('checkout account step', () => {
         it('reports an existing account with the host message and no password', async () => {
             host.ensure.mockResolvedValue({ Outcome: 'Exists', Message: 'Sign in on our website.' });
             const res = await EnsureCheckoutAccount(SID, KEY);
-            expect(res.Account).toEqual({ Outcome: 'Exists', Message: 'Sign in on our website.', CanSetPassword: false });
+            expect(res.Account).toEqual({ Outcome: 'Exists', Message: 'Sign in on our website.', CanSetPassword: false, VerificationRequired: false });
+        });
+
+        it('records that the host will send a verification link, for a created account only', async () => {
+            host.ensure.mockResolvedValue({ Outcome: 'Created', VerificationRequired: true });
+            expect((await EnsureCheckoutAccount(SID, KEY)).Account?.VerificationRequired).toBe(true);
+            expect(stored().VerificationRequired).toBe(true);
+            expect((await EnsureCheckoutAccount(SID, KEY)).Account?.VerificationRequired).toBe(true);
+        });
+
+        it('ignores a verification flag on an existing account', async () => {
+            host.ensure.mockResolvedValue({ Outcome: 'Exists', VerificationRequired: true });
+            expect((await EnsureCheckoutAccount(SID, KEY)).Account?.VerificationRequired).toBe(false);
+        });
+
+        it('records a host that does not answer in time as Failed, and asks again later', async () => {
+            class SlowStep extends TestAccountStep {
+                public override get HostTimeoutSeconds(): number {
+                    return 0.02;
+                }
+            }
+            createInstance.mockReturnValue(new SlowStep());
+            host.ensure.mockImplementationOnce(() => never());
+            const res = await EnsureCheckoutAccount(SID, KEY);
+            expect(res.Success).toBe(true);
+            expect(res.Account?.Outcome).toBe('Failed');
+            expect((await EnsureCheckoutAccount(SID, KEY)).Account?.Outcome).toBe('Created');
+            expect(host.ensure).toHaveBeenCalledTimes(2);
+        });
+
+        it('asks the host once when two calls for the same session arrive together', async () => {
+            const [a, b] = await Promise.all([EnsureCheckoutAccount(SID, KEY), EnsureCheckoutAccount(SID, KEY)]);
+            expect(host.ensure).toHaveBeenCalledTimes(1);
+            expect(a.Account?.Outcome).toBe('Created');
+            expect(b.Account?.Outcome).toBe('Created');
         });
 
         it('records a host that throws as Failed, with a message for the buyer', async () => {
@@ -305,6 +349,57 @@ describe('checkout account step', () => {
             } finally {
                 vi.useRealTimers();
             }
+        });
+
+        it('passes one password when two arrive together', async () => {
+            await EnsureCheckoutAccount(SID, KEY);
+            const [a, b] = await Promise.all([
+                SetCheckoutAccountPassword(SID, KEY, 'first password'),
+                SetCheckoutAccountPassword(SID, KEY, 'second password'),
+            ]);
+            expect(host.setPassword).toHaveBeenCalledTimes(1);
+            expect([a.Success, b.Success].sort()).toEqual([false, true]);
+        });
+
+        it('does not pass the password on when the attempt cannot be recorded first', async () => {
+            await EnsureCheckoutAccount(SID, KEY);
+            mocks.session.Save.mockResolvedValueOnce(false);
+            const res = await SetCheckoutAccountPassword(SID, KEY, 'correct horse battery');
+            expect(res.Success).toBe(false);
+            expect(res.Account?.CanSetPassword).toBe(true);
+            expect(host.setPassword).not.toHaveBeenCalled();
+        });
+
+        it('accepts no second password when the host set one but the answer could not be recorded', async () => {
+            await EnsureCheckoutAccount(SID, KEY);
+            mocks.session.Save.mockImplementationOnce(() => {
+                mocks.persisted = mocks.session.MetadataJSON;
+                return Promise.resolve(true);
+            }).mockResolvedValueOnce(false);
+            expect((await SetCheckoutAccountPassword(SID, KEY, 'correct horse battery')).Success).toBe(true);
+            const second = await SetCheckoutAccountPassword(SID, KEY, 'another one');
+            expect(second.Success).toBe(false);
+            expect(second.ErrorMessage).toContain('could not confirm');
+            expect(second.Account?.CanSetPassword).toBe(false);
+            expect(host.setPassword).toHaveBeenCalledTimes(1);
+        });
+
+        it('closes the form when the host does not answer in time, since the password may be set', async () => {
+            class SlowStep extends TestAccountStep {
+                public override get HostTimeoutSeconds(): number {
+                    return 0.02;
+                }
+            }
+            createInstance.mockReturnValue(new SlowStep());
+            await EnsureCheckoutAccount(SID, KEY);
+            host.setPassword.mockImplementationOnce(() => never());
+            const res = await SetCheckoutAccountPassword(SID, KEY, 'correct horse battery');
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('could not confirm');
+            expect(res.Account?.CanSetPassword).toBe(false);
+            expect((await SetCheckoutAccountPassword(SID, KEY, 'another one')).Success).toBe(false);
+            expect(host.setPassword).toHaveBeenCalledTimes(1);
+            expect(stored().PasswordAttempts).toBe(1);
         });
 
         it('with no step registered, refuses', async () => {

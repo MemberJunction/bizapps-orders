@@ -3,9 +3,11 @@
  *
  * Some hosts need the buyer to leave checkout with a working login on the host's own identity
  * provider. Orders does not know that provider, so it offers a seam: a `CheckoutAccountStep`
- * subclass registered through the ClassFactory. After the order is confirmed, the host is asked to
- * ensure an account for the buyer, and answers one of:
- *   - `Created` — a new account; the buyer may set its password in the widget, once.
+ * subclass registered through the ClassFactory. Once `/complete` has confirmed the order, the widget
+ * asks for the account step through `/checkout/account`, and the host is asked to ensure an account
+ * for the buyer. It answers one of:
+ *   - `Created` — a new account; the buyer may set its password in the widget, once. The account
+ *     must not sign in until the host has verified the buyer's e-mail (see the class doc).
  *   - `Exists`  — an account was already there; it is never touched, and the buyer is told to sign in.
  *   - `Failed`  — the host could not answer; the buyer is shown the host's message.
  *   - `NotApplicable` — this checkout is not one the host makes accounts for (another company's
@@ -14,8 +16,8 @@
  * With nothing registered the ClassFactory returns this base class itself, which means the step is
  * off: the checkout behaves exactly as it did before the step existed.
  *
- * The outcome is kept in the session's MetadataJSON, so a later call (the buyer returning after a
- * webhook confirmed the order, or retrying after `Failed`) gets the same answer, and the password
+ * The outcome is kept in the session's MetadataJSON, so a later call (the buyer reloading the page,
+ * or retrying after `Failed`) gets the same answer, and the password
  * call is only honoured for a session whose account this checkout created. The password itself is
  * handed straight to the host and never stored or logged.
  */
@@ -34,6 +36,8 @@ export const MAX_CHECKOUT_PASSWORD_ATTEMPTS = 5;
 export const MAX_CHECKOUT_PASSWORD_LENGTH = 256;
 /** Default minutes after the account is created during which the buyer may set its password here. */
 export const DEFAULT_CHECKOUT_PASSWORD_WINDOW_MINUTES = 5;
+/** Default seconds Orders waits for the host before treating a call as unanswered. */
+export const DEFAULT_CHECKOUT_ACCOUNT_HOST_TIMEOUT_SECONDS = 10;
 
 /** What the buyer can be shown. */
 export type CheckoutAccountOutcome = 'Created' | 'Exists' | 'Failed';
@@ -63,6 +67,11 @@ export interface CheckoutAccountResult {
     Outcome: CheckoutAccountHostOutcome;
     /** Shown to the buyer. Worded for the buyer, never containing secrets. */
     Message?: string;
+    /**
+     * With `Created`: the host has sent, or will send, a verification e-mail, and the widget tells
+     * the buyer to use it before signing in.
+     */
+    VerificationRequired?: boolean;
 }
 
 /** The host's answer to {@link CheckoutAccountStep.SetPassword}. */
@@ -78,9 +87,17 @@ export interface CheckoutPasswordResult {
  * registration wins.
  *
  * `SetPassword` is only called for a session whose `EnsureAccount` answered `Created`, within
- * `PasswordWindowMinutes` of that answer. A host must
- * still refuse to set a password on an account it did not create for this purchase: Orders cannot
- * see the identity provider, so that rule is the host's to hold.
+ * `PasswordWindowMinutes` of that answer. Orders cannot see the identity provider, and the checkout
+ * never proves the buyer owns the e-mail, so these rules are the host's to hold:
+ *   - Never change an account the checkout did not create for this purchase, in either method.
+ *   - An account answered `Created` must not sign in until the host has verified the buyer's e-mail,
+ *     for example with a link sent to it. Anyone can check out with someone else's e-mail and set
+ *     the password here; verification is what keeps that from becoming a working login.
+ *   - Until the e-mail is verified, do not link the new login to `PersonID`. That Person was
+ *     matched by e-mail alone, and may be an existing member with orders and memberships.
+ *   - When `EnsureAccount` finds an account it created earlier for the same `SessionID`, answer
+ *     `Created`, not `Exists`. A call Orders gave up on (`HostTimeoutSeconds`) is recorded as
+ *     `Failed` and asked again, and the host may have finished creating the account meanwhile.
  */
 export class CheckoutAccountStep {
     /**
@@ -89,6 +106,15 @@ export class CheckoutAccountStep {
      */
     public get PasswordWindowMinutes(): number {
         return DEFAULT_CHECKOUT_PASSWORD_WINDOW_MINUTES;
+    }
+
+    /**
+     * How long Orders waits for `EnsureAccount` or `SetPassword`. An `EnsureAccount` that runs over
+     * is recorded as `Failed`; a `SetPassword` that runs over closes the password form, since the
+     * password may have been set.
+     */
+    public get HostTimeoutSeconds(): number {
+        return DEFAULT_CHECKOUT_ACCOUNT_HOST_TIMEOUT_SECONDS;
     }
 
     public async EnsureAccount(_context: CheckoutAccountContext): Promise<CheckoutAccountResult> {
@@ -109,13 +135,24 @@ export function ResolveCheckoutAccountStep(): CheckoutAccountStep | null {
     return step;
 }
 
+/** True when a host registered an account step, so the widget should ask for it after `/complete`. */
+export function HasCheckoutAccountStep(): boolean {
+    return ResolveCheckoutAccountStep() !== null;
+}
+
 /** What the session remembers about its account step. */
 interface StoredAccountState {
     Outcome: CheckoutAccountHostOutcome;
     Message?: string;
     DecidedAt: string;
+    VerificationRequired?: boolean;
     PasswordSet?: boolean;
     PasswordAttempts?: number;
+    /**
+     * Set before the password is passed to the host, cleared once its answer is recorded. While it is
+     * set no other password is accepted, so a lost answer can never let a second one through.
+     */
+    PasswordPendingSince?: string;
 }
 
 /** The account step as the widget receives it. */
@@ -124,6 +161,8 @@ export interface CheckoutAccountStatus {
     Message?: string;
     /** True while the buyer may still set a password: the outcome was `Created` and none is set yet. */
     CanSetPassword: boolean;
+    /** True when the host will e-mail the buyer a link to verify the account before it signs in. */
+    VerificationRequired: boolean;
 }
 
 export interface CheckoutAccountResponse {
@@ -133,7 +172,41 @@ export interface CheckoutAccountResponse {
     Account?: CheckoutAccountStatus;
 }
 
-const GENERIC_FAILURE = 'We could not set up your account right now. You can sign in or reset your password later with the e-mail you used here.';
+const GENERIC_FAILURE = 'We could not set up your account just now. Your order is confirmed. Please try again in a moment.';
+
+/** Calls on the same session run one at a time in this process, so a retry cannot overlap a call still in progress. */
+const sessionQueues = new Map<string, Promise<unknown>>();
+
+async function oneAtATime<T>(sessionID: string, work: () => Promise<T>): Promise<T> {
+    const key = sessionID.toLowerCase();
+    const previous = sessionQueues.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(work);
+    sessionQueues.set(key, current);
+    try {
+        return await current;
+    } finally {
+        if (sessionQueues.get(key) === current) sessionQueues.delete(key);
+    }
+}
+
+const TIMED_OUT = Symbol('timed out');
+
+/** The host's answer, or {@link TIMED_OUT} when it does not answer within the step's timeout. */
+async function withHostTimeout<T>(step: CheckoutAccountStep, call: () => Promise<T>): Promise<T | typeof TIMED_OUT> {
+    const seconds = step.HostTimeoutSeconds;
+    const ms = (Number.isFinite(seconds) && seconds > 0 ? seconds : DEFAULT_CHECKOUT_ACCOUNT_HOST_TIMEOUT_SECONDS) * 1000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([
+            call(),
+            new Promise<typeof TIMED_OUT>((resolve) => {
+                timer = setTimeout(() => resolve(TIMED_OUT), ms);
+            }),
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 function keyMatches(session: mjBizAppsOrdersCheckoutSessionEntity, presentedKey: string | null | undefined): boolean {
     const stored = session.ClientSessionKey ?? '';
@@ -159,11 +232,13 @@ function readAccountState(session: mjBizAppsOrdersCheckoutSessionEntity): Stored
     return account && typeof account === 'object' && typeof account.Outcome === 'string' ? account : null;
 }
 
-async function saveAccountState(session: mjBizAppsOrdersCheckoutSessionEntity, state: StoredAccountState): Promise<void> {
+async function saveAccountState(session: mjBizAppsOrdersCheckoutSessionEntity, state: StoredAccountState): Promise<boolean> {
     session.MetadataJSON = JSON.stringify({ ...readMetadata(session), Account: state });
     if (!(await session.Save())) {
         LogError(`[CheckoutAccountStep] could not record the account step on session ${session.ID}: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+        return false;
     }
+    return true;
 }
 
 /** True while `now` is inside the step's password window, counted from when the outcome was decided. */
@@ -181,8 +256,10 @@ function toStatus(state: StoredAccountState & { Outcome: CheckoutAccountOutcome 
         CanSetPassword:
             state.Outcome === 'Created' &&
             !state.PasswordSet &&
+            !state.PasswordPendingSince &&
             (state.PasswordAttempts ?? 0) < MAX_CHECKOUT_PASSWORD_ATTEMPTS &&
             withinPasswordWindow(state, step),
+        VerificationRequired: state.Outcome === 'Created' && state.VerificationRequired === true,
     };
 }
 
@@ -250,7 +327,9 @@ async function buildContext(session: mjBizAppsOrdersCheckoutSessionEntity, conte
  *
  * `Created`, `Exists` and `NotApplicable` are final: asking again returns the recorded answer rather
  * than asking the host, which would now find the account this checkout created and call it
- * existing. Only `Failed` is asked again. `NotApplicable` is answered as if no step were registered. A host step that throws is recorded as `Failed`; it never affects the paid order.
+ * existing. Only `Failed` is asked again. `NotApplicable` is answered as if no step were registered.
+ * A host step that throws, or does not answer within `HostTimeoutSeconds`, is recorded as `Failed`;
+ * it never affects the paid order.
  */
 export async function EnsureCheckoutAccount(
     sessionID: string,
@@ -259,7 +338,15 @@ export async function EnsureCheckoutAccount(
 ): Promise<CheckoutAccountResponse> {
     const step = ResolveCheckoutAccountStep();
     if (!step) return { Success: true };
+    return oneAtATime(sessionID, () => ensureAccount(step, sessionID, clientSessionKey, contextUser));
+}
 
+async function ensureAccount(
+    step: CheckoutAccountStep,
+    sessionID: string,
+    clientSessionKey: string,
+    contextUser?: UserInfo
+): Promise<CheckoutAccountResponse> {
     const loaded = await loadConfirmedSession(sessionID, clientSessionKey, contextUser);
     if ('Refusal' in loaded) return loaded.Refusal;
     const session = loaded.Session;
@@ -277,7 +364,13 @@ export async function EnsureCheckoutAccount(
         result = { Outcome: 'Failed', Message: GENERIC_FAILURE };
     } else {
         try {
-            result = await step.EnsureAccount(context);
+            const answer = await withHostTimeout(step, () => step.EnsureAccount(context));
+            if (answer === TIMED_OUT) {
+                LogError(`[CheckoutAccountStep] ${step.constructor.name}.EnsureAccount did not answer within ${step.HostTimeoutSeconds}s for session ${session.ID}`);
+                result = { Outcome: 'Failed' };
+            } else {
+                result = answer;
+            }
         } catch (err) {
             LogError(`[CheckoutAccountStep] ${step.constructor.name}.EnsureAccount threw for session ${session.ID}: ${err instanceof Error ? err.message : String(err)}`);
             result = { Outcome: 'Failed' };
@@ -294,6 +387,7 @@ export async function EnsureCheckoutAccount(
         Outcome: outcome,
         Message: result?.Message ?? (outcome === 'Failed' ? GENERIC_FAILURE : undefined),
         DecidedAt: new Date().toISOString(),
+        VerificationRequired: outcome === 'Created' && result?.VerificationRequired === true,
         PasswordSet: false,
         PasswordAttempts: 0,
     };
@@ -304,8 +398,13 @@ export async function EnsureCheckoutAccount(
 /**
  * Set the password of the account this checkout created.
  *
- * Refused unless the session's recorded outcome is `Created`, no password has been set yet, the
- * buyer has attempts left, and the step's password window has not closed. A refusal by the host (its password policy) counts as an attempt.
+ * Refused unless the session's recorded outcome is `Created`, no password has been set or is being
+ * set, the buyer has attempts left, and the step's password window has not closed. A refusal by the
+ * host (its password policy) counts as an attempt.
+ *
+ * The attempt is recorded before the password is passed on, and a refusal is returned if that
+ * cannot be saved. So once the host may have set a password, no second one is accepted, even when
+ * its answer is lost or cannot be recorded.
  */
 export async function SetCheckoutAccountPassword(
     sessionID: string,
@@ -315,39 +414,65 @@ export async function SetCheckoutAccountPassword(
 ): Promise<CheckoutAccountResponse> {
     const step = ResolveCheckoutAccountStep();
     if (!step) return { Success: false, ErrorMessage: 'This checkout does not create accounts.' };
+    return oneAtATime(sessionID, () => setPassword(step, sessionID, clientSessionKey, password, contextUser));
+}
 
+const PASSWORD_MAY_BE_SET =
+    'We could not confirm your password was set. Sign in with the e-mail you used, or reset your password if that does not work.';
+
+async function setPassword(
+    step: CheckoutAccountStep,
+    sessionID: string,
+    clientSessionKey: string,
+    password: unknown,
+    contextUser?: UserInfo
+): Promise<CheckoutAccountResponse> {
     const loaded = await loadConfirmedSession(sessionID, clientSessionKey, contextUser);
     if ('Refusal' in loaded) return loaded.Refusal;
     const session = loaded.Session;
 
     const state = buyerFacing(readAccountState(session));
     if (!state || !toStatus(state, step).CanSetPassword) {
-        const expired = state?.Outcome === 'Created' && !state.PasswordSet && !withinPasswordWindow(state, step);
-        return {
-            Success: false,
-            ErrorMessage: expired
-                ? 'The time to set a password here has passed. Reset your password with the e-mail you used to sign in.'
-                : 'A password cannot be set here. Sign in, or reset your password, with the e-mail you used.',
-            Account: state ? toStatus(state, step) : undefined,
-        };
+        const open = state?.Outcome === 'Created' && !state.PasswordSet;
+        const errorMessage =
+            open && state.PasswordPendingSince
+                ? PASSWORD_MAY_BE_SET
+                : open && !withinPasswordWindow(state, step)
+                  ? 'The time to set a password here has passed. Reset your password with the e-mail you used to sign in.'
+                  : 'A password cannot be set here. Sign in, or reset your password, with the e-mail you used.';
+        return { Success: false, ErrorMessage: errorMessage, Account: state ? toStatus(state, step) : undefined };
     }
     if (typeof password !== 'string' || password.length === 0 || password.length > MAX_CHECKOUT_PASSWORD_LENGTH) {
         return { Success: false, ErrorMessage: 'Please enter a password.', Account: toStatus(state, step) };
     }
 
+    const pending: StoredAccountState & { Outcome: CheckoutAccountOutcome } = {
+        ...state,
+        PasswordAttempts: (state.PasswordAttempts ?? 0) + 1,
+        PasswordPendingSince: new Date().toISOString(),
+    };
+    if (!(await saveAccountState(session, pending))) {
+        return { Success: false, ErrorMessage: 'That password could not be set right now. Please try again.', Account: toStatus(state, step) };
+    }
+
     let result: CheckoutPasswordResult;
     try {
-        result = await step.SetPassword({ ...(await buildContext(session, contextUser)), Password: password });
+        const context = await buildContext(session, contextUser);
+        const answer = await withHostTimeout(step, () => step.SetPassword({ ...context, Password: password }));
+        if (answer === TIMED_OUT) {
+            // The host may still set it, so the attempt stays pending and the form closes.
+            LogError(`[CheckoutAccountStep] ${step.constructor.name}.SetPassword did not answer within ${step.HostTimeoutSeconds}s for session ${session.ID}`);
+            return { Success: false, ErrorMessage: PASSWORD_MAY_BE_SET, Account: toStatus(pending, step) };
+        }
+        result = answer;
     } catch (err) {
         LogError(`[CheckoutAccountStep] ${step.constructor.name}.SetPassword threw for session ${session.ID}: ${err instanceof Error ? err.message : String(err)}`);
         result = { Success: false };
     }
 
-    const next: StoredAccountState & { Outcome: CheckoutAccountOutcome } = {
-        ...state,
-        PasswordSet: result?.Success === true,
-        PasswordAttempts: (state.PasswordAttempts ?? 0) + 1,
-    };
+    const { PasswordPendingSince: _answered, ...rest } = pending;
+    const next: StoredAccountState & { Outcome: CheckoutAccountOutcome } = { ...rest, PasswordSet: result?.Success === true };
+    // A save that fails here leaves the attempt pending, which keeps the form closed.
     await saveAccountState(session, next);
     return result?.Success === true
         ? { Success: true, Account: toStatus(next, step) }

@@ -146,3 +146,15 @@
     font-size: 0.95rem;
     line-height: 1.5;
 }
+
+.mj-checkout-account__note {
+    margin: 0 0 0.5rem;
+    color: #475569;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    text-align: center;
+}
+
+.mj-checkout-account--actions {
+    margin-top: 0.75rem;
+}
