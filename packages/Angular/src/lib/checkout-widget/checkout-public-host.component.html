@@ -9,6 +9,51 @@
             @if (orderNumber) {
                 <p class="mj-checkout-success__order">Order {{ orderNumber }}</p>
             }
+            @if (accountLoading) {
+                <p class="mj-checkout-account__msg" role="status">Setting up your account…</p>
+            } @else if (account?.CanSetPassword) {
+                <form class="mj-checkout-account" (submit)="$event.preventDefault(); submitPassword()">
+                    <h2 class="mj-checkout-account__title">Set a password for your account</h2>
+                    @if (verificationNote) {
+                        <p class="mj-checkout-account__note">{{ verificationNote }}</p>
+                    }
+                    <label class="mj-checkout-account__label" for="mj-checkout-password">Password</label>
+                    <input
+                        id="mj-checkout-password"
+                        class="mj-checkout-account__input"
+                        type="password"
+                        autocomplete="new-password"
+                        [value]="password"
+                        (input)="password = $any($event.target).value" />
+                    <label class="mj-checkout-account__label" for="mj-checkout-password-confirm">Confirm password</label>
+                    <input
+                        id="mj-checkout-password-confirm"
+                        class="mj-checkout-account__input"
+                        type="password"
+                        autocomplete="new-password"
+                        [value]="passwordConfirmation"
+                        (input)="passwordConfirmation = $any($event.target).value" />
+                    @if (passwordError) {
+                        <p class="mj-checkout-account__error" role="alert">{{ passwordError }}</p>
+                    }
+                    <button class="mj-checkout-account__submit" type="submit" [disabled]="passwordBusy">
+                        {{ passwordBusy ? 'Saving…' : 'Set password' }}
+                    </button>
+                    <button class="mj-checkout-account__skip" type="button" (click)="skipPassword()" [disabled]="passwordBusy">
+                        Not now
+                    </button>
+                </form>
+            } @else if (accountMessage) {
+                <p class="mj-checkout-account__msg" role="status">{{ accountMessage }}</p>
+                @if (account?.Outcome === 'Failed') {
+                    <div class="mj-checkout-account mj-checkout-account--actions">
+                        <button class="mj-checkout-account__submit" type="button" (click)="retryAccount()">Try again</button>
+                        @if (config?.redirectUrl) {
+                            <button class="mj-checkout-account__skip" type="button" (click)="dismissAccount()">Not now</button>
+                        }
+                    </div>
+                }
+            }
         </div>
     } @else if (!config) {
         <p class="mj-checkout-public__status" role="status">Loading checkout…</p>
