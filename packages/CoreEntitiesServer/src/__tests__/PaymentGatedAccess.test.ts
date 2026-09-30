@@ -13,6 +13,7 @@ import {
     FirstPaymentAmount,
     InitialGrantStatus,
     IsPaymentSuspension,
+    ReadTimeCutoffSuspension,
     ReconcileGrantStatus,
     ResolveAccessOverrideOutcome,
     type OrderPaymentFacts,
@@ -249,6 +250,46 @@ describe('ApplyAccessOverrides', () => {
 
     it('is the payment rule when there is no override', () => {
         expect(ApplyAccessOverrides(pastDue, [], '2026-10-01')).toEqual(pastDue);
+    });
+});
+
+describe('ReadTimeCutoffSuspension — the cutoff a read applies before the nightly job (#287)', () => {
+    const active = { Status: 'Active', GrantTimingApplied: 'OnFirstPayment' } as const;
+    const pastDue = { Status: 'Suspended', Reason: 'PastDue' } as const;
+    const defer = (through: string) => ({ OverrideType: 'DeferCutoff', EffectiveThrough: through }) as const;
+    const day = '2026-10-01';
+
+    it('suspends an Active renewal on the cutoff day, not the day before', () => {
+        expect(ReadTimeCutoffSuspension(active, true, order({ DaysPastDue: 14 }), 14, [], day)).toEqual(pastDue);
+        expect(ReadTimeCutoffSuspension(active, true, order({ DaysPastDue: 13 }), 14, [], day)).toBeNull();
+    });
+
+    it('never cuts off when the cutoff is switched off', () => {
+        expect(ReadTimeCutoffSuspension(active, true, order({ DaysPastDue: 400 }), null, [], day)).toBeNull();
+    });
+
+    it('honours an approved DeferCutoff through its last day', () => {
+        expect(ReadTimeCutoffSuspension(active, true, order({ DaysPastDue: 20 }), 14, [defer(day)], day)).toBeNull();
+        expect(ReadTimeCutoffSuspension(active, true, order({ DaysPastDue: 20 }), 14, [defer('2026-09-30')], day)).toEqual(pastDue);
+    });
+
+    it('leaves a new purchase alone: its hold is written by the payment path, not the clock', () => {
+        expect(ReadTimeCutoffSuspension(active, false, order({ DaysPastDue: 40 }), 14, [], day)).toBeNull();
+    });
+
+    it('leaves other timings alone', () => {
+        for (const timing of ['OnConfirm', 'OnPaidInFull', 'OnActivation', null]) {
+            const g = { Status: 'Active', GrantTimingApplied: timing };
+            expect(ReadTimeCutoffSuspension(g, true, order({ DaysPastDue: 40 }), 14, [], day)).toBeNull();
+        }
+    });
+
+    it('only tightens: a suspended grant whose order is paid is not restored', () => {
+        for (const status of ['Suspended', 'Revoked', 'Expired']) {
+            const g = { Status: status, GrantTimingApplied: 'OnFirstPayment' };
+            expect(ReadTimeCutoffSuspension(g, true, order({ DaysPastDue: 0, Balance: 0 }), 14, [], day)).toBeNull();
+            expect(ReadTimeCutoffSuspension(g, true, order({ DaysPastDue: 40 }), 14, [], day)).toBeNull();
+        }
     });
 });
 

@@ -30,7 +30,8 @@
  *   RULE:     @mj-biz-apps/orders-entities overdue.ts (DaysOverdue — the one definition of overdue)
  *   SETTING:  OrdersSettings.RenewalAccessCutoffDaysPastDue
  *   CALLERS:  PaymentHeaderEntityServer.Save, OrderEntityServer.grantEntitlements,
- *             packages/Server/src/custom/enforce-payment-gated-access.action.ts
+ *             packages/Server/src/custom/enforce-payment-gated-access.action.ts,
+ *             ./EntitlementRead.ts (LoadReadTimeCutoffSuspensions)
  */
 import {
     CompositeKey,
@@ -42,7 +43,7 @@ import {
     RunView,
     UserInfo,
 } from '@memberjunction/core';
-import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { BusinessTimeZoneEngine, CalendarDayIn } from '@mj-biz-apps/common-entities';
 import {
     DaysOverdue,
     OverdueFilter,
@@ -55,9 +56,11 @@ import {
     DecideGrantStatus,
     FirstPaymentAmount,
     PAYMENT_GATED_TIMINGS,
+    ReadTimeCutoffSuspension,
     ReconcileGrantStatus,
     type AccessOverrideFacts,
     type AccessOverrideType,
+    type GrantStatusDecision,
     type GrantTiming,
     type OrderPaymentFacts,
     type FirstPaymentScheduleRow,
@@ -334,6 +337,72 @@ export async function ReconcilePaymentGatedGrants(
         });
     }
     return changes;
+}
+
+/** A grant the entitlement read path is evaluating, with what is needed to find its order. */
+export interface ReadTimeGrant {
+    ID: string;
+    Status: string;
+    OrderLineID: string | null;
+    GrantTimingApplied: string | null;
+}
+
+/**
+ * The past-due cutoffs these grants have reached that the nightly job has not written yet (#287),
+ * keyed by lowercased grant ID. See `ReadTimeCutoffSuspension`.
+ *
+ * Only Active `OnFirstPayment` grants on renewal lines are candidates; every other grant costs no
+ * query. Order lines, payment facts and approved overrides are read once for the whole set.
+ * Days past due are counted on `asOf`'s business-time-zone day, the day the nightly job uses.
+ * Payment facts are read as they stand now, so a historical `asOf` is measured on today's balance.
+ *
+ * Throws on a failed read; the caller fails closed.
+ */
+export async function LoadReadTimeCutoffSuspensions(
+    grants: ReadTimeGrant[],
+    asOf: Date,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, GrantStatusDecision>> {
+    const out = new Map<string, GrantStatusDecision>();
+    const candidates = grants.filter((g) => g.Status === 'Active' && g.GrantTimingApplied === 'OnFirstPayment' && !!g.OrderLineID);
+    if (!candidates.length) return out;
+
+    await OrdersSettings.Load(provider, user);
+    const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+    if (cutoff == null) return out;
+
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const lines = await rv.RunView<{ ID: string; OrderHeaderID: string }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter:
+                `ID IN (${quote(candidates.map((g) => g.OrderLineID!), 'OrderLineID')}) ` +
+                `AND RenewsSubscriptionID IS NOT NULL`,
+            Fields: ['ID', 'OrderHeaderID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!lines.Success) throw new Error(`Could not read order lines for access decisions: ${lines.ErrorMessage}`);
+    const renewalLines = new Map((lines.Results ?? []).map((l) => [key(l.ID), l]));
+    if (!renewalLines.size) return out;
+
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+    const asOfDay = CalendarDayIn(asOf, BusinessTimeZoneEngine.Instance.Zone);
+    const orderIDs = [...new Set([...renewalLines.values()].map((l) => key(l.OrderHeaderID)))];
+    const facts = await LoadOrderPaymentFacts(orderIDs, provider, user, asOfDay);
+    const overrides = await LoadApprovedAccessOverrides(orderIDs, provider, user);
+
+    for (const g of candidates) {
+        const line = renewalLines.get(key(g.OrderLineID));
+        const order = line ? facts.get(key(line.OrderHeaderID)) : undefined;
+        if (!line || !order) continue;
+        const pending = ReadTimeCutoffSuspension(g, true, order, cutoff, overrides.get(key(line.OrderHeaderID)) ?? [], asOfDay);
+        if (pending) out.set(key(g.ID), pending);
+    }
+    return out;
 }
 
 async function writeGrantStatus(
