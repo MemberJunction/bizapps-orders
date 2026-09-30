@@ -18,6 +18,14 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
+    BuildCheckoutCompleteDetail,
+    CHECKOUT_COMPLETE_EVENT,
+    CHECKOUT_ERROR_EVENT,
+    CHECKOUT_STATE_CHANGE_EVENT,
+    CheckoutElementEvent,
+    type CheckoutElementState,
+} from './checkout-events';
+import {
     MJCheckoutWidgetComponent,
     type CheckoutSubmissionEvent,
     type CheckoutWidgetConfig,
@@ -80,6 +88,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     private card: StripeCard | null = null;
     private cardMounted = false;
     private destroyed = false;
+    private state: CheckoutElementState | null = null;
 
     public get isFree(): boolean {
         return (this.config?.unitPrice ?? 0) <= 0;
@@ -96,6 +105,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.loadError = 'Checkout requires a secure random source. Open this page over HTTPS.';
             return;
         }
+        this.setState('LOADING');
         try {
             const init = await this.post('/initialize', {
                 slug: this.slug,
@@ -118,9 +128,11 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 return;
             }
             this.config = cfg;
+            this.setState('CHECKOUT');
         } catch {
             this.loadError = 'Checkout is temporarily unavailable. Please try again.';
         } finally {
+            if (this.loadError) this.reportError(this.loadError);
             this.cdr.detectChanges();
         }
     }
@@ -158,6 +170,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
         this.processing = true;
         this.errorMessage = null;
+        this.setState('PROCESSING');
         try {
             const line = buildCheckoutDraftLine(this.config.productId, event);
             const draft = await this.post('/draft', {
@@ -210,6 +223,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             await this.finish();
         } catch (err) {
             this.errorMessage = err instanceof Error ? err.message : 'Checkout failed.';
+            this.reportError(this.errorMessage);
         } finally {
             this.processing = false;
             this.cdr.detectChanges();
@@ -228,10 +242,42 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.successMessage =
             this.config?.successMessage ||
             (this.orderNumber ? `Thank you. Order ${this.orderNumber} is confirmed.` : 'Thank you. Your order is confirmed.');
+        // Dispatched before any redirect, so a host listener sees the sale on this page.
+        this.setState('SUCCESS');
+        this.dispatch(
+            CHECKOUT_COMPLETE_EVENT,
+            BuildCheckoutCompleteDetail({
+                sessionId: this.sessionId,
+                productName: this.config?.productName ?? this.config?.title,
+                productId: this.config?.productId,
+                totalGross: done.TotalGross,
+                currency: this.config?.currency,
+                // The applied promotion code, once the checkout takes one.
+                coupon: null,
+            })
+        );
         if (this.config?.redirectUrl) {
             window.location.href = this.config.redirectUrl;
         }
         this.cdr.detectChanges();
+    }
+
+    /** Reports a state the host page can track; repeats of the same state are not re-sent. */
+    private setState(state: CheckoutElementState): void {
+        if (this.state === state) return;
+        this.state = state;
+        this.dispatch(CHECKOUT_STATE_CHANGE_EVENT, { state });
+    }
+
+    private reportError(message: string): void {
+        this.setState('ERROR');
+        this.dispatch(CHECKOUT_ERROR_EVENT, { message });
+    }
+
+    /** Dispatches on the `<mj-orders-checkout>` element; bubbling and composed, so `document` hears it too. */
+    private dispatch<T>(name: string, detail: T): void {
+        const el = this.hostEl?.nativeElement as HTMLElement | undefined;
+        el?.dispatchEvent(CheckoutElementEvent(name, detail));
     }
 
     private async mountStripe(mount: HTMLElement): Promise<void> {
@@ -251,6 +297,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         } catch (err) {
             this.cardMounted = false;
             this.errorMessage = err instanceof Error ? err.message : 'Could not load card entry.';
+            this.reportError(this.errorMessage);
         }
     }
 
