@@ -1,5 +1,116 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.20.0
+
+### Minor Changes
+
+- 7af7a46: Two attestation controls from Jeremy's review of golive #241. `Orders.RecordProgress` returns a `ClosedPeriodWarning` when the measurement date falls in a month accounting has already posted a journal-entry batch for — advisory on both the preview and the live path, never blocking, since the batch build stays the control and attestation must not be gated on a state the attester cannot change. The screen shows it above the table, in the confirm dialog, and on the notice after a post made anyway. And the immutability trigger now looks forward as well as back: promoting an observation from Draft to Posted is refused outright by the trigger (51031), and inserting a row already Posted is refused by a new `OrderLineProgressMeasurement` server subclass unless `Orders.RecordProgress` is the one saving it. A posted observation carries a recognition amount and a journal entry id, and the only thing making those true is that the entry was written in the same transaction.
+- 41d32be: Bill.com integration: invoices out, payments in (golive #146, #147, #148, #242).
+
+  **The seam.** `BaseInvoiceRail` is the outbound-invoice counterpart of `BasePaymentProvider`: a
+  class-factory base keyed by `PaymentProviderType.Code`, with one implementation, `BillComInvoiceRail`,
+  over the published `@memberjunction/connector-bill-com` through a stubbable `BillComGateway`. Per-company
+  configuration is a `PaymentProvider` row of the new type `BillCom` whose new `CompanyIntegrationID`
+  column points at the `MJ: Company Integrations` row the connector resolves credentials from — a
+  pointer, never a secret.
+
+  **Billing units, not orders.** One Bill.com invoice per `(order, selling company, instalment | none)`.
+  An order billed as a whole is invoiceable at Confirmed; an instalment (PR #220) once its number is
+  frozen. The send is decoupled from both events: `Orders.SendExternalInvoices` works a computed worklist
+  (`Orders.GetExternalInvoicingWorklist`) through `Orders.IssueExternalInvoice`, which claims the unit
+  with a `Sending` row before the rail is called so a double send fails here rather than at Bill.com.
+  `Orders.CancelExternalInvoice` archives an unpaid invoice and is blocked when money has been applied;
+  on an instalment it leaves the rail facts as history, because Craig ruled that an issued instalment is
+  never re-issued — the replacement carries the next number. A send that times out leaves the unit
+  claimed on purpose, and `Orders.AdoptExternalInvoice` is the other half of resolving that: it records
+  the reference the rail already holds, after reading the invoice back and refusing a total that does not
+  tie. Native email delivery refuses a unit that is invoiced through the rail.
+
+  **Payments are polled, once.** Bill.com publishes no payment-received webhook, so
+  `Orders.PollExternalPayments` reads receivable payments since a stored watermark, matches
+  `invoicePayments[]` to `ExternalInvoice` rows by the rail's invoice id (all or nothing), and captures
+  each cleared payment through `Orders.CapturePayment` with `IdempotencyKey = 'billcom:<id>'`. Unknown
+  statuses are held, unmatched invoices capture nothing, reversals are flagged for a person. A verified
+  Bill.com invoice webhook (`POST /webhooks/billcom/:providerId`, HMAC-SHA256) only nudges that poll to
+  run now.
+
+  **Schema.** New tables `ExternalInvoice`, `ExternalCustomer`, `ExternalPayment`,
+  `PaymentProviderSyncState`; new nullable `PaymentProvider.CompanyIntegrationID`. Three new `V`
+  migrations, plain DDL per the convention set on PR #220; the FK to `OrderHeaderPaymentSchedule` is added
+  only where that table exists. Applied to a development database, with the CodeGen output folded under
+  each migration's banner. A fourth migration, `BillCom_Metadata_Sync`, carries the declarative metadata —
+  the `BillCom` provider type, the six remote operations, the two Actions with their 22 params and the two
+  scheduled jobs — because `metadata/` is a dev-time source no host installs. It was generated from a
+  database that did not hold those rows, so every statement is an `spCreate`, and each is guarded on the
+  primary key or the row's natural key so a host that already has the row is left alone.
+
+  **Verified live against the BILL sandbox**, not only in unit tests: customer and invoice create,
+  archive, duplicate-number refusal, payment polling, and the full capture chain — a confirmed order
+  issued to Bill.com, a payment recorded there, and the poll capturing it, with the order balance going
+  to zero and accounting booking DR Cash / CR Accounts Receivable against the confirm entry's DR AR /
+  CR Sales. Re-polling from an earlier watermark captured nothing further.
+
+  Two defects in `@memberjunction/connector-bill-com` 0.3.1 surfaced and were filed upstream
+  (MemberJunction/Integrations #390 and #391, fixed in PR #392): every generic request repeated the API
+  version and 404'd, and invoice archive had no connector verb. Both are released in 0.3.2, which this
+  change depends on; the local workarounds are gone and archive goes through the connector's own verb.
+
+  **The screens.** An **External invoicing** panel on the order form lists what the rail holds for that
+  order and carries the two acts a person may take; it hides itself entirely for a company with no rail,
+  so orders invoiced natively look untouched. An **Invoicing queue** page under Receivables shows what is
+  waiting to send and what the payment poll could not finish, and can run either job by hand — which
+  matters because both ship disabled and somebody has to prove them first. The billing worklist gains a
+  column naming the rail a company invoices through, so issuing an instalment tells the truth about what
+  happens next.
+
+  Every label is read from the `PaymentProvider` row: no screen says Bill.com. The rule that decides when
+  Send may be offered lives in a pure module (`external-invoice-view.ts`) and is unit-tested, because
+  offering it against a unit already live — or one whose last send was never confirmed — is how one
+  billing unit becomes two invoices in a customer's inbox.
+
+  **Scheduling.** Two Actions and two `MJ: Scheduled Jobs` rows (half-hourly send in business hours,
+  hourly poll), both shipped **Disabled and set to Preview**, like the renewal job, and installed by the
+  metadata migration above. Enabling them is a deliberate act, and the webhook follows the poll job rather
+  than overriding it.
+
+- 2ddd206: The three rules for reversing a scheduled order (D92 §6), as pure functions on `ContractBalance`.
+
+  `InstalmentsToCancel` picks the instalments a reversal withdraws — live and never billed, tested on `DocumentNumber` rather than `Status` so a row the customer holds an invoice for is never quietly removed. `ProratedCreditMemo` gives a reversing line its share of the origin's billed-but-not-earned balance, prorated to the quantity still left, and counts staged releases dated before the reversal as earned, less what earlier reversals of the same line already mirrored back (`StagedEarnedThrough`); revenue already recognised stays recognised. `RefuseEarnedNotBilled` refuses a reversal that would strand an earned-but-unbilled balance in Unbilled Receivable, naming the lines, the amounts and the instalment due as of the reversal's date to issue first; on a staged line it counts the staged-earned figure, since stored `RecognizedToDate` does not. `RefuseEarlierThanPriorReversal` refuses a reversal dated before an already-confirmed reversal of the same line, naming that reversal's order and date.
+
+  A reversal of an order billed by instalment books that memo or nothing, never the mirrored value entry; mirrors only the recognition releases dated after the reversal; reduces the origin line's `BilledToDate` by the memo; and withdraws unissued instalments only once the whole order is reversed. `Orders.CancelSubscription` refuses a term on an instalment-billed order for now.
+
+- d71575a: Orders now record who confirmed them. `OrderHeader.ConfirmedByUserID` (FK to `__mj.User`) is written by the booking save from the save's context user, in the same write as `ConfirmedAt`, and is NULL when the booking has no context user. Orders booked before this release keep NULL: who confirmed them is not recorded anywhere, so nothing is backfilled. Once an order has a `ConfirmedAt` the column cannot change: `Validate()` refuses it with the other booked header fields, and trigger 51017 refuses it at the database. Migration `V202609281000` adds the column, the trigger and their CodeGen output.
+- a67d0ef: Cash against a scheduled order is a customer deposit until the instalment is billed (golive #239 follow-up).
+
+  A scheduled company books no value at confirm, so until an instalment is invoiced there is no receivable for cash to clear. `PaymentAllocationFactory` now credits Accounts Receivable only up to what that company has invoiced and not been paid, and credits the new `Customer Deposits` GL role for the rest. The role resolves per order line through the same product, category, product type, company walk as every other role, and a payment that needs it with no account linked is refused, naming the role and the company. An order with no schedule rows books the single AR credit it always did. Unnamed cash beyond what the schedule's rows can still hold is not a deposit: it credits AR as a customer credit, as on an unscheduled order.
+
+  Issuing an instalment posts the invoice at full value and then clears whatever the customer had prepaid with a separate `Dr Customer Deposits / Cr AR` pair, sized from how much the rows' held deposits fell when the row became billed. Each instalment's bill is sliced so it equals its schedule row to the cent, and each line's pieces still sum to the line. A refund mirrors what the payment booked: the part the refund takes out of held deposits debits Customer Deposits and the rest debits AR. Reversing lines keep the order line and the instalment each original line named, so a refund of cash that named an instalment comes off that instalment. The Pending-to-Captured webhook promotion reads the schedule before the header is saved, and two lines of one payment naming different instalments each consume their own row.
+
+  `spRecalcOrderHeaderPaymentSchedule` cascades unnamed cash into invoiced instalments before merely scheduled ones, so the rollup and the ledger agree about which instalment the money settled (`V202609260100`).
+
+  `OrderHeaderPaymentScheduleEntityServer` refuses a `Scheduled` row reaching `Invoiced`, or acquiring a `DocumentNumber` or `InvoicedAt`, unless `Orders.IssueInstalmentInvoice` is the caller.
+
+  Needs the `Customer Deposits` role from bizapps-accounting #194 on the target database.
+
+- 102ea17: Percentage-of-completion revenue recognition (golive #241, plan Part F / D90, W10/W11). `RevenueRecognitionType.ScheduleBasis` (`AtBooking` | `OnMeasurement`; defaults to `AtBooking`, so the three existing types are unchanged) and the new `OrderLineProgressMeasurement` table — one attested observation of cumulative percent complete per line per period, immutable once posted. A `ProgressRecognitionDriver` family alongside the booking drivers, with `ManualAttestation` shipped. New operation `Orders.RecordProgress` posts the cumulative catch-up (`LineTotalNet × percent − the line's RecognizedToDate`) as a `RevenueRecognition` entry crediting Sales, debiting Deferred Revenue up to the line's deferred balance and Unbilled Receivable beyond it (D92 rule 2); a backward slide mirrors the same entry; a zero delta succeeds and writes nothing; `Preview` computes without writing. The operation advances the line's `RecognizedToDate` in the same transaction as the entry, and is gated on the order being confirmed rather than on the line carrying a booking entry, since a POC line on a company with a payment schedule books no value entry at confirm. `Orders.GetProgressWorklist` lists open POC lines with their last observation. Metadata: the Percentage of Completion rev-rec type and the Project / Implementation product type. Receivables rail gains a Progress attestation page.
+
+### Patch Changes
+
+- 22ee8ec: Spending a gift card now reduces its balance: capturing a gift-card payment passes the card to the stored-value driver, writes a Redeem StoredValueTransaction and lowers CurrentBalance in the payment's transaction (Depleted at zero). An overdraw is refused with nothing spent. Refunding it writes a Refund transaction and restores the balance. Closes #302.
+- d0c5fcd: A gift card spent as a tender now debits the issuing company's Gift Card Liability (Deferred Revenue when none is linked, with a warning) instead of Cash. Credit AR is unchanged and a refund mirrors it. Account credit and every other tender book exactly as before. Closes #300.
+- 8d3df77: A deferred line that neither an event nor a subscription dates can now be given its service period on the order screen, and Confirm stays disabled, naming the line, until both dates are set. `OrdersEngine.ServicePeriodSource(productID)` says where a line's window comes from (`NotRequired`, `Event`, `Subscription` or `Line`); `OrderHeaderEntity.LinesMissingServicePeriod()` lists the lines still without one. A refused Confirm, Void or Reopen now puts the previous status back (`OrderHeaderEntity.SaveStatus`) and shows the reason, instead of leaving the order reading the new status with every later save failing.
+- ada18e6: Spawned renewals now carry a one-row payment schedule per company, due on the day the renewal pass runs plus the customer's payment terms (never later than the new term's start), so under D92 the renewal is invoiced (with an invoice number) inside its confirm and AR is dated the invoice day rather than the new term's first day. Instalment invoice entries (automatic and manual) are now dated by the business day rather than the UTC day. Removes the unused `SCHEDULE_DEFAULTS.RenewalLeadDays` constant.
+- Updated dependencies [a1114ed]
+- Updated dependencies [7af7a46]
+- Updated dependencies [41d32be]
+- Updated dependencies [0bcafbd]
+- Updated dependencies [d71575a]
+- Updated dependencies [3a8b6b2]
+- Updated dependencies [e131f07]
+- Updated dependencies [102ea17]
+- Updated dependencies [8d3df77]
+  - @mj-biz-apps/orders-entities@5.20.0
+
 ## 5.19.0
 
 ### Minor Changes
@@ -160,8 +271,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-            The INSERT statement conflicted with the FOREIGN KEY constraint
-            "FK_EntityFieldValue_EntityField"
+              The INSERT statement conflicted with the FOREIGN KEY constraint
+              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
