@@ -764,7 +764,7 @@ export {
     isTerminalCapturePrecheck,
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
-export { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
+export { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
 // The post-payment step record, its review queue and operator replay (#326).
 export { CheckoutStepLog, STALE_RUNNING_MINUTES } from './CheckoutStepLog.js';
 export type { CheckoutStepAttempt, CheckoutStepName, CheckoutStepSource, CheckoutStepStatus } from './CheckoutStepLog.js';

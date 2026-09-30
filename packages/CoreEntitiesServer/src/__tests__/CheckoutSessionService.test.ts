@@ -273,6 +273,7 @@ const mocks = vi.hoisted(() => {
         mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
         mockMemberResolve: vi.fn(),
         mockLookupMemberResolver: vi.fn(),
+        mockSettledNotBookedAlert: vi.fn().mockResolvedValue(undefined),
         mockProductBySKU: vi.fn((sku: string | null | undefined) => {
             const wanted = sku?.trim().toLowerCase();
             if (wanted === 'conf-2027') return { ID: 'prod-1', SKU: 'CONF-2027' };
@@ -305,6 +306,11 @@ vi.mock('../IntentDescription.js', () => ({
 vi.mock('../CheckoutMemberDiscountResolver.js', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../CheckoutMemberDiscountResolver.js')>()),
     ResolveCheckoutMemberDiscountResolver: (key: string) => mocks.mockLookupMemberResolver(key)
+}));
+
+vi.mock('../checkoutCaptureAlert.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../checkoutCaptureAlert.js')>()),
+    raiseCheckoutSettledNotBookedAlert: (...args: unknown[]) => mocks.mockSettledNotBookedAlert(...args)
 }));
 
 vi.mock('../PaymentIntentService.js', () => ({
@@ -1361,10 +1367,17 @@ describe('CheckoutSessionService', () => {
                 return Promise.resolve({});
             });
 
+            mocks.mockSettledNotBookedAlert.mockClear();
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('does not cover');
             expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            // Money moved and no order booked: staff are alerted to refund.
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+            const [sessionArg, intentArg, reasonArg] = mocks.mockSettledNotBookedAlert.mock.calls[0];
+            expect(sessionArg).toBe('sess-123');
+            expect(intentArg).toBe('pi-row-1');
+            expect(reasonArg).toContain('does not cover');
         });
 
         it('rejects duplicate or concurrent CompleteCheckout calls when status is not Open', async () => {
@@ -1615,6 +1628,58 @@ describe('CheckoutSessionService', () => {
             expect(mocks.mockMemberResolve).not.toHaveBeenCalled();
             const captureInput = mocks.mockCaptureExecute.mock.calls[0][0] as { Amount: number };
             expect(captureInput.Amount).toBe(80);
+        });
+
+        it('/complete refuses with a plain message and alerts staff when the member code is declined after payment', async () => {
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }],
+                TotalGross: 80,
+                MemberPromotionCode: 'MEMBER20'
+            });
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.mockPaymentIntentInstance.Amount = 80;
+            mocks.mockSettledNotBookedAlert.mockClear();
+            // The promotion ended between the draft and the payment.
+            mocks.mockPricingPrice.mockImplementationOnce(priceWithMemberCode([{ Code: 'MEMBER20', Reason: 'the code is outside its valid dates' }]));
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toMatch(/member discount no longer applies/);
+            expect(res.ErrorMessage).not.toMatch(/settled payment amount/);
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockCaptureExecute).not.toHaveBeenCalled();
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+            const [sessionArg, intentArg, reasonArg, userArg] = mocks.mockSettledNotBookedAlert.mock.calls[0];
+            expect(sessionArg).toBe('sess-123');
+            expect(intentArg).toBe('pi-row-1');
+            expect(reasonArg).toContain('MEMBER20');
+            expect(reasonArg).toContain('the code is outside its valid dates');
+            expect(reasonArg).toContain('does not cover the order total (100)');
+            expect(userArg).toBe(testUser);
+        });
+
+        it('/complete with a declined member code but an unsettled payment keeps the usual refusal and raises no alert', async () => {
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }],
+                TotalGross: 80,
+                MemberPromotionCode: 'MEMBER20'
+            });
+            mocks.mockPaymentIntentInstance.Status = 'Pending';
+            mocks.mockPaymentIntentInstance.Amount = 80;
+            mocks.mockSettledNotBookedAlert.mockClear();
+            mocks.mockPricingPrice.mockImplementationOnce(priceWithMemberCode([{ Code: 'MEMBER20', Reason: 'the redemption limit has been reached' }]));
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('not settled');
+            expect(mocks.mockSettledNotBookedAlert).not.toHaveBeenCalled();
         });
 
         it('/complete without a snapshot code carries no promotion code', async () => {

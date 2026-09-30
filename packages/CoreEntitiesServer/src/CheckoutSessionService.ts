@@ -57,7 +57,7 @@ import {
     ResolveCheckoutMemberDiscountResolver,
 } from './CheckoutMemberDiscountResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
-import { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
+import { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
 import { CheckoutStepLog, type CheckoutStepAttempt, type CheckoutStepSource } from './CheckoutStepLog.js';
 import {
     isCaptureRefusalRetryable,
@@ -179,6 +179,10 @@ interface MemberDiscountResolution {
 }
 
 const MEMBER_DISCOUNT_UNAVAILABLE = 'Your member discount could not be verified, so this checkout is priced at the standard rate.';
+/** Shown when the payment settled at the member price but the discount no longer applies at completion. */
+const MEMBER_DISCOUNT_WITHDRAWN_MESSAGE =
+    'Your member discount no longer applies to this order, so your payment does not cover the total and the order was not placed. '
+    + 'Our team has been notified and will arrange a refund.';
 
 /** Outcome of booking CapturePayment after a checkout order is already confirmed. */
 export interface BookCheckoutPaymentResult {
@@ -1832,7 +1836,7 @@ export class CheckoutSessionService {
                 User: contextUser ?? (order.ContextCurrentUser as UserInfo),
             });
 
-            await pricingService.Price({
+            const priced = await pricingService.Price({
                 OrderHeaderID: order.ID || null,
                 CompanyID: widget.CompanyID,
                 BillToPersonID: order.BillToPersonID ?? null,
@@ -1857,6 +1861,12 @@ export class CheckoutSessionService {
                 Charges: [],
             });
 
+            // The draft priced with this code, but the engine can decline it now (the promotion
+            // ended or hit its redemption limit since), which raises the total above what was paid.
+            const memberCodeDeclined = memberPromotionCode
+                ? (priced?.UnusableCodes ?? []).find((u) => u.Code.toLowerCase() === memberPromotionCode!.toLowerCase())
+                : undefined;
+
             await this.settleLineTotals(order);
             let sumGross = 0;
             for (const line of order.Lines.Items) {
@@ -1875,9 +1885,19 @@ export class CheckoutSessionService {
                 if (paymentFailure) {
                     await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
                     session.Status = 'Open';
+                    // The buyer has been charged and no order will book: staff must refund. This
+                    // covers a declined member code and any other re-price that raised the total.
+                    if (paymentFailure.SettledButShort) {
+                        const reason = memberCodeDeclined
+                            ? `Member promotion code ${memberPromotionCode} was declined on re-price (${memberCodeDeclined.Reason}). ${paymentFailure.Message}`
+                            : paymentFailure.Message;
+                        void raiseCheckoutSettledNotBookedAlert(sessionID, session.PaymentIntentID, reason, contextUser);
+                    }
                     return {
                         Success: false,
-                        ErrorMessage: paymentFailure,
+                        ErrorMessage: memberCodeDeclined && paymentFailure.SettledButShort
+                            ? MEMBER_DISCOUNT_WITHDRAWN_MESSAGE
+                            : paymentFailure.Message,
                         SessionID: sessionID,
                         Status: 'Open'
                     };
@@ -1972,22 +1992,24 @@ export class CheckoutSessionService {
 
     /**
      * Verifies the paid-order gate for a session against a server-computed total. Returns a
-     * refusal message, or null when payment checks out. The intent must exist, belong to this
-     * session, be in a settled state, and cover the freshly re-priced total.
+     * refusal, or null when payment checks out. The intent must exist, belong to this session,
+     * be in a settled state, and cover the freshly re-priced total. `SettledButShort` marks the
+     * one refusal where money has already moved.
      */
     private static async verifySessionPayment(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         totalGross: number,
         md: Metadata,
         contextUser?: UserInfo
-    ): Promise<string | null> {
+    ): Promise<{ Message: string; SettledButShort: boolean } | null> {
+        const refused = (Message: string, SettledButShort = false) => ({ Message, SettledButShort });
         if (!session.PaymentIntentID) {
-            return 'Cannot confirm paid order (TotalGross > 0) without a payment intent for this session';
+            return refused('Cannot confirm paid order (TotalGross > 0) without a payment intent for this session');
         }
         const intent = await md.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, contextUser);
         const intentLoaded = await intent.Load(session.PaymentIntentID);
         if (!intentLoaded) {
-            return 'The payment intent attached to this session could not be found';
+            return refused('The payment intent attached to this session could not be found');
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
             // The browser has already confirmCardPayment'd (4242 succeeds at Stripe immediately).
@@ -1997,12 +2019,12 @@ export class CheckoutSessionService {
             await this.refreshIntentFromGateway(intent, contextUser);
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
-            return `Payment has not settled (intent status: ${intent.Status}). Complete payment and try again.`;
+            return refused(`Payment has not settled (intent status: ${intent.Status}). Complete payment and try again.`);
         }
         // Half-cent tolerance absorbs decimal rounding between the priced total and the
         // cents-rounded intent amount.
         if ((intent.Amount ?? 0) + 0.005 < totalGross) {
-            return `The settled payment amount (${intent.Amount}) does not cover the order total (${totalGross})`;
+            return refused(`The settled payment amount (${intent.Amount}) does not cover the order total (${totalGross})`, true);
         }
         return null;
     }

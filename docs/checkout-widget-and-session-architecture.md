@@ -414,18 +414,25 @@ token on the element (`<mj-orders-checkout slug="…" member-token="…">`), the
 @RegisterClass(BaseCheckoutMemberDiscountResolver, 'PARTNER-MEMBER')
 export class PartnerMemberResolver extends BaseCheckoutMemberDiscountResolver {
     public async Resolve(ctx: CheckoutMemberDiscountContext): Promise<CheckoutMemberDiscountDecision> {
-        const member = await verifyHostToken(ctx.MemberToken); // the host's own verification
-        return member ? { PromotionCode: 'PARTNER-RATE' } : { PromotionCode: null, Message: 'Membership could not be confirmed.' };
+        const member = await verifyHostToken(ctx.MemberToken); // the host's own verification, including expiry
+        // Bind the token to one buyer: a copied token is useless under another email.
+        const sameBuyer = !!member && !!ctx.Email && member.email.toLowerCase() === ctx.Email.toLowerCase();
+        return sameBuyer ? { PromotionCode: 'PARTNER-RATE' } : { PromotionCode: null, Message: 'Membership could not be confirmed.' };
     }
 }
 ```
 
 The widget names it with `Configuration.memberDiscountResolver: "PARTNER-MEMBER"` (server-side only).
 
+The token sits in the host page, so anyone who copies it can replay it. Issue **short-lived** tokens
+(minutes, not days) and tie each to the member's email, then have the resolver compare that email with
+`ctx.Email`, the buyer email captured on the draft, as the sample does.
+
 - The resolver returns a **promotion code**, priced through the ordinary promotion engine — dates, qualifiers and redemption limits apply as they do to any code.
 - The session snapshot keeps only the resolved code (`MemberPromotionCode`); **the token is never stored**. `/complete` re-prices from the snapshot and carries the code on the order, so the booked total equals the charged total.
 - A rejected token, a resolver that throws, or a code the engine declines prices at the standard rate and returns `MemberDiscountMessage`. The element stops once on that message before payment; submitting again pays the standard rate.
 - A token sent to a widget with no `memberDiscountResolver`, or one naming an unregistered class, is refused.
+- If the engine declines the code at `/complete` (the promotion ended or reached its redemption limit after the draft), the re-priced total exceeds the payment, so no order is booked. The buyer gets a plain message, and a checkout alert (log marker plus a Task when bizapps-tasks is installed) names the session and payment intent so staff can refund. Any settled payment that falls short of the re-priced total raises the same alert.
 
 ### Confirmation & Booking Phase
 When the user clicks **Pay & Register**:

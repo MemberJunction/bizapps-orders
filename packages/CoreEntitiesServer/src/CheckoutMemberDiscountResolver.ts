@@ -15,6 +15,10 @@
  *
  * THE TOKEN IS NEVER STORED. It reaches the resolver on the draft call and is dropped; the session
  * keeps only the resolved code, so `/complete` re-prices from that snapshot without seeing the token.
+ *
+ * THE TOKEN IS REPLAYABLE. It sits in the host page, so anyone who copies it can present it. Hosts
+ * should issue short-lived tokens tied to the member's email, and the resolver should compare that
+ * email with `ctx.Email`, the buyer email captured on the draft, returning no code on a mismatch.
  */
 import { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
