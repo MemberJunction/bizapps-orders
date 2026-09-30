@@ -367,6 +367,43 @@ describe('CheckoutServerExtension', () => {
         });
     });
 
+    it('passes the draft body attribution through to UpdateDraft', async () => {
+        const user = { ID: 'svc-1', Email: 'svc@example.com' };
+        mockGetSystemUser.mockReturnValue(user);
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({
+            Success: true, SessionID: 'sess-1', Subtotal: 0, Tax: 0, Adjustments: 0, TotalGross: 0, RequiresPayment: false, Lines: [],
+        });
+        const ext = new CheckoutServerExtension();
+        const res = mockRes();
+        const attribution = { source: 'voice_agent', reference: 'conv-9' };
+        await (ext as unknown as { handleDraft(req: Request, res: Response): Promise<void> }).handleDraft(
+            { body: { sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.com', lines: [], attribution } } as unknown as Request,
+            res as unknown as Response
+        );
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('sess-1', 'k', 'a@b.com', [], user, { Attribution: attribution, Answers: undefined });
+    });
+
+    it('passes the buyer answers from the draft body to UpdateDraft (#322)', async () => {
+        const user = { ID: 'svc-1', Email: 'svc@example.com' };
+        mockGetSystemUser.mockReturnValue(user);
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({
+            Success: true, SessionID: 'sess-1', Subtotal: 0, Tax: 0, Adjustments: 0, TotalGross: 0, RequiresPayment: false, Lines: [],
+        });
+        const ext = new CheckoutServerExtension();
+        const answers = { source: { Value: 'Other', OtherText: 'A podcast' } };
+        const res = mockRes();
+        await (ext as unknown as { handleDraft(req: Request, res: Response): Promise<void> }).handleDraft(
+            {
+                body: { sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.com', lines: [{ ProductID: 'p', Quantity: 1 }], answers },
+            } as unknown as Request,
+            res as unknown as Response
+        );
+        expect(res.statusCode).toBe(200);
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith(
+            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], user, { Attribution: undefined, Answers: answers }
+        );
+    });
+
     describe('account step (#292)', () => {
         type Handler = (req: Request, res: Response) => Promise<void>;
         const call = async (name: 'handleComplete' | 'handleAccount' | 'handleAccountPassword', body: Record<string, unknown>) => {

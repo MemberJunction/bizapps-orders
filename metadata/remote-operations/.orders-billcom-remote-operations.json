@@ -4,7 +4,7 @@
       "Name": "Issue External Invoice",
       "OperationKey": "Orders.IssueExternalInvoice",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
-      "Description": "Create one billing unit's invoice on the company's external AR rail (Bill.com): a Confirmed order billed as a whole, per selling company, or one Invoiced instalment. Idempotent per unit \u2014 a unit already on the rail returns its existing reference. Records the rail's invoice id on ExternalInvoice (authoritative) and on the instalment row; never touches Balance, PaymentStatus or the ledger.",
+      "Description": "Create one billing unit's invoice on the company's external AR rail (Bill.com): a Confirmed order billed as a whole, per selling company, or one Invoiced instalment. Idempotent per unit — a unit already on the rail returns its existing reference. Records the rail's invoice id on ExternalInvoice (authoritative) and on the instalment row; never touches Balance, PaymentStatus or the ledger.",
       "InputTypeName": "OrdersIssueExternalInvoiceInput",
       "InputTypeDefinition": "@file:types/orders-issue-external-invoice.input.ts",
       "InputTypeIsArray": false,
@@ -28,8 +28,8 @@
       "IDs are fixed here so the release Metadata_Sync migration can guard on ID or OperationKey."
     ],
     "sync": {
-      "lastModified": "2026-09-21T18:40:46.035Z",
-      "checksum": "368b0c26415427455ab0477ba74e464f0ca3af4e0484985c919d2145f46bcf2a"
+      "lastModified": "2026-09-30T19:18:02.826Z",
+      "checksum": "11fb6b8edeb68f8199c6a0aedd5320a91746570a86dc4c43dae0310ef37703a6"
     }
   },
   {
@@ -64,7 +64,7 @@
       "Name": "Get External Invoicing Worklist",
       "OperationKey": "Orders.GetExternalInvoicingWorklist",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
-      "Description": "Billing units that are invoiceable on a company's external rail and unsent \u2014 Confirmed schedule-less orders with a balance and no rail history, Invoiced instalments with SentAt NULL \u2014 plus failed and in-flight sends on request. Companies without an active rail never appear.",
+      "Description": "Billing units that are invoiceable on a company's external rail and unsent — Confirmed schedule-less orders with a balance and no rail history, Invoiced instalments with SentAt NULL — plus failed and in-flight sends on request. Companies without an active rail never appear.",
       "InputTypeName": "OrdersGetExternalInvoicingWorklistInput",
       "InputTypeDefinition": "@file:types/orders-get-external-invoicing-worklist.input.ts",
       "InputTypeIsArray": false,
@@ -136,8 +136,8 @@
       "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A05"
     },
     "sync": {
-      "lastModified": "2026-09-21T18:40:46.126Z",
-      "checksum": "2ddfb792cac4d61cad9bb97401225692bf6cdf14a65f7ea92d66a43d6bc57f5c"
+      "lastModified": "2026-09-30T19:18:02.843Z",
+      "checksum": "bf5c1658bf8922afbc0f7cbe3e1108aec6b422565d338275e8d704bfa8584056"
     }
   },
   {
@@ -145,7 +145,7 @@
       "Name": "Adopt External Invoice",
       "OperationKey": "Orders.AdoptExternalInvoice",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
-      "Description": "Attaches an invoice the rail already holds to a unit whose send was never confirmed. A timed-out send leaves the unit claimed on purpose \u2014 the rail may or may not have committed the invoice, and retrying blindly is how one billing unit becomes two invoices in a customer's inbox. This is the half of the answer where the invoice IS there; re-issuing with AllowReissue is the half where it is not. Reads the invoice back and refuses if its total does not tie to the unit.",
+      "Description": "Attaches an invoice the rail already holds to a unit whose send was never confirmed. A timed-out send leaves the unit claimed on purpose — the rail may or may not have committed the invoice, and retrying blindly is how one billing unit becomes two invoices in a customer's inbox. This is the half of the answer where the invoice IS there; re-issuing with AllowReissue is the half where it is not. Reads the invoice back and refuses if its total does not tie to the unit.",
       "InputTypeName": "OrdersAdoptExternalInvoiceInput",
       "InputTypeDefinition": "@file:types/orders-adopt-external-invoice.input.ts",
       "InputTypeIsArray": false,
@@ -163,8 +163,8 @@
       "ID": "A7F3C2D1-9B4E-4C61-8D2A-5E1F7B3C9A06"
     },
     "sync": {
-      "lastModified": "2026-09-21T18:40:46.059Z",
-      "checksum": "5c87e6b2fc9e06ad23832e90c0d0d4ea6d7ac2fd37ce29479ab91d355f4c39ea"
+      "lastModified": "2026-09-30T19:18:02.848Z",
+      "checksum": "03bfb2238a20633a6aeed744917575f750f67b86827b9d24c67032364900c994"
     }
   }
 ]

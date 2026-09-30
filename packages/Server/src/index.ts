@@ -22,6 +22,7 @@ import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-ga
 import { LoadDispatchOutboundEventsAction } from './custom/dispatch-outbound-events.action.js';
 import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
 import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
+import { LoadApplyAccessOverrideDecisionAction } from './custom/apply-access-override-decision.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -73,6 +74,8 @@ import {
     LoadGuestOrderClaimDriver,
     LoadCheckEntitlementOperation,
     LoadListEntitlementsOperation,
+    LoadAccessOverrideOperations,
+    LoadEntitlementAccessOverrideEntityServer,
 } from '@mj-biz-apps/orders-core-entities-server';
 
 // The unauthenticated webhook route. Registered as a server EXTENSION rather than mounted here,
@@ -154,6 +157,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadPollExternalPaymentsOperation();        // 'Orders.PollExternalPayments' — cleared Bill.com payments, captured once (golive #148)
     LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
     LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator
+    LoadAccessOverrideOperations();    // 'Orders.RequestAccessOverride' / 'Orders.RecordAccessOverrideDecision' (#268)
+    LoadEntitlementAccessOverrideEntityServer(); // an override is decided only through its approval task
 
     // Payment drivers (D19/D37). Each is keyed by its PaymentProviderType.Code, and WITHOUT these
     // anchors the @RegisterClass decorators are tree-shaken away — the ClassFactory then falls back to
@@ -176,6 +181,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadDispatchOutboundEventsAction(); // 'Orders.DispatchOutboundEvents' — sends recorded outbound events (#293)
     LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
     LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll
+    LoadApplyAccessOverrideDecisionAction(); // 'Orders.ApplyAccessOverrideDecision' — the Tasks inbox hook for overrides (#268)
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class

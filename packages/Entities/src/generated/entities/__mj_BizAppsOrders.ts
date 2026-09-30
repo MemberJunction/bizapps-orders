@@ -12514,6 +12514,25 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
 
   /**
+  * Related records: MJ_BizApps_Orders: Order Checkout Answers
+  *
+  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Order Headers record — see
+  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
+  * the 'MJ_BizApps_Orders: Order Headers → MJ_BizApps_Orders: Order Checkout Answers' relationship; edit that row, not this file.
+  *
+  */
+  public readonly CheckoutAnswers = this.DeclareRelatedRecords<mjBizAppsOrdersOrderCheckoutAnswerEntity>({
+      Name: 'CheckoutAnswers',
+        RelatedEntity: 'MJ_BizApps_Orders: Order Checkout Answers',
+        RelatedEntityJoinField: 'OrderHeaderID',
+        OrderBy: 'QuestionKey ASC',
+        Load: 'explicit',
+        OnRemove: 'delete',
+        Source: 'database',
+  });
+
+
+  /**
   * Embedded record: MJ_BizApps_Common: Addresses
   *
   * 1:1 peer joined by this record's BillToAddressID. Loaded and saved with this
