@@ -93,6 +93,8 @@ export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';
 export * from './pricing/inheritPrices';
 export * from './pricing/priceOverride';
+// Access overrides (bizapps-orders#268) — the authorization names and who may request each type.
+export * from './accessOverride';
 export * from './pricing/linePricePick';
 
 /**
