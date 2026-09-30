@@ -55,14 +55,14 @@
     "class-validator": "^0.14.3"
   },
   "peerDependencies": {
-    "@memberjunction/actions": "^6.1.4",
-    "@memberjunction/actions-base": "^6.1.4",
-    "@memberjunction/core": "^6.1.4",
-    "@memberjunction/global": "^6.1.4",
-    "@memberjunction/server": "^6.1.4",
-    "@memberjunction/server-extensions-core": "^6.1.4",
-    "@memberjunction/generic-database-provider": "^6.1.4",
-    "@memberjunction/templates": "^6.1.4",
+    "@memberjunction/actions": "~6.1.5",
+    "@memberjunction/actions-base": "~6.1.5",
+    "@memberjunction/core": "~6.1.5",
+    "@memberjunction/global": "~6.1.5",
+    "@memberjunction/server": "~6.1.5",
+    "@memberjunction/server-extensions-core": "~6.1.5",
+    "@memberjunction/generic-database-provider": "~6.1.5",
+    "@memberjunction/templates": "~6.1.5",
     "@mj-biz-apps/accounting-engine-base": ">=0.17.0",
     "@mj-biz-apps/accounting-entities": ">=0.17.0",
     "@mj-biz-apps/accounting-server": ">=0.17.0"
