@@ -82,7 +82,7 @@ describe('CheckoutPublicHostComponent events', () => {
         const target = new EventTarget();
         host = Object.assign(target, { getAttribute: () => null });
         seen = [];
-        for (const type of ['checkout-state-change', 'checkout-complete', 'checkout-error', 'checkout-cancel', 'closed']) {
+        for (const type of ['checkout-state-change', 'checkout-complete', 'checkout-error', 'checkout-cancel', 'checkout-close']) {
             host.addEventListener(type, (e) => seen.push({ type, detail: (e as CustomEvent).detail }));
         }
         responses = {
@@ -180,7 +180,7 @@ describe('CheckoutPublicHostComponent events', () => {
             expect(seen).toEqual([
                 { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
                 { type: 'checkout-cancel', detail: {} },
-                { type: 'closed', detail: {} },
+                { type: 'checkout-close', detail: {} },
             ]);
         });
 

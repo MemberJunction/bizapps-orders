@@ -452,7 +452,7 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 | `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units, `currency` upper-case, `coupon` the applied promotion code or `null` |
 | `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
 | `checkout-cancel` | the buyer pressed Cancel; the form has been reset to blank | `{}` |
-| `closed` | sent with `checkout-cancel`, for a container such as a modal to close itself | `{}` |
+| `checkout-close` | sent with `checkout-cancel`, for a container such as a modal to close itself | `{}` |
 
 Cancel clears every field, the error banner and the card entry; the checkout session stays open, so the buyer can start again. It is ignored while a payment is in flight.
 

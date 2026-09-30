@@ -20,7 +20,7 @@ import { CommonModule } from '@angular/common';
 import {
     BuildCheckoutCompleteDetail,
     CHECKOUT_CANCEL_EVENT,
-    CHECKOUT_CLOSED_EVENT,
+    CHECKOUT_CLOSE_EVENT,
     CHECKOUT_COMPLETE_EVENT,
     CHECKOUT_ERROR_EVENT,
     CHECKOUT_STATE_CHANGE_EVENT,
@@ -45,6 +45,7 @@ interface StripeCard {
     mount(target: string | HTMLElement): void;
     on(event: string, handler: (ev: { complete?: boolean }) => void): void;
     unmount?(): void;
+    destroy?(): void;
 }
 
 interface StripeInstance {
@@ -176,7 +177,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.errorMessage = null;
         this.stripePaymentMethodId = null;
         try {
-            this.card?.unmount?.();
+            this.card?.destroy?.();
         } catch {
             /* already gone */
         }
@@ -186,7 +187,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.formGeneration++;
         this.setState('CHECKOUT');
         this.dispatch(CHECKOUT_CANCEL_EVENT, {});
-        this.dispatch(CHECKOUT_CLOSED_EVENT, {});
+        this.dispatch(CHECKOUT_CLOSE_EVENT, {});
         this.cdr.detectChanges();
     }
 
