@@ -1,0 +1,13 @@
+diff --git a/dist/Misc/graphql_server_codegen.js b/dist/Misc/graphql_server_codegen.js
+index 17e6a1bfa2081da27104055571b402f1678d6bdf..5265f2843e1b9159dcbe4fc6d940813a4bef7448 100644
+--- a/dist/Misc/graphql_server_codegen.js
++++ b/dist/Misc/graphql_server_codegen.js
+@@ -269,7 +269,7 @@ export class ${serverGraphQLTypeName} {`;
+      * contract, which the database constraint does still govern.
+      */
+     isNonNullableServerField(fieldInfo) {
+-        return fieldInfo.IsUnrestrictableField;
++        return !fieldInfo.AllowsNull && fieldInfo.IsUnrestrictableField;
+     }
+     generateServerField(fieldInfo) {
+         const fieldString = this.getTypeGraphQLFieldString(fieldInfo);
