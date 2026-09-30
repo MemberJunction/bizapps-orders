@@ -157,7 +157,7 @@ export interface CancellationDecision {
  * term a line is about to create (golive #276).
  *
  * The dedupe lookup matches on `ProductID`, so a different band of one offering is invisible to
- * `ConcurrencyMode`. `Product.SubscriptionFamily` names the bands that belong together, and this
+ * `ConcurrencyMode`. `Product.SubscriptionFamilyID` names the bands that belong together, and this
  * is what the caller found for them.
  */
 export interface CoverageOverlap {
@@ -168,11 +168,17 @@ export interface CoverageOverlap {
     /** The overlapping part of that subscription's coverage, as calendar days. */
     CoverageStart: Date;
     CoverageEnd: Date;
+    /** The last day that subscription covers, including terms past the new one: a start after it clears the overlap. */
+    CoveredThrough: Date;
+    /** The `ConcurrencyMode` and code of the other band's subscription type. */
+    ConcurrencyMode: SubscriptionTypeRules['ConcurrencyMode'];
+    SubscriptionTypeCode: string;
 }
 
 export interface CoverageOverlapContext {
+    /** The rules of the line being confirmed. */
     Rules: SubscriptionTypeRules;
-    /** `Product.SubscriptionFamily` of the line being confirmed. */
+    /** The family's name, for the message. */
     Family: string;
     /** The line's product, for the message. */
     ProductName: string;
@@ -182,10 +188,12 @@ export interface CoverageOverlapContext {
 }
 
 /**
- * What confirm does with a line whose term overlaps coverage in its family.
+ * What confirm does with a line whose term overlaps coverage in its family. The mode is the
+ * stricter of the line's type and each overlapping band's type (RejectDuplicate, then
+ * ExtendExisting, then AllowMultiple), so the answer does not depend on which band is ordered.
  *
  *   None          nothing overlaps
- *   Allowed       `AllowMultiple` — concurrent coverage is the type's intent
+ *   Allowed       `AllowMultiple` — concurrent coverage is the types' intent
  *   Refused       `RejectDuplicate` — refused whether or not the line acknowledges it
  *   NeedsAck      `ExtendExisting` and the line does not acknowledge it — refused
  *   Acknowledged  `ExtendExisting` and the line acknowledges it — proceeds
@@ -299,6 +307,20 @@ function daysBetween(a: Date, b: Date): number {
 /** Calendar date for user-facing explanations. */
 function isoDay(d: Date): string {
     return d.toISOString().slice(0, 10);
+}
+
+/** Strictest first: a refusal outranks an acknowledgment, which outranks allowing it. */
+const CONCURRENCY_STRICTNESS: Record<SubscriptionTypeRules['ConcurrencyMode'], number> = {
+    AllowMultiple: 0,
+    ExtendExisting: 1,
+    RejectDuplicate: 2,
+};
+
+/** The strictest of several types' modes. On a tie the first (the line's own type) names it. */
+function strictestMode(
+    modes: Array<{ Mode: SubscriptionTypeRules['ConcurrencyMode']; Code: string }>,
+): { Mode: SubscriptionTypeRules['ConcurrencyMode']; Code: string } {
+    return modes.reduce((best, m) => (CONCURRENCY_STRICTNESS[m.Mode] > CONCURRENCY_STRICTNESS[best.Mode] ? m : best));
 }
 
 function describeOverlap(o: CoverageOverlap): string {
@@ -595,29 +617,43 @@ export class SubscriptionBehavior {
      *
      * The type's `ConcurrencyMode` already answers "may this holder have two concurrent
      * subscriptions", so it answers this too — a second band IS a second concurrent subscription.
-     * The one difference is `ExtendExisting`: for the same product it extends, but a different
-     * band cannot extend a subscription to another product, and silently creating a second one is
-     * what billed the holder twice. So it refuses unless the line says the overlap is intended.
+     * Two bands can carry different types, so the stricter mode of the line's type and each
+     * overlapping band's type applies; otherwise holding A and ordering B could be allowed while
+     * holding B and ordering A is refused.
+     *
+     * The one difference from the same-product case is `ExtendExisting`: a different band cannot
+     * extend a subscription to another product, and silently creating a second one is what billed
+     * the holder twice. So it refuses unless the line says the overlap is intended.
+     *
+     * The way out the message offers is a start after the existing coverage, or (where the mode
+     * permits) marking the line to run alongside it. It does not offer cancelling the existing
+     * subscription: a cancelled subscription keeps its coverage through its end date, and that
+     * coverage still counts.
      */
     public DecideCoverageOverlap(ctx: CoverageOverlapContext): CoverageOverlapDecision {
         if (ctx.Overlaps.length === 0) return { Outcome: 'None', Message: null };
 
+        const governing = strictestMode([
+            { Mode: ctx.Rules.ConcurrencyMode, Code: ctx.Rules.Code },
+            ...ctx.Overlaps.map((o) => ({ Mode: o.ConcurrencyMode, Code: o.SubscriptionTypeCode })),
+        ]);
         const what =
             `${ctx.ProductName} overlaps coverage this holder already has in subscription family ` +
             `${ctx.Family}: ${ctx.Overlaps.map(describeOverlap).join('; ')}.`;
+        const startAfter = isoDay(new Date(Math.max(...ctx.Overlaps.map((o) => utcDay(o.CoveredThrough).getTime()))));
 
-        switch (ctx.Rules.ConcurrencyMode) {
+        switch (governing.Mode) {
             case 'AllowMultiple':
                 return {
                     Outcome: 'Allowed',
-                    Message: `${what} Subscription type ${ctx.Rules.Code} allows concurrent subscriptions, so both will be billed.`,
+                    Message: `${what} Subscription type ${governing.Code} allows concurrent subscriptions, so both will be billed.`,
                 };
             case 'RejectDuplicate':
                 return {
                     Outcome: 'Refused',
                     Message:
-                        `${what} Subscription type ${ctx.Rules.Code} does not allow concurrent subscriptions. ` +
-                        `Cancel the existing subscription before ordering this band.`,
+                        `${what} Subscription type ${governing.Code} does not allow concurrent subscriptions. ` +
+                        `Start this band after ${startAfter}.`,
                 };
             case 'ExtendExisting':
                 return ctx.Acknowledged
@@ -629,7 +665,7 @@ export class SubscriptionBehavior {
                           Outcome: 'NeedsAck',
                           Message:
                               `${what} A different band does not extend the existing subscription, so both would be billed. ` +
-                              `Cancel the existing subscription first, or mark the line to run alongside it.`,
+                              `Start this band after ${startAfter}, or mark the line to run alongside it.`,
                       };
         }
     }
@@ -782,13 +818,19 @@ export class SubscriptionBehavior {
     }
 }
 
-/** A term of a live subscription to another band of the family, as the lookup reads it. */
+/**
+ * A term that covers the holder under another band of the family, as the lookup reads it: a live
+ * term, or a cancelled subscription's term cut at the subscription's end date.
+ */
 export interface FamilyCoverageTerm {
     SubscriptionID: string | null;
     SubscriptionNumber: string | null;
     ProductName: string;
     StartDate: Date;
     EndDate: Date;
+    /** The `ConcurrencyMode` and code of that band's subscription type. */
+    ConcurrencyMode: SubscriptionTypeRules['ConcurrencyMode'];
+    SubscriptionTypeCode: string;
 }
 
 /**
@@ -798,20 +840,28 @@ export interface FamilyCoverageTerm {
  * Terms are inclusive calendar days, so a term ending the day before `start` does not overlap —
  * that is a contiguous continuation, not double coverage. A subscription with several overlapping
  * terms reports one window from the earliest overlapping day to the latest, which is what the
- * holder is covered for twice.
+ * holder is covered for twice. `CoveredThrough` is the last day of any of that subscription's
+ * terms, including ones after `end`, so a start after it clears the overlap.
  */
 export function OverlappingCoverage(terms: FamilyCoverageTerm[], start: Date, end: Date): CoverageOverlap[] {
     const from = utcDay(start).getTime();
     const to = utcDay(end).getTime();
-    const bySubscription = new Map<string, CoverageOverlap>();
+    // A sibling line has no subscription yet; each sibling is its own entry.
+    const keyOf = (term: FamilyCoverageTerm, i: number) => term.SubscriptionID ?? `line:${i}`;
 
-    for (const term of terms) {
+    const coveredThrough = new Map<string, number>();
+    terms.forEach((term, i) => {
+        const key = keyOf(term, i);
+        coveredThrough.set(key, Math.max(coveredThrough.get(key) ?? -Infinity, utcDay(term.EndDate).getTime()));
+    });
+
+    const bySubscription = new Map<string, CoverageOverlap>();
+    terms.forEach((term, i) => {
         const s = Math.max(utcDay(term.StartDate).getTime(), from);
         const e = Math.min(utcDay(term.EndDate).getTime(), to);
-        if (s > e) continue;
+        if (s > e) return;
 
-        // A sibling line has no subscription yet; each sibling is its own entry.
-        const key = term.SubscriptionID ?? `line:${bySubscription.size}`;
+        const key = keyOf(term, i);
         const seen = bySubscription.get(key);
         if (seen) {
             seen.CoverageStart = new Date(Math.min(seen.CoverageStart.getTime(), s));
@@ -823,9 +873,12 @@ export function OverlappingCoverage(terms: FamilyCoverageTerm[], start: Date, en
                 ProductName: term.ProductName,
                 CoverageStart: new Date(s),
                 CoverageEnd: new Date(e),
+                CoveredThrough: new Date(coveredThrough.get(key)!),
+                ConcurrencyMode: term.ConcurrencyMode,
+                SubscriptionTypeCode: term.SubscriptionTypeCode,
             });
         }
-    }
+    });
     return [...bySubscription.values()];
 }
 

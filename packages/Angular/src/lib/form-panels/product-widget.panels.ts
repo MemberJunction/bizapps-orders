@@ -285,15 +285,16 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
                     LinkType="Record"
                     (Navigate)="FormComponent.OnFormNavigate($event)">
                 </mj-form-field>
-                <!-- Bands of one offering share this code, so confirm can tell a different band
+                <!-- Bands of one offering share a family, so confirm can tell a different band
                      from a new subscription (golive #276). -->
                 <mj-form-field
                     [Record]="Record"
                     [ShowLabel]="true"
-                    FieldName="SubscriptionFamily"
+                    FieldName="SubscriptionFamilyID"
                     Type="textbox"
                     [EditMode]="EditMode"
                     [FormContext]="FormContext"
+                    LinkType="Record"
                     (Navigate)="FormComponent.OnFormNavigate($event)">
                 </mj-form-field>
                 <mj-form-field

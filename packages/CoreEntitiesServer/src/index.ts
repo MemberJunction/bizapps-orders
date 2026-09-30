@@ -160,6 +160,11 @@ export { PriceOrderOperation, LoadPriceOrderOperation } from './PriceOrderOperat
 export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
 export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
 export {
+    ProductEntityServer,
+    SubscriptionFamilyEntityServer,
+    LoadSubscriptionFamilyRules,
+} from './SubscriptionFamilyRules.js';
+export {
     BasePriceResolver,
     DefaultPriceResolver,
     LoadDefaultPriceResolver,

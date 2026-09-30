@@ -1,4 +1,4 @@
-SKU,Name,CompanyCode,CategoryCode,ProductTypeCode,RevRecCode,SubscriptionTypeCode,Mnemonic,SubscriptionFamily
+SKU,Name,CompanyCode,CategoryCode,ProductTypeCode,RevRecCode,SubscriptionTypeCode,Mnemonic,SubscriptionFamilyCode
 STYLE-HB,Style Handbook,BCP,HANDBOOKS,PhysicalGood,UpFront,,WidgetA,
 KIT-BOOK,New Member Kit — Handbook,BCP,HANDBOOKS,PhysicalGood,UpFront,,BundlePartX,
 KIT-SEAT,New Member Kit — Workshop,BCP,WORKSHOPS,Service,UpFront,,BundlePartY,

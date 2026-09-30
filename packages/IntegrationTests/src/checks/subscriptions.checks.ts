@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB20).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB21).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -25,9 +25,10 @@
  *   SB15  a renewal ignores a stated start and continues where existing coverage ends
  *   SB16  a different band of the same family is refused while the holder has coverage (golive #276)
  *   SB17  …unless the line acknowledges it, which books a second subscription alongside
- *   SB18  cancelling the existing band first clears the way, with no acknowledgment
+ *   SB18  a cancelled band still blocks until its coverage ends; a start after that confirms
  *   SB19  two bands on ONE order are checked against each other
  *   SB20  Orders.CheckCoverageOverlap reports what confirm will do, and writes nothing
+ *   SB21  a product cannot join a subscription family of another company
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -49,7 +50,8 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
-import { BaseRemotableOperation } from '@memberjunction/core';
+import { BaseRemotableOperation, Metadata } from '@memberjunction/core';
+import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 import { MJGlobal } from '@memberjunction/global';
 import { BuildOrder, ConfirmOrder, type OrderSpec } from '../order-builder.js';
 
@@ -699,12 +701,15 @@ export const SubscriptionChecks: NamedCheck[] = [
                 // ExtendExisting never engages. The family is what connects them.
                 const second = await buySubscription(ctx, 'SubTierPremium', 500);
                 Assert(!second.Saved, 'a second band overlapping live coverage must be REFUSED under ExtendExisting');
-                Assert(/family MEM-TIER/.test(second.Message), `the refusal should name the family, got: ${second.Message}`);
+                Assert(/family Tiered Membership \(MEM-TIER\)/.test(second.Message), `the refusal should name the family, got: ${second.Message}`);
                 Assert(
                     /2026-07-01 to 2027-06-30/.test(second.Message),
                     `the refusal should name the overlapping coverage, got: ${second.Message}`,
                 );
-                Assert(/Cancel the existing subscription/.test(second.Message), `the refusal should say how to proceed, got: ${second.Message}`);
+                Assert(
+                    /Start this band after 2027-06-30, or mark the line to run alongside it\./.test(second.Message),
+                    `the refusal should say how to proceed, got: ${second.Message}`,
+                );
 
                 AssertEqual((await subscriptionsFor(ctx, 'SubTierPremium')).length, 0, 'no second subscription left behind');
                 AssertEqual((await subscriptionsFor(ctx, 'SubTierStandard')).length, 1, 'the existing band is untouched');
@@ -733,22 +738,43 @@ export const SubscriptionChecks: NamedCheck[] = [
     },
     {
         Id: 'subscriptions.SB18',
-        Name: 'SB18: cancelling the existing band first lets the new band confirm without acknowledgment',
+        Name: 'SB18: a cancelled band still blocks until its coverage ends; a start after that confirms',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
                 const first = await buySubscription(ctx, 'SubTierStandard', 300);
                 Assert(first.Saved, `first confirm failed: ${first.Message}`);
                 const [term1] = await termsForOrder(ctx, first.Order.ID as string);
 
+                // Cancelling marks the subscription Canceled at once, but the term still runs to its
+                // end, so the holder is still covered and a second band would still bill twice.
                 const cancelled = await runOperation<{ Success: boolean; Message?: string }>(ctx, 'Orders.CancelSubscription', {
                     SubscriptionID: term1.SubscriptionID,
                     RequestDate: '2026-07-01',
                 });
                 Assert(cancelled.Success, `cancel failed: ${cancelled.Message}`);
 
-                const second = await buySubscription(ctx, 'SubTierPremium', 500);
-                Assert(second.Saved, `a band whose sibling was cancelled must confirm: ${second.Message}`);
+                const refused = await buySubscription(ctx, 'SubTierPremium', 500);
+                Assert(!refused.Saved, 'a band overlapping a cancelled band that is still running must be refused');
+                const coveredThrough = /Start this band after (\d{4}-\d{2}-\d{2})/.exec(refused.Message)?.[1];
+                AssertEqual(coveredThrough, isoDate(term1.EndDate), 'the refusal names the day the cancelled coverage ends');
+
+                const nextDay = new Date(`${coveredThrough}T00:00:00Z`);
+                nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+                const after = await buySubscription(ctx, 'SubTierPremium', 500, {
+                    Lines: [
+                        {
+                            ProductID: f.Products.SubTierPremium,
+                            Quantity: 1,
+                            UnitPrice: 500,
+                            ServicePeriodStart: isoDate(nextDay),
+                        },
+                    ],
+                });
+                Assert(after.Saved, `a band starting after the cancelled coverage must confirm: ${after.Message}`);
+                const [term2] = await termsForOrder(ctx, after.Order.ID as string);
+                AssertEqual(isoDate(term2.StartDate), isoDate(nextDay), 'the new band starts where the old coverage ended');
             }),
     },
     {
@@ -810,6 +836,36 @@ export const SubscriptionChecks: NamedCheck[] = [
                 AssertEqual(status?.Status, 'Draft', 'the preview did not confirm the order');
             }),
     },
+    {
+        Id: 'subscriptions.SB21',
+        Name: "SB21: a product cannot join a subscription family of another company",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // The world's family belongs to the first company; the other company's product
+                // must not be able to join it, or the overlap check would never see it.
+                const family = await TxOne<{ ID: string }>(
+                    ctx,
+                    `SELECT ID FROM ${ORDERS_SCHEMA}.SubscriptionFamily WHERE Code = 'MEM-TIER' AND CompanyID = '${f.CoA.ID}'`,
+                );
+                Assert(!!family, 'the MEM-TIER family is in the world');
+                const other = await TxOne<{ ID: string }>(
+                    ctx,
+                    `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID = '${f.CoB.ID}' ORDER BY SKU`,
+                );
+                Assert(!!other, 'the second company has a product');
+
+                const product = await new Metadata().GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, ctx.User);
+                Assert(await product.Load(other!.ID), 'load the other company\'s product');
+                product.SubscriptionFamilyID = family!.ID;
+                Assert(!(await product.Save()), 'a product in another company must not join the family');
+                Assert(
+                    /belongs to another company/.test(product.LatestResult?.CompleteMessage ?? ''),
+                    `the refusal should say why, got: ${product.LatestResult?.CompleteMessage}`,
+                );
+            }),
+    },
 ];
 
 for (const check of SubscriptionChecks) {
@@ -824,5 +880,6 @@ IntegrationCheckRegistry.Instance.RegisterLifecycle('subscriptions', {
 });
 import {
   ORDER_LINE_ENTITY,
+  PRODUCT_ENTITY,
   SUBSCRIPTION_TERM_ENTITY,
 } from "../entity-names.js";

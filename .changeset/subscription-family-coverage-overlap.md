@@ -10,10 +10,10 @@ A different band of the same subscription offering no longer books a second, ove
 
 Confirm found an existing subscription by product, so a holder with coverage under one band who ordered another band got a new subscription for the same dates, billed and recognized alongside the first.
 
-- `Product.SubscriptionFamily` (new, nullable): a code the bands of one offering share. Set it on the product form's Subscription section.
-- `OrderLine.AcknowledgesCoverageOverlap` (new, default false): marks a line that is meant to run alongside existing coverage.
-- At confirm, a subscription line whose term overlaps the holder's live coverage under another band of its family follows the type's `ConcurrencyMode`: `AllowMultiple` proceeds, `RejectDuplicate` refuses, and `ExtendExisting` refuses unless the line acknowledges the overlap. The refusal names the subscription and the overlapping dates. Two bands on one order are checked against each other. A subscription cancelled through `Orders.CancelSubscription` no longer counts.
-- `Orders.CheckCoverageOverlap` (new, read-only): runs the same check over a saved draft. The order lines editor calls it after each save and shows the result on the line, with the acknowledgment checkbox where it applies.
+- A product joins a subscription family (the `SubscriptionFamily` table, one per selling company) through `Product.SubscriptionFamilyID`, picked on the product form's Subscription section. A product can only join a family of its own company, and not a family marked inactive; a family's company cannot change once saved.
+- At confirm, a subscription line whose term overlaps the holder's coverage under another band of its family, within the product's company, follows the stricter `ConcurrencyMode` of the two bands' types (`RejectDuplicate`, then `ExtendExisting`, then `AllowMultiple`): `AllowMultiple` proceeds, `RejectDuplicate` refuses, and `ExtendExisting` refuses unless the line sets `OrderLine.AcknowledgesCoverageOverlap`. The refusal names the family, the subscription and the overlapping dates, and says to start the band after the existing coverage ends or to mark the line to run alongside it. Two bands on one order are checked against each other.
+- A cancelled subscription still counts until its coverage ends: its terms that are not Canceled or Lapsed count in full, and a Canceled term counts through `Subscription.EndDate`.
+- `Orders.CheckCoverageOverlap` (new, read-only): runs the same check over a saved draft. The order lines editor calls it after each save and shows the result on the line, with the acknowledgment checkbox ("Run alongside the existing coverage. Both will be billed.") where it applies.
 
 Products with no family behave as before.
 

@@ -89,7 +89,7 @@ import {
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
 import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
-import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
+import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { Today, AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
@@ -116,8 +116,9 @@ interface ProductRow {
     SubscriptionTypeID?: string | null;
     ProductTypeID?: string | null;
     RevenueRecognitionTypeID: string;
-    /** `Product.SubscriptionFamily` — the bands of one offering share it (golive #276). */
-    SubscriptionFamily?: string | null;
+    CompanyID: string;
+    /** `Product.SubscriptionFamilyID` — the bands of one offering share it (golive #276). */
+    SubscriptionFamilyID?: string | null;
 }
 
 /** A subscription line whose term overlaps coverage in its family, as a preview reports it. */
@@ -2808,6 +2809,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // The same, for other BANDS: terms earlier lines of this order will create, keyed by
         // family and holder, so two bands on one order are checked against each other too.
         const pendingFamily = new Map<string, Array<FamilyCoverageTerm & { ProductID: string }>>();
+        const familyNames = await this.loadFamilyNames(subLines.map((s) => s.product.SubscriptionFamilyID));
 
         // The order's booking day, as a calendar day (#209). `Decide` reduces it with `utcDay` and
         // the settled term reaches `SubscriptionTerm.StartDate`/`EndDate`, both `DATE NOT NULL`, so
@@ -2888,17 +2890,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // product, so a holder with coverage under a sibling band found nothing and a second
             // subscription for the same dates was created and billed. A renewal names its target
             // outright, so it continues that subscription and is not checked.
-            if (decision.Term && product.SubscriptionFamily && !line.RenewsSubscriptionID) {
-                const familyKey = `${product.SubscriptionFamily.trim().toLowerCase()}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
+            if (decision.Term && product.SubscriptionFamilyID && !line.RenewsSubscriptionID) {
+                const familyKey = `${uuidKey(product.SubscriptionFamilyID)}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
                 const siblings = (pendingFamily.get(familyKey) ?? []).filter((s) => !UUIDsEqual(s.ProductID, product.ID));
                 const overlaps = OverlappingCoverage(
-                    [...siblings, ...(await this.loadFamilyCoverage(product, match, decision.Term.StartDate, decision.Term.EndDate))],
+                    [...siblings, ...(await this.loadFamilyCoverage(product, match, decision.Term.StartDate))],
                     decision.Term.StartDate,
                     decision.Term.EndDate,
                 );
                 const verdict = behavior.DecideCoverageOverlap({
                     Rules: rules,
-                    Family: product.SubscriptionFamily,
+                    Family: familyNames.get(uuidKey(product.SubscriptionFamilyID)) ?? product.SubscriptionFamilyID,
                     ProductName: product.Name,
                     Overlaps: overlaps,
                     Acknowledged: !!line.AcknowledgesCoverageOverlap,
@@ -2919,6 +2921,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         ProductName: product.Name,
                         StartDate: decision.Term.StartDate,
                         EndDate: decision.Term.EndDate,
+                        ConcurrencyMode: rules.ConcurrencyMode,
+                        SubscriptionTypeCode: rules.Code,
                     },
                 ]);
             }
@@ -3080,7 +3084,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 SubscriptionTypeID: p.SubscriptionTypeID,
                 ProductTypeID: p.ProductTypeID,
                 RevenueRecognitionTypeID: p.RevenueRecognitionTypeID,
-                SubscriptionFamily: p.SubscriptionFamily,
+                CompanyID: p.CompanyID,
+                SubscriptionFamilyID: p.SubscriptionFamilyID,
             });
         }
         if (products.size === 0) return [];
@@ -3237,79 +3242,124 @@ export class OrderEntityServer extends OrderHeaderEntity {
         return `${org} AND ${person}`;
     }
 
+    /** Family names by ID, for the overlap message. One read for every family on the order. */
+    private async loadFamilyNames(ids: Array<string | null | undefined>): Promise<Map<string, string>> {
+        const unique = [...new Set(ids.filter((id): id is string => !!id).map(uuidKey))];
+        if (unique.length === 0) return new Map();
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const list = RequireUUIDs(unique, 'SubscriptionFamilyID').map((id) => `'${id}'`).join(',');
+        const res = await rv.RunView<{ ID: string; Code: string; Name: string }>(
+            {
+                EntityName: SUBSCRIPTION_FAMILY_ENTITY,
+                ExtraFilter: `ID IN (${list})`,
+                Fields: ['ID', 'Code', 'Name'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!res?.Success) throw new Error(`Could not read subscription families: ${res?.ErrorMessage}`);
+        return new Map(res.Results.map((f) => [uuidKey(f.ID), `${f.Name} (${f.Code})`]));
+    }
+
     /**
-     * Terms of this holder's live subscriptions to OTHER bands of the product's family that touch
-     * `[start, end]` (golive #276).
+     * Terms that cover this holder under OTHER bands of the product's family and end on or after
+     * `start` (golive #276). Terms after `end` are included so the caller can say when coverage
+     * runs out.
      *
-     * Live means what the `Overlapping Subscriptions` query counts: a subscription that is not
-     * Canceled or Migrated, and a term that is not Canceled or Lapsed. A subscription cancelled
-     * through `Orders.CancelSubscription` is `Canceled` even while it rides out its term, so
-     * cancelling the old band first is what clears the way for the new one.
+     * Bands are the family's other products in the product's own company. A subscription counts
+     * unless it is Migrated, and its terms count unless they are Canceled or Lapsed. A Canceled
+     * subscription still counts: cancelling stamps one term and leaves the subscription's access
+     * running to `Subscription.EndDate`, so its Canceled term counts through that date, and any
+     * term it did not stamp counts in full.
      */
     private async loadFamilyCoverage(
         product: ProductRow,
         match: SubscriberMatch,
         start: Date,
-        end: Date,
     ): Promise<FamilyCoverageTerm[]> {
         const holder = this.holderFilter(match);
-        const family = product.SubscriptionFamily?.trim().toLowerCase();
-        if (!holder || !family) return [];
+        const familyID = product.SubscriptionFamilyID;
+        if (!holder || !familyID) return [];
 
         // The engine caches every product, active or not — a discontinued band still has holders.
         const bands = new Map(
             OrdersEngine.Instance.Products.filter(
-                (p) => p.SubscriptionFamily?.trim().toLowerCase() === family && !UUIDsEqual(p.ID, product.ID),
+                (p) =>
+                    UUIDsEqual(p.SubscriptionFamilyID, familyID) &&
+                    UUIDsEqual(p.CompanyID, product.CompanyID) &&
+                    !UUIDsEqual(p.ID, product.ID),
             ).map((p) => [uuidKey(p.ID), p.Name]),
         );
         if (bands.size === 0) return [];
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const bandIDs = RequireUUIDs([...bands.keys()], 'ProductID').map((id) => `'${id}'`).join(',');
-        const subs = await rv.RunView<{ ID: string; SubscriptionNumber: string; ProductID: string }>(
+        const subs = await rv.RunView<{
+            ID: string;
+            SubscriptionNumber: string;
+            ProductID: string;
+            SubscriptionTypeID: string;
+            Status: string;
+            EndDate: string | null;
+        }>(
             {
                 EntityName: SUBSCRIPTION_ENTITY,
-                ExtraFilter: `ProductID IN (${bandIDs}) AND ${holder} AND Status NOT IN ('Canceled','Migrated')`,
-                Fields: ['ID', 'SubscriptionNumber', 'ProductID'],
+                ExtraFilter: `ProductID IN (${bandIDs}) AND ${holder} AND Status <> 'Migrated'`,
+                Fields: ['ID', 'SubscriptionNumber', 'ProductID', 'SubscriptionTypeID', 'Status', 'EndDate'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
         if (!subs?.Success) {
-            throw new Error(`Could not read this holder's other subscriptions in family ${product.SubscriptionFamily}: ${subs?.ErrorMessage}`);
+            throw new Error(`Could not read this holder's other subscriptions in the product's family: ${subs?.ErrorMessage}`);
         }
         if (subs.Results.length === 0) return [];
 
         const byID = new Map(subs.Results.map((s) => [uuidKey(s.ID), s]));
         const subIDs = RequireUUIDs(subs.Results.map((s) => s.ID), 'SubscriptionID').map((id) => `'${id}'`).join(',');
         const day = (d: Date) => d.toISOString().slice(0, 10);
-        const terms = await rv.RunView<{ SubscriptionID: string; StartDate: string; EndDate: string }>(
+        const terms = await rv.RunView<{ SubscriptionID: string; StartDate: string; EndDate: string; Status: string }>(
             {
                 EntityName: SUBSCRIPTION_TERM_ENTITY,
-                ExtraFilter:
-                    `SubscriptionID IN (${subIDs}) AND Status NOT IN ('Canceled','Lapsed') ` +
-                    `AND StartDate <= '${day(end)}' AND EndDate >= '${day(start)}'`,
-                Fields: ['SubscriptionID', 'StartDate', 'EndDate'],
+                ExtraFilter: `SubscriptionID IN (${subIDs}) AND Status <> 'Lapsed' AND EndDate >= '${day(start)}'`,
+                Fields: ['SubscriptionID', 'StartDate', 'EndDate', 'Status'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
         if (!terms?.Success) {
-            throw new Error(`Could not read the terms of this holder's other subscriptions in family ${product.SubscriptionFamily}: ${terms?.ErrorMessage}`);
+            throw new Error(`Could not read the terms of this holder's other subscriptions in the product's family: ${terms?.ErrorMessage}`);
         }
 
-        return terms.Results.map((t) => {
+        const out: FamilyCoverageTerm[] = [];
+        for (const t of terms.Results) {
             const sub = byID.get(uuidKey(t.SubscriptionID));
-            return {
+            if (!sub) continue;
+            let endDate = new Date(t.EndDate);
+            if (t.Status === 'Canceled') {
+                // Only a cancelled subscription's own access window keeps a Canceled term alive.
+                if (sub.Status !== 'Canceled' || !sub.EndDate) continue;
+                const accessEnd = new Date(sub.EndDate);
+                if (accessEnd.getTime() < endDate.getTime()) endDate = accessEnd;
+            }
+            const type = OrdersEngine.Instance.SubscriptionTypeByID(sub.SubscriptionTypeID);
+            if (!type) {
+                throw new Error(`Subscription ${sub.SubscriptionNumber} names a subscription type that was not found.`);
+            }
+            const rules = SubscriptionTypeRulesFrom(type);
+            out.push({
                 SubscriptionID: t.SubscriptionID,
-                SubscriptionNumber: sub?.SubscriptionNumber ?? null,
-                ProductName: bands.get(uuidKey(sub?.ProductID)) ?? 'another band',
+                SubscriptionNumber: sub.SubscriptionNumber ?? null,
+                ProductName: bands.get(uuidKey(sub.ProductID)) ?? 'another band',
                 StartDate: new Date(t.StartDate),
-                EndDate: new Date(t.EndDate),
-            };
-        });
+                EndDate: endDate,
+                ConcurrencyMode: rules.ConcurrencyMode,
+                SubscriptionTypeCode: rules.Code,
+            });
+        }
+        return out;
     }
 
     /** Load a subscription plus the end and number of its latest term, by whatever filter. */
