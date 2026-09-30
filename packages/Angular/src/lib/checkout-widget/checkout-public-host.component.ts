@@ -184,6 +184,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             return;
         }
         this.resetForm();
+        this.setState('CHECKOUT');
         this.dispatch(CHECKOUT_CANCEL_EVENT, {});
         this.dispatch(CHECKOUT_CLOSE_EVENT, {});
         this.cdr.detectChanges();
@@ -193,13 +194,15 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
      * A reset the embedding host asked for, by dispatching `checkout-reset` on the element (a voice
      * or chat agent closing its panel, say). Refused while a payment is in flight — resetting then
      * would strand a charge the buyer cannot see. Unlike Cancel it sends no `checkout-cancel` or
-     * `checkout-close`: the host started it.
+     * `checkout-close`: the host started it. The e-mail and attribution are read again, so a host
+     * starting a new conversation sets them on the element before it dispatches the reset.
      */
     private resetRequested(): void {
         if (this.processing) {
             this.dispatch(CHECKOUT_RESET_REFUSED_EVENT, { state: this.state });
             return;
         }
+        this.readConversationAttributes();
         if (this.successMessage) {
             // The last purchase is confirmed and its session closed: the next one needs a new
             // session, so forget this one's key and start from the beginning.
@@ -213,10 +216,14 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             return;
         }
         this.resetForm();
+        this.setState('CHECKOUT');
         this.cdr.detectChanges();
     }
 
-    /** Back to a blank form: every field, the error banner and the card entry. The session stays open. */
+    /**
+     * Back to a blank form: every field, the error banner and the card entry. The session stays open.
+     * The caller reports the state, since a reset after a sale reports `LOADING` next, not `CHECKOUT`.
+     */
     private resetForm(): void {
         this.errorMessage = null;
         this.stripePaymentMethodId = null;
@@ -229,7 +236,6 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.cardMounted = false;
         this.isPaymentReady = !this.config?.stripePublishableKey;
         this.formGeneration++;
-        this.setState('CHECKOUT');
     }
 
     public async onSubmitted(event: CheckoutSubmissionEvent): Promise<void> {
@@ -409,12 +415,22 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         if (apiRoot) {
             this.apiRoot = apiRoot.replace(/\/+$/, '');
         }
-        // For a host that embeds the checkout in its own panel: an e-mail it already knows, and
-        // where the checkout came from. The server keeps the attribution only if it reads as one.
+        this.readConversationAttributes();
+        el.addEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);
+    }
+
+    /**
+     * For a host that embeds the checkout in its own panel: an e-mail it already knows, and where the
+     * checkout came from. The server keeps the attribution only if it reads as one.
+     */
+    private readConversationAttributes(): void {
+        const el = this.hostEl?.nativeElement as HTMLElement | undefined;
+        if (!el) {
+            return;
+        }
         this.prefillEmail = el.getAttribute('email') || el.getAttribute('data-email') || null;
         this.attributionSource = el.getAttribute('source') || el.getAttribute('data-source') || null;
         this.attributionReference = el.getAttribute('source-ref') || el.getAttribute('data-source-ref') || null;
-        el.addEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);
     }
 
     private forgetClientKey(): void {
@@ -425,7 +441,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
-        private clientKey(): string {
+    private clientKey(): string {
         const storageKey = `mj-checkout-key:${this.slug}`;
         try {
             const existing = sessionStorage.getItem(storageKey);

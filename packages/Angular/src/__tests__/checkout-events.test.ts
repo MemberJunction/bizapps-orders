@@ -256,6 +256,17 @@ describe('CheckoutPublicHostComponent events', () => {
             expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'CHECKOUT' } }]);
         });
 
+        it('a mid-flow reset takes the e-mail and attribution the host set for the next conversation', async () => {
+            attrs = { email: 'first@example.com', source: 'voice_agent', 'source-ref': 'conv-1' };
+            const c = create();
+            await c.ngOnInit();
+            attrs = { email: 'second@example.com', source: 'chat_agent', 'source-ref': 'conv-2' };
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            expect(c.prefillEmail).toBe('second@example.com');
+            await c.onSubmitted(submission());
+            expect(drafts[0].attribution).toEqual({ source: 'chat_agent', reference: 'conv-2' });
+        });
+
         it('refuses a reset while a payment is in flight', async () => {
             const c = create();
             await c.ngOnInit();
@@ -270,8 +281,13 @@ describe('CheckoutPublicHostComponent events', () => {
             await c.ngOnInit();
             await c.onSubmitted(submission());
             expect(c.successMessage).toBeTruthy();
+            seen = [];
             host.dispatchEvent(new CustomEvent('checkout-reset'));
             await new Promise((r) => setTimeout(r, 0));
+            expect(seen).toEqual([
+                { type: 'checkout-state-change', detail: { state: 'LOADING' } },
+                { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+            ]);
             expect(removed).toEqual(['mj-checkout-key:annual']);
             expect(inits).toBe(2);
             expect(c.successMessage).toBeNull();
