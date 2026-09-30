@@ -568,8 +568,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // THE ADDRESS AS SOLD, copied onto the order at the first confirm (golive #263).
             //
             // HERE, before either line write below: a draft's existing lines are written while the
-            // header is still Draft, and `trg_OrderLine_AddressFrozenAfterConfirm` refuses the line
-            // snapshot once the header is Confirmed. Inside the transaction, so it reads the same
+            // header is still Draft, and `trg_OrderLine_ImmutableAfterConfirm` (51016) refuses the
+            // line snapshot once the header is Confirmed. Inside the transaction, so it reads the same
             // Address rows the tax resolution in `prepareLines` just read.
             if (booking) await this.stampAddressSnapshots('confirm');
             else if (this.IsBookedOrder) await this.stampAddressSnapshots('fill');
