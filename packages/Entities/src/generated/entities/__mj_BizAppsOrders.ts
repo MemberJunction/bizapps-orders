@@ -82,6 +82,110 @@ export const mjBizAppsOrdersChargeTypeSchema = z.object({
 export type mjBizAppsOrdersChargeTypeEntityType = z.infer<typeof mjBizAppsOrdersChargeTypeSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Checkout Session Steps
+ */
+export const mjBizAppsOrdersCheckoutSessionStepSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    CheckoutSessionID: z.string().describe(`
+        * * Field Name: CheckoutSessionID
+        * * Display Name: Checkout Session ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Sessions (vwCheckoutSessions.ID)
+        * * Description: The checkout session this step belongs to.`),
+    StepName: z.union([z.literal('Capture'), z.literal('Confirm')]).describe(`
+        * * Field Name: StepName
+        * * Display Name: Step Name
+        * * SQL Data Type: nvarchar(50)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Capture
+    *   * Confirm
+        * * Description: Which post-payment step. Confirm: the order confirms, booking and creating entitlement grants in one transaction. Capture: the payment is booked against the order.`),
+    Status: z.union([z.literal('Failed'), z.literal('Running'), z.literal('Succeeded')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Running
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Failed
+    *   * Running
+    *   * Succeeded
+        * * Description: Running: an attempt started and has not reported back; one left Running long after LastAttemptAt was interrupted. Succeeded: the step is done, and replaying it does nothing. Failed: the last attempt failed; LastError says why.`),
+    Attempts: z.number().describe(`
+        * * Field Name: Attempts
+        * * Display Name: Attempts
+        * * SQL Data Type: int
+        * * Default Value: 0
+        * * Description: How many times the step has been attempted, from any source.`),
+    LastError: z.string().nullable().describe(`
+        * * Field Name: LastError
+        * * Display Name: Last Error
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The error from the last failed attempt. Cleared when the step succeeds.`),
+    Retryable: z.boolean().nullable().describe(`
+        * * Field Name: Retryable
+        * * Display Name: Retryable
+        * * SQL Data Type: bit
+        * * Description: Whether the last failure can succeed on a later attempt without anything changing (1), or needs a fix to the data first (0). NULL when the step has not failed or the step does not classify its failures.`),
+    LastAttemptSource: z.union([z.literal('Checkout'), z.literal('Replay'), z.literal('Webhook')]).describe(`
+        * * Field Name: LastAttemptSource
+        * * Display Name: Last Attempt Source
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Checkout
+    *   * Replay
+    *   * Webhook
+        * * Description: What started the last attempt. Checkout: the buyer's complete call. Webhook: a payment-provider event. Replay: an operator, through Orders.ReplayCheckoutStep.`),
+    LastReplayedByUserID: z.string().nullable().describe(`
+        * * Field Name: LastReplayedByUserID
+        * * Display Name: Last Replayed By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The operator who last replayed this step. NULL if it was never replayed.`),
+    FirstAttemptAt: z.date().describe(`
+        * * Field Name: FirstAttemptAt
+        * * Display Name: First Attempt At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the step was first attempted.`),
+    LastAttemptAt: z.date().describe(`
+        * * Field Name: LastAttemptAt
+        * * Display Name: Last Attempt At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the most recent attempt started.`),
+    SucceededAt: z.date().nullable().describe(`
+        * * Field Name: SucceededAt
+        * * Display Name: Succeeded At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the step succeeded. NULL until it does.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    CheckoutSession: z.string().describe(`
+        * * Field Name: CheckoutSession
+        * * Display Name: Checkout Session
+        * * SQL Data Type: nvarchar(100)`),
+    LastReplayedByUser: z.string().nullable().describe(`
+        * * Field Name: LastReplayedByUser
+        * * Display Name: Last Replayed By User
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersCheckoutSessionStepEntityType = z.infer<typeof mjBizAppsOrdersCheckoutSessionStepSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Checkout Sessions
  */
 export const mjBizAppsOrdersCheckoutSessionSchema = z.object({
@@ -610,6 +714,122 @@ export const mjBizAppsOrdersDimensionDefaultSchema = z.object({
 });
 
 export type mjBizAppsOrdersDimensionDefaultEntityType = z.infer<typeof mjBizAppsOrdersDimensionDefaultSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Entitlement Access Overrides
+ */
+export const mjBizAppsOrdersEntitlementAccessOverrideSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderHeaderID: z.string().describe(`
+        * * Field Name: OrderHeaderID
+        * * Display Name: Order Header ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+        * * Description: The order the override applies to. It does not carry to a later renewal or a revised order, which are different orders.`),
+    OverrideType: z.union([z.literal('DeferCutoff'), z.literal('WaivePaymentHold')]).describe(`
+        * * Field Name: OverrideType
+        * * Display Name: Override Type
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * DeferCutoff
+    *   * WaivePaymentHold
+        * * Description: WaivePaymentHold (lifts AwaitingPayment) or DeferCutoff (lifts PastDue).`),
+    Reason: z.string().describe(`
+        * * Field Name: Reason
+        * * Display Name: Reason
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: Why the exception is needed. Required.`),
+    EffectiveThrough: z.date().describe(`
+        * * Field Name: EffectiveThrough
+        * * Display Name: Effective Through
+        * * SQL Data Type: date
+        * * Description: The last day the override holds, inclusive. Required. After it the payment rule decides the grants again.`),
+    Status: z.union([z.literal('Approved'), z.literal('Expired'), z.literal('Rejected'), z.literal('Requested'), z.literal('Withdrawn')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Requested
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Approved
+    *   * Expired
+    *   * Rejected
+    *   * Requested
+    *   * Withdrawn
+        * * Description: Requested (awaiting approval), Approved (in force through EffectiveThrough), Rejected, Withdrawn (the approval task closed without a decision that could be applied), or Expired (EffectiveThrough has passed and the grants have been re-decided).`),
+    RequestedByUserID: z.string().describe(`
+        * * Field Name: RequestedByUserID
+        * * Display Name: Requested By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user who requested the override.`),
+    RequestedAt: z.date().describe(`
+        * * Field Name: RequestedAt
+        * * Display Name: Requested At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: When the override was requested.`),
+    ApprovalTaskID: z.string().nullable().describe(`
+        * * Field Name: ApprovalTaskID
+        * * Display Name: Approval Task ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Tasks: Tasks (vwTasks.ID)
+        * * Description: The Tasks approval request for this override.`),
+    ApprovalTaskRaisedAt: z.date().nullable().describe(`
+        * * Field Name: ApprovalTaskRaisedAt
+        * * Display Name: Approval Task Raised At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the approval task was raised. Set together with ApprovalTaskID.`),
+    DecidedByUserID: z.string().nullable().describe(`
+        * * Field Name: DecidedByUserID
+        * * Display Name: Decided By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user whose decision on the approval task approved or rejected the override.`),
+    DecidedAt: z.date().nullable().describe(`
+        * * Field Name: DecidedAt
+        * * Display Name: Decided At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the override was approved, rejected or withdrawn.`),
+    DecisionNotes: z.string().nullable().describe(`
+        * * Field Name: DecisionNotes
+        * * Display Name: Decision Notes
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: The notes recorded with the decision, or why a closed approval task was not applied.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    OrderHeader: z.string().describe(`
+        * * Field Name: OrderHeader
+        * * Display Name: Order Header
+        * * SQL Data Type: nvarchar(40)`),
+    RequestedByUser: z.string().describe(`
+        * * Field Name: RequestedByUser
+        * * Display Name: Requested By User
+        * * SQL Data Type: nvarchar(100)`),
+    ApprovalTask: z.string().nullable().describe(`
+        * * Field Name: ApprovalTask
+        * * Display Name: Approval Task
+        * * SQL Data Type: nvarchar(255)`),
+    DecidedByUser: z.string().nullable().describe(`
+        * * Field Name: DecidedByUser
+        * * Display Name: Decided By User
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersEntitlementAccessOverrideEntityType = z.infer<typeof mjBizAppsOrdersEntitlementAccessOverrideSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Entitlement Grants
@@ -1757,6 +1977,59 @@ export const mjBizAppsOrdersOrderChargeSchema = z.object({
 export type mjBizAppsOrdersOrderChargeEntityType = z.infer<typeof mjBizAppsOrdersOrderChargeSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Order Checkout Answers
+ */
+export const mjBizAppsOrdersOrderCheckoutAnswerSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderHeaderID: z.string().describe(`
+        * * Field Name: OrderHeaderID
+        * * Display Name: Order Header ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+        * * Description: The order the checkout confirmed.`),
+    QuestionKey: z.string().describe(`
+        * * Field Name: QuestionKey
+        * * Display Name: Question Key
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The question's key in the widget's Configuration. Stable across label edits, so answers to the same question can be reported together.`),
+    QuestionLabel: z.string().describe(`
+        * * Field Name: QuestionLabel
+        * * Display Name: Question Label
+        * * SQL Data Type: nvarchar(500)
+        * * Description: The question as the buyer saw it, copied at order time.`),
+    Answer: z.string().describe(`
+        * * Field Name: Answer
+        * * Display Name: Answer
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: The answer. For a select question, the value of the option the buyer chose; for a text question, the text entered.`),
+    OtherText: z.string().nullable().describe(`
+        * * Field Name: OtherText
+        * * Display Name: Other Text
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: The free-text answer the buyer gave after choosing the question's "Other" option. NULL for any other answer.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    OrderHeader: z.string().describe(`
+        * * Field Name: OrderHeader
+        * * Display Name: Order Header
+        * * SQL Data Type: nvarchar(40)`),
+});
+
+export type mjBizAppsOrdersOrderCheckoutAnswerEntityType = z.infer<typeof mjBizAppsOrdersOrderCheckoutAnswerSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Company Policies
  */
 export const mjBizAppsOrdersOrderCompanyPolicySchema = z.object({
@@ -2268,6 +2541,55 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
 export type mjBizAppsOrdersOrderHeaderEntityType = z.infer<typeof mjBizAppsOrdersOrderHeaderSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Order Line Choices
+ */
+export const mjBizAppsOrdersOrderLineChoiceSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderLineID: z.string().describe(`
+        * * Field Name: OrderLineID
+        * * Display Name: Order Line ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+        * * Description: The order line the option was chosen for.`),
+    GroupKey: z.string().describe(`
+        * * Field Name: GroupKey
+        * * Display Name: Group Key
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The choice group's key in the widget's Configuration. Matched by ProductEntitlement.ChoiceGroupKey.`),
+    GroupLabel: z.string().describe(`
+        * * Field Name: GroupLabel
+        * * Display Name: Group Label
+        * * SQL Data Type: nvarchar(500)
+        * * Description: The choice group as the buyer saw it, copied at order time.`),
+    OptionValue: z.string().describe(`
+        * * Field Name: OptionValue
+        * * Display Name: Option Value
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The value of the option chosen. Matched by ProductEntitlement.ChoiceOptionValue.`),
+    OptionLabel: z.string().describe(`
+        * * Field Name: OptionLabel
+        * * Display Name: Option Label
+        * * SQL Data Type: nvarchar(500)
+        * * Description: The option as the buyer saw it, copied at order time.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersOrderLineChoiceEntityType = z.infer<typeof mjBizAppsOrdersOrderLineChoiceSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Line Dimensions
  */
 export const mjBizAppsOrdersOrderLineDimensionSchema = z.object({
@@ -2585,7 +2907,8 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
     ShipToAddressID: z.string().nullable().describe(`
         * * Field Name: ShipToAddressID
         * * Display Name: Ship To Address
-        * * SQL Data Type: uniqueidentifier`),
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)`),
     ShipToOrganizationID: z.string().nullable().describe(`
         * * Field Name: ShipToOrganizationID
         * * Display Name: Ship To Organization
@@ -2810,6 +3133,153 @@ export const mjBizAppsOrdersOrderSequenceSchema = z.object({
 });
 
 export type mjBizAppsOrdersOrderSequenceEntityType = z.infer<typeof mjBizAppsOrdersOrderSequenceSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Outbound Deliveries
+ */
+export const mjBizAppsOrdersOutboundDeliverySchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OutboundEventID: z.string().describe(`
+        * * Field Name: OutboundEventID
+        * * Display Name: Outbound Event ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Outbound Events (vwOutboundEvents.ID)
+        * * Description: The event being delivered.`),
+    ConsumerKey: z.string().describe(`
+        * * Field Name: ConsumerKey
+        * * Display Name: Consumer Key
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The registration key of the consumer (an OrdersOutboundConsumer subclass).`),
+    GatesAccess: z.boolean().describe(`
+        * * Field Name: GatesAccess
+        * * Display Name: Gates Access
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: True when this consumer's delivery decides whether the buyer's access is ready, as declared by the consumer when the event was recorded.`),
+    Status: z.union([z.literal('DeadLettered'), z.literal('Delivered'), z.literal('Pending')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * DeadLettered
+    *   * Delivered
+    *   * Pending
+        * * Description: Pending until the consumer accepts it (Delivered), or until DeadlineAt passes without success (DeadLettered). Setting a DeadLettered row back to Pending sends it again.`),
+    Attempts: z.number().describe(`
+        * * Field Name: Attempts
+        * * Display Name: Attempts
+        * * SQL Data Type: int
+        * * Default Value: 0
+        * * Description: How many times delivery has been tried.`),
+    NextAttemptAt: z.date().describe(`
+        * * Field Name: NextAttemptAt
+        * * Display Name: Next Attempt At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: The earliest time the dispatcher tries this row again.`),
+    DeadlineAt: z.date().describe(`
+        * * Field Name: DeadlineAt
+        * * Display Name: Deadline At
+        * * SQL Data Type: datetimeoffset
+        * * Description: After this time a failed attempt dead-letters the row instead of scheduling another.`),
+    LeaseUntil: z.date().nullable().describe(`
+        * * Field Name: LeaseUntil
+        * * Display Name: Lease Until
+        * * SQL Data Type: datetimeoffset
+        * * Description: Set while a dispatcher pass holds the row, so another pass does not send it at the same time. A lease that runs out frees the row.`),
+    LastAttemptAt: z.date().nullable().describe(`
+        * * Field Name: LastAttemptAt
+        * * Display Name: Last Attempt At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When delivery was last tried.`),
+    LastError: z.string().nullable().describe(`
+        * * Field Name: LastError
+        * * Display Name: Last Error
+        * * SQL Data Type: nvarchar(2000)
+        * * Description: The consumer's error from the last failed attempt.`),
+    DeliveredAt: z.date().nullable().describe(`
+        * * Field Name: DeliveredAt
+        * * Display Name: Delivered At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the consumer accepted the event.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersOutboundDeliveryEntityType = z.infer<typeof mjBizAppsOrdersOutboundDeliverySchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Outbound Events
+ */
+export const mjBizAppsOrdersOutboundEventSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    EventType: z.union([z.literal('GrantStatusChanged'), z.literal('OrderConfirmed')]).describe(`
+        * * Field Name: EventType
+        * * Display Name: Event Type
+        * * SQL Data Type: nvarchar(40)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * GrantStatusChanged
+    *   * OrderConfirmed
+        * * Description: OrderConfirmed (first confirmation of an order, renewals included) or GrantStatusChanged (a grant created, or its Status changed).`),
+    OrderHeaderID: z.string().nullable().describe(`
+        * * Field Name: OrderHeaderID
+        * * Display Name: Order Header ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+        * * Description: The order the event is about. Set on both event types, so deliveries can be read by order.`),
+    EntitlementGrantID: z.string().nullable().describe(`
+        * * Field Name: EntitlementGrantID
+        * * Display Name: Entitlement Grant ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Entitlement Grants (vwEntitlementGrants.ID)
+        * * Description: The grant a GrantStatusChanged event is about. NULL for OrderConfirmed.`),
+    PayloadJSON: z.string().describe(`
+        * * Field Name: PayloadJSON
+        * * Display Name: Payload JSON
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The event as consumers receive it, fixed when the event was recorded.`),
+    OccurredAt: z.date().describe(`
+        * * Field Name: OccurredAt
+        * * Display Name: Occurred At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: When the change that caused the event was saved.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    OrderHeader: z.string().nullable().describe(`
+        * * Field Name: OrderHeader
+        * * Display Name: Order Header
+        * * SQL Data Type: nvarchar(40)`),
+});
+
+export type mjBizAppsOrdersOutboundEventEntityType = z.infer<typeof mjBizAppsOrdersOutboundEventSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Payment Details
@@ -4108,6 +4578,16 @@ export const mjBizAppsOrdersProductEntitlementSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    ChoiceGroupKey: z.string().nullable().describe(`
+        * * Field Name: ChoiceGroupKey
+        * * Display Name: Choice Group Key
+        * * SQL Data Type: nvarchar(100)
+        * * Description: With ChoiceOptionValue, makes this entitlement conditional: it is granted only on an order line that carries this choice (an OrderLineChoice row with this GroupKey and OptionValue). NULL grants it on every line of the product.`),
+    ChoiceOptionValue: z.string().nullable().describe(`
+        * * Field Name: ChoiceOptionValue
+        * * Display Name: Choice Option Value
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The option value, within ChoiceGroupKey, that the line must carry for this entitlement to be granted. Set together with ChoiceGroupKey or not at all.`),
     Product: z.string().describe(`
         * * Field Name: Product
         * * Display Name: Product Name
@@ -6026,6 +6506,250 @@ export class mjBizAppsOrdersChargeTypeEntity extends BaseEntity<mjBizAppsOrdersC
 
 
 /**
+ * MJ_BizApps_Orders: Checkout Session Steps - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: CheckoutSessionStep
+ * * Base View: vwCheckoutSessionSteps
+ * * @description One post-payment step of one checkout session: whether it ran, how many times, and how the last attempt ended. Written outside the step's own transaction, so a rolled-back step still records its failure. A Failed row, or a Running row left unfinished, needs review; Orders.ReplayCheckoutStep re-drives it.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Checkout Session Steps')
+export class mjBizAppsOrdersCheckoutSessionStepEntity extends BaseEntity<mjBizAppsOrdersCheckoutSessionStepEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Checkout Session Steps record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Checkout Session Steps record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersCheckoutSessionStepEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: CheckoutSessionID
+    * * Display Name: Checkout Session ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Sessions (vwCheckoutSessions.ID)
+    * * Description: The checkout session this step belongs to.
+    */
+    get CheckoutSessionID(): string {
+        return this.Get('CheckoutSessionID');
+    }
+    set CheckoutSessionID(value: string) {
+        this.Set('CheckoutSessionID', value);
+    }
+
+    /**
+    * * Field Name: StepName
+    * * Display Name: Step Name
+    * * SQL Data Type: nvarchar(50)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Capture
+    *   * Confirm
+    * * Description: Which post-payment step. Confirm: the order confirms, booking and creating entitlement grants in one transaction. Capture: the payment is booked against the order.
+    */
+    get StepName(): 'Capture' | 'Confirm' {
+        return this.Get('StepName');
+    }
+    set StepName(value: 'Capture' | 'Confirm') {
+        this.Set('StepName', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Running
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Failed
+    *   * Running
+    *   * Succeeded
+    * * Description: Running: an attempt started and has not reported back; one left Running long after LastAttemptAt was interrupted. Succeeded: the step is done, and replaying it does nothing. Failed: the last attempt failed; LastError says why.
+    */
+    get Status(): 'Failed' | 'Running' | 'Succeeded' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Failed' | 'Running' | 'Succeeded') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: Attempts
+    * * Display Name: Attempts
+    * * SQL Data Type: int
+    * * Default Value: 0
+    * * Description: How many times the step has been attempted, from any source.
+    */
+    get Attempts(): number {
+        return this.Get('Attempts');
+    }
+    set Attempts(value: number) {
+        this.Set('Attempts', value);
+    }
+
+    /**
+    * * Field Name: LastError
+    * * Display Name: Last Error
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The error from the last failed attempt. Cleared when the step succeeds.
+    */
+    get LastError(): string | null {
+        return this.Get('LastError');
+    }
+    set LastError(value: string | null) {
+        this.Set('LastError', value);
+    }
+
+    /**
+    * * Field Name: Retryable
+    * * Display Name: Retryable
+    * * SQL Data Type: bit
+    * * Description: Whether the last failure can succeed on a later attempt without anything changing (1), or needs a fix to the data first (0). NULL when the step has not failed or the step does not classify its failures.
+    */
+    get Retryable(): boolean | null {
+        return this.Get('Retryable');
+    }
+    set Retryable(value: boolean | null) {
+        this.Set('Retryable', value);
+    }
+
+    /**
+    * * Field Name: LastAttemptSource
+    * * Display Name: Last Attempt Source
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Checkout
+    *   * Replay
+    *   * Webhook
+    * * Description: What started the last attempt. Checkout: the buyer's complete call. Webhook: a payment-provider event. Replay: an operator, through Orders.ReplayCheckoutStep.
+    */
+    get LastAttemptSource(): 'Checkout' | 'Replay' | 'Webhook' {
+        return this.Get('LastAttemptSource');
+    }
+    set LastAttemptSource(value: 'Checkout' | 'Replay' | 'Webhook') {
+        this.Set('LastAttemptSource', value);
+    }
+
+    /**
+    * * Field Name: LastReplayedByUserID
+    * * Display Name: Last Replayed By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The operator who last replayed this step. NULL if it was never replayed.
+    */
+    get LastReplayedByUserID(): string | null {
+        return this.Get('LastReplayedByUserID');
+    }
+    set LastReplayedByUserID(value: string | null) {
+        this.Set('LastReplayedByUserID', value);
+    }
+
+    /**
+    * * Field Name: FirstAttemptAt
+    * * Display Name: First Attempt At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the step was first attempted.
+    */
+    get FirstAttemptAt(): Date {
+        return this.Get('FirstAttemptAt');
+    }
+    set FirstAttemptAt(value: Date) {
+        this.Set('FirstAttemptAt', value);
+    }
+
+    /**
+    * * Field Name: LastAttemptAt
+    * * Display Name: Last Attempt At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the most recent attempt started.
+    */
+    get LastAttemptAt(): Date {
+        return this.Get('LastAttemptAt');
+    }
+    set LastAttemptAt(value: Date) {
+        this.Set('LastAttemptAt', value);
+    }
+
+    /**
+    * * Field Name: SucceededAt
+    * * Display Name: Succeeded At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the step succeeded. NULL until it does.
+    */
+    get SucceededAt(): Date | null {
+        return this.Get('SucceededAt');
+    }
+    set SucceededAt(value: Date | null) {
+        this.Set('SucceededAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: CheckoutSession
+    * * Display Name: Checkout Session
+    * * SQL Data Type: nvarchar(100)
+    */
+    get CheckoutSession(): string {
+        return this.Get('CheckoutSession');
+    }
+
+    /**
+    * * Field Name: LastReplayedByUser
+    * * Display Name: Last Replayed By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get LastReplayedByUser(): string | null {
+        return this.Get('LastReplayedByUser');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Checkout Sessions - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: CheckoutSession
@@ -7560,6 +8284,280 @@ export class mjBizAppsOrdersDimensionDefaultEntity extends BaseEntity<mjBizAppsO
     */
     get DimensionValue(): string {
         return this.Get('DimensionValue');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Entitlement Access Overrides - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: EntitlementAccessOverride
+ * * Base View: vwEntitlementAccessOverrides
+ * * @description An approved exception to payment-gated access on one order: WaivePaymentHold lifts the hold on a new purchase awaiting its first payment, DeferCutoff lifts the past-due cutoff on a renewal. In force only once approved through Tasks, and only through EffectiveThrough.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Entitlement Access Overrides')
+export class mjBizAppsOrdersEntitlementAccessOverrideEntity extends BaseEntity<mjBizAppsOrdersEntitlementAccessOverrideEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Entitlement Access Overrides record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Entitlement Access Overrides record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersEntitlementAccessOverrideEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderID
+    * * Display Name: Order Header ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+    * * Description: The order the override applies to. It does not carry to a later renewal or a revised order, which are different orders.
+    */
+    get OrderHeaderID(): string {
+        return this.Get('OrderHeaderID');
+    }
+    set OrderHeaderID(value: string) {
+        this.Set('OrderHeaderID', value);
+    }
+
+    /**
+    * * Field Name: OverrideType
+    * * Display Name: Override Type
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * DeferCutoff
+    *   * WaivePaymentHold
+    * * Description: WaivePaymentHold (lifts AwaitingPayment) or DeferCutoff (lifts PastDue).
+    */
+    get OverrideType(): 'DeferCutoff' | 'WaivePaymentHold' {
+        return this.Get('OverrideType');
+    }
+    set OverrideType(value: 'DeferCutoff' | 'WaivePaymentHold') {
+        this.Set('OverrideType', value);
+    }
+
+    /**
+    * * Field Name: Reason
+    * * Display Name: Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: Why the exception is needed. Required.
+    */
+    get Reason(): string {
+        return this.Get('Reason');
+    }
+    set Reason(value: string) {
+        this.Set('Reason', value);
+    }
+
+    /**
+    * * Field Name: EffectiveThrough
+    * * Display Name: Effective Through
+    * * SQL Data Type: date
+    * * Description: The last day the override holds, inclusive. Required. After it the payment rule decides the grants again.
+    */
+    get EffectiveThrough(): Date {
+        return this.Get('EffectiveThrough');
+    }
+    set EffectiveThrough(value: Date) {
+        this.Set('EffectiveThrough', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Requested
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Approved
+    *   * Expired
+    *   * Rejected
+    *   * Requested
+    *   * Withdrawn
+    * * Description: Requested (awaiting approval), Approved (in force through EffectiveThrough), Rejected, Withdrawn (the approval task closed without a decision that could be applied), or Expired (EffectiveThrough has passed and the grants have been re-decided).
+    */
+    get Status(): 'Approved' | 'Expired' | 'Rejected' | 'Requested' | 'Withdrawn' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Approved' | 'Expired' | 'Rejected' | 'Requested' | 'Withdrawn') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: RequestedByUserID
+    * * Display Name: Requested By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user who requested the override.
+    */
+    get RequestedByUserID(): string {
+        return this.Get('RequestedByUserID');
+    }
+    set RequestedByUserID(value: string) {
+        this.Set('RequestedByUserID', value);
+    }
+
+    /**
+    * * Field Name: RequestedAt
+    * * Display Name: Requested At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: When the override was requested.
+    */
+    get RequestedAt(): Date {
+        return this.Get('RequestedAt');
+    }
+    set RequestedAt(value: Date) {
+        this.Set('RequestedAt', value);
+    }
+
+    /**
+    * * Field Name: ApprovalTaskID
+    * * Display Name: Approval Task ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Tasks: Tasks (vwTasks.ID)
+    * * Description: The Tasks approval request for this override.
+    */
+    get ApprovalTaskID(): string | null {
+        return this.Get('ApprovalTaskID');
+    }
+    set ApprovalTaskID(value: string | null) {
+        this.Set('ApprovalTaskID', value);
+    }
+
+    /**
+    * * Field Name: ApprovalTaskRaisedAt
+    * * Display Name: Approval Task Raised At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the approval task was raised. Set together with ApprovalTaskID.
+    */
+    get ApprovalTaskRaisedAt(): Date | null {
+        return this.Get('ApprovalTaskRaisedAt');
+    }
+    set ApprovalTaskRaisedAt(value: Date | null) {
+        this.Set('ApprovalTaskRaisedAt', value);
+    }
+
+    /**
+    * * Field Name: DecidedByUserID
+    * * Display Name: Decided By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user whose decision on the approval task approved or rejected the override.
+    */
+    get DecidedByUserID(): string | null {
+        return this.Get('DecidedByUserID');
+    }
+    set DecidedByUserID(value: string | null) {
+        this.Set('DecidedByUserID', value);
+    }
+
+    /**
+    * * Field Name: DecidedAt
+    * * Display Name: Decided At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the override was approved, rejected or withdrawn.
+    */
+    get DecidedAt(): Date | null {
+        return this.Get('DecidedAt');
+    }
+    set DecidedAt(value: Date | null) {
+        this.Set('DecidedAt', value);
+    }
+
+    /**
+    * * Field Name: DecisionNotes
+    * * Display Name: Decision Notes
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: The notes recorded with the decision, or why a closed approval task was not applied.
+    */
+    get DecisionNotes(): string | null {
+        return this.Get('DecisionNotes');
+    }
+    set DecisionNotes(value: string | null) {
+        this.Set('DecisionNotes', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: OrderHeader
+    * * Display Name: Order Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get OrderHeader(): string {
+        return this.Get('OrderHeader');
+    }
+
+    /**
+    * * Field Name: RequestedByUser
+    * * Display Name: Requested By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get RequestedByUser(): string {
+        return this.Get('RequestedByUser');
+    }
+
+    /**
+    * * Field Name: ApprovalTask
+    * * Display Name: Approval Task
+    * * SQL Data Type: nvarchar(255)
+    */
+    get ApprovalTask(): string | null {
+        return this.Get('ApprovalTask');
+    }
+
+    /**
+    * * Field Name: DecidedByUser
+    * * Display Name: Decided By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get DecidedByUser(): string | null {
+        return this.Get('DecidedByUser');
     }
 }
 
@@ -10819,6 +11817,146 @@ export class mjBizAppsOrdersOrderChargeEntity extends BaseEntity<mjBizAppsOrders
 
 
 /**
+ * MJ_BizApps_Orders: Order Checkout Answers - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OrderCheckoutAnswer
+ * * Base View: vwOrderCheckoutAnswers
+ * * @description The buyer's answer to one question a checkout widget asked before payment, recorded on the order the checkout confirmed. The questions are defined in the widget's Configuration.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Checkout Answers')
+export class mjBizAppsOrdersOrderCheckoutAnswerEntity extends BaseEntity<mjBizAppsOrdersOrderCheckoutAnswerEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Order Checkout Answers record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Checkout Answers record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOrderCheckoutAnswerEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderID
+    * * Display Name: Order Header ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+    * * Description: The order the checkout confirmed.
+    */
+    get OrderHeaderID(): string {
+        return this.Get('OrderHeaderID');
+    }
+    set OrderHeaderID(value: string) {
+        this.Set('OrderHeaderID', value);
+    }
+
+    /**
+    * * Field Name: QuestionKey
+    * * Display Name: Question Key
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The question's key in the widget's Configuration. Stable across label edits, so answers to the same question can be reported together.
+    */
+    get QuestionKey(): string {
+        return this.Get('QuestionKey');
+    }
+    set QuestionKey(value: string) {
+        this.Set('QuestionKey', value);
+    }
+
+    /**
+    * * Field Name: QuestionLabel
+    * * Display Name: Question Label
+    * * SQL Data Type: nvarchar(500)
+    * * Description: The question as the buyer saw it, copied at order time.
+    */
+    get QuestionLabel(): string {
+        return this.Get('QuestionLabel');
+    }
+    set QuestionLabel(value: string) {
+        this.Set('QuestionLabel', value);
+    }
+
+    /**
+    * * Field Name: Answer
+    * * Display Name: Answer
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: The answer. For a select question, the value of the option the buyer chose; for a text question, the text entered.
+    */
+    get Answer(): string {
+        return this.Get('Answer');
+    }
+    set Answer(value: string) {
+        this.Set('Answer', value);
+    }
+
+    /**
+    * * Field Name: OtherText
+    * * Display Name: Other Text
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: The free-text answer the buyer gave after choosing the question's "Other" option. NULL for any other answer.
+    */
+    get OtherText(): string | null {
+        return this.Get('OtherText');
+    }
+    set OtherText(value: string | null) {
+        this.Set('OtherText', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: OrderHeader
+    * * Display Name: Order Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get OrderHeader(): string {
+        return this.Get('OrderHeader');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Order Company Policies - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: OrderCompanyPolicy
@@ -11372,6 +12510,25 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
         OnRemove: 'delete',
         Source: 'database',
         Sequence: { Field: 'Sequence', From: 1 },
+  });
+
+
+  /**
+  * Related records: MJ_BizApps_Orders: Order Checkout Answers
+  *
+  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Order Headers record — see
+  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
+  * the 'MJ_BizApps_Orders: Order Headers → MJ_BizApps_Orders: Order Checkout Answers' relationship; edit that row, not this file.
+  *
+  */
+  public readonly CheckoutAnswers = this.DeclareRelatedRecords<mjBizAppsOrdersOrderCheckoutAnswerEntity>({
+      Name: 'CheckoutAnswers',
+        RelatedEntity: 'MJ_BizApps_Orders: Order Checkout Answers',
+        RelatedEntityJoinField: 'OrderHeaderID',
+        OrderBy: 'QuestionKey ASC',
+        Load: 'explicit',
+        OnRemove: 'delete',
+        Source: 'database',
   });
 
 
@@ -12206,6 +13363,137 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     */
     get IsOverdue(): number {
         return this.Get('IsOverdue');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Order Line Choices - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OrderLineChoice
+ * * Base View: vwOrderLineChoices
+ * * @description One option the buyer chose from a choice group at checkout, recorded on the order line it was chosen for. The choice groups are defined in the checkout widget's Configuration. A renewal copies the choices onto its line, so conditional entitlements follow them.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Line Choices')
+export class mjBizAppsOrdersOrderLineChoiceEntity extends BaseEntity<mjBizAppsOrdersOrderLineChoiceEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Order Line Choices record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Line Choices record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOrderLineChoiceEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderLineID
+    * * Display Name: Order Line ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    * * Description: The order line the option was chosen for.
+    */
+    get OrderLineID(): string {
+        return this.Get('OrderLineID');
+    }
+    set OrderLineID(value: string) {
+        this.Set('OrderLineID', value);
+    }
+
+    /**
+    * * Field Name: GroupKey
+    * * Display Name: Group Key
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The choice group's key in the widget's Configuration. Matched by ProductEntitlement.ChoiceGroupKey.
+    */
+    get GroupKey(): string {
+        return this.Get('GroupKey');
+    }
+    set GroupKey(value: string) {
+        this.Set('GroupKey', value);
+    }
+
+    /**
+    * * Field Name: GroupLabel
+    * * Display Name: Group Label
+    * * SQL Data Type: nvarchar(500)
+    * * Description: The choice group as the buyer saw it, copied at order time.
+    */
+    get GroupLabel(): string {
+        return this.Get('GroupLabel');
+    }
+    set GroupLabel(value: string) {
+        this.Set('GroupLabel', value);
+    }
+
+    /**
+    * * Field Name: OptionValue
+    * * Display Name: Option Value
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The value of the option chosen. Matched by ProductEntitlement.ChoiceOptionValue.
+    */
+    get OptionValue(): string {
+        return this.Get('OptionValue');
+    }
+    set OptionValue(value: string) {
+        this.Set('OptionValue', value);
+    }
+
+    /**
+    * * Field Name: OptionLabel
+    * * Display Name: Option Label
+    * * SQL Data Type: nvarchar(500)
+    * * Description: The option as the buyer saw it, copied at order time.
+    */
+    get OptionLabel(): string {
+        return this.Get('OptionLabel');
+    }
+    set OptionLabel(value: string) {
+        this.Set('OptionLabel', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
     }
 }
 
@@ -13250,6 +14538,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     * * Field Name: ShipToAddressID
     * * Display Name: Ship To Address
     * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
     */
     get ShipToAddressID(): string | null {
         return this.Get('ShipToAddressID');
@@ -13836,6 +15125,370 @@ export class mjBizAppsOrdersOrderSequenceEntity extends BaseEntity<mjBizAppsOrde
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Outbound Deliveries - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OutboundDelivery
+ * * Base View: vwOutboundDeliveries
+ * * @description One outbound event to one registered consumer: whether it has been delivered, and when it will be tried next.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Outbound Deliveries')
+export class mjBizAppsOrdersOutboundDeliveryEntity extends BaseEntity<mjBizAppsOrdersOutboundDeliveryEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Outbound Deliveries record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Outbound Deliveries record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOutboundDeliveryEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OutboundEventID
+    * * Display Name: Outbound Event ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Outbound Events (vwOutboundEvents.ID)
+    * * Description: The event being delivered.
+    */
+    get OutboundEventID(): string {
+        return this.Get('OutboundEventID');
+    }
+    set OutboundEventID(value: string) {
+        this.Set('OutboundEventID', value);
+    }
+
+    /**
+    * * Field Name: ConsumerKey
+    * * Display Name: Consumer Key
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The registration key of the consumer (an OrdersOutboundConsumer subclass).
+    */
+    get ConsumerKey(): string {
+        return this.Get('ConsumerKey');
+    }
+    set ConsumerKey(value: string) {
+        this.Set('ConsumerKey', value);
+    }
+
+    /**
+    * * Field Name: GatesAccess
+    * * Display Name: Gates Access
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: True when this consumer's delivery decides whether the buyer's access is ready, as declared by the consumer when the event was recorded.
+    */
+    get GatesAccess(): boolean {
+        return this.Get('GatesAccess');
+    }
+    set GatesAccess(value: boolean) {
+        this.Set('GatesAccess', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * DeadLettered
+    *   * Delivered
+    *   * Pending
+    * * Description: Pending until the consumer accepts it (Delivered), or until DeadlineAt passes without success (DeadLettered). Setting a DeadLettered row back to Pending sends it again.
+    */
+    get Status(): 'DeadLettered' | 'Delivered' | 'Pending' {
+        return this.Get('Status');
+    }
+    set Status(value: 'DeadLettered' | 'Delivered' | 'Pending') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: Attempts
+    * * Display Name: Attempts
+    * * SQL Data Type: int
+    * * Default Value: 0
+    * * Description: How many times delivery has been tried.
+    */
+    get Attempts(): number {
+        return this.Get('Attempts');
+    }
+    set Attempts(value: number) {
+        this.Set('Attempts', value);
+    }
+
+    /**
+    * * Field Name: NextAttemptAt
+    * * Display Name: Next Attempt At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: The earliest time the dispatcher tries this row again.
+    */
+    get NextAttemptAt(): Date {
+        return this.Get('NextAttemptAt');
+    }
+    set NextAttemptAt(value: Date) {
+        this.Set('NextAttemptAt', value);
+    }
+
+    /**
+    * * Field Name: DeadlineAt
+    * * Display Name: Deadline At
+    * * SQL Data Type: datetimeoffset
+    * * Description: After this time a failed attempt dead-letters the row instead of scheduling another.
+    */
+    get DeadlineAt(): Date {
+        return this.Get('DeadlineAt');
+    }
+    set DeadlineAt(value: Date) {
+        this.Set('DeadlineAt', value);
+    }
+
+    /**
+    * * Field Name: LeaseUntil
+    * * Display Name: Lease Until
+    * * SQL Data Type: datetimeoffset
+    * * Description: Set while a dispatcher pass holds the row, so another pass does not send it at the same time. A lease that runs out frees the row.
+    */
+    get LeaseUntil(): Date | null {
+        return this.Get('LeaseUntil');
+    }
+    set LeaseUntil(value: Date | null) {
+        this.Set('LeaseUntil', value);
+    }
+
+    /**
+    * * Field Name: LastAttemptAt
+    * * Display Name: Last Attempt At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When delivery was last tried.
+    */
+    get LastAttemptAt(): Date | null {
+        return this.Get('LastAttemptAt');
+    }
+    set LastAttemptAt(value: Date | null) {
+        this.Set('LastAttemptAt', value);
+    }
+
+    /**
+    * * Field Name: LastError
+    * * Display Name: Last Error
+    * * SQL Data Type: nvarchar(2000)
+    * * Description: The consumer's error from the last failed attempt.
+    */
+    get LastError(): string | null {
+        return this.Get('LastError');
+    }
+    set LastError(value: string | null) {
+        this.Set('LastError', value);
+    }
+
+    /**
+    * * Field Name: DeliveredAt
+    * * Display Name: Delivered At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the consumer accepted the event.
+    */
+    get DeliveredAt(): Date | null {
+        return this.Get('DeliveredAt');
+    }
+    set DeliveredAt(value: Date | null) {
+        this.Set('DeliveredAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Outbound Events - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OutboundEvent
+ * * Base View: vwOutboundEvents
+ * * @description An event Orders tells registered consumers about: an order confirmed, or an entitlement grant's status changed. Written in the same transaction as the change, so it exists exactly when the change committed. Its ID is the stable event id consumers dedupe on.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Outbound Events')
+export class mjBizAppsOrdersOutboundEventEntity extends BaseEntity<mjBizAppsOrdersOutboundEventEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Outbound Events record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Outbound Events record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOutboundEventEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: EventType
+    * * Display Name: Event Type
+    * * SQL Data Type: nvarchar(40)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * GrantStatusChanged
+    *   * OrderConfirmed
+    * * Description: OrderConfirmed (first confirmation of an order, renewals included) or GrantStatusChanged (a grant created, or its Status changed).
+    */
+    get EventType(): 'GrantStatusChanged' | 'OrderConfirmed' {
+        return this.Get('EventType');
+    }
+    set EventType(value: 'GrantStatusChanged' | 'OrderConfirmed') {
+        this.Set('EventType', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderID
+    * * Display Name: Order Header ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+    * * Description: The order the event is about. Set on both event types, so deliveries can be read by order.
+    */
+    get OrderHeaderID(): string | null {
+        return this.Get('OrderHeaderID');
+    }
+    set OrderHeaderID(value: string | null) {
+        this.Set('OrderHeaderID', value);
+    }
+
+    /**
+    * * Field Name: EntitlementGrantID
+    * * Display Name: Entitlement Grant ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Entitlement Grants (vwEntitlementGrants.ID)
+    * * Description: The grant a GrantStatusChanged event is about. NULL for OrderConfirmed.
+    */
+    get EntitlementGrantID(): string | null {
+        return this.Get('EntitlementGrantID');
+    }
+    set EntitlementGrantID(value: string | null) {
+        this.Set('EntitlementGrantID', value);
+    }
+
+    /**
+    * * Field Name: PayloadJSON
+    * * Display Name: Payload JSON
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The event as consumers receive it, fixed when the event was recorded.
+    */
+    get PayloadJSON(): string {
+        return this.Get('PayloadJSON');
+    }
+    set PayloadJSON(value: string) {
+        this.Set('PayloadJSON', value);
+    }
+
+    /**
+    * * Field Name: OccurredAt
+    * * Display Name: Occurred At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: When the change that caused the event was saved.
+    */
+    get OccurredAt(): Date {
+        return this.Get('OccurredAt');
+    }
+    set OccurredAt(value: Date) {
+        this.Set('OccurredAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: OrderHeader
+    * * Display Name: Order Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get OrderHeader(): string | null {
+        return this.Get('OrderHeader');
     }
 }
 
@@ -17643,6 +19296,32 @@ export class mjBizAppsOrdersProductEntitlementEntity extends BaseEntity<mjBizApp
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ChoiceGroupKey
+    * * Display Name: Choice Group Key
+    * * SQL Data Type: nvarchar(100)
+    * * Description: With ChoiceOptionValue, makes this entitlement conditional: it is granted only on an order line that carries this choice (an OrderLineChoice row with this GroupKey and OptionValue). NULL grants it on every line of the product.
+    */
+    get ChoiceGroupKey(): string | null {
+        return this.Get('ChoiceGroupKey');
+    }
+    set ChoiceGroupKey(value: string | null) {
+        this.Set('ChoiceGroupKey', value);
+    }
+
+    /**
+    * * Field Name: ChoiceOptionValue
+    * * Display Name: Choice Option Value
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The option value, within ChoiceGroupKey, that the line must carry for this entitlement to be granted. Set together with ChoiceGroupKey or not at all.
+    */
+    get ChoiceOptionValue(): string | null {
+        return this.Get('ChoiceOptionValue');
+    }
+    set ChoiceOptionValue(value: string | null) {
+        this.Set('ChoiceOptionValue', value);
     }
 
     /**

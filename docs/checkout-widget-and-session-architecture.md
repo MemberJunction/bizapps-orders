@@ -50,10 +50,12 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 4. [Metadata Reflection & Auto-Discovery](#metadata-reflection--auto-discovery)
 5. [The `Configuration` JSONType & `customUI` Engine](#the-configuration-jsontype--customui-engine)
 6. [Multi-Unit Discrete Expansion (`unitMode`)](#multi-unit-discrete-expansion-unitmode)
-7. [Zero-DB-Draft In-Memory Pricing & Atomic Booking](#zero-db-draft-in-memory-pricing--atomic-booking)
-8. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
-9. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
-10. [Server API & Service Reference](#server-api--service-reference)
+7. [Questions at Checkout (`questions`)](#questions-at-checkout-questions)
+8. [Zero-DB-Draft In-Memory Pricing & Atomic Booking](#zero-db-draft-in-memory-pricing--atomic-booking)
+9. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
+10. [Account Step After Payment (`CheckoutAccountStep`)](#account-step-after-payment-checkoutaccountstep)
+11. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
+12. [Server API & Service Reference](#server-api--service-reference)
 
 ---
 
@@ -324,6 +326,39 @@ In `CheckoutSessionService.CompleteCheckout`:
 
 ---
 
+## Questions at Checkout (`questions`)
+
+A widget can ask the buyer questions that are not columns on any entity, such as "How did you hear about us?". They are defined in the widget's `Configuration`:
+
+```json
+{
+  "questions": [
+    {
+      "key": "source",
+      "label": "How did you hear about us?",
+      "type": "select",
+      "options": ["Search", { "value": "referral", "label": "A colleague" }, "Other"],
+      "required": true,
+      "otherOptionKey": "Other"
+    },
+    { "key": "note", "label": "Anything we should know?", "type": "text", "maxLength": 500 }
+  ]
+}
+```
+
+- `type` is `select` or `text`. A `select` needs `options`; a bare string option is both value and label.
+- `otherOptionKey` names the option that needs a free-text answer. Choosing it makes the text required.
+- Answers are capped at 1000 characters, or `maxLength` when lower.
+- A malformed list (duplicate keys, a select with no options, an `otherOptionKey` that is not an option) refuses the checkout instead of being skipped.
+
+**Flow.** The widget renders the questions and keeps Pay disabled until required ones are answered. `/draft` stores the answers with the priced snapshot; it refuses an answer to a question the widget does not ask or a choice that is not an option, but accepts a missing required answer so the checkout can be priced first. `/payment-intent` and `/complete` check the stored answers in full against the widget's current questions and refuse a missing required answer, before a payment intent opens or a payer Person is created.
+
+**Storage.** `CompleteCheckout` adds one `OrderCheckoutAnswer` row per answered question to the order's `CheckoutAnswers` collection before `Confirm()`, so the rows save in the booking transaction. Each row records `QuestionKey`, `QuestionLabel` (as the buyer saw it), `Answer` (a select's option value, or the text) and `OtherText`.
+
+The shared check is `CheckCheckoutAnswers` in `@mj-biz-apps/orders-entities` (`checkout-questions.ts`), used by both the widget and the server.
+
+---
+
 ## Zero-DB-Draft In-Memory Pricing & Atomic Booking
 
 ### Draft Phase
@@ -388,6 +423,56 @@ When an unauthenticated guest completes an order:
 
 ---
 
+## Account Step After Payment (`CheckoutAccountStep`)
+
+A host that needs the buyer to leave checkout with a login on its own identity provider registers a subclass of `CheckoutAccountStep` (`@mj-biz-apps/orders-core-entities-server`). The identity-provider code lives in the host; Orders calls it after the order is confirmed.
+
+```typescript
+@RegisterClass(CheckoutAccountStep)
+export class MyAccountStep extends CheckoutAccountStep {
+    public override async EnsureAccount(ctx: CheckoutAccountContext): Promise<CheckoutAccountResult> {
+        // find or create the login for ctx.Email; never change an existing one
+        // create it unable to sign in, and send a verification link to ctx.Email
+        // 'NotApplicable' when this checkout is not one you make logins for (another company's widget)
+        return { Outcome: 'Created', VerificationRequired: true }; // or 'Exists' / 'Failed', with an optional buyer-facing Message
+    }
+    public override async SetPassword(ctx: CheckoutAccountContext & { Password: string }): Promise<CheckoutPasswordResult> {
+        // set the password of the account EnsureAccount created; refuse any other
+        return { Success: true }; // or { Success: false, Message: 'Use at least 10 characters.' }
+    }
+}
+```
+
+Reference the class from the server bootstrap so the decorator is not tree-shaken away. With nothing registered the step is off and checkout behaves as before.
+
+**The host must verify the e-mail.** The checkout never proves the buyer owns the e-mail they typed. Anyone can check out with someone else's e-mail, for the price of the widget or for nothing on a free one, and set the password in the widget. So:
+- An account answered `Created` must not be able to sign in until the host has verified the e-mail, for example with a link sent to it. Answer `VerificationRequired: true` and the widget tells the buyer to use that link.
+- Until the e-mail is verified, do not link the new login to `ctx.PersonID`. That Person was matched by e-mail alone, and may be an existing member whose orders and memberships would come with the login.
+- Never change an account the checkout did not create, in either method.
+
+**Flow.**
+1. `POST /checkout/complete` confirms the order and answers straight away, without calling the host. When a step is registered the response carries `AccountStep: true`.
+2. The widget then calls `POST /checkout/account` with `{ sessionId, clientSessionKey }`, showing "Setting up your account…". Orders calls `EnsureAccount` with the buyer's e-mail, name, Person, order, company, session id and when the session began, and answers `Account: { Outcome, Message?, CanSetPassword, VerificationRequired }`. A step that throws, or doesn't answer within `HostTimeoutSeconds` (default 10), is reported as `Failed`. It never changes the confirmed order.
+3. `Created`: the widget shows a password form, with the verification note when `VerificationRequired`. `POST /checkout/account/password` with `{ sessionId, clientSessionKey, password }` passes the password to `SetPassword`. The password is never stored or logged.
+4. `Exists`: the widget shows the step's message, or a default telling the buyer to sign in.
+5. `Failed`: the widget says the order is confirmed and offers "Try again", which calls `/checkout/account` again. "Not now" follows the redirect.
+6. `NotApplicable`: the session has no account step. The response carries no `Account`, exactly as when no step is registered.
+
+The widget's `redirectUrl` is followed once the step is settled, or when the buyer chooses "Not now". The widget remembers the completing session in `sessionStorage`, so a reload in the same tab after payment returns to an unsettled account step instead of starting a new checkout.
+
+**Rules.**
+- The outcome is recorded in the session's `MetadataJSON`. `Created`, `Exists` and `NotApplicable` are final; asking again returns them without calling the host. Only `Failed` is asked again.
+- A call Orders gave up on may still finish at the host. When `EnsureAccount` finds an account it created earlier for the same `SessionID`, it should answer `Created`, not `Exists`.
+- A password is accepted only for a confirmed session whose outcome is `Created`, with the session's client key, once, and within the step's `PasswordWindowMinutes` of the `Created` answer (default 5; override the getter to change it). After the window the buyer is told to reset the password with the host. A password the host refuses counts as an attempt; after 5 the form closes.
+- Each attempt is recorded before the password is passed on. If the host's answer is lost, times out or can't be recorded, the form closes and no second password is accepted. Calls for one session run one at a time within a server process.
+- A session confirmed only by a payment webhook, with no buyer returning to the widget, never runs the step.
+
+**What a host that enables the step takes on.**
+- **Scripts on the checkout page.** The password inputs render in the host page's DOM, and the client session key sits in `sessionStorage`, so any script on that page can read what the buyer types or call the password route. Keep third-party tags off the checkout page, or restrict them with a Content-Security-Policy.
+- **Account enumeration.** `Exists` versus `Created` tells anyone who completes a checkout whether an e-mail has an account with the host.
+
+---
+
 ## Embedding the Widget in Your Applications
 
 ### 1. Angular Application (Direct Component Embed)
@@ -442,15 +527,60 @@ The Angular `<mj-checkout-widget>` remains the embeddable control for sites that
 
 When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@mj-biz-apps/orders-server`), MJ auto-loads `OrdersCheckoutEdge` from the package's `MJ_SERVER_EXTENSIONS` export — the host `mj.config.cjs` does not need to copy the extension block. Host `serverExtensions[]` is still the override layer (`Enabled`, `RootPath`, `Settings` such as `ServiceUserEmail`).
 
+### DOM events for the host page
+
+`<mj-orders-checkout>` dispatches `CustomEvent`s that bubble and are `composed`, so a host page, Google Tag Manager or GA4 can listen on the element or on `document`:
+
+| Event | When | `detail` |
+|---|---|---|
+| `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `ERROR` | `{ state }` |
+| `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units, `currency` upper-case, `coupon` the applied promotion code or `null` |
+| `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
+| `checkout-cancel` | the buyer pressed Cancel; the form has been reset to blank | `{}` |
+| `checkout-close` | sent with `checkout-cancel`, for a container such as a modal to close itself | `{}` |
+| `checkout-reset-refused` | a host's `checkout-reset` arrived while a payment was in flight or the account step was unsettled | `{ state }` |
+
+Cancel clears every field, the error banner and the card entry; the checkout session stays open, so the buyer can start again. It is ignored while a payment is in flight.
+
+No detail carries the buyer's e-mail, name or any other personal data: the events reach every script on the host page. `productName` is the widget's `productName`, which `/initialize` fills from the product's name, or else its `title`.
+
+```javascript
+document.addEventListener('checkout-complete', (e) => {
+    window.dataLayer?.push({ event: 'purchase', value: e.detail.amount, currency: e.detail.currency, coupon: e.detail.coupon });
+});
+```
+
+### Embedding the checkout inside another widget
+
+A host that opens the checkout inside its own panel (a chat or voice agent, say) can pass what it already knows and control the element:
+
+```html
+<mj-orders-checkout slug="annual-plan-voice" api-root="https://api.example.com/checkout"
+    email="caller@example.com" source="voice_agent" source-ref="conv-8f2c"></mj-orders-checkout>
+```
+
+- **`slug`** picks the distribution, and with it the widget and product. Give each channel its own distribution to tell sales apart by slug.
+- **`email`** fills the e-mail field while it is empty; the buyer can still change it.
+- **`source`** and **`source-ref`** say where the checkout came from. They are kept on the checkout session as `MetadataJSON.Attribution` `{ Source, Reference }`, and the session's `DraftOrderID` names the order once it confirms — so an outbound consumer handling `OrderConfirmed` can read them by order. The order confirms a moment before `DraftOrderID` is stamped, so a consumer that finds no session for the order should retry the lookup shortly after. `source` is letters, digits and `_ - . :` up to 50 characters, `source-ref` up to 200 printable characters; an attribution that cannot be read is dropped, never a reason to refuse the checkout. The browser supplies it and anyone can set it, so it is reporting data only: nothing that pays out, such as a commission, may rely on it unless the server can verify it.
+- **Reset:** dispatch `checkout-reset` on the element to return it to a blank form (no `checkout-cancel` / `checkout-close`, since the host started it). It is refused with `checkout-reset-refused` `{ state }` while a payment is in flight, and after a sale while the account step still waits on the buyer (a password form showing, or a failed step not yet dismissed). Every reset starts a new session, before a sale as well as after one, so nothing about the previous buyer carries into the next. The reset reads `email`, `source` and `source-ref` again, so a host starting a new conversation sets them on the element first, then dispatches `checkout-reset`.
+
+```javascript
+const el = document.querySelector('mj-orders-checkout');
+el.addEventListener('checkout-reset-refused', () => { /* keep the panel open */ });
+el.dispatchEvent(new CustomEvent('checkout-reset'));
+```
+
 ### 3. Headless & Custom Frontend Integration — the anonymous checkout edge
 
 The app ships its own public REST edge: **`CheckoutServerExtension`** (`@mj-biz-apps/orders-server`, DriverClass `OrdersCheckoutEdge`), mounted pre-auth via Open App `MJ_SERVER_EXTENSIONS` (host `serverExtensions[]` overlays). Default root path `/checkout`:
 
 1. `GET /checkout/:slug` — first-party HTML host page for the distribution (404 if the slug is reserved or not an Active distribution)
 2. `POST /checkout/initialize` — body `{ slug, clientSessionKey, turnstileToken? }`
-3. `POST /checkout/draft` — body `{ sessionId, clientSessionKey, email, lines }`
+3. `POST /checkout/draft` — body `{ sessionId, clientSessionKey, email, lines, attribution?, answers? }`
 4. `POST /checkout/payment-intent` — body `{ sessionId, clientSessionKey }` → returns the gateway `ClientSecret` for Stripe.js confirmation
-5. `POST /checkout/complete` — body `{ sessionId, clientSessionKey, turnstileToken? }`
+5. `POST /checkout/complete` — body `{ sessionId, clientSessionKey, turnstileToken? }` → the confirmation, with `AccountStep: true` when a host registered an account step
+6. `POST /checkout/account` — body `{ sessionId, clientSessionKey }` → the account step's outcome (see [Account Step After Payment](#account-step-after-payment-checkoutaccountstep))
+7. `POST /checkout/account/password` — body `{ sessionId, clientSessionKey, password }`
 
 The edge enforces, in order and fail-closed: a body-size cap, per-IP(+slug) fixed-window rate limiting, the widget's `Configuration.allowedOrigins` allowlist (with CORS grants only for allowed origins), and — when the widget sets `requireTurnstile` — Cloudflare Turnstile verification against the secret named by the extension's `Settings.TurnstileSecretEnvVar`. Writes run as the principal named by `Settings.ServiceUserEmail`, falling back to MJ's system user. **No request body carries an amount, a price, a product resolution, or a payment provider** — those all resolve server-side.
 
@@ -496,8 +626,8 @@ Initializes a new checkout session (or reuses the caller's open, unexpired one).
 }
 ```
 
-### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines)`
-Recalculates draft pricing in memory and persists the priced snapshot to the session. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
+### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines, contextUser?, options?)`
+Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Attribution` carries the checkout's source. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
 
 **Request Parameters:**
 ```json
@@ -514,12 +644,15 @@ Recalculates draft pricing in memory and persists the priced snapshot to the ses
         { "FirstName": "Sam", "LastName": "Chen", "Email": "sam@example.com", "DietaryPreferences": "Vegetarian" }
       ]
     }
-  ]
+  ],
+  "answers": {
+    "source": { "Value": "Other", "OtherText": "A podcast" }
+  }
 }
 ```
 
 ### 3. `OpenPaymentIntentForSession(sessionID, clientSessionKey)`
-Opens (or idempotently re-opens) a payment intent for the session's **current server-priced total**. The amount comes from the session's own priced snapshot; the provider from the widget's `Configuration.paymentProviderId`. Returns the gateway `ClientSecret` (never persisted) for Stripe.js confirmation and stamps `session.PaymentIntentID`.
+Refuses while a required question is unanswered. Opens (or idempotently re-opens) a payment intent for the session's **current server-priced total**. The amount comes from the session's own priced snapshot; the provider from the widget's `Configuration.paymentProviderId`. Returns the gateway `ClientSecret` (never persisted) for Stripe.js confirmation and stamps `session.PaymentIntentID`.
 
 **Response:**
 ```json
@@ -533,7 +666,7 @@ Opens (or idempotently re-opens) a payment intent for the session's **current se
 ```
 
 ### 4. `CompleteCheckout(sessionID, clientSessionKey)`
-Executes payer-Person resolution (find-or-create by the session's captured email), payment verification (intent `Succeeded` + amount covers the re-priced total), line creation from the session's own snapshot (never fresh client input), companion extension hydration, atomic lifecycle booking, and GuestOrder claim generation. **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
+Refuses while a required question is unanswered, before anything is written. Executes payer-Person resolution (find-or-create by the session's captured email), payment verification (intent `Succeeded` + amount covers the re-priced total), line creation from the session's own snapshot (never fresh client input), companion extension hydration, the buyer's answers as Order Checkout Answers, atomic lifecycle booking, and GuestOrder claim generation. **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
 
 **Request Parameters:**
 ```json

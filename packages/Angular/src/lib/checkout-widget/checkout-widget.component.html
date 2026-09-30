@@ -216,6 +216,58 @@
         }
     </section>
 
+    <!-- Questions from the widget's Configuration; answers are recorded on the order -->
+    @if (questions().length > 0) {
+        <section class="mj-widget-form-section">
+            <h3 class="mj-section-title">A few questions</h3>
+            <div class="mj-form-grid">
+                @for (question of questions(); track question.key) {
+                    <div class="mj-form-group full-width">
+                        <label class="mj-label" [attr.for]="widgetInstanceId + '-q-' + question.key">
+                            {{ question.label }}
+                            @if (question.required) {
+                                <span class="mj-required">*</span>
+                            }
+                        </label>
+                        @if (question.type === 'select') {
+                            <select
+                                class="mj-select"
+                                [id]="widgetInstanceId + '-q-' + question.key"
+                                [ngModel]="answerFor(question.key).Value ?? ''"
+                                (ngModelChange)="updateAnswer(question.key, { Value: $event })"
+                                [required]="question.required || false">
+                                <option [ngValue]="''">Select an answer</option>
+                                @for (opt of question.options; track optionValue(opt)) {
+                                    <option [ngValue]="optionValue(opt)">{{ optionLabel(opt) }}</option>
+                                }
+                            </select>
+                            @if (isOtherChosen(question)) {
+                                <input
+                                    type="text"
+                                    class="mj-input mj-question-other"
+                                    [attr.aria-label]="question.label + ' (please specify)'"
+                                    placeholder="Please specify"
+                                    [attr.maxlength]="answerMaxLength(question)"
+                                    [ngModel]="answerFor(question.key).OtherText ?? ''"
+                                    (ngModelChange)="updateAnswer(question.key, { OtherText: $event })"
+                                    required />
+                            }
+                        } @else {
+                            <input
+                                type="text"
+                                class="mj-input"
+                                [id]="widgetInstanceId + '-q-' + question.key"
+                                [attr.maxlength]="answerMaxLength(question)"
+                                [ngModel]="answerFor(question.key).Value ?? ''"
+                                (ngModelChange)="updateAnswer(question.key, { Value: $event })"
+                                [required]="question.required || false" />
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
     <!-- Stripe Embedded Payment Section -->
     @if (!isFree()) {
         <section class="mj-widget-payment-section">
