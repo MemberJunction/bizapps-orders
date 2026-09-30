@@ -227,35 +227,43 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
      * A reset the embedding host asked for, by dispatching `checkout-reset` on the element (a voice
      * or chat agent closing its panel, say). Refused while a payment is in flight — resetting then
      * would strand a charge the buyer cannot see. Unlike Cancel it sends no `checkout-cancel` or
-     * `checkout-close`: the host started it. The e-mail and attribution are read again, so a host
+     * `checkout-close`: the host started it. Also refused while the account step after a sale is
+     * unsettled, since the buyer could not come back to it.
+     *
+     * A reset always starts a new session, before a sale as well as after one: the server matches
+     * the buyer's person record once per session, so a kept session would carry the previous
+     * conversation's buyer into the next. The e-mail and attribution are read again, so a host
      * starting a new conversation sets them on the element before it dispatches the reset.
      */
     private resetRequested(): void {
-        if (this.processing) {
+        if (this.processing || this.accountUnsettled) {
             this.dispatch(CHECKOUT_RESET_REFUSED_EVENT, { state: this.state });
             return;
         }
-        this.readConversationAttributes();
-        if (this.successMessage) {
-            // The last purchase is confirmed and its session closed: the next one needs a new
-            // session, so forget this one's key and start from the beginning.
-            this.successMessage = null;
-            this.orderNumber = null;
-            this.config = null;
-            this.sessionId = '';
-            this.forgetClientKey();
-            this.resetForm();
-            void this.ngOnInit();
-            return;
-        }
+        this.successMessage = null;
+        this.orderNumber = null;
+        this.account = null;
+        this.accountDismissed = false;
+        this.password = '';
+        this.passwordConfirmation = '';
+        this.passwordError = null;
+        this.passwordSet = false;
+        this.config = null;
+        this.sessionId = '';
+        this.forgetClientKey();
+        this.forgetCompleting();
         this.resetForm();
-        this.setState('CHECKOUT');
-        this.cdr.detectChanges();
+        void this.ngOnInit();
+    }
+
+    /** The account step is still asking the buyer for something, and the buyer has not left it. */
+    private get accountUnsettled(): boolean {
+        return this.accountLoading || this.passwordBusy || (!this.accountDismissed && !IsAccountSettled(this.account));
     }
 
     /**
      * Back to a blank form: every field, the error banner and the card entry. The session stays open.
-     * The caller reports the state, since a reset after a sale reports `LOADING` next, not `CHECKOUT`.
+     * The caller reports the state, since a host reset reports `LOADING` next, not `CHECKOUT`.
      */
     private resetForm(): void {
         this.errorMessage = null;

@@ -243,7 +243,7 @@ describe('CheckoutPublicHostComponent events', () => {
             expect(drafts[0]).not.toHaveProperty('attribution');
         });
 
-        it('resets on checkout-reset without the Cancel events', async () => {
+        it('after a failed payment, resets without the Cancel events and starts a new session', async () => {
             responses['/draft'] = { Success: false, ErrorMessage: 'Could not price this checkout.' };
             const c = create();
             await c.ngOnInit();
@@ -251,17 +251,24 @@ describe('CheckoutPublicHostComponent events', () => {
             const before = c.formGeneration;
             seen = [];
             host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
             expect(c.errorMessage).toBeNull();
             expect(c.formGeneration).toBe(before + 1);
-            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'CHECKOUT' } }]);
+            expect(seen).toEqual([
+                { type: 'checkout-state-change', detail: { state: 'LOADING' } },
+                { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+            ]);
+            expect(removed).toContain('mj-checkout-key:annual');
+            expect(inits).toBe(2);
         });
 
-        it('a mid-flow reset takes the e-mail and attribution the host set for the next conversation', async () => {
+        it('a reset takes the e-mail and attribution the host set for the next conversation', async () => {
             attrs = { email: 'first@example.com', source: 'voice_agent', 'source-ref': 'conv-1' };
             const c = create();
             await c.ngOnInit();
             attrs = { email: 'second@example.com', source: 'chat_agent', 'source-ref': 'conv-2' };
             host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
             expect(c.prefillEmail).toBe('second@example.com');
             await c.onSubmitted(submission());
             expect(drafts[0].attribution).toEqual({ source: 'chat_agent', reference: 'conv-2' });
@@ -276,6 +283,27 @@ describe('CheckoutPublicHostComponent events', () => {
             expect(seen).toEqual([{ type: 'checkout-reset-refused', detail: { state: 'CHECKOUT' } }]);
         });
 
+        it('refuses a reset while the account step after a sale is unsettled', async () => {
+            responses['/complete'] = { Success: true, OrderNumber: 'SO-1', TotalGross: 0, AccountStep: true };
+            responses['/account'] = { Success: true, Account: { Outcome: 'Created', CanSetPassword: true } };
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(c.account?.CanSetPassword).toBe(true);
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            expect(seen).toEqual([{ type: 'checkout-reset-refused', detail: { state: 'SUCCESS' } }]);
+            expect(inits).toBe(1);
+
+            c.skipPassword();
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
+            expect(inits).toBe(2);
+            expect(c.account).toBeNull();
+            expect(c.successMessage).toBeNull();
+        });
+
         it('after a completed sale, starts over with a new session', async () => {
             const c = create();
             await c.ngOnInit();
@@ -288,7 +316,7 @@ describe('CheckoutPublicHostComponent events', () => {
                 { type: 'checkout-state-change', detail: { state: 'LOADING' } },
                 { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
             ]);
-            expect(removed).toEqual(['mj-checkout-key:annual']);
+            expect(removed).toContain('mj-checkout-key:annual');
             expect(inits).toBe(2);
             expect(c.successMessage).toBeNull();
             expect(c.config).not.toBeNull();
