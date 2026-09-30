@@ -18,6 +18,16 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
+    ACCOUNT_STEP_FAILED,
+    AccountMessage,
+    CheckPasswordEntry,
+    IsAccountSettled,
+    MayRedirect,
+    ReadCheckoutAccount,
+    VerificationNote,
+    type CheckoutAccountView,
+} from './checkout-account';
+import {
     BuildCheckoutCompleteDetail,
     CHECKOUT_CANCEL_EVENT,
     CHECKOUT_CLOSE_EVENT,
@@ -89,6 +99,26 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public successMessage: string | null = null;
     public orderNumber: string | null = null;
 
+    /** The post-payment account step, when the host registered one (#292). */
+    public account: CheckoutAccountView | null = null;
+    public password = '';
+    public passwordConfirmation = '';
+    public passwordError: string | null = null;
+    public passwordBusy = false;
+    public passwordSet = false;
+    /** True while the account step is being asked for. */
+    public accountLoading = false;
+    /** The buyer chose to leave a failed account step. */
+    private accountDismissed = false;
+
+    public get accountMessage(): string | null {
+        return this.account ? AccountMessage(this.account, this.passwordSet) : null;
+    }
+
+    public get verificationNote(): string | null {
+        return VerificationNote(this.account);
+    }
+
     private stripe: StripeInstance | null = null;
     private card: StripeCard | null = null;
     private cardMounted = false;
@@ -116,6 +146,9 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.sessionKey = this.clientKey();
         if (!this.sessionKey) {
             this.loadError = 'Checkout requires a secure random source. Open this page over HTTPS.';
+            return;
+        }
+        if (await this.resumeAccountStep()) {
             return;
         }
         this.setState('LOADING');
@@ -308,6 +341,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     }
 
     private async finish(): Promise<void> {
+        // Remembered before completing, so a reload after payment returns to the account step.
+        this.rememberCompleting(this.sessionId);
         const done = await this.post('/complete', {
             sessionId: this.sessionId,
             clientSessionKey: this.sessionKey,
@@ -333,10 +368,118 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 coupon: null,
             })
         );
-        if (this.config?.redirectUrl) {
-            window.location.href = this.config.redirectUrl;
+        if (done.AccountStep === true) {
+            await this.loadAccount();
+        } else {
+            this.forgetCompleting();
+            this.leaveIfDone();
         }
         this.cdr.detectChanges();
+    }
+
+    /** Asks for the account step of the completed checkout. The host is asked again only after a failure. */
+    private async loadAccount(): Promise<void> {
+        this.accountLoading = true;
+        this.cdr.detectChanges();
+        try {
+            const res = await this.post('/account', {
+                sessionId: this.sessionId,
+                clientSessionKey: this.sessionKey,
+            });
+            this.account = res.Success ? ReadCheckoutAccount(res.Account) : ACCOUNT_STEP_FAILED;
+        } catch {
+            this.account = ACCOUNT_STEP_FAILED;
+        } finally {
+            this.accountLoading = false;
+        }
+        if (IsAccountSettled(this.account)) this.forgetCompleting();
+        this.leaveIfDone();
+        this.cdr.detectChanges();
+    }
+
+    /** Asks the host again after the account step failed. */
+    public async retryAccount(): Promise<void> {
+        if (this.accountLoading) return;
+        await this.loadAccount();
+    }
+
+    /** Leaves a failed account step. A reload of this checkout in the same tab offers it again. */
+    public dismissAccount(): void {
+        this.accountDismissed = true;
+        this.leaveIfDone();
+    }
+
+    /**
+     * A reload after payment: when this tab completed a checkout whose account step is not settled,
+     * shows the confirmation and the account step instead of a new checkout.
+     */
+    private async resumeAccountStep(): Promise<boolean> {
+        const sessionId = this.completingSession();
+        if (!sessionId) return false;
+        try {
+            const res = await this.post('/account', { sessionId, clientSessionKey: this.sessionKey });
+            const account = res.Success ? ReadCheckoutAccount(res.Account) : null;
+            if (!account) {
+                this.forgetCompleting();
+                return false;
+            }
+            this.sessionId = sessionId;
+            this.successMessage = 'Thank you. Your order is confirmed.';
+            this.account = account;
+            if (IsAccountSettled(account)) this.forgetCompleting();
+            return true;
+        } catch {
+            return false;
+        } finally {
+            this.cdr.detectChanges();
+        }
+    }
+
+    /** Sends the new account's password. The host's policy decides; its message is shown when it refuses. */
+    public async submitPassword(): Promise<void> {
+        const problem = CheckPasswordEntry(this.password, this.passwordConfirmation);
+        if (problem) {
+            this.passwordError = problem;
+            return;
+        }
+        this.passwordBusy = true;
+        this.passwordError = null;
+        try {
+            const res = await this.post('/account/password', {
+                sessionId: this.sessionId,
+                clientSessionKey: this.sessionKey,
+                password: this.password,
+            });
+            this.account = ReadCheckoutAccount(res.Account) ?? this.account;
+            if (IsAccountSettled(this.account)) this.forgetCompleting();
+            if (res.Success) {
+                this.passwordSet = true;
+                this.password = '';
+                this.passwordConfirmation = '';
+                this.leaveIfDone();
+            } else {
+                this.passwordError = this.str(res.ErrorMessage, 'That password could not be set. Please try another.');
+            }
+        } catch {
+            this.passwordError = 'That password could not be set right now. Please try again.';
+        } finally {
+            this.passwordBusy = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /** Leaves the password for later: the buyer can reset it at sign-in. */
+    public skipPassword(): void {
+        if (this.account) this.account = { ...this.account, CanSetPassword: false };
+        this.forgetCompleting();
+        this.leaveIfDone();
+    }
+
+    /** Follows the widget's redirect once nothing is left for the buyer to do here. */
+    private leaveIfDone(): void {
+        if (this.config?.redirectUrl && !this.accountLoading && MayRedirect(this.account, this.accountDismissed)) {
+            window.location.href = this.config.redirectUrl;
+        }
     }
 
     /** Reports a state the host page can track; repeats of the same state are not re-sent. */
@@ -470,6 +613,34 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             }
         }
         return key;
+    }
+
+    private get completingKey(): string {
+        return `mj-checkout-completing:${this.slug}`;
+    }
+
+    private rememberCompleting(sessionId: string): void {
+        try {
+            sessionStorage.setItem(this.completingKey, sessionId);
+        } catch {
+            /* private mode */
+        }
+    }
+
+    private forgetCompleting(): void {
+        try {
+            sessionStorage.removeItem(this.completingKey);
+        } catch {
+            /* private mode */
+        }
+    }
+
+    private completingSession(): string | null {
+        try {
+            return sessionStorage.getItem(this.completingKey);
+        } catch {
+            return null;
+        }
     }
 
     private async post(path: string, body: unknown): Promise<Record<string, unknown>> {
