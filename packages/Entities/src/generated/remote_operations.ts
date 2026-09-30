@@ -1276,7 +1276,9 @@ export interface OrdersRecordProgressInput {
     /**
      * SUPERSEDE: the posted observation this one replaces. It must be the line's latest observation
      * that is not already superseded, and the caller must hold `MJ.BizApps.Orders.Progress.Supersede`.
-     * Nothing is edited: the replaced observation's recognition is reversed on its own date, and this
+     * Nothing is edited: the replaced observation's recognition is reversed — on its own date while that
+     * month has no Posted batch for the line's company, else on day 1 of the first later month without
+     * one (`ReversalDate` on the output) — and this
      * observation's catch-up is computed as if the replaced one had never posted. `MeasurementDate`
      * must then be after the observation before the replaced one — not after the replaced one — which
      * is what makes a mistyped future date recoverable.
@@ -1331,8 +1333,15 @@ export interface OrdersRecordProgressOutput {
     FutureDateWarning?: string | null;
     /** On a supersede: the observation replaced. Null otherwise. */
     SupersededMeasurementID?: string | null;
-    /** On a supersede: the recognition taken back out on the replaced observation's date (its RecognitionAmount, negated). Zero otherwise. */
+    /** On a supersede: the recognition taken back out (the replaced observation's RecognitionAmount, negated). Zero otherwise. */
     ReversalAmount?: number;
+    /**
+     * On a supersede that reverses anything: the date the reversal is booked on. The replaced
+     * observation's own date while that month has no Posted batch for the line's company; otherwise
+     * day 1 of the first later month with none, so a correction never books into a closed period.
+     * Null otherwise.
+     */
+    ReversalDate?: string | null;
     /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */
     ReversalJournalEntryID?: string | null;
 }
@@ -1734,7 +1743,7 @@ export class OrdersRecordAccessOverrideDecisionOperation extends BaseRemotableOp
 // ============================================================
 /**
  * Record Progress
- * Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date and the new catch-up is computed as if it had never posted, with no row edited.
+ * Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted, with no row edited.
  * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
  * under 'Orders.RecordProgress'. This generated base provides the typed contract only (client-safe).
  */

@@ -27,8 +27,10 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
  *
  * SUPERSEDE IS THE WAY BACK FROM A WRONG ONE (golive #260). A user holding the supersede
  * authorization sees a toggle that makes the next post replace the line's last observation: its
- * recognition is reversed on its own date and the new observation posts as if it had never been
- * there. Nothing is edited. The operation checks the grant again; the toggle only hides the action
+ * recognition is reversed and the new observation posts as if it had never been there. Nothing is
+ * edited. The reversal lands on the replaced date while that month is open, and on day 1 of the
+ * first later open month when a posted batch has closed it; the preview and the confirm both say
+ * which date it got. The operation checks the grant again; the toggle only hides the action
  * from people who cannot use it.
  *
  * A LINE AT 100% IS STILL SUPERSEDABLE, so the same users get "Show 100%": the worklist omits
@@ -111,7 +113,12 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                 <div class="mjo-pg__closed" role="status">
                     <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
                     Superseding the {{ FormatDate(row.LastMeasurementDate, { Short: true }) }} observation at {{ percent(row.LastPercentComplete) }}.
-                    Its recognition is reversed on its own date; nothing is edited. Keep its date to correct the percent, or choose any date after the observation before it.
+                    Its recognition is reversed on its own date, or in the first open month if that month is in a posted batch; nothing is edited. Keep its date to correct the percent, or choose any date after the observation before it.
+                </div>
+            }
+            @if (reversalNote(Draft, row); as reversalText) {
+                <div class="mjo-pg__closed" role="status">
+                    <i class="fa-solid fa-calendar-day" aria-hidden="true"></i> {{ reversalText }}
                 </div>
             }
             @if (Draft?.FutureDateWarning; as future) {
@@ -265,7 +272,7 @@ export class MJOProgressPageComponent implements OnInit {
         const draft = this.Draft ?? (await this.record(true));
         if (!draft) return;
         const superseding = this.Supersede && row.LastMeasurementDate ? `, superseding the ${FormatDate(row.LastMeasurementDate, { Short: true })} observation` : '';
-        const warnings = [draft.FutureDateWarning, draft.ClosedPeriodWarning].filter((w): w is string => !!w);
+        const warnings = [this.reversalNote(draft, row), draft.FutureDateWarning, draft.ClosedPeriodWarning].filter((w): w is string => !!w);
         const proceed = await this.confirm.Confirm({
             title: `Attest ${row.OrderNumber} line ${row.LineNumber} at ${this.percent(Number(this.PercentInput) / 100)}${superseding}?`,
             message: draft.Message ?? '',
@@ -292,6 +299,22 @@ export class MJOProgressPageComponent implements OnInit {
         this.Draft = null;
         await this.load();
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Where a supersede's reversal is booked, in words — or null when nothing is reversed. Said
+     * whichever date it got, and with the reason when it is not the replaced observation's own date.
+     */
+    public reversalNote(draft: OrdersRecordProgressOutput | null, row: { LastMeasurementDate?: string | null }): string | null {
+        if (!draft?.ReversalDate || !draft.ReversalAmount) return null;
+        const amount = this.money(Math.abs(draft.ReversalAmount));
+        const on = FormatDate(draft.ReversalDate, { Short: true });
+        const replaced = row.LastMeasurementDate ? row.LastMeasurementDate.slice(0, 10) : null;
+        if (!replaced || replaced === draft.ReversalDate) return `The ${amount} reversal is dated ${on}, the replaced observation's own date.`;
+        return (
+            `The ${amount} reversal is dated ${on}: the ${FormatDate(replaced, { Short: true })} observation's month is already in a posted batch, ` +
+            `so the reversal books in the first month that is not.`
+        );
     }
 
     /** One call shape for both buttons. Returns null (and shows why) when the operation refused. */

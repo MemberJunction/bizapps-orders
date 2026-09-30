@@ -5,8 +5,14 @@
  * posted one, and a posted observation is immutable. Both are right; together, one mistyped date
  * froze the line until the calendar caught up with the typo. A supersede is the recovery path that
  * keeps immutability: a NEW observation names the one it replaces, the replaced observation's
- * recognition is reversed on its own date, and the new catch-up is computed as if it had never
- * posted. No row is edited. A row is superseded because another row points at it.
+ * recognition is reversed, and the new catch-up is computed as if it had never posted. No row is
+ * edited. A row is superseded because another row points at it.
+ *
+ * WHERE THE REVERSAL LANDS ({@link ReversalDate}). On the replaced observation's own date while that
+ * month is open, so a mistyped future date nets to zero on the day it names. When that month is
+ * closed, on the first day of the first later month that is open: finance's ruling is that a closed
+ * period is not reopened by a correction. "Closed" is the test the closed-period warning uses — the
+ * month has a Posted batch for the line's company.
  *
  * ONLY THE LATEST OBSERVATION CAN BE SUPERSEDED. Recognition is cumulative, so reversing the latest
  * observation's delta restores exactly the total the one before it left. Reversing an older one
@@ -45,7 +51,7 @@ export function EffectiveObservations<T extends ObservationLink>(rows: T[]): T[]
 }
 
 export interface SupersedePlan {
-    /** Recognition taken back out on the replaced observation's date — its delta, negated. */
+    /** Recognition taken back out by the reversal — the replaced observation's delta, negated. */
     Reversal: number;
     /** What the line had recognised before the replaced observation posted. */
     Restored: number;
@@ -84,6 +90,31 @@ export function MonthEnd(isoDate: string): string {
     const [y, m] = isoDate.slice(0, 10).split('-').map(Number);
     const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
     return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+}
+
+/**
+ * The date the reversal of `replacedDate` is booked on.
+ *
+ * `replacedDate` itself while its month is not in `postedMonths`; otherwise day 1 of the first later
+ * month that is not. `postedMonths` holds `YYYY-MM` keys: the months with a Posted batch for the
+ * line's company. Months are stepped on the date's own parts, never through a local-time `Date`.
+ */
+export function ReversalDate(replacedDate: string, postedMonths: Iterable<string>): string {
+    const closed = new Set(postedMonths);
+    const day = replacedDate.slice(0, 10);
+    let [y, m] = day.split('-').map(Number);
+    let key = day.slice(0, 7);
+    if (!closed.has(key)) return day;
+    // Finite: every step leaves one more key of a finite set behind.
+    while (closed.has(key)) {
+        m += 1;
+        if (m > 12) {
+            m = 1;
+            y += 1;
+        }
+        key = `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}`;
+    }
+    return `${key}-01`;
 }
 
 /**

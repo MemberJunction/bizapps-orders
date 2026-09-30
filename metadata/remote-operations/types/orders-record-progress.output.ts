@@ -45,8 +45,15 @@ export interface OrdersRecordProgressOutput {
     FutureDateWarning?: string | null;
     /** On a supersede: the observation replaced. Null otherwise. */
     SupersededMeasurementID?: string | null;
-    /** On a supersede: the recognition taken back out on the replaced observation's date (its RecognitionAmount, negated). Zero otherwise. */
+    /** On a supersede: the recognition taken back out (the replaced observation's RecognitionAmount, negated). Zero otherwise. */
     ReversalAmount?: number;
+    /**
+     * On a supersede that reverses anything: the date the reversal is booked on. The replaced
+     * observation's own date while that month has no Posted batch for the line's company; otherwise
+     * day 1 of the first later month with none, so a correction never books into a closed period.
+     * Null otherwise.
+     */
+    ReversalDate?: string | null;
     /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */
     ReversalJournalEntryID?: string | null;
 }

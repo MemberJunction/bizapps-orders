@@ -13,6 +13,7 @@ import {
     MonthEnd,
     PlanSupersede,
     PROGRESS_SUPERSEDE_AUTH,
+    ReversalDate,
     SupersedeRefusal,
 } from '../ProgressSupersede.js';
 import { ComputeCatchUp } from '../RevenueRecognition.js';
@@ -80,6 +81,30 @@ describe('MonthEnd and FutureDateWarning', () => {
         const warning = FutureDateWarning('2027-12-31', '2026-09-23');
         expect(warning).toMatch(/2027-12-31/);
         expect(warning).toMatch(/2026-09-30/);
+    });
+});
+
+describe('ReversalDate', () => {
+    it('keeps the replaced date while its month has no posted batch', () => {
+        expect(ReversalDate('2026-08-31', [])).toBe('2026-08-31');
+        expect(ReversalDate('2026-08-31', ['2026-07', '2026-09'])).toBe('2026-08-31');
+    });
+
+    it('moves to day 1 of the next month when the replaced month is posted', () => {
+        expect(ReversalDate('2026-08-31', ['2026-08'])).toBe('2026-09-01');
+    });
+
+    it('skips every consecutive posted month', () => {
+        expect(ReversalDate('2026-08-15', ['2026-08', '2026-09', '2026-10', '2026-12'])).toBe('2026-11-01');
+    });
+
+    it('rolls over the year', () => {
+        expect(ReversalDate('2026-11-30', ['2026-11', '2026-12'])).toBe('2027-01-01');
+    });
+
+    it('reads only the date part of a timestamp', () => {
+        expect(ReversalDate('2026-08-31T00:00:00Z', [])).toBe('2026-08-31');
+        expect(ReversalDate('2026-08-31T00:00:00Z', ['2026-08'])).toBe('2026-09-01');
     });
 });
 

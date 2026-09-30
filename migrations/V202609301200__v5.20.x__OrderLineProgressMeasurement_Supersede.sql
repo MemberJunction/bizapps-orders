@@ -69,7 +69,7 @@ EXEC sp_addextendedproperty
 GO
 EXEC sp_addextendedproperty
     @name = N'MS_Description',
-    @value = N'Soft reference into accounting: the entry reversing the superseded observation''s recognition, dated on that observation''s MeasurementDate so the revenue it recognised nets to zero on that date; the Deferred/Unbilled split follows the line''s billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.',
+    @value = N'Soft reference into accounting: the entry reversing the superseded observation''s recognition. Dated on that observation''s MeasurementDate while that month has no posted batch for the line''s company, so the revenue it recognised nets to zero on that date; otherwise on the first day of the first later month with no posted batch. The Deferred/Unbilled split follows the line''s billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'OrderLineProgressMeasurement',
     @level2type = N'COLUMN', @level2name = N'ReversalJournalEntryID';
@@ -251,7 +251,7 @@ UPDATE [${mjSchema}].[EntityField]
             (SELECT COALESCE(MAX([Sequence]), 0) FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '9F5508E8-9F4F-4F5D-B991-C98BF0043498') + 1,
             'ReversalJournalEntryID',
             'Reversal Journal Entry ID',
-            'Soft reference into accounting: the entry reversing the superseded observation''s recognition, dated on that observation''s MeasurementDate so the revenue it recognised nets to zero on that date; the Deferred/Unbilled split follows the line''s billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.',
+            'Soft reference into accounting: the entry reversing the superseded observation''s recognition. Dated on that observation''s MeasurementDate while that month has no posted batch for the line''s company, so the revenue it recognised nets to zero on that date; otherwise on the first day of the first later month with no posted batch. The Deferred/Unbilled split follows the line''s billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.',
             'uniqueidentifier',
             16,
             0,

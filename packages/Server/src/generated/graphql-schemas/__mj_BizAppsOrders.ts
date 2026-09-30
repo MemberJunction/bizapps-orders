@@ -7166,7 +7166,7 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @MaxLength(36)
     SupersedesMeasurementID?: string;
         
-    @Field({nullable: true, description: `Soft reference into accounting: the entry reversing the superseded observation's recognition, dated on that observation's MeasurementDate so the revenue it recognised nets to zero on that date; the Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`}) 
+    @Field({nullable: true, description: `Soft reference into accounting: the entry reversing the superseded observation's recognition. Dated on that observation's MeasurementDate while that month has no posted batch for the line's company, so the revenue it recognised nets to zero on that date; otherwise on the first day of the first later month with no posted batch. The Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`}) 
     @MaxLength(36)
     ReversalJournalEntryID?: string;
         
