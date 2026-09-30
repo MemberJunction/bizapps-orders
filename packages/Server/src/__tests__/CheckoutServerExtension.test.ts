@@ -36,6 +36,9 @@ vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
     },
     EscapeText: (value: string) => value.replace(/'/g, "''"),
     DispatchOutboundDeliveries: vi.fn().mockResolvedValue({ Success: true, Claimed: 0, Delivered: 0, Retrying: 0, DeadLettered: 0 }),
+    EnsureCheckoutAccount: vi.fn().mockResolvedValue({ Success: true }),
+    HasCheckoutAccountStep: vi.fn().mockReturnValue(false),
+    SetCheckoutAccountPassword: vi.fn(),
     LoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
     OrdersEngine: { Instance: {} },
 }));
@@ -45,7 +48,13 @@ vi.mock('@mj-biz-apps/orders-entities', () => ({
     OrdersEngine: { Instance: {} },
 }));
 
-import { CheckoutSessionService, DispatchOutboundDeliveries } from '@mj-biz-apps/orders-core-entities-server';
+import {
+    CheckoutSessionService,
+    DispatchOutboundDeliveries,
+    EnsureCheckoutAccount,
+    HasCheckoutAccountStep,
+    SetCheckoutAccountPassword,
+} from '@mj-biz-apps/orders-core-entities-server';
 import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap } from '../CheckoutServerExtension.js';
 
 type RouteMap = {
@@ -135,6 +144,8 @@ describe('CheckoutServerExtension', () => {
 
         expect(result.Success).toBe(true);
         expect(Object.keys(routes.post).sort()).toEqual([
+            '/checkout/account',
+            '/checkout/account/password',
             '/checkout/complete',
             '/checkout/draft',
             '/checkout/initialize',
@@ -147,6 +158,8 @@ describe('CheckoutServerExtension', () => {
             'POST /checkout/draft',
             'POST /checkout/payment-intent',
             'POST /checkout/complete',
+            'POST /checkout/account',
+            'POST /checkout/account/password',
             'GET /checkout/:slug',
         ]);
     });
@@ -351,6 +364,64 @@ describe('CheckoutServerExtension', () => {
             vi.mocked(DispatchOutboundDeliveries).mockRejectedValueOnce(new Error('consumer down'));
             const res = await complete({ Success: true, SessionID: 'sess-1', Status: 'Confirmed', OrderID: 'order-1' });
             expect(res.statusCode).toBe(200);
+        });
+    });
+
+    describe('account step (#292)', () => {
+        type Handler = (req: Request, res: Response) => Promise<void>;
+        const call = async (name: 'handleComplete' | 'handleAccount' | 'handleAccountPassword', body: Record<string, unknown>) => {
+            mockGetSystemUser.mockReturnValue({ ID: 'svc-1', Email: 'svc@example.com' });
+            const ext = new CheckoutServerExtension() as unknown as Record<string, Handler>;
+            const res = mockRes();
+            await ext[name].call(ext, { body } as unknown as Request, res as unknown as Response);
+            return res;
+        };
+        const completed = { Success: true, SessionID: 'sess-1', Status: 'Confirmed', OrderID: 'o-1', OrderNumber: 'SO-1' };
+
+        it('answers a completed checkout without waiting on the host, and says an account step follows', async () => {
+            vi.mocked(EnsureCheckoutAccount).mockClear();
+            vi.mocked(CheckoutSessionService.CompleteCheckout).mockResolvedValue(completed);
+            vi.mocked(HasCheckoutAccountStep).mockReturnValue(true);
+            const res = await call('handleComplete', { sessionId: 'sess-1', clientSessionKey: 'k' });
+            expect(res.statusCode).toBe(200);
+            expect(JSON.parse(res.body)).toEqual({ ...completed, AccountStep: true });
+            expect(EnsureCheckoutAccount).not.toHaveBeenCalled();
+        });
+
+        it('leaves the completion response unchanged when no step is registered', async () => {
+            vi.mocked(CheckoutSessionService.CompleteCheckout).mockResolvedValue(completed);
+            vi.mocked(HasCheckoutAccountStep).mockReturnValue(false);
+            const res = await call('handleComplete', { sessionId: 'sess-1', clientSessionKey: 'k' });
+            expect(JSON.parse(res.body)).toEqual(completed);
+        });
+
+        it('answers a checkout that did not complete with 409 and no account step', async () => {
+            vi.mocked(CheckoutSessionService.CompleteCheckout).mockResolvedValue({ Success: false, SessionID: 'sess-1', Status: 'Open', ErrorMessage: 'no' });
+            vi.mocked(HasCheckoutAccountStep).mockReturnValue(true);
+            const res = await call('handleComplete', { sessionId: 'sess-1', clientSessionKey: 'k' });
+            expect(res.statusCode).toBe(409);
+            expect(JSON.parse(res.body).AccountStep).toBeUndefined();
+        });
+
+        it('passes the account request through to the service', async () => {
+            vi.mocked(EnsureCheckoutAccount).mockResolvedValue({ Success: true, Account: { Outcome: 'Created', CanSetPassword: true, VerificationRequired: true } });
+            const res = await call('handleAccount', { sessionId: 'sess-1', clientSessionKey: 'k' });
+            expect(res.statusCode).toBe(200);
+            expect(JSON.parse(res.body).Account.Outcome).toBe('Created');
+            expect(EnsureCheckoutAccount).toHaveBeenCalledWith('sess-1', 'k', expect.anything());
+        });
+
+        it('passes the password body through to the service', async () => {
+            vi.mocked(SetCheckoutAccountPassword).mockResolvedValue({ Success: true });
+            const res = await call('handleAccountPassword', { sessionId: 'sess-1', clientSessionKey: 'k', password: 'pw' });
+            expect(res.statusCode).toBe(200);
+            expect(SetCheckoutAccountPassword).toHaveBeenCalledWith('sess-1', 'k', 'pw', expect.anything());
+        });
+
+        it('answers a refused password with 400', async () => {
+            vi.mocked(SetCheckoutAccountPassword).mockResolvedValue({ Success: false, ErrorMessage: 'too short' });
+            const res = await call('handleAccountPassword', { sessionId: 'sess-1', clientSessionKey: 'k', password: 'pw' });
+            expect(res.statusCode).toBe(400);
         });
     });
 });
