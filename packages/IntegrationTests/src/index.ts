@@ -31,6 +31,7 @@
  *   arithmetic-edges     AE1–AE12  the unit suite's hostile numbers, through the real pipeline
  *   concurrency          CN1–CN6   document numbering under contention, on a second connection (D30)
  *   events               EV1–EV10  event products and one-time deferred revenue
+ *   orders-isa           IS1–IS10  IS-A (Table-Per-Type) against the database: Event Products, Event Order Lines
  *   volume               VL1–VL13  populations, repeated purchases, and a SECOND MJ session
  *   entitlements         EN1–EN20  what a purchase confers, for how long, and when payment gates it (D27/D76, #223)
  *   entitlement-read     ER1–ER7   Orders.CheckEntitlement / ListEntitlements in-process Execute
@@ -85,6 +86,7 @@ export * from './checks/payments-rollups.checks.js';
 export * from './checks/payment-ledger.checks.js';
 export * from './checks/intercompany.checks.js';
 export * from './checks/events.checks.js';
+export * from './checks/orders-isa.checks.js';
 export * from './checks/account-credit.checks.js';
 export * from './checks/pricing.checks.js';
 export * from './checks/promotions.checks.js';
