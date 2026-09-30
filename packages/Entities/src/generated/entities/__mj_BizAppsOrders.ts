@@ -1219,6 +1219,10 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: Person
         * * Display Name: Person
         * * SQL Data Type: nvarchar(201)`),
+    AcknowledgesCoverageOverlap: z.boolean().describe(`
+        * * Field Name: AcknowledgesCoverageOverlap
+        * * Display Name: Acknowledges Coverage Overlap
+        * * SQL Data Type: bit`),
 });
 
 export type mjBizAppsOrdersEventOrderLineEntityType = z.infer<typeof mjBizAppsOrdersEventOrderLineSchema>;
@@ -1374,6 +1378,10 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: VenueAddress
         * * Display Name: Venue Address Details
         * * SQL Data Type: nvarchar(255)`),
+    SubscriptionFamilyID: z.string().nullable().describe(`
+        * * Field Name: SubscriptionFamilyID
+        * * Display Name: Subscription Family
+        * * SQL Data Type: uniqueidentifier`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -3037,6 +3045,12 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Display Name: Ship To Address Snapshot
         * * SQL Data Type: nvarchar(MAX)
         * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`),
+    AcknowledgesCoverageOverlap: z.boolean().describe(`
+        * * Field Name: AcknowledgesCoverageOverlap
+        * * Display Name: Acknowledges Coverage Overlap
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header Display
@@ -5041,6 +5055,12 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Max Quantity Per Line
         * * SQL Data Type: decimal(18, 4)
         * * Description: Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`),
+    SubscriptionFamilyID: z.string().nullable().describe(`
+        * * Field Name: SubscriptionFamilyID
+        * * Display Name: Subscription Family ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscription Families (vwSubscriptionFamilies.ID)
+        * * Description: The subscription family this product is a band of. At confirm, a line for this product is checked against the holder's subscriptions to the family's other products. NULL means the product has no other bands. Must belong to the product's company.`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
         * * Display Name: Product Type Name
@@ -5064,6 +5084,10 @@ export const mjBizAppsOrdersProductSchema = z.object({
     SubscriptionType: z.string().nullable().describe(`
         * * Field Name: SubscriptionType
         * * Display Name: Subscription Type Name
+        * * SQL Data Type: nvarchar(200)`),
+    SubscriptionFamily: z.string().nullable().describe(`
+        * * Field Name: SubscriptionFamily
+        * * Display Name: Subscription Family
         * * SQL Data Type: nvarchar(200)`),
 });
 
@@ -5847,6 +5871,60 @@ export const mjBizAppsOrdersSubscriptionEventSchema = z.object({
 });
 
 export type mjBizAppsOrdersSubscriptionEventEntityType = z.infer<typeof mjBizAppsOrdersSubscriptionEventSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Subscription Families
+ */
+export const mjBizAppsOrdersSubscriptionFamilySchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    CompanyID: z.string().describe(`
+        * * Field Name: CompanyID
+        * * Display Name: Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+        * * Description: The selling company that owns the family. Only that company's products can belong to it.`),
+    Code: z.string().describe(`
+        * * Field Name: Code
+        * * Display Name: Code
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Short code for the family, unique within its company.`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(200)
+        * * Description: Display name of the offering the family's bands belong to.`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: Optional notes on the offering and its bands.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: False retires the family from new product assignments. Products already in it keep it, and the overlap check still applies to them.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Company: z.string().describe(`
+        * * Field Name: Company
+        * * Display Name: Company
+        * * SQL Data Type: nvarchar(50)`),
+});
+
+export type mjBizAppsOrdersSubscriptionFamilyEntityType = z.infer<typeof mjBizAppsOrdersSubscriptionFamilySchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Subscription Sequences
@@ -9685,6 +9763,19 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     get Person(): string {
         return this.Get('Person');
     }
+
+    /**
+    * * Field Name: AcknowledgesCoverageOverlap
+    * * Display Name: Acknowledges Coverage Overlap
+    * * SQL Data Type: bit
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get AcknowledgesCoverageOverlap(): boolean {
+        return this.Get('AcknowledgesCoverageOverlap');
+    }
+    set AcknowledgesCoverageOverlap(value: boolean) {
+        this.Set('AcknowledgesCoverageOverlap', value);
+    }
 }
 
 
@@ -10185,6 +10276,19 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     */
     get VenueAddress(): string | null {
         return this.Get('VenueAddress');
+    }
+
+    /**
+    * * Field Name: SubscriptionFamilyID
+    * * Display Name: Subscription Family
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get SubscriptionFamilyID(): string | null {
+        return this.Get('SubscriptionFamilyID');
+    }
+    set SubscriptionFamilyID(value: string | null) {
+        this.Set('SubscriptionFamilyID', value);
     }
 }
 
@@ -14851,6 +14955,20 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set ShipToAddressSnapshot(value: string | null) {
         this.Set('ShipToAddressSnapshot', value);
+    }
+
+    /**
+    * * Field Name: AcknowledgesCoverageOverlap
+    * * Display Name: Acknowledges Coverage Overlap
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.
+    */
+    get AcknowledgesCoverageOverlap(): boolean {
+        return this.Get('AcknowledgesCoverageOverlap');
+    }
+    set AcknowledgesCoverageOverlap(value: boolean) {
+        this.Set('AcknowledgesCoverageOverlap', value);
     }
 
     /**
@@ -20648,6 +20766,20 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
 
     /**
+    * * Field Name: SubscriptionFamilyID
+    * * Display Name: Subscription Family ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscription Families (vwSubscriptionFamilies.ID)
+    * * Description: The subscription family this product is a band of. At confirm, a line for this product is checked against the holder's subscriptions to the family's other products. NULL means the product has no other bands. Must belong to the product's company.
+    */
+    get SubscriptionFamilyID(): string | null {
+        return this.Get('SubscriptionFamilyID');
+    }
+    set SubscriptionFamilyID(value: string | null) {
+        this.Set('SubscriptionFamilyID', value);
+    }
+
+    /**
     * * Field Name: ProductType
     * * Display Name: Product Type Name
     * * SQL Data Type: nvarchar(100)
@@ -20699,6 +20831,15 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     */
     get SubscriptionType(): string | null {
         return this.Get('SubscriptionType');
+    }
+
+    /**
+    * * Field Name: SubscriptionFamily
+    * * Display Name: Subscription Family
+    * * SQL Data Type: nvarchar(200)
+    */
+    get SubscriptionFamily(): string | null {
+        return this.Get('SubscriptionFamily');
     }
 }
 
@@ -22868,6 +23009,147 @@ export class mjBizAppsOrdersSubscriptionEventEntity extends BaseEntity<mjBizApps
     */
     get RelatedOrderHeader(): string | null {
         return this.Get('RelatedOrderHeader');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Subscription Families - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: SubscriptionFamily
+ * * Base View: vwSubscriptionFamilies
+ * * @description The products that are bands of one subscription offering (for example a standard and a premium tier), within one selling company. At confirm, a line for one band is checked against the holder's subscriptions to the family's other bands, and overlapping coverage is refused or allowed according to the subscription types' ConcurrencyMode.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Subscription Families')
+export class mjBizAppsOrdersSubscriptionFamilyEntity extends BaseEntity<mjBizAppsOrdersSubscriptionFamilyEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Subscription Families record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Subscription Families record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersSubscriptionFamilyEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: CompanyID
+    * * Display Name: Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    * * Description: The selling company that owns the family. Only that company's products can belong to it.
+    */
+    get CompanyID(): string {
+        return this.Get('CompanyID');
+    }
+    set CompanyID(value: string) {
+        this.Set('CompanyID', value);
+    }
+
+    /**
+    * * Field Name: Code
+    * * Display Name: Code
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Short code for the family, unique within its company.
+    */
+    get Code(): string {
+        return this.Get('Code');
+    }
+    set Code(value: string) {
+        this.Set('Code', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(200)
+    * * Description: Display name of the offering the family's bands belong to.
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: Optional notes on the offering and its bands.
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: False retires the family from new product assignments. Products already in it keep it, and the overlap check still applies to them.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Company
+    * * Display Name: Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get Company(): string {
+        return this.Get('Company');
     }
 }
 
