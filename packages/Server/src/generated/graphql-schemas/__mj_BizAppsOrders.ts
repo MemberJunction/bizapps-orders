@@ -17,7 +17,7 @@ import { MaxLength } from 'class-validator';
 import * as mj_core_schema_server_object_types from '@memberjunction/server'
 
 
-import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersExternalCustomerEntity, mjBizAppsOrdersExternalInvoiceEntity, mjBizAppsOrdersExternalPaymentEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderSyncStateEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
     
 
 //****************************************************************************
@@ -2287,19 +2287,21 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(36)
     DimensionValueID?: string;
         
+    @Field(() => Float, {nullable: true}) 
+    BilledToDate?: number;
+        
+    @Field(() => Float, {nullable: true}) 
+    RecognizedToDate?: number;
+        
     @Field({nullable: true}) 
     ShipToAddressSnapshot?: string;
         
     @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
-    @Field(() => Float) 
-    BilledToDate: number;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
-    @Field(() => Float) 
-    RecognizedToDate: number;
         
 }
 
@@ -3128,9 +3130,9 @@ export class mjBizAppsOrdersExternalCustomer_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The provider row (rail + company) this customer record belongs to.`}) 
+    @Field({nullable: true, description: `The provider row (rail + company) this customer record belongs to.`}) 
     @MaxLength(36)
-    PaymentProviderID: string;
+    PaymentProviderID?: string;
         
     @Field({nullable: true, description: `The organisation this rail customer represents, when the bill-to is an organisation.`}) 
     @MaxLength(36)
@@ -3140,9 +3142,9 @@ export class mjBizAppsOrdersExternalCustomer_ {
     @MaxLength(36)
     BillToPersonID?: string;
         
-    @Field({description: `The rail's customer id (Bill.com 0cu…). Our party id is also sent as the rail's account number so the link is recoverable from that side.`}) 
+    @Field({nullable: true, description: `The rail's customer id (Bill.com 0cu…). Our party id is also sent as the rail's account number so the link is recoverable from that side.`}) 
     @MaxLength(100)
-    ExternalCustomerRef: string;
+    ExternalCustomerRef?: string;
         
     @Field({nullable: true, description: `When the rail customer was last created or refreshed from here.`}) 
     LastSyncedAt?: Date;
@@ -3153,9 +3155,9 @@ export class mjBizAppsOrdersExternalCustomer_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentProvider: string;
+    PaymentProvider?: string;
         
     @Field({nullable: true}) 
     @MaxLength(255)
@@ -3164,6 +3166,9 @@ export class mjBizAppsOrdersExternalCustomer_ {
     @Field({nullable: true}) 
     @MaxLength(201)
     BillToPerson?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -3320,35 +3325,35 @@ export class mjBizAppsOrdersExternalInvoice_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The provider row that names the rail and the company whose Bill.com organisation this invoice lives in.`}) 
+    @Field({nullable: true, description: `The provider row that names the rail and the company whose Bill.com organisation this invoice lives in.`}) 
     @MaxLength(36)
-    PaymentProviderID: string;
+    PaymentProviderID?: string;
         
-    @Field({description: `The order this unit bills.`}) 
+    @Field({nullable: true, description: `The order this unit bills.`}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
-    @Field({description: `The selling company of the DOCUMENT (one per company on a split order), not necessarily the order header's company.`}) 
+    @Field({nullable: true, description: `The selling company of the DOCUMENT (one per company on a split order), not necessarily the order header's company.`}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
     @Field({nullable: true, description: `The instalment this unit is, when the order is billed on a schedule. NULL for an order billed as a whole.`}) 
     @MaxLength(36)
     OrderHeaderPaymentScheduleID?: string;
         
-    @Field({description: `Our frozen document number, sent as the rail's invoice number: ORD-1234, ORD-1234-2, ORD-1234-B2.`}) 
+    @Field({nullable: true, description: `Our frozen document number, sent as the rail's invoice number: ORD-1234, ORD-1234-2, ORD-1234-B2.`}) 
     @MaxLength(40)
-    DocumentNumber: string;
+    DocumentNumber?: string;
         
-    @Field(() => Float, {description: `What the unit bills, which the rail's lines must total to the cent.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `What the unit bills, which the rail's lines must total to the cent.`}) 
+    Amount?: number;
         
     @Field({nullable: true, description: `Due date sent to the rail; NULL means on receipt.`}) 
     DueDate?: Date;
         
-    @Field({description: `Sending (claim written, rail not yet confirmed), Sent (rail holds it), Canceled (archived on the rail), Failed (rail refused or the total did not tie).`}) 
+    @Field({nullable: true, description: `Sending (claim written, rail not yet confirmed), Sent (rail holds it), Canceled (archived on the rail), Failed (rail refused or the total did not tie).`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true, description: `The rail's customer id the invoice was issued to (Bill.com 0cu…).`}) 
     @MaxLength(100)
@@ -3388,9 +3393,9 @@ export class mjBizAppsOrdersExternalInvoice_ {
     @MaxLength(36)
     IssuedByUserID?: string;
         
-    @Field({description: `Persisted computed: OrderHeaderPaymentScheduleID or the zero GUID, so the live-unit unique index can include a nullable key.`}) 
+    @Field({nullable: true, description: `Persisted computed: OrderHeaderPaymentScheduleID or the zero GUID, so the live-unit unique index can include a nullable key.`}) 
     @MaxLength(36)
-    UnitScheduleKey: string;
+    UnitScheduleKey?: string;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -3398,21 +3403,24 @@ export class mjBizAppsOrdersExternalInvoice_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentProvider: string;
+    PaymentProvider?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
     IssuedByUser?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -3653,23 +3661,23 @@ export class mjBizAppsOrdersExternalPayment_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The provider row (rail + company) the payment was read from.`}) 
+    @Field({nullable: true, description: `The provider row (rail + company) the payment was read from.`}) 
     @MaxLength(36)
-    PaymentProviderID: string;
+    PaymentProviderID?: string;
         
-    @Field({description: `The rail's payment id (Bill.com 0rp…). Unique per provider.`}) 
+    @Field({nullable: true, description: `The rail's payment id (Bill.com 0rp…). Unique per provider.`}) 
     @MaxLength(100)
-    ExternalPaymentRef: string;
+    ExternalPaymentRef?: string;
         
     @Field({nullable: true, description: `The rail's customer id the payment came from.`}) 
     @MaxLength(100)
     ExternalCustomerRef?: string;
         
-    @Field(() => Float, {description: `The payment's gross amount as the rail reports it.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `The payment's gross amount as the rail reports it.`}) 
+    Amount?: number;
         
-    @Field(() => Float, {description: `The part the rail has not applied to any invoice (over-payment or unlinked). Stays on the rail as the customer's credit.`}) 
-    UnappliedAmount: number;
+    @Field(() => Float, {nullable: true, description: `The part the rail has not applied to any invoice (over-payment or unlinked). Stays on the rail as the customer's credit.`}) 
+    UnappliedAmount?: number;
         
     @Field({nullable: true, description: `When the rail says funds moved.`}) 
     PaymentDate?: Date;
@@ -3681,9 +3689,9 @@ export class mjBizAppsOrdersExternalPayment_ {
     @Field({nullable: true, description: `The rail's updatedTime as last seen — the watermark candidate.`}) 
     ExternalUpdatedAt?: Date;
         
-    @Field({description: `Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), Reapplied (captured, and the rail has since applied it to different invoices), ReversalNeeded (captured, and the rail now reports it reversed).`}) 
+    @Field({nullable: true, description: `Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), Reapplied (captured, and the rail has since applied it to different invoices), ReversalNeeded (captured, and the rail now reports it reversed).`}) 
     @MaxLength(20)
-    Disposition: string;
+    Disposition?: string;
         
     @Field({nullable: true, description: `Why, in words a person can act on.`}) 
     @MaxLength(500)
@@ -3696,11 +3704,11 @@ export class mjBizAppsOrdersExternalPayment_ {
     @Field({nullable: true, description: `The rail's record as received, JSON, for the audit trail.`}) 
     Payload?: string;
         
-    @Field({description: `First poll that saw this payment.`}) 
-    FirstSeenAt: Date;
+    @Field({nullable: true, description: `First poll that saw this payment.`}) 
+    FirstSeenAt?: Date;
         
-    @Field({description: `Most recent poll that saw this payment.`}) 
-    LastSeenAt: Date;
+    @Field({nullable: true, description: `Most recent poll that saw this payment.`}) 
+    LastSeenAt?: Date;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -3708,13 +3716,16 @@ export class mjBizAppsOrdersExternalPayment_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentProvider: string;
+    PaymentProvider?: string;
         
     @Field({nullable: true}) 
     @MaxLength(40)
     PaymentHeader?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -4982,26 +4993,26 @@ export class mjBizAppsOrdersOrderHeaderPaymentSchedule_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
-    @Field({description: `The selling company this instalment bills for. Stamped server-side from the order's lines (D86), never authored; a multi-company order carries one schedule per company.`}) 
+    @Field({nullable: true, description: `The selling company this instalment bills for. Stamped server-side from the order's lines (D86), never authored; a multi-company order carries one schedule per company.`}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
-    @Field(() => Int, {description: `1-based position within the order and company. Unique per (order, company). Part of the frozen document number, so it must not be renumbered after invoicing.`}) 
-    InstallmentNumber: number;
+    @Field(() => Int, {nullable: true, description: `1-based position within the order and company. Unique per (order, company). Part of the frozen document number, so it must not be renumbered after invoicing.`}) 
+    InstallmentNumber?: number;
         
-    @Field({description: `When this instalment is due. Re-datable while Scheduled; frozen once Invoiced. The earliest unpaid row's DueDate is the order's NextDueDate, which ageing reads.`}) 
-    DueDate: Date;
+    @Field({nullable: true, description: `When this instalment is due. Re-datable while Scheduled; frozen once Invoiced. The earliest unpaid row's DueDate is the order's NextDueDate, which ageing reads.`}) 
+    DueDate?: Date;
         
-    @Field(() => Float, {description: `The instalment amount. Per (order, company) the non-Canceled rows must sum to that company's LineTotalGross once the order is Confirmed; enforced at confirm and again at invoicing.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `The instalment amount. Per (order, company) the non-Canceled rows must sum to that company's LineTotalGross once the order is Confirmed; enforced at confirm and again at invoicing.`}) 
+    Amount?: number;
         
-    @Field({description: `Scheduled | Invoiced | Paid | Canceled | WrittenOff. Scheduled -> Invoiced is Orders.IssueInstalmentInvoice; Invoiced <-> Paid follows the rollup; WrittenOff and Canceled are explicit and never overwritten.`}) 
+    @Field({nullable: true, description: `Scheduled | Invoiced | Paid | Canceled | WrittenOff. Scheduled -> Invoiced is Orders.IssueInstalmentInvoice; Invoiced <-> Paid follows the rollup; WrittenOff and Canceled are explicit and never overwritten.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true, description: `The invoice number the customer holds, frozen by Orders.IssueInstalmentInvoice and never recomputed (D87). NULL while Scheduled. Format: ORD-1234-2, or ORD-1234-B2 on a company-split order.`}) 
     @MaxLength(40)
@@ -5029,8 +5040,8 @@ export class mjBizAppsOrdersOrderHeaderPaymentSchedule_ {
     @Field({nullable: true, description: `When the invoice was delivered to the customer. NULL means unsent — the audit fact behind reversing an unsent invoice.`}) 
     SentAt?: Date;
         
-    @Field(() => Float, {description: `Trigger-maintained: payments named to this row plus the oldest-due-first share of payments applied to the order as a whole. Never authored.`}) 
-    AmountPaid: number;
+    @Field(() => Float, {nullable: true, description: `Trigger-maintained: payments named to this row plus the oldest-due-first share of payments applied to the order as a whole. Never authored.`}) 
+    AmountPaid?: number;
         
     @Field(() => Float, {nullable: true, description: `Trigger-maintained: Amount - AmountPaid, computed in the same statement as AmountPaid. Never authored.`}) 
     Balance?: number;
@@ -5048,17 +5059,20 @@ export class mjBizAppsOrdersOrderHeaderPaymentSchedule_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
     InvoicedByUser?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -6232,19 +6246,19 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The percentage-of-completion order line this observation is about.`}) 
+    @Field({nullable: true, description: `The percentage-of-completion order line this observation is about.`}) 
     @MaxLength(36)
-    OrderLineID: string;
+    OrderLineID?: string;
         
-    @Field({description: `The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.`}) 
-    MeasurementDate: Date;
+    @Field({nullable: true, description: `The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.`}) 
+    MeasurementDate?: Date;
         
-    @Field(() => Float, {description: `CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.`}) 
-    PercentComplete: number;
+    @Field(() => Float, {nullable: true, description: `CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.`}) 
+    PercentComplete?: number;
         
-    @Field({description: `The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.`}) 
+    @Field({nullable: true, description: `The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.`}) 
     @MaxLength(40)
-    MethodCode: string;
+    MethodCode?: string;
         
     @Field(() => Float, {nullable: true, description: `Optional quantitative input behind the percent (cost incurred, units delivered), kept for audit. PercentComplete drives the entry regardless.`}) 
     MeasureNumerator?: number;
@@ -6280,9 +6294,9 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @MaxLength(36)
     JournalEntryID?: string;
         
-    @Field({description: `Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.`}) 
+    @Field({nullable: true, description: `Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -6297,6 +6311,9 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @Field({nullable: true}) 
     @MaxLength(255)
     SourceEntity?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -6621,7 +6638,7 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field(() => Boolean, {nullable: true, description: `1 when UnitPrice was set by a staff override (named list pick or typed amount) rather than the pricing engine. 0 is the engine price.`}) 
     PriceOverridden?: boolean;
         
-    @Field({nullable: true, description: `Optional staff note for why the engine price was overridden. NULL when PriceOverridden = 0 or when no reason was given.`}) 
+    @Field({nullable: true, description: `Why this line's price was moved off the default. Required when PriceOverridden is set: a save that flags the price as overridden and gives no reason is refused. NULL when the price is the default.`}) 
     PriceOverrideReason?: string;
         
     @Field({nullable: true, description: `The GL dimension this line is tagged on — the analysis axis, from __mj_BizAppsAccounting.Dimension. NULL leaves the line untagged, which books a valid entry that simply cannot be reported on by dimension. Set together with DimensionValueID (CK_OrderLine_DimensionPair).`}) 
@@ -6632,15 +6649,16 @@ export class mjBizAppsOrdersOrderLine_ {
     @MaxLength(36)
     DimensionValueID?: string;
         
+    @Field(() => Float, {nullable: true, description: `Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
+    BilledToDate?: number;
+        
+    @Field(() => Float, {nullable: true, description: `Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. ADVANCED FOR UP-FRONT AND ATTESTED LINES ONLY. A deferred driver stages its monthly releases as forward-dated entries at confirm; those credit Sales on their own dates without passing through rule 2, so they leave this total untouched. A subscription line therefore depends on its instalments being invoiced on time for the gap between the two totals to mean anything. Routing the staged releases through rule 2 is orders #241, parked. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
+    RecognizedToDate?: number;
+        
     @Field({nullable: true, description: `The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`}) 
     ShipToAddressSnapshot?: string;
         
     @Field({nullable: true}) 
-    @Field(() => Float, {description: `Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
-    BilledToDate: number;
-        
-    @Field(() => Float, {description: `Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. ADVANCED FOR UP-FRONT AND ATTESTED LINES ONLY. A deferred driver stages its monthly releases as forward-dated entries at confirm; those credit Sales on their own dates without passing through rule 2, so they leave this total untouched. A subscription line therefore depends on its instalments being invoiced on time for the gap between the two totals to mean anything. Routing the staged releases through rule 2 is orders #241, parked. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
-    RecognizedToDate: number;
     @MaxLength(40)
     OrderHeader?: string;
         
@@ -8378,13 +8396,13 @@ export class mjBizAppsOrdersPaymentProviderSyncState_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The provider row (rail + company) this watermark belongs to.`}) 
+    @Field({nullable: true, description: `The provider row (rail + company) this watermark belongs to.`}) 
     @MaxLength(36)
-    PaymentProviderID: string;
+    PaymentProviderID?: string;
         
-    @Field({description: `The rail object polled, e.g. receivable-payments.`}) 
+    @Field({nullable: true, description: `The rail object polled, e.g. receivable-payments.`}) 
     @MaxLength(100)
-    ObjectName: string;
+    ObjectName?: string;
         
     @Field({nullable: true, description: `The rail's max updatedTime seen on the last clean pass (ISO). The next pass reads from one day before it; dedupe is by payment id.`}) 
     @MaxLength(100)
@@ -8405,9 +8423,12 @@ export class mjBizAppsOrdersPaymentProviderSyncState_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentProvider: string;
+    PaymentProvider?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -8810,15 +8831,15 @@ export class mjBizAppsOrdersPaymentProvider_ {
     @Field(() => Boolean, {nullable: true, description: `Whether this provider account is active.`}) 
     IsActive?: boolean;
         
-    @Field({nullable: true, description: `The MJ Company Integration whose connector and credential this provider uses (Bill.com). NULL for providers that resolve credentials through CredentialsRef. A pointer, never a secret.`}) 
-    @MaxLength(36)
-    CompanyIntegrationID?: string;
-        
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true, description: `The MJ Company Integration whose connector and credential this provider uses (Bill.com). NULL for providers that resolve credentials through CredentialsRef. A pointer, never a secret.`}) 
+    @MaxLength(36)
+    CompanyIntegrationID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
@@ -8864,7 +8885,7 @@ export class CreatemjBizAppsOrdersPaymentProviderInput {
     IsActive?: boolean;
 
     @Field({ nullable: true })
-    CompanyIntegrationID?: string | null;
+    CompanyIntegrationID: string | null;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -11564,7 +11585,7 @@ export class mjBizAppsOrdersProduct_ {
     @MaxLength(36)
     RevenueRecognitionTypeID?: string;
         
-    @Field(() => Float, {nullable: true, description: `Standalone selling price for ASC 606 bundle revenue allocation (BO-D35; fields now, allocation engine later).`}) 
+    @Field(() => Float, {nullable: true, description: `DEPRECATED — do not use as a list price or quote. What someone pays is MJ_BizApps_Orders: Product Prices (Name, Amount, Applicability). Bundle SSP allocation already reads those rows. Column retained so historical SPs and existing data still validate; do not populate it for new products.`}) 
     StandaloneSellingPrice?: number;
         
     @Field({nullable: true}) 
@@ -12840,11 +12861,12 @@ export class mjBizAppsOrdersRevenueRecognitionType_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.`}) 
+    @MaxLength(20)
+    ScheduleBasis?: string;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
-    @Field({description: `AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.`}) 
-    @MaxLength(20)
-    ScheduleBasis: string;
         
 }
 
