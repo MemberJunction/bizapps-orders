@@ -4,6 +4,8 @@ import {
     BuildPaymentSchedule,
     DefaultScheduleWeights,
     ExplainShortfalls,
+    RenewalDueDate,
+    RenewalScheduleRows,
     ScheduleShortfalls,
     ScheduledCompanyIDs,
     type ScheduleTimingFacts,
@@ -141,5 +143,49 @@ describe('ScheduledCompanyIDs', () => {
         const rows = [row({ Status: 'Canceled' })];
         expect(ScheduleShortfalls(rows, [{ CompanyID: CO_A, LineTotalGross: 0 }])).toEqual([]);
         expect(ScheduledCompanyIDs(rows).size).toBe(0);
+    });
+});
+
+describe('RenewalScheduleRows (#305)', () => {
+    it('writes one row per company for its whole gross, due on the invoice day, and ties', () => {
+        const lines = [
+            { CompanyID: CO_A, LineTotalGross: 1000.01 },
+            { CompanyID: CO_B, LineTotalGross: 40 },
+            { CompanyID: CO_A, LineTotalGross: 199.99 },
+        ];
+        const rows = RenewalScheduleRows(lines, '2026-12-21');
+        expect(rows).toEqual([
+            { CompanyID: CO_A, InstallmentNumber: 1, DueDate: '2026-12-21', Amount: 1200 },
+            { CompanyID: CO_B, InstallmentNumber: 1, DueDate: '2026-12-21', Amount: 40 },
+        ]);
+        expect(ScheduleShortfalls(rows.map((r) => ({ ...r, Status: 'Scheduled' })), lines)).toEqual([]);
+    });
+
+    it('gives a zero-gross company no row, and that still ties', () => {
+        const lines = [{ CompanyID: CO_A, LineTotalGross: 0 }];
+        expect(RenewalScheduleRows(lines, '2026-12-21')).toEqual([]);
+    });
+});
+
+describe('RenewalDueDate (#305 review)', () => {
+    // The reviewer's example: a Jan 1 term, renewal placed Oct 3, Net 30 (the order is due Jan 31).
+    it('is the invoice day plus the terms the order resolved', () => {
+        expect(RenewalDueDate('2026-10-03', '2027-01-01', '2027-01-31')).toBe('2026-11-02');
+    });
+
+    it('never falls after the order date, so confirm still issues it', () => {
+        expect(RenewalDueDate('2026-12-20', '2027-01-01', '2027-01-31')).toBe('2027-01-01');
+    });
+
+    it('is the invoice day itself when the order is due on receipt', () => {
+        expect(RenewalDueDate('2026-10-03', '2027-01-01', '2027-01-01')).toBe('2026-10-03');
+    });
+
+    it('reads Date cells as well as strings', () => {
+        expect(RenewalDueDate('2026-10-03', new Date('2027-01-01T00:00:00Z'), new Date('2027-01-16T00:00:00Z'))).toBe('2026-10-18');
+    });
+
+    it('refuses an order with no resolved due date rather than guessing', () => {
+        expect(() => RenewalDueDate('2026-10-03', '2027-01-01', null)).toThrow(/resolved due date/);
     });
 });

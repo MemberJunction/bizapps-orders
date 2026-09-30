@@ -24,4 +24,10 @@ export const MJ_SERVER_EXTENSIONS: ServerExtensionConfig[] = [
         RootPath: '/checkout',
         Settings: {},
     },
+    {
+        Enabled: true,
+        DriverClass: 'OrdersBillComWebhook',
+        RootPath: '/webhooks/billcom',
+        Settings: {},
+    },
 ];
