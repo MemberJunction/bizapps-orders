@@ -790,6 +790,30 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('UpdateDraft — attribution', () => {
+        const draft = (attribution?: unknown) =>
+            CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, { Attribution: attribution });
+        const stored = () => JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Attribution;
+
+        it('keeps where the checkout came from with the draft', async () => {
+            const res = await draft({ source: 'voice_agent', reference: 'conv-9' });
+            expect(res.Success).toBe(true);
+            expect(stored()).toEqual({ Source: 'voice_agent', Reference: 'conv-9' });
+        });
+
+        it('keeps it across a later draft that names none', async () => {
+            await draft({ source: 'voice_agent', reference: 'conv-9' });
+            await draft(undefined);
+            expect(stored()).toEqual({ Source: 'voice_agent', Reference: 'conv-9' });
+        });
+
+        it('drops an attribution it cannot read rather than refusing the checkout', async () => {
+            const res = await draft({ source: 'not valid!' });
+            expect(res.Success).toBe(true);
+            expect(stored()).toBeUndefined();
+        });
+    });
+
     describe('OpenPaymentIntentForSession', () => {
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', 'wrong-key', testUser);
@@ -1207,7 +1231,7 @@ describe('CheckoutSessionService', () => {
 
         it('stores a draft before the required question is answered, so the checkout can be priced', async () => {
             withQuestions();
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, {});
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, { Answers: {} });
             expect(res.Success).toBe(true);
             expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Answers).toEqual({});
         });
@@ -1215,7 +1239,7 @@ describe('CheckoutSessionService', () => {
         it('stores the answers with the draft, trimmed', async () => {
             withQuestions();
             const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, {
-                source: { Value: 'Other', OtherText: ' A podcast ' },
+                Answers: { source: { Value: 'Other', OtherText: ' A podcast ' } },
             });
             expect(res.Success).toBe(true);
             expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Answers).toEqual({
@@ -1226,7 +1250,7 @@ describe('CheckoutSessionService', () => {
         it('refuses a draft carrying an answer to a question the widget does not ask', async () => {
             withQuestions();
             const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, {
-                forged: { Value: 'x' },
+                Answers: { forged: { Value: 'x' } },
             });
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('does not ask');

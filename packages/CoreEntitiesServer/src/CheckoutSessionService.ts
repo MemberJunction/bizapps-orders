@@ -35,7 +35,8 @@ import {
     ReadCheckoutQuestions,
     type CheckoutAnswersCheck,
     type CheckoutAnswersInput,
-    type ResolvedCheckoutAnswer
+    type ResolvedCheckoutAnswer,
+    NormalizeCheckoutAttribution
 } from '@mj-biz-apps/orders-entities';
 import { EscapeText } from './sql-guards.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
@@ -853,7 +854,7 @@ export class CheckoutSessionService {
         email: string,
         lines: CheckoutLineInput[],
         contextUser?: UserInfo,
-        answers?: CheckoutAnswersInput
+        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput }
     ): Promise<UpdateDraftResult> {
         const failed = (message: string): UpdateDraftResult => ({
             Success: false,
@@ -911,7 +912,7 @@ export class CheckoutSessionService {
         }
         const draftAnswers = CheckAnswersAgainstQuestions(
             questions.Questions.map((q) => ({ ...q, required: false })),
-            answers
+            options?.Answers
         );
         if (draftAnswers.Error) {
             return failed(draftAnswers.Error);
@@ -1110,12 +1111,28 @@ export class CheckoutSessionService {
             session.PaymentIntentID = null;
         }
 
+        // Where the checkout came from, as the embedding host states it. Kept from an earlier draft
+        // when this one names none; dropped, never refused, when it cannot be read.
+        let attribution = NormalizeCheckoutAttribution(options?.Attribution);
+        if (!attribution && session.MetadataJSON) {
+            try {
+                // Written by an earlier draft of this session, so already normalised.
+                const stored = (JSON.parse(session.MetadataJSON) as { Attribution?: { Source?: unknown; Reference?: unknown } }).Attribution;
+                attribution = typeof stored?.Source === 'string'
+                    ? { Source: stored.Source, Reference: typeof stored.Reference === 'string' ? stored.Reference : null }
+                    : null;
+            } catch {
+                attribution = null;
+            }
+        }
+
         // Store checkout state in session metadata JSON — no orphan OrderHeader rows
         session.MetadataJSON = JSON.stringify({
             Lines: lines,
             PricedLines: lineSummaries,
             TotalGross: order.TotalGross,
             Answers: this.answersForStorage(draftAnswers.Answers),
+            ...(attribution ? { Attribution: attribution } : {}),
             UpdatedAt: new Date().toISOString()
         });
         const sessionSaved = await session.Save();

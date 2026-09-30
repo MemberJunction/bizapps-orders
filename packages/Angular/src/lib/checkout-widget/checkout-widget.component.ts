@@ -163,6 +163,8 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
 
     @Input() public isPaymentReady: boolean = false;
     @Input() public stripePaymentMethodId: string | null = null;
+    /** An e-mail the embedding host already knows. Fills the field only while it is empty. */
+    @Input() public prefillEmail: string | null = null;
 
     @Output() public submitted = new EventEmitter<CheckoutSubmissionEvent>();
     @Output() public cancelled = new EventEmitter<void>();
@@ -281,6 +283,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     });
 
     public ngOnInit(): void {
+        this.applyPrefillEmail();
         this.syncUnits();
         this.applyCustomCSS(this.activeCSS());
         if (this.activeJS() && this.activeJS() !== this._lastMountedJS) {
@@ -292,7 +295,17 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         });
     }
 
+    private applyPrefillEmail(): void {
+        const prefill = (this.prefillEmail ?? '').trim();
+        if (prefill && !this.email().trim()) {
+            this.email.set(prefill);
+        }
+    }
+
     public ngOnChanges(changes: SimpleChanges): void {
+        if (changes['prefillEmail']) {
+            this.applyPrefillEmail();
+        }
         if (changes['config']) {
             this.syncUnits();
             this.applyCustomCSS(this.activeCSS());

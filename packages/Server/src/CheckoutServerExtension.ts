@@ -561,9 +561,12 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
         const email = typeof req.body?.email === 'string' ? req.body.email : '';
         const lines = Array.isArray(req.body?.lines) ? (req.body.lines as CheckoutLineInput[]) : [];
-        // Passed through unchecked: UpdateDraft judges the answers against the widget's own questions.
-        const answers = req.body?.answers as CheckoutAnswersInput | undefined;
-        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user, answers);
+        // Passed through unchecked: UpdateDraft keeps the attribution only when it reads as one, and
+        // judges the answers against the widget's own questions.
+        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user, {
+            Attribution: req.body?.attribution,
+            Answers: req.body?.answers as CheckoutAnswersInput | undefined,
+        });
         res.status(result.Success ? 200 : 400).json(result);
     }
 
