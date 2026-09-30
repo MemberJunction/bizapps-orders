@@ -15,6 +15,10 @@ export type CheckoutElementState = 'LOADING' | 'CHECKOUT' | 'PROCESSING' | 'PASS
 export const CHECKOUT_STATE_CHANGE_EVENT = 'checkout-state-change';
 export const CHECKOUT_COMPLETE_EVENT = 'checkout-complete';
 export const CHECKOUT_ERROR_EVENT = 'checkout-error';
+/** The buyer pressed Cancel; the form has been reset. */
+export const CHECKOUT_CANCEL_EVENT = 'checkout-cancel';
+/** The checkout asks its container to close, e.g. a modal on the host page. Sent with Cancel. */
+export const CHECKOUT_CLOSE_EVENT = 'checkout-close';
 
 export interface CheckoutStateChangeDetail {
     state: CheckoutElementState;

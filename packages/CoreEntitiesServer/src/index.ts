@@ -594,6 +594,24 @@ export { GuestOrderClaimDriver, LoadGuestOrderClaimDriver } from './GuestOrderCl
 export { resolvePersonID } from './claimDriverHelpers.js';
 export { CheckoutSessionService } from './CheckoutSessionService.js';
 export {
+    CheckoutAccountStep,
+    EnsureCheckoutAccount,
+    SetCheckoutAccountPassword,
+    ResolveCheckoutAccountStep,
+    HasCheckoutAccountStep,
+    MAX_CHECKOUT_PASSWORD_ATTEMPTS,
+    MAX_CHECKOUT_PASSWORD_LENGTH,
+    DEFAULT_CHECKOUT_PASSWORD_WINDOW_MINUTES,
+    DEFAULT_CHECKOUT_ACCOUNT_HOST_TIMEOUT_SECONDS,
+    type CheckoutAccountContext,
+    type CheckoutAccountOutcome,
+    type CheckoutAccountHostOutcome,
+    type CheckoutAccountResult,
+    type CheckoutAccountStatus,
+    type CheckoutAccountResponse,
+    type CheckoutPasswordResult,
+} from './CheckoutAccountStep.js';
+export {
     CHECKOUT_CAPTURE_RETRY_WINDOW_MS,
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
     isCaptureRefusalRetryable,
