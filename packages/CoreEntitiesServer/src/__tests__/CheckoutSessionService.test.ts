@@ -781,6 +781,30 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('UpdateDraft — attribution', () => {
+        const draft = (attribution?: unknown) =>
+            CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, { Attribution: attribution });
+        const stored = () => JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Attribution;
+
+        it('keeps where the checkout came from with the draft', async () => {
+            const res = await draft({ source: 'voice_agent', reference: 'conv-9' });
+            expect(res.Success).toBe(true);
+            expect(stored()).toEqual({ Source: 'voice_agent', Reference: 'conv-9' });
+        });
+
+        it('keeps it across a later draft that names none', async () => {
+            await draft({ source: 'voice_agent', reference: 'conv-9' });
+            await draft(undefined);
+            expect(stored()).toEqual({ Source: 'voice_agent', Reference: 'conv-9' });
+        });
+
+        it('drops an attribution it cannot read rather than refusing the checkout', async () => {
+            const res = await draft({ source: 'not valid!' });
+            expect(res.Success).toBe(true);
+            expect(stored()).toBeUndefined();
+        });
+    });
+
     describe('OpenPaymentIntentForSession', () => {
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', 'wrong-key', testUser);

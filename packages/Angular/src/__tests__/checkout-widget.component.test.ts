@@ -246,4 +246,18 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(comp1.widgetInstanceId).not.toBe(comp2.widgetInstanceId);
         });
     });
+
+    describe('prefilled e-mail', () => {
+        it('fills an empty e-mail field, and never overwrites what the buyer typed', () => {
+            component.prefillEmail = 'known@example.com';
+            component.ngOnInit();
+            expect(component.email()).toBe('known@example.com');
+
+            const other = new MJCheckoutWidgetComponent();
+            other.email.set('typed@example.com');
+            other.prefillEmail = 'known@example.com';
+            other.ngOnInit();
+            expect(other.email()).toBe('typed@example.com');
+        });
+    });
 });
