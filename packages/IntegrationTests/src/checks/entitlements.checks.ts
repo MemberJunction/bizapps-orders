@@ -757,6 +757,46 @@ export const EntitlementsChecks: NamedCheck[] = [
       }),
   },
   {
+    // #296: a checkout confirms before it captures, so an OnPaidInFull grant is born Suspended and
+    // only the later payment can make it live. EN9 pays at confirm; this pays afterwards.
+    Id: "entitlements.EN23",
+    Name: "EN23: OnPaidInFull holds an unpaid purchase through a part-payment; the payment that clears the balance releases it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.WidgetA, "OnPaidInFull", async () => {
+          const order = await buyWidget(ctx, 1);
+          const orderID = order.Order.ID as string;
+          const held = await gatesFor(ctx, orderID);
+          Assert(held.length > 0, "the grants exist while unpaid, so what is coming is visible");
+          Assert(
+            held.every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment" && g.SuspendedAt != null),
+            "confirmed before any payment, so held for payment, and each one says so and says when",
+          );
+          Assert(
+            held.every((g) => g.GrantTimingApplied === "OnPaidInFull"),
+            "the grant records the rule it was written under, so a later payment re-decides by it",
+          );
+
+          const gross = Number((await TxOne<{ TotalGross: number }>(ctx,
+            `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).TotalGross);
+          const part = Math.round(gross * 40) / 100;
+          await payOrder(ctx, orderID, part);
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment"),
+            "a part-payment leaves a balance, and OnPaidInFull waits for the whole of it",
+          );
+
+          await payOrder(ctx, orderID, Math.round((gross - part) * 100) / 100);
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Active" && g.SuspensionReason == null && g.SuspendedAt == null),
+            "the payment that clears the balance makes access live, inside the same capture",
+          );
+        });
+      }),
+  },
+  {
     Id: "entitlements.EN18",
     Name: "EN18: an OnFirstPayment RENEWAL keeps access at confirm, is cut off at the cutoff, and payment restores it",
     RequiresMutation: true,
