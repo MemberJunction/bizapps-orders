@@ -19,6 +19,8 @@ import {
 import { CommonModule } from '@angular/common';
 import {
     BuildCheckoutCompleteDetail,
+    CHECKOUT_CANCEL_EVENT,
+    CHECKOUT_CLOSE_EVENT,
     CHECKOUT_COMPLETE_EVENT,
     CHECKOUT_ERROR_EVENT,
     CHECKOUT_STATE_CHANGE_EVENT,
@@ -43,6 +45,7 @@ interface StripeCard {
     mount(target: string | HTMLElement): void;
     on(event: string, handler: (ev: { complete?: boolean }) => void): void;
     unmount?(): void;
+    destroy?(): void;
 }
 
 interface StripeInstance {
@@ -89,6 +92,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     private cardMounted = false;
     private destroyed = false;
     private state: CheckoutElementState | null = null;
+    /** Bumped by Cancel: the template re-creates the widget, which clears everything the buyer entered. */
+    public formGeneration = 0;
 
     public get isFree(): boolean {
         return (this.config?.unitPrice ?? 0) <= 0;
@@ -160,8 +165,30 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
+    /**
+     * Cancel resets the checkout to a blank form and tells the host page, which may close the modal
+     * the checkout sits in. The widget is re-created, so every field the buyer filled in is cleared,
+     * and the card field is mounted again on the new form. The session stays open for the next try.
+     */
     public onCancelled(): void {
+        if (this.processing) {
+            return;
+        }
         this.errorMessage = null;
+        this.stripePaymentMethodId = null;
+        try {
+            this.card?.destroy?.();
+        } catch {
+            /* already gone */
+        }
+        this.card = null;
+        this.cardMounted = false;
+        this.isPaymentReady = !this.config?.stripePublishableKey;
+        this.formGeneration++;
+        this.setState('CHECKOUT');
+        this.dispatch(CHECKOUT_CANCEL_EVENT, {});
+        this.dispatch(CHECKOUT_CLOSE_EVENT, {});
+        this.cdr.detectChanges();
     }
 
     public async onSubmitted(event: CheckoutSubmissionEvent): Promise<void> {
