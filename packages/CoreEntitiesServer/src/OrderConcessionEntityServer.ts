@@ -16,9 +16,9 @@
  * the approval's own transaction by ./TermExtension.ts: the term's end, the recognition schedule, access and an
  * acknowledgment task for accounting. If the extension cannot be applied, the approval does not happen.
  *
- * ITS APPROVERS ARE TOLD (golive #274). A Pending concession joins the order's approval task in the tasks
- * app, assigned to the rule's role holders, in the same transaction as the row. Deciding or withdrawing
- * the last Pending concession on the order closes that task.
+ * ITS APPROVERS ARE TOLD (golive #274). A Pending concession raises its own approval task in the tasks
+ * app, assigned to the rule's role holders, in the same transaction as the row. Deciding it on this record,
+ * or withdrawing it, closes that task.
  *
  * CONNECTS TO:
  *   PURE:   @mj-biz-apps/orders-entities ConcessionBehavior
@@ -49,8 +49,9 @@ import {
     type ConcessionValuation,
 } from '@mj-biz-apps/orders-entities';
 import {
+    CloseConcessionTasks,
+    ConcessionSummary,
     RouteConcessionToApproval,
-    SettleApprovalTask,
     UnlinkConcession,
     type ApprovalTaskContext,
 } from './ConcessionApprovalTask.js';
@@ -110,8 +111,14 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         if (recording && this.Status === 'Pending' && this.approvingRole) {
             const roleID = this.approvingRole;
+            const summary = this.approvalSummary;
             return this.withApprovalTask('create', () => super.Save(options), async (ctx) => {
-                await RouteConcessionToApproval(this.OrderHeaderID, roleID, ctx);
+                await RouteConcessionToApproval(
+                    { ID: this.ID, OrderHeaderID: this.OrderHeaderID, RequestedByUserID: this.RequestedByUserID },
+                    roleID,
+                    summary,
+                    ctx,
+                );
             });
         }
         // An approved Duration concession IS the term extension (golive #221): it applies in the same
@@ -119,10 +126,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const deciding = !recording && this.GetFieldByName('Status')?.Dirty === true;
         const extending = this.DeliveryForm === 'Duration' && this.Status === 'Approved' && (recording || deciding);
         // A decision made through the task leaves the task to the tasks app, which closes it itself.
-        const settling = deciding && !this.DecidedThroughTask;
-        if (extending || settling) {
+        const closing =
+            deciding && !this.DecidedThroughTask && (this.Status === 'Approved' || this.Status === 'Rejected') ? this.Status : null;
+        if (extending || closing) {
             return this.withApprovalTask(recording ? 'create' : 'update', () => super.Save(options), async (ctx) => {
-                if (settling) await SettleApprovalTask(this.OrderHeaderID, ctx);
+                if (closing) await CloseConcessionTasks(this.ID, this.OrderHeaderID, closing, ctx);
                 if (extending) await ApplyTermExtension(this.asApprovedExtension(), ctx);
             });
         }
@@ -141,11 +149,14 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         };
     }
 
-    /** Set only by ConcessionApprovalListener, when the decision was recorded on the order's approval task. */
+    /** Set only by ConcessionApprovalListener, when the decision was recorded on the concession's approval task. */
     public DecidedThroughTask = false;
 
     /** The ConcessionLimit rule's role, kept by `prepareNew` for routing a Pending concession. */
     private approvingRole: string | null = null;
+
+    /** What the approval task calls this concession ("25% discount, 3,000.00"), kept by `prepareNew`. */
+    private approvalSummary = '';
 
     /**
      * Set only by `OrderEntityServer` when it deletes a removed DRAFT line's dependents. A booked order
@@ -167,9 +178,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const id = this.ID;
         const orderHeaderID = this.OrderHeaderID;
         const pending = this.Status === 'Pending';
+        // A draft-line removal runs inside the order's own save, so the order header is not saved again here.
+        const releaseOrder = !this.WithdrawWithDraftLine;
         return this.withApprovalTask('delete', () => super.Delete(options), async (ctx) => {
+            if (pending) await CloseConcessionTasks(id, orderHeaderID, 'Withdrawn', ctx, releaseOrder);
             await UnlinkConcession(id, ctx);
-            if (pending) await SettleApprovalTask(orderHeaderID, ctx);
         });
     }
 
@@ -247,6 +260,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         } else {
             this.Status = 'Pending';
             this.approvingRole = rule.ApprovalRequiredRoleID;
+            this.approvalSummary = ConcessionSummary({
+                DeliveryForm: this.DeliveryForm,
+                ComputedValue: valued.Value,
+                Percent: valued.Percent,
+                AddedDays: this.AddedDays,
+                AddedQuantity: this.AddedQuantity,
+            });
         }
         return null;
     }
@@ -358,7 +378,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
         if (!user?.ID) return 'A decision must be attributable to a user, and no user was supplied.';
 
-        const roleID = await this.approvingRoleID(user);
+        const roleID = await this.ApprovingRoleID(user);
         if (!roleID) {
             return 'This concession names no ConcessionLimit rule with an approving role, so no one can decide it.';
         }
@@ -369,7 +389,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return null;
     }
 
-    private async approvingRoleID(user: UserInfo): Promise<string | null> {
+    /** The role that decides this concession: its ConcessionLimit rule's, or null when it names none. */
+    public async ApprovingRoleID(user: UserInfo): Promise<string | null> {
         if (!this.SalesRuleID) return null;
         const rule = await this.loadRow<{ ApprovalRequiredRoleID: string | null }>(
             SALES_RULE_ENTITY,

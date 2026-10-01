@@ -898,6 +898,76 @@ export const EntitlementsChecks: NamedCheck[] = [
         });
       }),
   },
+  {
+    Id: "entitlements.EN21",
+    Name: "EN21: an approved DeferCutoff override keeps a renewal live past the cutoff until its last day, then expires",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.SubRolling, "OnFirstPayment", async () => {
+          const first = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            OrderDate: new Date("2026-01-01T00:00:00Z"),
+            BillToOrganizationID: f.Customers.OrganizationID,
+            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1 }],
+          });
+          Assert(first.Saved, `confirm failed: ${first.Message}`);
+          const term = await TxOne<{ SubscriptionID: string; EndDate: Date; Gross: number }>(ctx,
+            `SELECT st.SubscriptionID, st.EndDate, oh.TotalGross AS Gross
+               FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+               JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+              WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+          await payOrder(ctx, first.Order.ID as string, Number(term.Gross));
+          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+
+          const due = await TxOne<{ NextDueDate: Date | null }>(ctx,
+            `SELECT NextDueDate FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${renewalID}'`);
+          Assert(due.NextDueDate != null, "the renewal carries a due date");
+          const dueDay = new Date(due.NextDueDate!).toISOString().slice(0, 10);
+          await OrdersSettings.Load(ctx.Provider, ctx.User);
+          const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+          Assert(cutoff != null && cutoff > 0, "the cutoff setting is on, with a positive number of days");
+          const cutoffDay = addDays(dueDay, cutoff!);
+          const lastDay = addDays(cutoffDay, 2);
+
+          // The approval flow is the operations' job; this check is about enforcement, so the
+          // approved row is written directly.
+          const overrideID = randomUUID();
+          await TxQuery(ctx,
+            `INSERT INTO ${ORDERS_SCHEMA}.EntitlementAccessOverride
+               (ID, OrderHeaderID, OverrideType, Reason, EffectiveThrough, Status, RequestedByUserID, DecidedByUserID, DecidedAt)
+             VALUES ('${overrideID}', '${renewalID}', 'DeferCutoff', 'EN21', '${lastDay}', 'Approved',
+                     '${ctx.User.ID}', '${ctx.User.ID}', SYSDATETIMEOFFSET())`);
+
+          const held = await EnforcePaymentGatedAccess({ AsOfDate: cutoffDay }, ctx.Provider, ctx.User);
+          Assert(held.Success, `the pass ran: ${held.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "on the cutoff day the override keeps the renewal's access",
+          );
+
+          const through = await EnforcePaymentGatedAccess({ AsOfDate: lastDay }, ctx.Provider, ctx.User);
+          Assert(through.Success, `the pass ran: ${through.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "the override holds through its last day",
+          );
+
+          const after = await EnforcePaymentGatedAccess({ AsOfDate: addDays(lastDay, 1) }, ctx.Provider, ctx.User);
+          Assert(after.Success, `the pass ran: ${after.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "PastDue"),
+            "the day after, the payment rule decides again and the renewal is cut off",
+          );
+          const status = await TxOne<{ Status: string }>(ctx,
+            `SELECT Status FROM ${ORDERS_SCHEMA}.EntitlementAccessOverride WHERE ID = '${overrideID}'`);
+          AssertEqual(status.Status, "Expired", "and the override is marked Expired, so the pass does not pick it up again");
+          Assert(after.OverridesExpired >= 1, "the pass reports the expiry");
+        });
+      }),
+  },
 ];
 
 for (const check of EntitlementsChecks) {
