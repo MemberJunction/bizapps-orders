@@ -19,6 +19,10 @@ export const CHECKOUT_ERROR_EVENT = 'checkout-error';
 export const CHECKOUT_CANCEL_EVENT = 'checkout-cancel';
 /** The checkout asks its container to close, e.g. a modal on the host page. Sent with Cancel. */
 export const CHECKOUT_CLOSE_EVENT = 'checkout-close';
+/** Dispatched ON the element by an embedding host to return it to a blank form. */
+export const CHECKOUT_RESET_REQUEST_EVENT = 'checkout-reset';
+/** The element refused a reset because a payment is in flight. */
+export const CHECKOUT_RESET_REFUSED_EVENT = 'checkout-reset-refused';
 
 export interface CheckoutStateChangeDetail {
     state: CheckoutElementState;

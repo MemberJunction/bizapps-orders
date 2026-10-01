@@ -23,6 +23,7 @@
     "action-categories",
     "actions",
     "scheduled-jobs",
+    "task-types",
     "entity-actions",
     "query-categories",
     "queries",

@@ -93,6 +93,8 @@ export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';
 export * from './pricing/inheritPrices';
 export * from './pricing/priceOverride';
+// Access overrides (bizapps-orders#268) — the authorization names and who may request each type.
+export * from './accessOverride';
 export * from './pricing/linePricePick';
 
 /**
@@ -116,6 +118,8 @@ export * from './date-cell';
  */
 export * from './overdue';
 export * from './configuration-types';
+export * from './checkout-questions';
+export * from './checkout-attribution';
 export * from './base-entity-augmentation';
 
 // Pure decisions for money arriving on an external rail (Bill.com) — read by Orders.PollExternalPayments.

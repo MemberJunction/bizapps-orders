@@ -189,6 +189,14 @@ const mocks = vi.hoisted(() => {
                 this.Lines.Items = [];
             })
         };
+        CheckoutAnswers = {
+            Items: [] as Array<{ QuestionKey?: string; QuestionLabel?: string; Answer?: string; OtherText?: string | null }>,
+            Create: vi.fn().mockImplementation(() => {
+                const row = {};
+                this.CheckoutAnswers.Items.push(row);
+                return Promise.resolve(row);
+            })
+        };
     }
 
     const mockPricingPrice = vi.fn().mockImplementation((ctx: { Lines: MockOrderLine[] }) => {
@@ -410,6 +418,7 @@ describe('CheckoutSessionService', () => {
         mocks.mockOrderInstance.BillToPersonID = null;
         mocks.mockOrderInstance.ShipToPersonID = null;
         mocks.mockOrderInstance.Lines.Items = [];
+        mocks.mockOrderInstance.CheckoutAnswers.Items = [];
         mocks.mockWidgetInstance.Configuration = mocks.DEFAULT_WIDGET_CONFIG;
         mocks.mockWidgetInstance.CompanyID = 'comp-10';
         mocks.mockProductInstance.CompanyID = 'comp-10';
@@ -808,6 +817,30 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('UpdateDraft — attribution', () => {
+        const draft = (attribution?: unknown) =>
+            CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, { Attribution: attribution });
+        const stored = () => JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Attribution;
+
+        it('keeps where the checkout came from with the draft', async () => {
+            const res = await draft({ source: 'voice_agent', reference: 'conv-9' });
+            expect(res.Success).toBe(true);
+            expect(stored()).toEqual({ Source: 'voice_agent', Reference: 'conv-9' });
+        });
+
+        it('keeps it across a later draft that names none', async () => {
+            await draft({ source: 'voice_agent', reference: 'conv-9' });
+            await draft(undefined);
+            expect(stored()).toEqual({ Source: 'voice_agent', Reference: 'conv-9' });
+        });
+
+        it('drops an attribution it cannot read rather than refusing the checkout', async () => {
+            const res = await draft({ source: 'not valid!' });
+            expect(res.Success).toBe(true);
+            expect(stored()).toBeUndefined();
+        });
+    });
+
     describe('OpenPaymentIntentForSession', () => {
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', 'wrong-key', testUser);
@@ -1199,6 +1232,119 @@ describe('CheckoutSessionService', () => {
             // latch or — if it observed the winner's Confirmed state — replays the same order.)
             expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalledTimes(1);
             expect(res1.Success || res2.Success).toBe(true);
+        });
+    });
+
+    describe('checkout questions (#322)', () => {
+        const SOURCE_QUESTION = {
+            key: 'source',
+            label: 'How did you hear about us?',
+            type: 'select',
+            options: ['Search', 'Other'],
+            required: true,
+            otherOptionKey: 'Other',
+        };
+        const withQuestions = (extra: Record<string, unknown> = {}) => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', questions: [SOURCE_QUESTION], ...extra });
+        };
+        const storedAnswers = (answers?: Record<string, { Value?: string; OtherText?: string }>) =>
+            JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }], TotalGross: 100, Answers: answers });
+
+        it('ships the questions to the client with the configuration', async () => {
+            withQuestions();
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            expect(res.Configuration?.questions).toEqual([SOURCE_QUESTION]);
+        });
+
+        it('stores a draft before the required question is answered, so the checkout can be priced', async () => {
+            withQuestions();
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, { Answers: {} });
+            expect(res.Success).toBe(true);
+            expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Answers).toEqual({});
+        });
+
+        it('stores the answers with the draft, trimmed', async () => {
+            withQuestions();
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, {
+                Answers: { source: { Value: 'Other', OtherText: ' A podcast ' } },
+            });
+            expect(res.Success).toBe(true);
+            expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Answers).toEqual({
+                source: { Value: 'Other', OtherText: 'A podcast' },
+            });
+        });
+
+        it('refuses a draft carrying an answer to a question the widget does not ask', async () => {
+            withQuestions();
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, {
+                Answers: { forged: { Value: 'x' } },
+            });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('does not ask');
+            expect(mocks.mockSessionSave).not.toHaveBeenCalled();
+        });
+
+        it('refuses a draft when the widget question list is malformed', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', questions: [{ key: 'x' }] });
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }]);
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('questions are invalid');
+        });
+
+        it('opens no payment intent until the required question is answered', async () => {
+            withQuestions({ paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.MetadataJSON = storedAnswers({});
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('"How did you hear about us?" needs an answer.');
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('opens no payment intent when Other is chosen without its text', async () => {
+            withQuestions({ paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.MetadataJSON = storedAnswers({ source: { Value: 'Other' } });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('say more');
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('opens the payment intent once the question is answered', async () => {
+            withQuestions({ paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.MetadataJSON = storedAnswers({ source: { Value: 'Search' } });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOpenPaymentIntent).toHaveBeenCalled();
+        });
+
+        it('refuses completion before creating the payer when a required answer is missing', async () => {
+            withQuestions();
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = storedAnswers(undefined);
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toBe('"How did you hear about us?" needs an answer.');
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+        });
+
+        it('records each answer on the order before it confirms', async () => {
+            withQuestions();
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = storedAnswers({ source: { Value: 'Other', OtherText: 'A podcast' } });
+            let answersAtConfirm: unknown[] = [];
+            mocks.mockOrderInstance.Confirm.mockImplementationOnce(() => {
+                answersAtConfirm = [...mocks.mockOrderInstance.CheckoutAnswers.Items];
+                mocks.mockOrderInstance.Status = 'Confirmed';
+                return Promise.resolve();
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+            expect(res.Success).toBe(true);
+            expect(answersAtConfirm).toEqual([
+                { QuestionKey: 'source', QuestionLabel: 'How did you hear about us?', Answer: 'Other', OtherText: 'A podcast' },
+            ]);
         });
     });
 
