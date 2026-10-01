@@ -1,0 +1,50 @@
+[
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Access.Override",
+      "ParentID": null,
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Parent grant for requesting exceptions to payment-gated access on an order. Child authorizations are WaivePaymentHold and DeferCutoff, one per override type. Holding the parent grants both. Who may approve a request is decided separately (bizapps-orders#360)."
+    },
+    "primaryKey": {
+      "ID": "AB81C474-1942-40C9-A05F-90E441C7A7F7"
+    },
+    "sync": {
+      "lastModified": "2026-09-29T14:02:15.199Z",
+      "checksum": "aed900d500c4a01ccd41210d505d4e3b60c48ac6077d2cb5a5d355b17722a3c7"
+    }
+  },
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Access.Override.WaivePaymentHold",
+      "ParentID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Access.Override",
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Request a WaivePaymentHold override on an order: its grants held for payment go Active before the payment arrives, through a stated last day. Requires a reason, and takes effect only once approved."
+    },
+    "primaryKey": {
+      "ID": "2A127B15-E119-478B-8E22-17C2125D68CC"
+    },
+    "sync": {
+      "lastModified": "2026-09-29T14:02:15.217Z",
+      "checksum": "9f875801c76bf6aa9c18d75666d2266fa0eb366e4d815d52d2b4fd61bb553243"
+    }
+  },
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Access.Override.DeferCutoff",
+      "ParentID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Access.Override",
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Request a DeferCutoff override on a renewal order: its grants stay Active past the renewal cutoff, through a stated last day. Requires a reason, and takes effect only once approved."
+    },
+    "primaryKey": {
+      "ID": "4B3E6438-CCAC-4800-A337-7A7E166932B4"
+    },
+    "sync": {
+      "lastModified": "2026-09-29T14:02:15.232Z",
+      "checksum": "c3942efc247d3a5945535478cef0b380c49a916d1f66c6bd54b6bae61710b867"
+    }
+  }
+]

@@ -1,0 +1,64 @@
+[
+  {
+    "_comments": [
+      "API SCOPES FOR THE ENTITLEMENT OPERATIONS (#347). Orders.CheckEntitlement and Orders.ListEntitlements declare",
+      "RequiredScope orders:entitlement-check and orders:entitlement-read (metadata/remote-operations). Without these",
+      "rows every API-key call to either operation is refused on a host that installs Orders, and nothing says why.",
+      "",
+      "A parent `orders` with one child per operation, matching how MJ lays out its own scopes. The application",
+      "ceiling that allows them on MJAPI is in metadata/api-application-scopes. A host then only issues API keys."
+    ],
+    "fields": {
+      "Name": "orders",
+      "FullPath": "orders",
+      "Category": "Orders",
+      "Description": "Parent scope for Orders remote operations",
+      "IsActive": true
+    },
+    "primaryKey": {
+      "ID": "B01CD343-1430-420E-B71D-143D2A5C1DF1"
+    },
+    "relatedEntities": {
+      "MJ: API Scopes": [
+        {
+          "fields": {
+            "ParentID": "@parent:ID",
+            "Name": "entitlement-check",
+            "FullPath": "orders:entitlement-check",
+            "Category": "Orders",
+            "Description": "Check whether a person holds an entitlement (Orders.CheckEntitlement)",
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "1C647BE9-702B-4D71-8F56-D6E6EB24C5F7"
+          },
+          "sync": {
+            "lastModified": "2026-09-29T17:25:54.693Z",
+            "checksum": "7adef18455cf05b24f23edb13867c6f0efc80acbe06ef39637e61921d84713b5"
+          }
+        },
+        {
+          "fields": {
+            "ParentID": "@parent:ID",
+            "Name": "entitlement-read",
+            "FullPath": "orders:entitlement-read",
+            "Category": "Orders",
+            "Description": "List a person's entitlements (Orders.ListEntitlements)",
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "B0BF6F7A-2FAF-4F99-8E71-77E7CCDB1A5A"
+          },
+          "sync": {
+            "lastModified": "2026-09-29T17:25:54.707Z",
+            "checksum": "373d56d307149d1564aa4eec22aaa041dccafa4e6ca2e2a68c2ce0ec18ec0cfa"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-09-29T17:25:54.670Z",
+      "checksum": "f8a3e38e38bb16192ff44fc9d3b8299f31936e4554553388e3c27c2e42002a8b"
+    }
+  }
+]

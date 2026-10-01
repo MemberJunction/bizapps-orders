@@ -206,6 +206,18 @@ const addDays = (iso: string, n: number): string => {
   return d.toISOString().slice(0, 10);
 };
 
+/** Ask `Orders.CheckEntitlement` / `Orders.ListEntitlements` the way a downstream app does. */
+async function readAccess<TOut>(ctx: IntegrationCheckContext, key: string, input: Record<string, unknown>): Promise<TOut> {
+  const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<Record<string, unknown>, TOut>>(
+    BaseRemotableOperation,
+    key,
+  );
+  Assert(op != null, `'${key}' is not registered`);
+  const result = await op!.Execute(input, { provider: ctx.Provider, user: ctx.User });
+  Assert(result.Success && result.Output != null, `${key} did not execute: ${result.ResultCode ?? result.ErrorMessage ?? "unknown"}`);
+  return result.Output!;
+}
+
 export const EntitlementsChecks: NamedCheck[] = [
   {
     Id: "entitlements.EN1",
@@ -893,6 +905,151 @@ export const EntitlementsChecks: NamedCheck[] = [
             standing.every((g) => g.Status === "Active"),
             "a refund the seller chose does not take away access the customer paid for",
           );
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN21",
+    Name: "EN21: an approved DeferCutoff override keeps a renewal live past the cutoff until its last day, then expires",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.SubRolling, "OnFirstPayment", async () => {
+          const first = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            OrderDate: new Date("2026-01-01T00:00:00Z"),
+            BillToOrganizationID: f.Customers.OrganizationID,
+            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1 }],
+          });
+          Assert(first.Saved, `confirm failed: ${first.Message}`);
+          const term = await TxOne<{ SubscriptionID: string; EndDate: Date; Gross: number }>(ctx,
+            `SELECT st.SubscriptionID, st.EndDate, oh.TotalGross AS Gross
+               FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+               JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+              WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+          await payOrder(ctx, first.Order.ID as string, Number(term.Gross));
+          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+
+          const due = await TxOne<{ NextDueDate: Date | null }>(ctx,
+            `SELECT NextDueDate FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${renewalID}'`);
+          Assert(due.NextDueDate != null, "the renewal carries a due date");
+          const dueDay = new Date(due.NextDueDate!).toISOString().slice(0, 10);
+          await OrdersSettings.Load(ctx.Provider, ctx.User);
+          const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+          Assert(cutoff != null && cutoff > 0, "the cutoff setting is on, with a positive number of days");
+          const cutoffDay = addDays(dueDay, cutoff!);
+          const lastDay = addDays(cutoffDay, 2);
+
+          // The approval flow is the operations' job; this check is about enforcement, so the
+          // approved row is written directly.
+          const overrideID = randomUUID();
+          await TxQuery(ctx,
+            `INSERT INTO ${ORDERS_SCHEMA}.EntitlementAccessOverride
+               (ID, OrderHeaderID, OverrideType, Reason, EffectiveThrough, Status, RequestedByUserID, DecidedByUserID, DecidedAt)
+             VALUES ('${overrideID}', '${renewalID}', 'DeferCutoff', 'EN21', '${lastDay}', 'Approved',
+                     '${ctx.User.ID}', '${ctx.User.ID}', SYSDATETIMEOFFSET())`);
+
+          const held = await EnforcePaymentGatedAccess({ AsOfDate: cutoffDay }, ctx.Provider, ctx.User);
+          Assert(held.Success, `the pass ran: ${held.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "on the cutoff day the override keeps the renewal's access",
+          );
+
+          const through = await EnforcePaymentGatedAccess({ AsOfDate: lastDay }, ctx.Provider, ctx.User);
+          Assert(through.Success, `the pass ran: ${through.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "the override holds through its last day",
+          );
+
+          const after = await EnforcePaymentGatedAccess({ AsOfDate: addDays(lastDay, 1) }, ctx.Provider, ctx.User);
+          Assert(after.Success, `the pass ran: ${after.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "PastDue"),
+            "the day after, the payment rule decides again and the renewal is cut off",
+          );
+          const status = await TxOne<{ Status: string }>(ctx,
+            `SELECT Status FROM ${ORDERS_SCHEMA}.EntitlementAccessOverride WHERE ID = '${overrideID}'`);
+          AssertEqual(status.Status, "Expired", "and the override is marked Expired, so the pass does not pick it up again");
+          Assert(after.OverridesExpired >= 1, "the pass reports the expiry");
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN22",
+    Name: "EN22: a renewal past its cutoff reads Suspended at CheckEntitlement before the nightly job has run (#287)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.SubRolling, "OnFirstPayment", async () => {
+          await OrdersSettings.Load(ctx.Provider, ctx.User);
+          const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+          Assert(cutoff != null && cutoff > 0, "the cutoff setting is on, with a positive number of days");
+
+          // CheckEntitlement refuses a future AsOf, so the dates are placed behind today instead:
+          // the first annual term ended 90 days ago, so its renewal is in force now and long past due.
+          const today = new Date().toISOString().slice(0, 10);
+          const firstStart = new Date(`${addDays(today, -90)}T00:00:00Z`);
+          firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
+          const first = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            OrderDate: firstStart,
+            BillToOrganizationID: f.Customers.OrganizationID,
+            BillToPersonID: f.Customers.PersonID,
+            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1 }],
+          });
+          Assert(first.Saved, `confirm failed: ${first.Message}`);
+          const term = await TxOne<{ SubscriptionID: string; EndDate: Date; Gross: number }>(ctx,
+            `SELECT st.SubscriptionID, st.EndDate, oh.TotalGross AS Gross
+               FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+               JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+              WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+          await payOrder(ctx, first.Order.ID as string, Number(term.Gross));
+          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+
+          const due = await TxOne<{ NextDueDate: Date | null }>(ctx,
+            `SELECT NextDueDate FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${renewalID}'`);
+          Assert(due.NextDueDate != null, "the renewal carries a due date");
+          const cutoffDay = addDays(new Date(due.NextDueDate!).toISOString().slice(0, 10), cutoff!);
+          Assert(cutoffDay < addDays(today, -1), `the renewal's cutoff (${cutoffDay}) is behind today, with a day's margin for the business zone`);
+
+          const renewalGrants = await gatesFor(ctx, renewalID);
+          Assert(renewalGrants.length > 0, "the renewal grants the next term");
+          Assert(renewalGrants.every((g) => g.Status === "Active"), "the nightly job has not run, so the rows still read Active");
+
+          const checked = await readAccess<{ HasAccess: boolean; Decision: string; GrantID?: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
+          AssertEqual(checked.HasAccess, false, "past the cutoff, the check denies access");
+          AssertEqual(checked.Decision, "Suspended", "and says it is suspended, as the row will once the job runs");
+          Assert(
+            renewalGrants.some((g) => g.ID.toLowerCase() === (checked.GrantID ?? "").toLowerCase()),
+            "the answer is the renewal's grant",
+          );
+
+          const listed = await readAccess<{ Items: Array<{ Code: string; HasAccess: boolean; Decision: string }> }>(
+            ctx, "Orders.ListEntitlements", { PersonID: f.Customers.PersonID });
+          const seats = listed.Items.find((i) => i.Code === "SUB-SEATS");
+          Assert(seats != null && !seats.HasAccess && seats.Decision === "Suspended", "ListEntitlements agrees");
+
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "a read writes nothing: the suspension is still the nightly job's to record",
+          );
+
+          // An approved DeferCutoff is honoured at read time, as the job honours it.
+          await TxQuery(ctx,
+            `INSERT INTO ${ORDERS_SCHEMA}.EntitlementAccessOverride
+               (ID, OrderHeaderID, OverrideType, Reason, EffectiveThrough, Status, RequestedByUserID, DecidedByUserID, DecidedAt)
+             VALUES ('${randomUUID()}', '${renewalID}', 'DeferCutoff', 'EN22', '${addDays(today, 2)}', 'Approved',
+                     '${ctx.User.ID}', '${ctx.User.ID}', SYSDATETIMEOFFSET())`);
+          const deferred = await readAccess<{ HasAccess: boolean; Decision: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
+          AssertEqual(deferred.Decision, "Granted", "an approved DeferCutoff keeps access at read time");
         });
       }),
   },

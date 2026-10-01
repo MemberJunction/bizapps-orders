@@ -1,0 +1,27 @@
+[
+  {
+    "_comments": [
+      "Approval of an exception to payment-gated access (bizapps-orders#268). Its own type, rather",
+      "than the generic Approval Request, so that closing the task in the Tasks inbox runs the Action that",
+      "applies the decision to the override."
+    ],
+    "fields": {
+      "Name": "Access Override Approval",
+      "Code": "ORDERS_ACCESS_OVERRIDE",
+      "Description": "Approve or reject an exception to payment-gated access on an order. Closing the task applies the decision to the override.",
+      "IconClass": "fa-solid fa-unlock-keyhole",
+      "DefaultPriority": "High",
+      "IsActive": true,
+      "OnCompleteActionID": "@lookup:MJ: Actions.Name=Apply Access Override Decision",
+      "OnCancelActionID": "@lookup:MJ: Actions.Name=Apply Access Override Decision",
+      "OnRejectActionID": "@lookup:MJ: Actions.Name=Apply Access Override Decision"
+    },
+    "primaryKey": {
+      "ID": "B321B638-B3B2-4072-BB2B-053407D1D4DE"
+    },
+    "sync": {
+      "lastModified": "2026-09-29T14:02:15.143Z",
+      "checksum": "017d82b83dbed4b23ac121c95d3c4fa498613a4f0937848cf6566bf311d68f16"
+    }
+  }
+]
