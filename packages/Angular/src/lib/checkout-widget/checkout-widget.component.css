@@ -214,6 +214,11 @@
     margin-top: 4px;
 }
 
+/* The free-text answer that appears under a question's "Other" choice. */
+.mj-question-other {
+    margin-top: 8px;
+}
+
 .mj-input:focus, .mj-select:focus {
     border-color: var(--mj-primary-color, #2563eb);
     box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);

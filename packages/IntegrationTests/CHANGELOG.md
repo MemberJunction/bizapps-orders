@@ -1,5 +1,29 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.20.0
+
+### Patch Changes
+
+- 460c601: The `payment-terms` bundle proves that a confirmed order's `DueDate` can be corrected without approval and that every correction, and every change to `PaymentTermsTypeID`, leaves a `MJ: Record Changes` row with the old value, the new value and who made it.
+- Updated dependencies [a1114ed]
+- Updated dependencies [7af7a46]
+- Updated dependencies [41d32be]
+- Updated dependencies [53efeb9]
+- Updated dependencies [2ddd206]
+- Updated dependencies [0bcafbd]
+- Updated dependencies [22ee8ec]
+- Updated dependencies [d0c5fcd]
+- Updated dependencies [d71575a]
+- Updated dependencies [3a8b6b2]
+- Updated dependencies [e131f07]
+- Updated dependencies [a67d0ef]
+- Updated dependencies [102ea17]
+- Updated dependencies [8d3df77]
+- Updated dependencies [ada18e6]
+  - @mj-biz-apps/orders-entities@5.20.0
+  - @mj-biz-apps/orders-core-entities-server@5.20.0
+  - @mj-biz-apps/orders-server@5.20.0
+
 ## 5.19.0
 
 ### Patch Changes
