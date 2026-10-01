@@ -1,5 +1,12 @@
 # @mj-biz-apps/orders-ng
 
+## 5.22.0
+
+### Patch Changes
+
+- Updated dependencies [2aca048]
+  - @mj-biz-apps/orders-entities@5.22.0
+
 ## 5.21.0
 
 ### Minor Changes
@@ -38,6 +45,9 @@
 ### Patch Changes
 
 - 854a137: Checkout can run a host's account step after payment. A host registers a `CheckoutAccountStep` subclass. `/complete` confirms the order without waiting on the host and answers `AccountStep: true`; the widget then calls `POST /checkout/account`, which calls the host's `EnsureAccount` (limited to `HostTimeoutSeconds`, default 10) and returns `Account: { Outcome, Message?, CanSetPassword, VerificationRequired }` (`Created`, `Exists` or `Failed`). For `Created` the public checkout shows a password form, and `POST /checkout/account/password` passes the password to the host's `SetPassword` — once, only for the account this checkout created, within `PasswordWindowMinutes` (default 5), never stored or logged. `Failed` offers "Try again". A host answers `NotApplicable` for a checkout it makes no logins for, which then has no account step. The seam requires the host to keep a created account unable to sign in, and unlinked from the Person, until the e-mail is verified. With no step registered, checkout behaves as before.
+
+  **Host obligations.** The checkout never proves the buyer owns the e-mail they typed. A host that registers a `CheckoutAccountStep` must keep an account it answers `Created` unable to sign in until it has verified the e-mail (for example with an e-mailed link), and must not link the new login to `PersonID` until then. It should answer `Created`, not `Exists`, for an account it already created for the same `SessionID`. Until #395 is fixed, also answer `VerificationRequired: true`: without it, the widget tells the buyer they can sign in straight away. Details are in "Account Step After Payment" in `docs/checkout-widget-and-session-architecture.md`.
+
 - 4d44098: Cancel on the public checkout resets the form (every field, the error banner and the card entry) and dispatches bubbling, composed `checkout-cancel` and `checkout-close` DOM events, so a host page that opens the checkout in a modal can close it. Cancel is ignored while a payment is in flight.
 - 1179f2d: `<mj-orders-checkout>` dispatches bubbling, composed DOM events for the host page: `checkout-state-change` `{ state }` (`LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `ERROR`), `checkout-complete` `{ sessionId, productName, productId, amount, currency, coupon }` (amount in major units, currency upper-case, dispatched before any redirect), and `checkout-error` `{ message }`. No detail carries personal data.
 - 6e5077d: `<mj-orders-checkout>` can be embedded inside another widget. New attributes: `email` prefills the e-mail field while it is empty; `source` and `source-ref` say where the checkout came from and are kept on the checkout session as `MetadataJSON.Attribution` (`NormalizeCheckoutAttribution`; an unreadable one is dropped, never refused). A host dispatches `checkout-reset` on the element to return it to a blank form; it is refused with `checkout-reset-refused` while a payment is in flight or the account step is unsettled, it always starts a new session, and it reads `email`, `source` and `source-ref` again for the next conversation.
@@ -128,6 +138,25 @@
   hourly poll), both shipped **Disabled and set to Preview**, like the renewal job, and installed by the
   metadata migration above. Enabling them is a deliberate act, and the webhook follows the poll job rather
   than overriding it.
+
+  **Host setup.** Nothing runs until a host configures it: with no `BillCom` provider row, the rail is
+  inert. To use Bill.com, a host needs:
+
+  1. **The connector, loaded in MJAPI.** Add `@memberjunction/connector-bill-com` 0.3.2 or later to
+     MJAPI's dependencies and to `dynamicPackages` in its `mj.config.cjs`, with
+     `StartupExport: 'registerConnector'`, the way other MJ connectors are loaded. No orders package
+     depends on it; without it, every Bill.com call fails with "No connector registered".
+  2. **The integration rows, per company.** An `MJ: Credentials` row for the Bill.com session, with its
+     `environment`; an `MJ: Company Integrations` row that uses it, on the Bill.com `MJ: Integrations`
+     row; and a `PaymentProvider` of type `BillCom` whose `CompanyIntegrationID` points at that Company
+     Integration. Orders creates none of these, and refuses a live provider pointed at a sandbox
+     credential.
+  3. **The jobs, enabled deliberately.** Enable a job, read one Preview run, then turn Preview off.
+  4. **Optionally, the webhook.** The receiver mounts itself at `POST /webhooks/billcom/:providerId` from
+     `@mj-biz-apps/orders-server`'s package manifest; no host config is needed. To use it, create the
+     Bill.com subscription and set `<CredentialsRef>_WEBHOOK_SECRET` to its `securityKey`, where
+     `CredentialsRef` is the value on the `BillCom` provider row. Without the key, every delivery is
+     refused, and the hourly poll still captures payments.
 
 - 102ea17: Percentage-of-completion revenue recognition (golive #241, plan Part F / D90, W10/W11). `RevenueRecognitionType.ScheduleBasis` (`AtBooking` | `OnMeasurement`; defaults to `AtBooking`, so the three existing types are unchanged) and the new `OrderLineProgressMeasurement` table — one attested observation of cumulative percent complete per line per period, immutable once posted. A `ProgressRecognitionDriver` family alongside the booking drivers, with `ManualAttestation` shipped. New operation `Orders.RecordProgress` posts the cumulative catch-up (`LineTotalNet × percent − the line's RecognizedToDate`) as a `RevenueRecognition` entry crediting Sales, debiting Deferred Revenue up to the line's deferred balance and Unbilled Receivable beyond it (D92 rule 2); a backward slide mirrors the same entry; a zero delta succeeds and writes nothing; `Preview` computes without writing. The operation advances the line's `RecognizedToDate` in the same transaction as the entry, and is gated on the order being confirmed rather than on the line carrying a booking entry, since a POC line on a company with a payment schedule books no value entry at confirm. `Orders.GetProgressWorklist` lists open POC lines with their last observation. Metadata: the Percentage of Completion rev-rec type and the Project / Implementation product type. Receivables rail gains a Progress attestation page.
 
@@ -347,8 +376,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                The INSERT statement conflicted with the FOREIGN KEY constraint
-                "FK_EntityFieldValue_EntityField"
+                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
