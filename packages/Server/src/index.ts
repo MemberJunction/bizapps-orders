@@ -21,6 +21,7 @@ import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
 import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-gated-access.action.js';
 import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
 import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
+import { LoadApplyAccessOverrideDecisionAction } from './custom/apply-access-override-decision.action.js';
 import { LoadDetectOverlappingSubscriptionsAction } from './custom/detect-overlapping-subscriptions.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
@@ -73,6 +74,8 @@ import {
     LoadGuestOrderClaimDriver,
     LoadCheckEntitlementOperation,
     LoadListEntitlementsOperation,
+    LoadAccessOverrideOperations,
+    LoadEntitlementAccessOverrideEntityServer,
 } from '@mj-biz-apps/orders-core-entities-server';
 
 // The unauthenticated webhook route. Registered as a server EXTENSION rather than mounted here,
@@ -154,6 +157,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadDetectOverlappingSubscriptionsOperation(); // 'Orders.DetectOverlappingSubscriptions' — finance exception type 5 (golive #279)
     LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
     LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator
+    LoadAccessOverrideOperations();    // 'Orders.RequestAccessOverride' / 'Orders.RecordAccessOverrideDecision' (#268)
+    LoadEntitlementAccessOverrideEntityServer(); // an override is decided only through its approval task
 
     // Payment drivers (D19/D37). Each is keyed by its PaymentProviderType.Code, and WITHOUT these
     // anchors the @RegisterClass decorators are tree-shaken away — the ClassFactory then falls back to
@@ -175,6 +180,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadEnforcePaymentGatedAccessAction(); // 'Orders.EnforcePaymentGatedAccess' — nightly renewal cutoff and restore (#223)
     LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
     LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll
+    LoadApplyAccessOverrideDecisionAction(); // 'Orders.ApplyAccessOverrideDecision' — the Tasks inbox hook for overrides (#268)
     LoadDetectOverlappingSubscriptionsAction(); // 'Orders.DetectOverlappingSubscriptions' — nightly overlap check for finance review (golive #279)
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same

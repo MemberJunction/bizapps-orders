@@ -1276,6 +1276,32 @@ export interface PriceOrderOutput {
 }
 
 /**
+ * Input for `Orders.RecordAccessOverrideDecision`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface RecordAccessOverrideDecisionInput {
+    AccessOverrideID: string;
+    /** A Tasks decision outcome code: Approved, ApprovedWithConditions or Rejected. */
+    Outcome: string;
+    Notes?: string;
+}
+
+/**
+ * Output of `Orders.RecordAccessOverrideDecision`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface AccessOverrideDecisionOutput {
+    Success: boolean;
+    Message?: string;
+    /** The override's status after the call. */
+    Status?: string;
+    /** Grants whose status changed because the override was approved. */
+    GrantsChanged?: number;
+}
+
+/**
  * Input for `Orders.RecordProgress`.
  *
  * One attested progress observation on a percentage-of-completion order line (plan D90). The
@@ -1391,6 +1417,36 @@ export interface RefundPaymentOutput {
         UnappliedAmount: number;
         BalanceAfter: number;
     }>;
+}
+
+/**
+ * Input for `Orders.RequestAccessOverride`.
+ *
+ * An exception to payment-gated access on one order. Nothing changes until it is approved through
+ * the task this raises.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface RequestAccessOverrideInput {
+    OrderHeaderID: string;
+    /** WaivePaymentHold lifts the hold on grants awaiting payment; DeferCutoff lifts the renewal cutoff. */
+    OverrideType: 'WaivePaymentHold' | 'DeferCutoff';
+    /** Why the exception is needed. Required. */
+    Reason: string;
+    /** Last day the override holds, YYYY-MM-DD, inclusive. Required; not before today. */
+    EffectiveThrough: string;
+}
+
+/**
+ * Output of `Orders.RequestAccessOverride`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface RequestAccessOverrideOutput {
+    Success: boolean;
+    Message?: string;
+    AccessOverrideID?: string;
+    ApprovalTaskID?: string;
 }
 
 /**
@@ -1706,6 +1762,22 @@ export class OrdersPriceOrderOperation extends BaseRemotableOperation<PriceOrder
 }
 
 // ============================================================
+// Orders.RecordAccessOverrideDecision — Record Access Override Decision
+// ============================================================
+/**
+ * Record Access Override Decision
+ * Approve or reject a requested access override. Records the decision on the override's Tasks approval and applies it: an approval re-decides the order's grants at once.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.RecordAccessOverrideDecision'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersRecordAccessOverrideDecisionOperation extends BaseRemotableOperation<RecordAccessOverrideDecisionInput, AccessOverrideDecisionOutput> {
+    public readonly OperationKey = "Orders.RecordAccessOverrideDecision";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
 // Orders.RecordProgress — Record Progress
 // ============================================================
 /**
@@ -1734,6 +1806,22 @@ export class OrdersRefundPaymentOperation extends BaseRemotableOperation<RefundP
     public readonly OperationKey = "Orders.RefundPayment";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "payments:refund";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.RequestAccessOverride — Request Access Override
+// ============================================================
+/**
+ * Request Access Override
+ * Request an exception to payment-gated access on one order: WaivePaymentHold lifts the hold on grants awaiting payment, DeferCutoff lifts the renewal cutoff. Requires a reason, a last day, and the MJ.BizApps.Orders.Access.Override authorization for that type. Writes a Requested override and raises its Tasks approval; access changes only once it is approved.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.RequestAccessOverride'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersRequestAccessOverrideOperation extends BaseRemotableOperation<RequestAccessOverrideInput, RequestAccessOverrideOutput> {
+    public readonly OperationKey = "Orders.RequestAccessOverride";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 

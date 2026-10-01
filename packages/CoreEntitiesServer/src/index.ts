@@ -195,6 +195,7 @@ export {
     FirstPaymentAmount,
     ReconcileGrantStatus,
     IsPaymentSuspension,
+    ReadTimeCutoffSuspension,
     PAYMENT_GATED_TIMINGS,
     ReduceGrantForReturn,
     EvaluateGrantAccess,
@@ -234,6 +235,7 @@ export {
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
 // Payment-gated access (bc-aidp-next-golive#223) — grant status kept in step with the order's cash.
 export {
+    LoadApprovedAccessOverrides,
     LoadOrderPaymentFacts,
     ReconcilePaymentGatedGrants,
     EnforcePaymentGatedAccess,
@@ -245,6 +247,30 @@ export type {
     EnforcePaymentGatedAccessInput,
     EnforcePaymentGatedAccessOutput,
 } from './PaymentGatedAccess.js';
+// Approved exceptions to payment-gated access (bizapps-orders#268).
+export {
+    ACCESS_OVERRIDE_AUTH,
+    ACCESS_OVERRIDE_TASK_TYPE_CODE,
+    ApplyAccessOverrideDecision,
+    RecordAccessOverrideDecision,
+    RequestAccessOverride,
+    UserMayRequestAccessOverride,
+} from './AccessOverride.js';
+export type {
+    AccessOverrideDecisionOutput,
+    RecordAccessOverrideDecisionInput,
+    RequestAccessOverrideInput,
+    RequestAccessOverrideOutput,
+} from './AccessOverride.js';
+export {
+    RecordAccessOverrideDecisionOperation,
+    RequestAccessOverrideOperation,
+    LoadAccessOverrideOperations,
+} from './AccessOverrideOperations.js';
+export {
+    EntitlementAccessOverrideEntityServer,
+    LoadEntitlementAccessOverrideEntityServer,
+} from './EntitlementAccessOverrideEntityServer.js';
 export { CheckEntitlementOperation, LoadCheckEntitlementOperation } from './CheckEntitlementOperation.js';
 export { ListEntitlementsOperation, LoadListEntitlementsOperation } from './ListEntitlementsOperation.js';
 export { CheckPersonEntitlement, ListPersonEntitlements, ASOF_FUTURE_TOLERANCE_MS } from './EntitlementRead.js';
@@ -595,6 +621,24 @@ export { EntitlementGrantClaimDriver, LoadEntitlementGrantClaimDriver } from './
 export { GuestOrderClaimDriver, LoadGuestOrderClaimDriver } from './GuestOrderClaimDriver.js';
 export { resolvePersonID } from './claimDriverHelpers.js';
 export { CheckoutSessionService } from './CheckoutSessionService.js';
+export {
+    CheckoutAccountStep,
+    EnsureCheckoutAccount,
+    SetCheckoutAccountPassword,
+    ResolveCheckoutAccountStep,
+    HasCheckoutAccountStep,
+    MAX_CHECKOUT_PASSWORD_ATTEMPTS,
+    MAX_CHECKOUT_PASSWORD_LENGTH,
+    DEFAULT_CHECKOUT_PASSWORD_WINDOW_MINUTES,
+    DEFAULT_CHECKOUT_ACCOUNT_HOST_TIMEOUT_SECONDS,
+    type CheckoutAccountContext,
+    type CheckoutAccountOutcome,
+    type CheckoutAccountHostOutcome,
+    type CheckoutAccountResult,
+    type CheckoutAccountStatus,
+    type CheckoutAccountResponse,
+    type CheckoutPasswordResult,
+} from './CheckoutAccountStep.js';
 export {
     CHECKOUT_CAPTURE_RETRY_WINDOW_MS,
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
