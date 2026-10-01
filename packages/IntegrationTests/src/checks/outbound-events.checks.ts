@@ -87,7 +87,7 @@ const eventsFor = (ctx: IntegrationCheckContext, orderID: string) =>
   TxQuery<EventRow>(
     ctx,
     `SELECT ID, EventType, EntitlementGrantID, PayloadJSON FROM ${ORDERS_SCHEMA}.OutboundEvent
-      WHERE OrderHeaderID = '${orderID}' ORDER BY EventType, OccurredAt`,
+      WHERE OrderHeaderID = '${orderID}' ORDER BY OccurredAt, EventType`,
   );
 
 const deliveriesFor = (ctx: IntegrationCheckContext, orderID: string) =>
