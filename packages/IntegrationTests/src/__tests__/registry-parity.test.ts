@@ -38,6 +38,7 @@ import '../checks/payments-rollups.checks.js';
 import '../checks/payment-ledger.checks.js';
 import '../checks/intercompany.checks.js';
 import '../checks/events.checks.js';
+import '../checks/orders-isa.checks.js';
 import '../checks/line-subscriber.checks.js';
 import '../checks/account-credit.checks.js';
 import '../checks/pricing.checks.js';
@@ -90,6 +91,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'payment-ledger': 12,
     intercompany: 14,
     events: 10,
+    'orders-isa': 10,
     'line-subscriber': 12,
     'account-credit': 11,
     pricing: 16,

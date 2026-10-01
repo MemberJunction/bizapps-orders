@@ -28,6 +28,7 @@
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
 import { randomUUID } from "node:crypto";
+import type { BaseEntity } from "@memberjunction/core";
 import {
   Assert,
   AssertEqual,
@@ -35,6 +36,7 @@ import {
   type IntegrationCheckContext,
   type NamedCheck,
 } from "@memberjunction/testing-integration";
+import type { mjBizAppsOrdersEventOrderLineEntity, OrderLineEntity } from "@mj-biz-apps/orders-entities";
 import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
@@ -42,12 +44,13 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  SameID,
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import { EVENT_ORDER_LINE_ENTITY, EVENT_PRODUCT_ENTITY } from "../entity-names.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { EVENT_ORDER_LINE_ENTITY, EVENT_PRODUCT_ENTITY, ORDER_LINE_ENTITY } from "../entity-names.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 
 const AR_CODE = "11201";
 const DEFERRED_CODE = "21301";
@@ -99,6 +102,17 @@ async function sellTickets(
   });
   Assert(result.Saved, `confirm failed: ${result.Message}`);
   return result;
+}
+
+/**
+ * A line's IsA child, narrowed to the Event Order Line by its metadata name — which is what an IsA
+ * subtype IS. Throws with what the link actually held, so a missing extension fails right here.
+ */
+function eventOrderLineOf(entity: BaseEntity | null, what: string): mjBizAppsOrdersEventOrderLineEntity {
+  const isEventOrderLine = (e: BaseEntity | null): e is mjBizAppsOrdersEventOrderLineEntity =>
+    (e?.EntityInfo?.Name ?? "").trim().toLowerCase() === EVENT_ORDER_LINE_ENTITY.toLowerCase();
+  if (isEventOrderLine(entity)) return entity;
+  throw new Error(`${what}: expected an Event Order Line, got '${entity?.EntityInfo?.Name ?? "nothing"}'`);
 }
 
 /** The stored service period of an order's first line. */
@@ -340,28 +354,43 @@ export const EventChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        const order = await sellTickets(ctx);
-        const line = await lineServicePeriod(ctx, order.Order.ID as string);
-
-        // The IsA child shares the parent's PK (BO-D37), which is what lets attendee data hang off
-        // a line without widening OrderLine for every product type that will never use it.
         const f = Fx();
-        await TxQuery(
-          ctx,
-          `INSERT INTO ${ORDERS_SCHEMA}.EventOrderLine (ID, PersonID, Comments)
-           VALUES ('${line.ID}','${f.Customers.PersonID}','Vegan meal requested')`,
+        // The attendee is taken AT THE SALE, the way checkout takes it: the ticket line gets its
+        // Event Order Line child before the confirm, and the one save writes both rows. The IsA child
+        // shares the parent's PK (BO-D37), which is what lets attendee data hang off a line without
+        // widening OrderLine for every product type that will never use it.
+        //
+        // This used to INSERT the row with raw SQL after the confirm, which proved the table and
+        // nothing else: no entity, no companion and no IsA chain ever touched it.
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2026-08-01T00:00:00Z"),
+          Lines: [{ ProductID: f.Products.EventTicket, Quantity: 1, UnitPrice: 500 }],
+        });
+        const ticket = built.Lines[0];
+        const attendee = eventOrderLineOf(
+          await ticket.EnsureISAChild(EVENT_ORDER_LINE_ENTITY),
+          "the ticket line's IsA child",
         );
-        const attendee = await TxOne<{ PersonID: string; Comments: string; ID: string }>(
-          ctx,
-          `SELECT ID, PersonID, Comments FROM ${ORDERS_SCHEMA}.EventOrderLine WHERE ID='${line.ID}'`,
+        attendee.PersonID = f.Customers.PersonID;
+        attendee.Comments = "Vegan meal requested";
+
+        built.Order.Status = "Confirmed";
+        Assert(
+          await built.Order.Save(),
+          `confirm failed: ${built.Order.LatestResult?.CompleteMessage ?? ""}`,
         );
-        AssertEqual(attendee.PersonID.toLowerCase(), f.Customers.PersonID.toLowerCase(), "attendee person stored against the line");
-        AssertEqual(attendee.Comments, "Vegan meal requested", "comments stored against the line");
-        AssertEqual(
-          attendee.ID.toLowerCase(),
-          line.ID.toLowerCase(),
-          "the extension shares the order line's primary key",
+
+        // Read back through the entity: load the LINE, and let IsA discovery find the extension —
+        // it looks the child up by the line's own key, so finding it at all is the shared PK.
+        const line = await ctx.Provider.GetEntityObject<OrderLineEntity>(ORDER_LINE_ENTITY, ctx.User);
+        Assert(await line.Load(ticket.ID), "the ticket line loads");
+        const stored = eventOrderLineOf(
+          line.Extension.Entity,
+          "the extension shares the order line's primary key, so loading the line finds it",
         );
+        Assert(SameID(stored.PersonID, f.Customers.PersonID), "attendee person stored against the line");
+        AssertEqual(stored.Comments, "Vegan meal requested", "comments stored against the line");
       }),
   },
   {
