@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609301000 — InvoiceLeadDays on ProductType, ProductCategory and Product
+-- V202610010100 — InvoiceLeadDays on ProductType, ProductCategory and Product
 --                 (orders #342)
 -- =============================================================================
 -- How many days before a line's service start its invoice goes out. An order
