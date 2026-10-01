@@ -6,7 +6,7 @@ import {
     mjBizAppsOrdersPromotionEntity,
 } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersPromotionFormComponent } from '../../generated/Entities/mjBizAppsOrdersPromotion/mjbizappsorderspromotion.form.component';
-import { FormatMoney } from '../../panels/money-format';
+import { FormatDate, FormatMoney } from '../../panels/money-format';
 
 /**
  * Custom Promotion & Campaign form component overriding the CodeGen-generated form.
@@ -81,10 +81,10 @@ export class BizAppsPromotionFormComponent extends mjBizAppsOrdersPromotionFormC
     public get FormattedScheduleWindow(): string {
         if (!this.record?.EffectiveFrom && !this.record?.EffectiveTo) return 'Continuous Campaign';
         const fromStr = this.record.EffectiveFrom
-            ? new Date(this.record.EffectiveFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            ? FormatDate(this.record.EffectiveFrom)
             : 'Immediate';
         const toStr = this.record.EffectiveTo
-            ? new Date(this.record.EffectiveTo).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            ? FormatDate(this.record.EffectiveTo)
             : 'Open-ended';
         return `${fromStr} – ${toStr}`;
     }

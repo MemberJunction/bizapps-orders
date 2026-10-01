@@ -7,6 +7,7 @@ import { UserInfoEngine } from '@memberjunction/core-entities';
 import { inject } from '@angular/core';
 import type { FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { DispatchFormNavigation } from '../form-navigation-helper';
+import { FormatDate } from '../../panels/money-format';
 import {
     mjBizAppsOrdersSubscriptionEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
@@ -239,15 +240,15 @@ export class BizAppsSubscriptionFormComponent extends mjBizAppsOrdersSubscriptio
      */
     public get FormattedCoverageWindow(): string {
         if (!this.record?.StartDate && !this.record?.EndDate) return '—';
-        const startStr = this.record.StartDate ? new Date(this.record.StartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
-        const endStr = this.record.EndDate ? new Date(this.record.EndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Indefinite';
+        const startStr = this.record.StartDate ? FormatDate(this.record.StartDate) : '—';
+        const endStr = this.record.EndDate ? FormatDate(this.record.EndDate) : 'Indefinite';
         return `${startStr} – ${endStr}`;
     }
 
     public FormatDateRange(start: Date | string | null | undefined, end: Date | string | null | undefined): string {
         if (!start && !end) return '—';
-        const startStr = start ? new Date(start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
-        const endStr = end ? new Date(end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Open-ended';
+        const startStr = start ? FormatDate(start) : '—';
+        const endStr = end ? FormatDate(end) : 'Open-ended';
         return `${startStr} – ${endStr}`;
     }
 

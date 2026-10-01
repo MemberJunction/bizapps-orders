@@ -318,7 +318,7 @@ export async function GetOrders(
     options: MJOGetOrdersOptions = {},
 ): Promise<mjBizAppsOrdersOrderHeaderEntity[]> {
     const filters: string[] = [];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = Today();
 
     switch (options.Preset) {
         case 'overdue':

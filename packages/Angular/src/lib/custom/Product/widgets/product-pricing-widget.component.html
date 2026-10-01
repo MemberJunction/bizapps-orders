@@ -195,7 +195,7 @@
                                                             <span>{{ row.Record.FeeType }}</span>
                                                         }
                                                         @if (row.Record.EffectiveTo) {
-                                                            <span>Until {{ row.Record.EffectiveTo | date:'mediumDate' }}</span>
+                                                            <span>Until {{ FormatDate(row.Record.EffectiveTo) }}</span>
                                                         }
                                                     </div>
                                                 }

@@ -10,6 +10,7 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 import {
     IsBefore,
     Today,
+    ToISODate,
     type mjBizAppsOrdersChargeTypeEntity,
     type mjBizAppsOrdersCustomerTaxExemptionEntity,
     type mjBizAppsOrdersProductEntity,
@@ -510,10 +511,10 @@ export class MJOChargesTaxPageComponent implements OnInit {
         Category: string;
         Rate: string;
     }> {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const live = (rate: Record<string, unknown>): boolean => {
-            const from = rate['EffectiveFrom'] ? String(rate['EffectiveFrom']).slice(0, 10) : null;
-            const to = rate['EffectiveTo'] ? String(rate['EffectiveTo']).slice(0, 10) : null;
+            const from = rate['EffectiveFrom'] ? ToISODate(rate['EffectiveFrom']) : null;
+            const to = rate['EffectiveTo'] ? ToISODate(rate['EffectiveTo']) : null;
             return (!from || from <= today) && (!to || to >= today);
         };
 

@@ -15,7 +15,7 @@
  */
 
 import { Pipe, PipeTransform } from '@angular/core';
-import type { DateCell } from '@mj-biz-apps/orders-entities';
+import { LocalDay, ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
 
 /** How a negative amount is written. */
 export type MJOMoneySign =
@@ -242,16 +242,35 @@ export function DaysSince(
  * The time-of-day is dropped on purpose: everything these helpers answer — what day is this, how
  * many days ago was it — is a question about calendar days, and keeping the clock in would make
  * "yesterday at 23:00" and "today at 01:00" two days apart in one timezone and one in another.
+ *
+ * The local midnight is only a carrier for `toLocaleDateString` and day arithmetic; the DAY it
+ * carries is decided by {@link calendarDayOf}, never by the browser's own zone.
  */
 function toLocalDate(value: Date | string | null | undefined): Date | null {
     if (!value) return null;
-    if (value instanceof Date) {
-        if (Number.isNaN(value.getTime())) return null;
-        return new Date(value.getFullYear(), value.getMonth(), value.getDate());
-    }
-    const [y, m, d] = String(value).split('T')[0].split('-').map(Number);
+    const day = value instanceof Date ? calendarDayOf(value) : String(value).split('T')[0];
+    if (!day) return null;
+    const [y, m, d] = day.split('-').map(Number);
     if (!y || !m || !d) return null;
     return new Date(y, m - 1, d);
+}
+
+/**
+ * The calendar day a `Date` names, as `YYYY-MM-DD`, or `null` when it is invalid.
+ *
+ * A `date` column comes off an entity as midnight UTC on its day. Reading that with LOCAL getters
+ * — what this file used to do — gives the day before anywhere west of Greenwich: a payment dated
+ * Oct 1 read "Sep 30" in its own header for every user in the Americas (golive #168). So a value at
+ * exactly midnight UTC is read by its UTC parts, as {@link ToISODate} does for every other cell.
+ *
+ * Anything else is a real instant (a `datetimeoffset`, or a `Date` built in code), and its day is
+ * the BUSINESS day it fell on — not the UTC day, and not the viewer's.
+ */
+function calendarDayOf(date: Date): string | null {
+    if (Number.isNaN(date.getTime())) return null;
+    const isUtcMidnight =
+        date.getUTCHours() === 0 && date.getUTCMinutes() === 0 && date.getUTCSeconds() === 0 && date.getUTCMilliseconds() === 0;
+    return isUtcMidnight ? ToISODate(date) : LocalDay(date);
 }
 
 /** Initials for an avatar, capped at two letters. */

@@ -11,7 +11,7 @@ import {
     MJCardFooterDirective,
 } from '@memberjunction/ng-ui-components';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { FormatMoney } from './money-format';
+import { FormatDate, FormatMoney } from './money-format';
 import type { PartyKind } from '../form-panels/party-order-stats';
 
 interface OrderRow {
@@ -1050,10 +1050,7 @@ export class PartyOrdersOverviewComponent implements OnInit {
     }
 
     public FormatDate(d: Date | string | null | undefined): string {
-        if (!d) return '—';
-        const date = d instanceof Date ? d : new Date(d);
-        if (isNaN(date.getTime())) return '—';
-        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        return FormatDate(d);
     }
 
     public GetPaymentStatus(ord: OrderRow): string {

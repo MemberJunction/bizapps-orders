@@ -1,4 +1,4 @@
-import { FormatMoney } from '../panels/money-format';
+import { FormatDate, FormatMoney } from '../panels/money-format';
 import type { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import type { mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 
@@ -110,11 +110,8 @@ export function FormatCoverageWindow(
 
 export function FormatShortDate(value: Date | string | null | undefined): string {
     if (!value) return '';
-    return new Date(value).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-    });
+    const label = FormatDate(value);
+    return label === '—' ? '' : label;
 }
 
 export function TermColorClass(index: number): string {

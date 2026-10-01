@@ -5,7 +5,8 @@
  * gotten wrong, shows a user the wrong number or the wrong day. The date test in
  * particular guards a bug this codebase has already hit once at the engine level.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
 import {
     DaysSince,
     FormatCompact,
@@ -173,6 +174,61 @@ describe('DaysSince', () => {
 
     it('handles nothing', () => {
         expect(DaysSince(null, '2026-07-29')).toBe(0);
+    });
+});
+
+/**
+ * A `Date` off an entity, as opposed to the ISO strings above (golive #168).
+ *
+ * A `date` column comes back from the driver as midnight UTC on its day. Every test above passes a
+ * string, so the `Date` branch went untested — and it read LOCAL parts, which put a payment dated
+ * Oct 1 at "Sep 30" in its own header for every user in the Americas.
+ *
+ * The machine zone is pinned WEST of Greenwich, because the question is UTC parts versus local parts
+ * of a UTC-midnight value: in UTC or anywhere east, both readings agree and these cannot fail.
+ */
+describe('FormatDate and DaysSince given a Date', () => {
+    const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
+    const original = { rows: engine._configurations, loaded: engine._loaded, tz: process.env.TZ };
+    const central = (): void => {
+        engine._configurations = [{ FeatureKey: 'BizApps.BusinessTimeZone', Value: '{"iana":"America/Chicago","sql":"Central Standard Time"}', DefaultValue: '{"iana":"UTC","sql":"UTC"}' }];
+        engine._loaded = true;
+    };
+    afterEach(() => {
+        engine._configurations = original.rows;
+        engine._loaded = original.loaded;
+        process.env.TZ = original.tz;
+    });
+
+    /** A SQL `date` column as the driver materialises it: midnight UTC on that calendar day. */
+    const driverDate = (iso: string): Date => new Date(`${iso}T00:00:00.000Z`);
+
+    it('reads a date column as its own day in a browser west of Greenwich', () => {
+        process.env.TZ = 'America/Chicago';
+        expect(FormatDate(driverDate('2026-10-01'))).toBe('Oct 1, 2026');
+        expect(FormatDate(driverDate('2026-10-01'), { Short: true })).toBe('Oct 1');
+    });
+
+    it('agrees with the string form of the same cell', () => {
+        process.env.TZ = 'America/Los_Angeles';
+        expect(FormatDate(driverDate('2026-01-01'))).toBe(FormatDate('2026-01-01'));
+    });
+
+    it('counts days from a date column without losing one', () => {
+        process.env.TZ = 'America/Chicago';
+        expect(DaysSince(driverDate('2026-09-30'), '2026-10-01')).toBe(1);
+        expect(DaysSince(driverDate('2026-10-01'), driverDate('2026-10-01'))).toBe(0);
+    });
+
+    it('reads a real instant as the BUSINESS day it fell on, not the UTC day', () => {
+        // 9:30 PM Central on Sep 30 is already Oct 1 in UTC.
+        process.env.TZ = 'Asia/Kolkata';
+        central();
+        expect(FormatDate(new Date('2026-10-01T02:30:00.000Z'))).toBe('Sep 30, 2026');
+    });
+
+    it('handles an invalid Date', () => {
+        expect(FormatDate(new Date('garbage'))).toBe('—');
     });
 });
 

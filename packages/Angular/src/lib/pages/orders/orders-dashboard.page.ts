@@ -10,7 +10,7 @@ import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { GetOrders } from '../../data/orders-queries';
-import { OverdueFilter, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OverdueFilter, Today, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
 import { LoadOrdersWorkingView, NewPresetView } from '../../data/order-views';
@@ -598,7 +598,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         try {
             this.WorkingView = await LoadOrdersWorkingView();
             if (this.OrderEntityInfo) {
-                const today = new Date().toISOString().slice(0, 10);
+                const today = Today();
                 this.AgingOverdueView = await NewPresetView(this.OrderEntityInfo, 'Overdue Collections', OverdueFilter(today), this.WorkingView.GridState);
             }
         } catch (e) {
@@ -616,7 +616,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public async OpenExplorerPreset(preset: string): Promise<void> {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         let whereClause: string | null = null;
         let presetName = 'All Orders';
         switch (preset) {
@@ -752,7 +752,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get WorthALook(): MJOAttentionItem[] {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const items: MJOAttentionItem[] = [];
 
         const worst = this.overdue
@@ -816,7 +816,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get overdue(): mjBizAppsOrdersOrderHeaderEntity[] {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         return this.owing.filter((o) => o.DueDate && DaysSince(o.DueDate, today) > 0);
     }
 
@@ -851,13 +851,13 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get AgingCurrentDisplay(): string {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const current = this.owing.filter((o) => !o.DueDate || DaysSince(o.DueDate, today) <= 30);
         return FormatMoney(current.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
     }
 
     public get Aging30Display(): string {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const b30 = this.owing.filter((o) => {
             if (!o.DueDate) return false;
             const days = DaysSince(o.DueDate, today);
@@ -867,7 +867,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get Aging60Display(): string {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const b60 = this.owing.filter((o) => {
             if (!o.DueDate) return false;
             const days = DaysSince(o.DueDate, today);
@@ -877,7 +877,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get Aging90Display(): string {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const b90 = this.owing.filter((o) => {
             if (!o.DueDate) return false;
             const days = DaysSince(o.DueDate, today);

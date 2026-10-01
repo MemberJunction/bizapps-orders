@@ -10,7 +10,7 @@ import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
-import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { Today, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersPaymentHeaderEntity, type mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 
 /** A customer with a balance, as the left rail lists them. */
 interface MJOCustomerSummary {
@@ -530,13 +530,13 @@ export class MJOCustomerARPageComponent implements OnInit {
 
     private ageLabel(row: mjBizAppsOrdersOrderHeaderEntity): string {
         if (!row.DueDate || (row.Balance ?? 0) <= 0) return 'Current';
-        const late = DaysSince(row.DueDate, new Date().toISOString().slice(0, 10));
+        const late = DaysSince(row.DueDate, Today());
         return late > 0 ? `${late}d` : 'Current';
     }
 
     private ageClass(row: mjBizAppsOrdersOrderHeaderEntity): string {
         if (!row.DueDate || (row.Balance ?? 0) <= 0) return '';
-        const late = DaysSince(row.DueDate, new Date().toISOString().slice(0, 10));
+        const late = DaysSince(row.DueDate, Today());
         if (late > 60) return 'mj-chip--error';
         if (late > 0) return 'mj-chip--warning';
         return '';
@@ -553,7 +553,7 @@ export class MJOCustomerARPageComponent implements OnInit {
         const open = orders.filter((o) => !['Draft', 'Quoted', 'Voided'].includes(o.Status) && (o.Balance ?? 0) !== 0);
 
         const byCustomer = new Map<string, MJOCustomerSummary>();
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
 
         for (const order of open) {
             const key = (order['BillToOrganizationID'] as string) ?? (order['BillToPersonID'] as string) ?? 'unknown';

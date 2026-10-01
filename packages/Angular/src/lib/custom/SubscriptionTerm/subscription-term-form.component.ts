@@ -7,6 +7,7 @@ import { UserInfoEngine } from '@memberjunction/core-entities';
 import { inject } from '@angular/core';
 import type { FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { DispatchFormNavigation } from '../form-navigation-helper';
+import { FormatDate } from '../../panels/money-format';
 import {
     mjBizAppsOrdersSubscriptionTermEntity,
 } from '@mj-biz-apps/orders-entities';
@@ -159,8 +160,8 @@ export class BizAppsSubscriptionTermFormComponent extends mjBizAppsOrdersSubscri
      */
     public get FormattedCoverageWindow(): string {
         if (!this.record?.StartDate && !this.record?.EndDate) return '—';
-        const startStr = this.record.StartDate ? new Date(this.record.StartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
-        const endStr = this.record.EndDate ? new Date(this.record.EndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Indefinite';
+        const startStr = this.record.StartDate ? FormatDate(this.record.StartDate) : '—';
+        const endStr = this.record.EndDate ? FormatDate(this.record.EndDate) : 'Indefinite';
         return `${startStr} – ${endStr}`;
     }
 

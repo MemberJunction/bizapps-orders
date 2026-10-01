@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { DispatchFormNavigation } from '../form-navigation-helper';
+import { FormatDate } from '../../panels/money-format';
 import {
     mjBizAppsOrdersPriceListEntity,
 } from '@mj-biz-apps/orders-entities';
@@ -80,10 +81,10 @@ export class BizAppsPriceListFormComponent extends mjBizAppsOrdersPriceListFormC
     public get FormattedValidityWindow(): string {
         if (!this.record?.EffectiveFrom && !this.record?.EffectiveTo) return 'Perpetual / Ongoing';
         const fromStr = this.record.EffectiveFrom
-            ? new Date(this.record.EffectiveFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            ? FormatDate(this.record.EffectiveFrom)
             : 'Immediate';
         const toStr = this.record.EffectiveTo
-            ? new Date(this.record.EffectiveTo).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            ? FormatDate(this.record.EffectiveTo)
             : 'Ongoing';
         return `${fromStr} – ${toStr}`;
     }
