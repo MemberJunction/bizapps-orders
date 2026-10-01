@@ -31,11 +31,15 @@ const user = { ID: 'user-1' } as never;
 
 type Row = Record<string, unknown>;
 
-/** Answers each RunView by entity: concessions and persisted lines. */
-function database(concessions: Row[], lines: Row[]) {
+/** Answers each RunView by entity: concessions, sales authorities and persisted lines. */
+function database(concessions: Row[], lines: Row[], authorities: Row[] = []) {
     mockRunView.mockImplementation(async (params: { EntityName: string }) => ({
         Success: true,
-        Results: params.EntityName.endsWith('Order Concessions') ? concessions : lines,
+        Results: params.EntityName.endsWith('Order Concessions')
+            ? concessions
+            : params.EntityName.endsWith('Sales Authorities')
+              ? authorities
+              : lines,
     }));
 }
 
@@ -120,5 +124,82 @@ describe('FindUnapprovedConcessions — line prices', () => {
         mockStanding.mockResolvedValue({ EngineUnitPrice: 60, IsEnginePrice: true, IsNamedListPick: false });
 
         expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+});
+
+/**
+ * A concession's share of the order is measured when it is recorded (#306). A draft that loses lines
+ * afterwards gives away a larger share than the approval on the rep's own authority covered, so the
+ * confirm gate measures the order again.
+ */
+describe('FindUnapprovedConcessions — share of the order', () => {
+    const AUTHORITY_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3310';
+    const RULE_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3311';
+    const fivePercent = [{ MaxConcessionPctOfContract: 0.05 }];
+
+    /** 600 of added seats, approved on the rep's own authority when the order was 12,000. */
+    const onAuthority = {
+        Status: 'Approved',
+        DeliveryForm: 'Seats',
+        ReasonCategory: 'Retention',
+        ComputedValue: 600,
+        OrderLineID: LINE_ID,
+        AuthorizedBySalesAuthorityID: AUTHORITY_ID,
+        SalesRuleID: null,
+        CumulativeShare: 0.05 - 0.0001,
+    };
+    const lineAt = (net: number) => ({ ...apiLine, UnitPrice: net, Quantity: 1, LineTotalNet: net });
+
+    beforeEach(() => mockStanding.mockResolvedValue({ EngineUnitPrice: 0, IsEnginePrice: true, IsNamedListPick: false }));
+
+    it('holds the confirm once the order has shrunk and the share reaches the limit', async () => {
+        database([onAuthority], [lineAt(8000)], fivePercent);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([
+            expect.stringMatching(/7\.5% of its net total, at or above the 5\.0% limit \(600\.00 on a net total of 8000\.00\).*Withdraw them and record them again/),
+        ]);
+    });
+
+    it('passes while the share stays under the limit', async () => {
+        database([onAuthority], [lineAt(20000)], fivePercent);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('measures the lines the caller holds instead of their persisted copies', async () => {
+        database([onAuthority], [lineAt(20000)], fivePercent);
+
+        const held = { ...lineAt(8000), PriceStated: true };
+        expect(await FindUnapprovedConcessions(ORDER_ID, [held], true, provider, user)).toHaveLength(1);
+    });
+
+    it('leaves reversal lines out of the net total', async () => {
+        const reversal = { ...lineAt(-12000), ID: '3f2504e0-4f89-41d3-9a0c-0305e82c3312', Quantity: -1, ReversesOrderLineID: LINE_ID };
+        database([onAuthority], [lineAt(20000), reversal], fivePercent);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('is covered by an approver who decided a concession at this share or higher', async () => {
+        const decided = { ...onAuthority, ComputedValue: 0, AuthorizedBySalesAuthorityID: null, SalesRuleID: RULE_ID, CumulativeShare: 0.08 };
+        database([onAuthority, decided], [lineAt(8000)], fivePercent);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('does not measure an order whose concessions were all decided by an approver', async () => {
+        const decided = { ...onAuthority, AuthorizedBySalesAuthorityID: null, SalesRuleID: RULE_ID };
+        database([decided], [lineAt(100)], fivePercent);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+        expect(mockRunView.mock.calls.some((c) => (c[0] as { EntityName: string }).EntityName.endsWith('Sales Authorities'))).toBe(false);
+    });
+
+    it('does not measure a confirmed order', async () => {
+        database([onAuthority], [lineAt(100)], fivePercent);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], false, provider, user)).toEqual([]);
     });
 });

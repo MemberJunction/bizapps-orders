@@ -19,6 +19,12 @@
  * one. Absence is not permission; it is the same rule `AuthorizeManualDiscount` applies to a user
  * with no `SalesAuthority` row.
  *
+ * SHARE OF THE ORDER. A currency limit treats a small order and a large one alike, so the same
+ * concession can be trivial on one and most of the other. `MaxConcessionPctOfContract` limits every
+ * concession on the order that is not Rejected, together, as a share of the order's net total. It
+ * is cumulative so that splitting one concession into several cannot keep each under the limit.
+ * An order with nothing to measure against (a net total of zero) breaches a limit that is set.
+ *
  * CONNECTS TO:
  *   CALLER: ./PromotionEngine.ts (AuthorizeManualDiscount — the absolute-value trigger)
  *   CALLER: OrderConcessionEntityServer, OrderEntityServer (confirm gate) in CoreEntitiesServer
@@ -77,6 +83,7 @@ export interface ConcessionAuthority {
     MaxDiscountPct: number | null;
     MaxConcessionValue: number | null;
     MaxTermExtensionDays: number | null;
+    MaxConcessionPctOfContract: number | null;
 }
 
 export interface ConcessionAssessment {
@@ -93,6 +100,16 @@ export function InclusiveDays(start: Date, end: Date): number {
 /** Days an end date moves later by. Zero or negative when it does not move later. */
 export function DaysAdded(previousEnd: Date, newEnd: Date): number {
     return Math.round((utcDay(newEnd) - utcDay(previousEnd)) / DAY_MS);
+}
+
+/**
+ * Concessions as a fraction of the order they are given on. Null when the order's net total is not
+ * positive, since there is then nothing to measure a share against.
+ */
+export function ConcessionShare(totalConcessionValue: number, orderNetTotal: number): number | null {
+    const net = Number(orderNetTotal);
+    if (!(net > 0)) return null;
+    return Math.max(0, Number(totalConcessionValue)) / net;
 }
 
 /** One figure for a concession, whatever form it was delivered in. */
@@ -124,12 +141,16 @@ export function ConcessionValue(facts: ConcessionFacts): ConcessionValuation {
 /**
  * Whether a rep's authority covers a concession. Every limit is checked and every breach reported,
  * so the person asking for approval sees all of what the approver will be deciding.
+ *
+ * @param cumulativeShare  the order's concessions, this one included, from {@link ConcessionShare}.
+ *   Omit it where no order is measured (a manual discount); null means the order has no net total.
  */
 export function AssessConcession(
     form: ConcessionDeliveryForm,
     valuation: ConcessionValuation,
     authority: ConcessionAuthority | null,
     addedDays?: number | null,
+    cumulativeShare?: number | null,
 ): ConcessionAssessment {
     if (!authority) {
         return { WithinAuthority: false, Breaches: ['the requester has no active SalesAuthority'] };
@@ -164,7 +185,28 @@ export function AssessConcession(
         }
     }
 
+    const shareBreach = ShareBreach(cumulativeShare, authority.MaxConcessionPctOfContract);
+    if (shareBreach) breaches.push(shareBreach);
+
     return { WithinAuthority: breaches.length === 0, Breaches: breaches };
+}
+
+/**
+ * The breach, if any, of a limit on the order's concessions as a share of its net total. At or
+ * above the limit breaches, as the policy reads. Null when no limit is set or the share is under it.
+ *
+ * @param share  undefined when nothing was measured, which no limit can breach.
+ */
+export function ShareBreach(share: number | null | undefined, limit: number | null | undefined): string | null {
+    if (share === undefined || limit == null) return null;
+    const cap = Number(limit);
+    if (share === null) {
+        return `the order has no net total to measure its concessions against the ${pct(cap)} share limit`;
+    }
+    if (share >= cap - 1e-9) {
+        return `concessions on the order come to ${pct(share)} of its net total, at or above the ${pct(cap)} limit`;
+    }
+    return null;
 }
 
 const DAY_MS = 86_400_000;

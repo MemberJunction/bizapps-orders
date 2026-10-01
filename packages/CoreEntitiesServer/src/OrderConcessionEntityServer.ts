@@ -3,7 +3,8 @@
  *
  * RECORDING ONE. The requester states what was given — the line, or the term and the days added — and
  * why. Everything else is derived here and whatever the caller sent is overwritten: the order it
- * belongs to, its value at the arrangement's own rate, the requester, and its status. Within the
+ * belongs to, its value at the arrangement's own rate, the order's net total and the share of it that
+ * the order's concessions now come to, the requester, and its status. Within the
  * requester's `SalesAuthority` it is Approved on save; outside it, it is Pending, stamped with the
  * active ConcessionLimit rule whose role decides it. A requester who holds that role approves their
  * own, and the record shows that it went through the rule rather than through their authority.
@@ -15,6 +16,11 @@
  * ITS APPROVERS ARE TOLD (golive #274). A Pending concession raises its own approval task in the tasks
  * app, assigned to the rule's role holders, in the same transaction as the row. Deciding it on this record,
  * or withdrawing it, closes that task.
+ *
+ * WITHDRAWING ONE. A Pending concession can be withdrawn, and so can one approved on the requester's
+ * own authority while its order is not confirmed. No approver decided the second kind, and the
+ * customer is not yet committed to it; withdrawing and recording it again is how it is measured
+ * against a draft that has since changed (the confirm gate's share check).
  *
  * CONNECTS TO:
  *   PURE:   @mj-biz-apps/orders-entities ConcessionBehavior
@@ -37,8 +43,10 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import {
     AssessConcession,
+    ConcessionShare,
     ConcessionValue,
     InclusiveDays,
+    IsEditable,
     UserHoldsRole,
     mjBizAppsOrdersOrderConcessionEntity,
     type ConcessionValuation,
@@ -50,12 +58,19 @@ import {
     UnlinkConcession,
     type ApprovalTaskContext,
 } from './ConcessionApprovalTask.js';
-import { FindConcessionLimitRule, LinePriceConcessionFor, LoadConcessionAuthority } from './ConcessionGate.js';
+import {
+    FindConcessionLimitRule,
+    LinePriceConcessionFor,
+    LoadConcessionAuthority,
+    OrderConcessionTotal,
+    OrderNetTotal,
+} from './ConcessionGate.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
+const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 
 /** The columns a requester authors. Once recorded, none of them change. */
 const AUTHORED_FIELDS = [
@@ -68,6 +83,8 @@ const AUTHORED_FIELDS = [
     'AddedDays',
     'AddedQuantity',
     'ComputedValue',
+    'OrderNetTotal',
+    'CumulativeShare',
     'RequestedByUserID',
     'AuthorizedBySalesAuthorityID',
     'SalesRuleID',
@@ -142,11 +159,12 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     public WithdrawWithDraftLine = false;
 
     public override async Delete(options?: EntityDeleteOptions): Promise<boolean> {
-        if (this.Status !== 'Pending' && !this.WithdrawWithDraftLine) {
+        if (this.Status !== 'Pending' && !this.WithdrawWithDraftLine && !(await this.approvedOnAuthorityInDraft())) {
             this.RegisterResultHistoryEntry(
                 this.buildRejection(
                     `This concession is ${this.Status}. A decided concession is the record of that decision and ` +
-                        `cannot be deleted; only a Pending one can be withdrawn.`,
+                        `cannot be deleted; only a Pending one, or one approved on the requester's own authority ` +
+                        `while its order is not confirmed, can be withdrawn.`,
                     'delete',
                 ),
             );
@@ -197,6 +215,15 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
     }
 
+    /** Approved on the requester's own authority, with no approver's decision, on an order not yet booked. */
+    private async approvedOnAuthorityInDraft(): Promise<boolean> {
+        if (this.Status !== 'Approved' || this.SalesRuleID || !this.AuthorizedBySalesAuthorityID) return false;
+        const user = this.ContextCurrentUser;
+        if (!user) return false;
+        const order = await this.loadRow<{ Status: string }>(ORDER_HEADER_ENTITY, this.OrderHeaderID, ['Status'], user);
+        return !!order && IsEditable(order.Status);
+    }
+
     // ─── Recording ────────────────────────────────────────────────────────────
 
     private async prepareNew(): Promise<string | null> {
@@ -207,8 +234,15 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const valued = await this.valueByForm(user);
         if (typeof valued === 'string') return valued;
 
+        // Measured against the order as it stands, with every concession on it that is not Rejected.
+        const net = await OrderNetTotal(this.OrderHeaderID, [], this.provider(), user);
+        const others = await OrderConcessionTotal(this.OrderHeaderID, this.provider(), user);
+        const share = ConcessionShare(others + valued.Value, net);
+
         this.RequestedByUserID = user.ID;
         this.ComputedValue = valued.Value;
+        this.OrderNetTotal = net;
+        this.CumulativeShare = share === null ? null : Math.round(share * 1e4) / 1e4;
         this.AuthorizedBySalesAuthorityID = null;
         this.SalesRuleID = null;
         this.DecidedByUserID = null;
@@ -216,7 +250,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.approvingRole = null;
 
         const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
-        const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.AddedDays);
+        const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.AddedDays, share);
         if (assessment.WithinAuthority && authority) {
             this.AuthorizedBySalesAuthorityID = authority.ID;
             this.decide('Approved', user);

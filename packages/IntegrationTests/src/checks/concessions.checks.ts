@@ -14,13 +14,19 @@
  *   CS9       a line priced through the API without PriceOverridden still holds the confirm
  *   CS10      removing a draft line removes its concession, even an approved one
  *   CS11      a bundle's components are priced at their allocation, which is not a concession
+ *   CS12      a Duration concession at the share-of-order limit escalates; one just below it does not
+ *   CS13      the same value escalates on a small order and passes on a large one (Seats)
+ *   CS14      Price and Scope concessions are held to the share limit too
+ *   CS15      the share counts every concession on the order, so splitting one does not get under it
+ *   CS16      a draft that shrinks after an approval on authority holds the confirm until the
+ *             concession is withdrawn and recorded again
  *
  * A Pending concession is routed to its approvers through the tasks app (golive #274):
  *
- *   CS12      one approval task per concession, titled with it, assigned to the role holders' person records
- *   CS13      an approval recorded on a task decides only that task's concession, as its decider
- *   CS14      a decision the concession refuses puts it back in front of its approvers on a fresh task
- *   CS15      withdrawing a concession cancels its task; deciding one on its record completes its task
+ *   CS17      one approval task per concession, titled with it, assigned to the role holders' person records
+ *   CS18      an approval recorded on a task decides only that task's concession, as its decider
+ *   CS19      a decision the concession refuses puts it back in front of its approvers on a fresh task
+ *   CS20      withdrawing a concession cancels its task; deciding one on its record completes its task
  *
  * CONNECTS TO:
  *   CODE: ConcessionBehavior · ConcessionGate · OrderConcessionEntityServer · SubscriptionTermEntity
@@ -38,6 +44,7 @@ import { BaseEntity, Metadata } from "@memberjunction/core";
 import { FindUnapprovedConcessions } from "@mj-biz-apps/orders-core-entities-server";
 import type {
   mjBizAppsOrdersOrderConcessionEntity,
+  mjBizAppsOrdersOrderLineEntity,
   mjBizAppsOrdersSalesRuleEntity,
   mjBizAppsOrdersSubscriptionTermEntity,
 } from "@mj-biz-apps/orders-entities";
@@ -55,6 +62,7 @@ import {
 } from "../fixture.js";
 import {
   ORDER_CONCESSION_ENTITY,
+  ORDER_LINE_ENTITY,
   SALES_AUTHORITY_ENTITY,
   SALES_RULE_ENTITY,
   PERSON_ENTITY,
@@ -67,6 +75,7 @@ interface Limits {
   maxPct?: number | null;
   maxValue?: number | null;
   maxDays?: number | null;
+  maxShare?: number | null;
 }
 
 /** Grant the current user a SalesAuthority with the given limits. */
@@ -76,6 +85,7 @@ async function grantAuthority(ctx: IntegrationCheckContext, limits: Limits): Pro
     MaxDiscountPct: limits.maxPct ?? null,
     MaxConcessionValue: limits.maxValue ?? null,
     MaxTermExtensionDays: limits.maxDays ?? null,
+    MaxConcessionPctOfContract: limits.maxShare ?? null,
     IsActive: 1,
   });
 }
@@ -539,7 +549,173 @@ export const ConcessionChecks: NamedCheck[] = [
   },
   {
     Id: "concessions.CS12",
-    Name: "CS12: each Pending concession raises its own approval task, assigned to the role holders' person records",
+    Name: "CS12: a Duration concession at the share-of-order limit escalates; one a day short does not",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Two 1200 annual orders, so neither concession counts toward the other. 5% of 1200 is 60,
+        // which a 365-day term reaches at 19 days (62.47) and not at 18 (59.18).
+        const at = await bookTerm(ctx, 1200);
+        const under = await bookTerm(ctx, 1200);
+        await grantAuthority(ctx, { maxValue: 100000, maxDays: 366, maxShare: 0.05 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+        const dAt = Math.ceil(0.05 * termDays(at.Term));
+
+        const u = await recordConcession(ctx, { DeliveryForm: "Duration", SubscriptionTermID: under.Term.ID, AddedDays: dAt - 1 });
+        Assert(u.Saved, `recording failed: ${u.Message}`);
+        AssertEqual(u.Entity.Status, "Approved", `${dAt - 1} days is under 5% of the order`);
+        AssertEqual(Number(u.Entity.OrderNetTotal), 1200, "measured against the order's net total");
+
+        const a = await recordConcession(ctx, { DeliveryForm: "Duration", SubscriptionTermID: at.Term.ID, AddedDays: dAt });
+        Assert(a.Saved, `recording failed: ${a.Message}`);
+        AssertEqual(a.Entity.Status, "Pending", `${dAt} days reaches 5% of the order`);
+        const share = Math.round((Number(a.Entity.ComputedValue) / 1200) * 1e4) / 1e4;
+        AssertEqual(Number(a.Entity.CumulativeShare), share, "the share it was judged on is recorded");
+      }),
+  },
+  {
+    Id: "concessions.CS13",
+    Name: "CS13: the same concession value escalates on a small order and passes on a large one",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxValue: 1000, maxShare: 0.05 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const small = await BuildOrder(ctx.User, { CompanyID: f.CoA.ID, Lines: [{ ProductID: f.Products.WidgetA, Quantity: 5 }] });
+        Assert(await small.Order.Save(), `the small draft did not save: ${small.Order.LatestResult?.CompleteMessage}`);
+        const large = await BuildOrder(ctx.User, { CompanyID: f.CoA.ID, Lines: [{ ProductID: f.Products.WidgetA, Quantity: 100 }] });
+        Assert(await large.Order.Save(), `the large draft did not save: ${large.Order.LatestResult?.CompleteMessage}`);
+
+        // Three free seats at 100: 300, inside the 1000 value limit either way.
+        const s = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: small.Lines[0].ID, AddedQuantity: 3 });
+        Assert(s.Saved, `recording failed: ${s.Message}`);
+        AssertEqual(s.Entity.Status, "Pending", "300 is 60% of a 500 order");
+        AssertEqual(Number(s.Entity.CumulativeShare), 0.6, "300 of 500");
+
+        const l = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: large.Lines[0].ID, AddedQuantity: 3 });
+        Assert(l.Saved, `recording failed: ${l.Message}`);
+        AssertEqual(l.Entity.Status, "Approved", "300 is 3% of a 10000 order");
+        AssertEqual(Number(l.Entity.CumulativeShare), 0.03, "300 of 10000");
+      }),
+  },
+  {
+    Id: "concessions.CS14",
+    Name: "CS14: Price and Scope concessions are held to the share-of-order limit",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await CreateProductPrice(ctx, f.Products.WidgetB, 100);
+        await grantAuthority(ctx, { maxPct: 1, maxValue: 1000, maxShare: 0.05 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        // Price: 95 against 100 on two units is 10, which is 5.3% of a 190 order.
+        const priced = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2, UnitPrice: 95 }],
+        });
+        Assert(await priced.Order.Save(), `the draft did not save: ${priced.Order.LatestResult?.CompleteMessage}`);
+        const p = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: priced.Lines[0].ID });
+        Assert(p.Saved, `recording failed: ${p.Message}`);
+        AssertEqual(p.Entity.Status, "Pending", "5% off is 5.3% of this order's net total");
+
+        // Scope: one free unit worth 100 beside 100 paid units is 1% of a 10000 order.
+        const scoped = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 100 },
+            { ProductID: f.Products.WidgetB, Quantity: 1 },
+          ],
+        });
+        Assert(await scoped.Order.Save(), `the draft did not save: ${scoped.Order.LatestResult?.CompleteMessage}`);
+        // A new line's price of 0 reads as blank and takes the engine price, so it is typed afterwards on
+        // the saved line, the way a rep takes the charge off a line already on the order.
+        const saved = scoped.Lines.find((l) => l.ProductID === f.Products.WidgetB);
+        Assert(saved?.ID != null, "the free line was not saved");
+        const free = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ctx.User);
+        Assert(await free.Load(saved.ID), "the free line did not load");
+        free.UnitPrice = 0;
+        free.PriceOverridden = true;
+        free.PriceOverrideReason = "added at no charge";
+        Assert(await free.Save(), `pricing the line at 0 did not save: ${free.LatestResult?.CompleteMessage}`);
+        const sc = await recordConcession(ctx, { DeliveryForm: "Scope", OrderLineID: free.ID });
+        Assert(sc.Saved, `recording failed: ${sc.Message}`);
+        AssertEqual(sc.Entity.Status, "Approved", "a free product worth 1% of the order is within authority");
+        AssertEqual(Number(sc.Entity.OrderNetTotal), 10000, "the free line adds nothing to the net total");
+      }),
+  },
+  {
+    Id: "concessions.CS15",
+    Name: "CS15: the share counts every concession on the order, so splitting one does not get under it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxValue: 1000, maxShare: 0.05 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, { CompanyID: f.CoA.ID, Lines: [{ ProductID: f.Products.WidgetA, Quantity: 100 }] });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const first = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: built.Lines[0].ID, AddedQuantity: 3 });
+        AssertEqual(first.Entity.Status, "Approved", `3% of the order is within authority: ${first.Message}`);
+        const second = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: built.Lines[0].ID, AddedQuantity: 3 });
+        Assert(second.Saved, `recording failed: ${second.Message}`);
+        AssertEqual(second.Entity.Status, "Pending", "another 3% brings the order to 6%");
+        AssertEqual(Number(second.Entity.CumulativeShare), 0.06, "both concessions are counted");
+      }),
+  },
+  {
+    Id: "concessions.CS16",
+    Name: "CS16: a draft that shrinks after an approval on authority holds the confirm until it is recorded again",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await CreateProductPrice(ctx, f.Products.WidgetB, 100);
+        await grantAuthority(ctx, { maxValue: 1000, maxShare: 0.05 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 5 },
+            { ProductID: f.Products.WidgetB, Quantity: 95 },
+          ],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const seatsLine = built.Lines.find((l) => l.ProductID === f.Products.WidgetA);
+        Assert(seatsLine?.ID != null, "the seats line was not saved");
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: seatsLine.ID, AddedQuantity: 3 });
+        AssertEqual(c.Entity.Status, "Approved", `300 is 3% of a 10000 order: ${c.Message}`);
+
+        // The large line goes; the same 300 is now 60% of a 500 order.
+        const big = built.Order.Lines.Items.find((l) => l.ProductID === f.Products.WidgetB);
+        Assert(big != null, "the large line is not on the order");
+        built.Order.Lines.Remove(big);
+        Assert(await built.Order.Save(), `removing the line must save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "the approval on authority no longer covers the order");
+        Assert(/60\.0% of its net total.*Withdraw them and record them again/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should explain the share, got: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        Assert(await c.Entity.Delete(), `withdrawing an approval on authority from a draft failed: ${c.Entity.LatestResult?.CompleteMessage}`);
+        const again = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: seatsLine.ID, AddedQuantity: 3 });
+        Assert(again.Saved, `recording again failed: ${again.Message}`);
+        AssertEqual(again.Entity.Status, "Pending", "measured against the order as it is now, it needs approval");
+      }),
+  },
+  {
+    Id: "concessions.CS17",
+    Name: "CS17: each Pending concession raises its own approval task, assigned to the role holders' person records",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -575,8 +751,8 @@ export const ConcessionChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "concessions.CS13",
-    Name: "CS13: an approval recorded on a task decides only that task's concession, as its decider",
+    Id: "concessions.CS18",
+    Name: "CS18: an approval recorded on a task decides only that task's concession, as its decider",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -602,8 +778,8 @@ export const ConcessionChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "concessions.CS14",
-    Name: "CS14: a decision the concession refuses puts it back in front of its approvers on a fresh task",
+    Id: "concessions.CS19",
+    Name: "CS19: a decision the concession refuses puts it back in front of its approvers on a fresh task",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -630,8 +806,8 @@ export const ConcessionChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "concessions.CS15",
-    Name: "CS15: withdrawing a concession cancels its task; deciding one on its record completes its task",
+    Id: "concessions.CS20",
+    Name: "CS20: withdrawing a concession cancels its task; deciding one on its record completes its task",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {

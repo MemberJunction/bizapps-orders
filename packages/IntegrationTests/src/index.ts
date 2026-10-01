@@ -40,7 +40,7 @@
  *   payment-schedule     PS1–PS13  instalments on the order: tie, issue, per-instalment rollup and ageing (D85–D88)
  *   payment-deposit      PM1–PM12  cash ahead of billing is a deposit, and only the operation issues (D91)
  *   contract-reversal    RV1–RV3   reversing a scheduled order: withdraw, credit back, or refuse (D92 §6)
- *   concessions          CS1–CS15  concessions valued in any form, approved before the customer sees them
+ *   concessions          CS1–CS20  concessions valued in any form, approved before the customer sees them
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
  *   progress-measurement PM1–PM14   percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
  *
