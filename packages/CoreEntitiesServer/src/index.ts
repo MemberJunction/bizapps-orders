@@ -15,6 +15,15 @@ export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './
 export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './GetBillingWorklistOperation.js';
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
+export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
+export {
+    FindConcessionLimitRule,
+    FindUnapprovedConcessions,
+    LinePriceConcessionFor,
+    LoadConcessionAuthority,
+    type ConcessionLineFacts,
+    type LinePriceConcession,
+} from './ConcessionGate.js';
 export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
 export { BeginInstalmentIssue, EndInstalmentIssue, IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
@@ -25,6 +34,25 @@ export {
     LoadOrderLineProgressMeasurementEntityServer,
 } from './OrderLineProgressMeasurementEntityServer.js';
 export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from './GetProgressWorklistOperation.js';
+// Finance exception review for progress (golive #279): the judgment call raised at attestation, and
+// the nightly pass for lines left unattested.
+export {
+    JudgmentCallReasons,
+    PROGRESS_JUDGMENT_CALL,
+    RaiseProgressJudgmentCall,
+    ReadJudgmentCallConfig,
+} from './ProgressJudgmentCall.js';
+export type { JudgmentCallConfig, JudgmentCallFacts, JudgmentCallOutcome, PostedObservation } from './ProgressJudgmentCall.js';
+export {
+    DetectUnattestedProgressOperation,
+    LoadDetectUnattestedProgressOperation,
+    PROGRESS_UNATTESTED,
+    ReadMaxDaysWithoutAttestation,
+    SelectUnattestedLines,
+    UnattestedDedupeKey,
+    UnattestedException,
+} from './DetectUnattestedProgressOperation.js';
+
 export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
@@ -117,8 +145,16 @@ export {
     LoadAccountingEngine,
     ResolverEntities,
     SubmitJournalEntryDrafts,
+    GetActiveFinanceExceptionType,
+    RaiseFinanceExceptions,
 } from './AccountingBridge.js';
-export type { AccountingEngineSurface, CreateJournalEntriesOutcome } from './AccountingBridge.js';
+export type {
+    AccountingEngineSurface,
+    CreateJournalEntriesOutcome,
+    FinanceExceptionToRaise,
+    FinanceExceptionTypeInfo,
+    RaiseFinanceExceptionsOutcome,
+} from './AccountingBridge.js';
 
 export { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
 export type {

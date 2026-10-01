@@ -53,6 +53,7 @@ import {
   ACCT_SCHEMA,
   createViaEntity,
   CreateOrdersFixture,
+  CreateProductPrice,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -119,6 +120,9 @@ async function sellGiftCards(
   extra: Record<string, unknown> = {},
 ) {
   const f = Fx();
+  // The card's price is its face value, so a face value below the catalog's 50 is not a concession
+  // the confirm gate would hold.
+  await CreateProductPrice(ctx, f.Products.GiftCardA, price);
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
     BillToOrganizationID: f.Customers.OrganizationID,

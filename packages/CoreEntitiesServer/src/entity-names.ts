@@ -49,3 +49,5 @@ export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order He
 
 /** One attested progress observation on a percentage-of-completion line (AIDP-26, D90). */
 export const ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY = 'MJ_BizApps_Orders: Order Line Progress Measurements';
+/** A concession granted on an order, valued whatever form it takes (golive #222). */
+export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';

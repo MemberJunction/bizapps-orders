@@ -562,6 +562,17 @@
           "primaryKey": {
             "ID": "A674F471-E717-4DFF-A301-1C606EF37270"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-39 - Concessions",
+            "Sequence": 39,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "FC90A0C8-20E3-44D0-B031-236F57916C56"
+          }
         }
       ]
     },

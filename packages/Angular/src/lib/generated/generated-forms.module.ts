@@ -39,6 +39,7 @@ import { mjBizAppsOrdersOrderLineProgressMeasurementFormComponent } from "./Enti
 import { mjBizAppsOrdersOrderHeaderFormComponent } from "./Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component";
 import { mjBizAppsOrdersOrderLineChoiceFormComponent } from "./Entities/mjBizAppsOrdersOrderLineChoice/mjbizappsordersorderlinechoice.form.component";
 import { mjBizAppsOrdersOrderLineDimensionFormComponent } from "./Entities/mjBizAppsOrdersOrderLineDimension/mjbizappsordersorderlinedimension.form.component";
+import { mjBizAppsOrdersOrderConcessionFormComponent } from "./Entities/mjBizAppsOrdersOrderConcession/mjbizappsordersorderconcession.form.component";
 import { mjBizAppsOrdersOrderLineFormComponent } from "./Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component";
 import { mjBizAppsOrdersOrderLinePriceComponentFormComponent } from "./Entities/mjBizAppsOrdersOrderLinePriceComponent/mjbizappsordersorderlinepricecomponent.form.component";
 import { mjBizAppsOrdersOrderSequenceFormComponent } from "./Entities/mjBizAppsOrdersOrderSequence/mjbizappsordersordersequence.form.component";
@@ -590,7 +591,8 @@ declarations: [
     mjBizAppsOrdersCustomerTaxExemptionFormComponent,
     mjBizAppsOrdersPaymentIntentFormComponent,
     mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent,
-    mjBizAppsOrdersOrderLineProgressMeasurementFormComponent
+    mjBizAppsOrdersOrderLineProgressMeasurementFormComponent,
+    mjBizAppsOrdersOrderConcessionFormComponent
 ],
 imports: [
     CommonModule,

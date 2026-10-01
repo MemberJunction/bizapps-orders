@@ -32,6 +32,7 @@ import {
 } from '../generated/entity_subclasses';
 import { MJGlobal } from '@memberjunction/global';
 import { AllocateProRata, Money } from './PricingBehavior.js';
+import { AssessConcession } from './ConcessionBehavior.js';
 import {
     ApplyPromotions,
     type ApplyPromotionsResult,
@@ -618,7 +619,12 @@ export async function AuthorizeManualDiscount(
     }
 
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const res = await rv.RunView<{ ID: string; MaxDiscountPct: number | null; MaxOrderValue: number | null }>(
+    const res = await rv.RunView<{
+        ID: string;
+        MaxDiscountPct: number | null;
+        MaxConcessionValue: number | null;
+        MaxOrderValue: number | null;
+    }>(
         {
             EntityName: SALES_AUTHORITY_ENTITY,
             ExtraFilter: `SalesRepUserID = '${userID}' AND IsActive = 1`,
@@ -638,12 +644,18 @@ export async function AuthorizeManualDiscount(
         };
     }
 
-    const pct = baseAmount > 0 ? amount / baseAmount : 1;
-    if (authority.MaxDiscountPct == null || pct <= Number(authority.MaxDiscountPct) + 1e-9) {
+    // Judged on BOTH the percentage and the absolute value: a small percentage of a large line is
+    // still a large concession, and escalates on the value limit when one is set.
+    const assessment = AssessConcession(
+        'Price',
+        { Value: amount, Percent: baseAmount > 0 ? amount / baseAmount : 1 },
+        { ...authority, MaxTermExtensionDays: null },
+    );
+    if (assessment.WithinAuthority) {
         return { AuthorityID: authority.ID, NeedsApproval: false, ApprovedByUserID: null };
     }
 
-    // ── OVER THE CAP ──────────────────────────────────────────────────────────
+    // ── OUTSIDE AUTHORITY ─────────────────────────────────────────────────────
     // This used to return `NeedsApproval: true` and nothing read it, so an over-cap discount applied
     // SILENTLY — the cap was decorative. Escalation now actually resolves: a `SalesRule` of type
     // DiscountLimit names the role that may approve, and the discount is permitted only when the
@@ -652,28 +664,27 @@ export async function AuthorizeManualDiscount(
     // Approving one's own over-cap discount is legitimate here: holding the approver role IS the
     // authority. What matters is that it is recorded — `ApprovedByUserID` makes the exception
     // visible rather than indistinguishable from an ordinary discount.
-    const cap = Number(authority.MaxDiscountPct);
+    const breaches = `This discount of ${amount} on ${baseAmount} is outside this user's SalesAuthority: ` +
+        `${assessment.Breaches.join('; ')}.`;
     const rule = await findDiscountLimitRule(provider, user);
     if (!rule?.ApprovalRequiredRoleID) {
         return {
             AuthorityID: authority.ID,
             NeedsApproval: true,
             Refusal:
-                `This discount is ${(pct * 100).toFixed(1)}% of ${baseAmount}, above the ${(cap * 100).toFixed(1)}% ` +
-                `cap on this user's SalesAuthority. No SalesRule of type 'DiscountLimit' names an approving role, ` +
-                `so there is no one who could authorize it. Either lower the discount, raise the cap, or configure ` +
-                `a DiscountLimit rule with an ApprovalRequiredRoleID.`,
+                `${breaches} No SalesRule of type 'DiscountLimit' names an approving role, so there is no one ` +
+                `who could authorize it. Either lower the discount, raise the limit, or configure a DiscountLimit ` +
+                `rule with an ApprovalRequiredRoleID.`,
         };
     }
 
-    if (!(await userHoldsRole(rule.ApprovalRequiredRoleID, provider, user, userID))) {
+    if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, provider, user, userID))) {
         return {
             AuthorityID: authority.ID,
             NeedsApproval: true,
             Refusal:
-                `This discount is ${(pct * 100).toFixed(1)}% of ${baseAmount}, above the ${(cap * 100).toFixed(1)}% ` +
-                `cap on this user's SalesAuthority. It needs approval from someone holding the role named by ` +
-                `SalesRule '${rule.Name}'. Have an approver apply it, or lower the discount to the cap.`,
+                `${breaches} It needs approval from someone holding the role named by SalesRule '${rule.Name}'. ` +
+                `Have an approver apply it, or lower the discount to within the limit.`,
         };
     }
 
@@ -700,7 +711,7 @@ async function findDiscountLimitRule(
 }
 
 /** Does this user hold the named MJ role? */
-async function userHoldsRole(
+export async function UserHoldsRole(
     roleID: string,
     provider: IMetadataProvider,
     user: UserInfo,
