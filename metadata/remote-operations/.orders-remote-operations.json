@@ -584,5 +584,28 @@
       "lastModified": "2026-09-28T23:39:39.487Z",
       "checksum": "ee3fee072d7f0ea337e5c1f3d8d3447a6bd6e95b15d79bbcc8a4c80e084d7d02"
     }
+  },
+  {
+    "fields": {
+      "Name": "Detect Unattested Progress",
+      "OperationKey": "Orders.DetectUnattestedProgress",
+      "Description": "The nightly finance-exception pass for percentage-of-completion lines (golive #279, type 2): every active, booked, not-complete POC line from the progress worklist whose last attestation - or, when it has never been attested, whose booking - is more than the PROGRESS_UNATTESTED type's MaxDaysWithoutAttestation days before the business day goes on accounting's review list. One exception per line per month; a repeat in the same month finds the one already raised. Nothing is blocked. A type accounting does not define or has switched off raises nothing.",
+      "InputTypeName": "OrdersDetectUnattestedProgressInput",
+      "InputTypeDefinition": "@file:types/orders-detect-unattested-progress.input.ts",
+      "OutputTypeName": "OrdersDetectUnattestedProgressOutput",
+      "OutputTypeDefinition": "@file:types/orders-detect-unattested-progress.output.ts",
+      "RequiredScope": "orders:write",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "InputTypeIsArray": false,
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "LongRunning",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "5EA18521-B7F5-4C05-8B21-12C62C697F39"
+    }
   }
 ]

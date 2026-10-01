@@ -1,0 +1,104 @@
+[
+  {
+    "_comments": [
+      "THE UNATTESTED-PROGRESS ACTION (bc-aidp-next-golive#279, type 2). Its own dot-json so parallel work on",
+      "other actions conflicts on nothing.",
+      "",
+      "WHY AN ACTION. A percentage-of-completion line goes unattested with nothing being written, so no save",
+      "path can notice it. MJ's scheduler dispatches Actions, and this row is how the nightly job reaches",
+      "Orders.DetectUnattestedProgress. The class behind it holds no detection logic.",
+      "",
+      "SAFE TO SHIP Active: nothing invokes it until the ScheduledJob in metadata/scheduled-jobs/ is enabled,",
+      "and that job ships Disabled. Running it by hand only adds rows to finance's review list, and a repeat",
+      "in the same month finds the rows already raised."
+    ],
+    "fields": {
+      "Name": "Detect Unattested Progress",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Put every active, booked, not-complete percentage-of-completion order line whose last attestation (or, if never attested, whose booking) is older than the PROGRESS_UNATTESTED type's MaxDaysWithoutAttestation on accounting's finance exception review list. One exception per line per month. Runs the Orders.DetectUnattestedProgress operation; this Action only reads parameters and reports the result. Nothing is blocked.",
+      "Type": "Custom",
+      "DriverClass": "Orders.DetectUnattestedProgress",
+      "IconClass": "fa-solid fa-clipboard-check",
+      "UserPrompt": "Find percentage-of-completion lines overdue for a progress attestation and put them on the finance review list.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C5F2CA57-5359-458A-B46A-BB392BD1ED7C"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AsOfDate",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Treat this date as today (YYYY-MM-DD) when measuring days without attestation and choosing the month of the exception. Omit for the business day, which is what the schedule uses. An unreadable value is refused rather than replaced with today."
+          },
+          "primaryKey": {
+            "ID": "67D82678-8904-4680-952C-DDDD91A6F7BE"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "LineCount",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many lines were overdue for attestation as of the run date, raised or not."
+          },
+          "primaryKey": {
+            "ID": "12C89730-E95E-42AA-9464-2F3875F0E187"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Raised",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many review rows this pass created."
+          },
+          "primaryKey": {
+            "ID": "B7D33247-BFE2-472A-A9CC-1A28E8FC128C"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AlreadyRaised",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many overdue lines already had this month's review row, from an earlier pass."
+          },
+          "primaryKey": {
+            "ID": "1FCCBFB5-693D-411E-A788-832AF4F62B40"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Lines",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every overdue line: the order and line number, the last attestation or booking day, the days without attestation, the value not yet recognised, the dedupe key and the review row raised for it."
+          },
+          "primaryKey": {
+            "ID": "A60B6D01-8BA2-40D4-8727-D01D300FD3AE"
+          }
+        }
+      ]
+    }
+  }
+]

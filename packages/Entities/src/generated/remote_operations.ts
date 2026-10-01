@@ -511,6 +511,65 @@ export interface CheckEntitlementOutput {
 }
 
 /**
+ * Input for `Orders.DetectUnattestedProgress`.
+ *
+ * The nightly pass that puts a percentage-of-completion line on finance's review list when nobody
+ * has attested its progress for too long (golive #279, type 2). The threshold is the
+ * PROGRESS_UNATTESTED type's `MaxDaysWithoutAttestation`, owned by accounting.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersDetectUnattestedProgressInput {
+    /** Treat this business day as "today" (YYYY-MM-DD). Omit for the actual business day, which is what the schedule uses. */
+    AsOfDate?: string;
+}
+
+/**
+ * Output for `Orders.DetectUnattestedProgress`.
+ *
+ * Every line found overdue for attestation comes back, with what was raised for it. One exception
+ * per line per month: a line still unattested next month is raised again, and a second run in the
+ * same month finds the one already raised.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface UnattestedProgressLine {
+    OrderLineID: string;
+    OrderNumber: string;
+    LineNumber: number;
+    CompanyID: string;
+    /** The last posted observation, or null when the line has never been attested. */
+    LastMeasurementDate?: string | null;
+    /** The business day the order was booked — the clock for a line never attested. */
+    ConfirmedOn?: string | null;
+    /** Whole days from the last attestation (or the booking) to the as-of day. */
+    DaysWithoutAttestation: number;
+    /** The line value not yet recognised. */
+    UnrecognizedAmount?: number | null;
+    /** `<OrderLineID>|<YYYY-MM>` — one exception per line per month. */
+    DedupeKey: string;
+    /** The review row, when accounting created or already held one. */
+    FinanceExceptionID?: string | null;
+    /** True when this pass created the review row; false when it already existed. */
+    Created?: boolean;
+}
+
+export interface OrdersDetectUnattestedProgressOutput {
+    Success: boolean;
+    Message?: string;
+    /** The business day the pass measured against. */
+    AsOfDate: string;
+    /** True when accounting does not define the type or has switched it off, so nothing was raised. */
+    TypeInactive: boolean;
+    MaxDaysWithoutAttestation?: number | null;
+    Lines: UnattestedProgressLine[];
+    /** Review rows this pass created. */
+    Raised: number;
+    /** Lines whose review row for this month already existed. */
+    AlreadyRaised: number;
+}
+
+/**
  * Input for `Orders.FulfillOrderLines`.
  *
  * Flipping lines to Fulfilled and advancing the order when the last one is done are ONE decision,
@@ -894,7 +953,11 @@ export interface ProgressWorklistRow {
     RecognizedToDate: number;
     /** Who signed the last observation. */
     LastAttestedBy?: string | null;
+    /** The user ID behind `LastAttestedBy`, or null when the line has never been attested. */
+    LastAttestedByUserID?: string | null;
     OrderStatus: string;
+    /** When the order was booked, as an ISO instant. */
+    ConfirmedAt?: string | null;
 }
 
 export interface OrdersGetProgressWorklistOutput {
@@ -1564,6 +1627,22 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
     public readonly OperationKey = "Orders.CheckEntitlement";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.DetectUnattestedProgress — Detect Unattested Progress
+// ============================================================
+/**
+ * Detect Unattested Progress
+ * The nightly finance-exception pass for percentage-of-completion lines (golive #279, type 2): every active, booked, not-complete POC line from the progress worklist whose last attestation - or, when it has never been attested, whose booking - is more than the PROGRESS_UNATTESTED type's MaxDaysWithoutAttestation days before the business day goes on accounting's review list. One exception per line per month; a repeat in the same month finds the one already raised. Nothing is blocked. A type accounting does not define or has switched off raises nothing.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.DetectUnattestedProgress'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersDetectUnattestedProgressOperation extends BaseRemotableOperation<OrdersDetectUnattestedProgressInput, OrdersDetectUnattestedProgressOutput> {
+    public readonly OperationKey = "Orders.DetectUnattestedProgress";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 
