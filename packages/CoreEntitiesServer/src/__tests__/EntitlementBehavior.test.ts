@@ -391,6 +391,24 @@ describe('EvaluateGrantAccess — Status is not the answer', () => {
     it('a perpetual grant (null ValidTo) stays Granted', () => {
         expect(EvaluateGrantAccess(grant({ ValidTo: null }), asOf).HasAccess).toBe(true);
     });
+
+    it('an Active row with a pending past-due suspension is Suspended (#287)', () => {
+        const r = EvaluateGrantAccess(grant({ PendingSuspension: { Status: 'Suspended', Reason: 'PastDue' } }), asOf);
+        expect(r).toMatchObject({ HasAccess: false, Decision: 'Suspended' });
+    });
+
+    it('a pending decision that is not a suspension leaves access alone', () => {
+        expect(EvaluateGrantAccess(grant({ PendingSuspension: { Status: 'Active', Reason: null } }), asOf).HasAccess).toBe(true);
+        expect(EvaluateGrantAccess(grant({ PendingSuspension: null }), asOf).HasAccess).toBe(true);
+    });
+
+    it('a written Revoked still outranks a pending suspension', () => {
+        const r = EvaluateGrantAccess(
+            grant({ Status: 'Revoked', PendingSuspension: { Status: 'Suspended', Reason: 'PastDue' } }),
+            asOf,
+        );
+        expect(r.Decision).toBe('Revoked');
+    });
 });
 
 describe('EvaluateGrantAccess — cancelled subscription + grace', () => {

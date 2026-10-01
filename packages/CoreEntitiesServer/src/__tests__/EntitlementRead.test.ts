@@ -7,7 +7,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import { InvalidOperationInputError } from '../sql-guards.js';
 
@@ -27,6 +27,8 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 
 import { ASOF_FUTURE_TOLERANCE_MS, CheckPersonEntitlement, ListPersonEntitlements } from '../EntitlementRead.js';
 import { ENTITLEMENT_CHECK_TTL_MS } from '../EntitlementBehavior.js';
+import { OrdersSettings } from '../OrdersSettings.js';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 
 const PERSON = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const TEMPLATE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -272,6 +274,125 @@ describe('CheckPersonEntitlement — evaluation through the loader', () => {
         );
         expect(r).toMatchObject({ HasAccess: false, Decision: 'NoGrant' });
         expect(r.GrantID).toBeUndefined();
+    });
+});
+
+describe('CheckPersonEntitlement — renewal cutoff applied at read time (#287)', () => {
+    const LINE = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const ORDER = '11111111-1111-4111-8111-111111111111';
+    const renewalGrant = {
+        ID: GRANT,
+        ProductEntitlementID: TEMPLATE,
+        Status: 'Active',
+        ValidFrom: new Date('2026-01-01T00:00:00Z'),
+        ValidTo: new Date('2026-12-31T00:00:00Z'),
+        Quantity: 1,
+        SubscriptionID: null,
+        SubscriptionTermID: null,
+        OrderLineID: LINE,
+        GrantTimingApplied: 'OnFirstPayment',
+    };
+    // ASOF is 2026-07-01, so a 2026-06-17 due date is 14 days past due and 2026-06-18 is 13.
+    const renewalOrder = (nextDueDate: string) => ({
+        'MJ_BizApps_Orders: Product Entitlements': [{ ID: TEMPLATE, ProductID: PRODUCT, Code: 'LEARNING_HUB_PREMIUM' }],
+        'MJ_BizApps_Orders: Entitlement Grants': [renewalGrant],
+        'MJ_BizApps_Orders: Order Lines': [{ ID: LINE, OrderHeaderID: ORDER }],
+        'MJ_BizApps_Orders: Order Headers': [
+            {
+                ID: ORDER,
+                OrderNumber: 'SO-1',
+                Status: 'Confirmed',
+                TotalGross: 1200,
+                AmountPaid: 0,
+                Balance: 1200,
+                DueDate: nextDueDate,
+                NextDueDate: nextDueDate,
+            },
+        ],
+    });
+    const check = () => CheckPersonEntitlement({ PersonID: PERSON, Code: 'LEARNING_HUB_PREMIUM', AsOf: ASOF }, provider, user);
+    const queried = () => runViewImpl.mock.calls.map((c: { EntityName: string }[]) => c[0].EntityName);
+
+    beforeEach(() => {
+        vi.spyOn(OrdersSettings, 'Load').mockResolvedValue();
+        vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined);
+        OrdersSettings.SetOverride('RenewalAccessCutoffDaysPastDue', '14');
+    });
+    afterEach(() => {
+        OrdersSettings.ClearOverrides();
+        vi.restoreAllMocks();
+    });
+
+    it('denies an Active renewal on its cutoff day, before the nightly job writes it', async () => {
+        byEntity(renewalOrder('2026-06-17'));
+        const r = await check();
+        expect(r).toMatchObject({ HasAccess: false, Decision: 'Suspended', GrantID: GRANT });
+        expect(new Date(r.CacheUntil).getTime() - Date.now()).toBeLessThanOrEqual(ENTITLEMENT_CHECK_TTL_MS);
+    });
+
+    it('grants the day before the cutoff', async () => {
+        byEntity(renewalOrder('2026-06-18'));
+        expect(await check()).toMatchObject({ HasAccess: true, Decision: 'Granted' });
+    });
+
+    it('grants when the cutoff is switched off, and reads no order lines', async () => {
+        OrdersSettings.SetOverride('RenewalAccessCutoffDaysPastDue', 'off');
+        byEntity(renewalOrder('2026-06-17'));
+        expect(await check()).toMatchObject({ HasAccess: true, Decision: 'Granted' });
+        expect(queried()).not.toContain('MJ_BizApps_Orders: Order Lines');
+    });
+
+    it('honours an approved DeferCutoff running through the day', async () => {
+        byEntity({
+            ...renewalOrder('2026-06-17'),
+            'MJ_BizApps_Orders: Entitlement Access Overrides': [
+                { OrderHeaderID: ORDER, OverrideType: 'DeferCutoff', EffectiveThrough: '2026-07-01' },
+            ],
+        });
+        expect(await check()).toMatchObject({ HasAccess: true, Decision: 'Granted' });
+    });
+
+    it('ignores a DeferCutoff whose last day has passed', async () => {
+        byEntity({
+            ...renewalOrder('2026-06-17'),
+            'MJ_BizApps_Orders: Entitlement Access Overrides': [
+                { OrderHeaderID: ORDER, OverrideType: 'DeferCutoff', EffectiveThrough: '2026-06-30' },
+            ],
+        });
+        expect(await check()).toMatchObject({ HasAccess: false, Decision: 'Suspended' });
+    });
+
+    it('reads no payment facts when the line is not a renewal', async () => {
+        byEntity({ ...renewalOrder('2026-06-17'), 'MJ_BizApps_Orders: Order Lines': [] });
+        expect(await check()).toMatchObject({ HasAccess: true, Decision: 'Granted' });
+        expect(queried()).not.toContain('MJ_BizApps_Orders: Order Headers');
+    });
+
+    it('reads nothing extra for a grant whose timing does not follow cash', async () => {
+        byEntity({
+            ...renewalOrder('2026-06-17'),
+            'MJ_BizApps_Orders: Entitlement Grants': [{ ...renewalGrant, GrantTimingApplied: 'OnConfirm' }],
+        });
+        expect(await check()).toMatchObject({ HasAccess: true, Decision: 'Granted' });
+        expect(queried()).not.toContain('MJ_BizApps_Orders: Order Lines');
+    });
+
+    it('fails closed when the payment facts cannot be read', async () => {
+        byEntity({ ...renewalOrder('2026-06-18'), 'MJ_BizApps_Orders: Order Headers': fail('timeout') });
+        const r = await check();
+        expect(r).toMatchObject({ HasAccess: false, Decision: 'NoGrant' });
+        expect(r.GrantID).toBeUndefined();
+    });
+
+    it('fails closed when the overrides cannot be read', async () => {
+        byEntity({ ...renewalOrder('2026-06-18'), 'MJ_BizApps_Orders: Entitlement Access Overrides': fail('timeout') });
+        expect(await check()).toMatchObject({ HasAccess: false, Decision: 'NoGrant' });
+    });
+
+    it('ListPersonEntitlements applies the same cutoff', async () => {
+        byEntity(renewalOrder('2026-06-17'));
+        const r = await ListPersonEntitlements({ PersonID: PERSON, AsOf: ASOF }, provider, user);
+        expect(r.Items).toEqual([expect.objectContaining({ Code: 'LEARNING_HUB_PREMIUM', HasAccess: false, Decision: 'Suspended' })]);
     });
 });
 
