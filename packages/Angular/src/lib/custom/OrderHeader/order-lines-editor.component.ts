@@ -19,6 +19,7 @@ import {
 import {
     OrderHeaderEntity,
     OrderLineEntity,
+    OrdersCheckCoverageOverlapOperation,
     ClampLineQuantity,
     CanRestoreLineDefault,
     IsLinePriceOverridden,
@@ -32,6 +33,7 @@ import {
     priceOverrideCatalogInstalled,
     userPriceOverrideKind,
     type ApplicablePrice,
+    type CheckCoverageOverlapOutput,
     type PriceOverrideKind,
     type mjBizAppsOrdersOrderAdjustmentEntity,
     type mjBizAppsOrdersOrderLineEntity,
@@ -105,6 +107,9 @@ function round(value: number): number {
  * of is a list that stopped helping; the ranking is what puts the right row inside this window.
  */
 const PICKER_RESULT_LIMIT = 12;
+
+/** One line's answer from `Orders.CheckCoverageOverlap`. */
+type CoverageOverlapLine = CheckCoverageOverlapOutput['Lines'][number];
 
 /**
  * Inline catalog picker + line cards for an order header.
@@ -401,6 +406,70 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         } finally {
             this.loadingContinuations.delete(subscriptionID);
         }
+    }
+
+    /* ── Coverage overlap with another band of the family (golive #276) ──
+     *
+     * Confirm refuses a band whose term would overlap coverage the holder already has for another
+     * band, unless the subscription type allows it or the line acknowledges it. The editor asks the
+     * server the same question after each save, through the operation that runs confirm's own
+     * check, so the notice cannot disagree with the refusal. Only saved lines are checked; a new
+     * line is checked on the next save.
+     */
+
+    /** Server answers by line id (lower-cased — ids come back from the server in either case). */
+    private readonly coverageByLine = new Map<string, CoverageOverlapLine>();
+    /** Set when the check itself failed, so a missing notice is not read as "no overlap". */
+    public CoverageCheckError: string | null = null;
+
+    public CoverageOverlapFor(line: mjBizAppsOrdersOrderLineEntity): CoverageOverlapLine | null {
+        return this.coverageByLine.get((line.ID ?? '').toLowerCase()) ?? null;
+    }
+
+    /** True when ticking the acknowledgment changes what confirm does — `ExtendExisting` only. */
+    public CanAcknowledgeOverlap(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const found = this.CoverageOverlapFor(line);
+        return found?.Outcome === 'NeedsAck' || found?.Outcome === 'Acknowledged';
+    }
+
+    /**
+     * True while confirm would refuse this line. Read from the checkbox as it stands, not the
+     * server's last answer, so ticking it clears the warning before the next save.
+     */
+    public OverlapBlocksConfirm(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const found = this.CoverageOverlapFor(line);
+        if (!found) return false;
+        if (found.Outcome === 'Refused') return true;
+        return this.CanAcknowledgeOverlap(line) && !line.AcknowledgesCoverageOverlap;
+    }
+
+    public SetOverlapAcknowledged(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        line.AcknowledgesCoverageOverlap = target.checked;
+    }
+
+    private async refreshCoverage(): Promise<void> {
+        const order = this._order;
+        if (!order?.IsSaved || order.Status !== 'Draft') {
+            this.coverageByLine.clear();
+            this.CoverageCheckError = null;
+            return;
+        }
+        const result = await new OrdersCheckCoverageOverlapOperation().Execute({ OrderHeaderID: order.ID });
+        // The order may have been swapped while the call was in flight.
+        if (this._order !== order) return;
+        this.coverageByLine.clear();
+        if (!result.Success || !result.Output) {
+            this.CoverageCheckError =
+                result.ErrorMessage?.trim() ||
+                'Whether these subscriptions overlap coverage the customer already has could not be checked. Confirm still checks.';
+        } else {
+            this.CoverageCheckError = null;
+            for (const row of result.Output.Lines) this.coverageByLine.set(row.OrderLineID.toLowerCase(), row);
+        }
+        this.cdr.detectChanges();
     }
 
     public SetTermStart(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -869,6 +938,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * `Adjustments.Remove` — the rows this map points at are already gone by the time it runs.
      */
     private onOrderSaved(): void {
+        void this.refreshCoverage();
         if (!this.stagedDiscounts.size) return;
         this.stagedDiscounts.clear();
         this.discountDrafts.clear();
@@ -1038,6 +1108,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             }) ?? null;
         this.schedulePricing();
         void this.refreshAllApplicable();
+        void this.refreshCoverage();
         this.cdr.detectChanges();
     }
 
@@ -1059,6 +1130,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
         // a cached continuation date is only trustworthy for as long as one order is open.
         this.continuationStarts.clear();
+        this.coverageByLine.clear();
+        this.CoverageCheckError = null;
         this.applicableByLine.clear();
         this.overrideEditorLineIds.clear();
         this.defaultUnitByLine.clear();

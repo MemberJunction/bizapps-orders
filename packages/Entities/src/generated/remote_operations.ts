@@ -455,6 +455,56 @@ export interface JournalEntryPreview {
 }
 
 /**
+ * Input for `Orders.CheckCoverageOverlap`.
+ *
+ * Whether any subscription line of a saved draft order would overlap coverage its holder already
+ * has for another band of the same subscription family, and what confirm will do about it. The
+ * order editor asks this so the notice it shows is the same rule confirm enforces.
+ *
+ * Read-only.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface CheckCoverageOverlapInput {
+    /** A saved order. Only its saved lines are checked. */
+    OrderHeaderID: string;
+}
+
+/**
+ * Output of `Orders.CheckCoverageOverlap`.
+ *
+ * One row per subscription line that overlaps coverage in its family. A line with no overlap has
+ * no row.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface CheckCoverageOverlapOutput {
+    Lines: {
+        OrderLineID: string;
+        /**
+         * What confirm will do with the line:
+         *   Refused       — confirm fails until the overlap is resolved
+         *   NeedsAck      — confirm fails unless the line acknowledges the overlap
+         *   Acknowledged  — the line acknowledges it, so confirm proceeds
+         *   Allowed       — the subscription type permits concurrent coverage
+         */
+        Outcome: 'Refused' | 'NeedsAck' | 'Acknowledged' | 'Allowed';
+        /** The sentence confirm refuses with, or the notice to show when it proceeds. */
+        Message: string;
+        /** The coverage it overlaps. */
+        Overlaps: {
+            /** Null when the overlap is with another line of this same order. */
+            SubscriptionID: string | null;
+            SubscriptionNumber: string | null;
+            ProductName: string;
+            /** Calendar days, `yyyy-MM-dd`. */
+            CoverageStart: string;
+            CoverageEnd: string;
+        }[];
+    }[];
+}
+
+/**
  * Input for `Orders.CheckEntitlement`.
  *
  * Asked by capability Code, not SKU. PersonID is authoritative; email is a convenience
@@ -1509,6 +1559,22 @@ export class OrdersCapturePaymentOperation extends BaseRemotableOperation<Orders
     public readonly OperationKey = "Orders.CapturePayment";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.CheckCoverageOverlap — Check Coverage Overlap
+// ============================================================
+/**
+ * Check Coverage Overlap
+ * For each subscription line of a saved order, whether it would overlap coverage the same holder already has for another band of the same subscription family, and whether confirm will refuse it, require an acknowledgment, or allow it. Read-only. Runs the same check confirm runs, so the order editor's notice cannot disagree with the refusal.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.CheckCoverageOverlap'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersCheckCoverageOverlapOperation extends BaseRemotableOperation<CheckCoverageOverlapInput, CheckCoverageOverlapOutput> {
+    public readonly OperationKey = "Orders.CheckCoverageOverlap";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
     public readonly RequiresSystemUser = false;
 }
 

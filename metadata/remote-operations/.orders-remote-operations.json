@@ -557,5 +557,32 @@
       "lastModified": "2026-09-29T14:02:14.742Z",
       "checksum": "474135cf152aa6d6833c348aea26caa63738e0f0947ca3495409d6c479184339"
     }
+  },
+  {
+    "fields": {
+      "Name": "Check Coverage Overlap",
+      "OperationKey": "Orders.CheckCoverageOverlap",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "For each subscription line of a saved order, whether it would overlap coverage the same holder already has for another band of the same subscription family, and whether confirm will refuse it, require an acknowledgment, or allow it. Read-only. Runs the same check confirm runs, so the order editor's notice cannot disagree with the refusal.",
+      "InputTypeName": "CheckCoverageOverlapInput",
+      "InputTypeDefinition": "@file:types/orders-check-coverage-overlap.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "CheckCoverageOverlapOutput",
+      "OutputTypeDefinition": "@file:types/orders-check-coverage-overlap.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "FB4AE588-436C-4B7E-B571-49EC8817B746"
+    },
+    "sync": {
+      "lastModified": "2026-09-27T18:11:41.514Z",
+      "checksum": "3aaabb59f796836d5a822fa2585fb8a3ec024e5b03584d97f6602fefd3e9033d"
+    }
   }
 ]

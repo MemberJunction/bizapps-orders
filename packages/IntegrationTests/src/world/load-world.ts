@@ -37,6 +37,7 @@ import {
     PRODUCT_ENTITLEMENT_ENTITY,
     PRODUCT_PRICE_ENTITY,
     PRODUCT_TYPE_ENTITY,
+    SUBSCRIPTION_FAMILY_ENTITY,
     RELATIONSHIP_ENTITY,
     RELATIONSHIP_TYPE_ENTITY,
     TAX_AUTHORITY_ENTITY,
@@ -75,6 +76,7 @@ export async function LoadWorld(ctx: IntegrationCheckContext): Promise<WorldStat
         Organizations: {},
         People: {},
         Categories: {},
+        SubscriptionFamilies: {},
         Products: {},
         ProductMnemonics: {},
         Entitlements: {},
@@ -105,6 +107,7 @@ export async function LoadWorld(ctx: IntegrationCheckContext): Promise<WorldStat
     await loadAddresses(ctx, world);
     await loadTax(ctx, world);
     await loadCategories(ctx, world);
+    await loadSubscriptionFamilies(ctx, world);
     await loadProducts(ctx, world);
     await loadEventProducts(ctx, world);
     await loadGLLinks(ctx, world, {
@@ -532,6 +535,20 @@ async function applyCategoryParents(
     }
 }
 
+/** The bands of one subscription offering (golive #276), keyed `CompanyCode:Code`. */
+async function loadSubscriptionFamilies(ctx: IntegrationCheckContext, world: WorldState): Promise<void> {
+    for (const row of ReadCsv(join(DATA, 'subscription-families.csv'))) {
+        const company = world.Companies[row.CompanyCode];
+        Assert(!!company, `subscription-families.csv: unknown company ${row.CompanyCode}`);
+        world.SubscriptionFamilies[`${row.CompanyCode}:${row.Code}`] = await Upsert(
+            ctx,
+            SUBSCRIPTION_FAMILY_ENTITY,
+            `CompanyID = '${company.ID}' AND Code = '${Quote(row.Code)}'`,
+            { CompanyID: company.ID, Code: row.Code, Name: row.Name, IsActive: true, Description: WORLD_TAG },
+        );
+    }
+}
+
 async function loadProducts(ctx: IntegrationCheckContext, world: WorldState): Promise<void> {
     const eventSKUs = new Set(ReadCsv(join(DATA, 'event-products.csv')).map((r) => r.SKU));
     for (const row of ReadCsv(join(DATA, 'products.csv'))) {
@@ -554,6 +571,9 @@ async function loadProducts(ctx: IntegrationCheckContext, world: WorldState): Pr
             Status: 'Active',
             RevenueRecognitionTypeID: rr,
             SubscriptionTypeID: sub ?? null,
+            SubscriptionFamilyID: row.SubscriptionFamilyCode
+                ? world.SubscriptionFamilies[`${row.CompanyCode}:${row.SubscriptionFamilyCode}`]
+                : null,
             Description: WORLD_TAG,
         });
         world.Products[row.SKU] = id;

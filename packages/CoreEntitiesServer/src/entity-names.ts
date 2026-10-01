@@ -49,3 +49,6 @@ export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order He
 
 /** One attested progress observation on a percentage-of-completion line (AIDP-26, D90). */
 export const ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY = 'MJ_BizApps_Orders: Order Line Progress Measurements';
+
+/** Subscription families — the bands of one subscription offering, per company (golive #276). */
+export const SUBSCRIPTION_FAMILY_ENTITY = 'MJ_BizApps_Orders: Subscription Families';
