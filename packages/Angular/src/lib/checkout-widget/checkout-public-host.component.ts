@@ -41,6 +41,15 @@ import {
     type CheckoutElementState,
 } from './checkout-events';
 import {
+    ACCESS_POLL_INTERVAL_MS,
+    ACCESS_POLL_TIMEOUT_MS,
+    AccessMessage,
+    CHECKOUT_ACCESS_STATE_EVENT,
+    IsFinalAccessState,
+    ReadAccessState,
+    type CheckoutAccessState,
+} from './checkout-access';
+import {
     MJCheckoutWidgetComponent,
     type CheckoutAppliedPromotion,
     type CheckoutServerPricedTotal,
@@ -131,6 +140,18 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         return VerificationNote(this.account);
     }
 
+    /** Whether the buyer's access is ready (#325); null while nothing is tracked. */
+    public accessState: CheckoutAccessState | null = null;
+    /** How often, and for how long, the success screen asks. Fields so a test can shorten them. */
+    public accessPollIntervalMs = ACCESS_POLL_INTERVAL_MS;
+    public accessPollTimeoutMs = ACCESS_POLL_TIMEOUT_MS;
+    /** True while access is being asked for; the redirect waits on it. */
+    private accessTracking = false;
+
+    public get accessMessage(): string | null {
+        return AccessMessage(this.accessState, this.config?.accessMessages);
+    }
+
     private stripe: StripeInstance | null = null;
     private card: StripeCard | null = null;
     private cardMounted = false;
@@ -151,6 +172,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     }
 
     public async ngOnInit(): Promise<void> {
+        // A reset runs this again: a failure from the previous attempt must not outlive it.
+        this.loadError = null;
         this.readHostAttributes();
         if (!this.slug) {
             this.loadError = 'This checkout link is missing its reference.';
@@ -479,13 +502,51 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 coupon: null,
             })
         );
+        this.cdr.detectChanges();
+        // Access is tracked alongside the account step. A redirect waits for both, so the buyer sees
+        // "ready" (or the support text) before leaving. With nothing tracked the first answer ends the wait.
+        const access = this.trackAccess();
         if (done.AccountStep === true) {
             await this.loadAccount();
         } else {
             this.forgetCompleting();
             this.leaveIfDone();
         }
+        await access;
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Asks whether the order's access is ready until it is, it has failed, or the wait runs out.
+     * Never throws: a status that cannot be read leaves the confirmation as it is. Holds the
+     * redirect while it runs, and follows it once it ends if nothing else is left to do.
+     */
+    private async trackAccess(): Promise<void> {
+        this.accessTracking = true;
+        try {
+            const deadline = Date.now() + this.accessPollTimeoutMs;
+            for (;;) {
+                let state: CheckoutAccessState | null = null;
+                try {
+                    state = ReadAccessState(
+                        await this.post('/access-status', { sessionId: this.sessionId, clientSessionKey: this.sessionKey })
+                    );
+                } catch {
+                    return;
+                }
+                if (state === null || state === 'NotTracked') return;
+                if (state !== this.accessState) {
+                    this.accessState = state;
+                    this.dispatch(CHECKOUT_ACCESS_STATE_EVENT, { state });
+                    this.cdr.detectChanges();
+                }
+                if (IsFinalAccessState(state) || Date.now() >= deadline) return;
+                await new Promise((resolve) => setTimeout(resolve, this.accessPollIntervalMs));
+            }
+        } finally {
+            this.accessTracking = false;
+            this.leaveIfDone();
+        }
     }
 
     /** Asks for the account step of the completed checkout. The host is asked again only after a failure. */
@@ -504,6 +565,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.accountLoading = false;
         }
         if (IsAccountSettled(this.account)) this.forgetCompleting();
+        this.syncAccountState();
         this.leaveIfDone();
         this.cdr.detectChanges();
     }
@@ -538,6 +600,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.successMessage = 'Thank you. Your order is confirmed.';
             this.account = account;
             if (IsAccountSettled(account)) this.forgetCompleting();
+            this.syncAccountState();
             return true;
         } catch {
             return false;
@@ -563,6 +626,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             });
             this.account = ReadCheckoutAccount(res.Account) ?? this.account;
             if (IsAccountSettled(this.account)) this.forgetCompleting();
+            this.syncAccountState();
             if (res.Success) {
                 this.passwordSet = true;
                 this.password = '';
@@ -583,12 +647,26 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public skipPassword(): void {
         if (this.account) this.account = { ...this.account, CanSetPassword: false };
         this.forgetCompleting();
+        this.syncAccountState();
         this.leaveIfDone();
+    }
+
+    /**
+     * `PASSWORD` while the account step's password form shows, and `SUCCESS` once it no longer does.
+     * Nothing is sent when the form never showed: `finish()` has already reported `SUCCESS`, and a
+     * reload that resumes a settled step should not report a second sale.
+     */
+    private syncAccountState(): void {
+        if (this.account?.CanSetPassword) {
+            this.setState('PASSWORD');
+        } else if (this.state === 'PASSWORD') {
+            this.setState('SUCCESS');
+        }
     }
 
     /** Follows the widget's redirect once nothing is left for the buyer to do here. */
     private leaveIfDone(): void {
-        if (this.config?.redirectUrl && !this.accountLoading && MayRedirect(this.account, this.accountDismissed)) {
+        if (this.config?.redirectUrl && !this.accountLoading && !this.accessTracking && MayRedirect(this.account, this.accountDismissed)) {
             // The landing page learns which order completed from `?order=` (#295).
             window.location.href = WithOrderReference(this.config.redirectUrl, this.orderNumber, window.location.href);
         }

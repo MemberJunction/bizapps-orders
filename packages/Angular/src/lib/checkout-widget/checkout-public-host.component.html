@@ -9,6 +9,9 @@
             @if (orderNumber) {
                 <p class="mj-checkout-success__order">Order {{ orderNumber }}</p>
             }
+            @if (accessMessage) {
+                <p class="mj-checkout-success__access" [class.is-failed]="accessState === 'Failed'" role="status">{{ accessMessage }}</p>
+            }
             @if (accountLoading) {
                 <p class="mj-checkout-account__msg" role="status">Setting up your account…</p>
             } @else if (account?.CanSetPassword) {

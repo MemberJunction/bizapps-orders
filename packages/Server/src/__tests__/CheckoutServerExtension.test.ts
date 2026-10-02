@@ -35,6 +35,7 @@ vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
         ReapExpiredOpenSessions: vi.fn().mockResolvedValue(0),
     },
     EscapeText: (value: string) => value.replace(/'/g, "''"),
+    GetCheckoutAccessStatus: vi.fn().mockResolvedValue({ Success: true, State: 'NotTracked' }),
     DispatchOutboundDeliveries: vi.fn().mockResolvedValue({ Success: true, Claimed: 0, Delivered: 0, Retrying: 0, DeadLettered: 0 }),
     EnsureCheckoutAccount: vi.fn().mockResolvedValue({ Success: true }),
     HasCheckoutAccountStep: vi.fn().mockReturnValue(false),
@@ -144,6 +145,7 @@ describe('CheckoutServerExtension', () => {
 
         expect(result.Success).toBe(true);
         expect(Object.keys(routes.post).sort()).toEqual([
+            '/checkout/access-status',
             '/checkout/account',
             '/checkout/account/password',
             '/checkout/complete',
@@ -160,6 +162,7 @@ describe('CheckoutServerExtension', () => {
             'POST /checkout/complete',
             'POST /checkout/account',
             'POST /checkout/account/password',
+            'POST /checkout/access-status',
             'GET /checkout/:slug',
         ]);
     });
