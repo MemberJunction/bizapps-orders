@@ -232,9 +232,23 @@ export interface CancelSubscriptionOutput {
     Decision?: CancellationDecisionResult;
     /** The term that was (or would be) cancelled. */
     SubscriptionTermID?: string;
+    /**
+     * Terms that start after coverage ends — a renewal already booked, say — and are (or would be)
+     * cancelled and reversed with it. Empty when there are none. Present even on a preview.
+     */
+    LaterTerms?: CanceledLaterTermResult[];
+    /** `Decision.RefundAmount` plus every later term's refund — the whole refund the cancel gives. */
+    TotalRefundAmount?: number;
     /** The reversal order, when one was needed. Absent when nothing was refunded. */
     ReversalOrderID?: string;
     ReversalOrderNumber?: string;
+}
+
+/** A later term cancelled alongside the affected one. */
+export interface CanceledLaterTermResult {
+    SubscriptionTermID: string;
+    TermNumber: number;
+    Decision: CancellationDecisionResult;
 }
 
 /**
