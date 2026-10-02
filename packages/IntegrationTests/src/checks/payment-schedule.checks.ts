@@ -61,6 +61,7 @@ import {
 import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { BuildInvoiceDocuments, type OrderHeaderPaymentScheduleEntityServer } from '@mj-biz-apps/orders-core-entities-server';
 import {
+    CreateProductPrice,
     ACCT_SCHEMA,
     CreateOrdersFixture,
     createViaEntity,
@@ -167,6 +168,9 @@ export async function scheduledOrder(
 ) {
     const f = Fx();
     const gross = over.gross ?? 300;
+    // Priced at the catalog price, so the confirm gate sees no concession: a stated price below the
+    // engine's holds the confirm, and this fixture is about schedules, not concessions.
+    await CreateProductPrice(ctx, over.productID ?? f.Products.WidgetA, gross);
     const draft = await BuildOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,

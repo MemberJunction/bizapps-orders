@@ -651,22 +651,26 @@ export const ConcessionChecks: NamedCheck[] = [
       InRolledBackTransaction(ctx, async () => {
         // Two 1200 annual orders, so neither concession counts toward the other. 5% of 1200 is 60,
         // which a 365-day term reaches at 19 days (62.47) and not at 18 (59.18).
-        const at = await bookTerm(ctx, 1200);
-        const under = await bookTerm(ctx, 1200);
+        //
+        // Both orders sell the same subscription to the same customer, so the second books the
+        // first's NEXT term, and a term with a later one cannot be extended. So the first term's
+        // concession is recorded before the second order is booked.
         await grantAuthority(ctx, { maxValue: 100000, maxDays: 366, maxShare: 0.05 });
         await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+        const at = await bookTerm(ctx, 1200);
         const dAt = Math.ceil(0.05 * termDays(at.Term));
-
-        const u = await recordConcession(ctx, { DeliveryForm: "Duration", SubscriptionTermID: under.Term.ID, AddedDays: dAt - 1 });
-        Assert(u.Saved, `recording failed: ${u.Message}`);
-        AssertEqual(u.Entity.Status, "Approved", `${dAt - 1} days is under 5% of the order`);
-        AssertEqual(Number(u.Entity.OrderNetTotal), 1200, "measured against the order's net total");
 
         const a = await recordConcession(ctx, { DeliveryForm: "Duration", SubscriptionTermID: at.Term.ID, AddedDays: dAt });
         Assert(a.Saved, `recording failed: ${a.Message}`);
         AssertEqual(a.Entity.Status, "Pending", `${dAt} days reaches 5% of the order`);
         const share = Math.round((Number(a.Entity.ComputedValue) / 1200) * 1e4) / 1e4;
         AssertEqual(Number(a.Entity.CumulativeShare), share, "the share it was judged on is recorded");
+
+        const under = await bookTerm(ctx, 1200);
+        const u = await recordConcession(ctx, { DeliveryForm: "Duration", SubscriptionTermID: under.Term.ID, AddedDays: dAt - 1 });
+        Assert(u.Saved, `recording failed: ${u.Message}`);
+        AssertEqual(u.Entity.Status, "Approved", `${dAt - 1} days is under 5% of the order`);
+        AssertEqual(Number(u.Entity.OrderNetTotal), 1200, "measured against the order's net total");
       }),
   },
   {

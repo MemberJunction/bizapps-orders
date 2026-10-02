@@ -644,6 +644,8 @@ export const GiftCardChecks: NamedCheck[] = [
         // THE RE-SAVE RULE. Late allocation lines make the header book again, but the payment is
         // already Captured, so the card must not be charged a second time. The lines move 20 of the
         // 60 onto another order, because a captured payment's lines must still total its amount.
+        // Sold at the catalog price, so the confirm gate sees no concession.
+        await CreateProductPrice(ctx, f.Products.WidgetA, 20);
         const other = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,

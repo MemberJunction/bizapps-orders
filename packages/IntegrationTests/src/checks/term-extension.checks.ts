@@ -49,6 +49,7 @@ import {
 } from "../fixture.js";
 import {
   ORDER_CONCESSION_ENTITY,
+  PERSON_ENTITY,
   SALES_AUTHORITY_ENTITY,
   SALES_RULE_ENTITY,
   SUBSCRIPTION_TERM_ENTITY,
@@ -71,8 +72,23 @@ async function grantAuthority(ctx: IntegrationCheckContext, maxValue: number, ma
 /**
  * A ConcessionLimit rule decided by `roleID`, which the requester lacks, so what they record outside their
  * authority is Pending. `handToRequester` then points it at a role they hold, so the check can decide it.
+ *
+ * A Pending concession's approval task is assigned to the person records of the role's other holders, and
+ * one nobody could be told of is refused, so a holder is given a person record when none of them has one.
  */
 async function ruleDecidedBy(ctx: IntegrationCheckContext, roleID: string) {
+  const holders = await TxQuery<{ UserID: string; PersonID: string | null }>(ctx,
+    `SELECT ur.UserID, (SELECT TOP 1 p.ID FROM __mj_BizAppsCommon.Person p
+                         WHERE p.LinkedUserID = ur.UserID AND p.Status = 'Active') AS PersonID
+       FROM __mj.UserRole ur
+       JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1
+      WHERE ur.RoleID = '${roleID}' AND ur.UserID <> '${ctx.User.ID}'`);
+  Assert(holders.length > 0, "the approving role has no holder other than the requester");
+  if (!holders.some((h) => h.PersonID)) {
+    await createViaEntity(ctx, PERSON_ENTITY, {
+      FirstName: "Concession", LastName: "Approver", LinkedUserID: holders[0].UserID, Status: "Active",
+    });
+  }
   const ruleID = await createViaEntity(ctx, SALES_RULE_ENTITY, {
     Name: "ConcessionLimit approval",
     RuleType: "ConcessionLimit",

@@ -1259,6 +1259,7 @@ export const VolumeChecks: NamedCheck[] = [
       const insert = async () => {
         priceIDs.push(await createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
           ProductID: f.Products.WidgetA,
+          Name: "VL11 base",
           PricingModel: "PerUnit",
           FeeType: "Standard",
           Amount: listPrice,
@@ -1279,6 +1280,7 @@ export const VolumeChecks: NamedCheck[] = [
         });
         priceIDs.push(await createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
           ProductID: f.Products.WidgetA,
+          Name: "VL11 member",
           PriceListID: listID,
           PricingModel: "PerUnit",
           FeeType: "Standard",
