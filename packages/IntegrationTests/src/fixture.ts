@@ -257,6 +257,12 @@ export async function InRolledBackTransaction(
         await body();
     } finally {
         try {
+            // A trigger that refused a write has already rolled the transaction back on the server.
+            // mssql marks it `_aborted` but leaves its last request recorded as active, and from 6.1.4
+            // MJ waits on that request before rolling back and then throws "still in flight" rather
+            // than reaching mssql's "Transaction has been aborted". So an aborted transaction is
+            // recognised here, before the rollback is attempted.
+            if (transactionAborted(p)) throw new Error('Transaction has been aborted.');
             await p.RollbackTransaction();
         } catch (e) {
             // "Transaction has been aborted" means SQL Server already rolled it back — a
@@ -282,6 +288,10 @@ export async function InRolledBackTransaction(
  * poisoning every check after it. Prefer {@link OutsideTransaction} for checks that EXPECT to
  * trigger a database guard; this is the safety net, not the plan.
  */
+function transactionAborted(p: unknown): boolean {
+    return (p as { _transaction?: { _aborted?: boolean } | null })._transaction?._aborted === true;
+}
+
 function resetTransactionState(p: unknown): void {
     const internals = p as { _transaction?: unknown; _transactionDepth?: number; _savepointStack?: unknown[] };
     internals._transaction = null;
