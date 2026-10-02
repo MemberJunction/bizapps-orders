@@ -286,6 +286,7 @@ export {
     ReconcileGrantStatus,
     IsPaymentSuspension,
     ReadTimeCutoffSuspension,
+    ReadTimeWaiverExpirySuspension,
     PAYMENT_GATED_TIMINGS,
     ReduceGrantForReturn,
     EvaluateGrantAccess,
