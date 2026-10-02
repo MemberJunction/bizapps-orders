@@ -201,6 +201,85 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(component.isFormValid()).toBe(true);
         });
 
+        it('holds Pay until the buyer ticks the automatic-renewal agreement, and reports the tick', () => {
+            component.config = { unitPrice: 599, autoRenewConsentText: 'Renews every year until cancelled.' } as CheckoutWidgetConfig;
+            component.email.set('jane@example.com');
+            component.firstName.set('Jane');
+            component.lastName.set('Doe');
+            component.isPaymentReady = true;
+
+            expect(component.autoRenewConsentText()).toBe('Renews every year until cancelled.');
+            expect(component.isFormValid()).toBe(false);
+
+            component.autoRenewConsent.set(true);
+            expect(component.isFormValid()).toBe(true);
+
+            const emitSpy = vi.spyOn(component.submitted, 'emit');
+            component.handleSubmit();
+            expect(emitSpy.mock.calls[0][0].autoRenewConsent).toBe(true);
+        });
+
+        it('shows no agreement for a free checkout or when the widget sets no wording', () => {
+            component.config = { unitPrice: 0, autoRenewConsentText: 'Renews every year.' } as CheckoutWidgetConfig;
+            expect(component.autoRenewConsentText()).toBeNull();
+            component.config = { unitPrice: 599 } as CheckoutWidgetConfig;
+            expect(component.autoRenewConsentText()).toBeNull();
+        });
+
+        it('offers a promotion-code field only on a paid widget that takes codes', () => {
+            component.config = { unitPrice: 599, allowCoupons: true } as CheckoutWidgetConfig;
+            expect(component.allowsPromotionCodes()).toBe(true);
+            component.config = { unitPrice: 599 } as CheckoutWidgetConfig;
+            expect(component.allowsPromotionCodes()).toBe(false);
+            component.config = { unitPrice: 0, allowCoupons: true } as CheckoutWidgetConfig;
+            expect(component.allowsPromotionCodes()).toBe(false);
+        });
+
+        it('Apply sends the form with the typed code, and ignores an empty field', () => {
+            component.config = { unitPrice: 599, allowCoupons: true } as CheckoutWidgetConfig;
+            component.email.set('jane@example.com');
+            const spy = vi.spyOn(component.promotionCodeApplied, 'emit');
+
+            component.applyPromotionCode();
+            expect(spy).not.toHaveBeenCalled();
+
+            component.promotionCodeInput.set('  SAVE10 ');
+            component.applyPromotionCode();
+            expect(spy).toHaveBeenCalledTimes(1);
+            expect(spy.mock.calls[0][0].promotionCode).toBe('SAVE10');
+            expect(spy.mock.calls[0][0].email).toBe('jane@example.com');
+        });
+
+        it('shows the server-priced total while the quantity matches, and drops it when the quantity changes', () => {
+            component.config = { unitPrice: 599, allowCoupons: true, allowQuantity: true } as CheckoutWidgetConfig;
+            component.appliedPromotion = { code: 'SAVE10', discount: 59.9, total: 539.1, quantity: 1 };
+            expect(component.totalGross()).toBe(539.1);
+
+            component.quantity.set(2);
+            expect(component.activePromotion()).toBeNull();
+            expect(component.totalGross()).toBe(1198);
+        });
+
+        it('shows the total the server priced (a member discount) while the quantity matches', () => {
+            component.config = { unitPrice: 599, allowQuantity: true } as CheckoutWidgetConfig;
+            component.serverPricedTotal = { total: 499, quantity: 1 };
+            expect(component.totalGross()).toBe(499);
+
+            component.quantity.set(2);
+            expect(component.totalGross()).toBe(1198);
+        });
+
+        it('carries the typed code on submission only when the widget takes codes', () => {
+            component.config = { unitPrice: 0 } as CheckoutWidgetConfig;
+            component.email.set('jane@example.com');
+            component.firstName.set('Jane');
+            component.lastName.set('Doe');
+            component.promotionCodeInput.set('SAVE10');
+            const spy = vi.spyOn(component.submitted, 'emit');
+            component.handleSubmit();
+            expect(spy.mock.calls[0][0].promotionCode).toBeUndefined();
+        });
+
         it('mounts custom JS exactly once during component initialization and ngOnChanges cycle', () => {
             let evalCount = 0;
             // Define global counter incremented by script execution

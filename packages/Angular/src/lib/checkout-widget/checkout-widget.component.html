@@ -312,6 +312,39 @@
             </div>
         </section>
 
+        @if (allowsPromotionCodes()) {
+            <div class="mj-checkout-promo">
+                <label class="mj-checkout-promo__label" for="{{ widgetInstanceId }}-promo">Promo code</label>
+                <div class="mj-checkout-promo__row">
+                    <input id="{{ widgetInstanceId }}-promo" type="text" class="mj-input mj-checkout-promo__input" autocomplete="off" maxlength="60"
+                        [value]="promotionCodeInput()"
+                        (input)="promotionCodeInput.set($any($event.target).value)"
+                        (keydown.enter)="applyPromotionCode()"
+                        [disabled]="isProcessing" />
+                    <button type="button" class="mj-checkout-promo__apply"
+                        [disabled]="isProcessing || !promotionCodeInput().trim()"
+                        (click)="applyPromotionCode()">Apply</button>
+                </div>
+                @if (promotionError) {
+                    <p class="mj-checkout-promo__error" role="alert">{{ promotionError }}</p>
+                } @else if (activePromotion(); as promo) {
+                    <p class="mj-checkout-promo__applied" role="status">
+                        {{ promo.code }} applied: −{{ currencySymbol() }}{{ promo.discount.toFixed(2) }}
+                    </p>
+                }
+            </div>
+        }
+
+        @if (autoRenewConsentText(); as consentText) {
+            <label class="mj-checkout-consent">
+                <input type="checkbox"
+                    [checked]="autoRenewConsent()"
+                    (change)="autoRenewConsent.set($any($event.target).checked)"
+                    [disabled]="isProcessing" />
+                <span>{{ consentText }}</span>
+            </label>
+        }
+
         <!-- Final Total Line -->
         <div class="mj-checkout-total-row">
             <span class="mj-total-label">Total Due</span>

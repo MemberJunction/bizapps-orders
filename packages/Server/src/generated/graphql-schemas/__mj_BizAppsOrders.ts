@@ -589,6 +589,12 @@ export class CreatemjBizAppsOrdersCheckoutSessionInput {
     @Field({ nullable: true })
     MetadataJSON: string | null;
 
+    @Field({ nullable: true })
+    AutoRenewConsentAt: Date | null;
+
+    @Field({ nullable: true })
+    AutoRenewConsentText: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -631,6 +637,12 @@ export class UpdatemjBizAppsOrdersCheckoutSessionInput {
 
     @Field({ nullable: true })
     MetadataJSON?: string | null;
+
+    @Field({ nullable: true })
+    AutoRenewConsentAt?: Date | null;
+
+    @Field({ nullable: true })
+    AutoRenewConsentText?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -16744,6 +16756,9 @@ export class CreatemjBizAppsOrdersSubscriptionInput {
     @Field({ nullable: true })
     MigratesToSubscriptionID: string | null;
 
+    @Field({ nullable: true })
+    DefaultCustomerPaymentMethodID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -16810,6 +16825,9 @@ export class UpdatemjBizAppsOrdersSubscriptionInput {
 
     @Field({ nullable: true })
     MigratesToSubscriptionID?: string | null;
+
+    @Field({ nullable: true })
+    DefaultCustomerPaymentMethodID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

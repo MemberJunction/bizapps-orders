@@ -258,7 +258,8 @@ export interface CheckoutWidgetConfiguration {
     maxQuantity?: number;
     stripePublishableKey?: string;
     successMessage?: string;
-    redirectUrl?: string;
+    redirectUrl?: string;          // followed after confirmation, with ?order=<order number> appended
+    sendReceipt?: boolean;         // ask the gateway to e-mail its own receipt to the buyer (Stripe receipt_email); off by default
     extensionEntityName?: string;
     extensionFields?: ExtensionFieldDef[];
     /**
@@ -405,6 +406,35 @@ When a user adds items or inputs coupon codes:
 - Returns the computed pricing to the client while storing the snapshot in `CheckoutSession.MetadataJSON`.
 - **Zero draft rows are written to the `OrderHeader` database table.**
 
+### Verified-member discount
+A host can price members of a partner organisation without a typed code. The host page sets a signed
+token on the element (`<mj-orders-checkout slug="…" member-token="…">`), the element sends it as
+`memberToken` on `/draft`, and the widget's registered resolver verifies it server-side:
+
+```typescript
+@RegisterClass(BaseCheckoutMemberDiscountResolver, 'PARTNER-MEMBER')
+export class PartnerMemberResolver extends BaseCheckoutMemberDiscountResolver {
+    public async Resolve(ctx: CheckoutMemberDiscountContext): Promise<CheckoutMemberDiscountDecision> {
+        const member = await verifyHostToken(ctx.MemberToken); // the host's own verification, including expiry
+        // Bind the token to one buyer: a copied token is useless under another email.
+        const sameBuyer = !!member && !!ctx.Email && member.email.toLowerCase() === ctx.Email.toLowerCase();
+        return sameBuyer ? { PromotionCode: 'PARTNER-RATE' } : { PromotionCode: null, Message: 'Membership could not be confirmed.' };
+    }
+}
+```
+
+The widget names it with `Configuration.memberDiscountResolver: "PARTNER-MEMBER"` (server-side only).
+
+The token sits in the host page, so anyone who copies it can replay it. Issue **short-lived** tokens
+(minutes, not days) and tie each to the member's email, then have the resolver compare that email with
+`ctx.Email`, the buyer email captured on the draft, as the sample does.
+
+- The resolver returns a **promotion code**, priced through the ordinary promotion engine — dates, qualifiers and redemption limits apply as they do to any code.
+- The session snapshot keeps only the resolved code (`MemberPromotionCode`); **the token is never stored**. `/complete` re-prices from the snapshot and carries the code on the order, so the booked total equals the charged total.
+- A rejected token, a resolver that throws, or a code the engine declines prices at the standard rate and returns `MemberDiscountMessage`. The element stops once on that message before payment; submitting again pays the standard rate.
+- A token sent to a widget with no `memberDiscountResolver`, or one naming an unregistered class, is refused.
+- If the engine declines the code at `/complete` (the promotion ended or reached its redemption limit after the draft), the re-priced total exceeds the payment, so no order is booked. The buyer gets a plain message, and a checkout alert (log marker plus a Task when bizapps-tasks is installed) names the session and payment intent so staff can refund. Any settled payment that falls short of the re-priced total raises the same alert.
+
 ### Confirmation & Booking Phase
 When the user clicks **Pay & Register**:
 ```typescript
@@ -491,7 +521,7 @@ export class MyAccountStep extends CheckoutAccountStep {
         // find or create the login for ctx.Email; never change an existing one
         // create it unable to sign in, and send a verification link to ctx.Email
         // 'NotApplicable' when this checkout is not one you make logins for (another company's widget)
-        return { Outcome: 'Created', VerificationRequired: true }; // or 'Exists' / 'Failed', with an optional buyer-facing Message
+        return { Outcome: 'Created' }; // or 'Exists' / 'Failed', with an optional buyer-facing Message
     }
     public override async SetPassword(ctx: CheckoutAccountContext & { Password: string }): Promise<CheckoutPasswordResult> {
         // set the password of the account EnsureAccount created; refuse any other
@@ -503,14 +533,14 @@ export class MyAccountStep extends CheckoutAccountStep {
 Reference the class from the server bootstrap so the decorator is not tree-shaken away. With nothing registered the step is off and checkout behaves as before.
 
 **The host must verify the e-mail.** The checkout never proves the buyer owns the e-mail they typed. Anyone can check out with someone else's e-mail, for the price of the widget or for nothing on a free one, and set the password in the widget. So:
-- An account answered `Created` must not be able to sign in until the host has verified the e-mail, for example with a link sent to it. Answer `VerificationRequired: true` and the widget tells the buyer to use that link.
+- An account answered `Created` must not be able to sign in until the host has verified the e-mail, for example with a link sent to it. The widget tells the buyer of every `Created` account to use that link before signing in. `CheckoutAccountResult.VerificationRequired` is deprecated and ignored.
 - Until the e-mail is verified, do not link the new login to `ctx.PersonID`. That Person was matched by e-mail alone, and may be an existing member whose orders and memberships would come with the login.
 - Never change an account the checkout did not create, in either method.
 
 **Flow.**
 1. `POST /checkout/complete` confirms the order and answers straight away, without calling the host. When a step is registered the response carries `AccountStep: true`.
-2. The widget then calls `POST /checkout/account` with `{ sessionId, clientSessionKey }`, showing "Setting up your account…". Orders calls `EnsureAccount` with the buyer's e-mail, name, Person, order, company, session id and when the session began, and answers `Account: { Outcome, Message?, CanSetPassword, VerificationRequired }`. A step that throws, or doesn't answer within `HostTimeoutSeconds` (default 10), is reported as `Failed`. It never changes the confirmed order.
-3. `Created`: the widget shows a password form, with the verification note when `VerificationRequired`. `POST /checkout/account/password` with `{ sessionId, clientSessionKey, password }` passes the password to `SetPassword`. The password is never stored or logged.
+2. The widget then calls `POST /checkout/account` with `{ sessionId, clientSessionKey }`, showing "Setting up your account…". Orders calls `EnsureAccount` with the buyer's e-mail, name, Person, order, company, session id and when the session began, and answers `Account: { Outcome, Message?, CanSetPassword, VerificationRequired }`, where `VerificationRequired` is true for every `Created` account. A step that throws, or doesn't answer within `HostTimeoutSeconds` (default 10), is reported as `Failed`. It never changes the confirmed order.
+3. `Created`: the widget shows a password form with the verification note, and after the password is set tells the buyer to verify the e-mail before signing in. `POST /checkout/account/password` with `{ sessionId, clientSessionKey, password }` passes the password to `SetPassword`. The password is never stored or logged.
 4. `Exists`: the widget shows the step's message, or a default telling the buyer to sign in.
 5. `Failed`: the widget says the order is confirmed and offers "Try again", which calls `/checkout/account` again. "Not now" follows the redirect.
 6. `NotApplicable`: the session has no account step. The response carries no `Account`, exactly as when no step is registered.
@@ -590,7 +620,7 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 
 | Event | When | `detail` |
 |---|---|---|
-| `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `ERROR` | `{ state }` |
+| `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `PASSWORD`, `ERROR`. `PASSWORD` is sent while the account step's password form shows after a sale (after `SUCCESS`, or on a reload that returns to the form); `SUCCESS` follows once the password is set or skipped | `{ state }` |
 | `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units, `currency` upper-case, `coupon` the applied promotion code or `null` |
 | `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
 | `checkout-cancel` | the buyer pressed Cancel; the form has been reset to blank | `{}` |
@@ -684,7 +714,7 @@ Initializes a new checkout session (or reuses the caller's open, unexpired one).
 ```
 
 ### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines, contextUser?, options?)`
-Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Choices` carries their picks from its `choiceGroups` (see [Choice Groups at Checkout](#choice-groups-at-checkout-choicegroups)); `options.Attribution` carries the checkout's source. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
+Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Choices` carries their picks from its `choiceGroups` (see [Choice Groups at Checkout](#choice-groups-at-checkout-choicegroups)); `options.Attribution` carries the checkout's source; `options.MemberToken` applies a [verified-member discount](#verified-member-discount), and the response then carries `MemberDiscountApplied` and, when no discount applied, `MemberDiscountMessage`. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
 
 **Request Parameters:**
 ```json

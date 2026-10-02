@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { BasePaymentProvider, type PaymentProviderConfig } from '../BasePaymentProvider.js';
-import { StripePaymentProvider, ToFormBody, stripeCaptureAlreadyCollected } from '../StripePaymentProvider.js';
+import { StripePaymentProvider, StripeInstrumentFromIntent, ToFormBody, stripeCaptureAlreadyCollected } from '../StripePaymentProvider.js';
 import { ManualPaymentProvider } from '../ManualPaymentProvider.js';
 import { StoredValuePaymentProvider } from '../StoredValuePaymentProvider.js';
 import { MoveGiftCardBalance } from '../GiftCardEngine.js';
@@ -151,6 +151,28 @@ describe('StripePaymentProvider — the stub', () => {
             expect(result.Amount).toBe(275);
             expect(result.ProviderChargeID).toBe('ch_live');
             expect(result.FeeAmount).toBe(1.1);
+        } finally {
+            globalThis.fetch = orig;
+        }
+    });
+
+    it('sends receipt_email when the request names one, and nothing otherwise (#295)', async () => {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const bodies: URLSearchParams[] = [];
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+            bodies.push(new URLSearchParams(String(init?.body ?? '')));
+            return new Response(JSON.stringify({ id: 'pi_1', client_secret: 'cs_1', status: 'requires_payment_method' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }) as typeof fetch;
+        try {
+            await driver.CreateIntent({ Amount: 10, CurrencyCode: 'USD', ReceiptEmail: 'buyer@example.com' });
+            await driver.CreateIntent({ Amount: 10, CurrencyCode: 'USD' });
+            expect(bodies[0].get('receipt_email')).toBe('buyer@example.com');
+            expect(bodies[1].has('receipt_email')).toBe(false);
         } finally {
             globalThis.fetch = orig;
         }
@@ -517,6 +539,161 @@ describe('StoredValuePaymentProvider', () => {
 
     it('handles no webhook kinds — internal money has no external notifier', () => {
         expect(sv().HandledEventKinds).toEqual([]);
+    });
+});
+
+describe('StripePaymentProvider — keeping a card for later charges', () => {
+    type Call = { method: string; url: string; body: URLSearchParams; headers: Record<string, string> };
+
+    /** A live driver whose requests are recorded; every call answers with `reply`. */
+    function recordingLive(reply: Record<string, unknown>) {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const calls: Call[] = [];
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            calls.push({
+                method: (init?.method ?? 'GET').toUpperCase(),
+                url: String(input),
+                body: new URLSearchParams(String(init?.body ?? '')),
+                headers: (init?.headers ?? {}) as Record<string, string>,
+            });
+            return new Response(JSON.stringify(reply), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }) as typeof fetch;
+        return { driver, calls, restore: () => (globalThis.fetch = orig) };
+    }
+
+    it('asks Stripe to keep the card when a customer is given', async () => {
+        const { driver, calls, restore } = recordingLive({ id: 'pi_1', status: 'requires_payment_method', client_secret: 'cs' });
+        try {
+            await driver.CreateIntent({ Amount: 599, CurrencyCode: 'USD', ProviderCustomerRef: 'cus_1', SaveInstrumentForReuse: true });
+            expect(calls[0].body.get('customer')).toBe('cus_1');
+            expect(calls[0].body.get('setup_future_usage')).toBe('off_session');
+            expect(calls[0].body.get('confirm')).toBe('false');
+            expect(calls[0].body.get('off_session')).toBeNull();
+        } finally {
+            restore();
+        }
+    });
+
+    it('does not ask to keep the card without a customer to attach it to', async () => {
+        const { driver, calls, restore } = recordingLive({ id: 'pi_1', status: 'requires_payment_method' });
+        try {
+            await driver.CreateIntent({ Amount: 599, CurrencyCode: 'USD', SaveInstrumentForReuse: true });
+            expect(calls[0].body.get('setup_future_usage')).toBeNull();
+        } finally {
+            restore();
+        }
+    });
+
+    it('charges an already-saved card off-session rather than asking to save it again', async () => {
+        const { driver, calls, restore } = recordingLive({ id: 'pi_1', status: 'succeeded' });
+        try {
+            await driver.CreateIntent({
+                Amount: 599,
+                CurrencyCode: 'USD',
+                ProviderCustomerRef: 'cus_1',
+                ProviderInstrumentRef: 'pm_1',
+                SaveInstrumentForReuse: true,
+            });
+            expect(calls[0].body.get('off_session')).toBe('true');
+            expect(calls[0].body.get('payment_method')).toBe('pm_1');
+            expect(calls[0].body.get('setup_future_usage')).toBeNull();
+        } finally {
+            restore();
+        }
+    });
+
+    it('reuses an existing customer without calling Stripe', async () => {
+        const { driver, calls, restore } = recordingLive({});
+        try {
+            const result = await driver.EnsureCustomer({ ExistingProviderCustomerRef: 'cus_old', BillToPersonID: 'p-1' });
+            expect(result).toEqual({ Success: true, ProviderCustomerRef: 'cus_old', WasExisting: true });
+            expect(calls).toHaveLength(0);
+        } finally {
+            restore();
+        }
+    });
+
+    it('creates a customer with the buyer’s e-mail, our person id and an idempotency key', async () => {
+        const { driver, calls, restore } = recordingLive({ id: 'cus_new' });
+        try {
+            const result = await driver.EnsureCustomer({ Email: 'buyer@example.com', BillToPersonID: 'p-1', IdempotencyKey: 'customer-p-1-pp-1' });
+            expect(result).toEqual({ Success: true, ProviderCustomerRef: 'cus_new', WasExisting: false });
+            expect(calls[0].method).toBe('POST');
+            expect(calls[0].url).toContain('/v1/customers');
+            expect(calls[0].body.get('email')).toBe('buyer@example.com');
+            expect(calls[0].body.get('metadata[PersonID]')).toBe('p-1');
+            expect(calls[0].headers['Idempotency-Key']).toBe('customer-p-1-pp-1');
+        } finally {
+            restore();
+        }
+    });
+
+    it('refuses a customer with no owner', async () => {
+        const result = await stripe({ IsLiveMode: true }).EnsureCustomer({ Email: 'buyer@example.com' });
+        expect(result.Success).toBe(false);
+    });
+
+    it('stub returns a deterministic customer without a network call', async () => {
+        const result = await stripe().EnsureCustomer({ BillToPersonID: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' });
+        expect(result.Success).toBe(true);
+        expect(result.ProviderCustomerRef).toBe('cus_stub_aaaaaaaabbbbccccddddeeee');
+    });
+
+    it('the base driver refuses rather than inventing a customer', async () => {
+        const base = new BasePaymentProvider();
+        base.Config = config({ TypeCode: 'Nonexistent' });
+        const result = await base.EnsureCustomer({ BillToPersonID: 'p-1' });
+        expect(result.Success).toBe(false);
+        expect(result.Reason).toContain('does not support');
+    });
+
+    it('retrieve reads the paid card back from an expanded intent', async () => {
+        const { driver, calls, restore } = recordingLive({
+            id: 'pi_1',
+            status: 'succeeded',
+            amount_received: 59900,
+            currency: 'usd',
+            customer: 'cus_1',
+            payment_method: {
+                id: 'pm_1',
+                card: { brand: 'visa', last4: '4242', exp_month: 12, exp_year: 2030 },
+                billing_details: { name: 'Pat Buyer' },
+            },
+        });
+        try {
+            const result = await driver.RetrieveIntent({ ProviderIntentID: 'pi_1' });
+            expect(calls[0].url).toContain('expand[]=payment_method');
+            expect(result.Instrument).toEqual({
+                ProviderCustomerRef: 'cus_1',
+                ProviderInstrumentRef: 'pm_1',
+                Brand: 'visa',
+                Last4: '4242',
+                ExpiryMonth: 12,
+                ExpiryYear: 2030,
+                HolderName: 'Pat Buyer',
+            });
+        } finally {
+            restore();
+        }
+    });
+});
+
+describe('StripeInstrumentFromIntent', () => {
+    it('reads unexpanded ids', () => {
+        expect(StripeInstrumentFromIntent({ customer: 'cus_1', payment_method: 'pm_1' })).toEqual({
+            ProviderCustomerRef: 'cus_1',
+            ProviderInstrumentRef: 'pm_1',
+        });
+    });
+
+    it('takes the customer from the payment method when the intent has none', () => {
+        expect(StripeInstrumentFromIntent({ customer: null, payment_method: { id: 'pm_1', customer: 'cus_2' } })?.ProviderCustomerRef).toBe('cus_2');
+    });
+
+    it('is undefined before a payment method exists', () => {
+        expect(StripeInstrumentFromIntent({ customer: 'cus_1', payment_method: null })).toBeUndefined();
     });
 });
 

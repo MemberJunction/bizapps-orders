@@ -53,3 +53,16 @@ export function stripeConfirmAlreadyCollected(error: { code?: string; message?: 
 export function formatStripeError(error: { message?: string } | null | undefined): string {
     return error?.message?.trim() || 'Payment failed.';
 }
+
+/**
+ * The notice to stop on before payment when a member token earned no discount (#324), or null to
+ * carry on. Shown once: the buyer sees why the price is the standard rate, and submitting again
+ * pays it. A buyer with no token, or whose discount applied, never stops here.
+ */
+export function memberDiscountNotice(draft: Record<string, unknown> | null | undefined, alreadyShown: boolean): string | null {
+    const message = draft?.['MemberDiscountMessage'];
+    if (alreadyShown || typeof message !== 'string' || !message) {
+        return null;
+    }
+    return `${message} Submit again to continue at the standard rate.`;
+}

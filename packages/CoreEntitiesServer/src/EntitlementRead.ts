@@ -11,7 +11,7 @@
  *
  * CONNECTS TO:
  *   PURE:   ./EntitlementBehavior.ts
- *   CUTOFF: ./PaymentGatedAccess.ts (LoadReadTimeCutoffSuspensions — past-due cutoffs not yet written)
+ *   GATED:  ./PaymentGatedAccess.ts (LoadReadTimePaymentSuspensions — cutoffs and lapsed waivers not yet written)
  *   OPS:    ./CheckEntitlementOperation.ts, ./ListEntitlementsOperation.ts
  *   DOC:    plans/entitlement-read-contract.md
  */
@@ -31,7 +31,7 @@ import {
     type GrantAccessEvaluation,
     type GrantStatusDecision,
 } from './EntitlementBehavior.js';
-import { LoadReadTimeCutoffSuspensions } from './PaymentGatedAccess.js';
+import { LoadReadTimePaymentSuspensions } from './PaymentGatedAccess.js';
 import { EscapeText, InvalidOperationInputError, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 
 const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
@@ -345,15 +345,15 @@ async function loadContext(
     return { ok: true, subs, terms };
 }
 
-/** Past-due cutoffs the rows do not show yet (#287). Null on a fault, so the caller fails closed. */
-async function loadCutoffSuspensions(
+/** Payment suspensions the rows do not show yet (#287, #404). Null on a fault, so the caller fails closed. */
+async function loadPendingSuspensions(
     grants: GrantRow[],
     asOf: Date,
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<Map<string, GrantStatusDecision> | null> {
     try {
-        return await LoadReadTimeCutoffSuspensions(grants, asOf, provider, user);
+        return await LoadReadTimePaymentSuspensions(grants, asOf, provider, user);
     } catch (err) {
         LogError(`[ENTITLEMENT-READ] payment facts lookup failed: ${err instanceof Error ? err.message : String(err)}`);
         return null;
@@ -366,7 +366,7 @@ function evaluateGrant(
     code: string,
     subs: Map<string, SubRow>,
     terms: Map<string, TermRow>,
-    cutoffs: Map<string, GrantStatusDecision>,
+    pendingSuspensions: Map<string, GrantStatusDecision>,
 ): EvaluatedNamedGrant {
     const sub = grant.SubscriptionID ? subs.get(grant.SubscriptionID.toLowerCase()) : undefined;
     const term = grant.SubscriptionTermID ? terms.get(grant.SubscriptionTermID.toLowerCase()) : undefined;
@@ -377,7 +377,7 @@ function evaluateGrant(
             ValidTo: toDate(grant.ValidTo),
             LinkedToSubscription: !!grant.SubscriptionID,
             LinkedToTerm: !!grant.SubscriptionTermID,
-            PendingSuspension: cutoffs.get(grant.ID.toLowerCase()) ?? null,
+            PendingSuspension: pendingSuspensions.get(grant.ID.toLowerCase()) ?? null,
         },
         asOf,
         sub
@@ -465,8 +465,8 @@ export async function CheckPersonEntitlement(
 
         const ctx = await loadContext(rv, user, grants.rows);
         if (!ctx.ok) return closed('context-lookup-failed');
-        const cutoffs = await loadCutoffSuspensions(grants.rows, evaluatedAt, provider, user);
-        if (!cutoffs) return closed('payment-lookup-failed');
+        const pendingSuspensions = await loadPendingSuspensions(grants.rows, evaluatedAt, provider, user);
+        if (!pendingSuspensions) return closed('payment-lookup-failed');
 
         const codeByTemplate = new Map(matching.map((t) => [t.ID.toLowerCase(), t.Code]));
         const evaluated = grants.rows.map((g) =>
@@ -476,7 +476,7 @@ export async function CheckPersonEntitlement(
                 codeByTemplate.get(g.ProductEntitlementID.toLowerCase()) ?? code,
                 ctx.subs,
                 ctx.terms,
-                cutoffs,
+                pendingSuspensions,
             ),
         );
         const picked = PickWinningAccess(evaluated);
@@ -560,12 +560,12 @@ export async function ListPersonEntitlements(
 
         const ctx = await loadContext(rv, user, inScope);
         if (!ctx.ok) return empty();
-        const cutoffs = await loadCutoffSuspensions(inScope, evaluatedAt, provider, user);
-        if (!cutoffs) return empty();
+        const pendingSuspensions = await loadPendingSuspensions(inScope, evaluatedAt, provider, user);
+        if (!pendingSuspensions) return empty();
 
         const evaluated = inScope.map((g) => {
             const template = templateByID.get(g.ProductEntitlementID.toLowerCase())!;
-            return evaluateGrant(g, evaluatedAt, template.Code, ctx.subs, ctx.terms, cutoffs);
+            return evaluateGrant(g, evaluatedAt, template.Code, ctx.subs, ctx.terms, pendingSuspensions);
         });
 
         const byCode = new Map<string, EvaluatedNamedGrant[]>();
