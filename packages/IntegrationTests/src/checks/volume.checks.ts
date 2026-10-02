@@ -81,7 +81,7 @@ import { randomUUID } from "crypto";
 import { BaseRemotableOperation, CompositeKey } from "@memberjunction/core";
 import type { BaseEntity, IMetadataProvider, UserInfo } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
-import type { mjBizAppsOrdersOrderHeaderEntity } from "@mj-biz-apps/orders-entities";
+import { OrdersEngine, type mjBizAppsOrdersOrderHeaderEntity } from "@mj-biz-apps/orders-entities";
 import {
   Assert,
   AssertEqual,
@@ -1295,6 +1295,9 @@ export const VolumeChecks: NamedCheck[] = [
           `DELETE FROM ${ORDERS_SCHEMA}.ProductPrice WHERE ID IN ('${priceIDs.join("','")}');
            DELETE FROM ${ORDERS_SCHEMA}.PriceListAssignment WHERE PriceListID='${listID}';
            DELETE FROM ${ORDERS_SCHEMA}.PriceList WHERE ID='${listID}'`).catch(() => undefined);
+        // The deletes are raw SQL, so OrdersEngine still holds the two rules this check committed.
+        // Left there, the next check prices a line with a rule that no longer exists.
+        await OrdersEngine.Instance.RefreshItem('_productPrices');
       };
 
       await insert();
