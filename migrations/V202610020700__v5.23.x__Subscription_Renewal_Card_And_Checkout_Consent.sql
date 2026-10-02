@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609281800 — A subscription's renewal card, and the checkout's auto-renew agreement
+-- V202610020700 — A subscription's renewal card, and the checkout's auto-renew agreement
 -- (MemberJunction/bizapps-orders#289, first half: keep the card at purchase)
 -- =============================================================================
 -- An auto-renewing subscription can only be charged at renewal with a card the gateway kept at the
