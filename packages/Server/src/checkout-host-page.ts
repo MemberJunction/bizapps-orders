@@ -457,7 +457,17 @@ const BOOT_SCRIPT = `
         ok.textContent = config.successMessage || ('Thank you. Order ' + (done.OrderNumber || '') + ' is confirmed.');
         host.appendChild(ok);
         if (config.redirectUrl) {
-          window.location.href = config.redirectUrl;
+          // The landing page learns which order completed from ?order= (#295). Only the order
+          // number: a URL lands in history, logs and referrers.
+          var target = config.redirectUrl;
+          if (done.OrderNumber) {
+            try {
+              var u = new URL(target, window.location.href);
+              u.searchParams.set('order', String(done.OrderNumber));
+              target = u.toString();
+            } catch (e) { /* unreadable URL: redirect unchanged */ }
+          }
+          window.location.href = target;
         }
       }).catch(function (err) {
         status.textContent = '';

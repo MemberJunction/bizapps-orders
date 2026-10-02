@@ -123,7 +123,25 @@ export interface CheckoutWidgetConfiguration {
      */
     allowCoupons?: boolean;
     successMessage?: string;
+    /**
+     * What the success screen says about the buyer's access while it is provisioned after the
+     * confirm (#325). Shown only when a registered outbound consumer gates access; each has a default.
+     */
+    accessMessages?: {
+        pending?: string;
+        ready?: string;
+        failed?: string;
+    };
+    /**
+     * Where the public checkout sends the buyer once the order is confirmed. The order number is
+     * appended as `order=<number>`, so the landing page knows which order completed.
+     */
     redirectUrl?: string;
+    /**
+     * Ask the payment gateway to send its own receipt to the buyer's e-mail (Stripe:
+     * `receipt_email`). Off by default: a host that sends its own receipt would otherwise send two.
+     */
+    sendReceipt?: boolean;
     extensionEntityName?: string;
     /**
      * Metadata-driven form field specs — auto-discovered from the product type's extension

@@ -140,6 +140,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         };
         if (request.Description) body.description = request.Description;
         if (request.ProviderCustomerRef) body.customer = request.ProviderCustomerRef;
+        if (request.ReceiptEmail) body.receipt_email = request.ReceiptEmail;
         if (request.ProviderInstrumentRef) {
             body.payment_method = request.ProviderInstrumentRef;
             body.off_session = 'true';
