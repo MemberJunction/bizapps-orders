@@ -501,6 +501,39 @@ export function ReadTimeCutoffSuspension(
 }
 
 /**
+ * A lapsed payment-hold waiver as a read sees it, before the nightly job has written it (#404).
+ *
+ * An approved `WaivePaymentHold` keeps an unpaid grant Active through its `EffectiveThrough` day.
+ * The day after, nothing is written until `EnforcePaymentGatedAccess` next runs, so the row still
+ * reads `Active`. The read path asks this instead, deciding with the same `DecideGrantStatus` and
+ * `ApplyAccessOverrides` the job runs.
+ *
+ * Applies only to an order with a `WaivePaymentHold` whose last day is before `asOfDay`, and only to
+ * the grants that override can hold up: `OnPaidInFull`, and `OnFirstPayment` on a new purchase (see
+ * {@link AccessOverrideCanApply}). A later waiver still in force keeps the grant Active.
+ *
+ * TIGHTEN ONLY. It answers an `AwaitingPayment` suspension for an Active grant, or null. It never
+ * activates a grant: lifting a suspension stays with the payment that writes it.
+ *
+ * @param overrides - Every APPROVED override on the grant's order, expired or not.
+ * @param asOfDay - The business-time-zone day being decided, `YYYY-MM-DD`.
+ */
+export function ReadTimeWaiverExpirySuspension(
+    grant: { Status: string; GrantTimingApplied: string | null },
+    isRenewal: boolean,
+    order: OrderPaymentFacts,
+    overrides: readonly AccessOverrideFacts[],
+    asOfDay: string,
+): GrantStatusDecision | null {
+    if (grant.Status !== 'Active') return null;
+    const timing = grant.GrantTimingApplied;
+    if (timing !== 'OnPaidInFull' && !(timing === 'OnFirstPayment' && !isRenewal)) return null;
+    if (!overrides.some((o) => o.OverrideType === 'WaivePaymentHold' && o.EffectiveThrough < asOfDay)) return null;
+    const decided = ApplyAccessOverrides(DecideGrantStatus(timing, isRenewal, order, null), overrides, asOfDay);
+    return decided.Status === 'Suspended' && decided.Reason === 'AwaitingPayment' ? decided : null;
+}
+
+/**
  * Whether an override of this type could lift anything on an order holding these grants: some grant
  * must follow a rule that can impose the suspension the type names. `AwaitingPayment` comes from
  * `OnPaidInFull`, and from `OnFirstPayment` on a new purchase; `PastDue` only from `OnFirstPayment`
@@ -599,7 +632,8 @@ export interface GrantAccessFacts {
     LinkedToTerm?: boolean;
     /**
      * A suspension the payment rule has reached that the row does not show yet, from
-     * {@link ReadTimeCutoffSuspension}. Only ever denies: an Active row reads as Suspended.
+     * {@link ReadTimeCutoffSuspension} or {@link ReadTimeWaiverExpirySuspension}.
+     * Only ever denies: an Active row reads as Suspended.
      */
     PendingSuspension?: GrantStatusDecision | null;
 }
