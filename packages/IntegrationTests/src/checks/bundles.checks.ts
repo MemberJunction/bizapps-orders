@@ -27,6 +27,7 @@
  *   BN10  the database refuses a rollup parent that carries money
  *   BN11  an ordinary product is untouched by any of this
  *   BN12  a bundle inside a bundle is refused rather than expanded
+ *   BN13  only expansion gives a line a parent; one set through the API is refused
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -42,6 +43,8 @@ import {
   type IntegrationCheckContext,
   type NamedCheck,
 } from "@memberjunction/testing-integration";
+import { Metadata } from "@memberjunction/core";
+import type { mjBizAppsOrdersOrderLineEntity } from "@mj-biz-apps/orders-entities";
 import {
   ACCT_SCHEMA,
   CreateBundleItem,
@@ -54,7 +57,8 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { ORDER_LINE_ENTITY } from "../entity-names.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 
 interface LineRow {
   ID: string;
@@ -443,6 +447,40 @@ export const BundleChecks: NamedCheck[] = [
             `if it refuses, it should say why: ${result.Message}`,
           );
         }
+      }),
+  },
+  {
+    // The concession confirm gate does not re-price a line with a parent, because a component is
+    // priced at its share of the bundle. A parent set any other way would let an ordinary line carry
+    // a price below the engine's past that gate (bc-aidp-next-golive#292).
+    Id: "bundles.BN13",
+    Name: "BN13: only bundle expansion gives a line a parent; one set through the API is refused",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await CreateProductPrice(ctx, f.Products.WidgetB, 100);
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 1 },
+            { ProductID: f.Products.WidgetB, Quantity: 1 },
+          ],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const [first, second] = await linesOf(ctx, built.Order.ID as string);
+
+        const line = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ctx.User);
+        Assert(await line.Load(second.ID), "the second line did not load");
+        line.ParentOrderLineID = first.ID;
+        Assert(!(await line.Save()), "an ordinary line must not be given a parent");
+        Assert(/only by bundle expansion/.test(line.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should say why, got: ${line.LatestResult?.CompleteMessage}`);
+
+        const stored = await TxOne<{ ParentOrderLineID: string | null }>(ctx,
+          `SELECT ParentOrderLineID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${second.ID}'`);
+        AssertEqual(stored.ParentOrderLineID, null, "and the line keeps no parent");
       }),
   },
 ];
