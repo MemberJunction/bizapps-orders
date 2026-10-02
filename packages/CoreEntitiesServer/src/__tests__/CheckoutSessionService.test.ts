@@ -277,6 +277,7 @@ const mocks = vi.hoisted(() => {
         mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
         mockMemberResolve: vi.fn(),
         mockLookupMemberResolver: vi.fn(),
+        mockIsMemberCode: vi.fn().mockResolvedValue(false),
         mockSettledNotBookedAlert: vi.fn().mockResolvedValue(undefined),
         mockProductBySKU: vi.fn((sku: string | null | undefined) => {
             const wanted = sku?.trim().toLowerCase();
@@ -309,7 +310,8 @@ vi.mock('../IntentDescription.js', () => ({
 
 vi.mock('../CheckoutMemberDiscountResolver.js', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../CheckoutMemberDiscountResolver.js')>()),
-    ResolveCheckoutMemberDiscountResolver: (key: string) => mocks.mockLookupMemberResolver(key)
+    ResolveCheckoutMemberDiscountResolver: (key: string) => mocks.mockLookupMemberResolver(key),
+    IsRegisteredMemberPromotionCode: (...args: unknown[]) => mocks.mockIsMemberCode(...args)
 }));
 
 vi.mock('../PaymentIntentService.js', () => ({
@@ -489,6 +491,7 @@ describe('CheckoutSessionService', () => {
         mocks.mockOrderInstance.PromotionCodes.Codes = [];
         mocks.mockLookupMemberResolver.mockImplementation(() => ({ Resolve: mocks.mockMemberResolve }));
         mocks.mockMemberResolve.mockReset();
+        mocks.mockIsMemberCode.mockReset().mockResolvedValue(false);
         mocks.mockOrderInstance.CheckoutAnswers.Items = [];
         mocks.mockWidgetInstance.Configuration = mocks.DEFAULT_WIDGET_CONFIG;
         mocks.mockWidgetInstance.CompanyID = 'comp-10';
@@ -719,6 +722,17 @@ describe('CheckoutSessionService', () => {
             });
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toMatch(/does not take promotion codes/i);
+            expect(mocks.mockPricingPrice).not.toHaveBeenCalled();
+        });
+
+        it('refuses a typed code that a member resolver claims, before pricing (#358)', async () => {
+            mocks.mockIsMemberCode.mockImplementation(async (ctx: { Code: string }) => ctx.Code === 'MEMBER20');
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: [' MEMBER20 '],
+            });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/MEMBER20 cannot be entered/);
+            expect(mocks.mockIsMemberCode.mock.calls[0][0]).toMatchObject({ Code: 'MEMBER20', CheckoutWidgetID: mocks.mockWidgetInstance.ID });
             expect(mocks.mockPricingPrice).not.toHaveBeenCalled();
         });
 

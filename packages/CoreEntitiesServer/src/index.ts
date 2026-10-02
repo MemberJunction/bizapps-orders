@@ -762,8 +762,13 @@ export {
     BaseCheckoutMemberDiscountResolver,
     CheckoutMemberDiscountNotConfiguredError,
     ResolveCheckoutMemberDiscountResolver,
+    IsRegisteredMemberPromotionCode,
 } from './CheckoutMemberDiscountResolver.js';
-export type { CheckoutMemberDiscountContext, CheckoutMemberDiscountDecision } from './CheckoutMemberDiscountResolver.js';
+export type {
+    CheckoutMemberDiscountContext,
+    CheckoutMemberDiscountDecision,
+    CheckoutTypedPromotionCodeContext,
+} from './CheckoutMemberDiscountResolver.js';
 export {
     CHECKOUT_CAPTURE_RETRY_WINDOW_MS,
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,

@@ -19,6 +19,11 @@
  * THE TOKEN IS REPLAYABLE. It sits in the host page, so anyone who copies it can present it. Hosts
  * should issue short-lived tokens tied to the member's email, and the resolver should compare that
  * email with `ctx.Email`, the buyer email captured on the draft, returning no code on a mismatch.
+ *
+ * A MEMBER CODE MUST NOT BE TYPED. It is an ordinary promotion code, so anyone who learns it could
+ * enter it in a checkout's code field and get the member price without a token (#358). Before a typed
+ * code is priced, every registered resolver is asked `IsMemberPromotionCode`, and a code any of them
+ * claims is refused — on every widget, because promotion codes are not scoped to one.
  */
 import { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
@@ -31,6 +36,15 @@ export interface CheckoutMemberDiscountContext {
     SessionID: string;
     /** The buyer email captured on this draft, when there is one. */
     Email: string | null;
+}
+
+/** What a resolver is told when a buyer types a promotion code at a checkout. */
+export interface CheckoutTypedPromotionCodeContext {
+    /** The code as the buyer typed it, trimmed. */
+    Code: string;
+    CheckoutWidgetID: string;
+    CompanyID: string;
+    SessionID: string;
 }
 
 /** A resolver's verdict. */
@@ -52,6 +66,53 @@ export abstract class BaseCheckoutMemberDiscountResolver {
         provider: IMetadataProvider,
         user: UserInfo | undefined,
     ): Promise<CheckoutMemberDiscountDecision>;
+
+    /**
+     * Whether `ctx.Code` belongs to a promotion this resolver hands out. The checkout refuses a typed
+     * code any registered resolver claims, so a member code reaches pricing only through `Resolve`.
+     *
+     * The default claims every code: a resolver that does not say which codes are its own turns typed
+     * codes off at every checkout, rather than letting a leaked member code through. Override it to
+     * name the resolver's codes.
+     */
+    public async IsMemberPromotionCode(
+        _ctx: CheckoutTypedPromotionCodeContext,
+        _provider: IMetadataProvider,
+        _user: UserInfo | undefined,
+    ): Promise<boolean> {
+        return true;
+    }
+}
+
+/**
+ * Asks every registered resolver whether `ctx.Code` is one of its member codes. True when any claims
+ * it. A resolver that throws is treated as claiming it, so an outage cannot open the field to member
+ * codes.
+ */
+export async function IsRegisteredMemberPromotionCode(
+    ctx: CheckoutTypedPromotionCodeContext,
+    provider: IMetadataProvider,
+    user: UserInfo | undefined,
+): Promise<boolean> {
+    const registrations = MJGlobal.Instance.ClassFactory.GetAllRegistrations(BaseCheckoutMemberDiscountResolver);
+    const keys = new Set(registrations.map((r) => r.Key).filter((k): k is string => typeof k === 'string' && k.length > 0));
+    for (const key of keys) {
+        const resolver = MJGlobal.Instance.ClassFactory.CreateInstance<BaseCheckoutMemberDiscountResolver>(
+            BaseCheckoutMemberDiscountResolver,
+            key,
+        );
+        if (!resolver || resolver.constructor === BaseCheckoutMemberDiscountResolver) {
+            continue;
+        }
+        try {
+            if (await resolver.IsMemberPromotionCode(ctx, provider, user)) {
+                return true;
+            }
+        } catch {
+            return true;
+        }
+    }
+    return false;
 }
 
 /** Thrown when a widget names a resolver that nobody registered. */

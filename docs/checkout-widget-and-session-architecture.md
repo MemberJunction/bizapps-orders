@@ -420,6 +420,11 @@ export class PartnerMemberResolver extends BaseCheckoutMemberDiscountResolver {
         const sameBuyer = !!member && !!ctx.Email && member.email.toLowerCase() === ctx.Email.toLowerCase();
         return sameBuyer ? { PromotionCode: 'PARTNER-RATE' } : { PromotionCode: null, Message: 'Membership could not be confirmed.' };
     }
+
+    // Names the codes this resolver hands out, so a buyer cannot type one instead.
+    public override async IsMemberPromotionCode(ctx: CheckoutTypedPromotionCodeContext): Promise<boolean> {
+        return ctx.Code.toUpperCase() === 'PARTNER-RATE';
+    }
 }
 ```
 
@@ -428,6 +433,13 @@ The widget names it with `Configuration.memberDiscountResolver: "PARTNER-MEMBER"
 The token sits in the host page, so anyone who copies it can replay it. Issue **short-lived** tokens
 (minutes, not days) and tie each to the member's email, then have the resolver compare that email with
 `ctx.Email`, the buyer email captured on the draft, as the sample does.
+
+A member code is an ordinary promotion code, so a buyer who learns it could type it into a checkout that
+takes codes and get the member price without a token. Before a typed code is priced, `/draft` asks every
+registered resolver `IsMemberPromotionCode`, and refuses a code any of them claims, at every widget —
+promotion codes are not scoped to one. A resolver that throws counts as claiming the code. The base class
+claims **every** code, so a resolver that does not override it turns typed codes off at every checkout
+until it names its own.
 
 - The resolver returns a **promotion code**, priced through the ordinary promotion engine — dates, qualifiers and redemption limits apply as they do to any code.
 - The session snapshot keeps only the resolved code (`MemberPromotionCode`); **the token is never stored**. `/complete` re-prices from the snapshot and carries the code on the order, so the booked total equals the charged total.

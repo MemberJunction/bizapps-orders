@@ -54,6 +54,7 @@ import {
 } from './CheckoutSavedInstrument.js';
 import {
     CheckoutMemberDiscountNotConfiguredError,
+    IsRegisteredMemberPromotionCode,
     ResolveCheckoutMemberDiscountResolver,
 } from './CheckoutMemberDiscountResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
@@ -1143,6 +1144,17 @@ export class CheckoutSessionService {
         const promotionCodes = normalizedCodes.Codes;
         if (promotionCodes.length > 0 && widgetConfig.allowCoupons !== true) {
             return failed('This checkout does not take promotion codes.');
+        }
+        // A member promotion's code is earned through a verified token, never typed (#358).
+        for (const code of promotionCodes) {
+            const isMemberCode = await IsRegisteredMemberPromotionCode(
+                { Code: code, CheckoutWidgetID: widget.ID, CompanyID: widget.CompanyID, SessionID: session.ID },
+                md as unknown as IMetadataProvider,
+                contextUser
+            );
+            if (isMemberCode) {
+                return failed(`The code ${code} cannot be entered at this checkout.`);
+            }
         }
 
         const allowedProductIds = await this.resolveAllowedProductIds(widgetConfig, contextUser);
