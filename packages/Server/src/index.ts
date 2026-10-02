@@ -22,6 +22,7 @@ import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-ga
 import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
 import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
 import { LoadApplyAccessOverrideDecisionAction } from './custom/apply-access-override-decision.action.js';
+import { LoadDetectOverlappingSubscriptionsAction } from './custom/detect-overlapping-subscriptions.action.js';
 import { LoadDetectUnattestedProgressAction } from './custom/detect-unattested-progress.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
@@ -29,6 +30,8 @@ import { LoadDetectUnattestedProgressAction } from './custom/detect-unattested-p
 import '@mj-biz-apps/orders-core-entities-server';
 import {
     LoadCancelSubscriptionOperation,
+    LoadAmendArrangementOperation,
+    LoadSubscriptionTermEntityServer,
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
     LoadOrderEntityServer,
@@ -48,6 +51,8 @@ import {
     LoadDetectUnattestedProgressOperation,
     LoadOrderHeaderPaymentScheduleEntityServer,
     LoadOrderLineProgressMeasurementEntityServer,
+    LoadOrderConcessionEntityServer,
+    InitConcessionApprovalListener,
     LoadGetFulfillmentQueueOperation,
     LoadGetPriorReturnsOperation,
     LoadFulfillOrderLinesOperation,
@@ -58,6 +63,7 @@ import {
     LoadTaxResolver,
     LoadRevenueRecognitionDrivers,
     LoadSpawnRenewalsOperation,
+    LoadDetectOverlappingSubscriptionsOperation,
     LoadEmailDeliveryChannel,
     LoadStoredValuePaymentProvider,
     LoadBillComPaymentProvider,
@@ -139,6 +145,9 @@ export function LoadBizAppsOrdersServer(): void {
     LoadDetectUnattestedProgressOperation(); // 'Orders.DetectUnattestedProgress' — POC lines left unattested, onto finance's review list (golive #279)
     LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
     LoadOrderLineProgressMeasurementEntityServer(); // refuses a Posted observation the operation did not write
+    LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
+    LoadSubscriptionTermEntityServer();    // a booked term's dates change only through an approved extension
+    InitConcessionApprovalListener();      // a decision on a concession's approval task decides that concession (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
@@ -150,6 +159,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadRevenueRecognitionDrivers();   // the three shipped rev-rec drivers (D43)
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
+    LoadAmendArrangementOperation();   // 'Orders.AmendArrangement' — extend a booked term, previewed and approved
     LoadSpawnRenewalsOperation();      // the 'Orders.SpawnRenewals' remote operation (D55)
     LoadIssueExternalInvoiceOperation();        // 'Orders.IssueExternalInvoice' — one billing unit → one Bill.com invoice, once (golive #146)
     LoadCancelExternalInvoiceOperation();       // 'Orders.CancelExternalInvoice' — archive an unpaid rail invoice, no ledger event (golive #147)
@@ -157,6 +167,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGetExternalInvoicingWorklistOperation(); // 'Orders.GetExternalInvoicingWorklist' — invoiceable and unsent, computed per request
     LoadSendExternalInvoicesOperation();        // 'Orders.SendExternalInvoices' — the sweep the scheduler calls
     LoadPollExternalPaymentsOperation();        // 'Orders.PollExternalPayments' — cleared Bill.com payments, captured once (golive #148)
+    LoadDetectOverlappingSubscriptionsOperation(); // 'Orders.DetectOverlappingSubscriptions' — finance exception type 5 (golive #279)
     LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
     LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator
     LoadAccessOverrideOperations();    // 'Orders.RequestAccessOverride' / 'Orders.RecordAccessOverrideDecision' (#268)
@@ -183,6 +194,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
     LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll
     LoadApplyAccessOverrideDecisionAction(); // 'Orders.ApplyAccessOverrideDecision' — the Tasks inbox hook for overrides (#268)
+    LoadDetectOverlappingSubscriptionsAction(); // 'Orders.DetectOverlappingSubscriptions' — nightly overlap check for finance review (golive #279)
     LoadDetectUnattestedProgressAction(); // 'Orders.DetectUnattestedProgress' — nightly unattested-progress exceptions (golive #279)
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same

@@ -241,6 +241,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         this.dropSavePopulatedFieldErrors(result);
         this.refuseBookedMoneyEdits(result);
         this.refuseBookedAddressEdits(result);
+        this.refuseBookedPaymentTermsEdit(result);
 
         const verdict = this.statusTransitionVerdict();
         if (!verdict.Allowed) {
@@ -398,6 +399,37 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 'Status',
                 message,
                 this.Status,
+                ValidationErrorType.Failure,
+            ),
+        );
+    }
+
+    /**
+     * True only for the server's own write of an approved `Terms` concession. The server subclass overrides
+     * it; here, where any caller could set a flag, nothing is sanctioned.
+     */
+    protected PaymentTermsChangeSanctioned(): boolean {
+        return false;
+    }
+
+    /**
+     * Refuse a change to a confirmed order's payment terms (#309).
+     *
+     * Terms are a commercial concession: they move when the cash arrives without changing the price. On a
+     * confirmed order they change only through an approved `Terms` concession, which the server applies.
+     * `trg_OrderHeader_ImmutableAfterConfirm` (51018) holds the same rule at the database. `DueDate`
+     * stays correctable, and MJ record-change tracking records every change to it.
+     */
+    private refuseBookedPaymentTermsEdit(result: ValidationResult): void {
+        if (!this.MoneyLocked || !this.FieldIsDirty('PaymentTermsTypeID') || this.PaymentTermsChangeSanctioned()) return;
+        const order = `Order ${this.OrderNumber ?? ''}`.trim();
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo(
+                'PaymentTermsTypeID',
+                `${order} is confirmed, so its payment terms cannot be edited directly. ` +
+                    `Amend them with Orders.AmendArrangement; the change takes effect when its Terms concession is approved.`,
+                this.PaymentTermsTypeID,
                 ValidationErrorType.Failure,
             ),
         );

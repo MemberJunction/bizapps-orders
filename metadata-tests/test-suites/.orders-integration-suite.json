@@ -562,6 +562,28 @@
           "primaryKey": {
             "ID": "A674F471-E717-4DFF-A301-1C606EF37270"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-39 - Concessions",
+            "Sequence": 39,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "FC90A0C8-20E3-44D0-B031-236F57916C56"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-40 - Term Extension",
+            "Sequence": 40,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "E261B03C-0C83-4297-B5B4-A6F0C69EFA2B"
+          }
         }
       ]
     },

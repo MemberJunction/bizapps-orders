@@ -106,6 +106,8 @@ async function defineBundle(
 
 async function sellBundle(ctx: IntegrationCheckContext, qty = 1, price = 100) {
   const f = Fx();
+  // The bundle's engine price, so selling it at `price` is not a concession the confirm gate holds.
+  await CreateProductPrice(ctx, f.Products.BundleA, price);
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
     BillToOrganizationID: f.Customers.OrganizationID,
@@ -272,6 +274,8 @@ export const BundleChecks: NamedCheck[] = [
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
         await defineBundle(ctx);
+        // The lower of the two bundle prices, so neither is a concession the confirm gate holds.
+        await CreateProductPrice(ctx, f.Products.BundleA, 60);
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,
@@ -417,6 +421,7 @@ export const BundleChecks: NamedCheck[] = [
         await CreateProductPrice(ctx, f.Products.WidgetB, 10);
         await CreateBundleItem(ctx, f.Products.BundlePartX, f.Products.WidgetB, { SortOrder: 10 });
 
+        await CreateProductPrice(ctx, f.Products.BundleA, 100);
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,

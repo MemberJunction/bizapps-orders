@@ -64,6 +64,8 @@ const UNBILLED_CODE = '11300';
 /** The three-line multi-company order OB1–OB6 all read from — built once per check, inside its tx. */
 async function confirmMultiCompanyOrder(ctx: IntegrationCheckContext) {
     const f = Fx();
+    // WidgetB's engine price, so its stated 50 is not a concession the confirm gate would hold.
+    await CreateProductPrice(ctx, f.Products.WidgetB, 50);
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         Lines: [
@@ -239,7 +241,8 @@ export const OrderBookingChecks: NamedCheck[] = [
                 // what the ledger says we are owed, or the two records of the same fact disagree —
                 // which is the one thing a general ledger exists to prevent.
                 const f = Fx();
-                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                // The lower of the two stated prices, so neither is a concession the confirm gate holds.
+                await CreateProductPrice(ctx, f.Products.WidgetA, 50);
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     BillToOrganizationID: f.Customers.OrganizationID,
