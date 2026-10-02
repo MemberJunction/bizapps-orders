@@ -416,8 +416,8 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * sale counts in is decided by where the customer was on the date of sale. An address that is
      * set cannot be replaced or cleared. An empty one may be filled, as an empty bill-to party may
      * be filled after confirm, and the server snapshots it on that save.
-     * `trg_OrderHeader_AddressFrozenAfterConfirm` (51015) and
-     * `trg_OrderLine_AddressFrozenAfterConfirm` (51016) hold the same rule at the database; this
+     * `trg_OrderHeader_ImmutableAfterConfirm` (51015) and
+     * `trg_OrderLine_ImmutableAfterConfirm` (51016) hold the same rule at the database; this
      * says so before the round trip, against the field that was changed.
      *
      * The snapshots are the server's to write, from the Address rows, so a change to one from

@@ -711,6 +711,31 @@
         }
     </mj-collapsible-panel>
 
+    <!-- Order Line Choices Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderLineChoices"
+        SectionName="Order Line Choices"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLineChoices')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Line Choices','OrderLineID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Line Choices','OrderLineID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLineChoices')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLineChoices', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <!-- Order Concessions Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderConcessions"

@@ -511,6 +511,122 @@ export interface CheckEntitlementOutput {
 }
 
 /**
+ * Input for `Orders.DetectOverlappingSubscriptions`.
+ *
+ * The nightly check behind finance exception type OVERLAPPING_SUBSCRIPTION: one exception per
+ * pair of live subscriptions for one holder whose terms overlap, raised through accounting's
+ * `Accounting.RaiseFinanceExceptions`. Re-running is safe — an exception already raised for a
+ * pair is left as it is.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersDetectOverlappingSubscriptionsInput {
+    /**
+     * The business day the exceptions are dated to (YYYY-MM-DD). Omit for today in the business
+     * time zone, which is what the schedule uses.
+     */
+    AsOfDate?: string;
+}
+
+/**
+ * Output for `Orders.DetectOverlappingSubscriptions`.
+ *
+ * Counts, plus every error, so an unattended run that raised nothing can be told apart from one
+ * that found nothing.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OverlappingSubscriptionsDetectionError {
+    /** `<EarlierSubscriptionID>|<LaterSubscriptionID>` when the error belongs to one pair. */
+    DedupeKey?: string;
+    Code: string;
+    Message: string;
+}
+
+export interface OrdersDetectOverlappingSubscriptionsOutput {
+    /** False when any pair could not be raised; every reason is in Errors. */
+    Success: boolean;
+    Message?: string;
+    /**
+     * False when the OVERLAPPING_SUBSCRIPTION exception type is missing or inactive. The check then
+     * does not run: the type's configuration is the only source of its settings.
+     */
+    TypeActive: boolean;
+    /** The business day the exceptions were dated to (YYYY-MM-DD). */
+    ExceptionDate: string;
+    /** Pairs the "Overlapping Subscriptions" query returned. */
+    PairsFound: number;
+    /** Pairs left after the IncludeSameCategory setting: the ones an exception was raised for. */
+    PairsConsidered: number;
+    /** Exceptions created by this run. */
+    Created: number;
+    /** Pairs that already had an exception, in any status. Left unchanged. */
+    AlreadyRaised: number;
+    /** Pairs accounting skipped. */
+    Skipped: number;
+    Errors: OverlappingSubscriptionsDetectionError[];
+}
+
+/**
+ * Input for `Orders.DetectUnattestedProgress`.
+ *
+ * The nightly pass that puts a percentage-of-completion line on finance's review list when nobody
+ * has attested its progress for too long (golive #279, type 2). The threshold is the
+ * PROGRESS_UNATTESTED type's `MaxDaysWithoutAttestation`, owned by accounting.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersDetectUnattestedProgressInput {
+    /** Treat this business day as "today" (YYYY-MM-DD). Omit for the actual business day, which is what the schedule uses. */
+    AsOfDate?: string;
+}
+
+/**
+ * Output for `Orders.DetectUnattestedProgress`.
+ *
+ * Every line found overdue for attestation comes back, with what was raised for it. One exception
+ * per line per month: a line still unattested next month is raised again, and a second run in the
+ * same month finds the one already raised.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface UnattestedProgressLine {
+    OrderLineID: string;
+    OrderNumber: string;
+    LineNumber: number;
+    CompanyID: string;
+    /** The last posted observation, or null when the line has never been attested. */
+    LastMeasurementDate?: string | null;
+    /** The business day the order was booked — the clock for a line never attested. */
+    ConfirmedOn?: string | null;
+    /** Whole days from the last attestation (or the booking) to the as-of day. */
+    DaysWithoutAttestation: number;
+    /** The line value not yet recognised. */
+    UnrecognizedAmount?: number | null;
+    /** `<OrderLineID>|<YYYY-MM>` — one exception per line per month. */
+    DedupeKey: string;
+    /** The review row, when accounting created or already held one. */
+    FinanceExceptionID?: string | null;
+    /** True when this pass created the review row; false when it already existed. */
+    Created?: boolean;
+}
+
+export interface OrdersDetectUnattestedProgressOutput {
+    Success: boolean;
+    Message?: string;
+    /** The business day the pass measured against. */
+    AsOfDate: string;
+    /** True when accounting does not define the type or has switched it off, so nothing was raised. */
+    TypeInactive: boolean;
+    MaxDaysWithoutAttestation?: number | null;
+    Lines: UnattestedProgressLine[];
+    /** Review rows this pass created. */
+    Raised: number;
+    /** Lines whose review row for this month already existed. */
+    AlreadyRaised: number;
+}
+
+/**
  * Input for `Orders.FulfillOrderLines`.
  *
  * Flipping lines to Fulfilled and advancing the order when the last one is done are ONE decision,
@@ -894,7 +1010,11 @@ export interface ProgressWorklistRow {
     RecognizedToDate: number;
     /** Who signed the last observation. */
     LastAttestedBy?: string | null;
+    /** The user ID behind `LastAttestedBy`, or null when the line has never been attested. */
+    LastAttestedByUserID?: string | null;
     OrderStatus: string;
+    /** When the order was booked, as an ISO instant. */
+    ConfirmedAt?: string | null;
 }
 
 export interface OrdersGetProgressWorklistOutput {
@@ -1219,6 +1339,32 @@ export interface PriceOrderOutput {
 }
 
 /**
+ * Input for `Orders.RecordAccessOverrideDecision`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface RecordAccessOverrideDecisionInput {
+    AccessOverrideID: string;
+    /** A Tasks decision outcome code: Approved, ApprovedWithConditions or Rejected. */
+    Outcome: string;
+    Notes?: string;
+}
+
+/**
+ * Output of `Orders.RecordAccessOverrideDecision`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface AccessOverrideDecisionOutput {
+    Success: boolean;
+    Message?: string;
+    /** The override's status after the call. */
+    Status?: string;
+    /** Grants whose status changed because the override was approved. */
+    GrantsChanged?: number;
+}
+
+/**
  * Input for `Orders.RecordProgress`.
  *
  * One attested progress observation on a percentage-of-completion order line (plan D90). The
@@ -1334,6 +1480,36 @@ export interface RefundPaymentOutput {
         UnappliedAmount: number;
         BalanceAfter: number;
     }>;
+}
+
+/**
+ * Input for `Orders.RequestAccessOverride`.
+ *
+ * An exception to payment-gated access on one order. Nothing changes until it is approved through
+ * the task this raises.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface RequestAccessOverrideInput {
+    OrderHeaderID: string;
+    /** WaivePaymentHold lifts the hold on grants awaiting payment; DeferCutoff lifts the renewal cutoff. */
+    OverrideType: 'WaivePaymentHold' | 'DeferCutoff';
+    /** Why the exception is needed. Required. */
+    Reason: string;
+    /** Last day the override holds, YYYY-MM-DD, inclusive. Required; not before today. */
+    EffectiveThrough: string;
+}
+
+/**
+ * Output of `Orders.RequestAccessOverride`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface RequestAccessOverrideOutput {
+    Success: boolean;
+    Message?: string;
+    AccessOverrideID?: string;
+    ApprovalTaskID?: string;
 }
 
 /**
@@ -1469,6 +1645,38 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
     public readonly OperationKey = "Orders.CheckEntitlement";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.DetectOverlappingSubscriptions — Detect Overlapping Subscriptions
+// ============================================================
+/**
+ * Detect Overlapping Subscriptions
+ * Raise a finance exception for each pair of live subscriptions for one holder whose terms overlap: the same product, or (when the exception type's IncludeSameCategory setting is on) products in the same category with the same subscription type. Each overlap is billed and recognized twice unless one is cancelled. Reads its settings from the OVERLAPPING_SUBSCRIPTION exception type and does nothing when that type is missing or inactive. The source record is the later subscription and the creator is whoever confirmed the order that booked it; when no confirmer is recorded (an order confirmed before that was recorded, or no order), the exception has no creator restriction. Re-running is safe: a pair that already has an exception raises nothing new.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.DetectOverlappingSubscriptions'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersDetectOverlappingSubscriptionsOperation extends BaseRemotableOperation<OrdersDetectOverlappingSubscriptionsInput, OrdersDetectOverlappingSubscriptionsOutput> {
+    public readonly OperationKey = "Orders.DetectOverlappingSubscriptions";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "subscriptions:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.DetectUnattestedProgress — Detect Unattested Progress
+// ============================================================
+/**
+ * Detect Unattested Progress
+ * The nightly finance-exception pass for percentage-of-completion lines (golive #279, type 2): every active, booked, not-complete POC line from the progress worklist whose last attestation - or, when it has never been attested, whose booking - is more than the PROGRESS_UNATTESTED type's MaxDaysWithoutAttestation days before the business day goes on accounting's review list. One exception per line per month; a repeat in the same month finds the one already raised. Nothing is blocked. A type accounting does not define or has switched off raises nothing.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.DetectUnattestedProgress'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersDetectUnattestedProgressOperation extends BaseRemotableOperation<OrdersDetectUnattestedProgressInput, OrdersDetectUnattestedProgressOutput> {
+    public readonly OperationKey = "Orders.DetectUnattestedProgress";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 
@@ -1633,6 +1841,22 @@ export class OrdersPriceOrderOperation extends BaseRemotableOperation<PriceOrder
 }
 
 // ============================================================
+// Orders.RecordAccessOverrideDecision — Record Access Override Decision
+// ============================================================
+/**
+ * Record Access Override Decision
+ * Approve or reject a requested access override. Records the decision on the override's Tasks approval and applies it: an approval re-decides the order's grants at once.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.RecordAccessOverrideDecision'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersRecordAccessOverrideDecisionOperation extends BaseRemotableOperation<RecordAccessOverrideDecisionInput, AccessOverrideDecisionOutput> {
+    public readonly OperationKey = "Orders.RecordAccessOverrideDecision";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
 // Orders.RecordProgress — Record Progress
 // ============================================================
 /**
@@ -1661,6 +1885,22 @@ export class OrdersRefundPaymentOperation extends BaseRemotableOperation<RefundP
     public readonly OperationKey = "Orders.RefundPayment";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "payments:refund";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.RequestAccessOverride — Request Access Override
+// ============================================================
+/**
+ * Request Access Override
+ * Request an exception to payment-gated access on one order: WaivePaymentHold lifts the hold on grants awaiting payment, DeferCutoff lifts the renewal cutoff. Requires a reason, a last day, and the MJ.BizApps.Orders.Access.Override authorization for that type. Writes a Requested override and raises its Tasks approval; access changes only once it is approved.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.RequestAccessOverride'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersRequestAccessOverrideOperation extends BaseRemotableOperation<RequestAccessOverrideInput, RequestAccessOverrideOutput> {
+    public readonly OperationKey = "Orders.RequestAccessOverride";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 

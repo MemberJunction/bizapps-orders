@@ -25,5 +25,17 @@
       "lastModified": "2026-09-24T11:01:28.540Z",
       "checksum": "9035d02fb521cb9d7b0cf151dc2cb9747410a60b1a71b0deaa716aa4b9a21ae3"
     }
+  },
+  {
+    "fields": {
+      "Category": "Authority Limits"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Authorities&Name=MaxConcessionPctOfContract"
+    },
+    "sync": {
+      "lastModified": "2026-09-29T13:59:48.052Z",
+      "checksum": "9035d02fb521cb9d7b0cf151dc2cb9747410a60b1a71b0deaa716aa4b9a21ae3"
+    }
   }
 ]

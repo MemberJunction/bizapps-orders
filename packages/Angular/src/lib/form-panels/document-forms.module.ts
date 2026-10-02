@@ -1,5 +1,6 @@
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
@@ -13,6 +14,7 @@ import { SubscriptionTermsPanel } from './subscription-terms.panel';
 import { SubscriptionRevRecPanel } from './subscription-revrec.panel';
 import { SubscriptionTermHeaderPanel } from './subscription-term-header.panel';
 import { SubscriptionTermRevRecPanel } from './subscription-term-revrec.panel';
+import { OrderAccessOverridesPanel } from './order-access-overrides.panel';
 import { ProductHeaderPanel } from './product-header.panel';
 import {
     ProductAccountingPanel,
@@ -69,6 +71,7 @@ const PANELS = [
     SubscriptionRevRecPanel,
     SubscriptionTermHeaderPanel,
     SubscriptionTermRevRecPanel,
+    OrderAccessOverridesPanel,
     ProductHeaderPanel,
     ProductPricingPanel,
     ProductPromosPanel,
@@ -113,6 +116,7 @@ const PANELS = [
     declarations: [...PANELS],
     imports: [
         CommonModule,
+        FormsModule,
         BaseFormsModule,
         MJAlertComponent,
         MJButtonDirective,

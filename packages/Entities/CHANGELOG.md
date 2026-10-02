@@ -1,5 +1,156 @@
 # @mj-biz-apps/orders-entities
 
+## 5.22.0
+
+### Minor Changes
+
+- 2aca048: Finance exception review for percentage-of-completion progress (golive #279, types 1 and 2). Nothing is blocked: each flagged item still posts and also lands on accounting's review list through `Accounting.RaiseFinanceExceptions`, with thresholds read from `Accounting.GetFinanceExceptionTypes` (a missing or inactive type raises nothing). `Orders.RecordProgress` raises `PROGRESS_JUDGMENT_CALL` inside its own transaction, after the observation is written, when the catch-up is a backward slide, is the line's first posted observation, or exceeds `MaxSingleObservationAmount` — one exception per observation naming every reason, keyed on the observation; a failure to raise fails the attestation, and `Preview` raises nothing. New operation `Orders.DetectUnattestedProgress`, with a Custom Action of the same name and a daily scheduled job that ships Disabled, raises `PROGRESS_UNATTESTED` for every active, booked, not-complete POC line on the progress worklist whose last attestation, or whose booking when never attested, is more than `MaxDaysWithoutAttestation` days before the business day — one exception per line per month (`<OrderLineID>|<YYYY-MM>`), amount the value not yet recognised, creator the last attester; a failed raise fails the run. `Orders.GetProgressWorklist` rows gain `LastAttestedByUserID` and `ConfirmedAt`.
+
+## 5.21.0
+
+### Minor Changes
+
+- 4d6f410: Approved exceptions to payment-gated access (#268). An `EntitlementAccessOverride` on one order
+  keeps its grants `Active` past the rule that would suspend them:
+
+  - `WaivePaymentHold` lifts the hold on grants awaiting payment (`AwaitingPayment`).
+  - `DeferCutoff` lifts the renewal cutoff (`PastDue`).
+
+  Every override carries a reason and a last day (`EffectiveThrough`), and applies only to the order
+  it names; a later renewal or a revised order is a different order. `Orders.RequestAccessOverride`
+  needs the authorization for the override type (`MJ.BizApps.Orders.Access.Override.WaivePaymentHold`
+  or `.DeferCutoff`, or their parent). No role holds them yet. The request raises an
+  `ORDERS_ACCESS_OVERRIDE` approval task, unassigned: who approves is #360.
+
+  An override takes effect only once approved, through `Orders.RecordAccessOverrideDecision` or by
+  closing the task in the Tasks inbox. An approval re-decides the order's grants at once. The payment
+  path and the nightly pass honour an approved override through its last day. After that day, the
+  nightly pass re-decides the grants without the override and marks it `Expired`.
+
+  The order form gains an Access Overrides section listing the order's overrides, with a request form
+  and approve / reject on open requests.
+
+  `@mj-biz-apps/orders-core-entities-server` now peers on `@mj-biz-apps/tasks-core`.
+
+- 1901f73: Checkout widgets can ask the buyer questions before payment (#322). `CheckoutWidgetConfiguration.questions` defines `select` or `text` questions, with `required` and an `otherOptionKey` whose choice requires a free-text answer. The widget renders them and keeps Pay disabled until required ones are answered. `/draft` stores the answers; `/payment-intent` and `/complete` refuse a missing required answer, before any intent opens or Person is created. The confirmed order records each answer as an Order Checkout Answer, saved in the booking transaction through the new `OrderHeader.CheckoutAnswers` collection. The check is shared: `CheckCheckoutAnswers` in `@mj-biz-apps/orders-entities`.
+- 53d6fd8: Migration `V202609291300` adds the CheckoutSessionStep table: one row per checkout session per post-payment step (Confirm, Capture), with status, attempts, last error, whether that error is retryable, what started the last attempt and when. Includes its CodeGen output: the generated entity class, GraphQL type and form.
+- 68402d5: Migration `V202609291306` adds the EntitlementAccessOverride table: a recorded exception to payment-gated access on one order (`WaivePaymentHold` or `DeferCutoff`), with a required reason and last day, its Tasks approval, and who decided it and when. A trigger stops the request and the decision being rewritten and limits the status moves. Includes its CodeGen output: the generated entity class, GraphQL type and form.
+- 18b10d7: Migration `V202609291304` adds the OrderCheckoutAnswer table: one row per order per question a checkout widget asked the buyer, with the question's key, its label as the buyer saw it, the answer, and the free-text answer given after choosing "Other". Includes its CodeGen output: the generated entity class, GraphQL type and form.
+- 497fc57: Migration `V202609291302` merges the confirmed-order guard triggers into one per table. `trg_OrderHeader_ImmutableAfterConfirm` now runs 51014, 51013, 51015 and 51017, and `trg_OrderLine_ImmutableAfterConfirm` runs 51002, 51003, 51016 and 51008. `trg_OrderHeader_AddressFrozenAfterConfirm`, `trg_OrderHeader_ConfirmedByFrozenAfterBooking` and `trg_OrderLine_AddressFrozenAfterConfirm` are dropped. Error numbers and messages are unchanged. When one write breaks two rules, the error returned now follows that order.
+- 2831b2f: Migration `V202609291307` adds the OrderLineChoice table: one row per option a buyer chose from a checkout choice group ("choose N of M"), recorded on the order line. It adds `ChoiceGroupKey` and `ChoiceOptionValue` to ProductEntitlement, set together or not at all; set, the entitlement is granted only on a line that carries that choice. Includes its CodeGen output: the generated entity class, GraphQL type and form, and the regenerated Product Entitlement view and procs.
+- f263124: Migration `V202609291301` restores trigger check 51008: once an order line's `JournalEntryID` is set it cannot be cleared or replaced. Two earlier redefinitions of `trg_OrderLine_ImmutableAfterConfirm` had dropped it.
+- 528b483: The 5.21 Metadata_Sync ships the entitlement access override to hosts: its authorizations, the Apply Access Override Decision action and the Access Override Approval task type. It also ships the `orders` API scopes granted to MJAPI and two new remote operations. The ML bench output is not included.
+- fa90781: Migration `V202609291308` adds the OutboundEvent and OutboundDelivery tables: a transactional outbox of `OrderConfirmed` and `GrantStatusChanged` events, and one delivery row per event per registered consumer with its status (`Pending`, `Delivered`, `DeadLettered`), attempts, next attempt, deadline and lease. Includes its CodeGen output: the generated entity classes, GraphQL types, forms, and the Outbound Events sections on the Order Header and Entitlement Grant forms.
+
+### Patch Changes
+
+- 6e5077d: `<mj-orders-checkout>` can be embedded inside another widget. New attributes: `email` prefills the e-mail field while it is empty; `source` and `source-ref` say where the checkout came from and are kept on the checkout session as `MetadataJSON.Attribution` (`NormalizeCheckoutAttribution`; an unreadable one is dropped, never refused). A host dispatches `checkout-reset` on the element to return it to a blank form; it is refused with `checkout-reset-refused` while a payment is in flight or the account step is unsettled, it always starts a new session, and it reads `email`, `source` and `source-ref` again for the next conversation.
+- 704eec2: Migration `V202609291303` adds `FK_OrderLine_ShipToAddress`, so an Address that an order line names as its ship-to can no longer be deleted, and adds the Addresses → Order Lines entity relationship so a dependency check on an Address finds those lines. `OrderLine.ShipToAddressID` is now documented as relating to Addresses.
+- fd0cfac: Orders now ships the API scopes its entitlement operations require: a parent `orders` scope with `orders:entitlement-check` (`Orders.CheckEntitlement`) and `orders:entitlement-read` (`Orders.ListEntitlements`), both allowed at the MJAPI application ceiling (`*`, Include). Before this, every API-key call to either operation was refused on a host that installed Orders until the scopes were created by hand. The rows are in `metadata/` and reach hosts through the release's metadata sync migration.
+
+## 5.20.0
+
+### Minor Changes
+
+- 7af7a46: Two attestation controls from Jeremy's review of golive #241. `Orders.RecordProgress` returns a `ClosedPeriodWarning` when the measurement date falls in a month accounting has already posted a journal-entry batch for — advisory on both the preview and the live path, never blocking, since the batch build stays the control and attestation must not be gated on a state the attester cannot change. The screen shows it above the table, in the confirm dialog, and on the notice after a post made anyway. And the immutability trigger now looks forward as well as back: promoting an observation from Draft to Posted is refused outright by the trigger (51031), and inserting a row already Posted is refused by a new `OrderLineProgressMeasurement` server subclass unless `Orders.RecordProgress` is the one saving it. A posted observation carries a recognition amount and a journal entry id, and the only thing making those true is that the entry was written in the same transaction.
+- 41d32be: Bill.com integration: invoices out, payments in (golive #146, #147, #148, #242).
+
+  **The seam.** `BaseInvoiceRail` is the outbound-invoice counterpart of `BasePaymentProvider`: a
+  class-factory base keyed by `PaymentProviderType.Code`, with one implementation, `BillComInvoiceRail`,
+  over the published `@memberjunction/connector-bill-com` through a stubbable `BillComGateway`. Per-company
+  configuration is a `PaymentProvider` row of the new type `BillCom` whose new `CompanyIntegrationID`
+  column points at the `MJ: Company Integrations` row the connector resolves credentials from — a
+  pointer, never a secret.
+
+  **Billing units, not orders.** One Bill.com invoice per `(order, selling company, instalment | none)`.
+  An order billed as a whole is invoiceable at Confirmed; an instalment (PR #220) once its number is
+  frozen. The send is decoupled from both events: `Orders.SendExternalInvoices` works a computed worklist
+  (`Orders.GetExternalInvoicingWorklist`) through `Orders.IssueExternalInvoice`, which claims the unit
+  with a `Sending` row before the rail is called so a double send fails here rather than at Bill.com.
+  `Orders.CancelExternalInvoice` archives an unpaid invoice and is blocked when money has been applied;
+  on an instalment it leaves the rail facts as history, because Craig ruled that an issued instalment is
+  never re-issued — the replacement carries the next number. A send that times out leaves the unit
+  claimed on purpose, and `Orders.AdoptExternalInvoice` is the other half of resolving that: it records
+  the reference the rail already holds, after reading the invoice back and refusing a total that does not
+  tie. Native email delivery refuses a unit that is invoiced through the rail.
+
+  **Payments are polled, once.** Bill.com publishes no payment-received webhook, so
+  `Orders.PollExternalPayments` reads receivable payments since a stored watermark, matches
+  `invoicePayments[]` to `ExternalInvoice` rows by the rail's invoice id (all or nothing), and captures
+  each cleared payment through `Orders.CapturePayment` with `IdempotencyKey = 'billcom:<id>'`. Unknown
+  statuses are held, unmatched invoices capture nothing, reversals are flagged for a person. A verified
+  Bill.com invoice webhook (`POST /webhooks/billcom/:providerId`, HMAC-SHA256) only nudges that poll to
+  run now.
+
+  **Schema.** New tables `ExternalInvoice`, `ExternalCustomer`, `ExternalPayment`,
+  `PaymentProviderSyncState`; new nullable `PaymentProvider.CompanyIntegrationID`. Three new `V`
+  migrations, plain DDL per the convention set on PR #220; the FK to `OrderHeaderPaymentSchedule` is added
+  only where that table exists. Applied to a development database, with the CodeGen output folded under
+  each migration's banner. A fourth migration, `BillCom_Metadata_Sync`, carries the declarative metadata —
+  the `BillCom` provider type, the six remote operations, the two Actions with their 22 params and the two
+  scheduled jobs — because `metadata/` is a dev-time source no host installs. It was generated from a
+  database that did not hold those rows, so every statement is an `spCreate`, and each is guarded on the
+  primary key or the row's natural key so a host that already has the row is left alone.
+
+  **Verified live against the BILL sandbox**, not only in unit tests: customer and invoice create,
+  archive, duplicate-number refusal, payment polling, and the full capture chain — a confirmed order
+  issued to Bill.com, a payment recorded there, and the poll capturing it, with the order balance going
+  to zero and accounting booking DR Cash / CR Accounts Receivable against the confirm entry's DR AR /
+  CR Sales. Re-polling from an earlier watermark captured nothing further.
+
+  Two defects in `@memberjunction/connector-bill-com` 0.3.1 surfaced and were filed upstream
+  (MemberJunction/Integrations #390 and #391, fixed in PR #392): every generic request repeated the API
+  version and 404'd, and invoice archive had no connector verb. Both are released in 0.3.2, which this
+  change depends on; the local workarounds are gone and archive goes through the connector's own verb.
+
+  **The screens.** An **External invoicing** panel on the order form lists what the rail holds for that
+  order and carries the two acts a person may take; it hides itself entirely for a company with no rail,
+  so orders invoiced natively look untouched. An **Invoicing queue** page under Receivables shows what is
+  waiting to send and what the payment poll could not finish, and can run either job by hand — which
+  matters because both ship disabled and somebody has to prove them first. The billing worklist gains a
+  column naming the rail a company invoices through, so issuing an instalment tells the truth about what
+  happens next.
+
+  Every label is read from the `PaymentProvider` row: no screen says Bill.com. The rule that decides when
+  Send may be offered lives in a pure module (`external-invoice-view.ts`) and is unit-tested, because
+  offering it against a unit already live — or one whose last send was never confirmed — is how one
+  billing unit becomes two invoices in a customer's inbox.
+
+  **Scheduling.** Two Actions and two `MJ: Scheduled Jobs` rows (half-hourly send in business hours,
+  hourly poll), both shipped **Disabled and set to Preview**, like the renewal job, and installed by the
+  metadata migration above. Enabling them is a deliberate act, and the webhook follows the poll job rather
+  than overriding it.
+
+  **Host setup.** Nothing runs until a host configures it: with no `BillCom` provider row, the rail is
+  inert. To use Bill.com, a host needs:
+
+  1. **The connector, loaded in MJAPI.** Add `@memberjunction/connector-bill-com` 0.3.2 or later to
+     MJAPI's dependencies and to `dynamicPackages` in its `mj.config.cjs`, with
+     `StartupExport: 'registerConnector'`, the way other MJ connectors are loaded. No orders package
+     depends on it; without it, every Bill.com call fails with "No connector registered".
+  2. **The integration rows, per company.** An `MJ: Credentials` row for the Bill.com session, with its
+     `environment`; an `MJ: Company Integrations` row that uses it, on the Bill.com `MJ: Integrations`
+     row; and a `PaymentProvider` of type `BillCom` whose `CompanyIntegrationID` points at that Company
+     Integration. Orders creates none of these, and refuses a live provider pointed at a sandbox
+     credential.
+  3. **The jobs, enabled deliberately.** Enable a job, read one Preview run, then turn Preview off.
+  4. **Optionally, the webhook.** The receiver mounts itself at `POST /webhooks/billcom/:providerId` from
+     `@mj-biz-apps/orders-server`'s package manifest; no host config is needed. To use it, create the
+     Bill.com subscription and set `<CredentialsRef>_WEBHOOK_SECRET` to its `securityKey`, where
+     `CredentialsRef` is the value on the `BillCom` provider row. Without the key, every delivery is
+     refused, and the hourly poll still captures payments.
+
+- d71575a: Orders now record who confirmed them. `OrderHeader.ConfirmedByUserID` (FK to `__mj.User`) is written by the booking save from the save's context user, in the same write as `ConfirmedAt`, and is NULL when the booking has no context user. Orders booked before this release keep NULL: who confirmed them is not recorded anywhere, so nothing is backfilled. Once an order has a `ConfirmedAt` the column cannot change: `Validate()` refuses it with the other booked header fields, and trigger 51017 refuses it at the database. Migration `V202609281000` adds the column, the trigger and their CodeGen output.
+- 3a8b6b2: The 5.20 Metadata_Sync ships the metadata that releases since 5.3 declared but never seeded, so it now reaches every host rather than only a developer's own database: the payment-gated-access and renewal actions with their daily jobs (installed Disabled), the Party Customer Roster query, the renewal access cutoff setting, the Instalment Invoice journal entry type, the progress-attestation remote operations, the Percentage of Completion recognition type and Project product type, the Engagement Lead role with its grant and permissions, and Account Director on the price-override grant. It also applies the curated user-search settings on 19 entities. The seed is idempotent and attaches to rows a host already created under its own IDs. It needs bizapps-common 5.47.0 or later, because the roster query sits in common's Party Signals category; mj-app.json now requires it. The ML models, training pipelines, scoring bindings and scoring record processes under metadata/ are not included.
+- 102ea17: Percentage-of-completion revenue recognition (golive #241, plan Part F / D90, W10/W11). `RevenueRecognitionType.ScheduleBasis` (`AtBooking` | `OnMeasurement`; defaults to `AtBooking`, so the three existing types are unchanged) and the new `OrderLineProgressMeasurement` table — one attested observation of cumulative percent complete per line per period, immutable once posted. A `ProgressRecognitionDriver` family alongside the booking drivers, with `ManualAttestation` shipped. New operation `Orders.RecordProgress` posts the cumulative catch-up (`LineTotalNet × percent − the line's RecognizedToDate`) as a `RevenueRecognition` entry crediting Sales, debiting Deferred Revenue up to the line's deferred balance and Unbilled Receivable beyond it (D92 rule 2); a backward slide mirrors the same entry; a zero delta succeeds and writes nothing; `Preview` computes without writing. The operation advances the line's `RecognizedToDate` in the same transaction as the entry, and is gated on the order being confirmed rather than on the line carrying a booking entry, since a POC line on a company with a payment schedule books no value entry at confirm. `Orders.GetProgressWorklist` lists open POC lines with their last observation. Metadata: the Percentage of Completion rev-rec type and the Project / Implementation product type. Receivables rail gains a Progress attestation page.
+
+### Patch Changes
+
+- a1114ed: Requires bizapps-accounting 0.16.0 or later, the release that seeds the Customer Deposits and Unbilled Receivable GL account roles. Without Customer Deposits, a host on an older accounting refuses scheduled-order payments that need that leg. The higher floor stops orders 5.20 from installing there.
+- 0bcafbd: An event-type product with no Event Products row now shows the service-period fields on its order line, and Confirm names the line until both dates are set, instead of offering no fields while the server refuses every confirm. `OrdersEngine` caches Event Products (`EventProducts`, `EventProductByID`), and `ServicePeriodSource` returns `Event` only when the row exists — the same test the order save uses to stamp event dates. An order line whose service period ends before it starts is now refused by the line's own validation with a plain message, and the line editor shows it as the dates are typed.
+- e131f07: A new payment can be captured from the Payments screen again. Receiving Company is filled from the allocated orders when they all belong to one company; when they span companies, capture is refused until one is chosen, with a message saying so. The payment detail now takes its company and tender from the header at every save (`PaymentHeaderEntity.SyncPaymentDetailFromHeader`), so a reference typed before the company was set no longer fails the save. A refused capture puts the previous status back (`PaymentHeaderEntity.SaveStatus`) instead of reading Captured with nothing saved. Wire and Internal Transfer show a reference field instead of the check panel, ACH shows its bank fields instead of the card panel, and an over-applied order shows its negative balance and the credit it creates instead of $0.00.
+- 8d3df77: A deferred line that neither an event nor a subscription dates can now be given its service period on the order screen, and Confirm stays disabled, naming the line, until both dates are set. `OrdersEngine.ServicePeriodSource(productID)` says where a line's window comes from (`NotRequired`, `Event`, `Subscription` or `Line`); `OrderHeaderEntity.LinesMissingServicePeriod()` lists the lines still without one. A refused Confirm, Void or Reopen now puts the previous status back (`OrderHeaderEntity.SaveStatus`) and shows the reason, instead of leaving the order reading the new status with every later save failing.
+
 ## 5.19.0
 
 ### Minor Changes
@@ -157,8 +308,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-            The INSERT statement conflicted with the FOREIGN KEY constraint
-            "FK_EntityFieldValue_EntityField"
+                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

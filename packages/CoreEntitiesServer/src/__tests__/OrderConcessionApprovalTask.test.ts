@@ -1,14 +1,15 @@
 /**
- * Recording a Pending concession routes it to the order's approval task, and deciding one on its record
- * settles that task — each in the concession's own transaction (golive #274).
+ * Recording a Pending concession raises its own approval task, and deciding one on its record closes that
+ * task — each in the concession's own transaction (golive #274).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BaseEntity } from '@memberjunction/core';
 
 const approval = vi.hoisted(() => ({
     RouteConcessionToApproval: vi.fn(),
-    SettleApprovalTask: vi.fn(),
+    CloseConcessionTasks: vi.fn(),
     UnlinkConcession: vi.fn(),
+    ConcessionSummary: vi.fn(),
 }));
 vi.mock('../ConcessionApprovalTask.js', () => approval);
 
@@ -16,6 +17,7 @@ const { OrderConcessionEntityServer } = await import('../OrderConcessionEntitySe
 
 const USER = { ID: 'user-1' };
 const ORDER_ID = 'order-1';
+const CONCESSION_ID = 'concession-1';
 
 type SavableConcession = {
     Status: string;
@@ -32,7 +34,9 @@ function concession(opts: { saved: boolean; status: string; statusDirty?: boolea
     const scope = { Commit: vi.fn(), Rollback: vi.fn() };
     const instance = Object.create(OrderConcessionEntityServer.prototype) as SavableConcession & Record<string, unknown>;
     Object.defineProperty(instance, 'Status', { value: opts.status, writable: true });
+    Object.defineProperty(instance, 'ID', { value: CONCESSION_ID });
     Object.defineProperty(instance, 'OrderHeaderID', { value: ORDER_ID });
+    Object.defineProperty(instance, 'RequestedByUserID', { value: USER.ID });
     Object.defineProperty(instance, 'IsSaved', { value: opts.saved });
     Object.defineProperty(instance, 'Fields', { value: [] });
     Object.defineProperty(instance, 'ContextCurrentUser', { value: USER });
@@ -40,6 +44,7 @@ function concession(opts: { saved: boolean; status: string; statusDirty?: boolea
     instance.GetFieldByName = (name: string) => (name === 'Status' ? { Dirty: opts.statusDirty === true } : undefined);
     instance.prepareNew = async () => {
         instance.approvingRole = opts.pendingRole ?? null;
+        instance.approvalSummary = '25% discount, 3,000.00';
         return null;
     };
     instance.applyDecision = async () => null;
@@ -54,13 +59,18 @@ afterEach(() => {
 });
 
 describe('OrderConcessionEntityServer.Save and the approval task', () => {
-    it('routes a Pending concession to its approvers in the same transaction', async () => {
+    it('raises its own approval task for a Pending concession, in the same transaction', async () => {
         const base = vi.spyOn(BaseEntity.prototype, 'Save').mockResolvedValue(true);
         const { row, scope } = concession({ saved: false, status: 'Pending', pendingRole: 'role-1' });
 
         expect(await row.Save()).toBe(true);
         expect(base).toHaveBeenCalledTimes(1);
-        expect(approval.RouteConcessionToApproval).toHaveBeenCalledWith(ORDER_ID, 'role-1', expect.objectContaining({ User: USER }));
+        expect(approval.RouteConcessionToApproval).toHaveBeenCalledWith(
+            { ID: CONCESSION_ID, OrderHeaderID: ORDER_ID, RequestedByUserID: USER.ID },
+            'role-1',
+            '25% discount, 3,000.00',
+            expect.objectContaining({ User: USER }),
+        );
         expect(scope.Commit).toHaveBeenCalledTimes(1);
     });
 
@@ -85,12 +95,20 @@ describe('OrderConcessionEntityServer.Save and the approval task', () => {
         expect(approval.RouteConcessionToApproval).not.toHaveBeenCalled();
     });
 
-    it('settles the order task when a concession is decided on its record', async () => {
+    it('closes the concession\'s task when it is decided on its record', async () => {
         vi.spyOn(BaseEntity.prototype, 'Save').mockResolvedValue(true);
         const { row } = concession({ saved: true, status: 'Approved', statusDirty: true });
 
         expect(await row.Save()).toBe(true);
-        expect(approval.SettleApprovalTask).toHaveBeenCalledWith(ORDER_ID, expect.objectContaining({ User: USER }));
+        expect(approval.CloseConcessionTasks).toHaveBeenCalledWith(CONCESSION_ID, ORDER_ID, 'Approved', expect.objectContaining({ User: USER }));
+    });
+
+    it('closes the task as rejected when the concession is rejected on its record', async () => {
+        vi.spyOn(BaseEntity.prototype, 'Save').mockResolvedValue(true);
+        const { row } = concession({ saved: true, status: 'Rejected', statusDirty: true });
+
+        expect(await row.Save()).toBe(true);
+        expect(approval.CloseConcessionTasks).toHaveBeenCalledWith(CONCESSION_ID, ORDER_ID, 'Rejected', expect.objectContaining({ User: USER }));
     });
 
     it('leaves the task alone when the decision came from the task', async () => {
@@ -99,6 +117,6 @@ describe('OrderConcessionEntityServer.Save and the approval task', () => {
         row.DecidedThroughTask = true;
 
         expect(await row.Save()).toBe(true);
-        expect(approval.SettleApprovalTask).not.toHaveBeenCalled();
+        expect(approval.CloseConcessionTasks).not.toHaveBeenCalled();
     });
 });
