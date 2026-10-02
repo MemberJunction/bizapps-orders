@@ -8,7 +8,6 @@
     "appendRecordsToExistingFile": true,
     "updateExistingRecords": true,
     "ignoreNullFields": true,
-    "ignoreVirtualFields": true,
-    "excludeFields": ["ArtifactFileID"]
+    "ignoreVirtualFields": true
   }
 }
