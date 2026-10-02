@@ -172,6 +172,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     }
 
     public async ngOnInit(): Promise<void> {
+        // A reset runs this again: a failure from the previous attempt must not outlive it.
+        this.loadError = null;
         this.readHostAttributes();
         if (!this.slug) {
             this.loadError = 'This checkout link is missing its reference.';

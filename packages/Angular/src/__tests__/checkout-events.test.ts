@@ -262,6 +262,27 @@ describe('CheckoutPublicHostComponent events', () => {
             expect(inits).toBe(2);
         });
 
+        it('clears the load error when a reset after a failed one loads (#397)', async () => {
+            const c = create();
+            await c.ngOnInit();
+            responses['/initialize'] = { Success: false, ErrorMessage: 'This checkout is not available.' };
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
+            expect(c.loadError).toBe('This checkout is not available.');
+
+            responses['/initialize'] = { Success: true, SessionID: 'sess-2', Configuration: CONFIG };
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
+            expect(c.loadError).toBeNull();
+            expect(c.config).not.toBeNull();
+            expect(seen).toEqual([
+                { type: 'checkout-state-change', detail: { state: 'LOADING' } },
+                { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+            ]);
+            expect(inits).toBe(3);
+        });
+
         it('a reset takes the e-mail and attribution the host set for the next conversation', async () => {
             attrs = { email: 'first@example.com', source: 'voice_agent', 'source-ref': 'conv-1' };
             const c = create();
