@@ -163,6 +163,79 @@ describe('CheckoutPublicHostComponent events', () => {
         expect(seen.some((e) => e.type === 'checkout-complete')).toBe(true);
     });
 
+    describe('account step password form (#396)', () => {
+        const SALE = [
+            { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },
+            { type: 'checkout-state-change', detail: { state: 'SUCCESS' } },
+            {
+                type: 'checkout-complete',
+                detail: { sessionId: 'sess-1', productName: 'Annual Plan', productId: 'prod-1', amount: 0, currency: 'USD', coupon: null },
+            },
+        ];
+
+        beforeEach(() => {
+            responses['/complete'] = { Success: true, OrderNumber: 'SO-1', TotalGross: 0, AccountStep: true };
+            responses['/account'] = { Success: true, Account: { Outcome: 'Created', CanSetPassword: true } };
+            vi.stubGlobal('sessionStorage', { getItem: () => null, setItem: () => undefined, removeItem: () => undefined });
+        });
+
+        const sold = async (): Promise<CheckoutPublicHostComponent> => {
+            const c = create();
+            await c.ngOnInit();
+            seen = [];
+            await c.onSubmitted(submission());
+            return c;
+        };
+
+        it('reports PASSWORD after the sale while the form shows, then SUCCESS once the password is set', async () => {
+            const c = await sold();
+            expect(seen).toEqual([...SALE, { type: 'checkout-state-change', detail: { state: 'PASSWORD' } }]);
+            responses['/account/password'] = { Success: true, Account: { Outcome: 'Created', CanSetPassword: false } };
+            c.password = 'pw-1';
+            c.passwordConfirmation = 'pw-1';
+            seen = [];
+            await c.submitPassword();
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'SUCCESS' } }]);
+        });
+
+        it('stays in PASSWORD when the password is refused', async () => {
+            const c = await sold();
+            responses['/account/password'] = { Success: false, ErrorMessage: 'Too short.', Account: { Outcome: 'Created', CanSetPassword: true } };
+            c.password = 'x';
+            c.passwordConfirmation = 'x';
+            seen = [];
+            await c.submitPassword();
+            expect(seen).toEqual([]);
+        });
+
+        it('reports SUCCESS when the buyer skips the password', async () => {
+            const c = await sold();
+            seen = [];
+            c.skipPassword();
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'SUCCESS' } }]);
+        });
+
+        it('sends no PASSWORD when the account step offers no password', async () => {
+            responses['/account'] = { Success: true, Account: { Outcome: 'Exists', CanSetPassword: false } };
+            await sold();
+            expect(seen).toEqual(SALE);
+        });
+
+        it('reports PASSWORD on a reload that returns to the form', async () => {
+            vi.stubGlobal('sessionStorage', {
+                getItem: (k: string) => (k === 'mj-checkout-completing:annual' ? 'sess-1' : null),
+                setItem: () => undefined,
+                removeItem: () => undefined,
+            });
+            const c = create();
+            await c.ngOnInit();
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'PASSWORD' } }]);
+            seen = [];
+            c.skipPassword();
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'SUCCESS' } }]);
+        });
+    });
+
     describe('Cancel (#297)', () => {
         it('resets the form, clears the error and tells the host page to close', async () => {
             responses['/draft'] = { Success: false, ErrorMessage: 'Could not price this checkout.' };
@@ -313,7 +386,7 @@ describe('CheckoutPublicHostComponent events', () => {
             expect(c.account?.CanSetPassword).toBe(true);
             seen = [];
             host.dispatchEvent(new CustomEvent('checkout-reset'));
-            expect(seen).toEqual([{ type: 'checkout-reset-refused', detail: { state: 'SUCCESS' } }]);
+            expect(seen).toEqual([{ type: 'checkout-reset-refused', detail: { state: 'PASSWORD' } }]);
             expect(inits).toBe(1);
 
             c.skipPassword();

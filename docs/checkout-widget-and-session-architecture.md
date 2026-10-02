@@ -620,7 +620,7 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 
 | Event | When | `detail` |
 |---|---|---|
-| `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `ERROR` | `{ state }` |
+| `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `PASSWORD`, `ERROR`. `PASSWORD` is sent while the account step's password form shows after a sale (after `SUCCESS`, or on a reload that returns to the form); `SUCCESS` follows once the password is set or skipped | `{ state }` |
 | `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units, `currency` upper-case, `coupon` the applied promotion code or `null` |
 | `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
 | `checkout-cancel` | the buyer pressed Cancel; the form has been reset to blank | `{}` |
