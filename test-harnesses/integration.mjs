@@ -128,6 +128,7 @@ const ALL_BUNDLES = [
     'payment-deposit',
     'contract-reversal',
     'concessions',
+    'term-extension',
     'party-roster',
     'progress-measurement',
     'volume',

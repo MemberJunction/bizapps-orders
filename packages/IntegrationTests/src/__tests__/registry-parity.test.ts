@@ -68,6 +68,7 @@ import '../checks/contract-reversal.checks.js';
 import '../checks/party-roster.checks.js';
 import '../checks/progress-measurement.checks.js';
 import '../checks/concessions.checks.js';
+import '../checks/term-extension.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -120,7 +121,8 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'contract-reversal': 9,
     'party-roster': 2,
     'progress-measurement': 17,
-    concessions: 11,
+    concessions: 25,
+    'term-extension': 9,
 };
 
 /**

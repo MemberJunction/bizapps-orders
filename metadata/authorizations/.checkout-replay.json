@@ -1,0 +1,18 @@
+[
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Checkout.Replay",
+      "ParentID": null,
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Replay one failed post-payment step of a checkout session through Orders.ReplayCheckoutStep. Held by the Checkout Operator role."
+    },
+    "primaryKey": {
+      "ID": "8B171BF1-B01A-4B92-B305-97ADBF0DBA73"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T23:39:39.816Z",
+      "checksum": "8b88ea29054a64b7f7453ef05c37f3060b472f19448e026e0480e9dd749d9821"
+    }
+  }
+]

@@ -38,6 +38,8 @@ import {
     type RefundResult,
     type RetrieveIntentRequest,
     type RetrieveIntentResult,
+    type UpdateIntentRequest,
+    type UpdateIntentResult,
     type WebhookEvent,
 } from './BasePaymentProvider.js';
 import {
@@ -133,6 +135,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
             // confirmation that will never come.
             confirm: request.ProviderInstrumentRef ? 'true' : 'false',
         };
+        if (request.Description) body.description = request.Description;
         if (request.ProviderCustomerRef) body.customer = request.ProviderCustomerRef;
         if (request.ProviderInstrumentRef) {
             body.payment_method = request.ProviderInstrumentRef;
@@ -151,6 +154,23 @@ export class StripePaymentProvider extends BasePaymentProvider {
             Status: MapStripeIntentStatus(result.Body.status as string),
             ClientSecret: result.Body.client_secret as string | undefined,
         };
+    }
+
+    public override async UpdateIntent(request: UpdateIntentRequest): Promise<UpdateIntentResult> {
+        if (!request.ProviderIntentID) {
+            return { Success: false, Reason: 'A Stripe update needs a provider intent id.' };
+        }
+        const body: Record<string, string> = {};
+        if (request.Description) body.description = request.Description;
+        for (const [k, v] of Object.entries(request.Metadata ?? {})) body[`metadata[${k}]`] = v;
+        if (this.useStub || Object.keys(body).length === 0) return { Success: true };
+
+        const result = await this.call(
+            'POST',
+            `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}`,
+            body,
+        );
+        return result.Ok ? { Success: true } : { Success: false, Reason: result.Reason };
     }
 
     public override async RetrieveIntent(request: RetrieveIntentRequest): Promise<RetrieveIntentResult> {

@@ -4,6 +4,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { UserInfo } from '@memberjunction/core';
 
+// The post-payment step record (#326): observed, not exercised — CheckoutStepLog has its own suite.
+const stepMocks = vi.hoisted(() => {
+    type Attempt = { Step: { StepName: string } | null; PreviousStatus: string | null; PreviousRetryable: boolean | null };
+    return {
+        Begin: vi.fn(async (_sessionID: string, stepName: string): Promise<Attempt> => ({ Step: { StepName: stepName }, PreviousStatus: null, PreviousRetryable: null })),
+        Succeed: vi.fn(async () => undefined),
+        Fail: vi.fn(async () => undefined),
+        CloseIfOpen: vi.fn(async () => undefined),
+        IsNewTerminalFailure: vi.fn((a: Attempt) => !(a.PreviousStatus === 'Failed' && a.PreviousRetryable === false)),
+        Alert: vi.fn(async () => undefined),
+    };
+});
+
 const mocks = vi.hoisted(() => {
     const mockWidgetSave = vi.fn().mockResolvedValue(true);
     const mockWidgetLoad = vi.fn().mockResolvedValue(true);
@@ -261,8 +274,32 @@ vi.mock('../identityClaimContracts.js', async (importOriginal) => ({
     }
 }));
 
+const describeMocks = vi.hoisted(() => ({
+    mockDescribeCheckoutSnapshot: vi.fn(),
+    mockSendOrderDescription: vi.fn(),
+}));
+
+vi.mock('../IntentDescription.js', () => ({
+    DescribeCheckoutSnapshot: (...args: unknown[]) => describeMocks.mockDescribeCheckoutSnapshot(...args),
+    SendOrderDescriptionToGateway: (...args: unknown[]) => describeMocks.mockSendOrderDescription(...args),
+}));
+
 vi.mock('../PaymentIntentService.js', () => ({
     OpenPaymentIntent: (request: unknown, provider: unknown, user: unknown) => mocks.mockOpenPaymentIntent(request, provider, user)
+}));
+
+vi.mock('../CheckoutStepLog.js', () => ({
+    CheckoutStepLog: {
+        Begin: (...args: Parameters<typeof stepMocks.Begin>) => stepMocks.Begin(...args),
+        Succeed: (...args: unknown[]) => stepMocks.Succeed(...args),
+        Fail: (...args: unknown[]) => stepMocks.Fail(...args),
+        CloseIfOpen: (...args: unknown[]) => stepMocks.CloseIfOpen(...args),
+        IsNewTerminalFailure: (...args: Parameters<typeof stepMocks.IsNewTerminalFailure>) => stepMocks.IsNewTerminalFailure(...args),
+    },
+}));
+
+vi.mock('../checkoutCaptureAlert.js', () => ({
+    raiseCheckoutCaptureTerminalAlert: (...args: unknown[]) => stepMocks.Alert(...args),
 }));
 
 vi.mock('../CapturePaymentOperation.js', () => ({
@@ -418,6 +455,8 @@ describe('CheckoutSessionService', () => {
         mocks.mockSessionSave.mockResolvedValue(true);
         mocks.mockClaimCreate.mockResolvedValue({ ID: 'claim-1' });
         mocks.mockLoadOrdersEngine.mockResolvedValue(undefined);
+        describeMocks.mockDescribeCheckoutSnapshot.mockResolvedValue(null);
+        describeMocks.mockSendOrderDescription.mockResolvedValue(undefined);
         mocks.mockProductBySKU.mockImplementation((sku: string | null | undefined) => {
             const wanted = sku?.trim().toLowerCase();
             if (wanted === 'conf-2027') return { ID: 'prod-1', SKU: 'CONF-2027' };
@@ -850,6 +889,17 @@ describe('CheckoutSessionService', () => {
             expect(request.Amount).toBe(100);
             expect(request.PaymentProviderID).toBe('pp-1');
         });
+
+        it('describes the charge from the snapshot, since the order does not exist yet (#327)', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' } });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', currency: 'USD' });
+            describeMocks.mockDescribeCheckoutSnapshot.mockResolvedValue('Annual Membership +1 more');
+
+            await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(describeMocks.mockDescribeCheckoutSnapshot.mock.calls[0][0]).toBe(mocks.mockSessionInstance.MetadataJSON);
+            const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as { Description?: string | null };
+            expect(request.Description).toBe('Annual Membership +1 more');
+        });
     });
 
     describe('CompleteCheckout', () => {
@@ -950,6 +1000,32 @@ describe('CheckoutSessionService', () => {
             expect(captureInput.Allocations).toEqual([{ OrderHeaderID: 'order-999', Amount: 100 }]);
             expect(captureInput.PaymentDetail).toEqual({ PaymentProviderID: 'pp-1' });
             expect(mocks.mockPaymentIntentInstance.OrderHeaderID).toBe('order-999');
+            // Second step of the gateway description (#327): the order number exists only now.
+            expect(describeMocks.mockSendOrderDescription).toHaveBeenCalledTimes(1);
+            expect(describeMocks.mockSendOrderDescription.mock.calls[0][0]).toBe(mocks.mockPaymentIntentInstance);
+            expect(describeMocks.mockSendOrderDescription.mock.calls[0][1]).toBe('order-999');
+        });
+
+        it('does not resend the gateway description for an intent already stamped with its order (#327)', async () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' },
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.mockPaymentIntentInstance.OrderHeaderID = 'order-999';
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = 100;
+                    line.LineTotalGross = 100 * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+            expect(describeMocks.mockSendOrderDescription).not.toHaveBeenCalled();
         });
 
         it('still confirms the order when CapturePayment fails after commit', async () => {
@@ -1356,6 +1432,119 @@ describe('CheckoutSessionService', () => {
      * `@mj-biz-apps/orders-entities` mock above) and assert on the VALUE the mock order instance
      * actually receives, so a regression back to `new Date()` fails them, not just the text check.
      */
+    describe('post-payment step record (#326)', () => {
+        const pricedAt100 = (ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+            for (const line of ctx.Lines) {
+                line.UnitPrice = 100;
+                line.LineTotalGross = 100 * line.Quantity;
+            }
+            return Promise.resolve({});
+        };
+        const paidCheckout = () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' }, Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+            mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
+        };
+        const confirmedUnpaid = (billTo: string | null = 'person-new-1') => {
+            mocks.mockSessionInstance.Status = 'Confirmed';
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockOrderInstance.TotalGross = 100;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = billTo;
+        };
+        const stepsBegun = () => stepMocks.Begin.mock.calls.map((c) => c[1]);
+
+        it('records Confirm and Capture as succeeded on a paid checkout', async () => {
+            paidCheckout();
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(stepMocks.Begin).toHaveBeenCalledWith('sess-123', 'Confirm', 'Checkout', testUser);
+            expect(stepMocks.Begin).toHaveBeenCalledWith('sess-123', 'Capture', 'Checkout', testUser, undefined);
+            expect(stepMocks.Succeed).toHaveBeenCalledTimes(2);
+            expect(stepMocks.Fail).not.toHaveBeenCalled();
+        });
+
+        it('records nothing for a $0 checkout: no payment, so no post-payment step', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' }, Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(stepMocks.Begin).not.toHaveBeenCalled();
+        });
+
+        it('records Confirm as failed when the booking rolls back after payment checked out', async () => {
+            paidCheckout();
+            mocks.mockOrderInstance.Confirm.mockRejectedValueOnce(new Error('booking failed'));
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(stepsBegun()).toEqual(['Confirm']);
+            const [attempt, message] = stepMocks.Fail.mock.calls[0] as [{ Step: { StepName: string } }, string];
+            expect(attempt.Step.StepName).toBe('Confirm');
+            expect(message).toContain('booking failed');
+        });
+
+        it('records Capture as failed, with the reason and whether it is retryable, while the order still confirms', async () => {
+            paidCheckout();
+            mocks.mockCaptureExecute.mockResolvedValueOnce({
+                Success: true,
+                Output: { Success: false, Message: 'UnknownTender', Blockers: [{ Message: 'nope' }] },
+            });
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const [attempt, message, retryable] = stepMocks.Fail.mock.calls[0] as [{ Step: { StepName: string } }, string, boolean];
+            expect(attempt.Step.StepName).toBe('Capture');
+            expect(message).toBe('UnknownTender');
+            expect(typeof retryable).toBe('boolean');
+        });
+
+        it('marks the webhook as the source of a capture it drives', async () => {
+            confirmedUnpaid();
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+            await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(stepMocks.Begin).toHaveBeenCalledWith('sess-123', 'Capture', 'Webhook', testUser, undefined);
+        });
+
+        it('raises the terminal-capture Task on the first terminal failure only', async () => {
+            confirmedUnpaid(null);
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(stepMocks.Alert).toHaveBeenCalledTimes(1);
+
+            // The replay of the same terminal failure: the record already says Failed, not retryable.
+            stepMocks.Begin.mockResolvedValueOnce({ Step: { StepName: 'Capture' }, PreviousStatus: 'Failed', PreviousRetryable: false });
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(stepMocks.Alert).toHaveBeenCalledTimes(1);
+            expect(stepMocks.Fail).toHaveBeenCalledTimes(2);
+        });
+
+        it('closes an open Capture record without counting an attempt when the order is already paid', async () => {
+            confirmedUnpaid();
+            mocks.mockOrderInstance.AmountPaid = 100;
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(stepMocks.CloseIfOpen).toHaveBeenCalledWith('sess-123', 'Capture', testUser);
+            expect(stepMocks.Begin).not.toHaveBeenCalled();
+            expect(mocks.mockCaptureExecute).not.toHaveBeenCalled();
+        });
+
+        it('ReplayCapture runs the same idempotent capture, recorded as a Replay by the operator', async () => {
+            confirmedUnpaid();
+            const result = await CheckoutSessionService.ReplayCapture('sess-123', testUser, 'operator-1');
+            expect(result).toEqual({ Attempted: true, Booked: true });
+            expect(stepMocks.Begin).toHaveBeenCalledWith('sess-123', 'Capture', 'Replay', testUser, 'operator-1');
+            const captureInput = mocks.mockCaptureExecute.mock.calls[0][0] as { IdempotencyKey: string };
+            expect(captureInput.IdempotencyKey).toBe('checkout-complete:sess-123');
+        });
+
+        it('ReplayCapture refuses a session with no confirmed order, and captures nothing', async () => {
+            const result = await CheckoutSessionService.ReplayCapture('sess-123', testUser, 'operator-1');
+            expect(typeof result).toBe('string');
+            expect(mocks.mockCaptureExecute).not.toHaveBeenCalled();
+            expect(stepMocks.Begin).not.toHaveBeenCalled();
+        });
+    });
+
     describe('OrderDate defaults come from the business day (bc-aidp-next-golive#168)', () => {
         const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
         const originalEngine = { rows: engine._configurations, loaded: engine._loaded };

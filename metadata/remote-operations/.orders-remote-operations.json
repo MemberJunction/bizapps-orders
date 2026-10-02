@@ -560,6 +560,33 @@
   },
   {
     "fields": {
+      "Name": "Replay Checkout Step",
+      "OperationKey": "Orders.ReplayCheckoutStep",
+      "Description": "Re-drive one post-payment step of a checkout session from its CheckoutSessionStep record. Requires the MJ.BizApps.Orders.Checkout.Replay authorization. A Succeeded step is a no-op. A step still Running inside the stale window is refused. Capture re-runs the checkout's idempotent CapturePayment; Confirm is not replayable here.",
+      "InputTypeName": "OrdersReplayCheckoutStepInput",
+      "InputTypeDefinition": "@file:types/orders-replay-checkout-step.input.ts",
+      "OutputTypeName": "OrdersReplayCheckoutStepOutput",
+      "OutputTypeDefinition": "@file:types/orders-replay-checkout-step.output.ts",
+      "RequiredScope": "orders:write",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "InputTypeIsArray": false,
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "0A86B760-12E3-4E5A-BD8F-B2AE43430FB7"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T23:39:39.487Z",
+      "checksum": "ee3fee072d7f0ea337e5c1f3d8d3447a6bd6e95b15d79bbcc8a4c80e084d7d02"
+    }
+  },
+  {
+    "fields": {
       "Name": "Detect Unattested Progress",
       "OperationKey": "Orders.DetectUnattestedProgress",
       "Description": "The nightly finance-exception pass for percentage-of-completion lines (golive #279, type 2): every active, booked, not-complete POC line from the progress worklist whose last attestation - or, when it has never been attested, whose booking - is more than the PROGRESS_UNATTESTED type's MaxDaysWithoutAttestation days before the business day goes on accounting's review list. One exception per line per month; a repeat in the same month finds the one already raised. Nothing is blocked. A type accounting does not define or has switched off raises nothing.",
@@ -579,6 +606,29 @@
     },
     "primaryKey": {
       "ID": "5EA18521-B7F5-4C05-8B21-12C62C697F39"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Amend Arrangement",
+      "OperationKey": "Orders.AmendArrangement",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount is refused until its credit-memo path exists.",
+      "InputTypeName": "AmendArrangementInput",
+      "InputTypeDefinition": "@file:types/orders-amend-arrangement.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "AmendArrangementOutput",
+      "OutputTypeDefinition": "@file:types/orders-amend-arrangement.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "subscriptions:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "6B24D4FD-3DD2-4E28-841C-3B64535DADDC"
     }
   }
 ]

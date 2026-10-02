@@ -649,7 +649,7 @@ export async function AuthorizeManualDiscount(
     const assessment = AssessConcession(
         'Price',
         { Value: amount, Percent: baseAmount > 0 ? amount / baseAmount : 1 },
-        { ...authority, MaxTermExtensionDays: null },
+        { ...authority, MaxTermExtensionDays: null, MaxConcessionPctOfContract: null },
     );
     if (assessment.WithinAuthority) {
         return { AuthorityID: authority.ID, NeedsApproval: false, ApprovedByUserID: null };

@@ -77,6 +77,11 @@ export interface CreateIntentRequest {
     /** Free-form, echoed back on webhooks. Useful for reconciliation, never load-bearing. */
     Metadata?: Record<string, string>;
     /**
+     * What the gateway's dashboard shows for this charge — see `FormatIntentDescription`. Display
+     * only, like `Metadata`: nothing reads it back.
+     */
+    Description?: string | null;
+    /**
      * OUR idempotency key. Sent to gateways that support one so a retried create does not open a
      * second intent — and therefore does not charge the customer twice.
      */
@@ -92,6 +97,22 @@ export interface CreateIntentResult {
     ClientSecret?: string;
     /** For a hosted-checkout flow — where to send the customer. */
     HostedUrl?: string;
+}
+
+/**
+ * Details attached to an intent after it was opened. Checkout opens its intent before the order exists,
+ * so the order number and id can only reach the gateway afterwards (#327).
+ */
+export interface UpdateIntentRequest {
+    ProviderIntentID: string;
+    Description?: string | null;
+    /** Merged into what the intent already carries; keys not named here are left alone. */
+    Metadata?: Record<string, string>;
+}
+
+export interface UpdateIntentResult {
+    Success: boolean;
+    Reason?: string;
 }
 
 export interface CaptureRequest {
@@ -256,6 +277,11 @@ export class BasePaymentProvider {
      */
     public async RetrieveIntent(_request: RetrieveIntentRequest): Promise<RetrieveIntentResult> {
         return { Success: false, Reason: this.notImplemented('retrieving a payment intent') };
+    }
+
+    /** Attach display details to an intent already opened. Moves no money and changes no status. */
+    public async UpdateIntent(_request: UpdateIntentRequest): Promise<UpdateIntentResult> {
+        return { Success: false, Reason: this.notImplemented('updating a payment intent') };
     }
 
     public async Refund(_request: RefundRequest): Promise<RefundResult> {

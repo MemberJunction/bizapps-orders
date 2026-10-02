@@ -43,10 +43,12 @@ import { OpenPaymentIntent } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
 import { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
+import { CheckoutStepLog, type CheckoutStepAttempt, type CheckoutStepSource } from './CheckoutStepLog.js';
 import {
     isCaptureRefusalRetryable,
     isTerminalCapturePrecheck,
 } from './checkoutCaptureRetry.js';
+import { DescribeCheckoutSnapshot, SendOrderDescriptionToGateway } from './IntentDescription.js';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
@@ -1240,6 +1242,9 @@ export class CheckoutSessionService {
             return failed('No metadata provider is available to open a payment intent.');
         }
 
+        // Products only: the order, and so its number, does not exist until completion.
+        const description = await DescribeCheckoutSnapshot(session.MetadataJSON, mdProvider, contextUser);
+
         const openResult = await OpenPaymentIntent({
             PaymentProviderID: paymentProviderId,
             Amount: snapshotTotal,
@@ -1248,7 +1253,8 @@ export class CheckoutSessionService {
             // Stable per-session idempotency key: reopening for the same session+amount
             // returns the SAME gateway intent instead of minting a fresh one per retry.
             IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}`,
-            Metadata: { CheckoutSessionID: sessionID }
+            Metadata: { CheckoutSessionID: sessionID },
+            Description: description
         }, mdProvider, contextUser);
 
         if (!openResult.Success || !openResult.PaymentIntentID) {
@@ -1312,7 +1318,7 @@ export class CheckoutSessionService {
             // `payment_intent.succeeded` is the other — BookSettledCheckoutPaymentIfNeeded, including
             // on AlreadyApplied webhook deliveries so a 500 after applyEvent still converges.
             if (orderLoaded) {
-                await this.applySettledPaymentToOrder(session, existingOrder, contextUser);
+                await this.applySettledPaymentToOrder(session, existingOrder, contextUser, { Source: 'Checkout' });
             }
             return {
                 Success: true,
@@ -1355,6 +1361,8 @@ export class CheckoutSessionService {
 
         // Set the moment order.Confirm() commits; controls the catch's no-revert posture.
         let confirmedOrderID: string | null = null;
+        // The Confirm step's record, begun once payment has checked out (#326).
+        let confirmStep: CheckoutStepAttempt | null = null;
 
         try {
             const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
@@ -1587,11 +1595,17 @@ export class CheckoutSessionService {
                         Status: 'Open'
                     };
                 }
+                // Payment has checked out, so from here a failure leaves a paid checkout without
+                // an order. Record the attempt; Confirm rolls back on failure, the record does not.
+                confirmStep = await CheckoutStepLog.Begin(sessionID, 'Confirm', 'Checkout', contextUser);
             }
 
             // Confirm order via BaseEntity lifecycle (executes GL booking, entitlement issuance, status latching)
             await order.Confirm();
             confirmedOrderID = order.ID;
+            if (confirmStep) {
+                await CheckoutStepLog.Succeed(confirmStep);
+            }
 
             // The order is now COMMITTED — from this point nothing may revert the session to
             // Open, or a retry would book a second order for the same purchase. Session
@@ -1607,7 +1621,7 @@ export class CheckoutSessionService {
 
             // Book the PaymentHeader + allocation now that the order exists. retrieve-on-complete
             // only stamps PaymentIntent.Status = Succeeded; AmountPaid stays 0 until CapturePayment.
-            await this.applySettledPaymentToOrder(session, order, contextUser);
+            await this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Checkout' });
 
             // Mint the GuestOrder identity claim for the buyer's email so a later account
             // (MJ core's IdentityClaimEngineServer) can attach the order + its entitlement
@@ -1653,6 +1667,9 @@ export class CheckoutSessionService {
                     SessionID: sessionID,
                     Status: 'Confirmed'
                 };
+            }
+            if (confirmStep) {
+                await CheckoutStepLog.Fail(confirmStep, msg);
             }
             await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
             session.Status = 'Open';
@@ -1745,7 +1762,32 @@ export class CheckoutSessionService {
         if (!(await order.Load(session.DraftOrderID))) {
             return { Attempted: false, Booked: false };
         }
-        return this.applySettledPaymentToOrder(session, order, contextUser);
+        return this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Webhook' });
+    }
+
+    /**
+     * Operator replay of the Capture step (`Orders.ReplayCheckoutStep`, #326). The same idempotent
+     * CapturePayment as the complete call and the webhook, recorded as a Replay by the operator.
+     * Returns a refusal message instead when the session has no confirmed order to capture against.
+     */
+    public static async ReplayCapture(
+        sessionID: string,
+        contextUser: UserInfo,
+        replayedByUserID: string,
+    ): Promise<BookCheckoutPaymentResult | string> {
+        const md = new Metadata();
+        const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
+        if (!(await session.Load(sessionID))) {
+            return `Checkout session ${sessionID} not found.`;
+        }
+        if (session.Status !== 'Confirmed' || !session.DraftOrderID) {
+            return `Checkout session ${sessionID} has no confirmed order (status ${session.Status}); there is nothing to capture against.`;
+        }
+        const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
+        if (!(await order.Load(session.DraftOrderID))) {
+            return `The order on checkout session ${sessionID} could not be read.`;
+        }
+        return this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Replay', ReplayedByUserID: replayedByUserID });
     }
 
     /**
@@ -1759,7 +1801,8 @@ export class CheckoutSessionService {
     private static async applySettledPaymentToOrder(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         order: OrderHeaderEntity,
-        contextUser?: UserInfo
+        contextUser: UserInfo | undefined,
+        trigger: { Source: CheckoutStepSource; ReplayedByUserID?: string },
     ): Promise<BookCheckoutPaymentResult> {
         if (!session.PaymentIntentID) {
             return { Attempted: false, Booked: false };
@@ -1769,29 +1812,38 @@ export class CheckoutSessionService {
             return { Attempted: false, Booked: false };
         }
         if (Number(order.AmountPaid ?? 0) + 0.005 >= due) {
+            // Paid, possibly by another path after an earlier capture attempt failed. A record
+            // left Failed or Running would keep the session in the review queue.
+            await CheckoutStepLog.CloseIfOpen(session.ID, 'Capture', contextUser);
             return { Attempted: false, Booked: true };
         }
         if (!contextUser) {
-            return this.captureFailed(order.ID, 'no context user', undefined, undefined, session.ID);
+            return this.captureFailed(order.ID, 'no context user', undefined, undefined, session.ID, null);
         }
+        const step = await CheckoutStepLog.Begin(session.ID, 'Capture', trigger.Source, contextUser, trigger.ReplayedByUserID);
         if (!order.BillToPersonID && !order.BillToOrganizationID) {
-            return this.captureFailed(order.ID, 'no bill-to party', undefined, contextUser, session.ID);
+            return this.captureFailed(order.ID, 'no bill-to party', undefined, contextUser, session.ID, step);
         }
 
         const md = new Metadata();
         const intent = await md.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, contextUser);
         if (!(await intent.Load(session.PaymentIntentID))) {
-            return this.captureFailed(order.ID, 'payment intent not found', undefined, contextUser, session.ID);
+            return this.captureFailed(order.ID, 'payment intent not found', undefined, contextUser, session.ID, step);
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
             await this.refreshIntentFromGateway(intent, contextUser);
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
-            return this.captureFailed(order.ID, `intent status is ${intent.Status}`, undefined, contextUser, session.ID);
+            return this.captureFailed(order.ID, `intent status is ${intent.Status}`, undefined, contextUser, session.ID, step);
         }
 
         if (!intent.OrderHeaderID) {
             intent.OrderHeaderID = order.ID;
+            // Second step of the gateway description: the intent was opened before the order existed.
+            const mdForGateway = Metadata.Provider as IMetadataProvider | undefined;
+            if (mdForGateway) {
+                await SendOrderDescriptionToGateway(intent, order.ID, mdForGateway, contextUser);
+            }
         }
         if (!intent.BillToPersonID && order.BillToPersonID) {
             intent.BillToPersonID = order.BillToPersonID;
@@ -1818,7 +1870,7 @@ export class CheckoutSessionService {
 
         const mdProvider = Metadata.Provider as IMetadataProvider | undefined;
         if (!mdProvider) {
-            return this.captureFailed(order.ID, 'no metadata provider', undefined, contextUser, session.ID);
+            return this.captureFailed(order.ID, 'no metadata provider', undefined, contextUser, session.ID, step);
         }
 
         try {
@@ -1850,26 +1902,33 @@ export class CheckoutSessionService {
                     ?? output?.Blockers?.map((b) => b.Message).join('; ')
                     ?? 'unknown error';
                 const codes = (output?.Blockers ?? []).map((b) => b.Code).filter((c): c is string => Boolean(c));
-                return this.captureFailed(order.ID, detail, isCaptureRefusalRetryable(codes), contextUser, session.ID);
+                return this.captureFailed(order.ID, detail, isCaptureRefusalRetryable(codes), contextUser, session.ID, step);
             }
+            await CheckoutStepLog.Succeed(step);
             return { Attempted: true, Booked: true };
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            return this.captureFailed(order.ID, msg, true, contextUser, session.ID);
+            return this.captureFailed(order.ID, msg, true, contextUser, session.ID, step);
         }
     }
 
-    private static captureFailed(
+    private static async captureFailed(
         orderID: string,
         message: string,
-        retryable?: boolean,
-        contextUser?: UserInfo,
-        sessionID?: string,
-    ): BookCheckoutPaymentResult {
+        retryable: boolean | undefined,
+        contextUser: UserInfo | undefined,
+        sessionID: string,
+        step: CheckoutStepAttempt | null,
+    ): Promise<BookCheckoutPaymentResult> {
         const Retryable = retryable ?? !isTerminalCapturePrecheck(message);
         LogError(`[CheckoutSessionService] CapturePayment failed for order ${orderID}: ${message}`);
-        if (!Retryable) {
+        // One Task per terminal failure, not one per replay of it: the step record says whether
+        // the last attempt already ended the same way.
+        if (!Retryable && (!step || CheckoutStepLog.IsNewTerminalFailure(step))) {
             void raiseCheckoutCaptureTerminalAlert(orderID, sessionID, message, contextUser);
+        }
+        if (step) {
+            await CheckoutStepLog.Fail(step, message, Retryable);
         }
         return { Attempted: true, Booked: false, ErrorMessage: message, Retryable };
     }

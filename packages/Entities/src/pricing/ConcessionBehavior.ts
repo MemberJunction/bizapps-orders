@@ -13,11 +13,26 @@
  *   Duration  a term extended at no charge          term amount × added days ÷ term days
  *   Seats     quantity added at no charge           unit price × added quantity
  *
+ * TERMS ARE THE EXCEPTION. A change to a booked order's payment terms moves when the cash arrives, not
+ * how much, so it has no currency figure: its value is the change in days to payment, and it carries no
+ * SalesAuthority limit. It always goes to approval (`ConcessionAlwaysEscalates`), whichever way the days
+ * move, and the requester cannot decide it.
+ *
  * AUTHORITY. A percentage cap still applies to the forms that are price reductions, as it always
  * has. The two non-percentage limits apply to every form, and for the forms a percentage cannot
  * express at all — Duration and Seats — an unset limit is NO authority rather than an unlimited
  * one. Absence is not permission; it is the same rule `AuthorizeManualDiscount` applies to a user
  * with no `SalesAuthority` row.
+ *
+ * TERM DATES. `MaxTermExtensionDays` limits any change to a term's dates, not only days added.
+ * Shortening a term or shifting it moves when its revenue is recognised as much as extending it, so a
+ * change is measured as the larger of how far its start and its end move (`TermDateChangeDays`).
+ *
+ * SHARE OF THE ORDER. A currency limit treats a small order and a large one alike, so the same
+ * concession can be trivial on one and most of the other. `MaxConcessionPctOfContract` limits every
+ * concession on the order that is not Rejected, together, as a share of the order's net total. It
+ * is cumulative so that splitting one concession into several cannot keep each under the limit.
+ * An order with nothing to measure against (a net total of zero) breaches a limit that is set.
  *
  * CONNECTS TO:
  *   CALLER: ./PromotionEngine.ts (AuthorizeManualDiscount — the absolute-value trigger)
@@ -26,7 +41,7 @@
 import { Money } from './PricingBehavior.js';
 
 /** How the value was given. Mirrors `CK_OrderConcession_DeliveryForm`. */
-export type ConcessionDeliveryForm = 'Price' | 'Duration' | 'Scope' | 'Seats';
+export type ConcessionDeliveryForm = 'Price' | 'Duration' | 'Scope' | 'Seats' | 'Terms';
 
 /** Why it was given. Mirrors `CK_OrderConcession_ReasonCategory`. */
 export type ConcessionReasonCategory = 'Retention' | 'Referral' | 'Other';
@@ -77,6 +92,7 @@ export interface ConcessionAuthority {
     MaxDiscountPct: number | null;
     MaxConcessionValue: number | null;
     MaxTermExtensionDays: number | null;
+    MaxConcessionPctOfContract: number | null;
 }
 
 export interface ConcessionAssessment {
@@ -93,6 +109,48 @@ export function InclusiveDays(start: Date, end: Date): number {
 /** Days an end date moves later by. Zero or negative when it does not move later. */
 export function DaysAdded(previousEnd: Date, newEnd: Date): number {
     return Math.round((utcDay(newEnd) - utcDay(previousEnd)) / DAY_MS);
+}
+
+/** A term's start and end. */
+export interface TermDates {
+    StartDate: Date;
+    EndDate: Date;
+}
+
+/**
+ * How far a change moves a term's dates: the larger of how far its start and its end move, in whole
+ * days, in either direction. An extension, a shortening and a shift of N days each measure N.
+ */
+export function TermDateChangeDays(previous: TermDates, next: TermDates): number {
+    const start = Math.abs(utcDay(next.StartDate) - utcDay(previous.StartDate));
+    const end = Math.abs(utcDay(next.EndDate) - utcDay(previous.EndDate));
+    return Math.round(Math.max(start, end) / DAY_MS);
+}
+
+/**
+ * Concessions as a fraction of the order they are given on. Null when the order's net total is not
+ * positive, since there is then nothing to measure a share against.
+ */
+export function ConcessionShare(totalConcessionValue: number, orderNetTotal: number): number | null {
+    const net = Number(orderNetTotal);
+    if (!(net > 0)) return null;
+    return Math.max(0, Number(totalConcessionValue)) / net;
+}
+
+/**
+ * Days to payment a change of terms moves by: positive when the customer pays later, negative when sooner.
+ * Terms with no `NetDays`, or no terms at all, are due on receipt.
+ */
+export function PaymentTermsDaysChange(priorNetDays: number | null, newNetDays: number | null): number {
+    return Math.round(Number(newNetDays ?? 0)) - Math.round(Number(priorNetDays ?? 0));
+}
+
+/**
+ * Forms that go to approval whatever the requester's authority, and that the requester cannot decide
+ * even when they hold the approving role.
+ */
+export function ConcessionAlwaysEscalates(form: ConcessionDeliveryForm): boolean {
+    return form === 'Terms';
 }
 
 /** One figure for a concession, whatever form it was delivered in. */
@@ -124,12 +182,19 @@ export function ConcessionValue(facts: ConcessionFacts): ConcessionValuation {
 /**
  * Whether a rep's authority covers a concession. Every limit is checked and every breach reported,
  * so the person asking for approval sees all of what the approver will be deciding.
+ *
+ * `termDateChangeDays` is the concession's `TermDateChangeDays`. It is checked against
+ * `MaxTermExtensionDays` for a Duration concession, and for any other form that changes a term's dates.
+ *
+ * @param cumulativeShare  the order's concessions, this one included, from {@link ConcessionShare}.
+ *   Omit it where no order is measured (a manual discount); null means the order has no net total.
  */
 export function AssessConcession(
     form: ConcessionDeliveryForm,
     valuation: ConcessionValuation,
     authority: ConcessionAuthority | null,
-    addedDays?: number | null,
+    termDateChangeDays?: number | null,
+    cumulativeShare?: number | null,
 ): ConcessionAssessment {
     if (!authority) {
         return { WithinAuthority: false, Breaches: ['the requester has no active SalesAuthority'] };
@@ -154,17 +219,38 @@ export function AssessConcession(
         breaches.push('the SalesAuthority sets no MaxConcessionValue, so it grants no authority for this concession');
     }
 
-    if (form === 'Duration') {
-        const days = Math.max(0, Number(addedDays ?? 0));
+    const days = Math.abs(Number(termDateChangeDays ?? 0));
+    if (form === 'Duration' || days > 0) {
         if (authority.MaxTermExtensionDays == null) {
-            breaches.push('the SalesAuthority sets no MaxTermExtensionDays, so it grants no authority to extend a term');
+            breaches.push("the SalesAuthority sets no MaxTermExtensionDays, so it grants no authority to change a term's dates");
         } else if (days >= Number(authority.MaxTermExtensionDays)) {
             // At or above: the limit is the length that needs approval, so it reads as the policy does.
-            breaches.push(`a ${days}-day extension is at or above the ${authority.MaxTermExtensionDays}-day limit`);
+            breaches.push(`a ${days}-day change to the term's dates is at or above the ${authority.MaxTermExtensionDays}-day limit`);
         }
     }
 
+    const shareBreach = ShareBreach(cumulativeShare, authority.MaxConcessionPctOfContract);
+    if (shareBreach) breaches.push(shareBreach);
+
     return { WithinAuthority: breaches.length === 0, Breaches: breaches };
+}
+
+/**
+ * The breach, if any, of a limit on the order's concessions as a share of its net total. At or
+ * above the limit breaches, as the policy reads. Null when no limit is set or the share is under it.
+ *
+ * @param share  undefined when nothing was measured, which no limit can breach.
+ */
+export function ShareBreach(share: number | null | undefined, limit: number | null | undefined): string | null {
+    if (share === undefined || limit == null) return null;
+    const cap = Number(limit);
+    if (share === null) {
+        return `the order has no net total to measure its concessions against the ${pct(cap)} share limit`;
+    }
+    if (share >= cap - 1e-9) {
+        return `concessions on the order come to ${pct(share)} of its net total, at or above the ${pct(cap)} limit`;
+    }
+    return null;
 }
 
 const DAY_MS = 86_400_000;
