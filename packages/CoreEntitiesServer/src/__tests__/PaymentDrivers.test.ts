@@ -211,6 +211,81 @@ describe('StripePaymentProvider — the stub', () => {
     });
 });
 
+describe('Payment intent descriptions (#327)', () => {
+    /** Stands in for Stripe; records each call's method, path and decoded form body. */
+    async function withStripe(
+        run: (driver: StripePaymentProvider, calls: Array<{ Method: string; Path: string; Body: URLSearchParams }>) => Promise<void>,
+    ): Promise<void> {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const calls: Array<{ Method: string; Path: string; Body: URLSearchParams }> = [];
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            calls.push({
+                Method: (init?.method ?? 'GET').toUpperCase(),
+                Path: new URL(String(input)).pathname,
+                Body: new URLSearchParams(String(init?.body ?? '')),
+            });
+            return new Response(JSON.stringify({ id: 'pi_live', status: 'requires_payment_method' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }) as typeof fetch;
+        try {
+            await run(driver, calls);
+        } finally {
+            globalThis.fetch = orig;
+        }
+    }
+
+    it('Stripe sends the description when opening an intent', async () => {
+        await withStripe(async (driver, calls) => {
+            await driver.CreateIntent({ Amount: 100, CurrencyCode: 'USD', Description: 'Annual Membership — Order ORD-1' });
+            expect(calls[0].Body.get('description')).toBe('Annual Membership — Order ORD-1');
+        });
+    });
+
+    it('Stripe sends no description field when none is given', async () => {
+        await withStripe(async (driver, calls) => {
+            await driver.CreateIntent({ Amount: 100, CurrencyCode: 'USD' });
+            expect(calls[0].Body.has('description')).toBe(false);
+        });
+    });
+
+    it('Stripe updates an open intent with the description and order id', async () => {
+        await withStripe(async (driver, calls) => {
+            const result = await driver.UpdateIntent({
+                ProviderIntentID: 'pi_live',
+                Description: 'Annual Membership — Order ORD-1',
+                Metadata: { OrderHeaderID: 'order-1' },
+            });
+            expect(result.Success).toBe(true);
+            expect(calls).toHaveLength(1);
+            expect(calls[0].Method).toBe('POST');
+            expect(calls[0].Path).toBe('/v1/payment_intents/pi_live');
+            expect(calls[0].Body.get('description')).toBe('Annual Membership — Order ORD-1');
+            expect(calls[0].Body.get('metadata[OrderHeaderID]')).toBe('order-1');
+        });
+    });
+
+    it('Stripe makes no call for an update with nothing in it', async () => {
+        await withStripe(async (driver, calls) => {
+            expect((await driver.UpdateIntent({ ProviderIntentID: 'pi_live' })).Success).toBe(true);
+            expect(calls).toHaveLength(0);
+        });
+    });
+
+    it('the Stripe stub accepts an update without a network call', async () => {
+        expect((await stripe().UpdateIntent({ ProviderIntentID: 'pi_stub_x', Description: 'x' })).Success).toBe(true);
+    });
+
+    it('the base driver refuses an update rather than pretending', async () => {
+        const base = new BasePaymentProvider();
+        base.Config = config({ TypeCode: 'Nonexistent' });
+        expect((await base.UpdateIntent({ ProviderIntentID: 'pi_1', Description: 'x' })).Success).toBe(false);
+    });
+});
+
 describe('StripePaymentProvider — reading webhooks', () => {
     it('declares the event kinds it acts on', () => {
         expect(stripe().HandledEventKinds).toContain('payment_intent.succeeded');

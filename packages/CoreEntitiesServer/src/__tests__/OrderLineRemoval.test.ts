@@ -128,12 +128,33 @@ describe('OrderEntityServer.deleteRemovedLines', () => {
 
         const swept = mockRunView.mock.calls.map((call) => (call[0] as { EntityName: string }).EntityName);
         expect(swept).toEqual([
+            'MJ_BizApps_Orders: Order Concessions',
             'MJ_BizApps_Orders: Order Line Price Components',
             'MJ_BizApps_Orders: Order Charge Allocations',
             'MJ_BizApps_Orders: Order Adjustment Allocations',
             'MJ_BizApps_Orders: Order Adjustments',
             'MJ_BizApps_Orders: Order Line Dimensions',
         ]);
+    });
+
+    it('withdraws a concession with its draft line, decided or not', async () => {
+        // A draft line typed at 60 against an engine price of 100, quantity 2, carries a Price
+        // concession approved at 80. Removing the line has to take the concession with it, or
+        // FK_OrderConcession_OrderLine refuses the line's delete and the whole order save fails.
+        const log: string[] = [];
+        const concession = { ...dependentRow('concession', log), Status: 'Approved', WithdrawWithDraftLine: false };
+        concession.Delete = vi.fn(async () => {
+            log.push(`delete-dependent:concession:${concession.WithdrawWithDraftLine}`);
+            return true;
+        });
+        mockRunView.mockImplementation(async (params: { EntityName: string }) => ({
+            Success: true,
+            Results: params.EntityName === 'MJ_BizApps_Orders: Order Concessions' ? [concession] : [],
+        }));
+
+        await orderWith([fakeLine(1, log)]).deleteRemovedLines();
+
+        expect(log).toEqual(['delete-dependent:concession:true', 'delete-line:1']);
     });
 
     it('does no work and issues no queries when nothing was removed', async () => {
@@ -170,7 +191,7 @@ describe('OrderEntityServer.deleteRemovedLines', () => {
         const line = fakeLine(2, log);
 
         await expect(orderWith([line]).deleteRemovedLines()).rejects.toThrow(
-            /Order Line Price Components.*order line 2/,
+            /Order Concessions.*order line 2/,
         );
         // And the line itself is left alone, so the transaction rolls back with the row intact
         // rather than half-cleared.

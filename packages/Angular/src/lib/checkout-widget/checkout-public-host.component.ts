@@ -297,6 +297,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 ...(this.attributionSource
                     ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
                     : {}),
+                choices: event.choices,
             });
             if (!draft?.Success) {
                 throw new Error(this.str(draft?.ErrorMessage, 'Could not price this checkout.'));

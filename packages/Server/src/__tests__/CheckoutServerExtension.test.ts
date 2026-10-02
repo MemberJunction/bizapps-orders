@@ -400,7 +400,28 @@ describe('CheckoutServerExtension', () => {
         );
         expect(res.statusCode).toBe(200);
         expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith(
-            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], user, { Attribution: undefined, Answers: answers }
+            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], user, { Attribution: undefined, Answers: answers, Choices: undefined }
+        );
+    });
+
+    it('passes the buyer choices from the draft body to UpdateDraft (#291)', async () => {
+        const user = { ID: 'svc-1', Email: 'svc@example.com' };
+        mockGetSystemUser.mockReturnValue(user);
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({
+            Success: true, SessionID: 'sess-1', Subtotal: 0, Tax: 0, Adjustments: 0, TotalGross: 0, RequiresPayment: false, Lines: [],
+        });
+        const ext = new CheckoutServerExtension();
+        const choices = { department: ['marketing', 'finance'] };
+        const res = mockRes();
+        await (ext as unknown as { handleDraft(req: Request, res: Response): Promise<void> }).handleDraft(
+            {
+                body: { sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.com', lines: [{ ProductID: 'p', Quantity: 1 }], choices },
+            } as unknown as Request,
+            res as unknown as Response
+        );
+        expect(res.statusCode).toBe(200);
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith(
+            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], user, { Attribution: undefined, Answers: undefined, Choices: choices }
         );
     });
 

@@ -82,6 +82,16 @@ export class OrderLineEntityServer extends OrderLineEntity {
     public ResolvedExtendedAmount: number | null = null;
 
     /**
+     * Set only by bundle expansion, on the component lines it writes (bc-aidp-next-golive#292).
+     *
+     * TRANSIENT, like `ResolvedExtendedAmount`. A line with a `ParentOrderLineID` is a bundle
+     * component, priced at its share of the bundle, and the concession confirm gate does not re-price
+     * it. Only expansion may make a line one: a parent set any other way would let an ordinary line
+     * skip the gate. See `refuseParentNotFromExpansion`.
+     */
+    public WrittenByBundleExpansion = false;
+
+    /**
      * `BaseEntity` skips `ValidateAsync` unless a subclass opts in, so without this the checks
      * below never run when a line is saved on its own. The order's own `ValidateAsync` loops over
      * its lines and would have covered the confirm path — except that one was skipped for the same
@@ -131,6 +141,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
         }
 
         this.refuseUnexplainedOverride(result);
+        this.refuseParentNotFromExpansion(result);
         await this.refuseNewLineOnBookedOrder(result);
         await this.refuseVetoedEdit(result, this.IsSaved ? 'update' : 'create');
 
@@ -159,6 +170,31 @@ export class OrderLineEntityServer extends OrderLineEntity {
                 'PriceOverrideReason',
                 PRICE_OVERRIDE_REASON_REQUIRED,
                 this.PriceOverrideReason,
+                ValidationErrorType.Failure,
+            ),
+        );
+    }
+
+    /**
+     * A parent line is written by bundle expansion and nothing else (bc-aidp-next-golive#292).
+     *
+     * The concession confirm gate skips a line with a `ParentOrderLineID`, because a bundle component
+     * is priced at its share of the bundle rather than at a concession. Set by an API caller on an
+     * ordinary line, the same field would carry a price below the engine's past the gate. So a parent
+     * is refused unless expansion wrote it. Clearing one is allowed: the line is then checked like any
+     * other. A saved component whose parent is not being changed is not affected.
+     */
+    private refuseParentNotFromExpansion(result: ValidationResult): void {
+        if (!this.ParentOrderLineID || this.WrittenByBundleExpansion) return;
+        if (this.IsSaved && !this.FieldIsDirty('ParentOrderLineID')) return;
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo(
+                'ParentOrderLineID',
+                'ParentOrderLineID is set only by bundle expansion, which writes each component of a bundle ' +
+                    'line at its share of the bundle price. Leave it empty, and sell the bundle product to get ' +
+                    'its components.',
+                this.ParentOrderLineID,
                 ValidationErrorType.Failure,
             ),
         );

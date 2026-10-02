@@ -51,11 +51,13 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 5. [The `Configuration` JSONType & `customUI` Engine](#the-configuration-jsontype--customui-engine)
 6. [Multi-Unit Discrete Expansion (`unitMode`)](#multi-unit-discrete-expansion-unitmode)
 7. [Questions at Checkout (`questions`)](#questions-at-checkout-questions)
-8. [Zero-DB-Draft In-Memory Pricing & Atomic Booking](#zero-db-draft-in-memory-pricing--atomic-booking)
-9. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
-10. [Account Step After Payment (`CheckoutAccountStep`)](#account-step-after-payment-checkoutaccountstep)
-11. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
-12. [Server API & Service Reference](#server-api--service-reference)
+8. [Choice Groups at Checkout (`choiceGroups`)](#choice-groups-at-checkout-choicegroups)
+9. [Zero-DB-Draft In-Memory Pricing & Atomic Booking](#zero-db-draft-in-memory-pricing--atomic-booking)
+10. [Post-Payment Step Record, Review Queue and Replay](#post-payment-step-record-review-queue-and-replay)
+11. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
+12. [Account Step After Payment (`CheckoutAccountStep`)](#account-step-after-payment-checkoutaccountstep)
+13. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
+14. [Server API & Service Reference](#server-api--service-reference)
 
 ---
 
@@ -359,6 +361,41 @@ The shared check is `CheckCheckoutAnswers` in `@mj-biz-apps/orders-entities` (`c
 
 ---
 
+## Choice Groups at Checkout (`choiceGroups`)
+
+Some products require the buyer to choose from a fixed list, such as "choose exactly 2 of these 8 departments", and the choice decides what the buyer is entitled to. The groups are defined in the widget's `Configuration`:
+
+```json
+{
+  "choiceGroups": [
+    {
+      "key": "department",
+      "label": "Choose your departments",
+      "options": [{ "value": "marketing", "label": "Marketing" }, { "value": "finance", "label": "Finance" }, "Operations"],
+      "min": 2,
+      "max": 2
+    }
+  ]
+}
+```
+
+- `min` and `max` are whole numbers: `0 <= min <= max <= options`, and `max >= 1`. `min: 0` makes the group optional.
+- A bare string option is both value and label. Keys and option values are at most 100 characters.
+- A malformed list refuses the checkout instead of being skipped.
+- A widget with choice groups sells a single line, and not an extension-type (IS-A) line such as an event line: `/draft` refuses either.
+
+**Flow.** The widget renders each group as checkboxes. A group of one swaps the pick; a larger group stops at `max` and disables the rest. Pay stays disabled until every group has at least `min`. `/draft` stores the picks with the priced snapshot and refuses more than `max` or an option not in the list, but accepts fewer than `min`, so the checkout can be priced first. `/payment-intent` and `/complete` check the stored picks in full against the widget's current groups.
+
+**Storage.** `CompleteCheckout` adds one `OrderLineChoice` row per pick to each line's `Choices` collection before `Confirm()`, so the rows save in the booking transaction. In `perUnit` mode every line gets the picks. Each row records `GroupKey`, `GroupLabel`, `OptionValue` and `OptionLabel`, with the labels as the buyer saw them.
+
+**Entitlements.** A `ProductEntitlement` with `ChoiceGroupKey` and `ChoiceOptionValue` set is conditional: it is granted only on a line carrying that pick. One without them is granted on every line of its product, as before. To grant a code per department, add one conditional row per option, for example `ChoiceGroupKey = department`, `ChoiceOptionValue = marketing`, `Code = MARKETING-ACCESS`.
+
+**Renewals.** `Orders.SpawnRenewals` copies the renewed line's picks onto the renewal line, so the conditional entitlements renew with them. Changing a pick after purchase is not supported.
+
+The shared check is `CheckCheckoutChoices` in `@mj-biz-apps/orders-entities` (`checkout-choices.ts`), used by both the widget and the server.
+
+---
+
 ## Zero-DB-Draft In-Memory Pricing & Atomic Booking
 
 ### Draft Phase
@@ -399,6 +436,26 @@ if (!confirmed) {
 5. Emits real-time notification events across MemberJunction.
 
 ---
+
+## Post-Payment Step Record, Review Queue and Replay
+
+Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row per session (`CheckoutStepLog.ts`):
+
+| Step | Runs in | Failure leaves |
+|---|---|---|
+| `Confirm` | `CompleteCheckout`, once payment has checked out | the session `Open`; the buyer's next complete call retries it |
+| `Capture` | `CompleteCheckout`, its replay, and the `payment_intent.succeeded` webhook | the order `Confirmed` and unpaid |
+
+- Every attempt sets the row `Running`, adds one to `Attempts` and records its source (`Checkout`, `Webhook` or `Replay`). It then ends `Succeeded` or `Failed` with `LastError` and `Retryable`.
+- Rows are written outside the step's own transaction, so a rolled-back `Confirm` still records its failure. A write that fails is logged; it never fails the step.
+- The shared view **Checkouts: Needs Review** lists `Failed` rows, plus `Running` rows whose last attempt started more than 15 minutes ago (`STALE_RUNNING_MINUTES`).
+- `Orders.ReplayCheckoutStep` (authorization `MJ.BizApps.Orders.Checkout.Replay`, held by the **Checkout Operator** role) re-drives one step:
+  - a `Succeeded` step is a no-op;
+  - a step still `Running` inside the stale window is refused;
+  - `Capture` re-runs the same idempotent `CapturePayment` (`checkout-complete:${session.ID}`);
+  - `Confirm` is not replayable here.
+- The terminal-capture Task is raised on the first non-retryable failure only, not again on every replay of it.
+- GuestOrder claim minting is not recorded: it is dormant until MJ publishes the identity-claim engine.
 
 ## Guest Record Claiming Workflow
 
@@ -627,7 +684,7 @@ Initializes a new checkout session (or reuses the caller's open, unexpired one).
 ```
 
 ### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines, contextUser?, options?)`
-Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Attribution` carries the checkout's source. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
+Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Choices` carries their picks from its `choiceGroups` (see [Choice Groups at Checkout](#choice-groups-at-checkout-choicegroups)); `options.Attribution` carries the checkout's source. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
 
 **Request Parameters:**
 ```json
@@ -647,6 +704,9 @@ Recalculates draft pricing in memory and persists the priced snapshot to the ses
   ],
   "answers": {
     "source": { "Value": "Other", "OtherText": "A podcast" }
+  },
+  "choices": {
+    "department": ["marketing", "finance"]
   }
 }
 ```

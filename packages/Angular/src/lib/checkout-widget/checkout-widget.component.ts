@@ -44,6 +44,16 @@ import {
     type CheckoutAnswersInput,
     type CheckoutQuestion
 } from '@mj-biz-apps/orders-entities/dist/checkout-questions.js';
+// Same reason: a dependency-free module the server also runs.
+import {
+    CheckChoicesAgainstGroups,
+    CheckoutChoiceOptionLabel,
+    CheckoutChoiceOptionValue,
+    DescribeChoiceCount,
+    ReadCheckoutChoiceGroups,
+    type CheckoutChoiceGroup,
+    type CheckoutChoicesInput
+} from '@mj-biz-apps/orders-entities/dist/checkout-choices.js';
 
 export interface CheckoutWidgetTheme extends CustomUIThemeConfiguration {
     primaryColor?: string;
@@ -107,6 +117,8 @@ export interface CheckoutSubmissionEvent {
     totalGross: number;
     /** Answers to the widget's `questions`, keyed by question key. */
     answers: CheckoutAnswersInput;
+    /** Options chosen from the widget's `choiceGroups`, keyed by group key. */
+    choices: CheckoutChoicesInput;
     paymentToken?: string;
     stripePaymentMethodId?: string;
     stripePaymentIntentId?: string;
@@ -195,6 +207,40 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
 
     private answersAreComplete(): boolean {
         return !CheckAnswersAgainstQuestions(this.questions(), this.answers()).Error;
+    }
+
+    /** The widget's choice groups. A malformed list shows none here; the server refuses the checkout. */
+    public choiceGroups = computed<CheckoutChoiceGroup[]>(() => ReadCheckoutChoiceGroups(this._config()?.choiceGroups).Groups);
+    public choices = signal<CheckoutChoicesInput>({});
+    public readonly choiceValue = CheckoutChoiceOptionValue;
+    public readonly choiceLabel = CheckoutChoiceOptionLabel;
+    public readonly choiceCount = DescribeChoiceCount;
+
+    public isChosen(groupKey: string, value: string): boolean {
+        return (this.choices()[groupKey] ?? []).includes(value);
+    }
+
+    /**
+     * Pick or unpick an option. A group of one swaps the pick, as a radio would; a larger group
+     * stops at its maximum, and the template disables the rest until one is unpicked.
+     */
+    public toggleChoice(group: CheckoutChoiceGroup, value: string): void {
+        this.choices.update((current) => {
+            const picked = current[group.key] ?? [];
+            if (picked.includes(value)) return { ...current, [group.key]: picked.filter((v) => v !== value) };
+            if (group.max === 1) return { ...current, [group.key]: [value] };
+            if (picked.length >= group.max) return current;
+            return { ...current, [group.key]: [...picked, value] };
+        });
+    }
+
+    /** True when the group is full, so its unpicked options are disabled. */
+    public isGroupFull(group: CheckoutChoiceGroup): boolean {
+        return group.max > 1 && (this.choices()[group.key] ?? []).length >= group.max;
+    }
+
+    private choicesAreComplete(): boolean {
+        return !CheckChoicesAgainstGroups(this.choiceGroups(), this.choices()).Error;
     }
 
     // Form state signals
@@ -492,6 +538,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             const ln = this.lastName().trim();
             if (!em || !em.includes('@') || !fn || !ln) return false;
             if (!this.answersAreComplete()) return false;
+            if (!this.choicesAreComplete()) return false;
             if (!this.isFree() && !this.isPaymentReady) return false;
             return true;
         }
@@ -525,7 +572,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             }
         }
 
-        if (!this.answersAreComplete()) {
+        if (!this.answersAreComplete() || !this.choicesAreComplete()) {
             return false;
         }
 
@@ -555,6 +602,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             },
             totalGross: this.totalGross(),
             answers: this.answers(),
+            choices: this.choices(),
             stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? undefined),
             sessionKey: finalSessionKey
         };

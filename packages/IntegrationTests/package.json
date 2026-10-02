@@ -17,8 +17,8 @@
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",
   "devDependencies": {
-    "@mj-biz-apps/accounting-engine-base": ">=0.5.0",
-    "@mj-biz-apps/accounting-server": ">=0.5.0",
+    "@mj-biz-apps/accounting-engine-base": ">=0.17.0",
+    "@mj-biz-apps/accounting-server": ">=0.17.0",
     "@mj-biz-apps/common-entities": ">=5.46.0",
     "@types/node": "^22.10.2",
     "typescript": "^5.9.3",
@@ -31,15 +31,15 @@
     "@mj-biz-apps/orders-core-entities-server": "5.22.0"
   },
   "peerDependencies": {
-    "@memberjunction/core": "^6.1.0-edge.5",
-    "@memberjunction/global": "^6.1.0-edge.5",
-    "@memberjunction/testing-integration": "^6.1.0-edge.5",
-    "@mj-biz-apps/accounting-engine-base": ">=0.5.0",
-    "@mj-biz-apps/accounting-server": ">=0.5.0",
+    "@memberjunction/core": "^6.1.4",
+    "@memberjunction/global": "^6.1.4",
+    "@memberjunction/testing-integration": "^6.1.4",
+    "@mj-biz-apps/accounting-engine-base": ">=0.17.0",
+    "@mj-biz-apps/accounting-server": ">=0.17.0",
     "@mj-biz-apps/common-entities": ">=5.46.0",
-    "@memberjunction/actions": "^6.1.0-edge.5",
-    "@memberjunction/actions-base": "^6.1.0-edge.5",
-    "@memberjunction/core-entities": "^6.1.0-edge.5"
+    "@memberjunction/actions": "^6.1.4",
+    "@memberjunction/actions-base": "^6.1.4",
+    "@memberjunction/core-entities": "^6.1.4"
   },
   "repository": {
     "type": "git",
