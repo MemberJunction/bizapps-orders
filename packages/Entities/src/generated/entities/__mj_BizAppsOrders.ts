@@ -14736,6 +14736,25 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntit
  */
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Lines')
 export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOrderLineEntityType> {
+
+  /**
+  * Related records: MJ_BizApps_Orders: Order Line Choices
+  *
+  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Order Lines record — see
+  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
+  * the 'MJ_BizApps_Orders: Order Lines → MJ_BizApps_Orders: Order Line Choices' relationship; edit that row, not this file.
+  *
+  */
+  public readonly Choices = this.DeclareRelatedRecords<mjBizAppsOrdersOrderLineChoiceEntity>({
+      Name: 'Choices',
+        RelatedEntity: 'MJ_BizApps_Orders: Order Line Choices',
+        RelatedEntityJoinField: 'OrderLineID',
+        OrderBy: 'GroupKey ASC, OptionValue ASC',
+        Load: 'explicit',
+        OnRemove: 'delete',
+        Source: 'database',
+  });
+
     /**
     * Loads the MJ_BizApps_Orders: Order Lines record from the database
     * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Lines record.

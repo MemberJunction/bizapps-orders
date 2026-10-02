@@ -36,7 +36,13 @@ import {
     type CheckoutAnswersCheck,
     type CheckoutAnswersInput,
     type ResolvedCheckoutAnswer,
-    NormalizeCheckoutAttribution
+    NormalizeCheckoutAttribution,
+    CheckCheckoutChoices,
+    ChoicesForStorage,
+    ReadCheckoutChoiceGroups,
+    CheckChoicesAgainstGroups,
+    type CheckoutChoicesCheck,
+    type CheckoutChoicesInput
 } from '@mj-biz-apps/orders-entities';
 import { EscapeText } from './sql-guards.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
@@ -327,6 +333,7 @@ export class CheckoutSessionService {
         'theme',
         'allowCoupons',
         'questions',
+        'choiceGroups',
     ]);
 
     private static sanitizeConfigurationForClient(configObj: CheckoutWidgetConfiguration): CheckoutWidgetConfiguration {
@@ -722,6 +729,39 @@ export class CheckoutSessionService {
         return CheckCheckoutAnswers(questions, stored);
     }
 
+    /** Whether a line can hold Order Line Choices. An extension-type line (IS-A) does not. */
+    private static canRecordChoices(line: unknown): line is mjBizAppsOrdersOrderLineEntity {
+        return !!(line as { Choices?: unknown }).Choices;
+    }
+
+    /**
+     * The session's stored choices, checked in full against the widget's CURRENT choice groups:
+     * every group within its min and max, every option one of the group's. Run where money moves
+     * or the order books.
+     */
+    private static checkSessionChoices(
+        widget: mjBizAppsOrdersCheckoutWidgetEntity,
+        session: mjBizAppsOrdersCheckoutSessionEntity
+    ): CheckoutChoicesCheck {
+        let groups: unknown;
+        if (widget.Configuration) {
+            try {
+                groups = (JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration).choiceGroups;
+            } catch {
+                return { Choices: [], Error: 'Invalid widget configuration' };
+            }
+        }
+        let stored: unknown;
+        if (session.MetadataJSON) {
+            try {
+                stored = (JSON.parse(session.MetadataJSON) as { Choices?: unknown }).Choices;
+            } catch {
+                stored = undefined;
+            }
+        }
+        return CheckCheckoutChoices(groups, stored);
+    }
+
     /**
      * Creates an order line entity instance attached to the order's Lines collection.
      */
@@ -856,7 +896,7 @@ export class CheckoutSessionService {
         email: string,
         lines: CheckoutLineInput[],
         contextUser?: UserInfo,
-        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput }
+        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput }
     ): Promise<UpdateDraftResult> {
         const failed = (message: string): UpdateDraftResult => ({
             Success: false,
@@ -918,6 +958,21 @@ export class CheckoutSessionService {
         );
         if (draftAnswers.Error) {
             return failed(draftAnswers.Error);
+        }
+
+        // Choices likewise: a draft may hold fewer than a group's minimum, never more than its
+        // maximum or an option it does not offer. The choice is the buyer's for the one item the
+        // widget sells, so a widget with choice groups takes a single line.
+        const choiceGroups = ReadCheckoutChoiceGroups(widgetConfig.choiceGroups);
+        if (choiceGroups.Error) {
+            return failed(choiceGroups.Error);
+        }
+        if (choiceGroups.Groups.length > 0 && Array.isArray(lines) && lines.length > 1) {
+            return failed('This checkout sells one item at a time.');
+        }
+        const draftChoices = CheckChoicesAgainstGroups(choiceGroups.Groups, options?.Choices, { partial: true });
+        if (draftChoices.Error) {
+            return failed(draftChoices.Error);
         }
 
         const allowedProductIds = await this.resolveAllowedProductIds(widgetConfig, contextUser);
@@ -1046,6 +1101,13 @@ export class CheckoutSessionService {
             }
         }
 
+        // A choice is recorded on the order line itself. A line of an extension type (an event
+        // line) has no collection for it, so refuse here, before the buyer pays, rather than at
+        // completion.
+        if (choiceGroups.Groups.length > 0 && order.Lines.Items.some((l) => !CheckoutSessionService.canRecordChoices(l))) {
+            return failed('This checkout is not configured correctly (its choices cannot be recorded on this item).');
+        }
+
         // Price the draft order in memory
         try {
             const pricingService = new OrderPricingService({
@@ -1135,6 +1197,7 @@ export class CheckoutSessionService {
             TotalGross: order.TotalGross,
             Answers: this.answersForStorage(draftAnswers.Answers),
             ...(attribution ? { Attribution: attribution } : {}),
+            Choices: ChoicesForStorage(draftChoices.Choices),
             UpdatedAt: new Date().toISOString()
         });
         const sessionSaved = await session.Save();
@@ -1220,6 +1283,10 @@ export class CheckoutSessionService {
         const answersCheck = this.checkSessionAnswers(widget, session);
         if (answersCheck.Error) {
             return failed(answersCheck.Error);
+        }
+        const choicesCheck = this.checkSessionChoices(widget, session);
+        if (choicesCheck.Error) {
+            return failed(choicesCheck.Error);
         }
 
         let paymentProviderId: string | undefined;
@@ -1382,12 +1449,14 @@ export class CheckoutSessionService {
 
             // Refused before anything is written, so an unanswered checkout creates no Person.
             const answersCheck = this.checkSessionAnswers(widget, session);
-            if (answersCheck.Error) {
+            const choicesCheck = this.checkSessionChoices(widget, session);
+            const unanswered = answersCheck.Error ?? choicesCheck.Error;
+            if (unanswered) {
                 await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
                 session.Status = 'Open';
                 return {
                     Success: false,
-                    ErrorMessage: answersCheck.Error,
+                    ErrorMessage: unanswered,
                     SessionID: sessionID,
                     Status: 'Open'
                 };
@@ -1538,6 +1607,22 @@ export class CheckoutSessionService {
                 row.QuestionLabel = answer.QuestionLabel;
                 row.Answer = answer.Answer;
                 row.OtherText = answer.OtherText;
+            }
+
+            // The choices ride on each line the checkout sold (every seat, in per-unit mode), in the
+            // same graph: the entitlement walk reads them from the line to decide which conditional
+            // entitlements to grant, and a refused confirm leaves none behind.
+            for (const line of order.Lines.Items) {
+                if (choicesCheck.Choices.length > 0 && !CheckoutSessionService.canRecordChoices(line)) {
+                    throw new Error('This checkout is not configured correctly (its choices cannot be recorded on this item).');
+                }
+                for (const choice of choicesCheck.Choices) {
+                    const row = await line.Choices.Create();
+                    row.GroupKey = choice.GroupKey;
+                    row.GroupLabel = choice.GroupLabel;
+                    row.OptionValue = choice.OptionValue;
+                    row.OptionLabel = choice.OptionLabel;
+                }
             }
 
             // Price lines before confirmation

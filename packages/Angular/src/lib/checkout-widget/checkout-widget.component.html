@@ -268,6 +268,35 @@
         </section>
     }
 
+    <!-- Choice groups from the widget's Configuration; the picks are recorded on the order line -->
+    @for (group of choiceGroups(); track group.key) {
+        <section class="mj-widget-form-section">
+            <fieldset class="mj-choice-group">
+                <legend class="mj-section-title">
+                    {{ group.label }}
+                    <span class="mj-choice-count">(choose {{ choiceCount(group) }})</span>
+                    @if (group.min > 0) {
+                        <span class="mj-required">*</span>
+                    }
+                </legend>
+                <div class="mj-choice-options">
+                    @for (opt of group.options; track choiceValue(opt)) {
+                        <label
+                            class="mj-checkbox-label"
+                            [class.is-disabled]="isGroupFull(group) && !isChosen(group.key, choiceValue(opt))">
+                            <input
+                                type="checkbox"
+                                [checked]="isChosen(group.key, choiceValue(opt))"
+                                [disabled]="isGroupFull(group) && !isChosen(group.key, choiceValue(opt))"
+                                (change)="toggleChoice(group, choiceValue(opt))" />
+                            <span>{{ choiceLabel(opt) }}</span>
+                        </label>
+                    }
+                </div>
+            </fieldset>
+        </section>
+    }
+
     <!-- Stripe Embedded Payment Section -->
     @if (!isFree()) {
         <section class="mj-widget-payment-section">
