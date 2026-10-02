@@ -623,6 +623,26 @@ export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyA
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
+export { EntitlementGrantEntityServer, LoadEntitlementGrantEntityServer } from './EntitlementGrantEntityServer.js';
+export {
+    OrdersOutboundConsumer,
+    RecordOutboundEvent,
+    DispatchOutboundDeliveries,
+    RegisteredOutboundConsumers,
+    HasOutboundConsumers,
+    NextOutboundAttempt,
+    EnvelopeFor,
+    OUTBOUND_EVENT_ENTITY,
+    OUTBOUND_DELIVERY_ENTITY,
+    OUTBOUND_DELIVERY_DEADLINE_MS,
+    OUTBOUND_RETRY_MINUTES,
+    OUTBOUND_LEASE_MS,
+    type OutboundEventType,
+    type OutboundEventEnvelope,
+    type RecordOutboundEventInput,
+    type DispatchOutboundInput,
+    type DispatchOutboundOutput,
+} from './OutboundEvents.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';
 
 // Invoicing (D-INV): an invoice is a PRESENTATION of an order, never a record. The decisions are in

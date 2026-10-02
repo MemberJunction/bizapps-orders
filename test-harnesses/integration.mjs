@@ -131,6 +131,7 @@ const ALL_BUNDLES = [
     'term-extension',
     'party-roster',
     'progress-measurement',
+    'outbound-events',
     'volume',
 ];
 

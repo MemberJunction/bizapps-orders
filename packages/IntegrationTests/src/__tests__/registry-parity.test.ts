@@ -67,6 +67,7 @@ import '../checks/payment-deposit.checks.js';
 import '../checks/contract-reversal.checks.js';
 import '../checks/party-roster.checks.js';
 import '../checks/progress-measurement.checks.js';
+import '../checks/outbound-events.checks.js';
 import '../checks/concessions.checks.js';
 import '../checks/term-extension.checks.js';
 
@@ -121,6 +122,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'contract-reversal': 9,
     'party-roster': 2,
     'progress-measurement': 17,
+    'outbound-events': 6,
     concessions: 25,
     'term-extension': 9,
 };

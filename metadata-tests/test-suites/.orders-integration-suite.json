@@ -566,8 +566,19 @@
         {
           "fields": {
             "SuiteID": "@parent:ID",
-            "TestID": "@lookup:MJ: Tests.Name=ORD-39 - Concessions",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-39 - Outbound Events",
             "Sequence": 39,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "4B9A2F51-7C3D-4E86-9F10-2A3B4C5D6E7F"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-40 - Concessions",
+            "Sequence": 40,
             "Status": "Active"
           },
           "primaryKey": {
@@ -577,8 +588,8 @@
         {
           "fields": {
             "SuiteID": "@parent:ID",
-            "TestID": "@lookup:MJ: Tests.Name=ORD-40 - Term Extension",
-            "Sequence": 40,
+            "TestID": "@lookup:MJ: Tests.Name=ORD-41 - Term Extension",
+            "Sequence": 41,
             "Status": "Active"
           },
           "primaryKey": {

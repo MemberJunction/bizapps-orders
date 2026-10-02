@@ -115,6 +115,7 @@ export * from './checks/payment-deposit.checks.js';
 export * from './checks/contract-reversal.checks.js';
 export * from './checks/party-roster.checks.js';
 export * from './checks/progress-measurement.checks.js';
+export * from './checks/outbound-events.checks.js';
 export * from './checks/concessions.checks.js';
 export * from './checks/term-extension.checks.js';
 
