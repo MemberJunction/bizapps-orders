@@ -172,6 +172,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     }
 
     public async ngOnInit(): Promise<void> {
+        // A reset runs this again: a failure from the previous attempt must not outlive it.
+        this.loadError = null;
         this.readHostAttributes();
         if (!this.slug) {
             this.loadError = 'This checkout link is missing its reference.';
@@ -563,6 +565,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.accountLoading = false;
         }
         if (IsAccountSettled(this.account)) this.forgetCompleting();
+        this.syncAccountState();
         this.leaveIfDone();
         this.cdr.detectChanges();
     }
@@ -597,6 +600,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.successMessage = 'Thank you. Your order is confirmed.';
             this.account = account;
             if (IsAccountSettled(account)) this.forgetCompleting();
+            this.syncAccountState();
             return true;
         } catch {
             return false;
@@ -622,6 +626,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             });
             this.account = ReadCheckoutAccount(res.Account) ?? this.account;
             if (IsAccountSettled(this.account)) this.forgetCompleting();
+            this.syncAccountState();
             if (res.Success) {
                 this.passwordSet = true;
                 this.password = '';
@@ -642,7 +647,21 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public skipPassword(): void {
         if (this.account) this.account = { ...this.account, CanSetPassword: false };
         this.forgetCompleting();
+        this.syncAccountState();
         this.leaveIfDone();
+    }
+
+    /**
+     * `PASSWORD` while the account step's password form shows, and `SUCCESS` once it no longer does.
+     * Nothing is sent when the form never showed: `finish()` has already reported `SUCCESS`, and a
+     * reload that resumes a settled step should not report a second sale.
+     */
+    private syncAccountState(): void {
+        if (this.account?.CanSetPassword) {
+            this.setState('PASSWORD');
+        } else if (this.state === 'PASSWORD') {
+            this.setState('SUCCESS');
+        }
     }
 
     /** Follows the widget's redirect once nothing is left for the buyer to do here. */

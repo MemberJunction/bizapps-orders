@@ -1171,6 +1171,13 @@ export class CheckoutSessionService {
         order.OrderDate = TodayAsDateValue();
 
         const normalizedEmail = (email || '').trim().toLowerCase();
+        const previousEmail = (session.Email || '').trim().toLowerCase();
+        // The resolved payer belongs to the e-mail it was resolved from. A changed e-mail drops it
+        // so the resolve below runs again for the new address — or, when the new address matches
+        // no Person, CompleteCheckout resolves or creates the payer (#393).
+        if (previousEmail && previousEmail !== normalizedEmail) {
+            session.PersonID = null;
+        }
         session.Email = normalizedEmail;
 
         // Resolve (never create) the payer Person by email so person-specific pricing applies
@@ -2258,7 +2265,10 @@ export class CheckoutSessionService {
                 await SendOrderDescriptionToGateway(intent, order.ID, mdForGateway, contextUser);
             }
         }
-        if (!intent.BillToPersonID && order.BillToPersonID) {
+        // The order's bill-to is authoritative. The intent can carry an earlier payer: one opened
+        // before the buyer changed e-mail is returned again by the gateway for the same idempotency
+        // key, still naming the person it was first opened for (#393).
+        if (order.BillToPersonID && !this.idsEqual(intent.BillToPersonID, order.BillToPersonID)) {
             intent.BillToPersonID = order.BillToPersonID;
         }
         if (!intent.BillToOrganizationID && order.BillToOrganizationID) {
