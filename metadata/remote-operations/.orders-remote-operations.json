@@ -454,7 +454,7 @@
     "fields": {
       "Name": "Record Progress",
       "OperationKey": "Orders.RecordProgress",
-      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted, with no row edited.",
+      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted and booked no earlier than that reversal date, with no row edited.",
       "InputTypeName": "OrdersRecordProgressInput",
       "InputTypeDefinition": "@file:types/orders-record-progress.input.ts",
       "OutputTypeName": "OrdersRecordProgressOutput",
@@ -473,8 +473,8 @@
       "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F20"
     },
     "sync": {
-      "lastModified": "2026-09-30T19:21:52.608Z",
-      "checksum": "6cd0f72b09245cfb789e829e945d2b82900d4c440c3ef792633e2657e52a67ae"
+      "lastModified": "2026-10-02T19:39:06.000Z",
+      "checksum": "1698753314ad012a44edbf700c06c8f11cfc21d416653efe5df0dcbf64fadfe0"
     }
   },
   {

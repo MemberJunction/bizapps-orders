@@ -14,6 +14,10 @@
  * period is not reopened by a correction. "Closed" is the test the closed-period warning uses — the
  * month has a Posted batch for the line's company.
  *
+ * THE REPLACEMENT'S CATCH-UP FOLLOWS IT ({@link CatchUpDate}). When the reversal moves, the catch-up
+ * books no earlier than the reversal's date, so nothing new posts into the closed month. The
+ * observation keeps the date the supervisor chose; only its entry moves.
+ *
  * ONLY THE LATEST OBSERVATION CAN BE SUPERSEDED. Recognition is cumulative, so reversing the latest
  * observation's delta restores exactly the total the one before it left. Reversing an older one
  * would unwind a delta that later observations were computed on top of. To back out further,
@@ -115,6 +119,20 @@ export function ReversalDate(replacedDate: string, postedMonths: Iterable<string
         key = `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}`;
     }
     return `${key}-01`;
+}
+
+/**
+ * The date a supersede's catch-up is booked on.
+ *
+ * `measurementDate` itself while the replaced observation's month is open — `firstOpenDate`, from
+ * {@link ReversalDate}, is then the replaced date. When that month is closed, the later of
+ * `measurementDate` and `firstOpenDate`: a replacement dated into the closed month books on the
+ * first open day, and one dated after it keeps its own date.
+ */
+export function CatchUpDate(measurementDate: string, replacedDate: string, firstOpenDate: string): string {
+    const day = measurementDate.slice(0, 10);
+    if (firstOpenDate === replacedDate.slice(0, 10)) return day;
+    return day < firstOpenDate ? firstOpenDate : day;
 }
 
 /**

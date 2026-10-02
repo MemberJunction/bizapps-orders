@@ -54,6 +54,13 @@ export interface OrdersRecordProgressOutput {
      * Null otherwise.
      */
     ReversalDate?: string | null;
+    /**
+     * The date this observation's catch-up entry is booked on. `MeasurementDate` itself, except on a
+     * supersede whose replaced observation's month has a Posted batch for the line's company: then the
+     * later of `MeasurementDate` and `ReversalDate`'s first open day, so nothing new posts into the
+     * closed month. The observation row keeps `MeasurementDate`. Null when there is no catch-up.
+     */
+    CatchUpDate?: string | null;
     /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */
     ReversalJournalEntryID?: string | null;
 }

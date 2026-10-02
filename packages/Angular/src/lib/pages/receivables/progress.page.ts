@@ -29,8 +29,8 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
  * authorization sees a toggle that makes the next post replace the line's last observation: its
  * recognition is reversed and the new observation posts as if it had never been there. Nothing is
  * edited. The reversal lands on the replaced date while that month is open, and on day 1 of the
- * first later open month when a posted batch has closed it; the preview and the confirm both say
- * which date it got. The operation checks the grant again; the toggle only hides the action
+ * first later open month when a posted batch has closed it, and the new catch-up follows it there;
+ * the preview and the confirm both say which dates they got. The operation checks the grant again; the toggle only hides the action
  * from people who cannot use it.
  *
  * A LINE AT 100% IS STILL SUPERSEDABLE, so the same users get "Show 100%": the worklist omits
@@ -113,7 +113,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                 <div class="mjo-pg__closed" role="status">
                     <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
                     Superseding the {{ FormatDate(row.LastMeasurementDate, { Short: true }) }} observation at {{ percent(row.LastPercentComplete) }}.
-                    Its recognition is reversed on its own date, or in the first open month if that month is in a posted batch; nothing is edited. Keep its date to correct the percent, or choose any date after the observation before it.
+                    Its recognition is reversed on its own date, or in the first open month if that month is in a posted batch, and the new catch-up books there too; nothing is edited. Keep its date to correct the percent, or choose any date after the observation before it.
                 </div>
             }
             @if (reversalNote(Draft, row); as reversalText) {
@@ -302,19 +302,31 @@ export class MJOProgressPageComponent implements OnInit {
     }
 
     /**
-     * Where a supersede's reversal is booked, in words — or null when nothing is reversed. Said
-     * whichever date it got, and with the reason when it is not the replaced observation's own date.
+     * Where a supersede's entries are booked, in words — or null when nothing is reversed and the
+     * catch-up keeps its date. The reversal is said whichever date it got, with the reason when it is
+     * not the replaced observation's own date; the catch-up only when it moved off the chosen date.
      */
     public reversalNote(draft: OrdersRecordProgressOutput | null, row: { LastMeasurementDate?: string | null }): string | null {
-        if (!draft?.ReversalDate || !draft.ReversalAmount) return null;
-        const amount = this.money(Math.abs(draft.ReversalAmount));
-        const on = FormatDate(draft.ReversalDate, { Short: true });
+        if (!draft) return null;
         const replaced = row.LastMeasurementDate ? row.LastMeasurementDate.slice(0, 10) : null;
-        if (!replaced || replaced === draft.ReversalDate) return `The ${amount} reversal is dated ${on}, the replaced observation's own date.`;
-        return (
-            `The ${amount} reversal is dated ${on}: the ${FormatDate(replaced, { Short: true })} observation's month is already in a posted batch, ` +
-            `so the reversal books in the first month that is not.`
-        );
+        const notes: string[] = [];
+        if (draft.ReversalDate && draft.ReversalAmount) {
+            const amount = this.money(Math.abs(draft.ReversalAmount));
+            const on = FormatDate(draft.ReversalDate, { Short: true });
+            notes.push(
+                !replaced || replaced === draft.ReversalDate
+                    ? `The ${amount} reversal is dated ${on}, the replaced observation's own date.`
+                    : `The ${amount} reversal is dated ${on}: the ${FormatDate(replaced, { Short: true })} observation's month is already in a posted batch, ` +
+                          `so the reversal books in the first month that is not.`,
+            );
+        }
+        if (draft.CatchUpDate && draft.MeasurementDate && draft.CatchUpDate !== draft.MeasurementDate && draft.RecognitionAmount) {
+            notes.push(
+                `The ${this.money(Math.abs(draft.RecognitionAmount))} catch-up books on ${FormatDate(draft.CatchUpDate, { Short: true })} too, ` +
+                    `so nothing new posts into the closed month; the observation keeps ${FormatDate(draft.MeasurementDate, { Short: true })}.`,
+            );
+        }
+        return notes.length ? notes.join(' ') : null;
     }
 
     /** One call shape for both buttons. Returns null (and shows why) when the operation refused. */

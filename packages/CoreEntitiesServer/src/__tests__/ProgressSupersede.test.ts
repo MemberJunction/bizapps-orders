@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthorizationInfo, UserInfo } from '@memberjunction/core';
 import {
+    CatchUpDate,
     EffectiveObservations,
     FutureDateWarning,
     MonthEnd,
@@ -105,6 +106,26 @@ describe('ReversalDate', () => {
     it('reads only the date part of a timestamp', () => {
         expect(ReversalDate('2026-08-31T00:00:00Z', [])).toBe('2026-08-31');
         expect(ReversalDate('2026-08-31T00:00:00Z', ['2026-08'])).toBe('2026-09-01');
+    });
+});
+
+describe('CatchUpDate', () => {
+    it('keeps the chosen date while the replaced month is open', () => {
+        expect(CatchUpDate('2026-08-31', '2026-08-31', '2026-08-31')).toBe('2026-08-31');
+        expect(CatchUpDate('2026-09-15', '2026-08-31', '2026-08-31')).toBe('2026-09-15');
+    });
+
+    it('follows the reversal out of a closed month', () => {
+        expect(CatchUpDate('2026-08-31', '2026-08-31', '2026-09-01')).toBe('2026-09-01');
+        expect(CatchUpDate('2026-08-20', '2026-08-31', '2026-10-01')).toBe('2026-10-01');
+    });
+
+    it('keeps a chosen date after the first open day', () => {
+        expect(CatchUpDate('2026-09-15', '2026-08-31', '2026-09-01')).toBe('2026-09-15');
+    });
+
+    it('reads only the date part of a timestamp', () => {
+        expect(CatchUpDate('2026-08-31T00:00:00Z', '2026-08-31T00:00:00Z', '2026-09-01')).toBe('2026-09-01');
     });
 });
 

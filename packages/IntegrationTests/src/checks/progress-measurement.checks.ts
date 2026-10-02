@@ -46,9 +46,10 @@
  *   PM24 an invoice posted between the mistake and the supersede: revenue nets to zero on the
  *        mistaken date, the contra legs need not, and the line's end balances match a control line
  *        that was never mistyped
- *   PM25 a supersede whose replaced month is already in a Posted batch books its reversal on day 1
- *        of the first later month with none — skipping every posted month in between — while the
- *        replacement keeps the date the supervisor chose, and preview and post agree on the date
+ *   PM25 a supersede whose replaced month is already in a Posted batch books its reversal AND the
+ *        replacement's catch-up on day 1 of the first later month with none — skipping every posted
+ *        month in between — while the replacement row keeps the date the supervisor chose, and
+ *        preview and post agree on the dates
  *
  * Every attestation here is made as an Engagement Lead-only user, never the System owner, so each
  * check also proves the role is enough on its own.
@@ -105,6 +106,7 @@ interface RecordOutput {
     ReversalAmount?: number;
     ReversalJournalEntryID?: string | null;
     ReversalDate?: string | null;
+    CatchUpDate?: string | null;
     Preview: boolean;
     RecognizedToDateBefore?: number;
     RecognizedToDateAfter?: number;
@@ -876,6 +878,7 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 AssertEqual(fixed.SupersededMeasurementID?.toLowerCase(), typo.OrderLineProgressMeasurementID?.toLowerCase(), 'it names the row it replaced');
                 AssertEqual(fixed.ReversalAmount, -300.01, "the reversal is the typo's own delta, negated");
                 AssertEqual(fixed.ReversalDate, '2027-08-31', "no batch has posted the typo's month, so the reversal keeps its date");
+                AssertEqual(fixed.CatchUpDate, '2026-08-31', 'and the catch-up keeps the date the supervisor chose');
                 Assert(!!fixed.ReversalJournalEntryID && !!fixed.JournalEntryID, 'two entries: the reversal and the catch-up');
                 AssertEqual(fixed.RecognizedToDateBefore, 400, 'the catch-up starts from what July left');
                 AssertEqual(fixed.RecognitionAmount, 150.01, 'and posts only its own delta');
@@ -1077,7 +1080,7 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
     },
     {
         Id: 'progress-measurement.PM25',
-        Name: 'PM25: a replaced month already in a posted batch books its reversal in the first later month with none',
+        Name: 'PM25: a replaced month already in a posted batch books the reversal and the catch-up in the first later month with none',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -1105,20 +1108,25 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 const preview = await supersede(true);
                 Assert(preview.Success, `the preview must succeed: ${preview.Message}`);
                 AssertEqual(preview.ReversalDate, '2026-09-01', 'August is posted, so the reversal moves to 1 September');
+                AssertEqual(preview.CatchUpDate, '2026-09-01', 'and the catch-up follows it, so nothing new posts into August');
                 Assert(/2026-09-01/.test(String(preview.Message ?? '')), `the preview message states the reversal date: ${preview.Message}`);
+                Assert(/revenue on 2026-09-01 \(2026-08 is in a posted batch\)\.$/.test(String(preview.Message ?? '')), `the preview message states the catch-up date: ${preview.Message}`);
 
                 // September closes too before the supervisor posts: the reversal skips it as well.
                 await postBatch('PM25-SEP', '2026-09-30');
                 const fixed = await supersede(false);
                 Assert(fixed.Success, `the supersede must post: ${fixed.Message}`);
                 AssertEqual(fixed.ReversalDate, '2026-10-01', 'every consecutive posted month is skipped');
+                AssertEqual(fixed.CatchUpDate, '2026-10-01', 'by the catch-up too');
                 AssertEqual(fixed.ReversalAmount, -300.01, "the reversal is the typo's own delta, negated");
                 AssertEqual(fixed.RecognitionAmount, 150.01, 'the replacement catches up from the restored 40%');
 
                 const entries = await recognitionEntries(ctx, lineID);
                 const on = (date: string) => entries.filter((e) => e.EffectiveDate === date).map((e) => cents(Number(e.Signed))).sort((a, b) => a - b);
-                AssertEqual(JSON.stringify(on('2026-10-01')), JSON.stringify([-300.01]), 'the reversal is booked in the first open month');
-                AssertEqual(JSON.stringify(on('2026-08-31')), JSON.stringify([150.01, 300.01]), 'nothing new reverses into closed August; the replacement keeps its chosen date');
+                AssertEqual(JSON.stringify(on('2026-10-01')), JSON.stringify([-300.01, 150.01]), 'the reversal and the catch-up are both booked in the first open month');
+                AssertEqual(JSON.stringify(on('2026-08-31')), JSON.stringify([300.01]), 'nothing new posts into closed August: only the typo is there');
+                const replacement = (await observations(ctx, lineID)).find((o) => o.ID === fixed.OrderLineProgressMeasurementID);
+                AssertEqual(replacement?.MeasurementDate, '2026-08-31', 'the replacement row keeps the date the supervisor chose');
                 AssertEqual(cents(entries.reduce((sum, e) => sum + Number(e.Signed), 0)), 550.01, 'the ledger holds exactly 55%');
                 AssertEqual(Number((await lineTotal(ctx, lineID)).RecognizedToDate), 550.01, "and so does the line's running total");
             }),

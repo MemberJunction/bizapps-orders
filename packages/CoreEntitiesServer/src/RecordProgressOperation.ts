@@ -40,8 +40,10 @@
  * the restored total. The reversal is dated on the replaced observation's own date while that month
  * is open, and on day 1 of the first later open month when it is not (finance's ruling; see
  * {@link ReversalDate}). "Closed" is the closed-period warning's test, a Posted batch for the line's
- * company, and here a read that fails REFUSES the supersede instead of passing it. The replaced row stays Posted and
- * immutable; it stops counting because a row points at it. A replacement may carry the replaced
+ * company, and here a read that fails REFUSES the supersede instead of passing it. When the reversal
+ * moves, this observation's catch-up books no earlier than the reversal's date, so nothing new posts
+ * into the closed month; the observation keeps its chosen date (see {@link CatchUpDate}). The replaced
+ * row stays Posted and immutable; it stops counting because a row points at it. A replacement may carry the replaced
  * observation's date, so a wrong percent is corrected on the day it was attested. See
  * `./ProgressSupersede.ts`.
  *
@@ -97,7 +99,7 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 import { RegisterOperationPost, ReleaseOperationPost } from './OrderLineProgressMeasurementEntityServer.js';
 import { OrderJournalEntryFactory, type JEDraft } from './OrderJournalEntryFactory.js';
-import { EffectiveObservations, FutureDateWarning, PlanSupersede, ReversalDate, SupersedeRefusal } from './ProgressSupersede.js';
+import { CatchUpDate, EffectiveObservations, FutureDateWarning, PlanSupersede, ReversalDate, SupersedeRefusal } from './ProgressSupersede.js';
 import { RaiseProgressJudgmentCall } from './ProgressJudgmentCall.js';
 import { ComputeCatchUp, ProgressRecognitionDriver } from './RevenueRecognition.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
@@ -238,18 +240,23 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         const plan = replaced ? PlanSupersede(lineAmount, percent, recognizedToDate, replaced.RecognitionAmount) : null;
         const catchUp = plan ? plan.CatchUp : ComputeCatchUp(lineAmount, percent, recognizedToDate);
         const reversal = plan?.Reversal ?? 0;
-        // THE REVERSAL NEVER LANDS IN A CLOSED MONTH, so unlike the observation's own date it needs
-        // no warning — but it needs the read to have worked. A warning can fail open; a posting date
-        // cannot, because guessing "open" books into a period finance has closed.
+        // NEITHER ENTRY OF A SUPERSEDE LANDS IN A CLOSED MONTH. When the replaced observation's month
+        // is closed, the reversal moves to the first open day and the catch-up follows it, so the read
+        // has to have worked. A warning can fail open; a posting date cannot, because guessing "open"
+        // books into a period finance has closed. The read is made on every supersede, since the
+        // catch-up's date depends on it even when nothing is reversed.
         let reversalDate: string | null = null;
-        if (replaced && reversal !== 0) {
+        let catchUpDate = measurementDate;
+        if (replaced) {
             const resolved = await this.reversalDate(line, replaced.MeasurementDate, provider, ledger);
             if ('Refusal' in resolved) return this.refuse(preview, resolved.Refusal, echo);
-            reversalDate = resolved.Date;
+            if (reversal !== 0) reversalDate = resolved.Date;
+            catchUpDate = CatchUpDate(measurementDate, replaced.MeasurementDate, resolved.Date);
         }
         // Read once, echoed on BOTH paths: the preview is where it is meant to be seen, and the live
-        // output carries it so the screen can show it after a post that was made anyway.
-        const closed = await this.closedPeriodWarning(line, measurementDate, provider, ledger);
+        // output carries it so the screen can show it after a post that was made anyway. Tested on the
+        // catch-up's booking date, which on a moved supersede is already open.
+        const closed = await this.closedPeriodWarning(line, catchUpDate, provider, ledger);
         const numbers = {
             ...echo,
             PercentComplete: percent,
@@ -262,6 +269,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             SupersededMeasurementID: replaced?.ID ?? null,
             ReversalAmount: reversal,
             ReversalDate: reversalDate,
+            CatchUpDate: catchUp.Delta === 0 ? null : catchUpDate,
         };
         const signer = user.Name || user.Email;
         const note = `to ${(percent * 100).toFixed(2).replace(/\.?0+$/, '')}% (attested by ${signer}, ${measurementDate})`;
@@ -273,10 +281,10 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
                 ? await this.buildDraft(order, line, reversal, reversalDate, `reversing the ${replaced.MeasurementDate} observation (superseded by ${signer}, ${measurementDate})`, provider, ledger)
                 : null;
         if (reversal !== 0) this.applyRecognized(line, reversal);
-        const draft = catchUp.Delta === 0 ? null : await this.buildDraft(order, line, catchUp.Delta, measurementDate, note, provider, ledger);
+        const draft = catchUp.Delta === 0 ? null : await this.buildDraft(order, line, catchUp.Delta, catchUpDate, note, provider, ledger);
 
         if (preview) {
-            return { Success: true, Preview: true, ...numbers, OrderLineProgressMeasurementID: null, JournalEntryID: null, ReversalJournalEntryID: null, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, true, replaced, reversal, reversalDate) };
+            return { Success: true, Preview: true, ...numbers, OrderLineProgressMeasurementID: null, JournalEntryID: null, ReversalJournalEntryID: null, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, true, replaced, reversal, reversalDate, measurementDate, catchUpDate) };
         }
 
         const dbProvider = provider as unknown as DatabaseProviderBase;
@@ -308,7 +316,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
                 ledger,
             );
             await dbProvider.CommitTransaction();
-            return { Success: true, Preview: false, ...numbers, OrderLineProgressMeasurementID: measurementID, JournalEntryID: journalEntryID, ReversalJournalEntryID: reversalJournalEntryID, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, false, replaced, reversal, reversalDate) };
+            return { Success: true, Preview: false, ...numbers, OrderLineProgressMeasurementID: measurementID, JournalEntryID: journalEntryID, ReversalJournalEntryID: reversalJournalEntryID, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, false, replaced, reversal, reversalDate, measurementDate, catchUpDate) };
         } catch (err) {
             LogError(`Orders.RecordProgress failed for line ${lineID}: ${err}`);
             try {
@@ -424,7 +432,8 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
 
     /**
      * The date a supersede's reversal is booked on — {@link ReversalDate} over the months, from the
-     * replaced observation's onward, that have a Posted batch for the line's company.
+     * replaced observation's onward, that have a Posted batch for the line's company. The catch-up's
+     * date is derived from it too ({@link CatchUpDate}).
      *
      * FAILS CLOSED, unlike {@link closedPeriodWarning}: that one is a hint, this is a posting date.
      * A read that fails returns a refusal, not the replaced date. A line with no company has no
@@ -443,7 +452,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         } catch (err) {
             return {
                 Refusal:
-                    `Could not check whether ${replacedDate.slice(0, 7)} is in a posted batch, which decides the reversal's date, ` +
+                    `Could not check whether ${replacedDate.slice(0, 7)} is in a posted batch, which decides where the supersede's entries are dated, ` +
                     `so nothing was superseded: ${err instanceof Error ? err.message : String(err)}`,
             };
         }
@@ -620,6 +629,8 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         replaced: LineObservation | null = null,
         reversal = 0,
         reversalDate: string | null = null,
+        measurementDate: string | null = null,
+        catchUpDate: string | null = null,
     ): string {
         const verb = preview ? 'would' : 'did';
         const head = `Order ${orderNumber} line ${lineNumber}: `;
@@ -630,9 +641,10 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
               : `supersedes the ${replaced.MeasurementDate} observation — ${money(Math.abs(reversal)).toFixed(2)} ${verb} ${reversal < 0 ? 'come back out of' : 'return to'} revenue on ${reversalDate ?? replaced.MeasurementDate}` +
                 (reversalDate && reversalDate !== replaced.MeasurementDate ? ` (${replaced.MeasurementDate.slice(0, 7)} is in a posted batch)` : '') +
                 `; then `;
+        const moved = replaced && catchUpDate && measurementDate && catchUpDate !== measurementDate ? ` on ${catchUpDate} (${replaced.MeasurementDate.slice(0, 7)} is in a posted batch)` : '';
         if (delta === 0) return `${head}${undo}${replaced ? 'nothing further to recognise.' : 'progress unchanged — nothing to recognise.'}`;
-        if (delta < 0) return `${head}${undo}${replaced ? '' : 'progress slid back; '}${money(-delta).toFixed(2)} ${verb} come out of revenue.`;
-        return `${head}${undo}${money(delta).toFixed(2)} ${verb} move from deferred revenue to revenue.`;
+        if (delta < 0) return `${head}${undo}${replaced ? '' : 'progress slid back; '}${money(-delta).toFixed(2)} ${verb} come out of revenue${moved}.`;
+        return `${head}${undo}${money(delta).toFixed(2)} ${verb} move from deferred revenue to revenue${moved}.`;
     }
 
     private refuse(preview: boolean, message: string, echo: Partial<OrdersRecordProgressOutput> = {}): OrdersRecordProgressOutput {

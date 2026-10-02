@@ -1462,6 +1462,13 @@ export interface OrdersRecordProgressOutput {
      * Null otherwise.
      */
     ReversalDate?: string | null;
+    /**
+     * The date this observation's catch-up entry is booked on. `MeasurementDate` itself, except on a
+     * supersede whose replaced observation's month has a Posted batch for the line's company: then the
+     * later of `MeasurementDate` and `ReversalDate`'s first open day, so nothing new posts into the
+     * closed month. The observation row keeps `MeasurementDate`. Null when there is no catch-up.
+     */
+    CatchUpDate?: string | null;
     /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */
     ReversalJournalEntryID?: string | null;
 }
@@ -1934,7 +1941,7 @@ export class OrdersRecordAccessOverrideDecisionOperation extends BaseRemotableOp
 // ============================================================
 /**
  * Record Progress
- * Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted, with no row edited.
+ * Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted and booked no earlier than that reversal date, with no row edited.
  * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
  * under 'Orders.RecordProgress'. This generated base provides the typed contract only (client-safe).
  */
