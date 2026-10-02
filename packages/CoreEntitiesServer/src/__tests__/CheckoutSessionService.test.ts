@@ -312,11 +312,6 @@ vi.mock('../CheckoutMemberDiscountResolver.js', async (importOriginal) => ({
     ResolveCheckoutMemberDiscountResolver: (key: string) => mocks.mockLookupMemberResolver(key)
 }));
 
-vi.mock('../checkoutCaptureAlert.js', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('../checkoutCaptureAlert.js')>()),
-    raiseCheckoutSettledNotBookedAlert: (...args: unknown[]) => mocks.mockSettledNotBookedAlert(...args)
-}));
-
 vi.mock('../PaymentIntentService.js', () => ({
     OpenPaymentIntent: (request: unknown, provider: unknown, user: unknown) => mocks.mockOpenPaymentIntent(request, provider, user)
 }));
@@ -333,6 +328,7 @@ vi.mock('../CheckoutStepLog.js', () => ({
 
 vi.mock('../checkoutCaptureAlert.js', () => ({
     raiseCheckoutCaptureTerminalAlert: (...args: unknown[]) => stepMocks.Alert(...args),
+    raiseCheckoutSettledNotBookedAlert: (...args: unknown[]) => mocks.mockSettledNotBookedAlert(...args),
 }));
 
 const renewalMocks = vi.hoisted(() => ({
