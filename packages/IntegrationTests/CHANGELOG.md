@@ -1,5 +1,59 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.23.0
+
+### Minor Changes
+
+- b5e97d0: An approved Duration concession now extends its term (bc-aidp-next-golive#221, case B).
+
+  Approving the concession applies the extension in the same transaction:
+
+  - The term's `EndDate` and its line's `ServicePeriodEnd` move to the new end.
+  - Every staged `RevenueRecognition` entry dated on or after the effective date is mirrored on its own date, and what those entries were going to recognise is spread again from the first of them to the new end, using the term's own driver and cadence. There is no catch-up and no receivable entry.
+  - Access grants that follow the term run to the new end.
+  - An `Extended` subscription event names the concession and pairs each offset with the entry it offsets.
+  - A task is assigned to every active holder of the acknowledgment role except the requester, carrying the old and new schedules.
+
+  The renewal follows the new end because `SpawnRenewals` reads the latest term.
+
+  An extension is refused, both when it is recorded and when it is approved, if:
+
+  - the term's renewal is already placed;
+  - an entry it would offset is already in a journal-entry batch;
+  - no acknowledgment role is configured (the new `AmendmentAcknowledgmentRole` setting, empty by default); or
+  - nobody but the requester holds that role.
+
+  `Orders.AmendArrangement` previews an extension without writing anything, or records it. A change of amount is refused for now.
+
+  A booked term's dates can still be changed only through this path. The server subclass `SubscriptionTermEntityServer` admits the amendment's own write and no other.
+
+### Patch Changes
+
+- 44ba79b: Move to MemberJunction 6.1.4 (the 6.1 LTS line) from 6.1.0-edge.5, and require BizApps Accounting 0.17.0 or later, the first release with the finance exception operations that progress posting, the overlap check and the below-engine check call. `mjVersionRange` is now `>=6.1.4 <7.0.0`.
+- a05a122: Outbound events: Orders tells registered `OrdersOutboundConsumer` subclasses when a sale confirms (renewals included; not returns, cancellations, amendments or credits) and when an entitlement grant is created or its status changes. Events are recorded in the same transaction as the change (a transactional outbox) and sent after it by the new `Orders — Dispatch Outbound Events` scheduled job and, for a completed checkout, right after `/complete`. Delivery is at least once with a stable event id, retried with backoff (a `Deliver` call is bounded at 30 seconds) and dead-lettered after 24 hours. A new `EntitlementGrantEntityServer` records grant changes whoever makes them. With no consumer registered, nothing is recorded. See `docs/outbound-events.md`.
+- 7d375f5: An order line refuses a `ParentOrderLineID` unless bundle expansion wrote it. The concession confirm gate does not re-price a bundle component, so a parent set through the API would have let an ordinary line skip it. Clearing a parent is still allowed. Integration check BN13 covers the refusal.
+- Updated dependencies [319018d]
+- Updated dependencies [cd97084]
+- Updated dependencies [afbfd22]
+- Updated dependencies [8fe29eb]
+- Updated dependencies [348b2ab]
+- Updated dependencies [bf20bfa]
+- Updated dependencies [43cb51e]
+- Updated dependencies [69060ae]
+- Updated dependencies [44ba79b]
+- Updated dependencies [a05a122]
+- Updated dependencies [78878b3]
+- Updated dependencies [76053c0]
+- Updated dependencies [7d375f5]
+- Updated dependencies [498ce77]
+- Updated dependencies [dfa3dc8]
+- Updated dependencies [69aff1b]
+- Updated dependencies [399a517]
+- Updated dependencies [b5e97d0]
+  - @mj-biz-apps/orders-entities@5.23.0
+  - @mj-biz-apps/orders-core-entities-server@5.23.0
+  - @mj-biz-apps/orders-server@5.23.0
+
 ## 5.22.0
 
 ### Patch Changes

@@ -1,5 +1,94 @@
 # @mj-biz-apps/orders-entities
 
+## 5.23.0
+
+### Minor Changes
+
+- cd97084: Paid checkouts now record each post-payment step (Confirm, Capture) in `CheckoutSessionStep`: every attempt, its source (checkout, webhook or replay), and how it ended. A shared view, "Checkouts: Needs Review", lists failed steps and steps left running for more than 15 minutes. `Orders.ReplayCheckoutStep` lets a holder of `MJ.BizApps.Orders.Checkout.Replay` (the new Checkout Operator role) re-drive a failed Capture through the same idempotent CapturePayment. Replaying a succeeded step does nothing, and Confirm is not replayable. The terminal-capture Task is now raised once per terminal failure instead of once per replay.
+- 348b2ab: Value a concession however it is delivered, and approve it before the customer sees it.
+
+  The sales guardrails valued a concession only as a percentage off price, so a term extended at no
+  charge, seats added at no charge or a product added at no charge computed to 0% and cleared every
+  check.
+
+  - New `OrderConcession` entity. A concession is valued on save at the arrangement's own rate: a term
+    extension at the term's amount over its length, a typed price at its reduction from the engine
+    price, added seats at the line's unit price. Within the requester's `SalesAuthority` it is Approved
+    on save; outside it, it is Pending until a holder of the `ConcessionLimit` rule's role approves or
+    rejects it. Each records the delivery form and a reason category (Retention, Referral, Other).
+  - `SalesAuthority` gains `MaxConcessionValue` and `MaxTermExtensionDays`. An extension at or above
+    `MaxTermExtensionDays` needs approval, so a limit of 30 escalates a 30-day extension. A manual discount now
+    escalates on either its percentage or its absolute value. For Duration and Seats concessions an
+    unset limit grants no authority.
+  - `SalesRule.RuleType` gains `ConcessionLimit`.
+  - An order cannot be confirmed, and its documents cannot be sent, while a concession on it is Pending,
+    or while a line on an unconfirmed order carries a stated price below its engine price with no
+    approved concession covering it. Every line with a stated price is checked, whether it was typed in
+    the editor or set through the API, except a bundle component, priced at its share of the bundle,
+    and a reversal, priced from the line it unwinds. The order itself still saves.
+  - A removed draft line takes its concessions with it, including decided ones.
+  - A saved `SubscriptionTerm`'s `StartDate`, `EndDate` and `Amount` can no longer be edited. Extend a
+    term by recording a Duration concession.
+
+- 43cb51e: Limit concessions as a share of the order's net total, in every delivery form (#306).
+
+  - `SalesAuthority` gains `MaxConcessionPctOfContract`. Every concession on an order that is not
+    Rejected, together, is measured as a share of the order's net total (its lines after discounts,
+    before tax and charges, reversal lines left out). At or above the limit, a concession needs
+    approval, whatever its delivery form. With the limit set, an order with no net total needs
+    approval too.
+  - Each `OrderConcession` records the `OrderNetTotal` and `CumulativeShare` it was measured against.
+  - An unconfirmed order whose share has since reached the limit of a concession approved on the
+    requester's own authority cannot be confirmed until that concession is withdrawn and recorded
+    again. Such a concession can now be withdrawn while its order is not confirmed.
+
+- 69060ae: A nightly check raises a finance exception for each pair of live subscriptions for one holder whose terms overlap (finance exception type `OVERLAPPING_SUBSCRIPTION`). The new remote operation `Orders.DetectOverlappingSubscriptions` reads the type's settings through `Accounting.GetFinanceExceptionTypes` and does nothing when the type is missing or inactive, runs the saved query "Overlapping Subscriptions", leaves out same-category pairs when `IncludeSameCategory` is false, and raises through `Accounting.RaiseFinanceExceptions`: one exception per pair against the later subscription, dated to the business day, attributed to whoever confirmed the later order, with no creator restriction when that is not recorded (a booked order's confirmer cannot be filled in later, so an unresolved row could never be cleared). A re-run raises nothing new. A pair that could not be raised is reported and fails the run. The `Orders.DetectOverlappingSubscriptions` Action is the scheduler's way in, and the daily job "Orders — Detect Overlapping Subscriptions (daily)" ships disabled. Requires the BizApps Accounting release that provides the finance exception operations.
+- dfa3dc8: A confirmed order's payment terms change only through an approved Terms concession.
+
+  `OrderConcession` gains a `Terms` delivery form carrying the prior and new payment terms; its value is the
+  change in days to payment. It always goes to approval and the requester cannot decide it. Approving it moves
+  the order's terms and its due date to the order date plus the new terms' days. The order entity and trigger
+  51018 refuse a direct edit. `Orders.AmendArrangement` takes `OrderHeaderID` and `NewPaymentTermsTypeID` to
+  preview or record the change. The due date stays correctable without approval.
+
+- b5e97d0: An approved Duration concession now extends its term (bc-aidp-next-golive#221, case B).
+
+  Approving the concession applies the extension in the same transaction:
+
+  - The term's `EndDate` and its line's `ServicePeriodEnd` move to the new end.
+  - Every staged `RevenueRecognition` entry dated on or after the effective date is mirrored on its own date, and what those entries were going to recognise is spread again from the first of them to the new end, using the term's own driver and cadence. There is no catch-up and no receivable entry.
+  - Access grants that follow the term run to the new end.
+  - An `Extended` subscription event names the concession and pairs each offset with the entry it offsets.
+  - A task is assigned to every active holder of the acknowledgment role except the requester, carrying the old and new schedules.
+
+  The renewal follows the new end because `SpawnRenewals` reads the latest term.
+
+  An extension is refused, both when it is recorded and when it is approved, if:
+
+  - the term's renewal is already placed;
+  - an entry it would offset is already in a journal-entry batch;
+  - no acknowledgment role is configured (the new `AmendmentAcknowledgmentRole` setting, empty by default); or
+  - nobody but the requester holds that role.
+
+  `Orders.AmendArrangement` previews an extension without writing anything, or records it. A change of amount is refused for now.
+
+  A booked term's dates can still be changed only through this path. The server subclass `SubscriptionTermEntityServer` admits the amendment's own write and no other.
+
+### Patch Changes
+
+- 319018d: Checkout widgets can offer choice groups ("choose N of M") in `Configuration.choiceGroups`: options, `min` and `max`. The widget renders them as checkboxes and keeps Pay disabled until each group has its minimum. `/draft` accepts `choices`. The payment intent and completion refuse picks outside `min`..`max` or options not in the list. `CompleteCheckout` records each pick on the order line as an Order Line Choice before `Confirm()`. A Product Entitlement with `ChoiceGroupKey` / `ChoiceOptionValue` set is granted only on a line carrying that pick, and `Orders.SpawnRenewals` copies the picks onto the renewal line so those entitlements renew. The shared check is `CheckCheckoutChoices` (`checkout-choices.ts`).
+- afbfd22: A cleared Bill To Person stays cleared. The server save fills party defaults only from what changed in that save, and never copies the ship-to person into an empty bill-to, so a cleared party field is not refilled by that save or a later one. Clearing or replacing a person takes the ship-to person and employer organizations that were filled in from them along with it, and a replacement person brings their own ship-to copy. Values the user set are kept. The order form no longer shows the name of a party that was cleared.
+- bf20bfa: A concession's `OrderNetTotal` and `CumulativeShare` are measured again when it is decided, not only when it is recorded. The record shows the share the decision was made at, not the one the draft had when the concession was recorded.
+- 44ba79b: Move to MemberJunction 6.1.4 (the 6.1 LTS line) from 6.1.0-edge.5, and require BizApps Accounting 0.17.0 or later, the first release with the finance exception operations that progress posting, the overlap check and the below-engine check call. `mjVersionRange` is now `>=6.1.4 <7.0.0`.
+- 76053c0: Ship the `Overlapping Subscriptions` query for finance's month-end exception review (golive #279,
+  type 5): pairs of live subscriptions for one holder whose terms overlap, for the same product or a
+  band of it (same category and subscription type). Each overlap is billed and recognized twice
+  unless one is cancelled. Metadata only; no schema change.
+- 399a517: `MaxTermExtensionDays` now limits any change to a term's dates, not only days added. A change is measured
+  as the larger of how far the term's start and end move (`TermDateChangeDays`), so an extension, a
+  shortening and a shift of N days each escalate at a limit of N. It is checked for every concession that
+  changes a term's dates, whatever its form.
+
 ## 5.22.0
 
 ### Minor Changes
@@ -308,8 +397,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                  The INSERT statement conflicted with the FOREIGN KEY constraint
-                  "FK_EntityFieldValue_EntityField"
+                    The INSERT statement conflicted with the FOREIGN KEY constraint
+                    "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
