@@ -76,6 +76,7 @@ import { mjBizAppsOrdersSalesRuleFormComponent } from "./Entities/mjBizAppsOrder
 import { mjBizAppsOrdersStoredValueAccountFormComponent } from "./Entities/mjBizAppsOrdersStoredValueAccount/mjbizappsordersstoredvalueaccount.form.component";
 import { mjBizAppsOrdersStoredValueTransactionFormComponent } from "./Entities/mjBizAppsOrdersStoredValueTransaction/mjbizappsordersstoredvaluetransaction.form.component";
 import { mjBizAppsOrdersSubscriptionEventFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionEvent/mjbizappsorderssubscriptionevent.form.component";
+import { mjBizAppsOrdersSubscriptionFamilyFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionFamily/mjbizappsorderssubscriptionfamily.form.component";
 import { mjBizAppsOrdersSubscriptionFormComponent } from "./Entities/mjBizAppsOrdersSubscription/mjbizappsorderssubscription.form.component";
 import { mjBizAppsOrdersSubscriptionSequenceFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionSequence/mjbizappsorderssubscriptionsequence.form.component";
 import { mjBizAppsOrdersSubscriptionTermFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionTerm/mjbizappsorderssubscriptionterm.form.component";
@@ -218,7 +219,8 @@ export class GeneratedForms_SubModule_7 { }
 @NgModule({
 declarations: [
     mjBizAppsOrdersEventProductFormComponent,
-    mjBizAppsOrdersSubscriptionEventFormComponent
+    mjBizAppsOrdersSubscriptionEventFormComponent,
+    mjBizAppsOrdersSubscriptionFamilyFormComponent
 ],
 imports: [
     CommonModule,
