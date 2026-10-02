@@ -29,6 +29,20 @@
   },
   {
     "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Checkout.Replay",
+      "RoleID": "@lookup:MJ: Roles.Name=Checkout Operator",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "E05A3F8D-39CB-4F8B-82D7-9F4187B4E469"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T23:39:40.137Z",
+      "checksum": "5f65cdf9667452553af7ea658de007912a04091e36a4a04ea88ed647d3bd7e89"
+    }
+  },
+  {
+    "fields": {
       "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Progress.Supersede",
       "RoleID": "@lookup:MJ: Roles.Name=Orders Revenue Supervisor",
       "Type": "Allow"

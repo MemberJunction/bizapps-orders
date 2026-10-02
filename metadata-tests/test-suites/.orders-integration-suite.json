@@ -573,6 +573,28 @@
           "primaryKey": {
             "ID": "4B9A2F51-7C3D-4E86-9F10-2A3B4C5D6E7F"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-40 - Concessions",
+            "Sequence": 40,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "FC90A0C8-20E3-44D0-B031-236F57916C56"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-41 - Term Extension",
+            "Sequence": 41,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "E261B03C-0C83-4297-B5B4-A6F0C69EFA2B"
+          }
         }
       ]
     },

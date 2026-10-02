@@ -37,6 +37,7 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  PRODUCT_ENTITLEMENT_ENTITY,
   PRODUCT_ENTITY,
   TeardownOrdersFixture,
   TxOne,
@@ -396,6 +397,8 @@ export const EntitlementsChecks: NamedCheck[] = [
         // DeferredA's template states no ValidityMode, and its type is the Subscription type — whose
         // default is SubscriptionTerm. But a plain deferred line has no term, so the engine cannot
         // honour that and falls back to Perpetual. The fallback is correct; ADMITTING it is the point.
+        // DeferredA's engine price, so the stated 240 is not a concession the confirm gate holds.
+        await CreateProductPrice(ctx, f.Products.DeferredA, 240);
         const order = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,
@@ -1051,6 +1054,68 @@ export const EntitlementsChecks: NamedCheck[] = [
             ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
           AssertEqual(deferred.Decision, "Granted", "an approved DeferCutoff keeps access at read time");
         });
+      }),
+  },
+  {
+    Id: "entitlements.EN23",
+    Name: "EN23: a conditional entitlement is granted only for the option the buyer chose, and a renewal keeps the choice",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        // Two conditional templates beside the product's unconditional seat count: the buyer
+        // picks one department, and only that department is granted (#291).
+        for (const dept of ["marketing", "finance"]) {
+          await upsertViaEntity(ctx, PRODUCT_ENTITLEMENT_ENTITY, randomUUID(), {
+            ProductID: f.Products.SubRolling,
+            EntitlementType: "AccessLevel",
+            Code: `IT-DEPT-${dept.toUpperCase()}`,
+            Name: `Department: ${dept}`,
+            ValidityMode: "SubscriptionTerm",
+            IsActive: true,
+            ChoiceGroupKey: "department",
+            ChoiceOptionValue: dept,
+          });
+        }
+
+        const first = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2026-01-01T00:00:00Z"),
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{
+            ProductID: f.Products.SubRolling,
+            Quantity: 1,
+            Choices: [{ GroupKey: "department", GroupLabel: "Department", OptionValue: "marketing", OptionLabel: "Marketing" }],
+          }],
+        });
+        Assert(first.Saved, `confirm failed: ${first.Message}`);
+        const bought = (await grantsFor(ctx, first.Order.ID as string)).map((g) => g.Code);
+        AssertEqual(
+          bought.join(","),
+          "IT-DEPT-MARKETING,SUB-SEATS",
+          "the chosen department and the unconditional seats are granted; the department not chosen is not",
+        );
+
+        const term = await TxOne<{ SubscriptionID: string; EndDate: Date }>(ctx,
+          `SELECT st.SubscriptionID, st.EndDate
+             FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+             JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+            WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+        const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+
+        const carried = await TxQuery<{ GroupKey: string; GroupLabel: string; OptionValue: string; OptionLabel: string }>(ctx,
+          `SELECT c.GroupKey, c.GroupLabel, c.OptionValue, c.OptionLabel
+             FROM ${ORDERS_SCHEMA}.OrderLineChoice c
+             JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = c.OrderLineID
+            WHERE ol.OrderHeaderID = '${renewalID}'`);
+        AssertEqual(carried.length, 1, "the renewal line carries the buyer's one choice");
+        AssertEqual(
+          `${carried[0].GroupKey}/${carried[0].OptionValue}/${carried[0].GroupLabel}/${carried[0].OptionLabel}`,
+          "department/marketing/Department/Marketing",
+          "copied with its labels",
+        );
+        const renewed = (await grantsFor(ctx, renewalID)).map((g) => g.Code);
+        AssertEqual(renewed.join(","), "IT-DEPT-MARKETING,SUB-SEATS", "so the renewal grants the same department for the next term");
       }),
   },
 ];

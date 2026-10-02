@@ -76,6 +76,8 @@ import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
+import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
@@ -88,6 +90,7 @@ import {
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
+import { PaymentTermsChangeGranted } from './PaymentTermsSanction.js';
 import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
@@ -149,6 +152,7 @@ const BOOKED_STATUSES = new Set(['Confirmed']);
  * an allocation points at its adjustment. See `deleteLineDependents` for why the list stops here.
  */
 const REMOVED_LINE_DEPENDENT_ENTITIES = [
+    'MJ_BizApps_Orders: Order Concessions',
     'MJ_BizApps_Orders: Order Line Price Components',
     'MJ_BizApps_Orders: Order Charge Allocations',
     'MJ_BizApps_Orders: Order Adjustment Allocations',
@@ -227,6 +231,11 @@ interface CreateJournalEntriesResult {
 
 @RegisterClass(BaseEntity, ORDER_ENTITY)
 export class OrderEntityServer extends OrderHeaderEntity {
+    /** An approved Terms concession, applied by ./PaymentTermsChange.ts, is the only change to a confirmed order's terms. */
+    protected override PaymentTermsChangeSanctioned(): boolean {
+        return PaymentTermsChangeGranted(this);
+    }
+
     /** Price decompositions produced during this save, written once the lines have IDs (D69). */
     private _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
@@ -397,9 +406,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // has now found three times.
         if (!this.passesStatusTransition()) return false;
 
-        await this.ApplyPersonPartyDefaults();
+        await this.ApplySavePartyDefaults();
 
         const booking = this.willBookOnThisSave();
+
+        // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
+        // for the same reason as the status move above: a refused confirm must change nothing.
+        if (booking && !(await this.passesConcessionGate())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
         //
@@ -614,6 +627,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
             if (booking) {
                 const lines = await this.loadLinesForBooking();
+
+                // A LINE BOOKED BELOW ITS ENGINE PRICE WITH NO APPROVED CONCESSION IS RECORDED FOR
+                // FINANCE (golive #279). The gate above refuses most of these; this catches the ones
+                // that book anyway — see `raisePriceBelowEngineExceptions`. Here, once every line is
+                // written and priced, and inside the transaction: a raise that fails rolls the
+                // booking back rather than losing the exception.
+                await this.raisePriceBelowEngineExceptions(lines);
 
                 // THE SCHEDULE MUST TIE (plan §4.3). Per company, the instalments must sum to exactly
                 // what the lines just landed as — checked here, inside the transaction, because the
@@ -905,6 +925,85 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
 
+    /**
+     * Refuse the confirm while a concession on this order awaits a decision, or a line's typed price
+     * gives away value no approved concession covers (golive #222). The order itself saves; only
+     * the move to Confirmed waits, so the work is kept and the concession stays visible as a queue.
+     */
+    private async passesConcessionGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        const lines: ConcessionLineFacts[] = this.Lines.Items.map((line) => ({
+            ID: line.IsSaved ? line.ID : null,
+            LineNumber: line.LineNumber ?? null,
+            ParentOrderLineID: line.ParentOrderLineID ?? null,
+            ReversesOrderLineID: line.ReversesOrderLineID ?? null,
+            ProductID: line.ProductID,
+            OrderHeaderID: this.IsSaved ? this.ID : null,
+            Quantity: line.Quantity,
+            UnitPrice: line.UnitPrice,
+            ProductPriceID: line.ProductPriceID,
+            PriceStated:
+                line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0,
+            LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
+        }));
+        const problems = await FindUnapprovedConcessions(
+            this.IsSaved ? this.ID : null,
+            lines,
+            true,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            user,
+        );
+        if (problems.length === 0) return true;
+
+        this.RegisterResultHistoryEntry(
+            this.buildFailureResult(
+                new Error(
+                    `Order ${this.OrderNumber ?? ''} cannot be confirmed yet: ${problems.join('; ')}. A concession ` +
+                        `must be approved before the customer is committed to it.`,
+                ),
+            ),
+        );
+        return false;
+    }
+
+    /**
+     * Record every line of this booking that is priced below its engine price with no Approved
+     * concession covering it (finance exception type 4, golive #279). Refuses nothing.
+     *
+     * `passesConcessionGate` already holds most such confirms. What still books: a save with no
+     * context user, which skips the gate; and a line the gate judged against state this save then
+     * changed — it runs before bundle expansion, proration and pricing, and prices a saved order
+     * against its header as last persisted, so a bill-to or order date changed in the confirming
+     * save itself is not what it saw. This runs on the lines and header as booked.
+     */
+    private async raisePriceBelowEngineExceptions(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser ?? null;
+        await RaisePriceBelowEngineExceptions(
+            {
+                OrderHeaderID: this.ID,
+                OrderNumber: this.OrderNumber ?? null,
+                Lines: lines.map((line) => ({
+                    ID: line.ID,
+                    LineNumber: line.LineNumber ?? null,
+                    ParentOrderLineID: line.ParentOrderLineID ?? null,
+                    ReversesOrderLineID: line.ReversesOrderLineID ?? null,
+                    ProductID: line.ProductID,
+                    OrderHeaderID: this.ID,
+                    Quantity: line.Quantity,
+                    UnitPrice: line.UnitPrice,
+                    ProductPriceID: line.ProductPriceID,
+                    PriceStated: true,
+                    CompanyID: line.CompanyID,
+                })),
+                BusinessDay: () => BusinessDay(provider, user as UserInfo),
+            },
+            provider,
+            user,
+        );
+    }
+
     // ─── Booking ───────────────────────────────────────────────────────────────
 
     // `bookingInFlight` and `willBookOnThisSave()` moved to OrderHeaderEntity (both `protected`),
@@ -1178,6 +1277,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
             for (const row of rows) {
+                // A concession on a draft line goes with the line, decided or not: the line it priced
+                // no longer exists, and the order has committed no customer to it.
+                if ('WithdrawWithDraftLine' in row) row.WithdrawWithDraftLine = true;
                 if (!(await row.Delete())) {
                     throw new Error(
                         `Failed to delete ${entityName} for removed order line ${line.LineNumber}: ` +
@@ -1307,6 +1409,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 ShipToPersonID: l.ShipToPersonID ?? null,
                 ShipToOrganizationID: l.ShipToOrganizationID ?? null,
                 RenewsSubscriptionID: l.RenewsSubscriptionID ?? null,
+                // Choices added to the line in this graph are the truth before they commit; a line
+                // holding none here is left for the engine to read.
+                Choices: l.Choices?.Count
+                    ? l.Choices.Items.map((c) => ({ GroupKey: c.GroupKey, OptionValue: c.OptionValue }))
+                    : undefined,
             })),
             subs.TermsByLine,
             provider,

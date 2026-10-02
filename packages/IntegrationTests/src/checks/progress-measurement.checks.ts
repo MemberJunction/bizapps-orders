@@ -71,6 +71,7 @@ import {
     type NamedCheck,
 } from '@memberjunction/testing-integration';
 import {
+    CreateProductPrice,
     ACCT_SCHEMA,
     CreateOrdersFixture,
     createViaEntity,
@@ -628,6 +629,9 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 // carry its slice of it — otherwise the discount sits in Deferred Revenue after the
                 // project reaches 100%, and every entry still balances on the way there.
                 const f = Fx();
+                // Priced at the catalog price, so the confirm gate sees no concession; the discount
+                // is a line discount, which the gate does not count.
+                await CreateProductPrice(ctx, f.Products.PocA, 1000);
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     BillToOrganizationID: f.Customers.OrganizationID,

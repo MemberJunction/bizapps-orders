@@ -109,8 +109,21 @@ async function addPrice(
     return existing[0].ID;
   }
 
+  // Name is required and unique per product. It labels the price breakdown, so the caller's description
+  // leads when there is one; otherwise it is built from what tells the rule apart, as the shared fixture does.
+  const name = [
+    opts.description ?? (opts.priceListID ? "List" : "Base"),
+    opts.minQty != null ? `qty${opts.minQty}` : null,
+    priority ? `p${priority}` : null,
+    opts.months ? `m${opts.months}` : null,
+    String(opts.amount),
+    // Names are unique per product, and two rules can share everything above.
+    randomUUID().slice(0, 6),
+  ].filter(Boolean).join(" ").slice(0, 100);
+
   return createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
     ProductID: productID,
+    Name: name,
     PriceListID: opts.priceListID ?? null,
     PricingModel: opts.model ?? "PerUnit",
     FeeType: "Standard",
@@ -493,6 +506,7 @@ export const PricingChecks: NamedCheck[] = [
         const rule = await md.GetEntityObject<mjBizAppsOrdersProductPriceEntity>(PRODUCT_PRICE_ENTITY, ctx.User);
         rule.NewRecord();
         rule.ProductID = f.Products.WidgetA;
+        rule.Name = "Base qty10 p5 7";
         rule.PricingModel = "PerUnit";
         rule.FeeType = "Standard";
         rule.Amount = 7;

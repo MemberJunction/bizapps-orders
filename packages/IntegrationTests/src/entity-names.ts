@@ -50,6 +50,7 @@ export const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assig
 
 export const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 export const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
+export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
 
 export const CUSTOMER_TAX_EXEMPTION_ENTITY = 'MJ_BizApps_Orders: Customer Tax Exemptions';
 export const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
@@ -65,6 +66,10 @@ export const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
 export const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
 export const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
+
+// ── Tasks (peer app; a Pending concession is routed to its approvers as a task) ─────────────────────
+export const TASK_ENTITY = 'MJ_BizApps_Tasks: Tasks';
+export const TASK_DECISION_ENTITY = 'MJ_BizApps_Tasks: Task Decisions';
 
 // ── Accounting (peer app; we resolve THROUGH these, so we build them properly) ────────────────────
 export const GL_ACCOUNT_ENTITY = 'MJ_BizApps_Accounting: GL Accounts';
@@ -119,6 +124,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PRICE_LIST_ASSIGNMENT_ENTITY,
     SALES_AUTHORITY_ENTITY,
     SALES_RULE_ENTITY,
+    ORDER_CONCESSION_ENTITY,
     CUSTOMER_TAX_EXEMPTION_ENTITY,
     CUSTOMER_PAYMENT_TERMS_ENTITY,
     CUSTOMER_PAYMENT_METHOD_ENTITY,
@@ -151,4 +157,6 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     RELATIONSHIP_TYPE_ENTITY,
     ADDRESS_ENTITY,
     COMPANY_ENTITY,
+    TASK_ENTITY,
+    TASK_DECISION_ENTITY,
 ];

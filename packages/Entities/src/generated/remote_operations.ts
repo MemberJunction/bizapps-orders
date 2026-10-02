@@ -511,6 +511,63 @@ export interface CheckEntitlementOutput {
 }
 
 /**
+ * Input for `Orders.DetectOverlappingSubscriptions`.
+ *
+ * The nightly check behind finance exception type OVERLAPPING_SUBSCRIPTION: one exception per
+ * pair of live subscriptions for one holder whose terms overlap, raised through accounting's
+ * `Accounting.RaiseFinanceExceptions`. Re-running is safe — an exception already raised for a
+ * pair is left as it is.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersDetectOverlappingSubscriptionsInput {
+    /**
+     * The business day the exceptions are dated to (YYYY-MM-DD). Omit for today in the business
+     * time zone, which is what the schedule uses.
+     */
+    AsOfDate?: string;
+}
+
+/**
+ * Output for `Orders.DetectOverlappingSubscriptions`.
+ *
+ * Counts, plus every error, so an unattended run that raised nothing can be told apart from one
+ * that found nothing.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OverlappingSubscriptionsDetectionError {
+    /** `<EarlierSubscriptionID>|<LaterSubscriptionID>` when the error belongs to one pair. */
+    DedupeKey?: string;
+    Code: string;
+    Message: string;
+}
+
+export interface OrdersDetectOverlappingSubscriptionsOutput {
+    /** False when any pair could not be raised; every reason is in Errors. */
+    Success: boolean;
+    Message?: string;
+    /**
+     * False when the OVERLAPPING_SUBSCRIPTION exception type is missing or inactive. The check then
+     * does not run: the type's configuration is the only source of its settings.
+     */
+    TypeActive: boolean;
+    /** The business day the exceptions were dated to (YYYY-MM-DD). */
+    ExceptionDate: string;
+    /** Pairs the "Overlapping Subscriptions" query returned. */
+    PairsFound: number;
+    /** Pairs left after the IncludeSameCategory setting: the ones an exception was raised for. */
+    PairsConsidered: number;
+    /** Exceptions created by this run. */
+    Created: number;
+    /** Pairs that already had an exception, in any status. Left unchanged. */
+    AlreadyRaised: number;
+    /** Pairs accounting skipped. */
+    Skipped: number;
+    Errors: OverlappingSubscriptionsDetectionError[];
+}
+
+/**
  * Input for `Orders.DetectUnattestedProgress`.
  *
  * The nightly pass that puts a percentage-of-completion line on finance's review list when nobody
@@ -1460,6 +1517,45 @@ export interface RefundPaymentOutput {
 }
 
 /**
+ * Input for `Orders.ReplayCheckoutStep`.
+ *
+ * Names one post-payment step of one checkout session, as recorded in CheckoutSessionStep.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersReplayCheckoutStepInput {
+    /** The checkout session whose step is replayed. */
+    CheckoutSessionID: string;
+    /** The step to replay: 'Capture' or 'Confirm'. Only Capture is replayable today. */
+    StepName: string;
+}
+
+/**
+ * Output for `Orders.ReplayCheckoutStep`.
+ *
+ * Outcome says what happened:
+ *   Replayed          the step ran again; Status is how it ended
+ *   AlreadySucceeded  the step had already succeeded, so nothing ran
+ *   Refused           the step was not run (no record, not replayable, still running, not authorized)
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersReplayCheckoutStepOutput {
+    /** True when the step is Succeeded after the call, whether it ran now or before. */
+    Success: boolean;
+    Outcome: 'Replayed' | 'AlreadySucceeded' | 'Refused';
+    Message?: string;
+    CheckoutSessionID?: string;
+    StepName?: string;
+    /** The step's Status after the call: Running, Succeeded or Failed. */
+    Status?: string;
+    /** The step's Attempts after the call. */
+    Attempts?: number;
+    /** The last attempt's error, when Status is Failed. */
+    LastError?: string | null;
+}
+
+/**
  * Input for `Orders.RequestAccessOverride`.
  *
  * An exception to payment-gated access on one order. Nothing changes until it is approved through
@@ -1622,6 +1718,22 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
     public readonly OperationKey = "Orders.CheckEntitlement";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.DetectOverlappingSubscriptions — Detect Overlapping Subscriptions
+// ============================================================
+/**
+ * Detect Overlapping Subscriptions
+ * Raise a finance exception for each pair of live subscriptions for one holder whose terms overlap: the same product, or (when the exception type's IncludeSameCategory setting is on) products in the same category with the same subscription type. Each overlap is billed and recognized twice unless one is cancelled. Reads its settings from the OVERLAPPING_SUBSCRIPTION exception type and does nothing when that type is missing or inactive. The source record is the later subscription and the creator is whoever confirmed the order that booked it; when no confirmer is recorded (an order confirmed before that was recorded, or no order), the exception has no creator restriction. Re-running is safe: a pair that already has an exception raises nothing new.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.DetectOverlappingSubscriptions'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersDetectOverlappingSubscriptionsOperation extends BaseRemotableOperation<OrdersDetectOverlappingSubscriptionsInput, OrdersDetectOverlappingSubscriptionsOutput> {
+    public readonly OperationKey = "Orders.DetectOverlappingSubscriptions";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "subscriptions:write";
     public readonly RequiresSystemUser = false;
 }
 
@@ -1846,6 +1958,22 @@ export class OrdersRefundPaymentOperation extends BaseRemotableOperation<RefundP
     public readonly OperationKey = "Orders.RefundPayment";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "payments:refund";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ReplayCheckoutStep — Replay Checkout Step
+// ============================================================
+/**
+ * Replay Checkout Step
+ * Re-drive one post-payment step of a checkout session from its CheckoutSessionStep record. Requires the MJ.BizApps.Orders.Checkout.Replay authorization. A Succeeded step is a no-op. A step still Running inside the stale window is refused. Capture re-runs the checkout's idempotent CapturePayment; Confirm is not replayable here.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ReplayCheckoutStep'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersReplayCheckoutStepOperation extends BaseRemotableOperation<OrdersReplayCheckoutStepInput, OrdersReplayCheckoutStepOutput> {
+    public readonly OperationKey = "Orders.ReplayCheckoutStep";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 
