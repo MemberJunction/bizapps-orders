@@ -45,14 +45,13 @@ import type {
     OrdersDetectOverlappingSubscriptionsInput,
     OrdersDetectOverlappingSubscriptionsOutput,
 } from '@mj-biz-apps/orders-entities';
-import {
-    DetectOverlappingSubscriptionsOperation,
-    type FinanceExceptionTypesInput,
-    type FinanceExceptionTypesOutput,
-    type OverlappingSubscriptionRow,
-    type RaiseFinanceExceptionsInput,
-    type RaiseFinanceExceptionsOutput,
-} from '../DetectOverlappingSubscriptionsOperation.js';
+import type { FinanceExceptionToRaise, FinanceExceptionTypeInfo, RaiseFinanceExceptionsOutcome } from '../AccountingBridge.js';
+import { DetectOverlappingSubscriptionsOperation, type OverlappingSubscriptionRow } from '../DetectOverlappingSubscriptionsOperation.js';
+
+type FinanceExceptionTypesInput = { Codes?: string[] };
+type FinanceExceptionTypesOutput = { Success: boolean; Types: FinanceExceptionTypeInfo[] };
+type RaiseFinanceExceptionsInput = { Exceptions: FinanceExceptionToRaise[] };
+type RaiseFinanceExceptionsOutput = RaiseFinanceExceptionsOutcome;
 
 // ─── Fake accounting ─────────────────────────────────────────────────────────────────────────────
 

@@ -23,9 +23,9 @@
  * `IncludeSameCategory` is refused rather than defaulted, because a default here would decide on
  * finance's behalf whether bands of one product count as overlaps.
  *
- * ACCOUNTING IS RESOLVED BY NAME through the class factory, exactly as `SubmitJournalEntryDrafts` in
- * AccountingBridge.ts does — no build-time dependency on the accounting server package. An
- * unregistered operation throws. Both the envelope and the payload are checked.
+ * ACCOUNTING IS RESOLVED BY NAME through AccountingBridge.ts, which holds the finance exception
+ * contract for every orders detector — no build-time dependency on the accounting server package.
+ * An unregistered operation throws. Both the envelope and the payload are checked.
  *
  * A FAILED RAISE IS REPORTED, NOT SWALLOWED. The pairs are raised in batches; a batch accounting
  * refuses is recorded in `Errors`, the remaining batches still run (a nightly job reports and
@@ -45,13 +45,19 @@ import {
     RunView,
     UserInfo,
 } from '@memberjunction/core';
-import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import { RegisterClass } from '@memberjunction/global';
 import {
     ToISODate,
     type OrdersDetectOverlappingSubscriptionsInput,
     type OrdersDetectOverlappingSubscriptionsOutput,
     type OverlappingSubscriptionsDetectionError,
 } from '@mj-biz-apps/orders-entities';
+import {
+    GetActiveFinanceExceptionType,
+    ResolveAccountingOperation,
+    type FinanceExceptionToRaise,
+    type RaiseFinanceExceptionsOutcome,
+} from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { RequireOptionalDay, RequireUUIDs } from './sql-guards.js';
 
@@ -65,39 +71,6 @@ const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const RAISE_BATCH_SIZE = 100;
 /** Order ids per `IN (...)` read of `ConfirmedByUserID`. */
 const ORDER_READ_BATCH_SIZE = 500;
-
-// ─── The accounting contract (golive #279), restated as types ──────────────────────────────────────
-// Declared here rather than imported: orders takes no build-time dependency on the accounting server
-// package, which is what keeps the operation resolvable by name alone.
-
-export interface FinanceExceptionTypesInput {
-    Codes?: string[];
-}
-export interface FinanceExceptionTypesOutput {
-    Success: boolean;
-    Types: Array<{ Code: string; IsActive: boolean; Configuration: Record<string, unknown> }>;
-    Errors?: Array<{ Code: string; Message: string }>;
-}
-export interface FinanceExceptionToRaise {
-    TypeCode: string;
-    SourceEntityName: string;
-    SourceRecordID: string;
-    CompanyID: string;
-    Amount?: number | null;
-    ExceptionDate: string;
-    Summary: string;
-    DedupeKey: string;
-    SourceCreatedByUserID?: string | null;
-    CreatorUnresolved?: boolean;
-}
-export interface RaiseFinanceExceptionsInput {
-    Exceptions: FinanceExceptionToRaise[];
-}
-export interface RaiseFinanceExceptionsOutput {
-    Success: boolean;
-    Results: Array<{ Index: number; FinanceExceptionID?: string; Created: boolean; Skipped?: boolean }>;
-    Errors?: Array<{ Index?: number; Code: string; Message: string }>;
-}
 
 /** One row of the "Overlapping Subscriptions" query — the columns this check reads. */
 export interface OverlappingSubscriptionRow {
@@ -170,27 +143,6 @@ export function BuildOverlapException(
     };
 }
 
-// ─── Accounting, by name ─────────────────────────────────────────────────────────────────────────
-
-/**
- * The accounting operation registered under `key`, or a throw.
- *
- * `TryCreateInstance`, not `CreateInstance`: for an unregistered key `CreateInstance` returns a bare
- * `BaseRemotableOperation` rather than null, so a null check never fires and the call would be routed
- * to whatever the provider makes of an unknown key.
- */
-function accountingOperation<I, O>(key: string): BaseRemotableOperation<I, O> {
-    const resolved = MJGlobal.Instance.ClassFactory.TryCreateInstance<BaseRemotableOperation<I, O>>(BaseRemotableOperation, key);
-    const op = resolved.Resolved ? resolved.Instance : null;
-    if (!op) {
-        throw new Error(
-            `The '${key}' operation is not registered. The BizApps Accounting server package must be loaded ` +
-                `before orders can raise finance exceptions.`,
-        );
-    }
-    return op;
-}
-
 function describeErrors(errors: Array<{ Code: string; Message: string }> | undefined): string {
     return (errors ?? []).map((e) => `${e.Code}: ${e.Message}`).join('; ') || 'no reason given';
 }
@@ -224,9 +176,10 @@ export class DetectOverlappingSubscriptionsOperation extends BaseRemotableOperat
             Errors: [],
         };
 
-        const type = await this.loadType(provider, user);
-        if (!type || !type.IsActive) {
-            out.Message = `The ${OVERLAPPING_SUBSCRIPTION_TYPE_CODE} finance exception type is ${type ? 'inactive' : 'not defined'}; nothing was checked.`;
+        // Null when accounting has no such type or has switched it off; the bridge logs which.
+        const type = await GetActiveFinanceExceptionType(OVERLAPPING_SUBSCRIPTION_TYPE_CODE, provider, user);
+        if (!type) {
+            out.Message = `The ${OVERLAPPING_SUBSCRIPTION_TYPE_CODE} finance exception type is not defined or is inactive; nothing was checked.`;
             LogStatus(`Orders.DetectOverlappingSubscriptions: ${out.Message}`);
             return out;
         }
@@ -262,22 +215,6 @@ export class DetectOverlappingSubscriptionsOperation extends BaseRemotableOperat
             `${out.AlreadyRaised} already raised, ${out.Skipped} skipped` +
             (out.Errors.length ? `, ${out.Errors.length} error(s) — see Errors.` : '.');
         return out;
-    }
-
-    private async loadType(provider: IMetadataProvider, user: UserInfo): Promise<FinanceExceptionTypesOutput['Types'][number] | null> {
-        const op = accountingOperation<FinanceExceptionTypesInput, FinanceExceptionTypesOutput>('Accounting.GetFinanceExceptionTypes');
-        const result = await op.Execute({ Codes: [OVERLAPPING_SUBSCRIPTION_TYPE_CODE] }, { provider, user });
-        if (!result.Success) {
-            throw new Error(
-                `Accounting.GetFinanceExceptionTypes did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`,
-            );
-        }
-        const payload = result.Output;
-        if (!payload) throw new Error('Accounting.GetFinanceExceptionTypes returned no payload.');
-        if (!payload.Success) {
-            throw new Error(`Accounting.GetFinanceExceptionTypes failed. ${describeErrors(payload.Errors)}`);
-        }
-        return payload.Types.find((t) => t.Code === OVERLAPPING_SUBSCRIPTION_TYPE_CODE) ?? null;
     }
 
     private async runOverlapQuery(provider: IMetadataProvider, user: UserInfo): Promise<OverlappingSubscriptionRow[]> {
@@ -327,7 +264,10 @@ export class DetectOverlappingSubscriptionsOperation extends BaseRemotableOperat
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<void> {
-        const op = accountingOperation<RaiseFinanceExceptionsInput, RaiseFinanceExceptionsOutput>('Accounting.RaiseFinanceExceptions');
+        const op = ResolveAccountingOperation<{ Exceptions: FinanceExceptionToRaise[] }, RaiseFinanceExceptionsOutcome>(
+            'Accounting.RaiseFinanceExceptions',
+            'raise finance exceptions',
+        );
         const result = await op.Execute({ Exceptions: batch }, { provider, user });
         if (!result.Success || !result.Output) {
             const message = `Accounting.RaiseFinanceExceptions did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'no payload'}`;

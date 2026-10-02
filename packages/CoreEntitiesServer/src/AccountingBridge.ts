@@ -314,11 +314,13 @@ export interface RaiseFinanceExceptionsOutcome {
 }
 
 /**
+ * The accounting operation registered under `key`, or a throw naming `what` could not be done.
+ *
  * `TryCreateInstance`, not `CreateInstance`: for an unregistered key `CreateInstance` hands back a
  * hollow `BaseRemotableOperation` rather than null, so a null check alone would never fire and the
  * call would route with no operation key.
  */
-function resolveAccountingOperation<I, O>(key: string, what: string): BaseRemotableOperation<I, O> {
+export function ResolveAccountingOperation<I, O>(key: string, what: string): BaseRemotableOperation<I, O> {
     const resolved = MJGlobal.Instance.ClassFactory.TryCreateInstance<BaseRemotableOperation<I, O>>(BaseRemotableOperation, key);
     const op = resolved.Resolved ? resolved.Instance : null;
     if (!op) {
@@ -342,7 +344,7 @@ export async function GetActiveFinanceExceptionType(
     user: UserInfo,
 ): Promise<FinanceExceptionTypeInfo | null> {
     const key = 'Accounting.GetFinanceExceptionTypes';
-    const op = resolveAccountingOperation<{ Codes?: string[] }, GetFinanceExceptionTypesOutput>(key, `read the ${code} exception type`);
+    const op = ResolveAccountingOperation<{ Codes?: string[] }, GetFinanceExceptionTypesOutput>(key, `read the ${code} exception type`);
     const result = await op.Execute({ Codes: [code] }, { provider, user });
     if (!result.Success) {
         throw new Error(`${key} did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`);
@@ -381,7 +383,7 @@ export async function RaiseFinanceExceptions(
     user: UserInfo,
 ): Promise<RaiseFinanceExceptionsOutcome> {
     const key = 'Accounting.RaiseFinanceExceptions';
-    const op = resolveAccountingOperation<{ Exceptions: FinanceExceptionToRaise[] }, RaiseFinanceExceptionsOutcome>(key, `raise ${what}`);
+    const op = ResolveAccountingOperation<{ Exceptions: FinanceExceptionToRaise[] }, RaiseFinanceExceptionsOutcome>(key, `raise ${what}`);
     const result = await op.Execute({ Exceptions: exceptions }, { provider, user });
     if (!result.Success) {
         throw new Error(`${key} did not execute for ${what}: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`);
