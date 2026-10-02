@@ -12,6 +12,7 @@ import {
 } from '@memberjunction/ng-ui-components';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatDate, FormatMoney } from './money-format';
+import { Today, ToISODate } from '@mj-biz-apps/orders-entities';
 import type { PartyKind } from '../form-panels/party-order-stats';
 
 interface OrderRow {
@@ -887,17 +888,19 @@ export class PartyOrdersOverviewComponent implements OnInit {
     private ProcessSpendTrajectory(months?: MonthSpend[]): void {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const fullNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-        const now = new Date();
+        // The window ends at the BUSINESS month, not the browser's: at 10 PM Central on Oct 31 a
+        // viewer in Pune is already in November, and the chart slid a month ahead of the books.
+        const [todayYear, todayMonth] = Today().split('-').map(Number);
 
         const monthBuckets: MonthSpend[] = [];
         const monthMap = new Map<string, MonthSpend>();
 
         for (let i = 5; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const d = new Date(Date.UTC(todayYear, todayMonth - 1 - i, 1));
+            const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
             const item: MonthSpend = {
-                MonthLabel: `${fullNames[d.getMonth()]} ${d.getFullYear()}`,
-                MonthShort: monthNames[d.getMonth()],
+                MonthLabel: `${fullNames[d.getUTCMonth()]} ${d.getUTCFullYear()}`,
+                MonthShort: monthNames[d.getUTCMonth()],
                 Amount: 0,
                 HeightPct: 4,
                 IsPeak: false,
@@ -919,10 +922,11 @@ export class PartyOrdersOverviewComponent implements OnInit {
         // Aggregate orders to ensure live correctness for current and previous months
         if (this.Orders && this.Orders.length > 0) {
             this.Orders.forEach(o => {
-                if (!o.OrderDate) return;
-                const d = o.OrderDate instanceof Date ? o.OrderDate : new Date(o.OrderDate);
-                if (isNaN(d.getTime())) return;
-                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                // `OrderDate` is a `date` column: its month is read off the day it names (UTC parts
+                // of a driver Date, or the ISO string), never local getters — an order dated Oct 1
+                // filed under September for every viewer west of Greenwich.
+                const key = ToISODate(o.OrderDate)?.slice(0, 7);
+                if (!key) return;
                 const found = monthMap.get(key);
                 if (found) {
                     const amt = Number(o.TotalGross) || 0;

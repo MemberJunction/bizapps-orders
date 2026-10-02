@@ -11,6 +11,7 @@ import {
     IsBefore,
     Today,
     ToISODate,
+    type DateCell,
     type mjBizAppsOrdersChargeTypeEntity,
     type mjBizAppsOrdersCustomerTaxExemptionEntity,
     type mjBizAppsOrdersProductEntity,
@@ -548,8 +549,9 @@ export class MJOChargesTaxPageComponent implements OnInit {
         return out;
     }
 
+    /** A `date` cell (CertificateExpiresAt), passed as it is — `String()` of a `Date` reads as no date. */
     protected dateOf(value: unknown): string {
-        return value ? FormatDate(String(value), { Short: true }) : '—';
+        return value ? FormatDate(value as DateCell, { Short: true }) : '—';
     }
 
     protected nexusClass(row: Record<string, unknown>): string {

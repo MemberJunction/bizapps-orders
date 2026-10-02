@@ -757,9 +757,11 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
 
         const worst = this.overdue
             .slice()
-            .sort((a, b) => DaysSince(String(b.DueDate), today) - DaysSince(String(a.DueDate), today))[0];
+            .sort((a, b) => DaysSince(b.DueDate, today) - DaysSince(a.DueDate, today))[0];
         if (worst) {
-            const days = DaysSince(String(worst.DueDate), today);
+            // The cell itself, never `String(cell)`: on a `Date` that is the long human form, which
+            // no day reader can parse, and the headline read "0 days past due".
+            const days = DaysSince(worst.DueDate, today);
             items.push({
                 Order: worst,
                 Tone: 'error',

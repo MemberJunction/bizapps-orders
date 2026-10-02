@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
-import { MJOMoneyPipe, FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
+import { MJOMoneyPipe, FormatDate, FormatInstantDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { RunView, Metadata, type EntityInfo } from '@memberjunction/core';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
@@ -179,7 +179,7 @@ interface MJORecognitionPeriod {
                             @for (event of Events; track event['ID']) {
                                 <div class="mjo-sub__event">
                                     <span class="mj-chip mj-chip--outline">{{ event['EventType'] }}</span>
-                                    <span class="small muted">{{ dateOf(event['OccurredAt']) }}</span>
+                                    <span class="small muted">{{ instantOf(event['OccurredAt']) }}</span>
                                 </div>
                             } @empty {
                                 <div class="small muted">No history yet.</div>
@@ -377,7 +377,13 @@ export class MJOSubscriptionsPageComponent implements OnInit {
      * made an appended renewal look like a duplicate.
      */
     protected dateOf(value: unknown): string {
-        return value ? FormatDate(String(value)) : '—';
+        // The cell as it is: `String()` of a `Date` is the long human form and read as no date.
+        return value ? FormatDate(value as DateCell) : '—';
+    }
+
+    /** A `datetimeoffset` (an event's `OccurredAt`), as the business day it happened on. */
+    protected instantOf(value: unknown): string {
+        return value ? FormatInstantDate(value as DateCell) : '—';
     }
 
     /**
@@ -441,15 +447,17 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         // every month label below read 'Invalid Date'.
         const startISO = ToISODate(subscription.StartDate);
         if (!startISO) return [];
-        const start = new Date(`${startISO}T00:00:00`);
-        const today = new Date();
+        const [startYear, startMonth] = startISO.split('-').map(Number);
+        // A period is released once the BUSINESS calendar reaches its first day — compared as ISO
+        // days, so a viewer east of the business zone does not see next month released early.
+        const today = Today();
 
         return Array.from({ length: periods }, (_, index) => {
-            const date = new Date(start.getFullYear(), start.getMonth() + index, 1);
+            const date = new Date(Date.UTC(startYear, startMonth - 1 + index, 1));
             return {
-                Label: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+                Label: date.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: '2-digit' }),
                 Amount: perPeriod,
-                Released: date <= today,
+                Released: (ToISODate(date) ?? '') <= today,
             };
         });
     }

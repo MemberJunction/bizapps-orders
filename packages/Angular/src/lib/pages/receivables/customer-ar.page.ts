@@ -10,7 +10,7 @@ import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
-import { Today, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersPaymentHeaderEntity, type mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { Today, type DateCell, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersPaymentHeaderEntity, type mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 
 /** A customer with a balance, as the left rail lists them. */
 interface MJOCustomerSummary {
@@ -476,8 +476,9 @@ export class MJOCustomerARPageComponent implements OnInit {
         return (this.Selected?.Orders ?? []).filter((o) => (o.Balance ?? 0) < 0);
     }
 
+    /** A `date` cell (PaymentDate, EndDate), passed as it is — `String()` of a `Date` reads as no date. */
     protected dateOf(value: unknown): string {
-        return value ? FormatDate(String(value), { Short: true }) : '—';
+        return value ? FormatDate(value as DateCell, { Short: true }) : '—';
     }
 
     /**
