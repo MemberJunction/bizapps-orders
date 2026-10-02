@@ -152,6 +152,28 @@ export function ResolveGrantQuantity(
     return Math.ceil(Math.round(scaled * 1e6) / 1e6);
 }
 
+/** One option a buyer chose for a line: the group and the option value (an Order Line Choice). */
+export interface LineChoiceKey {
+    GroupKey: string;
+    OptionValue: string;
+}
+
+/**
+ * Whether an entitlement template applies to a line, given the options chosen for it.
+ *
+ * A template with no `ChoiceGroupKey` is unconditional and applies to every line of its product. A
+ * conditional one applies only when the line carries that exact group and option: a buyer who chose
+ * two of eight departments is granted those two, not all eight. Values match exactly, as they were
+ * checked against the widget's options when the buyer chose them.
+ */
+export function TemplateAppliesToLineChoices(
+    template: { ChoiceGroupKey: string | null; ChoiceOptionValue: string | null },
+    lineChoices: ReadonlyArray<LineChoiceKey>,
+): boolean {
+    if (!template.ChoiceGroupKey) return true;
+    return lineChoices.some((c) => c.GroupKey === template.ChoiceGroupKey && c.OptionValue === template.ChoiceOptionValue);
+}
+
 /** Everything a validity window might need to know, so the pure function needs no lookups. */
 export interface ValidityContext {
     /** When the grant takes effect — normally the order date. */

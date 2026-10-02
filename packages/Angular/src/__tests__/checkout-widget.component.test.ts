@@ -281,6 +281,61 @@ describe('MJCheckoutWidgetComponent', () => {
             });
         });
 
+        describe('choice groups (#291)', () => {
+            const DEPARTMENTS = {
+                key: 'department',
+                label: 'Choose your departments',
+                options: ['Marketing', 'Membership', 'Finance'],
+                min: 2,
+                max: 2,
+            };
+            const TRACK = { key: 'track', label: 'Choose a track', options: ['Online', 'In person'], min: 1, max: 1 };
+            const fillBuyer = (choiceGroups: unknown[]) => {
+                component.config = { unitPrice: 0, choiceGroups } as CheckoutWidgetConfig;
+                component.email.set('jane@example.com');
+                component.firstName.set('Jane');
+                component.lastName.set('Doe');
+            };
+
+            it('keeps Pay disabled until each group has its minimum', () => {
+                fillBuyer([DEPARTMENTS]);
+                expect(component.isFormValid()).toBe(false);
+                component.toggleChoice(DEPARTMENTS, 'Marketing');
+                expect(component.isFormValid()).toBe(false);
+                component.toggleChoice(DEPARTMENTS, 'Finance');
+                expect(component.isFormValid()).toBe(true);
+            });
+
+            it('stops a group at its maximum and disables the rest until one is unpicked', () => {
+                fillBuyer([DEPARTMENTS]);
+                component.toggleChoice(DEPARTMENTS, 'Marketing');
+                component.toggleChoice(DEPARTMENTS, 'Finance');
+                component.toggleChoice(DEPARTMENTS, 'Membership');
+                expect(component.choices()).toEqual({ department: ['Marketing', 'Finance'] });
+                expect(component.isGroupFull(DEPARTMENTS)).toBe(true);
+                component.toggleChoice(DEPARTMENTS, 'Marketing');
+                expect(component.choices()).toEqual({ department: ['Finance'] });
+                expect(component.isGroupFull(DEPARTMENTS)).toBe(false);
+            });
+
+            it('swaps the pick in a group of one', () => {
+                fillBuyer([TRACK]);
+                component.toggleChoice(TRACK, 'Online');
+                component.toggleChoice(TRACK, 'In person');
+                expect(component.choices()).toEqual({ track: ['In person'] });
+                expect(component.isFormValid()).toBe(true);
+            });
+
+            it('sends the picks with the submission', () => {
+                fillBuyer([DEPARTMENTS]);
+                component.toggleChoice(DEPARTMENTS, 'Membership');
+                component.toggleChoice(DEPARTMENTS, 'Finance');
+                const emitSpy = vi.spyOn(component.submitted, 'emit');
+                component.handleSubmit();
+                expect(emitSpy.mock.calls[0][0].choices).toEqual({ department: ['Membership', 'Finance'] });
+            });
+        });
+
         it('generates a unique per-instance widgetInstanceId', () => {
             const comp1 = new MJCheckoutWidgetComponent();
             const comp2 = new MJCheckoutWidgetComponent();

@@ -15,6 +15,57 @@ export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './
 export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './GetBillingWorklistOperation.js';
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
+export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
+export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
+export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
+export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
+export { NetRelease, PlanTermExtension } from './TermExtensionPlan.js';
+export type { StagedEntry, StagedLine, TermExtensionInput, TermExtensionPlan } from './TermExtensionPlan.js';
+// Each Pending concession is routed to its approvers as its own tasks-app approval task (golive #274).
+export {
+    APPROVAL_TASK_TYPE_CODE,
+    ApprovalTaskName,
+    ApproverAssignees,
+    CloseConcessionTasks,
+    ConcessionStatusForOutcome,
+    ConcessionSummary,
+    IsOpenApprovalTask,
+    LinkedConcessionIDs,
+    RaiseConcessionApprovalAgain,
+    ReleaseOrderFromTasks,
+    RouteConcessionToApproval,
+    UnlinkConcession,
+    type ApprovalTaskContext,
+    type ConcessionDecision,
+    type ConcessionForApproval,
+    type ConcessionSummaryFacts,
+    type ConcessionTaskClosing,
+    type RoleHolder,
+} from './ConcessionApprovalTask.js';
+export {
+    ApplyTaskDecisionToConcessions,
+    InitConcessionApprovalListener,
+    type ConcessionDecisionResult,
+} from './ConcessionApprovalListener.js';
+export {
+    FindConcessionLimitRule,
+    FindUnapprovedConcessions,
+    FindUncoveredLinePrices,
+    LinePriceConcessionFor,
+    LoadConcessionAuthority,
+    OrderConcessionTotal,
+    OrderNetTotal,
+    type ConcessionLineFacts,
+    type LinePriceConcession,
+    type UncoveredLinePrice,
+} from './ConcessionGate.js';
+export {
+    PRICE_BELOW_ENGINE_TYPE_CODE,
+    RaisePriceBelowEngineExceptions,
+    type BookedLineFacts,
+    type PriceBelowEngineBooking,
+    type PriceBelowEngineOutcome,
+} from './PriceBelowEngineExceptions.js';
 export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
 export { BeginInstalmentIssue, EndInstalmentIssue, IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
@@ -123,10 +174,14 @@ export type {
 } from './SubscriptionBehavior.js';
 
 export { CancelSubscriptionOperation, LoadCancelSubscriptionOperation } from './CancelSubscriptionOperation.js';
+export { AmendArrangementOperation, LoadAmendArrangementOperation } from './AmendArrangementOperation.js';
+export type { AmendArrangementInput, AmendArrangementOutput } from './AmendArrangementOperation.js';
 export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './CancelSubscriptionOperation.js';
 
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
 export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
+
+export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 
 export {
     BuildGLAccountResolver,
@@ -383,6 +438,8 @@ export type {
     RetrieveIntentResult,
     RefundRequest,
     RefundResult,
+    UpdateIntentRequest,
+    UpdateIntentResult,
     WebhookEvent,
 } from './BasePaymentProvider.js';
 
@@ -566,6 +623,26 @@ export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyA
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
+export { EntitlementGrantEntityServer, LoadEntitlementGrantEntityServer } from './EntitlementGrantEntityServer.js';
+export {
+    OrdersOutboundConsumer,
+    RecordOutboundEvent,
+    DispatchOutboundDeliveries,
+    RegisteredOutboundConsumers,
+    HasOutboundConsumers,
+    NextOutboundAttempt,
+    EnvelopeFor,
+    OUTBOUND_EVENT_ENTITY,
+    OUTBOUND_DELIVERY_ENTITY,
+    OUTBOUND_DELIVERY_DEADLINE_MS,
+    OUTBOUND_RETRY_MINUTES,
+    OUTBOUND_LEASE_MS,
+    type OutboundEventType,
+    type OutboundEventEnvelope,
+    type RecordOutboundEventInput,
+    type DispatchOutboundInput,
+    type DispatchOutboundOutput,
+} from './OutboundEvents.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';
 
 // Invoicing (D-INV): an invoice is a PRESENTATION of an order, never a record. The decisions are in
@@ -672,6 +749,10 @@ export {
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
 export { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
+// The post-payment step record, its review queue and operator replay (#326).
+export { CheckoutStepLog, STALE_RUNNING_MINUTES } from './CheckoutStepLog.js';
+export type { CheckoutStepAttempt, CheckoutStepName, CheckoutStepSource, CheckoutStepStatus } from './CheckoutStepLog.js';
+export { ReplayCheckoutStepOperation, LoadReplayCheckoutStepOperation, CHECKOUT_REPLAY_AUTH } from './ReplayCheckoutStepOperation.js';
 export type {
     AttendeeInput,
     CheckoutAttendeeInput,

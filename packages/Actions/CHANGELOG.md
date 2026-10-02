@@ -1,5 +1,11 @@
 # @mj-biz-apps/orders-actions
 
+## 5.23.0
+
+### Patch Changes
+
+- 44ba79b: Move to MemberJunction 6.1.4 (the 6.1 LTS line) from 6.1.0-edge.5, and require BizApps Accounting 0.17.0 or later, the first release with the finance exception operations that progress posting, the overlap check and the below-engine check call. `mjVersionRange` is now `>=6.1.4 <7.0.0`.
+
 ## 5.22.0
 
 ## 5.21.0

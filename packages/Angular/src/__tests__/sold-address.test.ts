@@ -33,6 +33,7 @@ describe('order form with an unreadable snapshot', () => {
 
     it('renders the rest of the party and marks the address unreadable', () => {
         const record = {
+            BillToPersonID: 'aaaaaaaa-0000-4000-8000-000000000001',
             BillToPerson: 'Pat Payer',
             PaymentTermsType: 'Net 30',
             BillToAddress: '9 Somewhere Else',

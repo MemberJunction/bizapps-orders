@@ -52,7 +52,7 @@
  */
 import BodyParser from 'body-parser';
 import type { Application, NextFunction, Request, Response } from 'express';
-import { LogError, LogStatus, RunView, UserInfo } from '@memberjunction/core';
+import { LogError, LogStatus, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { UserCache } from '@memberjunction/generic-database-provider';
 import { RegisterClass } from '@memberjunction/global';
 import {
@@ -63,13 +63,14 @@ import {
 } from '@memberjunction/server-extensions-core';
 import {
     CheckoutSessionService,
+    DispatchOutboundDeliveries,
     EnsureCheckoutAccount,
     EscapeText,
     HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
     type CheckoutLineInput,
 } from '@mj-biz-apps/orders-core-entities-server';
-import type { CheckoutAnswersInput, CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
+import type { CheckoutAnswersInput, CheckoutChoicesInput, CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -562,10 +563,11 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const email = typeof req.body?.email === 'string' ? req.body.email : '';
         const lines = Array.isArray(req.body?.lines) ? (req.body.lines as CheckoutLineInput[]) : [];
         // Passed through unchecked: UpdateDraft keeps the attribution only when it reads as one, and
-        // judges the answers against the widget's own questions.
+        // judges the answers and choices against the widget's own questions and choice groups.
         const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user, {
             Attribution: req.body?.attribution,
             Answers: req.body?.answers as CheckoutAnswersInput | undefined,
+            Choices: req.body?.choices as CheckoutChoicesInput | undefined,
         });
         res.status(result.Success ? 200 : 400).json(result);
     }
@@ -598,6 +600,14 @@ export class CheckoutServerExtension extends BaseServerExtension {
         // The confirmation is answered without waiting on the host's identity provider. When a host
         // registered an account step, the widget asks for it next through /checkout/account.
         res.status(200).json(HasCheckoutAccountStep() ? { ...result, AccountStep: true } : result);
+        // The order's outbound events are committed by now; send them rather than waiting for the
+        // minute job, so a buyer's access is not a minute late. After the response, and never
+        // awaited by it: a slow or failing consumer must not hold the buyer's checkout.
+        if (result.OrderID) {
+            DispatchOutboundDeliveries({ OrderHeaderID: result.OrderID }, Metadata.Provider, user).catch((err) =>
+                LogError(`[OrdersCheckoutEdge] outbound dispatch after session ${sessionId} completed failed: ${err instanceof Error ? err.message : String(err)}`)
+            );
+        }
     }
 
     /** The account step's outcome for a completed checkout, asking the host again only after a failure. */

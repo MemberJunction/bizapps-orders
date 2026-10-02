@@ -53,6 +53,7 @@ function lineWith(spec: LineSpec) {
         Fields: [],
         Quantity: 1,
         ReversesOrderLineID: null,
+        ParentOrderLineID: null,
         LineNumber: 1,
         DimensionID: null,
         DimensionValueID: null,
