@@ -1374,6 +1374,10 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: VenueAddress
         * * Display Name: Venue Address Details
         * * SQL Data Type: nvarchar(255)`),
+    InvoiceLeadDays: z.number().nullable().describe(`
+        * * Field Name: InvoiceLeadDays
+        * * Display Name: Invoice Lead Days
+        * * SQL Data Type: int`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -4463,6 +4467,11 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Display Name: Pricing Driver Class
         * * SQL Data Type: nvarchar(255)
         * * Description: ClassFactory key of a BasePriceResolver subclass for every product in this category (and, unless overridden, its child categories), or NULL. See Product.PricingDriverClass for the resolution order.`),
+    InvoiceLeadDays: z.number().nullable().describe(`
+        * * Field Name: InvoiceLeadDays
+        * * Display Name: Invoice Lead Days
+        * * SQL Data Type: int
+        * * Description: Days before a line's service start that its invoice falls due, for an order confirmed with no payment schedule: such an order gets one Scheduled instalment per company, due on the earliest service start less the lowest lead among its dated lines, when that day is after the order date. NULL means inherit from the next level: the parent category, then the product type, then the Orders application setting DefaultInvoiceLeadDays. A product's own value overrides this.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company
@@ -4888,6 +4897,11 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * Display Name: Configuration
         * * SQL Data Type: nvarchar(MAX)
         * * Description: Extensible JSON configuration for this product type including customUI (js, css, theme, componentOverrideKey), unitMode, allowQuantity, and fieldOverrides.`),
+    InvoiceLeadDays: z.number().nullable().describe(`
+        * * Field Name: InvoiceLeadDays
+        * * Display Name: Invoice Lead Days
+        * * SQL Data Type: int
+        * * Description: Days before a line's service start that its invoice falls due, for an order confirmed with no payment schedule, for every product of this type. NULL means inherit from the next level: the Orders application setting DefaultInvoiceLeadDays. A product category or the product itself overrides this.`),
     DefaultRevenueRecognitionType: z.string().nullable().describe(`
         * * Field Name: DefaultRevenueRecognitionType
         * * Display Name: Default Revenue Recognition Type
@@ -5041,6 +5055,11 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Max Quantity Per Line
         * * SQL Data Type: decimal(18, 4)
         * * Description: Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`),
+    InvoiceLeadDays: z.number().nullable().describe(`
+        * * Field Name: InvoiceLeadDays
+        * * Display Name: Invoice Lead Days
+        * * SQL Data Type: int
+        * * Description: Days before this product's service start that its invoice falls due, for an order confirmed with no payment schedule. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type, then the Orders application setting DefaultInvoiceLeadDays.`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
         * * Display Name: Product Type Name
@@ -10185,6 +10204,19 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     */
     get VenueAddress(): string | null {
         return this.Get('VenueAddress');
+    }
+
+    /**
+    * * Field Name: InvoiceLeadDays
+    * * Display Name: Invoice Lead Days
+    * * SQL Data Type: int
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get InvoiceLeadDays(): number | null {
+        return this.Get('InvoiceLeadDays');
+    }
+    set InvoiceLeadDays(value: number | null) {
+        this.Set('InvoiceLeadDays', value);
     }
 }
 
@@ -18949,6 +18981,19 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: InvoiceLeadDays
+    * * Display Name: Invoice Lead Days
+    * * SQL Data Type: int
+    * * Description: Days before a line's service start that its invoice falls due, for an order confirmed with no payment schedule: such an order gets one Scheduled instalment per company, due on the earliest service start less the lowest lead among its dated lines, when that day is after the order date. NULL means inherit from the next level: the parent category, then the product type, then the Orders application setting DefaultInvoiceLeadDays. A product's own value overrides this.
+    */
+    get InvoiceLeadDays(): number | null {
+        return this.Get('InvoiceLeadDays');
+    }
+    set InvoiceLeadDays(value: number | null) {
+        this.Set('InvoiceLeadDays', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company
     * * SQL Data Type: nvarchar(50)
@@ -20190,6 +20235,19 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: InvoiceLeadDays
+    * * Display Name: Invoice Lead Days
+    * * SQL Data Type: int
+    * * Description: Days before a line's service start that its invoice falls due, for an order confirmed with no payment schedule, for every product of this type. NULL means inherit from the next level: the Orders application setting DefaultInvoiceLeadDays. A product category or the product itself overrides this.
+    */
+    get InvoiceLeadDays(): number | null {
+        return this.Get('InvoiceLeadDays');
+    }
+    set InvoiceLeadDays(value: number | null) {
+        this.Set('InvoiceLeadDays', value);
+    }
+
+    /**
     * * Field Name: DefaultRevenueRecognitionType
     * * Display Name: Default Revenue Recognition Type
     * * SQL Data Type: nvarchar(200)
@@ -20645,6 +20703,19 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
     set MaxQuantityPerLine(value: number | null) {
         this.Set('MaxQuantityPerLine', value);
+    }
+
+    /**
+    * * Field Name: InvoiceLeadDays
+    * * Display Name: Invoice Lead Days
+    * * SQL Data Type: int
+    * * Description: Days before this product's service start that its invoice falls due, for an order confirmed with no payment schedule. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type, then the Orders application setting DefaultInvoiceLeadDays.
+    */
+    get InvoiceLeadDays(): number | null {
+        return this.Get('InvoiceLeadDays');
+    }
+    set InvoiceLeadDays(value: number | null) {
+        this.Set('InvoiceLeadDays', value);
     }
 
     /**

@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
     AddMonths,
     BuildPaymentSchedule,
+    DecideDefaultSchedule,
+    DefaultScheduleRows,
     DefaultScheduleWeights,
     ExplainShortfalls,
     RenewalDueDate,
     RenewalScheduleRows,
+    ResolveInvoiceLeadDays,
     ScheduleShortfalls,
     ScheduledCompanyIDs,
     type ScheduleTimingFacts,
@@ -187,5 +190,183 @@ describe('RenewalDueDate (#305 review)', () => {
 
     it('refuses an order with no resolved due date rather than guessing', () => {
         expect(() => RenewalDueDate('2026-10-03', '2027-01-01', null)).toThrow(/resolved due date/);
+    });
+});
+
+describe('ResolveInvoiceLeadDays', () => {
+    const unset = { Product: null, Categories: [], Type: null };
+
+    it('the product wins over its category', () => {
+        expect(ResolveInvoiceLeadDays({ ...unset, Product: 10, Categories: [90], Type: 60 }, 30)).toBe(10);
+    });
+    it('a sub-category wins over its parent category', () => {
+        expect(ResolveInvoiceLeadDays({ ...unset, Categories: [45, 90] }, 30)).toBe(45);
+    });
+    it('an unset sub-category inherits the nearest ancestor that states one', () => {
+        expect(ResolveInvoiceLeadDays({ ...unset, Categories: [null, undefined, 60, 45] }, 30)).toBe(60);
+    });
+    it('a category wins over the product type', () => {
+        expect(ResolveInvoiceLeadDays({ ...unset, Categories: [null, 90], Type: 60 }, 30)).toBe(90);
+    });
+    it('the product type wins over the setting', () => {
+        expect(ResolveInvoiceLeadDays({ ...unset, Categories: [null, null], Type: 60 }, 30)).toBe(60);
+    });
+    it('all unset falls to the setting', () => {
+        expect(ResolveInvoiceLeadDays({ Product: undefined, Categories: [null, null], Type: undefined }, 30)).toBe(30);
+        expect(ResolveInvoiceLeadDays(unset, 30)).toBe(30);
+    });
+    it('zero is a stated value at every level, not "unset"', () => {
+        expect(ResolveInvoiceLeadDays({ Product: 0, Categories: [90], Type: 60 }, 30)).toBe(0);
+        expect(ResolveInvoiceLeadDays({ ...unset, Categories: [0, 90], Type: 60 }, 30)).toBe(0);
+        expect(ResolveInvoiceLeadDays({ ...unset, Type: 0 }, 30)).toBe(0);
+    });
+});
+
+describe('DefaultScheduleRows', () => {
+    const line = (over: Partial<Parameters<typeof DefaultScheduleRows>[0][number]> = {}) => ({
+        CompanyID: CO_A,
+        LineTotalGross: 5500,
+        ServicePeriodStart: '2027-09-26' as string | null,
+        LeadDays: 30,
+        ...over,
+    });
+
+    it('a start beyond the lead gets one row for the whole gross, due start less lead (ORD-000039)', () => {
+        expect(DefaultScheduleRows([line()], '2026-09-26')).toEqual([
+            { InstallmentNumber: 1, DueDate: '2027-08-27', Amount: 5500, CompanyID: CO_A },
+        ]);
+    });
+
+    it('counts calendar days across a month and a leap day', () => {
+        expect(DefaultScheduleRows([line({ ServicePeriodStart: '2028-03-15', LeadDays: 30 })], '2027-01-01')[0].DueDate).toBe('2028-02-14');
+        expect(DefaultScheduleRows([line({ ServicePeriodStart: '2027-01-01', LeadDays: 90 })], '2026-01-01')[0].DueDate).toBe('2026-10-03');
+    });
+
+    it('a start within the lead gets nothing — including the day the lead lands exactly on the order date', () => {
+        expect(DefaultScheduleRows([line({ ServicePeriodStart: '2026-10-15' })], '2026-09-26')).toEqual([]);
+        expect(DefaultScheduleRows([line({ ServicePeriodStart: '2026-10-26' })], '2026-09-26')).toEqual([]);
+        expect(DefaultScheduleRows([line({ ServicePeriodStart: '2026-10-27' })], '2026-09-26')[0].DueDate).toBe('2026-09-27');
+    });
+
+    it('a Date cell reads as its calendar day', () => {
+        const rows = DefaultScheduleRows([line({ ServicePeriodStart: new Date('2027-09-26T00:00:00Z') as unknown as string })], '2026-09-26');
+        expect(rows[0].DueDate).toBe('2027-08-27');
+    });
+
+    it('lines with no service period never trigger it, but still count toward the company gross', () => {
+        expect(DefaultScheduleRows([line({ ServicePeriodStart: null })], '2026-09-26')).toEqual([]);
+        const rows = DefaultScheduleRows([line({ LineTotalGross: 1000 }), line({ ServicePeriodStart: null, LineTotalGross: 250.5 })], '2026-09-26');
+        expect(rows.map((r) => r.Amount)).toEqual([1250.5]);
+    });
+
+    it('is due on the earliest of each dated line\'s own start less its own lead', () => {
+        const rows = DefaultScheduleRows(
+            [line({ ServicePeriodStart: '2027-03-01', LeadDays: 30 }), line({ ServicePeriodStart: '2027-04-01', LeadDays: 90 })],
+            '2026-09-26',
+        );
+        // 2027-03-01 − 30 = 2027-01-30; 2027-04-01 − 90 = 2027-01-01. The old earliest-start/lowest-lead
+        // pairing said 2027-01-30, billing the 90-day line after its own lead.
+        expect(rows[0].DueDate).toBe('2027-01-01');
+        expect(rows[0].Amount).toBe(11000);
+    });
+
+    it('Robert #344 (2): a long-lead line already inside its lead holds the whole company to confirm', () => {
+        const lines = [
+            line({ LineTotalGross: 1200, ServicePeriodStart: '2026-08-10', LeadDays: 90 }), // own due 2026-05-12, already passed
+            line({ LineTotalGross: 300, ServicePeriodStart: '2027-01-17', LeadDays: 30 }), // own due 2026-12-18
+        ];
+        // The old rule wrote one 1,500 row due 2026-07-11. Now: no row, both book at confirm.
+        expect(DefaultScheduleRows(lines, '2026-07-01')).toEqual([]);
+    });
+
+    it('90 on the category moves the due date 90 days ahead of the start', () => {
+        expect(DefaultScheduleRows([line({ LeadDays: 90 })], '2026-09-26')[0].DueDate).toBe('2027-06-28');
+    });
+
+    it('each company gets its own row, and a company within its lead gets none', () => {
+        const rows = DefaultScheduleRows(
+            [
+                line({ CompanyID: CO_A, LineTotalGross: 100 }),
+                line({ CompanyID: CO_B, LineTotalGross: 200, ServicePeriodStart: '2027-12-01' }),
+                line({ CompanyID: CO_B.toUpperCase(), LineTotalGross: 50, ServicePeriodStart: null }),
+            ],
+            '2026-09-26',
+        );
+        expect(rows).toEqual([
+            { InstallmentNumber: 1, DueDate: '2027-08-27', Amount: 100, CompanyID: CO_A },
+            { InstallmentNumber: 1, DueDate: '2027-11-01', Amount: 250, CompanyID: CO_B },
+        ]);
+        expect(DefaultScheduleRows([line({ CompanyID: CO_A }), line({ CompanyID: CO_B, ServicePeriodStart: '2026-10-01' })], '2026-09-26').map((r) => r.CompanyID)).toEqual([CO_A]);
+    });
+
+    it('a company whose lines come to nothing gets no row', () => {
+        expect(DefaultScheduleRows([line({ LineTotalGross: 0 })], '2026-09-26')).toEqual([]);
+        expect(DefaultScheduleRows([line({ LineTotalGross: -5500 })], '2026-09-26')).toEqual([]);
+    });
+
+    it('refuses an order day that is not YYYY-MM-DD', () => {
+        expect(() => DefaultScheduleRows([line()], '9/26/2026')).toThrow(/YYYY-MM-DD/);
+    });
+
+    // A spawned renewal (#305) is dated its term start and already carries its own row before
+    // confirm, so confirm skips the default. Even without that row, a line starting on the order
+    // date can never clear the lead, so the default can never add a second row to a renewal.
+    it('a renewal-shaped order (service starts on the order date) gets nothing at any lead, including zero', () => {
+        for (const lead of [0, 30, 90]) {
+            expect(DefaultScheduleRows([line({ ServicePeriodStart: '2027-01-01', LeadDays: lead })], '2027-01-01')).toEqual([]);
+        }
+    });
+});
+
+describe('mixed companies, only some qualify (Robert #344 (1))', () => {
+    const orderDay = '2026-07-01';
+    const lines = (bStart: string | null) => [
+        { CompanyID: CO_A, LineTotalGross: 1200, ServicePeriodStart: '2027-01-01', LeadDays: 30 },
+        { CompanyID: CO_B, LineTotalGross: 300, ServicePeriodStart: bStart, LeadDays: 30 },
+    ];
+
+    for (const [label, bStart] of [['undated', null], ['within its lead', '2026-07-15']] as const) {
+        it(`B ${label}: A gets one row due 2026-12-02, B none, and the scoped re-check passes`, () => {
+            const drafts = DefaultScheduleRows(lines(bStart), orderDay);
+            expect(drafts).toEqual([{ InstallmentNumber: 1, DueDate: '2026-12-02', Amount: 1200, CompanyID: CO_A }]);
+
+            const rows = drafts.map((d) => ({ CompanyID: d.CompanyID, Amount: d.Amount, Status: 'Scheduled', DueDate: d.DueDate }));
+            const defaulted = new Set(drafts.map((d) => d.CompanyID.toLowerCase()));
+            // Confirm re-verifies only the companies that got a row: nothing short, so confirm goes ahead.
+            expect(ScheduleShortfalls(rows, lines(bStart), defaulted)).toEqual([]);
+            // B is not billed by instalment, so the factory books its receivable at confirm as before.
+            expect([...ScheduledCompanyIDs(rows)]).toEqual([CO_A]);
+            // The strict every-company check (hand-entered schedules) still names B.
+            expect(ScheduleShortfalls(rows, lines(bStart))).toEqual([{ CompanyID: CO_B, Scheduled: 0, Lines: 300, Difference: 300 }]);
+        });
+    }
+
+    it('the scoped check still refuses a defaulted company that does not tie', () => {
+        const rows = [{ CompanyID: CO_A, Amount: 1100, Status: 'Scheduled' }];
+        expect(ScheduleShortfalls(rows, lines(null), new Set([CO_A]))).toEqual([{ CompanyID: CO_A, Scheduled: 1100, Lines: 1200, Difference: 100 }]);
+    });
+});
+
+describe('DecideDefaultSchedule (#344 review)', () => {
+    const base = { HasSchedule: false, IsReversal: false, PaidAtConfirm: false, HasDatedLines: true };
+
+    it('writes only for an unscheduled, unpaid, non-reversal order with a dated line', () => {
+        expect(DecideDefaultSchedule(base)).toEqual({ Write: true });
+    });
+
+    it('skips each blocking input on its own, naming it', () => {
+        expect(DecideDefaultSchedule({ ...base, HasSchedule: true })).toEqual({ Write: false, Reason: 'HasSchedule' });
+        expect(DecideDefaultSchedule({ ...base, IsReversal: true })).toEqual({ Write: false, Reason: 'Reversal' });
+        expect(DecideDefaultSchedule({ ...base, PaidAtConfirm: true })).toEqual({ Write: false, Reason: 'PaidAtConfirm' });
+        expect(DecideDefaultSchedule({ ...base, HasDatedLines: false })).toEqual({ Write: false, Reason: 'NoDatedLines' });
+    });
+
+    it('writes for exactly one of all sixteen input combinations', () => {
+        const bools = [false, true];
+        let writes = 0;
+        for (const HasSchedule of bools) for (const IsReversal of bools) for (const PaidAtConfirm of bools) for (const HasDatedLines of bools) {
+            if (DecideDefaultSchedule({ HasSchedule, IsReversal, PaidAtConfirm, HasDatedLines }).Write) writes++;
+        }
+        expect(writes).toBe(1);
     });
 });

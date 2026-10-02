@@ -148,7 +148,10 @@ export async function IssueInstalment(
         }
 
         // The schedule must tie to the lines — the same check the confirm ran, because a Scheduled
-        // row may have been edited since.
+        // row may have been edited since. Only companies with a row of any status (cancelled
+        // included) are checked: a company with none was never billed by instalment and booked its
+        // receivable at confirm — a default schedule leaves exactly that on a multi-company order
+        // where only some companies qualify (Robert, #344 review).
         const [lines, siblings] = await Promise.all([
             rv.RunView<{ CompanyID: string; LineTotalGross: number }>(
                 { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID = '${order.ID}'`, Fields: ['CompanyID', 'LineTotalGross'], ResultType: 'simple' },
@@ -162,7 +165,8 @@ export async function IssueInstalment(
         if (!lines.Success || !siblings.Success) {
             return refuse(`Could not read order ${order.OrderNumber} to check its schedule: ${lines.ErrorMessage ?? siblings.ErrorMessage ?? 'unknown error'}`, echo);
         }
-        const shortfalls = ScheduleShortfalls(siblings.Results ?? [], lines.Results ?? []);
+        const rowCompanies = new Set((siblings.Results ?? []).map((s) => String(s.CompanyID).toLowerCase()));
+        const shortfalls = ScheduleShortfalls(siblings.Results ?? [], lines.Results ?? [], rowCompanies);
         if (shortfalls.length) {
             const names = new Map((siblings.Results ?? []).map((s) => [String(s.CompanyID).toLowerCase(), s.Company ?? s.CompanyID]));
             return refuse(ExplainShortfalls(order.OrderNumber, shortfalls, (id) => String(names.get(id) ?? id)), echo);

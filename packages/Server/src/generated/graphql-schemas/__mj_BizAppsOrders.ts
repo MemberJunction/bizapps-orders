@@ -3338,6 +3338,9 @@ export class mjBizAppsOrdersEventProduct_ {
     @MaxLength(255)
     VenueAddress?: string;
         
+    @Field(() => Int, {nullable: true}) 
+    InvoiceLeadDays?: number;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
         
@@ -3435,6 +3438,9 @@ export class CreatemjBizAppsOrdersEventProductInput {
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine: number | null;
 
+    @Field(() => Int, { nullable: true })
+    InvoiceLeadDays: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3531,6 +3537,9 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine?: number | null;
+
+    @Field(() => Int, { nullable: true })
+    InvoiceLeadDays?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -11688,6 +11697,9 @@ export class mjBizAppsOrdersProductCategory_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
+    @Field(() => Int, {nullable: true, description: `Days before a line's service start that its invoice falls due, for an order confirmed with no payment schedule: such an order gets one Scheduled instalment per company, due on the earliest service start less the lowest lead among its dated lines, when that day is after the order date. NULL means inherit from the next level: the parent category, then the product type, then the Orders application setting DefaultInvoiceLeadDays. A product's own value overrides this.`}) 
+    InvoiceLeadDays?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -11761,6 +11773,9 @@ export class CreatemjBizAppsOrdersProductCategoryInput {
     @Field({ nullable: true })
     PricingDriverClass: string | null;
 
+    @Field(() => Int, { nullable: true })
+    InvoiceLeadDays: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -11809,6 +11824,9 @@ export class UpdatemjBizAppsOrdersProductCategoryInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field(() => Int, { nullable: true })
+    InvoiceLeadDays?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -12603,6 +12621,9 @@ export class mjBizAppsOrdersProductType_ {
     @Field({nullable: true, description: `Extensible JSON configuration for this product type including customUI (js, css, theme, componentOverrideKey), unitMode, allowQuantity, and fieldOverrides.`}) 
     Configuration?: string;
         
+    @Field(() => Int, {nullable: true, description: `Days before a line's service start that its invoice falls due, for an order confirmed with no payment schedule, for every product of this type. NULL means inherit from the next level: the Orders application setting DefaultInvoiceLeadDays. A product category or the product itself overrides this.`}) 
+    InvoiceLeadDays?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultRevenueRecognitionType?: string;
@@ -12672,6 +12693,9 @@ export class CreatemjBizAppsOrdersProductTypeInput {
     @Field({ nullable: true })
     Configuration: string | null;
 
+    @Field(() => Int, { nullable: true })
+    InvoiceLeadDays: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -12732,6 +12756,9 @@ export class UpdatemjBizAppsOrdersProductTypeInput {
 
     @Field({ nullable: true })
     Configuration?: string | null;
+
+    @Field(() => Int, { nullable: true })
+    InvoiceLeadDays?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -12915,6 +12942,9 @@ export class mjBizAppsOrdersProduct_ {
     @Field(() => Float, {nullable: true, description: `Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`}) 
     MaxQuantityPerLine?: number;
         
+    @Field(() => Int, {nullable: true, description: `Days before this product's service start that its invoice falls due, for an order confirmed with no payment schedule. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type, then the Orders application setting DefaultInvoiceLeadDays.`}) 
+    InvoiceLeadDays?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     ProductType?: string;
@@ -13012,6 +13042,9 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine: number | null;
 
+    @Field(() => Int, { nullable: true })
+    InvoiceLeadDays: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -13084,6 +13117,9 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine?: number | null;
+
+    @Field(() => Int, { nullable: true })
+    InvoiceLeadDays?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
