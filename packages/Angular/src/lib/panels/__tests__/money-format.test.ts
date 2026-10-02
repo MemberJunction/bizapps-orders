@@ -5,11 +5,13 @@
  * gotten wrong, shows a user the wrong number or the wrong day. The date test in
  * particular guards a bug this codebase has already hit once at the engine level.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
 import {
     DaysSince,
     FormatCompact,
     FormatDate,
+    FormatInstantDate,
     FormatMoney,
     FormatMoneyGroup,
     FormatQuantity,
@@ -173,6 +175,97 @@ describe('DaysSince', () => {
 
     it('handles nothing', () => {
         expect(DaysSince(null, '2026-07-29')).toBe(0);
+    });
+});
+
+/**
+ * Date-only cells versus timestamps (golive #168).
+ *
+ * A `date` column comes back from the driver as midnight UTC on its day; a `datetimeoffset` is an
+ * instant. They are formatted by two functions, because they cannot be told apart by value: 7:00 PM
+ * Central is exactly midnight UTC. `FormatDate` / `DaysSince` take the first, `FormatInstantDate` the
+ * second.
+ *
+ * Every test sets BOTH zones on purpose. The machine zone is varied — west of Greenwich, where a
+ * UTC-midnight value read by local parts is the day before, and far east of it — while the BUSINESS
+ * zone is Central, so that a date-only cell read as a business-day instant (the wrong reading) gives
+ * a different answer from its UTC day in every one of them.
+ */
+describe('FormatDate / DaysSince (date-only) and FormatInstantDate (timestamps)', () => {
+    const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
+    const original = { rows: engine._configurations, loaded: engine._loaded, tz: process.env.TZ };
+    const central = (): void => {
+        engine._configurations = [{ FeatureKey: 'BizApps.BusinessTimeZone', Value: '{"iana":"America/Chicago","sql":"Central Standard Time"}', DefaultValue: '{"iana":"UTC","sql":"UTC"}' }];
+        engine._loaded = true;
+    };
+    beforeEach(central);
+    afterEach(() => {
+        engine._configurations = original.rows;
+        engine._loaded = original.loaded;
+        // `process.env.TZ = undefined` stores the STRING "undefined", which is not "unset".
+        if (original.tz === undefined) delete process.env.TZ;
+        else process.env.TZ = original.tz;
+    });
+
+    /** A SQL `date` column as the driver materialises it: midnight UTC on that calendar day. */
+    const driverDate = (iso: string): Date => new Date(`${iso}T00:00:00.000Z`);
+    /** 7:00 PM Central Daylight Time on Oct 1 — midnight UTC on Oct 2. */
+    const sevenPmCentral = '2026-10-02T00:00:00.000Z';
+
+    describe.each(['America/Chicago', 'Asia/Kolkata', 'Pacific/Auckland'])('in a browser in %s, business zone Central', (tz) => {
+        beforeEach(() => {
+            process.env.TZ = tz;
+        });
+
+        it('reads a date column as its own day', () => {
+            expect(FormatDate(driverDate('2026-10-01'))).toBe('Oct 1, 2026');
+            expect(FormatDate(driverDate('2026-10-01'), { Short: true })).toBe('Oct 1');
+            expect(FormatDate(driverDate('2026-01-01'))).toBe('Jan 1, 2026');
+        });
+
+        it('agrees with the string form of the same cell', () => {
+            expect(FormatDate(driverDate('2026-10-01'))).toBe(FormatDate('2026-10-01'));
+            expect(FormatDate('2026-10-01T00:00:00.000Z')).toBe('Oct 1, 2026');
+        });
+
+        it('counts days between date columns without losing one', () => {
+            expect(DaysSince(driverDate('2026-09-30'), '2026-10-01')).toBe(1);
+            expect(DaysSince(driverDate('2026-10-01'), driverDate('2026-10-01'))).toBe(0);
+            expect(DaysSince(driverDate('2026-08-01'), '2026-10-01')).toBe(61);
+        });
+
+        it('reads 7:00 PM Central as Oct 1 through the instant formatter, as a Date and as a string', () => {
+            expect(FormatInstantDate(new Date(sevenPmCentral))).toBe('Oct 1, 2026');
+            expect(FormatInstantDate(sevenPmCentral)).toBe('Oct 1, 2026');
+            expect(FormatInstantDate(sevenPmCentral, { Short: true })).toBe('Oct 1');
+        });
+
+        it('reads an instant by the BUSINESS day, not the UTC day and not the viewer\'s', () => {
+            // 9:30 PM Central on Sep 30 is already Oct 1 in UTC, and Oct 1 in Pune and Auckland.
+            expect(FormatInstantDate(new Date('2026-10-01T02:30:00.000Z'))).toBe('Sep 30, 2026');
+            expect(FormatInstantDate('2026-09-30T21:30:00-05:00')).toBe('Sep 30, 2026');
+        });
+    });
+
+    it('does not guess: FormatDate reads ANY Date by its UTC day, so a timestamp must go through FormatInstantDate', () => {
+        process.env.TZ = 'America/Chicago';
+        // The removed heuristic read a non-midnight value as an instant; there is no such branch now.
+        expect(FormatDate(new Date('2026-10-01T02:30:00.000Z'))).toBe('Oct 1, 2026');
+        expect(FormatInstantDate(new Date('2026-10-01T02:30:00.000Z'))).toBe('Sep 30, 2026');
+    });
+
+    it('reads a bare day handed to the instant formatter as that day', () => {
+        process.env.TZ = 'America/Chicago';
+        expect(FormatInstantDate('2026-10-01')).toBe('Oct 1, 2026');
+    });
+
+    it('refuses what it cannot read rather than guessing a day', () => {
+        expect(FormatDate(new Date('garbage'))).toBe('—');
+        expect(FormatInstantDate(new Date('garbage'))).toBe('—');
+        expect(FormatInstantDate('not a date')).toBe('—');
+        expect(FormatInstantDate(null)).toBe('—');
+        // `String(date)` — the long human form — is not a date cell; it must not read as one.
+        expect(FormatDate(String(driverDate('2026-10-01')))).toBe('—');
     });
 });
 

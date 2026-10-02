@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, EventEmitter, Input, OnDestroy, OnInit, O
 import { CompositeKey, Metadata, RunView, type BaseEntity } from '@memberjunction/core';
 import type { FormContext, FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { AccountingEngineBase, pickActiveLinkIndex, type LinkCandidate } from '@mj-biz-apps/accounting-engine-base';
-import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
+import { Today, type mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 
 /** Accounting's polymorphic link entity. A SOFT reference — no FK crosses the schema boundary. */
 const LINK_ENTITY = 'MJ_BizApps_Accounting: GL Account Links';
@@ -808,10 +808,15 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
         return raw;
     }
 
-    /** Today in UTC as `yyyy-MM-dd` — the same zone the window is stored and rendered in. */
+    /**
+     * Today on the BUSINESS calendar as `yyyy-MM-dd`.
+     *
+     * The window is stored as that day at midnight UTC and rendered by its UTC parts, so the DAY is
+     * what has to be right. The UTC day was already tomorrow for the whole American evening: a link
+     * opened or retired at 8 PM Central was stamped with tomorrow's date.
+     */
     private today(): string {
-        const n = new Date();
-        return `${n.getUTCFullYear()}-${String(n.getUTCMonth() + 1).padStart(2, '0')}-${String(n.getUTCDate()).padStart(2, '0')}`;
+        return Today();
     }
 
     private async load(): Promise<ProductGLLinkRow[]> {

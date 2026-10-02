@@ -300,8 +300,10 @@ export class MJOPricingPageComponent implements OnInit {
     }
 
     protected windowOf(row: mjBizAppsOrdersPriceListEntity): string {
-        const from = row['EffectiveFrom'] ? FormatDate(String(row['EffectiveFrom']), { Short: true }) : '—';
-        const to = row['EffectiveTo'] ? FormatDate(String(row['EffectiveTo']), { Short: true }) : 'open';
+        // `date` columns, passed as they are: `String()` of a `Date` is the long human form, and the
+        // window read "— → —".
+        const from = row.EffectiveFrom ? FormatDate(row.EffectiveFrom, { Short: true }) : '—';
+        const to = row.EffectiveTo ? FormatDate(row.EffectiveTo, { Short: true }) : 'open';
         return `${from} → ${to}`;
     }
 
