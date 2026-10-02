@@ -96,4 +96,12 @@ describe('checkoutHostSecurityHeaders', () => {
         expect(h['Content-Security-Policy']).toContain('https://js.stripe.com');
         expect(h['Content-Security-Policy']).toContain("default-src 'none'");
     });
+
+describe('the fallback host page redirect (#295)', () => {
+    it('adds the order number to the redirect, and only the order number', () => {
+        const html = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n' });
+        expect(html).toContain("u.searchParams.set('order', String(done.OrderNumber))");
+        expect(html).not.toMatch(/searchParams\.set\('(email|name)'/);
+    });
+});
 });

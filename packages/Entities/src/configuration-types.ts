@@ -116,8 +116,32 @@ export interface CheckoutWidgetConfiguration {
      * checkbox.
      */
     autoRenewConsentText?: string;
+    /**
+     * When true, the widget shows a promotion-code field and the anonymous draft accepts one code
+     * (validated, priced and booked server-side by the promotion engine). Absent or false: codes are
+     * refused.
+     */
+    allowCoupons?: boolean;
     successMessage?: string;
+    /**
+     * What the success screen says about the buyer's access while it is provisioned after the
+     * confirm (#325). Shown only when a registered outbound consumer gates access; each has a default.
+     */
+    accessMessages?: {
+        pending?: string;
+        ready?: string;
+        failed?: string;
+    };
+    /**
+     * Where the public checkout sends the buyer once the order is confirmed. The order number is
+     * appended as `order=<number>`, so the landing page knows which order completed.
+     */
     redirectUrl?: string;
+    /**
+     * Ask the payment gateway to send its own receipt to the buyer's e-mail (Stripe:
+     * `receipt_email`). Off by default: a host that sends its own receipt would otherwise send two.
+     */
+    sendReceipt?: boolean;
     extensionEntityName?: string;
     /**
      * Metadata-driven form field specs — auto-discovered from the product type's extension
@@ -169,6 +193,12 @@ export interface CheckoutWidgetConfiguration {
      * Turnstile secret for verification to run — fail-closed when it is not).
      */
     requireTurnstile?: boolean;
+    /**
+     * `@RegisterClass` key of the `BaseCheckoutMemberDiscountResolver` that verifies a host's
+     * member token and names the promotion code it earns. Server-side only. A draft that carries a
+     * member token is refused when this is unset or names an unregistered class.
+     */
+    memberDiscountResolver?: string;
     /**
      * Custom UI section containing JS hooks, scoped CSS, theme tokens, and component overrides.
      */

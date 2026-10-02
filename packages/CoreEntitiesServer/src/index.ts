@@ -286,6 +286,7 @@ export {
     ReconcileGrantStatus,
     IsPaymentSuspension,
     ReadTimeCutoffSuspension,
+    ReadTimeWaiverExpirySuspension,
     PAYMENT_GATED_TIMINGS,
     ReduceGrantForReturn,
     EvaluateGrantAccess,
@@ -635,6 +636,12 @@ export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { EntitlementGrantEntityServer, LoadEntitlementGrantEntityServer } from './EntitlementGrantEntityServer.js';
 export {
+    GetCheckoutAccessStatus,
+    SummarizeAccessDeliveries,
+    type CheckoutAccessState,
+    type CheckoutAccessStatusResult,
+} from './CheckoutAccessStatus.js';
+export {
     OrdersOutboundConsumer,
     RecordOutboundEvent,
     DispatchOutboundDeliveries,
@@ -752,13 +759,19 @@ export {
     type CheckoutPasswordResult,
 } from './CheckoutAccountStep.js';
 export {
+    BaseCheckoutMemberDiscountResolver,
+    CheckoutMemberDiscountNotConfiguredError,
+    ResolveCheckoutMemberDiscountResolver,
+} from './CheckoutMemberDiscountResolver.js';
+export type { CheckoutMemberDiscountContext, CheckoutMemberDiscountDecision } from './CheckoutMemberDiscountResolver.js';
+export {
     CHECKOUT_CAPTURE_RETRY_WINDOW_MS,
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
     isCaptureRefusalRetryable,
     isTerminalCapturePrecheck,
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
-export { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
+export { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
 // The post-payment step record, its review queue and operator replay (#326).
 export { CheckoutStepLog, STALE_RUNNING_MINUTES } from './CheckoutStepLog.js';
 export type { CheckoutStepAttempt, CheckoutStepName, CheckoutStepSource, CheckoutStepStatus } from './CheckoutStepLog.js';

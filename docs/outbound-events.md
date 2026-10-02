@@ -44,6 +44,19 @@ A term that lapses without renewal changes nothing on the grant, so it fires no 
 5. **Retried, then dead-lettered.** A consumer that throws or times out is tried again after 1, 5, 15 and 60 minutes, then every 4 hours, until 24 hours after the event; then the row is `DeadLettered`. `LastError` keeps the consumer's message.
 6. **At least once.** A consumer can see an event twice (a timed-out call that later succeeded, a crash between its success and the write). Dedupe on `EventID`.
 
+## Access status on the checkout's success screen
+
+A consumer whose delivery decides whether the buyer's access is ready declares `GatesAccess`. After a checkout completes, the public checkout polls `POST /checkout/access-status` (`{ sessionId, clientSessionKey }`, a confirmed session only) every 2 seconds for up to a minute. The state is read from the order's gating deliveries:
+
+| State | Meaning | Success screen (overridable in the widget's `accessMessages`) |
+|---|---|---|
+| `Ready` | every gating delivery was accepted | `ready`: "Your access is ready." |
+| `Pending` | at least one is still being tried | `pending`: "Your access is being set up…" |
+| `Failed` | at least one was dead-lettered | `failed`: "We couldn't finish setting up your access. Please contact support." |
+| `NotTracked` | no consumer gates access | nothing extra; the confirmation is as before |
+
+Each change is also dispatched as a bubbling, composed `checkout-access-state` DOM event with `{ state }`. A configured `redirectUrl` is followed once the state is final or the wait runs out.
+
 ## Operating it
 
 - `OutboundDelivery` rows show each consumer's status per event, and can be read per order through `OutboundEvent.OrderHeaderID`.
