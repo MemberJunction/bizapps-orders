@@ -35,6 +35,7 @@ vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
         ReapExpiredOpenSessions: vi.fn().mockResolvedValue(0),
     },
     EscapeText: (value: string) => value.replace(/'/g, "''"),
+    GetCheckoutAccessStatus: vi.fn().mockResolvedValue({ Success: true, State: 'NotTracked' }),
     DispatchOutboundDeliveries: vi.fn().mockResolvedValue({ Success: true, Claimed: 0, Delivered: 0, Retrying: 0, DeadLettered: 0 }),
     EnsureCheckoutAccount: vi.fn().mockResolvedValue({ Success: true }),
     HasCheckoutAccountStep: vi.fn().mockReturnValue(false),
@@ -144,6 +145,7 @@ describe('CheckoutServerExtension', () => {
 
         expect(result.Success).toBe(true);
         expect(Object.keys(routes.post).sort()).toEqual([
+            '/checkout/access-status',
             '/checkout/account',
             '/checkout/account/password',
             '/checkout/complete',
@@ -160,8 +162,25 @@ describe('CheckoutServerExtension', () => {
             'POST /checkout/complete',
             'POST /checkout/account',
             'POST /checkout/account/password',
+            'POST /checkout/access-status',
             'GET /checkout/:slug',
         ]);
+    });
+
+    it('passes the buyer’s promotion codes through to the draft, unmodified', async () => {
+        const { app } = mockApp();
+        const ext = new CheckoutServerExtension();
+        await ext.Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({ Success: true } as never);
+        const res = mockRes();
+        const body = { sessionId: 's-1', clientSessionKey: 'k', email: 'a@b.com', lines: [], promotionCodes: ['SAVE10'] };
+        await (ext as unknown as { handleDraft(req: Request, res: Response): Promise<void> }).handleDraft(
+            { body, headers: {}, socket: {} } as unknown as Request,
+            res as unknown as Response,
+        );
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('s-1', 'k', 'a@b.com', [], expect.anything(), {
+            PromotionCodes: ['SAVE10'],
+        });
     });
 
     it('serves the element bundle and its source map to any origin', async () => {

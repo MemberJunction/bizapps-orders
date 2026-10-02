@@ -90,6 +90,11 @@ export interface CreateIntentRequest {
      */
     Description?: string | null;
     /**
+     * Where the gateway sends its own receipt for this charge, when the caller wants one. Omitted, the
+     * gateway sends none. A driver whose gateway has no receipts ignores it.
+     */
+    ReceiptEmail?: string | null;
+    /**
      * OUR idempotency key. Sent to gateways that support one so a retried create does not open a
      * second intent — and therefore does not charge the customer twice.
      */

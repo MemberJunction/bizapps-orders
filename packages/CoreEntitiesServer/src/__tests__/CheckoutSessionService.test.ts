@@ -169,6 +169,7 @@ const mocks = vi.hoisted(() => {
 
     class MockOrderHeader {
         ID = 'order-999';
+        PromotionCodes = { Codes: [] as string[] };
         OrderNumber = 'ORD-2026-0001';
         CompanyID = 'comp-10';
         Status = 'Draft';
@@ -270,6 +271,9 @@ const mocks = vi.hoisted(() => {
         mockPaymentIntentInstance: new MockPaymentIntent(),
         lastRunViewParams: undefined as { EntityName?: string; MaxRows?: number; Fields?: string[]; ExtraFilter?: string } | undefined,
         sessionRunViewResults: undefined as Array<{ ID: string }> | undefined,
+        /** Existing Person rows the e-mail lookup finds, keyed by normalized e-mail. */
+        peopleByEmail: {} as Record<string, string>,
+        personLookups: 0,
         mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
         mockMemberResolve: vi.fn(),
         mockLookupMemberResolver: vi.fn(),
@@ -410,9 +414,12 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                     });
                 }
                 if (params.EntityName.includes('People') || params.EntityName.includes('Persons')) {
+                    mocks.personLookups++;
+                    const email = /Email = '(.*)'/.exec(params.ExtraFilter ?? '')?.[1];
+                    const id = email ? mocks.peopleByEmail[email] : undefined;
                     return Promise.resolve({
                         Success: true,
-                        Results: []
+                        Results: id ? [{ ID: id }] : []
                     });
                 }
                 if (params.EntityName.includes('Products') && !params.EntityName.includes('Product Types')) {
@@ -454,7 +461,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     };
 });
 
-import { CheckoutSessionService } from '../CheckoutSessionService.js';
+import { CheckoutSessionService, NormalizeCheckoutPromotionCodes } from '../CheckoutSessionService.js';
 import { CheckoutMemberDiscountNotConfiguredError } from '../CheckoutMemberDiscountResolver.js';
 import { Metadata } from '@memberjunction/core';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
@@ -493,6 +500,8 @@ describe('CheckoutSessionService', () => {
         mocks.mockProductInstance.ID = 'prod-1';
         mocks.lastRunViewParams = undefined;
         mocks.sessionRunViewResults = undefined;
+        mocks.peopleByEmail = {};
+        mocks.personLookups = 0;
         mocks.mockPaymentIntentInstance.Status = 'Succeeded';
         mocks.mockPaymentIntentInstance.Amount = 100;
         mocks.mockPaymentIntentInstance.PaymentProviderID = 'pp-1';
@@ -640,6 +649,116 @@ describe('CheckoutSessionService', () => {
             expect(res.Configuration?.paymentProviderId).toBeUndefined();
             expect(res.Configuration?.signingKey).toBeUndefined();
             expect(res.Configuration?.allowAnyProduct).toBeUndefined();
+        });
+    });
+
+    describe('UpdateDraft — promotion codes', () => {
+        type PricedLine = { UnitPrice: number; LineTotalGross: number; Quantity: number; DiscountAmount?: number };
+        /** Price each line at 599; a usable SAVE10 takes 59.90 off; anything else comes back unusable. */
+        const priceWithCodes = (ctx: { Lines: PricedLine[]; PromotionCodes: string[] }) => {
+            const unusable: Array<{ Code: string; Reason: string }> = [];
+            for (const line of ctx.Lines) {
+                line.UnitPrice = 599;
+                line.DiscountAmount = 0;
+                line.LineTotalGross = 599 * line.Quantity;
+            }
+            for (const code of ctx.PromotionCodes) {
+                if (code.toUpperCase() === 'SAVE10') {
+                    ctx.Lines[0].DiscountAmount = 59.9;
+                    ctx.Lines[0].LineTotalGross -= 59.9;
+                } else {
+                    unusable.push({ Code: code, Reason: 'no such code' });
+                }
+            }
+            return Promise.resolve({ UnusableCodes: unusable });
+        };
+
+        beforeEach(() => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', allowCoupons: true });
+            mocks.mockPricingPrice.mockImplementation(priceWithCodes);
+        });
+
+        afterEach(() => {
+            mocks.mockPricingPrice.mockImplementation((ctx: { Lines: PricedLine[] }) => {
+                for (const line of ctx.Lines) {
+                    line.LineTotalGross = (line.UnitPrice ?? 0) * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+        });
+
+        it('prices the draft with a usable code, reports the discount, and keeps the code in the snapshot', async () => {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: [' SAVE10 '],
+            });
+            expect(res.Success).toBe(true);
+            expect(res.TotalGross).toBe(539.1);
+            expect(res.Discount).toBe(59.9);
+            expect(res.Subtotal).toBe(599);
+            expect(res.Adjustments).toBe(-59.9);
+            expect(res.AppliedPromotionCodes).toEqual(['SAVE10']);
+            expect(res.UnusablePromotionCodes).toEqual([]);
+            const priced = mocks.mockPricingPrice.mock.calls[0][0] as { PromotionCodes: string[] };
+            expect(priced.PromotionCodes).toEqual(['SAVE10']);
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON!) as { PromotionCodes: string[]; TotalGross: number };
+            expect(snapshot.PromotionCodes).toEqual(['SAVE10']);
+            expect(snapshot.TotalGross).toBe(539.1);
+        });
+
+        it('prices at full price and says why when the code cannot be used, and does not keep it', async () => {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: ['NOPE'],
+            });
+            expect(res.Success).toBe(true);
+            expect(res.TotalGross).toBe(599);
+            expect(res.UnusablePromotionCodes).toEqual([{ Code: 'NOPE', Reason: 'no such code' }]);
+            expect(res.AppliedPromotionCodes).toEqual([]);
+            expect((JSON.parse(mocks.mockSessionInstance.MetadataJSON!) as { PromotionCodes: string[] }).PromotionCodes).toEqual([]);
+        });
+
+        it('refuses a code when the widget does not take codes', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1' });
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: ['SAVE10'],
+            });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/does not take promotion codes/i);
+            expect(mocks.mockPricingPrice).not.toHaveBeenCalled();
+        });
+
+        it('refuses more than one code', async () => {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: ['SAVE10', 'OTHER'],
+            });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/only 1 promotion code/i);
+        });
+
+        it('does not quote an undiscounted price when pricing fails with a code in play', async () => {
+            mocks.mockPricingPrice.mockRejectedValueOnce(new Error('promotion lookup failed'));
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], testUser, {
+                PromotionCodes: ['SAVE10'],
+            });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/could not be applied/i);
+        });
+
+        it('completes with the snapshot code: prices and books the order with it', async () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }],
+                PromotionCodes: ['SAVE10'],
+                TotalGross: 539.1,
+            });
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.mockPaymentIntentInstance.Amount = 539.1;
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const priced = mocks.mockPricingPrice.mock.calls.at(-1)![0] as { PromotionCodes: string[] };
+            expect(priced.PromotionCodes).toEqual(['SAVE10']);
+            expect(mocks.mockOrderInstance.PromotionCodes.Codes).toEqual(['SAVE10']);
         });
     });
 
@@ -887,6 +1006,53 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('UpdateDraft — payer follows the e-mail (#393)', () => {
+        const draft = (email: string) =>
+            CheckoutSessionService.UpdateDraft('sess-123', KEY, email, [{ ProductID: 'prod-1', Quantity: 1 }]);
+        const personLookups = () => mocks.personLookups;
+
+        it('re-resolves the payer when a later draft carries a different e-mail', async () => {
+            mocks.peopleByEmail = { 'first@example.com': 'person-a', 'second@example.com': 'person-b' };
+
+            expect((await draft('first@example.com')).Success).toBe(true);
+            expect(mocks.mockSessionInstance.PersonID).toBe('person-a');
+
+            expect((await draft('second@example.com')).Success).toBe(true);
+            expect(mocks.mockSessionInstance.Email).toBe('second@example.com');
+            expect(mocks.mockSessionInstance.PersonID).toBe('person-b');
+            expect(mocks.mockOrderInstance.BillToPersonID).toBe('person-b');
+            expect(mocks.mockOrderInstance.ShipToPersonID).toBe('person-b');
+        });
+
+        it('keeps the payer when the e-mail differs only in case or whitespace', async () => {
+            mocks.peopleByEmail = { 'first@example.com': 'person-a' };
+
+            await draft('first@example.com');
+            const lookupsAfterFirst = personLookups();
+            expect((await draft('  First@Example.COM ')).Success).toBe(true);
+
+            expect(mocks.mockSessionInstance.PersonID).toBe('person-a');
+            expect(personLookups()).toBe(lookupsAfterFirst);
+        });
+
+        it('clears the payer for an unknown new e-mail, and completion resolves the new one', async () => {
+            mocks.peopleByEmail = { 'first@example.com': 'person-a' };
+
+            await draft('first@example.com');
+            expect(mocks.mockSessionInstance.PersonID).toBe('person-a');
+            expect((await draft('new@example.com')).Success).toBe(true);
+            expect(mocks.mockSessionInstance.PersonID).toBeNull();
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockSessionInstance.PersonID).toBe('person-new-1');
+            expect(mocks.mockOrderInstance.BillToPersonID).toBe('person-new-1');
+            expect(mocks.mockOrderInstance.ShipToPersonID).toBe('person-new-1');
+        });
+    });
+
     describe('UpdateDraft — attribution', () => {
         const draft = (attribution?: unknown) =>
             CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, { Attribution: attribution });
@@ -957,6 +1123,38 @@ describe('CheckoutSessionService', () => {
             expect(describeMocks.mockDescribeCheckoutSnapshot.mock.calls[0][0]).toBe(mocks.mockSessionInstance.MetadataJSON);
             const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as { Description?: string | null };
             expect(request.Description).toBe('Annual Membership +1 more');
+        });
+
+        describe('gateway receipt (#295)', () => {
+            const open = async (config: Record<string, unknown>, email: string | null) => {
+                mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100 });
+                mocks.mockSessionInstance.Email = email;
+                mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', currency: 'USD', ...config });
+                mocks.mockOpenPaymentIntent.mockClear();
+                await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+                return mocks.mockOpenPaymentIntent.mock.calls[0][0] as { ReceiptEmail?: string | null; IdempotencyKey: string };
+            };
+
+            it('asks for no receipt unless the widget sets sendReceipt', async () => {
+                const request = await open({}, 'Buyer@Example.com');
+                expect(request.ReceiptEmail).toBeNull();
+                expect(request.IdempotencyKey).toBe('checkout-sess-123-10000');
+            });
+
+            it("sends the receipt to the buyer's e-mail when the widget asks", async () => {
+                const request = await open({ sendReceipt: true }, ' Buyer@Example.com ');
+                expect(request.ReceiptEmail).toBe('buyer@example.com');
+            });
+
+            it('gives a different e-mail a different idempotency key, so the gateway does not refuse the reopen', async () => {
+                const first = await open({ sendReceipt: true }, 'a@example.com');
+                const second = await open({ sendReceipt: true }, 'b@example.com');
+                const again = await open({ sendReceipt: true }, 'A@example.com');
+                expect(first.IdempotencyKey).toMatch(/^checkout-sess-123-10000-r[0-9a-f]{12}$/);
+                expect(second.IdempotencyKey).not.toBe(first.IdempotencyKey);
+                expect(again.IdempotencyKey).toBe(first.IdempotencyKey);
+                expect(first.IdempotencyKey).not.toContain('example');
+            });
         });
     });
 
@@ -1288,6 +1486,25 @@ describe('CheckoutSessionService', () => {
             expect(book.Attempted).toBe(true);
             expect(book.Booked).toBe(true);
             expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+        });
+
+        it('BookSettledCheckoutPaymentIfNeeded restamps an intent opened for an earlier payer with the order bill-to (#393)', async () => {
+            mocks.mockSessionInstance.Status = 'Confirmed';
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+            mocks.mockOrderInstance.TotalGross = 100;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = 'person-b';
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.mockPaymentIntentInstance.BillToPersonID = 'person-a';
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book.Booked).toBe(true);
+            expect(mocks.mockPaymentIntentInstance.BillToPersonID).toBe('person-b');
+            expect(mocks.mockIntentSave).toHaveBeenCalled();
+            const captureInput = mocks.mockCaptureExecute.mock.calls[0][0] as { BillToPersonID: string | null };
+            expect(captureInput.BillToPersonID).toBe('person-b');
         });
 
         it('BookSettledCheckoutPaymentIfNeeded is a no-op when no Confirmed checkout session owns the intent', async () => {
@@ -2223,5 +2440,22 @@ describe('CheckoutSessionService', () => {
                 configSpy.mockRestore();
             }
         });
+    });
+});
+
+describe('NormalizeCheckoutPromotionCodes', () => {
+    it('trims, drops empties and de-duplicates case-insensitively', () => {
+        expect(NormalizeCheckoutPromotionCodes([' save10 ', '', 'SAVE10'])).toEqual({ Codes: ['save10'] });
+    });
+
+    it('treats a missing list as no codes', () => {
+        expect(NormalizeCheckoutPromotionCodes(undefined)).toEqual({ Codes: [] });
+    });
+
+    it('refuses a non-list, a non-string, an over-long code and more than one code', () => {
+        expect(NormalizeCheckoutPromotionCodes('SAVE10')).toHaveProperty('Error');
+        expect(NormalizeCheckoutPromotionCodes([42])).toHaveProperty('Error');
+        expect(NormalizeCheckoutPromotionCodes(['X'.repeat(61)])).toHaveProperty('Error');
+        expect(NormalizeCheckoutPromotionCodes(['A', 'B'])).toHaveProperty('Error');
     });
 });

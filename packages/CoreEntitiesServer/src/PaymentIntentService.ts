@@ -84,6 +84,8 @@ export interface OpenIntentRequest {
     SaveInstrumentForReuse?: boolean;
     /** Echoed back on webhooks. Useful for reconciliation, never load-bearing. */
     Metadata?: Record<string, string>;
+    /** Where the gateway sends its own receipt for the charge. Omitted, it sends none. */
+    ReceiptEmail?: string | null;
     /**
      * What the gateway dashboard shows for the charge. When omitted and `OrderHeaderID` is set, it is
      * built from the order — see `DescribeOrder`.
@@ -152,6 +154,7 @@ export async function OpenPaymentIntent(
         SaveInstrumentForReuse: request.SaveInstrumentForReuse ?? false,
         Metadata: request.Metadata,
         Description: description,
+        ReceiptEmail: request.ReceiptEmail?.trim() || null,
         IdempotencyKey: request.IdempotencyKey ?? undefined,
     });
 

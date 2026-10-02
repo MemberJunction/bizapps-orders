@@ -156,6 +156,12 @@ export interface UpdateDraftResult {
     TotalGross: number;
     RequiresPayment: boolean;
     Lines: CheckoutLineSummary[];
+    /** The promotion code the draft was priced with, when it was usable. */
+    AppliedPromotionCodes?: string[];
+    /** Codes the buyer entered that did nothing, and why — shown to the buyer, never silently dropped. */
+    UnusablePromotionCodes?: Array<{ Code: string; Reason: string }>;
+    /** What the applied promotion took off, in major units (0 when none). */
+    Discount?: number;
     /** True when a member token earned a discount that this draft is priced with. */
     MemberDiscountApplied?: boolean;
     /** Why a member token earned no discount, for the buyer. Absent when no token was sent. */
@@ -168,6 +174,8 @@ interface CheckoutSessionSnapshot {
     TotalGross?: number;
     /** Promotion code a verified member token earned. The token itself is never stored. */
     MemberPromotionCode?: string | null;
+    /** Codes the buyer entered that the draft priced with. */
+    PromotionCodes?: string[];
 }
 
 /** Outcome of resolving a draft's member token. */
@@ -176,6 +184,48 @@ interface MemberDiscountResolution {
     Message?: string;
     /** Set when the widget cannot verify tokens at all — the draft is refused. */
     Refusal?: string;
+}
+
+/** Most codes a buyer can present on one checkout. One, as a hosted card checkout allows. */
+export const MAX_PROMOTION_CODES_PER_CHECKOUT = 1;
+/** Longest code accepted — `PromotionCode.Code` is NVARCHAR(60). */
+const MAX_PROMOTION_CODE_LENGTH = 60;
+
+/**
+ * Normalise the codes an anonymous caller sent: strings only, trimmed, empties dropped, de-duplicated
+ * case-insensitively. Refuses more than {@link MAX_PROMOTION_CODES_PER_CHECKOUT} or an over-long code
+ * rather than truncating — a code that was cut short is a different code.
+ */
+export function NormalizeCheckoutPromotionCodes(input: unknown): { Codes: string[] } | { Error: string } {
+    if (input == null) return { Codes: [] };
+    if (!Array.isArray(input)) return { Error: 'Promotion codes must be a list.' };
+    const seen = new Set<string>();
+    const codes: string[] = [];
+    for (const raw of input) {
+        if (typeof raw !== 'string') return { Error: 'Promotion codes must be text.' };
+        const code = raw.trim();
+        if (!code) continue;
+        if (code.length > MAX_PROMOTION_CODE_LENGTH) return { Error: 'That promotion code is too long.' };
+        const key = code.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        codes.push(code);
+    }
+    if (codes.length > MAX_PROMOTION_CODES_PER_CHECKOUT) {
+        return { Error: `Only ${MAX_PROMOTION_CODES_PER_CHECKOUT} promotion code can be used per order.` };
+    }
+    return { Codes: codes };
+}
+
+/**
+ * The codes a checkout prices with: the buyer's own codes plus the code a verified member token
+ * earned, de-duplicated case-insensitively. Whether they stack is the promotion engine's call.
+ */
+export function CombineCheckoutPromotionCodes(buyerCodes: string[], memberCode: string | null | undefined): string[] {
+    if (!memberCode || buyerCodes.some((c) => c.toLowerCase() === memberCode.toLowerCase())) {
+        return [...buyerCodes];
+    }
+    return [...buyerCodes, memberCode];
 }
 
 const MEMBER_DISCOUNT_UNAVAILABLE = 'Your member discount could not be verified, so this checkout is priced at the standard rate.';
@@ -359,6 +409,7 @@ export class CheckoutSessionService {
         'stripePublishableKey',
         'autoRenewConsentText',
         'successMessage',
+        'accessMessages',
         'redirectUrl',
         'extensionEntityName',
         'extensionFields',
@@ -1004,7 +1055,7 @@ export class CheckoutSessionService {
         email: string,
         lines: CheckoutLineInput[],
         contextUser?: UserInfo,
-        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput; MemberToken?: string }
+        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput; MemberToken?: string; PromotionCodes?: unknown }
     ): Promise<UpdateDraftResult> {
         const failed = (message: string): UpdateDraftResult => ({
             Success: false,
@@ -1083,6 +1134,17 @@ export class CheckoutSessionService {
             return failed(draftChoices.Error);
         }
 
+        // Promotion codes are an anonymous input, so they are taken only when the widget's own
+        // configuration invites them, and only in the bounded shape NormalizeCheckoutPromotionCodes allows.
+        const normalizedCodes = NormalizeCheckoutPromotionCodes(options?.PromotionCodes);
+        if ('Error' in normalizedCodes) {
+            return failed(normalizedCodes.Error);
+        }
+        const promotionCodes = normalizedCodes.Codes;
+        if (promotionCodes.length > 0 && widgetConfig.allowCoupons !== true) {
+            return failed('This checkout does not take promotion codes.');
+        }
+
         const allowedProductIds = await this.resolveAllowedProductIds(widgetConfig, contextUser);
         const allowAnyProduct = widgetConfig.allowAnyProduct === true;
         if (!allowAnyProduct && allowedProductIds.size === 0) {
@@ -1109,6 +1171,13 @@ export class CheckoutSessionService {
         order.OrderDate = TodayAsDateValue();
 
         const normalizedEmail = (email || '').trim().toLowerCase();
+        const previousEmail = (session.Email || '').trim().toLowerCase();
+        // The resolved payer belongs to the e-mail it was resolved from. A changed e-mail drops it
+        // so the resolve below runs again for the new address — or, when the new address matches
+        // no Person, CompleteCheckout resolves or creates the payer (#393).
+        if (previousEmail && previousEmail !== normalizedEmail) {
+            session.PersonID = null;
+        }
         session.Email = normalizedEmail;
 
         // Resolve (never create) the payer Person by email so person-specific pricing applies
@@ -1224,6 +1293,7 @@ export class CheckoutSessionService {
         }
 
         // Price the draft order in memory
+        let unusableCodes: Array<{ Code: string; Reason: string }> = [];
         try {
             const pricingService = new OrderPricingService({
                 Provider: (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
@@ -1250,10 +1320,14 @@ export class CheckoutSessionService {
                 ),
                 ShipToAddressID: order.ShipToAddressID ?? null,
                 Lines: [...order.Lines.Items],
-                PromotionCodes: memberDiscount.PromotionCode ? [memberDiscount.PromotionCode] : [],
+                PromotionCodes: CombineCheckoutPromotionCodes(promotionCodes, memberDiscount.PromotionCode),
                 ManualDiscounts: [],
                 Charges: [],
             });
+            // Only the buyer's own codes are reported as unusable; a declined member code is explained
+            // through MemberDiscountMessage below.
+            const buyerKeys = new Set(promotionCodes.map((c) => c.toLowerCase()));
+            unusableCodes = (priced?.UnusableCodes ?? []).filter((u) => buyerKeys.has(u.Code.toLowerCase()));
 
             // The engine may still decline the code (dates, limits, qualifier). Price at full rate
             // and say why, rather than snapshotting a code `/complete` would also decline.
@@ -1274,7 +1348,16 @@ export class CheckoutSessionService {
             order.TotalGross = Math.round(sumGross * 100) / 100;
         } catch (pricingErr) {
             console.warn('[CheckoutSessionService] Pricing walk error on draft:', pricingErr);
+            // A pricing failure with a code in play must not quote the undiscounted price as if the
+            // code had been considered.
+            if (promotionCodes.length > 0) {
+                return failed('This promotion code could not be applied right now. Please try again.');
+            }
         }
+        const unusableKeys = new Set(unusableCodes.map((u) => u.Code.toLowerCase()));
+        const appliedCodes = promotionCodes.filter((c) => !unusableKeys.has(c.toLowerCase()));
+        const discount =
+            Math.round((order.Lines.Items as OrderLineEntity[]).reduce((sum, l) => sum + Number(l.DiscountAmount ?? 0), 0) * 100) / 100;
 
         // Build line summaries from the in-memory priced order graph
         const lineSummaries: CheckoutLineSummary[] = (order.Lines.Items as OrderLineEntity[]).map(l => ({
@@ -1317,6 +1400,8 @@ export class CheckoutSessionService {
         }
 
         // Store checkout state in session metadata JSON — no orphan OrderHeader rows
+        // The applied code rides the snapshot so completion prices — and books — the same order the
+        // buyer was shown and the payment intent was opened for. An unusable code is not kept.
         session.MetadataJSON = JSON.stringify({
             Lines: lines,
             PricedLines: lineSummaries,
@@ -1325,6 +1410,7 @@ export class CheckoutSessionService {
             ...(attribution ? { Attribution: attribution } : {}),
             Choices: ChoicesForStorage(draftChoices.Choices),
             MemberPromotionCode: memberDiscount.PromotionCode,
+            PromotionCodes: appliedCodes,
             UpdatedAt: new Date().toISOString()
         });
         const sessionSaved = await session.Save();
@@ -1337,12 +1423,15 @@ export class CheckoutSessionService {
             SessionID: sessionID,
             OrderID: session.DraftOrderID || '',
             OrderNumber: '',
-            Subtotal: order.TotalGross ?? 0,
+            Subtotal: Math.round(((order.TotalGross ?? 0) + discount) * 100) / 100,
             Tax: 0,
-            Adjustments: 0,
+            Adjustments: -discount,
             TotalGross: order.TotalGross ?? 0,
             RequiresPayment: (order.TotalGross ?? 0) > 0,
             Lines: lineSummaries,
+            AppliedPromotionCodes: appliedCodes,
+            UnusablePromotionCodes: unusableCodes,
+            Discount: discount,
             ...(options?.MemberToken ? { MemberDiscountApplied: !!memberDiscount.PromotionCode } : {}),
             ...(memberDiscount.Message ? { MemberDiscountMessage: memberDiscount.Message } : {})
         };
@@ -1422,6 +1511,7 @@ export class CheckoutSessionService {
         let paymentProviderId: string | undefined;
         let currencyCode: string | undefined;
         let autoRenewConsentText: string | undefined;
+        let sendReceipt = false;
         if (widget.Configuration) {
             try {
                 const configObj = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
@@ -1431,6 +1521,7 @@ export class CheckoutSessionService {
                     typeof configObj.autoRenewConsentText === 'string' && configObj.autoRenewConsentText.trim()
                         ? configObj.autoRenewConsentText.trim()
                         : undefined;
+                sendReceipt = configObj.sendReceipt === true;
             } catch {
                 // Malformed configuration already fails InitializeSession; treat as unset here.
             }
@@ -1462,6 +1553,17 @@ export class CheckoutSessionService {
         // CheckoutSavedInstrument. Fail-soft: a card that cannot be kept must not block the sale.
         const saveForRenewal = await this.resolveCustomerForRenewal(session, paymentProviderId, mdProvider, contextUser);
 
+        // The gateway's own receipt, when the widget asks for one, goes to the e-mail the buyer
+        // entered. It is part of the request, and a gateway refuses a repeated idempotency key sent
+        // with different parameters, so a changed e-mail must not reuse the key: a short hash of the
+        // address goes into it.
+        const receiptEmail = sendReceipt && session.Email ? session.Email.trim().toLowerCase() : null;
+        let receiptKey = '';
+        if (receiptEmail) {
+            const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(receiptEmail)));
+            receiptKey = `-r${Array.from(digest.slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('')}`;
+        }
+
         const openResult = await OpenPaymentIntent({
             PaymentProviderID: paymentProviderId,
             Amount: snapshotTotal,
@@ -1471,11 +1573,12 @@ export class CheckoutSessionService {
             SaveInstrumentForReuse: !!saveForRenewal,
             // Stable per-session idempotency key: reopening for the same session+amount
             // returns the SAME gateway intent instead of minting a fresh one per retry. A
-            // card-keeping intent gets its own key, because the gateway refuses a repeated key
-            // whose request parameters differ.
-            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}${saveForRenewal ? '-keep' : ''}`,
+            // card-keeping intent, and a receipt to a given e-mail, each get their own key, because the
+            // gateway refuses a repeated key whose request parameters differ.
+            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}${saveForRenewal ? '-keep' : ''}${receiptKey}`,
             Metadata: { CheckoutSessionID: sessionID },
-            Description: description
+            Description: description,
+            ReceiptEmail: receiptEmail
         }, mdProvider, contextUser);
 
         if (!openResult.Success || !openResult.PaymentIntentID) {
@@ -1634,6 +1737,7 @@ export class CheckoutSessionService {
 
             let linesInput: CheckoutLineInput[] = [];
             let memberPromotionCode: string | null = null;
+            let snapshotCodes: string[] = [];
             if (session.MetadataJSON) {
                 try {
                     const parsed = JSON.parse(session.MetadataJSON) as CheckoutSessionSnapshot;
@@ -1643,6 +1747,10 @@ export class CheckoutSessionService {
                     if (typeof parsed.MemberPromotionCode === 'string' && parsed.MemberPromotionCode) {
                         memberPromotionCode = parsed.MemberPromotionCode;
                     }
+                    // Written by UpdateDraft, re-normalised anyway: the snapshot is ours, but the rule for
+                    // what a code may look like belongs in one place.
+                    const normalized = NormalizeCheckoutPromotionCodes(parsed.PromotionCodes);
+                    snapshotCodes = 'Codes' in normalized ? normalized.Codes : [];
                 } catch {
                     // Ignore metadata parse error
                 }
@@ -1826,9 +1934,12 @@ export class CheckoutSessionService {
                 }
             }
 
-            // The draft's member discount rides on the order, so the re-price inside Confirm()'s save
-            // applies the same code this pre-check does — the charged total and the booked total match.
-            order.PromotionCodes.Codes = memberPromotionCode ? [memberPromotionCode] : [];
+            // The codes the draft was priced with — the buyer's and the member discount's. Set on the
+            // order's companion so the booking walk in OrderEntityServer re-prices with them and writes
+            // the promotions' adjustment rows: that records the redemption, and the re-price inside
+            // Confirm()'s save applies the same codes this pre-check does, so the charged total and the
+            // booked total match.
+            order.PromotionCodes.Codes = CombineCheckoutPromotionCodes(snapshotCodes, memberPromotionCode);
 
             // Price lines before confirmation
             const pricingService = new OrderPricingService({
@@ -2154,7 +2265,10 @@ export class CheckoutSessionService {
                 await SendOrderDescriptionToGateway(intent, order.ID, mdForGateway, contextUser);
             }
         }
-        if (!intent.BillToPersonID && order.BillToPersonID) {
+        // The order's bill-to is authoritative. The intent can carry an earlier payer: one opened
+        // before the buyer changed e-mail is returned again by the gateway for the same idempotency
+        // key, still naming the person it was first opened for (#393).
+        if (order.BillToPersonID && !this.idsEqual(intent.BillToPersonID, order.BillToPersonID)) {
             intent.BillToPersonID = order.BillToPersonID;
         }
         if (!intent.BillToOrganizationID && order.BillToOrganizationID) {

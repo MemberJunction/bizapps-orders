@@ -14,7 +14,11 @@ export interface CheckoutAccountView {
     Outcome: CheckoutAccountOutcome;
     Message?: string;
     CanSetPassword: boolean;
-    /** The host will e-mail a link the buyer must use before the account signs in. */
+    /**
+     * The buyer must verify the e-mail before the account signs in. True for every `Created`
+     * account: the `CheckoutAccountStep` contract keeps a created account unable to sign in until
+     * the host has verified the e-mail (#395).
+     */
     VerificationRequired?: boolean;
 }
 
@@ -30,13 +34,13 @@ export function ReadCheckoutAccount(raw: unknown): CheckoutAccountView | null {
         Outcome: a['Outcome'],
         Message: typeof a['Message'] === 'string' && a['Message'] ? a['Message'] : undefined,
         CanSetPassword: a['CanSetPassword'] === true,
-        VerificationRequired: a['Outcome'] === 'Created' && a['VerificationRequired'] === true,
+        VerificationRequired: a['Outcome'] === 'Created',
     };
 }
 
 const VERIFY_NOTE = 'We are sending a link to your e-mail. Use it to verify your account before you sign in.';
 
-/** The note shown with the password form when the host will send a verification link. */
+/** The note shown with the password form of a created account. */
 export function VerificationNote(account: CheckoutAccountView | null): string | null {
     return account?.VerificationRequired ? VERIFY_NOTE : null;
 }
@@ -44,9 +48,7 @@ export function VerificationNote(account: CheckoutAccountView | null): string | 
 /** The line shown under the confirmation when no password form is showing. */
 export function AccountMessage(account: CheckoutAccountView, passwordSet: boolean): string | null {
     if (passwordSet) {
-        return account.VerificationRequired
-            ? 'Your password is set. Check your e-mail for the link to verify your account, then sign in with the e-mail you used here.'
-            : 'Your password is set. You can now sign in with the e-mail you used here.';
+        return 'Your password is set. Check your e-mail for the link to verify your account, then sign in with the e-mail you used here.';
     }
     if (account.Message) return account.Message;
     if (account.Outcome === 'Exists') return 'You already have an account with this e-mail. Sign in, or reset your password if you have forgotten it.';

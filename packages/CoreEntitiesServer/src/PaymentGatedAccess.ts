@@ -31,7 +31,7 @@
  *   SETTING:  OrdersSettings.RenewalAccessCutoffDaysPastDue
  *   CALLERS:  PaymentHeaderEntityServer.Save, OrderEntityServer.grantEntitlements,
  *             packages/Server/src/custom/enforce-payment-gated-access.action.ts,
- *             ./EntitlementRead.ts (LoadReadTimeCutoffSuspensions)
+ *             ./EntitlementRead.ts (LoadReadTimePaymentSuspensions)
  */
 import {
     CompositeKey,
@@ -57,6 +57,7 @@ import {
     FirstPaymentAmount,
     PAYMENT_GATED_TIMINGS,
     ReadTimeCutoffSuspension,
+    ReadTimeWaiverExpirySuspension,
     ReconcileGrantStatus,
     type AccessOverrideFacts,
     type AccessOverrideType,
@@ -348,58 +349,77 @@ export interface ReadTimeGrant {
 }
 
 /**
- * The past-due cutoffs these grants have reached that the nightly job has not written yet (#287),
- * keyed by lowercased grant ID. See `ReadTimeCutoffSuspension`.
+ * The payment suspensions these grants have reached that the nightly job has not written yet,
+ * keyed by lowercased grant ID. Two kinds, each decided as the job would decide it:
  *
- * Only Active `OnFirstPayment` grants on renewal lines are candidates; every other grant costs no
- * query. Order lines, payment facts and approved overrides are read once for the whole set.
- * Days past due are counted on `asOf`'s business-time-zone day, the day the nightly job uses.
+ *   · a renewal past its cutoff (#287) — see `ReadTimeCutoffSuspension`;
+ *   · a new purchase, or an `OnPaidInFull` grant, whose `WaivePaymentHold` has run out unpaid (#404)
+ *     — see `ReadTimeWaiverExpirySuspension`.
+ *
+ * Only Active `OnFirstPayment` and `OnPaidInFull` grants are candidates; every other grant costs no
+ * query. One order-line query keeps only the lines either rule can reach — renewal lines while the
+ * cutoff is on, and lines on orders holding an Approved `WaivePaymentHold` whose last day has passed —
+ * so a read with neither costs nothing more. Payment facts and approved overrides are then read once
+ * for those orders. Days are counted on `asOf`'s business-time-zone day, the day the nightly job uses.
  * Payment facts are read as they stand now, so a historical `asOf` is measured on today's balance.
  *
  * Throws on a failed read; the caller fails closed.
  */
-export async function LoadReadTimeCutoffSuspensions(
+export async function LoadReadTimePaymentSuspensions(
     grants: ReadTimeGrant[],
     asOf: Date,
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<Map<string, GrantStatusDecision>> {
     const out = new Map<string, GrantStatusDecision>();
-    const candidates = grants.filter((g) => g.Status === 'Active' && g.GrantTimingApplied === 'OnFirstPayment' && !!g.OrderLineID);
+    const candidates = grants.filter(
+        (g) =>
+            g.Status === 'Active' &&
+            (g.GrantTimingApplied === 'OnFirstPayment' || g.GrantTimingApplied === 'OnPaidInFull') &&
+            !!g.OrderLineID,
+    );
     if (!candidates.length) return out;
 
     await OrdersSettings.Load(provider, user);
     const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
-    if (cutoff == null) return out;
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+    const asOfDay = CalendarDayIn(asOf, BusinessTimeZoneEngine.Instance.Zone);
+
+    const lapsedWaiver =
+        `OrderHeaderID IN (SELECT OrderHeaderID FROM __mj_BizAppsOrders.EntitlementAccessOverride ` +
+        `WHERE Status = 'Approved' AND OverrideType = 'WaivePaymentHold' ` +
+        `AND EffectiveThrough < '${RequireDate(asOfDay, 'AsOfDay')}')`;
+    const reachable = cutoff == null ? lapsedWaiver : `(RenewsSubscriptionID IS NOT NULL OR ${lapsedWaiver})`;
 
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const lines = await rv.RunView<{ ID: string; OrderHeaderID: string }>(
+    const lines = await rv.RunView<{ ID: string; OrderHeaderID: string; RenewsSubscriptionID: string | null }>(
         {
             EntityName: ORDER_LINE_ENTITY,
-            ExtraFilter:
-                `ID IN (${quote(candidates.map((g) => g.OrderLineID!), 'OrderLineID')}) ` +
-                `AND RenewsSubscriptionID IS NOT NULL`,
-            Fields: ['ID', 'OrderHeaderID'],
+            ExtraFilter: `ID IN (${quote(candidates.map((g) => g.OrderLineID!), 'OrderLineID')}) AND ${reachable}`,
+            Fields: ['ID', 'OrderHeaderID', 'RenewsSubscriptionID'],
             ResultType: 'simple',
             BypassCache: true,
         },
         user,
     );
     if (!lines.Success) throw new Error(`Could not read order lines for access decisions: ${lines.ErrorMessage}`);
-    const renewalLines = new Map((lines.Results ?? []).map((l) => [key(l.ID), l]));
-    if (!renewalLines.size) return out;
+    const lineByID = new Map((lines.Results ?? []).map((l) => [key(l.ID), l]));
+    if (!lineByID.size) return out;
 
-    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
-    const asOfDay = CalendarDayIn(asOf, BusinessTimeZoneEngine.Instance.Zone);
-    const orderIDs = [...new Set([...renewalLines.values()].map((l) => key(l.OrderHeaderID)))];
+    const orderIDs = [...new Set([...lineByID.values()].map((l) => key(l.OrderHeaderID)))];
     const facts = await LoadOrderPaymentFacts(orderIDs, provider, user, asOfDay);
     const overrides = await LoadApprovedAccessOverrides(orderIDs, provider, user);
 
     for (const g of candidates) {
-        const line = renewalLines.get(key(g.OrderLineID));
+        const line = lineByID.get(key(g.OrderLineID));
         const order = line ? facts.get(key(line.OrderHeaderID)) : undefined;
         if (!line || !order) continue;
-        const pending = ReadTimeCutoffSuspension(g, true, order, cutoff, overrides.get(key(line.OrderHeaderID)) ?? [], asOfDay);
+        const isRenewal = !!line.RenewsSubscriptionID;
+        const orderOverrides = overrides.get(key(line.OrderHeaderID)) ?? [];
+        const pending =
+            g.GrantTimingApplied === 'OnFirstPayment' && isRenewal
+                ? ReadTimeCutoffSuspension(g, true, order, cutoff, orderOverrides, asOfDay)
+                : ReadTimeWaiverExpirySuspension(g, isRenewal, order, orderOverrides, asOfDay);
         if (pending) out.set(key(g.ID), pending);
     }
     return out;
