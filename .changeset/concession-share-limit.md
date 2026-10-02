@@ -13,5 +13,4 @@ Limit concessions as a share of the order's net total, in every delivery form (#
 - Each `OrderConcession` records the `OrderNetTotal` and `CumulativeShare` it was measured against.
 - An unconfirmed order whose share has since reached the limit of a concession approved on the
   requester's own authority cannot be confirmed until that concession is withdrawn and recorded
-  again. Such a concession can now be withdrawn while its order is not confirmed. An approver who
-  decided a concession at that share or higher already covers it.
+  again. Such a concession can now be withdrawn while its order is not confirmed.

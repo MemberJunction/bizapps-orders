@@ -27,9 +27,10 @@
  *      authority when the order's concessions, as a share of its net total, now reach that
  *      authority's `MaxConcessionPctOfContract`. The share is measured when a concession is
  *      recorded; a draft that loses lines afterwards raises it, and the approval on authority no
- *      longer covers what the order now gives away. An approver who decided a concession at this
- *      share or higher has already seen it, so that covers it too. A concession's share is measured
- *      again when it is decided, so this is the share at the decision, not at the recording.
+ *      longer covers what the order now gives away. An approver's decision on another concession
+ *      does not cover it: the share that approver saw belongs to the order as it was then. The
+ *      concession is withdrawn and recorded again, which measures it against the order as it is now
+ *      and routes it for approval.
  *
  * Confirmed orders are checked for (1) only. Their lines' prices were settled at booking, and lines
  * converted from the previous system carry overrides nobody recorded a concession for.
@@ -265,12 +266,6 @@ async function shareNoLongerCovered(
     const net = await OrderNetTotal(orderHeaderID, inMemoryLines, provider, user);
     const share = ConcessionShare(concessionTotal(rows), net);
 
-    // Stored to four places, so compare within that rounding.
-    const approverSaw = rows
-        .filter((r) => r.Status === 'Approved' && !!r.SalesRuleID && r.CumulativeShare != null)
-        .map((r) => Number(r.CumulativeShare));
-    if (share !== null && approverSaw.some((seen) => share <= seen + 5e-5)) return null;
-
     const limits = await loadShareLimits(
         [...new Set(onAuthority.map((r) => String(r.AuthorizedBySalesAuthorityID).toLowerCase()))],
         provider,
@@ -397,7 +392,6 @@ interface ConcessionRow {
     OrderLineID: string | null;
     AuthorizedBySalesAuthorityID: string | null;
     SalesRuleID: string | null;
-    CumulativeShare: number | null;
 }
 
 async function loadConcessions(
@@ -418,7 +412,6 @@ async function loadConcessions(
                 'OrderLineID',
                 'AuthorizedBySalesAuthorityID',
                 'SalesRuleID',
-                'CumulativeShare',
             ],
             ResultType: 'simple',
             BypassCache: true,

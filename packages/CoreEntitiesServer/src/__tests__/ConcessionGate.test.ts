@@ -182,11 +182,19 @@ describe('FindUnapprovedConcessions — share of the order', () => {
         expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
     });
 
-    it('is covered by an approver who decided a concession at this share or higher', async () => {
-        const decided = { ...onAuthority, ComputedValue: 0, AuthorizedBySalesAuthorityID: null, SalesRuleID: RULE_ID, CumulativeShare: 0.08 };
-        database([onAuthority, decided], [lineAt(8000)], fivePercent);
+    it('is not covered by an approver who decided another concession at a higher share', async () => {
+        // A 20% limit. At a net total of 10,000 an approver decides 5,000 (50%). The order grows to
+        // 100,000 and 3,500 more is approved on the rep's own authority (8.5%). It shrinks to 20,000:
+        // 8,500 is 42.5%, which no approver saw on this order as it is now.
+        const decided = { ...onAuthority, ComputedValue: 5000, AuthorizedBySalesAuthorityID: null, SalesRuleID: RULE_ID, CumulativeShare: 0.5 };
+        const grown = { ...onAuthority, ComputedValue: 3500, CumulativeShare: 0.085 };
+        database([decided, grown], [lineAt(20000)], [{ MaxConcessionPctOfContract: 0.2 }]);
 
-        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([
+            expect.stringMatching(/42\.5% of its net total, at or above the 20\.0% limit \(8500\.00 on a net total of 20000\.00\).*Withdraw them and record them again/),
+        ]);
     });
 
     it('does not measure an order whose concessions were all decided by an approver', async () => {

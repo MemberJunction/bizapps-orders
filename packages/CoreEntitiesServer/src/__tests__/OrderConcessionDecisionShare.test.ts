@@ -1,7 +1,7 @@
 /**
- * A concession's share of the order is measured again when it is decided (#306). The confirm gate reads
- * an approved concession's `CumulativeShare` as what its approver has seen, so it must be the share at the
- * decision: a draft that changed while the concession sat Pending must not carry the recording's figure.
+ * A concession's share of the order is measured again when it is decided (#306). The record shows the
+ * share at the decision: a draft that changed while the concession sat Pending must not carry the
+ * recording's figure.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
