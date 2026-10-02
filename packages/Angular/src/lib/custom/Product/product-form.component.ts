@@ -12,7 +12,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersProductFormComponent } from '../../generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
 import { LoadProductListPriceLabel } from '../../panels/catalog-list-price';
-import { FormatDate } from '../../panels/money-format';
+import { FormatInstantDate } from '../../panels/money-format';
 
 export type ProductFormPane = 'overview' | 'pricing' | 'promos' | 'accounting' | 'fulfillment' | 'subscriptions' | 'bundles' | 'systemMetadata';
 
@@ -131,7 +131,7 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         if (!this.HasEventExtension) return '—';
         const venue = this.EventProductChild?.VenueName || 'Venue TBD';
         const start = this.EventProductChild?.EventStartsAt
-            ? FormatDate(this.EventProductChild.EventStartsAt)
+            ? FormatInstantDate(this.EventProductChild.EventStartsAt)
             : 'Date TBD';
         return `${venue} · ${start}`;
     }

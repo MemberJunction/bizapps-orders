@@ -1,4 +1,4 @@
-import { FormatDate, FormatMoney } from '../panels/money-format';
+import { FormatDate, FormatInstantDate, FormatMoney } from '../panels/money-format';
 import type { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import type { mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 
@@ -100,6 +100,7 @@ export function TermStatusChipClass(status: string | null | undefined): string {
     }
 }
 
+/** A coverage window between two DATE-ONLY values (`date` columns); see {@link FormatShortDate}. */
 export function FormatCoverageWindow(
     start: Date | string | null | undefined,
     end: Date | string | null | undefined,
@@ -108,9 +109,29 @@ export function FormatCoverageWindow(
     return `${FormatShortDate(start) || '—'} – ${end ? FormatShortDate(end) : 'Open-ended'}`;
 }
 
+/**
+ * A window between two TIMESTAMPS (`datetimeoffset` columns, e.g. a promotion's `EffectiveFrom` /
+ * `EffectiveTo`), each shown as the business day it falls on; see {@link FormatShortInstantDate}.
+ */
+export function FormatInstantWindow(
+    start: Date | string | null | undefined,
+    end: Date | string | null | undefined,
+): string {
+    if (!start && !end) return '—';
+    return `${FormatShortInstantDate(start) || '—'} – ${end ? FormatShortInstantDate(end) : 'Open-ended'}`;
+}
+
+/** A DATE-ONLY value (a `date` column) as its own calendar day, or `''` when absent or unreadable. */
 export function FormatShortDate(value: Date | string | null | undefined): string {
     if (!value) return '';
     const label = FormatDate(value);
+    return label === '—' ? '' : label;
+}
+
+/** A TIMESTAMP (a `datetimeoffset` column) as the business day it fell on, or `''` when absent or unreadable. */
+export function FormatShortInstantDate(value: Date | string | null | undefined): string {
+    if (!value) return '';
+    const label = FormatInstantDate(value);
     return label === '—' ? '' : label;
 }
 

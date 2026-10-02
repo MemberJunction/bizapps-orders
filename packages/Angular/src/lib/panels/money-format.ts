@@ -183,12 +183,23 @@ export function FormatRate(value: number | null | undefined): string {
 }
 
 /**
- * Format an ISO date for display.
+ * Format a DATE-ONLY value — a SQL `date` column — for display.
  *
- * Parsed as LOCAL rather than UTC on purpose. A date-only column carries no time
- * zone, and `new Date('2026-08-01')` is parsed as UTC midnight — which renders as
- * July 31st for anyone west of Greenwich. Splitting the string avoids handing the
- * user a date one day earlier than the one stored.
+ * A date column has no time and no zone; it names a calendar day, and this prints that day in every
+ * browser. Two shapes reach here:
+ *
+ * - an ISO string (`'2026-08-01'`, or `'2026-08-01T00:00:00.000Z'` off the wire): its leading
+ *   `YYYY-MM-DD` is the day. `new Date('2026-08-01')` would be midnight UTC, which renders as July 31
+ *   anywhere west of Greenwich — so the string is read, never parsed.
+ * - a `Date` off an entity: the driver materialises a date column at midnight UTC on its day, so the
+ *   day is its UTC day ({@link ToISODate}). LOCAL getters on that value gave a payment dated Oct 1
+ *   "Sep 30" in its own header for every user in the Americas (golive #168).
+ *
+ * **NOT FOR TIMESTAMPS.** A `datetimeoffset` (`EventStartsAt`, `OccurredAt`, a promotion's
+ * `EffectiveFrom`) is an instant, and its day is the business day it fell on — use
+ * {@link FormatInstantDate}. This function does not guess which one it was handed: an instant at
+ * 7:00 PM Central is exactly midnight UTC, indistinguishable by value from a date column, and a
+ * heuristic printed it as the next day.
  *
  * @example
  * ```typescript
@@ -196,81 +207,101 @@ export function FormatRate(value: number | null | undefined): string {
  * FormatDate('2026-08-01', { Short: true })   // 'Aug 1'
  * FormatDate(order.OrderDate)                 // a Date off an entity works too
  * ```
- *
- * ACCEPTS A `Date` AS WELL AS AN ISO STRING, and that is not convenience. A date column is a `Date`
- * on an entity and an ISO string on the wire, so a screen holds one or the other depending on how it
- * read the row. Given a `Date`, the old string-splitting path found no '-' to split on and returned
- * '—' — an empty-looking cell that reads as "no date" rather than as the type mismatch it was.
  */
 export function FormatDate(
     value: DateCell,
     options: { Short?: boolean } = {},
 ): string {
-    const date = toLocalDate(value);
-    if (!date) return '—';
-    return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        ...(options.Short ? {} : { year: 'numeric' }),
-    });
+    return formatDay(dateOnlyDay(value), options);
 }
 
 /**
- * Whole days between an ISO date and a reference point. Positive means the date
- * is in the past — i.e. "days overdue", which is the only way this is used.
+ * Format a TIMESTAMP — a `datetimeoffset` — as the BUSINESS calendar day it fell on.
+ *
+ * The issue's rule (golive #168): a true timestamp displays converted to the business zone, so
+ * 7:00 PM Central on Oct 1 (`2026-10-02T00:00:00Z`) reads "Oct 1" for a viewer in Chicago, Pune or
+ * Auckland alike — not the UTC day, and not the viewer's.
+ *
+ * Accepts a `Date` or an ISO string carrying a time and offset (`Z` or `±hh:mm`), which is parsed as
+ * the instant it names. A bare `YYYY-MM-DD` carries no instant and is read as that day.
+ *
+ * For a `date` column use {@link FormatDate}.
+ *
+ * @example
+ * ```typescript
+ * FormatInstantDate(event.EventStartsAt)                          // 'Oct 1, 2026'
+ * FormatInstantDate('2026-10-02T00:00:00Z', { Short: true })      // 'Oct 1' (business zone Central)
+ * ```
+ */
+export function FormatInstantDate(
+    value: DateCell,
+    options: { Short?: boolean } = {},
+): string {
+    return formatDay(instantDay(value), options);
+}
+
+/**
+ * Whole days between two DATE-ONLY values. Positive means `value` is in the past — i.e. "days
+ * overdue", which is the only way this is used.
  *
  * @example
  * ```typescript
  * DaysSince('2026-06-15', '2026-07-29')  // 44
+ * DaysSince(order.DueDate, Today())       // a Date off an entity works too
  * ```
  *
- * Takes a `Date` on either side for the same reason {@link FormatDate} does.
+ * Both sides read as {@link FormatDate} reads them; `asOf` is normally `Today()`, the business day.
  */
 export function DaysSince(
     value: DateCell,
     asOf: Date | string,
 ): number {
-    const from = toLocalDate(value);
-    const to = toLocalDate(asOf);
+    const from = dateOnlyDay(value);
+    const to = dateOnlyDay(asOf);
     if (!from || !to) return 0;
-    return Math.round((to.getTime() - from.getTime()) / 86_400_000);
+    return Math.round((Date.UTC(...to) - Date.UTC(...from)) / 86_400_000);
 }
 
-/**
- * A calendar date at LOCAL midnight, from either representation.
- *
- * The time-of-day is dropped on purpose: everything these helpers answer — what day is this, how
- * many days ago was it — is a question about calendar days, and keeping the clock in would make
- * "yesterday at 23:00" and "today at 01:00" two days apart in one timezone and one in another.
- *
- * The local midnight is only a carrier for `toLocaleDateString` and day arithmetic; the DAY it
- * carries is decided by {@link calendarDayOf}, never by the browser's own zone.
- */
-function toLocalDate(value: Date | string | null | undefined): Date | null {
+/** A calendar day as `[year, monthIndex, day]`. */
+type CalendarDay = [number, number, number];
+
+/** The day a DATE-ONLY cell names: a `Date` by its UTC parts, a string by its leading `YYYY-MM-DD`. */
+function dateOnlyDay(value: DateCell): CalendarDay | null {
     if (!value) return null;
-    const day = value instanceof Date ? calendarDayOf(value) : String(value).split('T')[0];
-    if (!day) return null;
-    const [y, m, d] = day.split('-').map(Number);
+    if (value instanceof Date) return parseDay(ToISODate(value));
+    return parseDay(String(value));
+}
+
+/** The BUSINESS day an instant fell on. A bare `YYYY-MM-DD` string has no instant and is that day. */
+function instantDay(value: DateCell): CalendarDay | null {
+    if (!value) return null;
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return parseDay(value.trim());
+    const instant = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(instant.getTime())) return null;
+    return parseDay(LocalDay(instant));
+}
+
+/** `[y, m - 1, d]` from a leading `YYYY-MM-DD`, or `null` when the text does not start with one. */
+function parseDay(text: string | null): CalendarDay | null {
+    const match = text ? /^(\d{4})-(\d{2})-(\d{2})/.exec(text) : null;
+    if (!match) return null;
+    const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
     if (!y || !m || !d) return null;
-    return new Date(y, m - 1, d);
+    return [y, m - 1, d];
 }
 
 /**
- * The calendar day a `Date` names, as `YYYY-MM-DD`, or `null` when it is invalid.
- *
- * A `date` column comes off an entity as midnight UTC on its day. Reading that with LOCAL getters
- * — what this file used to do — gives the day before anywhere west of Greenwich: a payment dated
- * Oct 1 read "Sep 30" in its own header for every user in the Americas (golive #168). So a value at
- * exactly midnight UTC is read by its UTC parts, as {@link ToISODate} does for every other cell.
- *
- * Anything else is a real instant (a `datetimeoffset`, or a `Date` built in code), and its day is
- * the BUSINESS day it fell on — not the UTC day, and not the viewer's.
+ * Print a calendar day. Formatted in UTC from a UTC-midnight carrier, so the browser's zone has no
+ * say in which day is printed — it was decided before this point.
  */
-function calendarDayOf(date: Date): string | null {
-    if (Number.isNaN(date.getTime())) return null;
-    const isUtcMidnight =
-        date.getUTCHours() === 0 && date.getUTCMinutes() === 0 && date.getUTCSeconds() === 0 && date.getUTCMilliseconds() === 0;
-    return isUtcMidnight ? ToISODate(date) : LocalDay(date);
+function formatDay(day: CalendarDay | null, options: { Short?: boolean }): string {
+    if (!day) return '—';
+    return new Date(Date.UTC(...day)).toLocaleDateString('en-US', {
+        timeZone: 'UTC',
+        month: 'short',
+        day: 'numeric',
+        ...(options.Short ? {} : { year: 'numeric' }),
+    });
 }
 
 /** Initials for an avatar, capped at two letters. */
@@ -320,7 +351,7 @@ export class MJORatePipe implements PipeTransform {
     }
 }
 
-/** `{{ iso | mjoDate }}` / `{{ iso | mjoDate: true }}` for the short form. */
+/** `{{ iso | mjoDate }}` / `{{ iso | mjoDate: true }}` for the short form. DATE-ONLY values; see {@link FormatDate}. */
 @Pipe({ name: 'mjoDate', standalone: true })
 export class MJODatePipe implements PipeTransform {
     public transform(iso: string | null | undefined, short = false): string {
