@@ -22,6 +22,7 @@ import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-ga
 import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
 import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
 import { LoadApplyAccessOverrideDecisionAction } from './custom/apply-access-override-decision.action.js';
+import { LoadDetectUnattestedProgressAction } from './custom/detect-unattested-progress.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -43,6 +44,7 @@ import {
     LoadIssueInstalmentInvoiceOperation,
     LoadRecordProgressOperation,
     LoadGetProgressWorklistOperation,
+    LoadDetectUnattestedProgressOperation,
     LoadOrderHeaderPaymentScheduleEntityServer,
     LoadOrderLineProgressMeasurementEntityServer,
     LoadGetFulfillmentQueueOperation,
@@ -132,6 +134,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
     LoadRecordProgressOperation(); // 'Orders.RecordProgress' — one attested POC observation and its catch-up entry (AIDP-26)
     LoadGetProgressWorklistOperation(); // 'Orders.GetProgressWorklist' — open POC lines with their last observation
+    LoadDetectUnattestedProgressOperation(); // 'Orders.DetectUnattestedProgress' — POC lines left unattested, onto finance's review list (golive #279)
     LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
     LoadOrderLineProgressMeasurementEntityServer(); // refuses a Posted observation the operation did not write
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
@@ -178,6 +181,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
     LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll
     LoadApplyAccessOverrideDecisionAction(); // 'Orders.ApplyAccessOverrideDecision' — the Tasks inbox hook for overrides (#268)
+    LoadDetectUnattestedProgressAction(); // 'Orders.DetectUnattestedProgress' — nightly unattested-progress exceptions (golive #279)
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class
