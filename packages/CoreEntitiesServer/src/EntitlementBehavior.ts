@@ -454,6 +454,31 @@ export function ApplyAccessOverrides(
 }
 
 /**
+ * The past-due cutoff as a read sees it, before the nightly job has written it (#287).
+ *
+ * A renewal crosses `RenewalAccessCutoffDaysPastDue` with nothing written, so its grant still reads
+ * `Active` until `EnforcePaymentGatedAccess` next runs. The read path asks this instead of trusting
+ * the row, and decides with the same `DecideGrantStatus` and `ApplyAccessOverrides` the job runs.
+ *
+ * TIGHTEN ONLY. It answers a `PastDue` suspension for an Active `OnFirstPayment` renewal grant, or
+ * null. It never activates a grant: lifting a suspension stays with the payment that writes it.
+ *
+ * @param asOfDay - The business-time-zone day `order.DaysPastDue` was measured on, `YYYY-MM-DD`.
+ */
+export function ReadTimeCutoffSuspension(
+    grant: { Status: string; GrantTimingApplied: string | null },
+    isRenewal: boolean,
+    order: OrderPaymentFacts,
+    cutoffDaysPastDue: number | null,
+    overrides: readonly AccessOverrideFacts[],
+    asOfDay: string,
+): GrantStatusDecision | null {
+    if (grant.Status !== 'Active' || grant.GrantTimingApplied !== 'OnFirstPayment' || !isRenewal) return null;
+    const decided = ApplyAccessOverrides(DecideGrantStatus('OnFirstPayment', true, order, cutoffDaysPastDue), overrides, asOfDay);
+    return decided.Status === 'Suspended' && decided.Reason === 'PastDue' ? decided : null;
+}
+
+/**
  * Whether an override of this type could lift anything on an order holding these grants: some grant
  * must follow a rule that can impose the suspension the type names. `AwaitingPayment` comes from
  * `OnPaidInFull`, and from `OnFirstPayment` on a new purchase; `PastDue` only from `OnFirstPayment`
@@ -550,6 +575,11 @@ export interface GrantAccessFacts {
     LinkedToSubscription?: boolean;
     /** True when `EntitlementGrant.SubscriptionTermID` is set. Missing term row → fail closed. */
     LinkedToTerm?: boolean;
+    /**
+     * A suspension the payment rule has reached that the row does not show yet, from
+     * {@link ReadTimeCutoffSuspension}. Only ever denies: an Active row reads as Suspended.
+     */
+    PendingSuspension?: GrantStatusDecision | null;
 }
 
 /** Subscription facts that can cut access short or extend it through grace. */
@@ -613,6 +643,7 @@ export function EvaluateGrantAccess(
     if (grant.Status === 'Suspended') return denied('Suspended');
     if (grant.Status === 'Expired') return denied('Expired');
     if (grant.Status !== 'Active') return denied('NoGrant');
+    if (grant.PendingSuspension?.Status === 'Suspended') return denied('Suspended');
 
     if (grant.ValidFrom && asOf.getTime() < grant.ValidFrom.getTime()) {
         return denied('NotYetValid');

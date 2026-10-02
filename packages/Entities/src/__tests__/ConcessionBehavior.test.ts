@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     AssessConcession,
+    ConcessionShare,
     ConcessionValue,
     DaysAdded,
     InclusiveDays,
@@ -19,6 +20,7 @@ const authority = (overrides: Partial<ConcessionAuthority> = {}): ConcessionAuth
     MaxDiscountPct: 0.1,
     MaxConcessionValue: 5000,
     MaxTermExtensionDays: 31,
+    MaxConcessionPctOfContract: null,
     ...overrides,
 });
 
@@ -114,5 +116,74 @@ describe('AssessConcession', () => {
 
     it('grants nothing to a requester with no SalesAuthority', () => {
         expect(AssessConcession('Seats', { Value: 1, Percent: null }, null, null).WithinAuthority).toBe(false);
+    });
+});
+
+/**
+ * Concessions as a share of the order they are given on (#306). A currency limit treats a small
+ * order and a large one alike; the share limit measures every concession on the order, together,
+ * against the order's net total.
+ */
+describe('share of the order', () => {
+    const roomy = (share: number | null) =>
+        authority({ MaxConcessionValue: 1_000_000, MaxTermExtensionDays: 366, MaxDiscountPct: 1, MaxConcessionPctOfContract: share });
+
+    it('divides every concession on the order by its net total', () => {
+        expect(ConcessionShare(500, 10000)).toBeCloseTo(0.05, 9);
+        expect(ConcessionShare(0, 10000)).toBe(0);
+    });
+
+    it('has no share when the order has no net total', () => {
+        expect(ConcessionShare(100, 0)).toBeNull();
+        expect(ConcessionShare(100, -5)).toBeNull();
+    });
+
+    it('escalates a Duration concession at the share limit and passes one just below it', () => {
+        // A 12,000 annual order. 5% of it is 600, about 18 days at the term's own rate.
+        const limit = roomy(0.05);
+        const at = ConcessionValue({ Form: 'Duration', TermAmount: 12000, TermDays: 365, AddedDays: 19 });
+        const under = ConcessionValue({ Form: 'Duration', TermAmount: 12000, TermDays: 365, AddedDays: 18 });
+        expect(AssessConcession('Duration', at, limit, 19, ConcessionShare(at.Value, 12000)).Breaches).toEqual([
+            'concessions on the order come to 5.2% of its net total, at or above the 5.0% limit',
+        ]);
+        expect(AssessConcession('Duration', under, limit, 18, ConcessionShare(under.Value, 12000)).WithinAuthority).toBe(true);
+    });
+
+    it('treats a share exactly at the limit as at or above it', () => {
+        expect(AssessConcession('Seats', { Value: 500, Percent: null }, roomy(0.05), null, ConcessionShare(500, 10000)).WithinAuthority)
+            .toBe(false);
+    });
+
+    it('escalates the same value on a small order and passes it on a large one', () => {
+        const seats = ConcessionValue({ Form: 'Seats', UnitPrice: 100, AddedQuantity: 10 });
+        expect(AssessConcession('Seats', seats, roomy(0.05), null, ConcessionShare(seats.Value, 8000)).WithinAuthority).toBe(false);
+        expect(AssessConcession('Seats', seats, roomy(0.05), null, ConcessionShare(seats.Value, 80000)).WithinAuthority).toBe(true);
+    });
+
+    it('applies to Price and Scope concessions as well', () => {
+        const price = ConcessionValue({ Form: 'Price', ReferenceUnitPrice: 1000, ChargedUnitPrice: 950, Quantity: 2 });
+        const scope = ConcessionValue({ Form: 'Scope', ReferenceUnitPrice: 300, ChargedUnitPrice: 0, Quantity: 1 });
+        expect(AssessConcession('Price', price, roomy(0.05), null, ConcessionShare(price.Value, 1900)).WithinAuthority).toBe(false);
+        expect(AssessConcession('Price', price, roomy(0.05), null, ConcessionShare(price.Value, 19000)).WithinAuthority).toBe(true);
+        expect(AssessConcession('Scope', scope, roomy(0.05), null, ConcessionShare(scope.Value, 5000)).WithinAuthority).toBe(false);
+        expect(AssessConcession('Scope', scope, roomy(0.05), null, ConcessionShare(scope.Value, 7000)).WithinAuthority).toBe(true);
+    });
+
+    it('counts the concessions already on the order, so splitting one does not get under the limit', () => {
+        // Two 300 concessions on a 10,000 order: 3% each, 6% together.
+        const each = { Value: 300, Percent: null };
+        expect(AssessConcession('Seats', each, roomy(0.05), null, ConcessionShare(300, 10000)).WithinAuthority).toBe(true);
+        expect(AssessConcession('Seats', each, roomy(0.05), null, ConcessionShare(300 + 300, 10000)).WithinAuthority).toBe(false);
+    });
+
+    it('breaches a set limit when the order has no net total to measure against', () => {
+        expect(AssessConcession('Seats', { Value: 10, Percent: null }, roomy(0.05), null, null).Breaches).toEqual([
+            'the order has no net total to measure its concessions against the 5.0% share limit',
+        ]);
+    });
+
+    it('sets no limit when MaxConcessionPctOfContract is unset, or when nothing was measured', () => {
+        expect(AssessConcession('Seats', { Value: 900, Percent: null }, roomy(null), null, 0.9).WithinAuthority).toBe(true);
+        expect(AssessConcession('Seats', { Value: 900, Percent: null }, roomy(0.05), null).WithinAuthority).toBe(true);
     });
 });
