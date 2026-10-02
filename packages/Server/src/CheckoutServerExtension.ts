@@ -52,7 +52,7 @@
  */
 import BodyParser from 'body-parser';
 import type { Application, NextFunction, Request, Response } from 'express';
-import { LogError, LogStatus, RunView, UserInfo } from '@memberjunction/core';
+import { LogError, LogStatus, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { UserCache } from '@memberjunction/generic-database-provider';
 import { RegisterClass } from '@memberjunction/global';
 import {
@@ -63,6 +63,7 @@ import {
 } from '@memberjunction/server-extensions-core';
 import {
     CheckoutSessionService,
+    DispatchOutboundDeliveries,
     EnsureCheckoutAccount,
     EscapeText,
     HasCheckoutAccountStep,
@@ -598,6 +599,14 @@ export class CheckoutServerExtension extends BaseServerExtension {
         // The confirmation is answered without waiting on the host's identity provider. When a host
         // registered an account step, the widget asks for it next through /checkout/account.
         res.status(200).json(HasCheckoutAccountStep() ? { ...result, AccountStep: true } : result);
+        // The order's outbound events are committed by now; send them rather than waiting for the
+        // minute job, so a buyer's access is not a minute late. After the response, and never
+        // awaited by it: a slow or failing consumer must not hold the buyer's checkout.
+        if (result.OrderID) {
+            DispatchOutboundDeliveries({ OrderHeaderID: result.OrderID }, Metadata.Provider, user).catch((err) =>
+                LogError(`[OrdersCheckoutEdge] outbound dispatch after session ${sessionId} completed failed: ${err instanceof Error ? err.message : String(err)}`)
+            );
+        }
     }
 
     /** The account step's outcome for a completed checkout, asking the host again only after a failure. */

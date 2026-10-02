@@ -562,6 +562,17 @@
           "primaryKey": {
             "ID": "A674F471-E717-4DFF-A301-1C606EF37270"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-39 - Outbound Events",
+            "Sequence": 39,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "4B9A2F51-7C3D-4E86-9F10-2A3B4C5D6E7F"
+          }
         }
       ]
     },

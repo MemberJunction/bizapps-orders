@@ -67,6 +67,7 @@ import '../checks/payment-deposit.checks.js';
 import '../checks/contract-reversal.checks.js';
 import '../checks/party-roster.checks.js';
 import '../checks/progress-measurement.checks.js';
+import '../checks/outbound-events.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -109,7 +110,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,
-    entitlements: 21,
+    entitlements: 22,
     'entitlement-read': 7,
     'payment-providers': 12,
     'ach-settlement': 17,
@@ -119,6 +120,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'contract-reversal': 9,
     'party-roster': 2,
     'progress-measurement': 25,
+    'outbound-events': 6,
 };
 
 /**

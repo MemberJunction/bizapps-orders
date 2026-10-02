@@ -1,0 +1,40 @@
+[
+  {
+    "_comments": [
+      "THE NIGHTLY UNATTESTED-PROGRESS PASS (bc-aidp-next-golive#279, type 2).",
+      "",
+      "IT SHIPS DISABLED, like the other orders jobs, so a lower environment does not start filling the",
+      "finance review list the moment this lands. There is no Preview step: the pass writes only review",
+      "rows, blocks nothing, and is idempotent per line per month. Enable it once accounting's",
+      "PROGRESS_UNATTESTED type is configured.",
+      "",
+      "04:00 UTC, after the 03:00 renewal and 03:30 payment-access passes. The operation measures against",
+      "the business day, not the hour, so any hour of the right day selects the same lines. Daily because",
+      "a line crosses the threshold on a day, not a month; the monthly dedupe key keeps that from raising",
+      "a line more than once a month. ConcurrencyMode Skip, MissedRunPolicy RunOnce: a catch-up is one",
+      "run. RunImmediatelyIfNeverRun false: the first run waits for the schedule.",
+      "",
+      "OwnerUserID / NotifyUserID are unset: they name people, which differ per environment."
+    ],
+    "fields": {
+      "Name": "Orders — Detect Unattested Progress (daily)",
+      "Description": "Puts percentage-of-completion order lines overdue for a progress attestation on accounting's finance exception review list, one exception per line per month, using the PROGRESS_UNATTESTED type's MaxDaysWithoutAttestation. Ships disabled: enable it once that type is configured.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 0 4 * * *",
+      "Timezone": "UTC",
+      "Status": "Disabled",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 30,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\":\"C5F2CA57-5359-458A-B46A-BB392BD1ED7C\",\"Params\":[]}"
+    },
+    "primaryKey": {
+      "ID": "9A6C6FA2-81DB-43E7-936A-356D85E469F7"
+    }
+  }
+]

@@ -7,6 +7,7 @@ const mockGetSystemUser = vi.fn();
 vi.mock('@memberjunction/core', () => ({
     LogError: vi.fn(),
     LogStatus: vi.fn(),
+    Metadata: { Provider: {} },
     RunView: class {
         RunView = mockRunView;
     },
@@ -34,6 +35,7 @@ vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
         ReapExpiredOpenSessions: vi.fn().mockResolvedValue(0),
     },
     EscapeText: (value: string) => value.replace(/'/g, "''"),
+    DispatchOutboundDeliveries: vi.fn().mockResolvedValue({ Success: true, Claimed: 0, Delivered: 0, Retrying: 0, DeadLettered: 0 }),
     EnsureCheckoutAccount: vi.fn().mockResolvedValue({ Success: true }),
     HasCheckoutAccountStep: vi.fn().mockReturnValue(false),
     SetCheckoutAccountPassword: vi.fn(),
@@ -48,6 +50,7 @@ vi.mock('@mj-biz-apps/orders-entities', () => ({
 
 import {
     CheckoutSessionService,
+    DispatchOutboundDeliveries,
     EnsureCheckoutAccount,
     HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
@@ -333,6 +336,35 @@ describe('CheckoutServerExtension', () => {
         expect(await hit('1.1.1.1')).toBe(200);
         expect(await hit('2.2.2.2')).toBe(200);
         expect(await hit('3.3.3.3')).toBe(429);
+    });
+
+    describe('outbound dispatch after completion (#293)', () => {
+        const complete = async (result: Record<string, unknown>) => {
+            mockGetSystemUser.mockReturnValue({ ID: 'svc-1', Email: 'svc@example.com' });
+            vi.mocked(CheckoutSessionService.CompleteCheckout).mockResolvedValue(result as never);
+            vi.mocked(DispatchOutboundDeliveries).mockClear();
+            const ext = new CheckoutServerExtension() as unknown as { handleComplete(req: Request, res: Response): Promise<void> };
+            const res = mockRes();
+            await ext.handleComplete({ body: { sessionId: 'sess-1', clientSessionKey: 'k' } } as unknown as Request, res as unknown as Response);
+            return res;
+        };
+
+        it("sends the completed order's outbound events without waiting for the minute job", async () => {
+            const res = await complete({ Success: true, SessionID: 'sess-1', Status: 'Confirmed', OrderID: 'order-1' });
+            expect(res.statusCode).toBe(200);
+            expect(DispatchOutboundDeliveries).toHaveBeenCalledWith({ OrderHeaderID: 'order-1' }, expect.anything(), expect.anything());
+        });
+
+        it('sends nothing for a checkout that did not complete', async () => {
+            await complete({ Success: false, SessionID: 'sess-1', Status: 'Open', ErrorMessage: 'no' });
+            expect(DispatchOutboundDeliveries).not.toHaveBeenCalled();
+        });
+
+        it('answers the buyer even when the dispatch fails', async () => {
+            vi.mocked(DispatchOutboundDeliveries).mockRejectedValueOnce(new Error('consumer down'));
+            const res = await complete({ Success: true, SessionID: 'sess-1', Status: 'Confirmed', OrderID: 'order-1' });
+            expect(res.statusCode).toBe(200);
+        });
     });
 
     it('passes the draft body attribution through to UpdateDraft', async () => {

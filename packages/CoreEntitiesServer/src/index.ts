@@ -25,6 +25,25 @@ export {
     LoadOrderLineProgressMeasurementEntityServer,
 } from './OrderLineProgressMeasurementEntityServer.js';
 export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from './GetProgressWorklistOperation.js';
+// Finance exception review for progress (golive #279): the judgment call raised at attestation, and
+// the nightly pass for lines left unattested.
+export {
+    JudgmentCallReasons,
+    PROGRESS_JUDGMENT_CALL,
+    RaiseProgressJudgmentCall,
+    ReadJudgmentCallConfig,
+} from './ProgressJudgmentCall.js';
+export type { JudgmentCallConfig, JudgmentCallFacts, JudgmentCallOutcome, PostedObservation } from './ProgressJudgmentCall.js';
+export {
+    DetectUnattestedProgressOperation,
+    LoadDetectUnattestedProgressOperation,
+    PROGRESS_UNATTESTED,
+    ReadMaxDaysWithoutAttestation,
+    SelectUnattestedLines,
+    UnattestedDedupeKey,
+    UnattestedException,
+} from './DetectUnattestedProgressOperation.js';
+
 export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
@@ -125,8 +144,16 @@ export {
     LoadAccountingEngine,
     ResolverEntities,
     SubmitJournalEntryDrafts,
+    GetActiveFinanceExceptionType,
+    RaiseFinanceExceptions,
 } from './AccountingBridge.js';
-export type { AccountingEngineSurface, CreateJournalEntriesOutcome } from './AccountingBridge.js';
+export type {
+    AccountingEngineSurface,
+    CreateJournalEntriesOutcome,
+    FinanceExceptionToRaise,
+    FinanceExceptionTypeInfo,
+    RaiseFinanceExceptionsOutcome,
+} from './AccountingBridge.js';
 
 export { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
 export type {
@@ -203,6 +230,7 @@ export {
     FirstPaymentAmount,
     ReconcileGrantStatus,
     IsPaymentSuspension,
+    ReadTimeCutoffSuspension,
     PAYMENT_GATED_TIMINGS,
     ReduceGrantForReturn,
     EvaluateGrantAccess,
@@ -548,6 +576,26 @@ export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyA
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
+export { EntitlementGrantEntityServer, LoadEntitlementGrantEntityServer } from './EntitlementGrantEntityServer.js';
+export {
+    OrdersOutboundConsumer,
+    RecordOutboundEvent,
+    DispatchOutboundDeliveries,
+    RegisteredOutboundConsumers,
+    HasOutboundConsumers,
+    NextOutboundAttempt,
+    EnvelopeFor,
+    OUTBOUND_EVENT_ENTITY,
+    OUTBOUND_DELIVERY_ENTITY,
+    OUTBOUND_DELIVERY_DEADLINE_MS,
+    OUTBOUND_RETRY_MINUTES,
+    OUTBOUND_LEASE_MS,
+    type OutboundEventType,
+    type OutboundEventEnvelope,
+    type RecordOutboundEventInput,
+    type DispatchOutboundInput,
+    type DispatchOutboundOutput,
+} from './OutboundEvents.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';
 
 // Invoicing (D-INV): an invoice is a PRESENTATION of an order, never a record. The decisions are in

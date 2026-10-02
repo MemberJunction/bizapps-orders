@@ -31,7 +31,11 @@ export interface ProgressWorklistRow {
     RecognizedToDate: number;
     /** Who signed the last observation. */
     LastAttestedBy?: string | null;
+    /** The user ID behind `LastAttestedBy`, or null when the line has never been attested. */
+    LastAttestedByUserID?: string | null;
     OrderStatus: string;
+    /** When the order was booked, as an ISO instant. */
+    ConfirmedAt?: string | null;
 }
 
 export interface OrdersGetProgressWorklistOutput {

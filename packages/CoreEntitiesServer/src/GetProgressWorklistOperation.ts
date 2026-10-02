@@ -27,6 +27,13 @@ import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
+/** A datetimeoffset cell as an ISO instant, whichever form the driver handed over; null when unreadable. */
+function isoInstant(value: unknown): string | null {
+    if (value == null || value === '') return null;
+    const d = value instanceof Date ? value : new Date(String(value));
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 interface LineShape extends Record<string, unknown> {
     ID: string;
     OrderHeaderID: string;
@@ -44,6 +51,7 @@ interface OrderShape extends Record<string, unknown> {
     ID: string;
     OrderNumber: string;
     Status: string;
+    ConfirmedAt?: unknown;
     BillToOrganization?: string | null;
     BillToPerson?: string | null;
 }
@@ -55,12 +63,26 @@ interface MeasurementShape extends Record<string, unknown> {
     MeasurementDate: unknown;
     PercentComplete: number;
     RecognitionAmount: number | null;
+    AttestedByUserID?: string | null;
     AttestedByUser?: string | null;
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.GetProgressWorklist')
 export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOperationBase {
     protected async InternalExecute(
+        input: OrdersGetProgressWorklistInput,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<OrdersGetProgressWorklistOutput> {
+        return this.Build(input, provider, user);
+    }
+
+    /**
+     * The worklist itself, callable in-process by a server caller that needs the same set of lines
+     * rather than a second query that could come to disagree with this one — the nightly
+     * unattested-progress detector (golive #279) is that caller.
+     */
+    public async Build(
         input: OrdersGetProgressWorklistInput,
         provider: IMetadataProvider,
         user: UserInfo,
@@ -103,14 +125,14 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         const orderIDs = [...new Set(lineRows.map((l) => `'${RequireUUID(l.OrderHeaderID, 'OrderHeaderID')}'`))].join(',');
         const [orders, measurements] = await Promise.all([
             rv.RunView<OrderShape>(
-                { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID IN (${orderIDs})`, Fields: ['ID', 'OrderNumber', 'Status', 'BillToOrganization', 'BillToPerson'], ResultType: 'simple' },
+                { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID IN (${orderIDs})`, Fields: ['ID', 'OrderNumber', 'Status', 'ConfirmedAt', 'BillToOrganization', 'BillToPerson'], ResultType: 'simple' },
                 user,
             ),
             rv.RunView<MeasurementShape>(
                 {
                     EntityName: ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY,
                     ExtraFilter: `OrderLineID IN (${lineIDs}) AND Status = 'Posted'`,
-                    Fields: ['ID', 'OrderLineID', 'SupersedesMeasurementID', 'MeasurementDate', 'PercentComplete', 'RecognitionAmount', 'AttestedByUser'],
+                    Fields: ['ID', 'OrderLineID', 'SupersedesMeasurementID', 'MeasurementDate', 'PercentComplete', 'RecognitionAmount', 'AttestedByUserID', 'AttestedByUser'],
                     OrderBy: 'MeasurementDate',
                     ResultType: 'simple',
                     BypassCache: true,
@@ -163,7 +185,9 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
                 LastPercentComplete: last ? Number(last.PercentComplete) : 0,
                 RecognizedToDate: money(Number(l.RecognizedToDate ?? 0)),
                 LastAttestedBy: last?.AttestedByUser ?? null,
+                LastAttestedByUserID: last?.AttestedByUserID ?? null,
                 OrderStatus: order?.Status ?? '—',
+                ConfirmedAt: isoInstant(order?.ConfirmedAt),
             };
         });
         const open = input?.IncludeComplete ? all : all.filter((r) => r.LastPercentComplete < 1);
