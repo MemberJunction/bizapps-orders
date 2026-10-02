@@ -69,7 +69,7 @@ import {
     SetCheckoutAccountPassword,
     type CheckoutLineInput,
 } from '@mj-biz-apps/orders-core-entities-server';
-import type { CheckoutAnswersInput, CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
+import type { CheckoutAnswersInput, CheckoutChoicesInput, CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -562,10 +562,11 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const email = typeof req.body?.email === 'string' ? req.body.email : '';
         const lines = Array.isArray(req.body?.lines) ? (req.body.lines as CheckoutLineInput[]) : [];
         // Passed through unchecked: UpdateDraft keeps the attribution only when it reads as one, and
-        // judges the answers against the widget's own questions.
+        // judges the answers and choices against the widget's own questions and choice groups.
         const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user, {
             Attribution: req.body?.attribution,
             Answers: req.body?.answers as CheckoutAnswersInput | undefined,
+            Choices: req.body?.choices as CheckoutChoicesInput | undefined,
         });
         res.status(result.Success ? 200 : 400).json(result);
     }

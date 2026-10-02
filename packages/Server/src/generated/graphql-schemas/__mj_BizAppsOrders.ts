@@ -5685,7 +5685,7 @@ export class mjBizAppsOrdersOrderConcession_ {
     @MaxLength(36)
     SubscriptionTermID?: string;
         
-    @Field({description: `How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge).`}) 
+    @Field({description: `How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).`}) 
     @MaxLength(20)
     DeliveryForm: string;
         
@@ -5743,6 +5743,14 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `For a Terms concession, the order's payment terms before the change. NULL when the order had none and was due on receipt.`}) 
+    @MaxLength(36)
+    PriorPaymentTermsTypeID?: string;
+        
+    @Field({nullable: true, description: `For a Terms concession, the payment terms the order moves to when it is approved.`}) 
+    @MaxLength(36)
+    NewPaymentTermsTypeID?: string;
+        
     @Field() 
     @MaxLength(40)
     OrderHeader: string;
@@ -5758,6 +5766,14 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field({nullable: true}) 
     @MaxLength(100)
     DecidedByUser?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    PriorPaymentTermsType?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    NewPaymentTermsType?: string;
         
 }
 
@@ -5822,6 +5838,12 @@ export class CreatemjBizAppsOrdersOrderConcessionInput {
 
     @Field({ nullable: true })
     DecisionNotes: string | null;
+
+    @Field({ nullable: true })
+    PriorPaymentTermsTypeID: string | null;
+
+    @Field({ nullable: true })
+    NewPaymentTermsTypeID: string | null;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -5889,6 +5911,12 @@ export class UpdatemjBizAppsOrdersOrderConcessionInput {
 
     @Field({ nullable: true })
     DecisionNotes?: string | null;
+
+    @Field({ nullable: true })
+    PriorPaymentTermsTypeID?: string | null;
+
+    @Field({ nullable: true })
+    NewPaymentTermsTypeID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

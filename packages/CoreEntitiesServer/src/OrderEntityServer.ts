@@ -76,6 +76,7 @@ import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
+import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
@@ -88,6 +89,7 @@ import {
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
+import { PaymentTermsChangeGranted } from './PaymentTermsSanction.js';
 import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
@@ -228,6 +230,11 @@ interface CreateJournalEntriesResult {
 
 @RegisterClass(BaseEntity, ORDER_ENTITY)
 export class OrderEntityServer extends OrderHeaderEntity {
+    /** An approved Terms concession, applied by ./PaymentTermsChange.ts, is the only change to a confirmed order's terms. */
+    protected override PaymentTermsChangeSanctioned(): boolean {
+        return PaymentTermsChangeGranted(this);
+    }
+
     /** Price decompositions produced during this save, written once the lines have IDs (D69). */
     private _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
@@ -620,6 +627,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
             if (booking) {
                 const lines = await this.loadLinesForBooking();
 
+                // A LINE BOOKED BELOW ITS ENGINE PRICE WITH NO APPROVED CONCESSION IS RECORDED FOR
+                // FINANCE (golive #279). The gate above refuses most of these; this catches the ones
+                // that book anyway — see `raisePriceBelowEngineExceptions`. Here, once every line is
+                // written and priced, and inside the transaction: a raise that fails rolls the
+                // booking back rather than losing the exception.
+                await this.raisePriceBelowEngineExceptions(lines);
+
                 // THE SCHEDULE MUST TIE (plan §4.3). Per company, the instalments must sum to exactly
                 // what the lines just landed as — checked here, inside the transaction, because the
                 // per-company gross does not exist until the lines are written. Throwing rolls the
@@ -923,6 +937,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ProductPriceID: line.ProductPriceID,
             PriceStated:
                 line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0,
+            LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
         }));
         const problems = await FindUnapprovedConcessions(
             this.IsSaved ? this.ID : null,
@@ -942,6 +957,43 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ),
         );
         return false;
+    }
+
+    /**
+     * Record every line of this booking that is priced below its engine price with no Approved
+     * concession covering it (finance exception type 4, golive #279). Refuses nothing.
+     *
+     * `passesConcessionGate` already holds most such confirms. What still books: a save with no
+     * context user, which skips the gate; and a line the gate judged against state this save then
+     * changed — it runs before bundle expansion, proration and pricing, and prices a saved order
+     * against its header as last persisted, so a bill-to or order date changed in the confirming
+     * save itself is not what it saw. This runs on the lines and header as booked.
+     */
+    private async raisePriceBelowEngineExceptions(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser ?? null;
+        await RaisePriceBelowEngineExceptions(
+            {
+                OrderHeaderID: this.ID,
+                OrderNumber: this.OrderNumber ?? null,
+                Lines: lines.map((line) => ({
+                    ID: line.ID,
+                    LineNumber: line.LineNumber ?? null,
+                    ParentOrderLineID: line.ParentOrderLineID ?? null,
+                    ReversesOrderLineID: line.ReversesOrderLineID ?? null,
+                    ProductID: line.ProductID,
+                    OrderHeaderID: this.ID,
+                    Quantity: line.Quantity,
+                    UnitPrice: line.UnitPrice,
+                    ProductPriceID: line.ProductPriceID,
+                    PriceStated: true,
+                    CompanyID: line.CompanyID,
+                })),
+                BusinessDay: () => BusinessDay(provider, user as UserInfo),
+            },
+            provider,
+            user,
+        );
     }
 
     // ─── Booking ───────────────────────────────────────────────────────────────
@@ -1349,6 +1401,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 ShipToPersonID: l.ShipToPersonID ?? null,
                 ShipToOrganizationID: l.ShipToOrganizationID ?? null,
                 RenewsSubscriptionID: l.RenewsSubscriptionID ?? null,
+                // Choices added to the line in this graph are the truth before they commit; a line
+                // holding none here is left for the engine to read.
+                Choices: l.Choices?.Count
+                    ? l.Choices.Items.map((c) => ({ GroupKey: c.GroupKey, OptionValue: c.OptionValue }))
+                    : undefined,
             })),
             subs.TermsByLine,
             provider,

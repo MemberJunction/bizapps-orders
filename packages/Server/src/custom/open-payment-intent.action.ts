@@ -62,7 +62,7 @@ function setOutput(params: RunActionParams, name: string, value: unknown): void 
  *
  * Inputs: `PaymentProviderID` (required), `Amount` (required), `CurrencyCode`, `OrderHeaderID`,
  * `BillToPersonID`, `BillToOrganizationID`, `ProviderCustomerRef`, `ProviderInstrumentRef`,
- * `IdempotencyKey`.
+ * `IdempotencyKey`, `Description` (built from the order when omitted).
  * Outputs: `PaymentIntentID`, `ProviderIntentID`, `Status`, `ClientSecret`, `HostedUrl`, `WasExisting`.
  */
 @RegisterClass(BaseAction, 'Orders.OpenPaymentIntent')
@@ -138,6 +138,7 @@ export class OpenPaymentIntentAction extends BaseAction {
                 ProviderCustomerRef: strParam(params, 'ProviderCustomerRef'),
                 ProviderInstrumentRef: strParam(params, 'ProviderInstrumentRef'),
                 IdempotencyKey: strParam(params, 'IdempotencyKey'),
+                Description: strParam(params, 'Description'),
             },
             provider,
             user,

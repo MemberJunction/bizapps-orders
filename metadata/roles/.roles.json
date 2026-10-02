@@ -26,5 +26,19 @@
       "lastModified": "2026-09-28T21:24:38.829Z",
       "checksum": "78b6449738667ab6cea602fb91f7ce79bed757bca69e7553fbfa9f36e0934b7f"
     }
+  },
+  {
+    "fields": {
+      "Name": "Checkout Operator",
+      "Description": "Reviews checkout sessions whose post-payment steps failed or never finished, and replays a step (MJ.BizApps.Orders.Checkout.Replay).",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "40B0F538-69BD-4D08-AF87-2D3A01C78BD9"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T23:39:39.833Z",
+      "checksum": "ca41d9bd30e3341cc3c7bed26bdedc9be2688e1f5a394f1e3a8511a6ce2a4571"
+    }
   }
 ]

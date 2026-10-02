@@ -66,6 +66,10 @@ export const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider
 export const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
 
+// ── Tasks (peer app; a Pending concession is routed to its approvers as a task) ─────────────────────
+export const TASK_ENTITY = 'MJ_BizApps_Tasks: Tasks';
+export const TASK_DECISION_ENTITY = 'MJ_BizApps_Tasks: Task Decisions';
+
 // ── Accounting (peer app; we resolve THROUGH these, so we build them properly) ────────────────────
 export const GL_ACCOUNT_ENTITY = 'MJ_BizApps_Accounting: GL Accounts';
 export const GL_ACCOUNT_ROLE_ENTITY = 'MJ_BizApps_Accounting: GL Account Roles';
@@ -151,4 +155,6 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     RELATIONSHIP_TYPE_ENTITY,
     ADDRESS_ENTITY,
     COMPANY_ENTITY,
+    TASK_ENTITY,
+    TASK_DECISION_ENTITY,
 ];

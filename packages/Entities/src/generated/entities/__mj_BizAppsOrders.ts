@@ -2120,7 +2120,7 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscription Terms (vwSubscriptionTerms.ID)
         * * Description: The subscription term a Duration concession extends.`),
-    DeliveryForm: z.union([z.literal('Duration'), z.literal('Price'), z.literal('Scope'), z.literal('Seats')]).describe(`
+    DeliveryForm: z.union([z.literal('Duration'), z.literal('Price'), z.literal('Scope'), z.literal('Seats'), z.literal('Terms')]).describe(`
         * * Field Name: DeliveryForm
         * * Display Name: Delivery Form
         * * SQL Data Type: nvarchar(20)
@@ -2130,7 +2130,8 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
     *   * Price
     *   * Scope
     *   * Seats
-        * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge).`),
+    *   * Terms
+        * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).`),
     ReasonCategory: z.union([z.literal('Other'), z.literal('Referral'), z.literal('Retention')]).describe(`
         * * Field Name: ReasonCategory
         * * Display Name: Reason Category
@@ -2226,6 +2227,18 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    PriorPaymentTermsTypeID: z.string().nullable().describe(`
+        * * Field Name: PriorPaymentTermsTypeID
+        * * Display Name: Prior Payment Terms Type ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Terms Types (vwPaymentTermsTypes.ID)
+        * * Description: For a Terms concession, the order's payment terms before the change. NULL when the order had none and was due on receipt.`),
+    NewPaymentTermsTypeID: z.string().nullable().describe(`
+        * * Field Name: NewPaymentTermsTypeID
+        * * Display Name: New Payment Terms Type ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Terms Types (vwPaymentTermsTypes.ID)
+        * * Description: For a Terms concession, the payment terms the order moves to when it is approved.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -2242,6 +2255,14 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * Field Name: DecidedByUser
         * * Display Name: Decided By User
         * * SQL Data Type: nvarchar(100)`),
+    PriorPaymentTermsType: z.string().nullable().describe(`
+        * * Field Name: PriorPaymentTermsType
+        * * Display Name: Prior Payment Terms Type
+        * * SQL Data Type: nvarchar(200)`),
+    NewPaymentTermsType: z.string().nullable().describe(`
+        * * Field Name: NewPaymentTermsType
+        * * Display Name: New Payment Terms Type
+        * * SQL Data Type: nvarchar(200)`),
 });
 
 export type mjBizAppsOrdersOrderConcessionEntityType = z.infer<typeof mjBizAppsOrdersOrderConcessionSchema>;
@@ -12379,12 +12400,13 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     *   * Price
     *   * Scope
     *   * Seats
-    * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge).
+    *   * Terms
+    * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).
     */
-    get DeliveryForm(): 'Duration' | 'Price' | 'Scope' | 'Seats' {
+    get DeliveryForm(): 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Terms' {
         return this.Get('DeliveryForm');
     }
-    set DeliveryForm(value: 'Duration' | 'Price' | 'Scope' | 'Seats') {
+    set DeliveryForm(value: 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Terms') {
         this.Set('DeliveryForm', value);
     }
 
@@ -12606,6 +12628,34 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: PriorPaymentTermsTypeID
+    * * Display Name: Prior Payment Terms Type ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Terms Types (vwPaymentTermsTypes.ID)
+    * * Description: For a Terms concession, the order's payment terms before the change. NULL when the order had none and was due on receipt.
+    */
+    get PriorPaymentTermsTypeID(): string | null {
+        return this.Get('PriorPaymentTermsTypeID');
+    }
+    set PriorPaymentTermsTypeID(value: string | null) {
+        this.Set('PriorPaymentTermsTypeID', value);
+    }
+
+    /**
+    * * Field Name: NewPaymentTermsTypeID
+    * * Display Name: New Payment Terms Type ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Terms Types (vwPaymentTermsTypes.ID)
+    * * Description: For a Terms concession, the payment terms the order moves to when it is approved.
+    */
+    get NewPaymentTermsTypeID(): string | null {
+        return this.Get('NewPaymentTermsTypeID');
+    }
+    set NewPaymentTermsTypeID(value: string | null) {
+        this.Set('NewPaymentTermsTypeID', value);
+    }
+
+    /**
     * * Field Name: OrderHeader
     * * Display Name: Order Header
     * * SQL Data Type: nvarchar(40)
@@ -12639,6 +12689,24 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     */
     get DecidedByUser(): string | null {
         return this.Get('DecidedByUser');
+    }
+
+    /**
+    * * Field Name: PriorPaymentTermsType
+    * * Display Name: Prior Payment Terms Type
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PriorPaymentTermsType(): string | null {
+        return this.Get('PriorPaymentTermsType');
+    }
+
+    /**
+    * * Field Name: NewPaymentTermsType
+    * * Display Name: New Payment Terms Type
+    * * SQL Data Type: nvarchar(200)
+    */
+    get NewPaymentTermsType(): string | null {
+        return this.Get('NewPaymentTermsType');
     }
 }
 
@@ -14668,6 +14736,25 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntit
  */
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Lines')
 export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOrderLineEntityType> {
+
+  /**
+  * Related records: MJ_BizApps_Orders: Order Line Choices
+  *
+  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Order Lines record — see
+  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
+  * the 'MJ_BizApps_Orders: Order Lines → MJ_BizApps_Orders: Order Line Choices' relationship; edit that row, not this file.
+  *
+  */
+  public readonly Choices = this.DeclareRelatedRecords<mjBizAppsOrdersOrderLineChoiceEntity>({
+      Name: 'Choices',
+        RelatedEntity: 'MJ_BizApps_Orders: Order Line Choices',
+        RelatedEntityJoinField: 'OrderLineID',
+        OrderBy: 'GroupKey ASC, OptionValue ASC',
+        Load: 'explicit',
+        OnRemove: 'delete',
+        Source: 'database',
+  });
+
     /**
     * Loads the MJ_BizApps_Orders: Order Lines record from the database
     * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Lines record.
