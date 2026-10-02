@@ -5705,10 +5705,10 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field(() => Float, {description: `What the concession is worth, in currency, at the arrangement's own rate. Computed on save from the line or term; never authored.`}) 
     ComputedValue: number;
         
-    @Field(() => Float, {nullable: true, description: `The order's net total when the concession was recorded: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.`}) 
+    @Field(() => Float, {nullable: true, description: `The order's net total when the concession was recorded, measured again when it is decided: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.`}) 
     OrderNetTotal?: number;
         
-    @Field(() => Float, {nullable: true, description: `Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal when it was recorded. This is what SalesAuthority.MaxConcessionPctOfContract is checked against. NULL when OrderNetTotal is zero. Computed on save; never authored.`}) 
+    @Field(() => Float, {nullable: true, description: `Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal: measured when it was recorded and again when it is decided. This is what SalesAuthority.MaxConcessionPctOfContract is checked against, and on a decided concession it is the share its approver decided at. NULL when OrderNetTotal is zero. Computed on save; never authored.`}) 
     CumulativeShare?: number;
         
     @Field({description: `Pending | Approved | Rejected. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role.`}) 

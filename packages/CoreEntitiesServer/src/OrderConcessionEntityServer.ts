@@ -507,6 +507,12 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!(await UserHoldsRole(roleID, this.provider(), user, user.ID))) {
             return 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
         }
+        // Measured again at the decision: the draft may have changed while this sat Pending, and the
+        // confirm gate reads an approved concession's share as what its approver has seen.
+        const net = await OrderNetTotal(this.OrderHeaderID, [], this.provider(), user);
+        const share = ConcessionShare(await OrderConcessionTotal(this.OrderHeaderID, this.provider(), user), net);
+        this.OrderNetTotal = net;
+        this.CumulativeShare = share === null ? null : Math.round(share * 1e4) / 1e4;
         this.decide(this.Status, user);
         return null;
     }

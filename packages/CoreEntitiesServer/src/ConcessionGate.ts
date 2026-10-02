@@ -28,7 +28,8 @@
  *      authority's `MaxConcessionPctOfContract`. The share is measured when a concession is
  *      recorded; a draft that loses lines afterwards raises it, and the approval on authority no
  *      longer covers what the order now gives away. An approver who decided a concession at this
- *      share or higher has already seen it, so that covers it too.
+ *      share or higher has already seen it, so that covers it too. A concession's share is measured
+ *      again when it is decided, so this is the share at the decision, not at the recording.
  *
  * Confirmed orders are checked for (1) only. Their lines' prices were settled at booking, and lines
  * converted from the previous system carry overrides nobody recorded a concession for.

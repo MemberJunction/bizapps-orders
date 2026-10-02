@@ -2166,12 +2166,12 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * Field Name: OrderNetTotal
         * * Display Name: Order Net Total
         * * SQL Data Type: decimal(18, 2)
-        * * Description: The order's net total when the concession was recorded: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.`),
+        * * Description: The order's net total when the concession was recorded, measured again when it is decided: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.`),
     CumulativeShare: z.number().nullable().describe(`
         * * Field Name: CumulativeShare
         * * Display Name: Cumulative Share
         * * SQL Data Type: decimal(9, 4)
-        * * Description: Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal when it was recorded. This is what SalesAuthority.MaxConcessionPctOfContract is checked against. NULL when OrderNetTotal is zero. Computed on save; never authored.`),
+        * * Description: Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal: measured when it was recorded and again when it is decided. This is what SalesAuthority.MaxConcessionPctOfContract is checked against, and on a decided concession it is the share its approver decided at. NULL when OrderNetTotal is zero. Computed on save; never authored.`),
     Status: z.union([z.literal('Approved'), z.literal('Pending'), z.literal('Rejected')]).describe(`
         * * Field Name: Status
         * * Display Name: Status
@@ -12484,7 +12484,7 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     * * Field Name: OrderNetTotal
     * * Display Name: Order Net Total
     * * SQL Data Type: decimal(18, 2)
-    * * Description: The order's net total when the concession was recorded: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.
+    * * Description: The order's net total when the concession was recorded, measured again when it is decided: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.
     */
     get OrderNetTotal(): number | null {
         return this.Get('OrderNetTotal');
@@ -12497,7 +12497,7 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     * * Field Name: CumulativeShare
     * * Display Name: Cumulative Share
     * * SQL Data Type: decimal(9, 4)
-    * * Description: Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal when it was recorded. This is what SalesAuthority.MaxConcessionPctOfContract is checked against. NULL when OrderNetTotal is zero. Computed on save; never authored.
+    * * Description: Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal: measured when it was recorded and again when it is decided. This is what SalesAuthority.MaxConcessionPctOfContract is checked against, and on a decided concession it is the share its approver decided at. NULL when OrderNetTotal is zero. Computed on save; never authored.
     */
     get CumulativeShare(): number | null {
         return this.Get('CumulativeShare');

@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202609301400 — Concession guardrails: value a concession however it is delivered
+-- V202610011600 — Concession guardrails: value a concession however it is delivered
 -- (bc-aidp-next-golive#222)
 -- =============================================================================
 -- The sales guardrails valued a concession only as a percentage off price. A
@@ -214,7 +214,7 @@ GO
 
 EXEC sp_addextendedproperty
     @name = N'MS_Description',
-    @value = N'The order''s net total when the concession was recorded: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.',
+    @value = N'The order''s net total when the concession was recorded, measured again when it is decided: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'OrderConcession',
     @level2type = N'COLUMN', @level2name = N'OrderNetTotal';
@@ -222,7 +222,7 @@ GO
 
 EXEC sp_addextendedproperty
     @name = N'MS_Description',
-    @value = N'Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal when it was recorded. This is what SalesAuthority.MaxConcessionPctOfContract is checked against. NULL when OrderNetTotal is zero. Computed on save; never authored.',
+    @value = N'Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal: measured when it was recorded and again when it is decided. This is what SalesAuthority.MaxConcessionPctOfContract is checked against, and on a decided concession it is the share its approver decided at. NULL when OrderNetTotal is zero. Computed on save; never authored.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'OrderConcession',
     @level2type = N'COLUMN', @level2name = N'CumulativeShare';
@@ -1304,7 +1304,7 @@ GO
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '0E13E45B-0FF1-4B09-8919-CE576829E178'),
             'OrderNetTotal',
             'Order Net Total',
-            'The order''s net total when the concession was recorded: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.',
+            'The order''s net total when the concession was recorded, measured again when it is decided: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.',
             'decimal',
             9,
             18,
@@ -1367,7 +1367,7 @@ GO
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '0E13E45B-0FF1-4B09-8919-CE576829E178'),
             'CumulativeShare',
             'Cumulative Share',
-            'Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal when it was recorded. This is what SalesAuthority.MaxConcessionPctOfContract is checked against. NULL when OrderNetTotal is zero. Computed on save; never authored.',
+            'Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal: measured when it was recorded and again when it is decided. This is what SalesAuthority.MaxConcessionPctOfContract is checked against, and on a decided concession it is the share its approver decided at. NULL when OrderNetTotal is zero. Computed on save; never authored.',
             'decimal',
             5,
             9,
