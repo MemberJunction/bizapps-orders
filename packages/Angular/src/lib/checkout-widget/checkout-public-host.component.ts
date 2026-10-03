@@ -11,9 +11,11 @@ import {
     ChangeDetectorRef,
     Component,
     ElementRef,
+    EventEmitter,
     Input,
     OnDestroy,
     OnInit,
+    Output,
     inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -45,8 +47,10 @@ import {
     type CheckoutWidgetConfig,
 } from './checkout-widget.component';
 import {
+    alreadySubscribedDetail,
     buildCheckoutDraftLine,
     formatStripeError,
+    type CheckoutAlreadySubscribedDetail,
     intentAlreadyCollected,
     stripeConfirmAlreadyCollected,
 } from './checkout-draft-line';
@@ -87,6 +91,12 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     @Input() public slug = '';
     @Input() public apiRoot = '/checkout';
+
+    /**
+     * The buyer already subscribes to what they tried to buy (#323). As the `<mj-orders-checkout>`
+     * element this is a DOM `CustomEvent` of the same name, with the detail as `event.detail`.
+     */
+    @Output('checkout-already-subscribed') public alreadySubscribed = new EventEmitter<CheckoutAlreadySubscribedDetail>();
 
     public config: CheckoutWidgetConfig | null = null;
     public sessionKey = '';
@@ -300,6 +310,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 choices: event.choices,
             });
             if (!draft?.Success) {
+                this.emitIfAlreadySubscribed(draft);
                 throw new Error(this.str(draft?.ErrorMessage, 'Could not price this checkout.'));
             }
             if (!draft.RequiresPayment) {
@@ -311,6 +322,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 clientSessionKey: this.sessionKey,
             });
             if (!intent?.Success) {
+                this.emitIfAlreadySubscribed(intent);
                 throw new Error(this.str(intent?.ErrorMessage, 'Could not start payment.'));
             }
             if (intentAlreadyCollected(intent.Status)) {
@@ -347,6 +359,13 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         } finally {
             this.processing = false;
             this.cdr.detectChanges();
+        }
+    }
+
+    private emitIfAlreadySubscribed(response: Record<string, unknown> | null | undefined): void {
+        const detail = alreadySubscribedDetail(response);
+        if (detail) {
+            this.alreadySubscribed.emit(detail);
         }
     }
 

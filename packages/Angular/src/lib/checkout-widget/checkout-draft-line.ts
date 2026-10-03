@@ -53,3 +53,32 @@ export function stripeConfirmAlreadyCollected(error: { code?: string; message?: 
 export function formatStripeError(error: { message?: string } | null | undefined): string {
     return error?.message?.trim() || 'Payment failed.';
 }
+
+/**
+ * Detail of the `checkout-already-subscribed` DOM event. Product ids and where the refusal came
+ * from — never the buyer's e-mail or any other personal data, because the host page may forward
+ * the event to analytics.
+ */
+export interface CheckoutAlreadySubscribedDetail {
+    productIds: string[];
+    source: 'built-in' | 'host';
+}
+
+/**
+ * The event detail when a checkout response refused the purchase because the buyer already
+ * subscribes, or null for any other response.
+ */
+export function alreadySubscribedDetail(response: Record<string, unknown> | null | undefined): CheckoutAlreadySubscribedDetail | null {
+    const refusal = response?.['Refusal'];
+    if (!refusal || typeof refusal !== 'object') {
+        return null;
+    }
+    const { Code, Source, ProductIDs } = refusal as { Code?: unknown; Source?: unknown; ProductIDs?: unknown };
+    if (Code !== 'AlreadySubscribed') {
+        return null;
+    }
+    return {
+        productIds: Array.isArray(ProductIDs) ? ProductIDs.filter((id): id is string => typeof id === 'string') : [],
+        source: Source === 'host' ? 'host' : 'built-in',
+    };
+}
