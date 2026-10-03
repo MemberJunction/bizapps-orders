@@ -68,6 +68,7 @@ import {
     EscapeText,
     HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
+    type CheckoutBillingAddressInput,
     type CheckoutLineInput,
 } from '@mj-biz-apps/orders-core-entities-server';
 import type { CheckoutAnswersInput, CheckoutChoicesInput, CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
@@ -562,9 +563,14 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
         const email = typeof req.body?.email === 'string' ? req.body.email : '';
         const lines = Array.isArray(req.body?.lines) ? (req.body.lines as CheckoutLineInput[]) : [];
+        // Shape-checked by the service (CheckBillingLocation); anything that is not an object is absent.
+        const rawAddress: unknown = req.body?.billingAddress;
+        const billingAddress = rawAddress && typeof rawAddress === 'object' && !Array.isArray(rawAddress)
+            ? (rawAddress as CheckoutBillingAddressInput)
+            : null;
         // Passed through unchecked: UpdateDraft keeps the attribution only when it reads as one, and
         // judges the answers and choices against the widget's own questions and choice groups.
-        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user, {
+        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, billingAddress, user, {
             Attribution: req.body?.attribution,
             Answers: req.body?.answers as CheckoutAnswersInput | undefined,
             Choices: req.body?.choices as CheckoutChoicesInput | undefined,

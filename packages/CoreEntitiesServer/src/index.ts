@@ -544,7 +544,7 @@ export { ResolveDeliveryChannel, DeliveryChannelNotConfiguredError } from './Del
 export { LoadOrderDeliveryContacts, LoadOrderStatus, LoadExternallyInvoiced } from './DeliveryRecipientResolver.js';
 
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
-export { OpenPaymentIntent } from './PaymentIntentService.js';
+export { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 export type { OpenIntentRequest, OpenIntentResult } from './PaymentIntentService.js';
 export { SettlePaymentForEvent } from './PaymentSettlement.js';
 export type { SettlementOutcome } from './PaymentSettlement.js';
@@ -756,6 +756,7 @@ export { ReplayCheckoutStepOperation, LoadReplayCheckoutStepOperation, CHECKOUT_
 export type {
     AttendeeInput,
     CheckoutAttendeeInput,
+    CheckoutBillingAddressInput,
     CheckoutLineExtensionData,
     CheckoutLineInput,
     CheckoutLineSummary,
