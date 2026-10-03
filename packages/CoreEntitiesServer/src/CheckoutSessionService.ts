@@ -55,8 +55,18 @@ import {
 import { EscapeText } from './sql-guards.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
+import {
+    FindReusableProviderCustomerRef,
+    SnapshotSellsSubscription,
+    SaveCheckoutInstrumentForRenewals,
+} from './CheckoutSavedInstrument.js';
+import {
+    CheckoutMemberDiscountNotConfiguredError,
+    IsRegisteredMemberPromotionCode,
+    ResolveCheckoutMemberDiscountResolver,
+} from './CheckoutMemberDiscountResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
-import { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
+import { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
 import { CheckoutStepLog, type CheckoutStepAttempt, type CheckoutStepSource } from './CheckoutStepLog.js';
 import {
     isCaptureRefusalRetryable,
@@ -160,6 +170,10 @@ interface CheckoutSnapshot {
     Answers?: CheckoutAnswersInput;
     Attribution?: CheckoutAttribution;
     Choices?: CheckoutChoicesInput;
+    /** Promotion code a verified member token earned. The token itself is never stored. */
+    MemberPromotionCode?: string | null;
+    /** Codes the buyer entered that the draft priced with. */
+    PromotionCodes?: string[];
     UpdatedAt?: string;
 }
 
@@ -184,6 +198,82 @@ export interface UpdateDraftResult {
     TotalGross: number;
     RequiresPayment: boolean;
     Lines: CheckoutLineSummary[];
+    /** The promotion code the draft was priced with, when it was usable. */
+    AppliedPromotionCodes?: string[];
+    /** Codes the buyer entered that did nothing, and why — shown to the buyer, never silently dropped. */
+    UnusablePromotionCodes?: Array<{ Code: string; Reason: string }>;
+    /** What the applied promotion took off, in major units (0 when none). */
+    Discount?: number;
+    /** True when a member token earned a discount that this draft is priced with. */
+    MemberDiscountApplied?: boolean;
+    /** Why a member token earned no discount, for the buyer. Absent when no token was sent. */
+    MemberDiscountMessage?: string;
+}
+
+/** Outcome of resolving a draft's member token. */
+interface MemberDiscountResolution {
+    PromotionCode: string | null;
+    Message?: string;
+    /** Set when the widget cannot verify tokens at all — the draft is refused. */
+    Refusal?: string;
+}
+
+/** Most codes a buyer can present on one checkout. One, as a hosted card checkout allows. */
+export const MAX_PROMOTION_CODES_PER_CHECKOUT = 1;
+/** Longest code accepted — `PromotionCode.Code` is NVARCHAR(60). */
+const MAX_PROMOTION_CODE_LENGTH = 60;
+
+/**
+ * Normalise the codes an anonymous caller sent: strings only, trimmed, empties dropped, de-duplicated
+ * case-insensitively. Refuses more than {@link MAX_PROMOTION_CODES_PER_CHECKOUT} or an over-long code
+ * rather than truncating — a code that was cut short is a different code.
+ */
+export function NormalizeCheckoutPromotionCodes(input: unknown): { Codes: string[] } | { Error: string } {
+    if (input == null) return { Codes: [] };
+    if (!Array.isArray(input)) return { Error: 'Promotion codes must be a list.' };
+    const seen = new Set<string>();
+    const codes: string[] = [];
+    for (const raw of input) {
+        if (typeof raw !== 'string') return { Error: 'Promotion codes must be text.' };
+        const code = raw.trim();
+        if (!code) continue;
+        if (code.length > MAX_PROMOTION_CODE_LENGTH) return { Error: 'That promotion code is too long.' };
+        const key = code.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        codes.push(code);
+    }
+    if (codes.length > MAX_PROMOTION_CODES_PER_CHECKOUT) {
+        return { Error: `Only ${MAX_PROMOTION_CODES_PER_CHECKOUT} promotion code can be used per order.` };
+    }
+    return { Codes: codes };
+}
+
+/**
+ * The codes a checkout prices with: the buyer's own codes plus the code a verified member token
+ * earned, de-duplicated case-insensitively. Whether they stack is the promotion engine's call.
+ */
+export function CombineCheckoutPromotionCodes(buyerCodes: string[], memberCode: string | null | undefined): string[] {
+    if (!memberCode || buyerCodes.some((c) => c.toLowerCase() === memberCode.toLowerCase())) {
+        return [...buyerCodes];
+    }
+    return [...buyerCodes, memberCode];
+}
+
+const MEMBER_DISCOUNT_UNAVAILABLE = 'Your member discount could not be verified, so this checkout is priced at the standard rate.';
+/**
+ * Shown when the payment settled but the order, re-priced at completion, now costs more than was paid:
+ * a member discount or a typed promotion code stopped applying, or the price changed some other way.
+ * The buyer has been charged and staff are alerted, so every case gets the refund wording.
+ */
+function SettledButShortMessage(cause: 'member' | 'code' | 'price'): string {
+    const what = {
+        member: 'Your member discount no longer applies to this order',
+        code: 'Your promotion code no longer applies to this order',
+        price: 'The price of this order changed after you paid',
+    }[cause];
+    return `${what}, so your payment does not cover the total and the order was not placed. `
+        + 'Our team has been notified and will arrange a refund.';
 }
 
 /** Outcome of booking CapturePayment after a checkout order is already confirmed. */
@@ -359,7 +449,9 @@ export class CheckoutSessionService {
         'allowQuantity',
         'maxQuantity',
         'stripePublishableKey',
+        'autoRenewConsentText',
         'successMessage',
+        'accessMessages',
         'redirectUrl',
         'extensionEntityName',
         'extensionFields',
@@ -802,6 +894,78 @@ export class CheckoutSessionService {
     /**
      * Creates an order line entity instance attached to the order's Lines collection.
      */
+    /**
+     * Turns a draft's member token into the promotion code it earns (#324). No token prices at
+     * full rate with no message; a rejected token, or a verifier that throws, prices at full rate
+     * with a message. A token sent to a widget that cannot verify one is refused — a host that
+     * expects member pricing must not silently charge full price.
+     */
+    private static async resolveMemberDiscount(
+        memberToken: string | undefined,
+        widgetConfig: CheckoutWidgetConfiguration,
+        widget: mjBizAppsOrdersCheckoutWidgetEntity,
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        email: string,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<MemberDiscountResolution> {
+        const token = typeof memberToken === 'string' ? memberToken.trim() : '';
+        if (!token) {
+            return { PromotionCode: null };
+        }
+        const key = typeof widgetConfig.memberDiscountResolver === 'string' ? widgetConfig.memberDiscountResolver.trim() : '';
+        if (!key) {
+            return { PromotionCode: null, Refusal: 'This checkout is not configured to verify member tokens.' };
+        }
+
+        let resolver;
+        try {
+            resolver = ResolveCheckoutMemberDiscountResolver(key);
+        } catch (err) {
+            if (err instanceof CheckoutMemberDiscountNotConfiguredError) {
+                LogError(`[CheckoutSessionService] ${err.message}`);
+                return { PromotionCode: null, Refusal: 'This checkout is not configured to verify member tokens.' };
+            }
+            throw err;
+        }
+
+        try {
+            const decision = await resolver.Resolve(
+                {
+                    MemberToken: token,
+                    CheckoutWidgetID: widget.ID,
+                    CompanyID: widget.CompanyID,
+                    SessionID: session.ID,
+                    Email: email || null,
+                },
+                md as unknown as IMetadataProvider,
+                contextUser
+            );
+            const code = typeof decision?.PromotionCode === 'string' ? decision.PromotionCode.trim() : '';
+            if (code) {
+                return { PromotionCode: code };
+            }
+            return { PromotionCode: null, Message: decision?.Message || MEMBER_DISCOUNT_UNAVAILABLE };
+        } catch (err) {
+            LogError(`[CheckoutSessionService] Member discount resolver '${key}' failed: ${err instanceof Error ? err.message : String(err)}`);
+            return { PromotionCode: null, Message: MEMBER_DISCOUNT_UNAVAILABLE };
+        }
+    }
+
+    /**
+     * Computes each line's totals the way its save would, so a discount the pricing walk wrote to
+     * `DiscountAmount` reaches the checkout total. Same hoisted call `OrderEntityServer` makes
+     * before companion validation; idempotent.
+     */
+    private static async settleLineTotals(order: OrderHeaderEntity): Promise<void> {
+        for (const line of order.Lines.Items) {
+            const serverLine = line as unknown as { PrepareForSave?: () => Promise<void> };
+            if (typeof serverLine.PrepareForSave === 'function') {
+                await serverLine.PrepareForSave();
+            }
+        }
+    }
+
     private static async createOrderLine(
         order: OrderHeaderEntity,
         targetExtensionEntity: string | null,
@@ -938,7 +1102,7 @@ export class CheckoutSessionService {
         lines: CheckoutLineInput[],
         billingAddress: CheckoutBillingAddressInput | null | undefined,
         contextUser?: UserInfo,
-        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput }
+        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput; MemberToken?: string; PromotionCodes?: unknown }
     ): Promise<UpdateDraftResult> {
         const failed = (message: string): UpdateDraftResult => ({
             Success: false,
@@ -1023,6 +1187,28 @@ export class CheckoutSessionService {
             return failed(draftChoices.Error);
         }
 
+        // Promotion codes are an anonymous input, so they are taken only when the widget's own
+        // configuration invites them, and only in the bounded shape NormalizeCheckoutPromotionCodes allows.
+        const normalizedCodes = NormalizeCheckoutPromotionCodes(options?.PromotionCodes);
+        if ('Error' in normalizedCodes) {
+            return failed(normalizedCodes.Error);
+        }
+        const promotionCodes = normalizedCodes.Codes;
+        if (promotionCodes.length > 0 && widgetConfig.allowCoupons !== true) {
+            return failed('This checkout does not take promotion codes.');
+        }
+        // A member promotion's code is earned through a verified token, never typed (#358).
+        for (const code of promotionCodes) {
+            const isMemberCode = await IsRegisteredMemberPromotionCode(
+                { Code: code, CheckoutWidgetID: widget.ID, CompanyID: widget.CompanyID, SessionID: session.ID },
+                md as unknown as IMetadataProvider,
+                contextUser
+            );
+            if (isMemberCode) {
+                return failed(`The code ${code} cannot be entered at this checkout.`);
+            }
+        }
+
         const allowedProductIds = await this.resolveAllowedProductIds(widgetConfig, contextUser);
         const allowAnyProduct = widgetConfig.allowAnyProduct === true;
         if (!allowAnyProduct && allowedProductIds.size === 0) {
@@ -1049,6 +1235,13 @@ export class CheckoutSessionService {
         order.OrderDate = TodayAsDateValue();
 
         const normalizedEmail = (email || '').trim().toLowerCase();
+        const previousEmail = (session.Email || '').trim().toLowerCase();
+        // The resolved payer belongs to the e-mail it was resolved from. A changed e-mail drops it
+        // so the resolve below runs again for the new address — or, when the new address matches
+        // no Person, CompleteCheckout resolves or creates the payer (#393).
+        if (previousEmail && previousEmail !== normalizedEmail) {
+            session.PersonID = null;
+        }
         session.Email = normalizedEmail;
 
         // Resolve (never create) the payer Person by email so person-specific pricing applies
@@ -1156,7 +1349,15 @@ export class CheckoutSessionService {
             return failed('This checkout is not configured correctly (its choices cannot be recorded on this item).');
         }
 
+        const memberDiscount = await this.resolveMemberDiscount(
+            options?.MemberToken, widgetConfig, widget, session, normalizedEmail, md, contextUser
+        );
+        if (memberDiscount.Refusal) {
+            return failed(memberDiscount.Refusal);
+        }
+
         // Price the draft order in memory
+        let unusableCodes: Array<{ Code: string; Reason: string }> = [];
         try {
             const pricingService = new OrderPricingService({
                 Provider: (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
@@ -1165,7 +1366,7 @@ export class CheckoutSessionService {
 
             // Nothing is saved yet, so the location is priced inline; completion prices the same
             // location from the Address row it records.
-            await pricingService.Price({
+            const priced = await pricingService.Price({
                 OrderHeaderID: order.ID || null,
                 CompanyID: widget.CompanyID,
                 BillToPersonID: order.BillToPersonID ?? null,
@@ -1186,15 +1387,39 @@ export class CheckoutSessionService {
                 ShipToAddressID: null,
                 ShipToAddress: this.toTaxAddress(location),
                 Lines: [...order.Lines.Items],
-                PromotionCodes: [],
+                PromotionCodes: CombineCheckoutPromotionCodes(promotionCodes, memberDiscount.PromotionCode),
                 ManualDiscounts: [],
                 Charges: [],
             });
+            // Only the buyer's own codes are reported as unusable; a declined member code is explained
+            // through MemberDiscountMessage below.
+            const buyerKeys = new Set(promotionCodes.map((c) => c.toLowerCase()));
+            unusableCodes = (priced?.UnusableCodes ?? []).filter((u) => buyerKeys.has(u.Code.toLowerCase()));
 
+            // The engine may still decline the code (dates, limits, qualifier). Price at full rate
+            // and say why, rather than snapshotting a code `/complete` would also decline.
+            const declined = memberDiscount.PromotionCode
+                ? (priced?.UnusableCodes ?? []).find((u) => u.Code.toLowerCase() === memberDiscount.PromotionCode!.toLowerCase())
+                : undefined;
+            if (declined) {
+                memberDiscount.PromotionCode = null;
+                memberDiscount.Message = `Your member discount does not apply to this order: ${declined.Reason}.`;
+            }
+
+            await this.settleLineTotals(order);
             order.TotalGross = this.sumLineTotals(order.Lines.Items);
         } catch (pricingErr) {
             console.warn('[CheckoutSessionService] Pricing walk error on draft:', pricingErr);
+            // A pricing failure with a code in play must not quote the undiscounted price as if the
+            // code had been considered.
+            if (promotionCodes.length > 0) {
+                return failed('This promotion code could not be applied right now. Please try again.');
+            }
         }
+        const unusableKeys = new Set(unusableCodes.map((u) => u.Code.toLowerCase()));
+        const appliedCodes = promotionCodes.filter((c) => !unusableKeys.has(c.toLowerCase()));
+        const discount =
+            Math.round((order.Lines.Items as OrderLineEntity[]).reduce((sum, l) => sum + Number(l.DiscountAmount ?? 0), 0) * 100) / 100;
 
         // Build line summaries from the in-memory priced order graph
         const lineSummaries: CheckoutLineSummary[] = (order.Lines.Items as OrderLineEntity[]).map(l => ({
@@ -1237,6 +1462,8 @@ export class CheckoutSessionService {
         }
 
         // Store checkout state in session metadata JSON — no orphan OrderHeader rows
+        // The applied code rides the snapshot so completion prices — and books — the same order the
+        // buyer was shown and the payment intent was opened for. An unusable code is not kept.
         const snapshot: CheckoutSnapshot = {
             Lines: lines,
             PricedLines: lineSummaries,
@@ -1245,6 +1472,8 @@ export class CheckoutSessionService {
             Answers: this.answersForStorage(draftAnswers.Answers),
             ...(attribution ? { Attribution: attribution } : {}),
             Choices: ChoicesForStorage(draftChoices.Choices),
+            MemberPromotionCode: memberDiscount.PromotionCode,
+            PromotionCodes: appliedCodes,
             UpdatedAt: new Date().toISOString()
         };
         session.MetadataJSON = JSON.stringify(snapshot);
@@ -1259,12 +1488,17 @@ export class CheckoutSessionService {
             SessionID: sessionID,
             OrderID: session.DraftOrderID || '',
             OrderNumber: '',
-            Subtotal: Math.round(((order.TotalGross ?? 0) - tax) * 100) / 100,
+            Subtotal: Math.round(((order.TotalGross ?? 0) - tax + discount) * 100) / 100,
             Tax: tax,
-            Adjustments: 0,
+            Adjustments: -discount,
             TotalGross: order.TotalGross ?? 0,
             RequiresPayment: (order.TotalGross ?? 0) > 0,
-            Lines: lineSummaries
+            Lines: lineSummaries,
+            AppliedPromotionCodes: appliedCodes,
+            UnusablePromotionCodes: unusableCodes,
+            Discount: discount,
+            ...(options?.MemberToken ? { MemberDiscountApplied: !!memberDiscount.PromotionCode } : {}),
+            ...(memberDiscount.Message ? { MemberDiscountMessage: memberDiscount.Message } : {})
         };
     }
 
@@ -1281,7 +1515,8 @@ export class CheckoutSessionService {
     public static async OpenPaymentIntentForSession(
         sessionID: string,
         clientSessionKey: string,
-        contextUser?: UserInfo
+        contextUser?: UserInfo,
+        options?: { AutoRenewConsent?: boolean }
     ): Promise<OpenSessionPaymentIntentResult> {
         const failed = (message: string): OpenSessionPaymentIntentResult => ({
             Success: false,
@@ -1343,17 +1578,35 @@ export class CheckoutSessionService {
 
         let paymentProviderId: string | undefined;
         let currencyCode: string | undefined;
+        let autoRenewConsentText: string | undefined;
+        let sendReceipt = false;
         if (widget.Configuration) {
             try {
                 const configObj = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
                 paymentProviderId = typeof configObj.paymentProviderId === 'string' ? configObj.paymentProviderId : undefined;
                 currencyCode = typeof configObj.currency === 'string' ? configObj.currency : undefined;
+                autoRenewConsentText =
+                    typeof configObj.autoRenewConsentText === 'string' && configObj.autoRenewConsentText.trim()
+                        ? configObj.autoRenewConsentText.trim()
+                        : undefined;
+                sendReceipt = configObj.sendReceipt === true;
             } catch {
                 // Malformed configuration already fails InitializeSession; treat as unset here.
             }
         }
         if (!paymentProviderId) {
             return failed(`Checkout widget '${widget.Name}' has no paymentProviderId configured — a paid checkout requires one.`);
+        }
+
+        // The automatic-renewal agreement. The buyer's tick is the only client input; the wording
+        // recorded is the widget's own server-side text, so what the session says was agreed to is
+        // what the widget displayed, not something a caller supplied.
+        if (autoRenewConsentText) {
+            if (options?.AutoRenewConsent !== true) {
+                return failed('Please agree to the automatic renewal terms to continue.');
+            }
+            session.AutoRenewConsentText = autoRenewConsentText;
+            session.AutoRenewConsentAt = new Date();
         }
 
         const mdProvider = Metadata.Provider;
@@ -1364,17 +1617,35 @@ export class CheckoutSessionService {
         // Products only: the order, and so its number, does not exist until completion.
         const description = await DescribeCheckoutSnapshot(session.MetadataJSON, mdProvider, contextUser);
 
+        // A subscription that renews on its own needs the card kept at THIS payment — see
+        // CheckoutSavedInstrument. Fail-soft: a card that cannot be kept must not block the sale.
+        const saveForRenewal = await this.resolveCustomerForRenewal(session, paymentProviderId, mdProvider, contextUser);
+
+        // The gateway's own receipt, when the widget asks for one, goes to the e-mail the buyer
+        // entered. It is part of the request, and a gateway refuses a repeated idempotency key sent
+        // with different parameters, so a changed e-mail must not reuse the key: a short hash of the
+        // address goes into it.
+        const receiptEmail = sendReceipt && session.Email ? session.Email.trim().toLowerCase() : null;
+        const receiptKey = receiptEmail ? `-r${await this.keyDigest(receiptEmail)}` : '';
+        // Likewise the customer the card is kept for: a changed e-mail can mean a different customer.
+        const keepKey = saveForRenewal ? `-k${await this.keyDigest(saveForRenewal)}` : '';
+
         const openResult = await OpenPaymentIntent({
             PaymentProviderID: paymentProviderId,
             Amount: snapshotTotal,
             // Unset means USD; anything else is refused by OpenPaymentIntent until orders record a currency.
             CurrencyCode: currencyCode ?? SUPPORTED_PAYMENT_CURRENCY,
             BillToPersonID: session.PersonID ?? undefined,
+            ProviderCustomerRef: saveForRenewal ?? undefined,
+            SaveInstrumentForReuse: !!saveForRenewal,
             // Stable per-session idempotency key: reopening for the same session+amount
-            // returns the SAME gateway intent instead of minting a fresh one per retry.
-            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}`,
+            // returns the SAME gateway intent instead of minting a fresh one per retry. A
+            // card-keeping intent, and a receipt to a given e-mail, each get their own key, because the
+            // gateway refuses a repeated key whose request parameters differ.
+            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}${keepKey}${receiptKey}`,
             Metadata: { CheckoutSessionID: sessionID },
-            Description: description
+            Description: description,
+            ReceiptEmail: receiptEmail
         }, mdProvider, contextUser);
 
         if (!openResult.Success || !openResult.PaymentIntentID) {
@@ -1395,6 +1666,67 @@ export class CheckoutSessionService {
             Status: openResult.Status,
             Amount: snapshotTotal
         };
+    }
+
+    /**
+     * The gateway customer a renewal card will belong to, when this checkout sells a subscription:
+     * the one the buyer already has with this provider, or a new one. A buyer with no person record
+     * yet — completion creates it — gets a customer opened for this checkout, keyed on the session and
+     * the e-mail; the card is filed under the person once the order is booked. Null when nothing
+     * renews or the customer cannot be had — logged, and the sale goes ahead without keeping the card.
+     */
+    private static async resolveCustomerForRenewal(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        paymentProviderId: string,
+        mdProvider: IMetadataProvider,
+        contextUser: UserInfo
+    ): Promise<string | null> {
+        const email = session.Email?.trim().toLowerCase() || null;
+        if (!session.PersonID && !email) {
+            return null;
+        }
+        try {
+            if (!(await SnapshotSellsSubscription(session.MetadataJSON, contextUser))) {
+                return null;
+            }
+            const driver = await ResolvePaymentProvider(paymentProviderId, mdProvider, contextUser);
+            const customer = session.PersonID
+                ? await driver.EnsureCustomer({
+                      ExistingProviderCustomerRef: await FindReusableProviderCustomerRef(session.PersonID, paymentProviderId, contextUser),
+                      Email: email,
+                      BillToPersonID: session.PersonID,
+                      IdempotencyKey: `customer-${session.PersonID}-${paymentProviderId}`,
+                  })
+                : await driver.EnsureCustomer({
+                      ExistingProviderCustomerRef: null,
+                      Email: email,
+                      CheckoutSessionID: session.ID,
+                      IdempotencyKey: `customer-checkout-${session.ID}-${paymentProviderId}-${await this.keyDigest(email!)}`,
+                  });
+            if (!customer.Success || !customer.ProviderCustomerRef) {
+                LogError(
+                    `[CheckoutSessionService] Session ${session.ID}: no gateway customer for the renewal card ` +
+                        `(${customer.Reason ?? 'no reason given'}); the subscription will not auto-charge.`
+                );
+                return null;
+            }
+            return customer.ProviderCustomerRef;
+        } catch (err) {
+            LogError(
+                `[CheckoutSessionService] Session ${session.ID}: could not prepare a renewal card: ` +
+                    `${err instanceof Error ? err.message : String(err)}`
+            );
+            return null;
+        }
+    }
+
+    /**
+     * Twelve hex characters of a SHA-256, for idempotency keys that must change with a value — an
+     * e-mail, a gateway customer — without carrying it.
+     */
+    private static async keyDigest(value: string): Promise<string> {
+        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
+        return Array.from(digest.slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('');
     }
 
     /**
@@ -1490,6 +1822,12 @@ export class CheckoutSessionService {
 
             const snapshot = this.readSnapshot(session);
             const linesInput: CheckoutLineInput[] = Array.isArray(snapshot.Lines) ? snapshot.Lines : [];
+            const memberPromotionCode =
+                typeof snapshot.MemberPromotionCode === 'string' && snapshot.MemberPromotionCode ? snapshot.MemberPromotionCode : null;
+            // Written by UpdateDraft, re-normalised anyway: the snapshot is ours, but the rule for
+            // what a code may look like belongs in one place.
+            const normalizedSnapshotCodes = NormalizeCheckoutPromotionCodes(snapshot.PromotionCodes);
+            const snapshotCodes = 'Codes' in normalizedSnapshotCodes ? normalizedSnapshotCodes.Codes : [];
 
             // A sale with no location can never be placed in a jurisdiction afterwards. A session
             // drafted without one (or before the location was collected) must be drafted again.
@@ -1683,6 +2021,13 @@ export class CheckoutSessionService {
                 }
             }
 
+            // The codes the draft was priced with — the buyer's and the member discount's. Set on the
+            // order's companion so the booking walk in OrderEntityServer re-prices with them and writes
+            // the promotions' adjustment rows: that records the redemption, and the re-price inside
+            // Confirm()'s save applies the same codes this pre-check does, so the charged total and the
+            // booked total match.
+            order.PromotionCodes.Codes = CombineCheckoutPromotionCodes(snapshotCodes, memberPromotionCode);
+
             // Price lines before confirmation
             const pricingService = new OrderPricingService({
                 Provider: (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
@@ -1691,7 +2036,7 @@ export class CheckoutSessionService {
 
             // Priced inline, exactly as the draft was: the Address row is recorded only once
             // payment checks out, so a refused payment leaves no row behind.
-            await pricingService.Price({
+            const priced = await pricingService.Price({
                 OrderHeaderID: order.ID || null,
                 CompanyID: widget.CompanyID,
                 BillToPersonID: order.BillToPersonID ?? null,
@@ -1712,11 +2057,21 @@ export class CheckoutSessionService {
                 ShipToAddressID: null,
                 ShipToAddress: this.toTaxAddress(location),
                 Lines: [...order.Lines.Items],
-                PromotionCodes: [],
+                PromotionCodes: order.PromotionCodes.Codes,
                 ManualDiscounts: [],
                 Charges: [],
             });
 
+            // The draft priced with this code, but the engine can decline it now (the promotion
+            // ended or hit its redemption limit since), which raises the total above what was paid.
+            const memberCodeDeclined = memberPromotionCode
+                ? (priced?.UnusableCodes ?? []).find((u) => u.Code.toLowerCase() === memberPromotionCode!.toLowerCase())
+                : undefined;
+            const typedCodeDeclined = (priced?.UnusableCodes ?? []).find((u) =>
+                snapshotCodes.some((c) => c.toLowerCase() === u.Code.toLowerCase())
+            );
+
+            await this.settleLineTotals(order);
             const sumGross = this.sumLineTotals(order.Lines.Items);
             order.TotalGross = sumGross;
 
@@ -1730,9 +2085,21 @@ export class CheckoutSessionService {
                 if (paymentFailure) {
                     await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
                     session.Status = 'Open';
+                    // The buyer has been charged and no order will book: staff must refund. This
+                    // covers a declined member code and any other re-price that raised the total.
+                    if (paymentFailure.SettledButShort) {
+                        const reason = memberCodeDeclined
+                            ? `Member promotion code ${memberPromotionCode} was declined on re-price (${memberCodeDeclined.Reason}). ${paymentFailure.Message}`
+                            : typedCodeDeclined
+                              ? `Promotion code ${typedCodeDeclined.Code} was declined on re-price (${typedCodeDeclined.Reason}). ${paymentFailure.Message}`
+                              : paymentFailure.Message;
+                        void raiseCheckoutSettledNotBookedAlert(sessionID, session.PaymentIntentID, reason, contextUser);
+                    }
                     return {
                         Success: false,
-                        ErrorMessage: paymentFailure,
+                        ErrorMessage: paymentFailure.SettledButShort
+                            ? SettledButShortMessage(memberCodeDeclined ? 'member' : typedCodeDeclined ? 'code' : 'price')
+                            : paymentFailure.Message,
                         SessionID: sessionID,
                         Status: 'Open'
                     };
@@ -1934,22 +2301,24 @@ export class CheckoutSessionService {
 
     /**
      * Verifies the paid-order gate for a session against a server-computed total. Returns a
-     * refusal message, or null when payment checks out. The intent must exist, belong to this
-     * session, be in a settled state, and cover the freshly re-priced total.
+     * refusal, or null when payment checks out. The intent must exist, belong to this session,
+     * be in a settled state, and cover the freshly re-priced total. `SettledButShort` marks the
+     * one refusal where money has already moved.
      */
     private static async verifySessionPayment(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         totalGross: number,
         md: Metadata,
         contextUser?: UserInfo
-    ): Promise<string | null> {
+    ): Promise<{ Message: string; SettledButShort: boolean } | null> {
+        const refused = (Message: string, SettledButShort = false) => ({ Message, SettledButShort });
         if (!session.PaymentIntentID) {
-            return 'Cannot confirm paid order (TotalGross > 0) without a payment intent for this session';
+            return refused('Cannot confirm paid order (TotalGross > 0) without a payment intent for this session');
         }
         const intent = await md.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, contextUser);
         const intentLoaded = await intent.Load(session.PaymentIntentID);
         if (!intentLoaded) {
-            return 'The payment intent attached to this session could not be found';
+            return refused('The payment intent attached to this session could not be found');
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
             // The browser has already confirmCardPayment'd (4242 succeeds at Stripe immediately).
@@ -1959,12 +2328,12 @@ export class CheckoutSessionService {
             await this.refreshIntentFromGateway(intent, contextUser);
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
-            return `Payment has not settled (intent status: ${intent.Status}). Complete payment and try again.`;
+            return refused(`Payment has not settled (intent status: ${intent.Status}). Complete payment and try again.`);
         }
         // Half-cent tolerance absorbs decimal rounding between the priced total and the
         // cents-rounded intent amount.
         if ((intent.Amount ?? 0) + 0.005 < totalGross) {
-            return `The settled payment amount (${intent.Amount}) does not cover the order total (${totalGross})`;
+            return refused(`The settled payment amount (${intent.Amount}) does not cover the order total (${totalGross})`, true);
         }
         return null;
     }
@@ -2094,7 +2463,10 @@ export class CheckoutSessionService {
                 await SendOrderDescriptionToGateway(intent, order.ID, mdForGateway, contextUser);
             }
         }
-        if (!intent.BillToPersonID && order.BillToPersonID) {
+        // The order's bill-to is authoritative. The intent can carry an earlier payer: one opened
+        // before the buyer changed e-mail is returned again by the gateway for the same idempotency
+        // key, still naming the person it was first opened for (#393).
+        if (order.BillToPersonID && !this.idsEqual(intent.BillToPersonID, order.BillToPersonID)) {
             intent.BillToPersonID = order.BillToPersonID;
         }
         if (!intent.BillToOrganizationID && order.BillToOrganizationID) {
@@ -2154,6 +2526,22 @@ export class CheckoutSessionService {
                 return this.captureFailed(order.ID, detail, isCaptureRefusalRetryable(codes), contextUser, session.ID, step);
             }
             await CheckoutStepLog.Succeed(step);
+            // The money has moved; now keep the card for any subscription that renews on its own.
+            // Fail-soft by contract, so this cannot turn a booked capture into a failed one.
+            if (intent.PaymentProviderID && intent.ProviderIntentID) {
+                await SaveCheckoutInstrumentForRenewals(
+                    {
+                        OrderHeaderID: order.ID,
+                        CompanyID: order.CompanyID,
+                        OwnerPersonID: order.BillToPersonID ?? null,
+                        PaymentProviderID: intent.PaymentProviderID,
+                        ProviderIntentID: intent.ProviderIntentID,
+                        TenderCode: tenderCode,
+                    },
+                    mdProvider,
+                    contextUser
+                );
+            }
             return { Attempted: true, Booked: true };
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);

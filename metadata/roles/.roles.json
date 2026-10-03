@@ -40,5 +40,15 @@
       "lastModified": "2026-09-28T23:39:39.833Z",
       "checksum": "ca41d9bd30e3341cc3c7bed26bdedc9be2688e1f5a394f1e3a8511a6ce2a4571"
     }
+  },
+  {
+    "fields": {
+      "Name": "Orders Revenue Supervisor",
+      "Description": "Supervises percentage-of-completion revenue in BizApps Orders. Holds MJ.BizApps.Orders.Progress.Supersede, which replaces a posted progress observation through Orders.RecordProgress — the recovery path for a mistyped measurement date or percent. Additive: a supersede is itself an attestation, so assign it alongside Engagement Lead, and only to the people who sign off project revenue.",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "F4810AB1-C226-426E-8FDC-6D51E310DDD9"
+    }
   }
 ]

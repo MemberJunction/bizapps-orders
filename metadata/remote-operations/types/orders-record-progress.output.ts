@@ -37,4 +37,30 @@ export interface OrdersRecordProgressOutput {
      * run, because an attestation must not depend on the availability of a hint.
      */
     ClosedPeriodWarning?: string | null;
+    /**
+     * Set when the measurement date is after the end of the current month on the business calendar.
+     * ADVISORY ONLY — forward dating is allowed with no cap. It exists because a mistyped year posts
+     * silently and only surfaces when the next month's attestation is refused.
+     */
+    FutureDateWarning?: string | null;
+    /** On a supersede: the observation replaced. Null otherwise. */
+    SupersededMeasurementID?: string | null;
+    /** On a supersede: the recognition taken back out (the replaced observation's RecognitionAmount, negated). Zero otherwise. */
+    ReversalAmount?: number;
+    /**
+     * On a supersede that reverses anything: the date the reversal is booked on. The replaced
+     * observation's own date while that month has no Posted batch for the line's company; otherwise
+     * day 1 of the first later month with none, so a correction never books into a closed period.
+     * Null otherwise.
+     */
+    ReversalDate?: string | null;
+    /**
+     * The date this observation's catch-up entry is booked on. `MeasurementDate` itself, except on a
+     * supersede whose replaced observation's month has a Posted batch for the line's company: then the
+     * later of `MeasurementDate` and `ReversalDate`'s first open day, so nothing new posts into the
+     * closed month. The observation row keeps `MeasurementDate`. Null when there is no catch-up.
+     */
+    CatchUpDate?: string | null;
+    /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */
+    ReversalJournalEntryID?: string | null;
 }

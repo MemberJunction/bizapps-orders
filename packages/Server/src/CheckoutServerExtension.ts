@@ -66,6 +66,7 @@ import {
     DispatchOutboundDeliveries,
     EnsureCheckoutAccount,
     EscapeText,
+    GetCheckoutAccessStatus,
     HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
     type CheckoutBillingAddressInput,
@@ -220,6 +221,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
             [`${root}/complete`, (req, res) => this.handleComplete(req, res)],
             [`${root}/account`, (req, res) => this.handleAccount(req, res)],
             [`${root}/account/password`, (req, res) => this.handleAccountPassword(req, res)],
+            [`${root}/access-status`, (req, res) => this.handleAccessStatus(req, res)],
         ];
 
         for (const [path, handler] of routes) {
@@ -235,7 +237,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const hostPath = `${root}/:slug`;
         app.get(hostPath, (req: Request, res: Response) => this.handleGetHost(req, res));
 
-        LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete,account,account/password}`);
+        LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete,account,account/password,access-status}`);
         return {
             Success: true,
             Message: 'Orders anonymous checkout edge mounted (public GET host, rate-limited POSTs, origin-gated, optional Turnstile).',
@@ -266,7 +268,10 @@ export class CheckoutServerExtension extends BaseServerExtension {
             const ip = this.clientIp(req);
             const slug = typeof req.body?.slug === 'string' ? req.body.slug : '';
             const globalMax = this.settings.RateLimitMaxGlobal ?? DEFAULT_RATE_MAX_GLOBAL;
-            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(`${ip}|${slug}`)) {
+            // The success screen polls access-status for up to a minute. It counts in its own window
+            // so that polling cannot use up the per-slug allowance the buyer's password step needs.
+            const bucket = req.path?.endsWith('/access-status') ? `${ip}|access-status|${slug}` : `${ip}|${slug}`;
+            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(bucket)) {
                 res.status(429).json({ Success: false, ErrorMessage: 'Too many requests — slow down and try again shortly.' });
                 return;
             }
@@ -569,11 +574,16 @@ export class CheckoutServerExtension extends BaseServerExtension {
             ? (rawAddress as CheckoutBillingAddressInput)
             : null;
         // Passed through unchecked: UpdateDraft keeps the attribution only when it reads as one, and
-        // judges the answers and choices against the widget's own questions and choice groups.
+        // judges the answers and choices against the widget's own questions and choice groups. The
+        // member token is verified server-side by the widget's registered resolver and never stored (#324).
+        // Promotion codes are passed as sent; the service normalises and bounds them
+        // (NormalizeCheckoutPromotionCodes).
         const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, billingAddress, user, {
             Attribution: req.body?.attribution,
             Answers: req.body?.answers as CheckoutAnswersInput | undefined,
             Choices: req.body?.choices as CheckoutChoicesInput | undefined,
+            PromotionCodes: req.body?.promotionCodes,
+            MemberToken: typeof req.body?.memberToken === 'string' ? req.body.memberToken : undefined,
         });
         res.status(result.Success ? 200 : 400).json(result);
     }
@@ -586,7 +596,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
-        const result = await CheckoutSessionService.OpenPaymentIntentForSession(sessionId, clientSessionKey, user);
+        const result = await CheckoutSessionService.OpenPaymentIntentForSession(sessionId, clientSessionKey, user, {
+            AutoRenewConsent: req.body?.autoRenewConsent === true,
+        });
         res.status(result.Success ? 200 : 400).json(result);
     }
 
@@ -639,6 +651,19 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
         const result = await SetCheckoutAccountPassword(sessionId, clientSessionKey, req.body?.password, user);
+        res.status(result.Success ? 200 : 400).json(result);
+    }
+
+    /** Whether a completed checkout's access is ready, for the success screen to poll (#325). */
+    private async handleAccessStatus(req: Request, res: Response): Promise<void> {
+        const user = this.resolveActingUser();
+        if (!user) {
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            return;
+        }
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+        const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const result = await GetCheckoutAccessStatus(sessionId, clientSessionKey, user);
         res.status(result.Success ? 200 : 400).json(result);
     }
 

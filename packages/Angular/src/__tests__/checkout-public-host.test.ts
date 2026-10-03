@@ -3,6 +3,7 @@ import {
     buildCheckoutDraftLine,
     formatStripeError,
     intentAlreadyCollected,
+    memberDiscountNotice,
     stripeConfirmAlreadyCollected,
 } from '../lib/checkout-widget/checkout-draft-line';
 import type { CheckoutSubmissionEvent } from '../lib/checkout-widget/checkout-widget.component';
@@ -68,5 +69,19 @@ describe('stripe confirm retry helpers', () => {
             .not.toContain('payment_intent_authentication_failure');
         expect(formatStripeError({ message: '  ', code: 'card_declined' })).toBe('Payment failed.');
         expect(formatStripeError(null)).toBe('Payment failed.');
+    });
+});
+
+describe('memberDiscountNotice (#324)', () => {
+    it('stops once on a draft whose member token earned no discount', () => {
+        const draft = { Success: true, MemberDiscountApplied: false, MemberDiscountMessage: 'Membership has lapsed.' };
+        expect(memberDiscountNotice(draft, false)).toBe('Membership has lapsed. Submit again to continue at the standard rate.');
+        expect(memberDiscountNotice(draft, true)).toBeNull();
+    });
+
+    it('carries on when the discount applied or no token was sent', () => {
+        expect(memberDiscountNotice({ Success: true, MemberDiscountApplied: true }, false)).toBeNull();
+        expect(memberDiscountNotice({ Success: true }, false)).toBeNull();
+        expect(memberDiscountNotice(null, false)).toBeNull();
     });
 });
