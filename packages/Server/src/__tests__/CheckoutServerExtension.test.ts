@@ -390,6 +390,34 @@ describe('CheckoutServerExtension', () => {
         expect(await hit('3.3.3.3')).toBe(429);
     });
 
+    it('counts access-status polling in its own window, so it cannot exhaust the password step', async () => {
+        const ext = new CheckoutServerExtension() as unknown as {
+            settings: Record<string, unknown>;
+            resolveEdgePolicy(req: Request): Promise<unknown>;
+            guardAndRun(req: Request, res: Response, handler: (req: Request, res: Response) => Promise<void>): Promise<void>;
+        };
+        ext.settings = { RateLimitMax: 2, RateLimitMaxGlobal: 100, RateLimitWindowMs: 60_000 };
+        ext.resolveEdgePolicy = async () => null;
+        const handler = vi.fn(async (_req: Request, res: Response) => {
+            res.status(200).json({ Success: true });
+        });
+        const hit = async (path: string) => {
+            const res = mockRes();
+            await ext.guardAndRun(
+                { path, body: { slug: 'summit-2027' }, headers: {}, socket: { remoteAddress: '10.0.0.9' } } as unknown as Request,
+                res as unknown as Response,
+                handler
+            );
+            return res.statusCode;
+        };
+        expect(await hit('/checkout/access-status')).toBe(200);
+        expect(await hit('/checkout/access-status')).toBe(200);
+        expect(await hit('/checkout/access-status')).toBe(429);
+        expect(await hit('/checkout/account/password')).toBe(200);
+        expect(await hit('/checkout/account/password')).toBe(200);
+        expect(await hit('/checkout/account/password')).toBe(429);
+    });
+
     describe('outbound dispatch after completion (#293)', () => {
         const complete = async (result: Record<string, unknown>) => {
             mockGetSystemUser.mockReturnValue({ ID: 'svc-1', Email: 'svc@example.com' });

@@ -681,7 +681,7 @@ The app ships its own public REST edge: **`CheckoutServerExtension`** (`@mj-biz-
 6. `POST /checkout/account` — body `{ sessionId, clientSessionKey }` → the account step's outcome (see [Account Step After Payment](#account-step-after-payment-checkoutaccountstep))
 7. `POST /checkout/account/password` — body `{ sessionId, clientSessionKey, password }`
 
-The edge enforces, in order and fail-closed: a body-size cap, per-IP(+slug) fixed-window rate limiting, the widget's `Configuration.allowedOrigins` allowlist (with CORS grants only for allowed origins), and — when the widget sets `requireTurnstile` — Cloudflare Turnstile verification against the secret named by the extension's `Settings.TurnstileSecretEnvVar`. Writes run as the principal named by `Settings.ServiceUserEmail`, falling back to MJ's system user. **No request body carries an amount, a price, a product resolution, or a payment provider** — those all resolve server-side.
+The edge enforces, in order and fail-closed: a body-size cap, per-IP(+slug) fixed-window rate limiting (`access-status`, which the success screen polls, counts in a window of its own), the widget's `Configuration.allowedOrigins` allowlist (with CORS grants only for allowed origins), and — when the widget sets `requireTurnstile` — Cloudflare Turnstile verification against the secret named by the extension's `Settings.TurnstileSecretEnvVar`. Writes run as the principal named by `Settings.ServiceUserEmail`, falling back to MJ's system user. **No request body carries an amount, a price, a product resolution, or a payment provider** — those all resolve server-side.
 
 ---
 

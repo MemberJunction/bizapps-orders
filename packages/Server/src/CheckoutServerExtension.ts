@@ -267,7 +267,10 @@ export class CheckoutServerExtension extends BaseServerExtension {
             const ip = this.clientIp(req);
             const slug = typeof req.body?.slug === 'string' ? req.body.slug : '';
             const globalMax = this.settings.RateLimitMaxGlobal ?? DEFAULT_RATE_MAX_GLOBAL;
-            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(`${ip}|${slug}`)) {
+            // The success screen polls access-status for up to a minute. It counts in its own window
+            // so that polling cannot use up the per-slug allowance the buyer's password step needs.
+            const bucket = req.path?.endsWith('/access-status') ? `${ip}|access-status|${slug}` : `${ip}|${slug}`;
+            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(bucket)) {
                 res.status(429).json({ Success: false, ErrorMessage: 'Too many requests — slow down and try again shortly.' });
                 return;
             }
