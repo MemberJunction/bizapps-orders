@@ -1,0 +1,5 @@
+---
+'@mj-biz-apps/orders-entities': minor
+---
+
+The 5.25 Metadata_Sync ships the metadata 5.22 through 5.24 added without a migration, so hosts get it and not only a developer's own database. It covers four remote operations (Detect Overlapping Subscriptions, Replay Checkout Step, Detect Unattested Progress, Amend Arrangement), the Dispatch Outbound Events, Detect Overlapping Subscriptions and Detect Unattested Progress actions with their scheduled jobs (outbound dispatch every minute and Active; the two detectors daily and Disabled), the Overlapping Subscriptions query, the Checkout Replay and Progress Supersede authorizations with the Checkout Operator and Orders Revenue Supervisor roles, the AmendmentAcknowledgmentRole setting and the Checkouts: Needs Review view. It also updates the Record Progress and Get Progress Worklist operation contracts, the concession-limit fields' category and the Choices related-record collection. The seed is idempotent and safe on a host that already ran `mj sync push`. The ML bench output under metadata/ is not included.
