@@ -230,10 +230,20 @@ export function CombineCheckoutPromotionCodes(buyerCodes: string[], memberCode: 
 }
 
 const MEMBER_DISCOUNT_UNAVAILABLE = 'Your member discount could not be verified, so this checkout is priced at the standard rate.';
-/** Shown when the payment settled at the member price but the discount no longer applies at completion. */
-const MEMBER_DISCOUNT_WITHDRAWN_MESSAGE =
-    'Your member discount no longer applies to this order, so your payment does not cover the total and the order was not placed. '
-    + 'Our team has been notified and will arrange a refund.';
+/**
+ * Shown when the payment settled but the order, re-priced at completion, now costs more than was paid:
+ * a member discount or a typed promotion code stopped applying, or the price changed some other way.
+ * The buyer has been charged and staff are alerted, so every case gets the refund wording.
+ */
+function SettledButShortMessage(cause: 'member' | 'code' | 'price'): string {
+    const what = {
+        member: 'Your member discount no longer applies to this order',
+        code: 'Your promotion code no longer applies to this order',
+        price: 'The price of this order changed after you paid',
+    }[cause];
+    return `${what}, so your payment does not cover the total and the order was not placed. `
+        + 'Our team has been notified and will arrange a refund.';
+}
 
 /** Outcome of booking CapturePayment after a checkout order is already confirmed. */
 export interface BookCheckoutPaymentResult {
@@ -2005,6 +2015,9 @@ export class CheckoutSessionService {
             const memberCodeDeclined = memberPromotionCode
                 ? (priced?.UnusableCodes ?? []).find((u) => u.Code.toLowerCase() === memberPromotionCode!.toLowerCase())
                 : undefined;
+            const typedCodeDeclined = (priced?.UnusableCodes ?? []).find((u) =>
+                snapshotCodes.some((c) => c.toLowerCase() === u.Code.toLowerCase())
+            );
 
             await this.settleLineTotals(order);
             let sumGross = 0;
@@ -2029,13 +2042,15 @@ export class CheckoutSessionService {
                     if (paymentFailure.SettledButShort) {
                         const reason = memberCodeDeclined
                             ? `Member promotion code ${memberPromotionCode} was declined on re-price (${memberCodeDeclined.Reason}). ${paymentFailure.Message}`
-                            : paymentFailure.Message;
+                            : typedCodeDeclined
+                              ? `Promotion code ${typedCodeDeclined.Code} was declined on re-price (${typedCodeDeclined.Reason}). ${paymentFailure.Message}`
+                              : paymentFailure.Message;
                         void raiseCheckoutSettledNotBookedAlert(sessionID, session.PaymentIntentID, reason, contextUser);
                     }
                     return {
                         Success: false,
-                        ErrorMessage: memberCodeDeclined && paymentFailure.SettledButShort
-                            ? MEMBER_DISCOUNT_WITHDRAWN_MESSAGE
+                        ErrorMessage: paymentFailure.SettledButShort
+                            ? SettledButShortMessage(memberCodeDeclined ? 'member' : typedCodeDeclined ? 'code' : 'price')
                             : paymentFailure.Message,
                         SessionID: sessionID,
                         Status: 'Open'

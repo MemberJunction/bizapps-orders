@@ -1658,7 +1658,9 @@ describe('CheckoutSessionService', () => {
             mocks.mockSettledNotBookedAlert.mockClear();
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
             expect(res.Success).toBe(false);
-            expect(res.ErrorMessage).toContain('does not cover');
+            // The buyer gets the plain refund wording; the amounts go to staff.
+            expect(res.ErrorMessage).toMatch(/price of this order changed after you paid.*arrange a refund/);
+            expect(res.ErrorMessage).not.toMatch(/settled payment amount/);
             expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
             // Money moved and no order booked: staff are alerted to refund.
             expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
@@ -1948,6 +1950,33 @@ describe('CheckoutSessionService', () => {
             expect(reasonArg).toContain('the code is outside its valid dates');
             expect(reasonArg).toContain('does not cover the order total (100)');
             expect(userArg).toBe(testUser);
+        });
+
+        it('/complete refuses with a plain message and alerts staff when a typed promotion code is declined after payment', async () => {
+            mocks.mockSessionInstance.Email = 'buyer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }],
+                TotalGross: 80,
+                PromotionCodes: ['SPRING20']
+            });
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.mockPaymentIntentInstance.Amount = 80;
+            mocks.mockSettledNotBookedAlert.mockClear();
+            // The code ran out of uses between the draft and the payment.
+            mocks.mockPricingPrice.mockImplementationOnce(priceWithMemberCode([{ Code: 'SPRING20', Reason: 'the redemption limit has been reached' }]));
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/promotion code no longer applies.*arrange a refund/);
+            expect(res.ErrorMessage).not.toMatch(/settled payment amount/);
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+            const reasonArg = mocks.mockSettledNotBookedAlert.mock.calls[0][2] as string;
+            expect(reasonArg).toContain('SPRING20');
+            expect(reasonArg).toContain('the redemption limit has been reached');
+            expect(reasonArg).toContain('does not cover the order total (100)');
         });
 
         it('/complete with a declined member code but an unsettled payment keeps the usual refusal and raises no alert', async () => {
