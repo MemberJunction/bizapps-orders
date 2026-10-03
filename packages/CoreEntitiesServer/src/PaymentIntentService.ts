@@ -58,6 +58,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import type { IntentStatus } from './PaymentProviderBehavior.js';
+import { DescribeOrder } from './IntentDescription.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 
@@ -85,6 +86,11 @@ export interface OpenIntentRequest {
     ProviderInstrumentRef?: string | null;
     /** Echoed back on webhooks. Useful for reconciliation, never load-bearing. */
     Metadata?: Record<string, string>;
+    /**
+     * What the gateway dashboard shows for the charge. When omitted and `OrderHeaderID` is set, it is
+     * built from the order — see `DescribeOrder`.
+     */
+    Description?: string | null;
     /**
      * Sent to the gateway so a retried call does not open a SECOND intent — which, on a saved
      * instrument, would charge the customer twice. See the dedup note in {@link OpenPaymentIntent}.
@@ -140,6 +146,8 @@ export async function OpenPaymentIntent(
     }
 
     const driver = await ResolvePaymentProvider(request.PaymentProviderID, provider, user);
+    const description =
+        request.Description?.trim() || (request.OrderHeaderID ? await DescribeOrder(request.OrderHeaderID, provider, user) : null);
 
     const opened = await driver.CreateIntent({
         Amount: request.Amount,
@@ -150,6 +158,7 @@ export async function OpenPaymentIntent(
         ProviderCustomerRef: request.ProviderCustomerRef ?? null,
         ProviderInstrumentRef: request.ProviderInstrumentRef ?? null,
         Metadata: request.Metadata,
+        Description: description,
         IdempotencyKey: request.IdempotencyKey ?? undefined,
     });
 

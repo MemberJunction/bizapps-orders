@@ -36,17 +36,33 @@ import {
     type BillingLocation,
     type CheckoutWidgetConfiguration,
     type ProductTypeConfiguration,
-    type TaxAddress
+    type TaxAddress,
+    CheckAnswersAgainstQuestions,
+    CheckCheckoutAnswers,
+    ReadCheckoutQuestions,
+    type CheckoutAnswersCheck,
+    type CheckoutAnswersInput,
+    type ResolvedCheckoutAnswer,
+    NormalizeCheckoutAttribution,
+    type CheckoutAttribution,
+    CheckCheckoutChoices,
+    ChoicesForStorage,
+    ReadCheckoutChoiceGroups,
+    CheckChoicesAgainstGroups,
+    type CheckoutChoicesCheck,
+    type CheckoutChoicesInput
 } from '@mj-biz-apps/orders-entities';
 import { EscapeText } from './sql-guards.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
 import { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
+import { CheckoutStepLog, type CheckoutStepAttempt, type CheckoutStepSource } from './CheckoutStepLog.js';
 import {
     isCaptureRefusalRetryable,
     isTerminalCapturePrecheck,
 } from './checkoutCaptureRetry.js';
+import { DescribeCheckoutSnapshot, SendOrderDescriptionToGateway } from './IntentDescription.js';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
@@ -141,6 +157,9 @@ interface CheckoutSnapshot {
     PricedLines?: CheckoutLineSummary[];
     TotalGross?: number;
     BillingAddress?: BillingLocation;
+    Answers?: CheckoutAnswersInput;
+    Attribution?: CheckoutAttribution;
+    Choices?: CheckoutChoicesInput;
     UpdatedAt?: string;
 }
 
@@ -350,6 +369,8 @@ export class CheckoutSessionService {
         'isEvent',
         'theme',
         'allowCoupons',
+        'questions',
+        'choiceGroups',
     ]);
 
     private static sanitizeConfigurationForClient(configObj: CheckoutWidgetConfiguration): CheckoutWidgetConfiguration {
@@ -709,6 +730,75 @@ export class CheckoutSessionService {
         return null;
     }
 
+    /** Resolved answers as the session metadata stores them, keyed by question. */
+    private static answersForStorage(answers: ResolvedCheckoutAnswer[]): CheckoutAnswersInput {
+        const stored: CheckoutAnswersInput = {};
+        for (const a of answers) {
+            stored[a.QuestionKey] = a.OtherText === null ? { Value: a.Answer } : { Value: a.Answer, OtherText: a.OtherText };
+        }
+        return stored;
+    }
+
+    /**
+     * The session's stored answers, checked in full against the widget's CURRENT questions:
+     * required answers present, choices valid. Run where money moves or the order books.
+     */
+    private static checkSessionAnswers(
+        widget: mjBizAppsOrdersCheckoutWidgetEntity,
+        session: mjBizAppsOrdersCheckoutSessionEntity
+    ): CheckoutAnswersCheck {
+        let questions: unknown;
+        if (widget.Configuration) {
+            try {
+                questions = (JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration).questions;
+            } catch {
+                return { Answers: [], Error: 'Invalid widget configuration' };
+            }
+        }
+        let stored: unknown;
+        if (session.MetadataJSON) {
+            try {
+                stored = (JSON.parse(session.MetadataJSON) as { Answers?: unknown }).Answers;
+            } catch {
+                stored = undefined;
+            }
+        }
+        return CheckCheckoutAnswers(questions, stored);
+    }
+
+    /** Whether a line can hold Order Line Choices. An extension-type line (IS-A) does not. */
+    private static canRecordChoices(line: unknown): line is mjBizAppsOrdersOrderLineEntity {
+        return !!(line as { Choices?: unknown }).Choices;
+    }
+
+    /**
+     * The session's stored choices, checked in full against the widget's CURRENT choice groups:
+     * every group within its min and max, every option one of the group's. Run where money moves
+     * or the order books.
+     */
+    private static checkSessionChoices(
+        widget: mjBizAppsOrdersCheckoutWidgetEntity,
+        session: mjBizAppsOrdersCheckoutSessionEntity
+    ): CheckoutChoicesCheck {
+        let groups: unknown;
+        if (widget.Configuration) {
+            try {
+                groups = (JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration).choiceGroups;
+            } catch {
+                return { Choices: [], Error: 'Invalid widget configuration' };
+            }
+        }
+        let stored: unknown;
+        if (session.MetadataJSON) {
+            try {
+                stored = (JSON.parse(session.MetadataJSON) as { Choices?: unknown }).Choices;
+            } catch {
+                stored = undefined;
+            }
+        }
+        return CheckCheckoutChoices(groups, stored);
+    }
+
     /**
      * Creates an order line entity instance attached to the order's Lines collection.
      */
@@ -847,7 +937,8 @@ export class CheckoutSessionService {
         email: string,
         lines: CheckoutLineInput[],
         billingAddress: CheckoutBillingAddressInput | null | undefined,
-        contextUser?: UserInfo
+        contextUser?: UserInfo,
+        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput }
     ): Promise<UpdateDraftResult> {
         const failed = (message: string): UpdateDraftResult => ({
             Success: false,
@@ -901,6 +992,37 @@ export class CheckoutSessionService {
                 return failed('Invalid widget configuration');
             }
         }
+
+        // Answers are stored as they stand, so a buyer can price the checkout before answering;
+        // a missing required answer is refused when the payment intent opens and at completion.
+        // What is sent must still be a well-formed answer to a question this widget asks.
+        const questions = ReadCheckoutQuestions(widgetConfig.questions);
+        if (questions.Error) {
+            return failed(questions.Error);
+        }
+        const draftAnswers = CheckAnswersAgainstQuestions(
+            questions.Questions.map((q) => ({ ...q, required: false })),
+            options?.Answers
+        );
+        if (draftAnswers.Error) {
+            return failed(draftAnswers.Error);
+        }
+
+        // Choices likewise: a draft may hold fewer than a group's minimum, never more than its
+        // maximum or an option it does not offer. The choice is the buyer's for the one item the
+        // widget sells, so a widget with choice groups takes a single line.
+        const choiceGroups = ReadCheckoutChoiceGroups(widgetConfig.choiceGroups);
+        if (choiceGroups.Error) {
+            return failed(choiceGroups.Error);
+        }
+        if (choiceGroups.Groups.length > 0 && Array.isArray(lines) && lines.length > 1) {
+            return failed('This checkout sells one item at a time.');
+        }
+        const draftChoices = CheckChoicesAgainstGroups(choiceGroups.Groups, options?.Choices, { partial: true });
+        if (draftChoices.Error) {
+            return failed(draftChoices.Error);
+        }
+
         const allowedProductIds = await this.resolveAllowedProductIds(widgetConfig, contextUser);
         const allowAnyProduct = widgetConfig.allowAnyProduct === true;
         if (!allowAnyProduct && allowedProductIds.size === 0) {
@@ -1027,6 +1149,13 @@ export class CheckoutSessionService {
             }
         }
 
+        // A choice is recorded on the order line itself. A line of an extension type (an event
+        // line) has no collection for it, so refuse here, before the buyer pays, rather than at
+        // completion.
+        if (choiceGroups.Groups.length > 0 && order.Lines.Items.some((l) => !CheckoutSessionService.canRecordChoices(l))) {
+            return failed('This checkout is not configured correctly (its choices cannot be recorded on this item).');
+        }
+
         // Price the draft order in memory
         try {
             const pricingService = new OrderPricingService({
@@ -1092,12 +1221,30 @@ export class CheckoutSessionService {
             session.PaymentIntentID = null;
         }
 
+        // Where the checkout came from, as the embedding host states it. Kept from an earlier draft
+        // when this one names none; dropped, never refused, when it cannot be read.
+        let attribution = NormalizeCheckoutAttribution(options?.Attribution);
+        if (!attribution && session.MetadataJSON) {
+            try {
+                // Written by an earlier draft of this session, so already normalised.
+                const stored = (JSON.parse(session.MetadataJSON) as { Attribution?: { Source?: unknown; Reference?: unknown } }).Attribution;
+                attribution = typeof stored?.Source === 'string'
+                    ? { Source: stored.Source, Reference: typeof stored.Reference === 'string' ? stored.Reference : null }
+                    : null;
+            } catch {
+                attribution = null;
+            }
+        }
+
         // Store checkout state in session metadata JSON — no orphan OrderHeader rows
         const snapshot: CheckoutSnapshot = {
             Lines: lines,
             PricedLines: lineSummaries,
             TotalGross: order.TotalGross,
             BillingAddress: location,
+            Answers: this.answersForStorage(draftAnswers.Answers),
+            ...(attribution ? { Attribution: attribution } : {}),
+            Choices: ChoicesForStorage(draftChoices.Choices),
             UpdatedAt: new Date().toISOString()
         };
         session.MetadataJSON = JSON.stringify(snapshot);
@@ -1185,6 +1332,15 @@ export class CheckoutSessionService {
             return failed('The checkout widget for this session could not be loaded.');
         }
 
+        const answersCheck = this.checkSessionAnswers(widget, session);
+        if (answersCheck.Error) {
+            return failed(answersCheck.Error);
+        }
+        const choicesCheck = this.checkSessionChoices(widget, session);
+        if (choicesCheck.Error) {
+            return failed(choicesCheck.Error);
+        }
+
         let paymentProviderId: string | undefined;
         let currencyCode: string | undefined;
         if (widget.Configuration) {
@@ -1205,6 +1361,9 @@ export class CheckoutSessionService {
             return failed('No metadata provider is available to open a payment intent.');
         }
 
+        // Products only: the order, and so its number, does not exist until completion.
+        const description = await DescribeCheckoutSnapshot(session.MetadataJSON, mdProvider, contextUser);
+
         const openResult = await OpenPaymentIntent({
             PaymentProviderID: paymentProviderId,
             Amount: snapshotTotal,
@@ -1214,7 +1373,8 @@ export class CheckoutSessionService {
             // Stable per-session idempotency key: reopening for the same session+amount
             // returns the SAME gateway intent instead of minting a fresh one per retry.
             IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}`,
-            Metadata: { CheckoutSessionID: sessionID }
+            Metadata: { CheckoutSessionID: sessionID },
+            Description: description
         }, mdProvider, contextUser);
 
         if (!openResult.Success || !openResult.PaymentIntentID) {
@@ -1278,7 +1438,7 @@ export class CheckoutSessionService {
             // `payment_intent.succeeded` is the other — BookSettledCheckoutPaymentIfNeeded, including
             // on AlreadyApplied webhook deliveries so a 500 after applyEvent still converges.
             if (orderLoaded) {
-                await this.applySettledPaymentToOrder(session, existingOrder, contextUser);
+                await this.applySettledPaymentToOrder(session, existingOrder, contextUser, { Source: 'Checkout' });
             }
             return {
                 Success: true,
@@ -1321,6 +1481,8 @@ export class CheckoutSessionService {
 
         // Set the moment order.Confirm() commits; controls the catch's no-revert posture.
         let confirmedOrderID: string | null = null;
+        // The Confirm step's record, begun once payment has checked out (#326).
+        let confirmStep: CheckoutStepAttempt | null = null;
 
         try {
             const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
@@ -1338,6 +1500,21 @@ export class CheckoutSessionService {
                 return {
                     Success: false,
                     ErrorMessage: MISSING_LOCATION_MESSAGE,
+                    SessionID: sessionID,
+                    Status: 'Open'
+                };
+            }
+
+            // Refused before anything is written, so an unanswered checkout creates no Person.
+            const answersCheck = this.checkSessionAnswers(widget, session);
+            const choicesCheck = this.checkSessionChoices(widget, session);
+            const unanswered = answersCheck.Error ?? choicesCheck.Error;
+            if (unanswered) {
+                await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
+                session.Status = 'Open';
+                return {
+                    Success: false,
+                    ErrorMessage: unanswered,
                     SessionID: sessionID,
                     Status: 'Open'
                 };
@@ -1480,6 +1657,32 @@ export class CheckoutSessionService {
                 }
             }
 
+            // The answers ride in the order's graph, so Confirm() writes them in the booking
+            // transaction: a refused confirm leaves none behind for a retry to duplicate.
+            for (const answer of answersCheck.Answers) {
+                const row = await order.CheckoutAnswers.Create();
+                row.QuestionKey = answer.QuestionKey;
+                row.QuestionLabel = answer.QuestionLabel;
+                row.Answer = answer.Answer;
+                row.OtherText = answer.OtherText;
+            }
+
+            // The choices ride on each line the checkout sold (every seat, in per-unit mode), in the
+            // same graph: the entitlement walk reads them from the line to decide which conditional
+            // entitlements to grant, and a refused confirm leaves none behind.
+            for (const line of order.Lines.Items) {
+                if (choicesCheck.Choices.length > 0 && !CheckoutSessionService.canRecordChoices(line)) {
+                    throw new Error('This checkout is not configured correctly (its choices cannot be recorded on this item).');
+                }
+                for (const choice of choicesCheck.Choices) {
+                    const row = await line.Choices.Create();
+                    row.GroupKey = choice.GroupKey;
+                    row.GroupLabel = choice.GroupLabel;
+                    row.OptionValue = choice.OptionValue;
+                    row.OptionLabel = choice.OptionLabel;
+                }
+            }
+
             // Price lines before confirmation
             const pricingService = new OrderPricingService({
                 Provider: (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
@@ -1534,6 +1737,9 @@ export class CheckoutSessionService {
                         Status: 'Open'
                     };
                 }
+                // Payment has checked out, so from here a failure leaves a paid checkout without
+                // an order. Record the attempt; Confirm rolls back on failure, the record does not.
+                confirmStep = await CheckoutStepLog.Begin(sessionID, 'Confirm', 'Checkout', contextUser);
             }
 
             // The billing location is the only location a self-serve sale has, so it is both the
@@ -1546,6 +1752,9 @@ export class CheckoutSessionService {
             // Confirm order via BaseEntity lifecycle (executes GL booking, entitlement issuance, status latching)
             await order.Confirm();
             confirmedOrderID = order.ID;
+            if (confirmStep) {
+                await CheckoutStepLog.Succeed(confirmStep);
+            }
 
             // The order is now COMMITTED — from this point nothing may revert the session to
             // Open, or a retry would book a second order for the same purchase. Session
@@ -1561,7 +1770,7 @@ export class CheckoutSessionService {
 
             // Book the PaymentHeader + allocation now that the order exists. retrieve-on-complete
             // only stamps PaymentIntent.Status = Succeeded; AmountPaid stays 0 until CapturePayment.
-            await this.applySettledPaymentToOrder(session, order, contextUser);
+            await this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Checkout' });
 
             // Mint the GuestOrder identity claim for the buyer's email so a later account
             // (MJ core's IdentityClaimEngineServer) can attach the order + its entitlement
@@ -1607,6 +1816,9 @@ export class CheckoutSessionService {
                     SessionID: sessionID,
                     Status: 'Confirmed'
                 };
+            }
+            if (confirmStep) {
+                await CheckoutStepLog.Fail(confirmStep, msg);
             }
             await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
             session.Status = 'Open';
@@ -1799,7 +2011,32 @@ export class CheckoutSessionService {
         if (!(await order.Load(session.DraftOrderID))) {
             return { Attempted: false, Booked: false };
         }
-        return this.applySettledPaymentToOrder(session, order, contextUser);
+        return this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Webhook' });
+    }
+
+    /**
+     * Operator replay of the Capture step (`Orders.ReplayCheckoutStep`, #326). The same idempotent
+     * CapturePayment as the complete call and the webhook, recorded as a Replay by the operator.
+     * Returns a refusal message instead when the session has no confirmed order to capture against.
+     */
+    public static async ReplayCapture(
+        sessionID: string,
+        contextUser: UserInfo,
+        replayedByUserID: string,
+    ): Promise<BookCheckoutPaymentResult | string> {
+        const md = new Metadata();
+        const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
+        if (!(await session.Load(sessionID))) {
+            return `Checkout session ${sessionID} not found.`;
+        }
+        if (session.Status !== 'Confirmed' || !session.DraftOrderID) {
+            return `Checkout session ${sessionID} has no confirmed order (status ${session.Status}); there is nothing to capture against.`;
+        }
+        const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
+        if (!(await order.Load(session.DraftOrderID))) {
+            return `The order on checkout session ${sessionID} could not be read.`;
+        }
+        return this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Replay', ReplayedByUserID: replayedByUserID });
     }
 
     /**
@@ -1813,7 +2050,8 @@ export class CheckoutSessionService {
     private static async applySettledPaymentToOrder(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         order: OrderHeaderEntity,
-        contextUser?: UserInfo
+        contextUser: UserInfo | undefined,
+        trigger: { Source: CheckoutStepSource; ReplayedByUserID?: string },
     ): Promise<BookCheckoutPaymentResult> {
         if (!session.PaymentIntentID) {
             return { Attempted: false, Booked: false };
@@ -1823,29 +2061,38 @@ export class CheckoutSessionService {
             return { Attempted: false, Booked: false };
         }
         if (Number(order.AmountPaid ?? 0) + 0.005 >= due) {
+            // Paid, possibly by another path after an earlier capture attempt failed. A record
+            // left Failed or Running would keep the session in the review queue.
+            await CheckoutStepLog.CloseIfOpen(session.ID, 'Capture', contextUser);
             return { Attempted: false, Booked: true };
         }
         if (!contextUser) {
-            return this.captureFailed(order.ID, 'no context user', undefined, undefined, session.ID);
+            return this.captureFailed(order.ID, 'no context user', undefined, undefined, session.ID, null);
         }
+        const step = await CheckoutStepLog.Begin(session.ID, 'Capture', trigger.Source, contextUser, trigger.ReplayedByUserID);
         if (!order.BillToPersonID && !order.BillToOrganizationID) {
-            return this.captureFailed(order.ID, 'no bill-to party', undefined, contextUser, session.ID);
+            return this.captureFailed(order.ID, 'no bill-to party', undefined, contextUser, session.ID, step);
         }
 
         const md = new Metadata();
         const intent = await md.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, contextUser);
         if (!(await intent.Load(session.PaymentIntentID))) {
-            return this.captureFailed(order.ID, 'payment intent not found', undefined, contextUser, session.ID);
+            return this.captureFailed(order.ID, 'payment intent not found', undefined, contextUser, session.ID, step);
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
             await this.refreshIntentFromGateway(intent, contextUser);
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
-            return this.captureFailed(order.ID, `intent status is ${intent.Status}`, undefined, contextUser, session.ID);
+            return this.captureFailed(order.ID, `intent status is ${intent.Status}`, undefined, contextUser, session.ID, step);
         }
 
         if (!intent.OrderHeaderID) {
             intent.OrderHeaderID = order.ID;
+            // Second step of the gateway description: the intent was opened before the order existed.
+            const mdForGateway = Metadata.Provider as IMetadataProvider | undefined;
+            if (mdForGateway) {
+                await SendOrderDescriptionToGateway(intent, order.ID, mdForGateway, contextUser);
+            }
         }
         if (!intent.BillToPersonID && order.BillToPersonID) {
             intent.BillToPersonID = order.BillToPersonID;
@@ -1872,7 +2119,7 @@ export class CheckoutSessionService {
 
         const mdProvider = Metadata.Provider as IMetadataProvider | undefined;
         if (!mdProvider) {
-            return this.captureFailed(order.ID, 'no metadata provider', undefined, contextUser, session.ID);
+            return this.captureFailed(order.ID, 'no metadata provider', undefined, contextUser, session.ID, step);
         }
 
         try {
@@ -1904,26 +2151,33 @@ export class CheckoutSessionService {
                     ?? output?.Blockers?.map((b) => b.Message).join('; ')
                     ?? 'unknown error';
                 const codes = (output?.Blockers ?? []).map((b) => b.Code).filter((c): c is string => Boolean(c));
-                return this.captureFailed(order.ID, detail, isCaptureRefusalRetryable(codes), contextUser, session.ID);
+                return this.captureFailed(order.ID, detail, isCaptureRefusalRetryable(codes), contextUser, session.ID, step);
             }
+            await CheckoutStepLog.Succeed(step);
             return { Attempted: true, Booked: true };
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            return this.captureFailed(order.ID, msg, true, contextUser, session.ID);
+            return this.captureFailed(order.ID, msg, true, contextUser, session.ID, step);
         }
     }
 
-    private static captureFailed(
+    private static async captureFailed(
         orderID: string,
         message: string,
-        retryable?: boolean,
-        contextUser?: UserInfo,
-        sessionID?: string,
-    ): BookCheckoutPaymentResult {
+        retryable: boolean | undefined,
+        contextUser: UserInfo | undefined,
+        sessionID: string,
+        step: CheckoutStepAttempt | null,
+    ): Promise<BookCheckoutPaymentResult> {
         const Retryable = retryable ?? !isTerminalCapturePrecheck(message);
         LogError(`[CheckoutSessionService] CapturePayment failed for order ${orderID}: ${message}`);
-        if (!Retryable) {
+        // One Task per terminal failure, not one per replay of it: the step record says whether
+        // the last attempt already ended the same way.
+        if (!Retryable && (!step || CheckoutStepLog.IsNewTerminalFailure(step))) {
             void raiseCheckoutCaptureTerminalAlert(orderID, sessionID, message, contextUser);
+        }
+        if (step) {
+            await CheckoutStepLog.Fail(step, message, Retryable);
         }
         return { Attempted: true, Booked: false, ErrorMessage: message, Retryable };
     }

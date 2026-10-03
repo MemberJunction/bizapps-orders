@@ -250,6 +250,106 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(secondSessionKey).toBe(firstSessionKey);
         });
 
+        describe('questions (#322)', () => {
+            const QUESTIONS = [
+                {
+                    key: 'source',
+                    label: 'How did you hear about us?',
+                    type: 'select' as const,
+                    options: ['Search', 'Other'],
+                    required: true,
+                    otherOptionKey: 'Other',
+                },
+            ];
+            const fillBuyer = () => {
+                component.config = { unitPrice: 0, questions: QUESTIONS } as CheckoutWidgetConfig;
+                component.email.set('jane@example.com');
+                component.firstName.set('Jane');
+                component.lastName.set('Doe');
+                fillLocation(component);
+            };
+
+            it('keeps Pay disabled until a required question is answered', () => {
+                fillBuyer();
+                expect(component.isFormValid()).toBe(false);
+                component.updateAnswer('source', { Value: 'Search' });
+                expect(component.isFormValid()).toBe(true);
+            });
+
+            it('requires the text answer when Other is chosen', () => {
+                fillBuyer();
+                component.updateAnswer('source', { Value: 'Other' });
+                expect(component.isOtherChosen(QUESTIONS[0])).toBe(true);
+                expect(component.isFormValid()).toBe(false);
+                component.updateAnswer('source', { OtherText: 'A podcast' });
+                expect(component.isFormValid()).toBe(true);
+            });
+
+            it('sends the answers with the submission', () => {
+                fillBuyer();
+                component.updateAnswer('source', { Value: 'Search' });
+                const emitSpy = vi.spyOn(component.submitted, 'emit');
+                component.handleSubmit();
+                expect(emitSpy.mock.calls[0][0].answers).toEqual({ source: { Value: 'Search' } });
+            });
+        });
+
+        describe('choice groups (#291)', () => {
+            const DEPARTMENTS = {
+                key: 'department',
+                label: 'Choose your departments',
+                options: ['Marketing', 'Membership', 'Finance'],
+                min: 2,
+                max: 2,
+            };
+            const TRACK = { key: 'track', label: 'Choose a track', options: ['Online', 'In person'], min: 1, max: 1 };
+            const fillBuyer = (choiceGroups: unknown[]) => {
+                component.config = { unitPrice: 0, choiceGroups } as CheckoutWidgetConfig;
+                component.email.set('jane@example.com');
+                component.firstName.set('Jane');
+                component.lastName.set('Doe');
+                fillLocation(component);
+            };
+
+            it('keeps Pay disabled until each group has its minimum', () => {
+                fillBuyer([DEPARTMENTS]);
+                expect(component.isFormValid()).toBe(false);
+                component.toggleChoice(DEPARTMENTS, 'Marketing');
+                expect(component.isFormValid()).toBe(false);
+                component.toggleChoice(DEPARTMENTS, 'Finance');
+                expect(component.isFormValid()).toBe(true);
+            });
+
+            it('stops a group at its maximum and disables the rest until one is unpicked', () => {
+                fillBuyer([DEPARTMENTS]);
+                component.toggleChoice(DEPARTMENTS, 'Marketing');
+                component.toggleChoice(DEPARTMENTS, 'Finance');
+                component.toggleChoice(DEPARTMENTS, 'Membership');
+                expect(component.choices()).toEqual({ department: ['Marketing', 'Finance'] });
+                expect(component.isGroupFull(DEPARTMENTS)).toBe(true);
+                component.toggleChoice(DEPARTMENTS, 'Marketing');
+                expect(component.choices()).toEqual({ department: ['Finance'] });
+                expect(component.isGroupFull(DEPARTMENTS)).toBe(false);
+            });
+
+            it('swaps the pick in a group of one', () => {
+                fillBuyer([TRACK]);
+                component.toggleChoice(TRACK, 'Online');
+                component.toggleChoice(TRACK, 'In person');
+                expect(component.choices()).toEqual({ track: ['In person'] });
+                expect(component.isFormValid()).toBe(true);
+            });
+
+            it('sends the picks with the submission', () => {
+                fillBuyer([DEPARTMENTS]);
+                component.toggleChoice(DEPARTMENTS, 'Membership');
+                component.toggleChoice(DEPARTMENTS, 'Finance');
+                const emitSpy = vi.spyOn(component.submitted, 'emit');
+                component.handleSubmit();
+                expect(emitSpy.mock.calls[0][0].choices).toEqual({ department: ['Membership', 'Finance'] });
+            });
+        });
+
         it('generates a unique per-instance widgetInstanceId', () => {
             const comp1 = new MJCheckoutWidgetComponent();
             const comp2 = new MJCheckoutWidgetComponent();
@@ -314,6 +414,20 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(component.totalGross()).toBe(107.25);
             component.quotedTotal = null;
             expect(component.totalGross()).toBe(100);
+        });
+    });
+
+    describe('prefilled e-mail', () => {
+        it('fills an empty e-mail field, and never overwrites what the buyer typed', () => {
+            component.prefillEmail = 'known@example.com';
+            component.ngOnInit();
+            expect(component.email()).toBe('known@example.com');
+
+            const other = new MJCheckoutWidgetComponent();
+            other.email.set('typed@example.com');
+            other.prefillEmail = 'known@example.com';
+            other.ngOnInit();
+            expect(other.email()).toBe('typed@example.com');
         });
     });
 });

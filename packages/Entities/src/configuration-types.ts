@@ -7,6 +7,9 @@
  * @module @mj-biz-apps/orders-entities/configuration-types
  */
 
+import type { CheckoutChoiceGroup } from './checkout-choices';
+import type { CheckoutQuestion } from './checkout-questions';
+
 export interface CustomUIThemeConfiguration {
     primaryColor?: string;
     accentColor?: string;
@@ -120,6 +123,20 @@ export interface CheckoutWidgetConfiguration {
         placeholder?: string;
         options?: Array<string | { label: string; value: string | number }>;
     }>;
+    /**
+     * Questions the buyer answers before paying, such as "How did you hear about us?". Not
+     * columns on any entity: the answers are recorded on the confirmed order as Order Checkout
+     * Answers. A required question blocks the payment intent and completion until answered.
+     */
+    questions?: CheckoutQuestion[];
+    /**
+     * Groups the buyer chooses from before paying: "choose N of these M options". Each pick is
+     * recorded on the order line as an Order Line Choice, and a Product Entitlement with a matching
+     * `ChoiceGroupKey` / `ChoiceOptionValue` grants only on a line that carries it. Picks outside
+     * `min`..`max`, or options not in the list, block the payment intent and completion. The widget
+     * must sell a single line.
+     */
+    choiceGroups?: CheckoutChoiceGroup[];
     /**
      * The PaymentProvider row id used to open payment intents for this widget's sessions.
      * Admin-authored, server-resolved — never accepted from the client. Required before a

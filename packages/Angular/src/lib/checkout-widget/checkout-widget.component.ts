@@ -41,6 +41,27 @@ import {
     CheckBillingLocation,
     type LocationOption
 } from '@mj-biz-apps/orders-entities/dist/billing-location.js';
+// Same reason: a dependency-free module the server also runs.
+import {
+    CheckAnswersAgainstQuestions,
+    CheckoutAnswerMaxLength,
+    CheckoutQuestionOptionLabel,
+    CheckoutQuestionOptionValue,
+    ReadCheckoutQuestions,
+    type CheckoutAnswerInput,
+    type CheckoutAnswersInput,
+    type CheckoutQuestion
+} from '@mj-biz-apps/orders-entities/dist/checkout-questions.js';
+// Same reason: a dependency-free module the server also runs.
+import {
+    CheckChoicesAgainstGroups,
+    CheckoutChoiceOptionLabel,
+    CheckoutChoiceOptionValue,
+    DescribeChoiceCount,
+    ReadCheckoutChoiceGroups,
+    type CheckoutChoiceGroup,
+    type CheckoutChoicesInput
+} from '@mj-biz-apps/orders-entities/dist/checkout-choices.js';
 
 export interface CheckoutWidgetTheme extends CustomUIThemeConfiguration {
     primaryColor?: string;
@@ -110,6 +131,10 @@ export interface CheckoutSubmissionEvent {
         units?: Array<Record<string, unknown>>;
     };
     totalGross: number;
+    /** Answers to the widget's `questions`, keyed by question key. */
+    answers: CheckoutAnswersInput;
+    /** Options chosen from the widget's `choiceGroups`, keyed by group key. */
+    choices: CheckoutChoicesInput;
     paymentToken?: string;
     stripePaymentMethodId?: string;
     stripePaymentIntentId?: string;
@@ -166,6 +191,8 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
 
     @Input() public isPaymentReady: boolean = false;
     @Input() public stripePaymentMethodId: string | null = null;
+    /** An e-mail the embedding host already knows. Fills the field only while it is empty. */
+    @Input() public prefillEmail: string | null = null;
 
     /**
      * The server's priced total and tax for the current details, once the host has drafted them.
@@ -197,6 +224,64 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     // Internal error message for client-side validation failures
     public internalErrorMessage = signal<string | null>(null);
     public displayErrorMessage = computed<string | null>(() => this._errorMessage() || this.internalErrorMessage());
+
+    /** The widget's questions. A malformed list shows none here; the server refuses the checkout. */
+    public questions = computed<CheckoutQuestion[]>(() => ReadCheckoutQuestions(this._config()?.questions).Questions);
+    public answers = signal<CheckoutAnswersInput>({});
+    public readonly optionValue = CheckoutQuestionOptionValue;
+    public readonly optionLabel = CheckoutQuestionOptionLabel;
+    public readonly answerMaxLength = CheckoutAnswerMaxLength;
+
+    public answerFor(key: string): CheckoutAnswerInput {
+        return this.answers()[key] ?? {};
+    }
+
+    public updateAnswer(key: string, patch: CheckoutAnswerInput): void {
+        this.answers.update((current) => ({ ...current, [key]: { ...current[key], ...patch } }));
+    }
+
+    /** True when the buyer chose the question's "Other" option, which needs a text answer. */
+    public isOtherChosen(question: CheckoutQuestion): boolean {
+        return question.otherOptionKey !== undefined && this.answerFor(question.key).Value === question.otherOptionKey;
+    }
+
+    private answersAreComplete(): boolean {
+        return !CheckAnswersAgainstQuestions(this.questions(), this.answers()).Error;
+    }
+
+    /** The widget's choice groups. A malformed list shows none here; the server refuses the checkout. */
+    public choiceGroups = computed<CheckoutChoiceGroup[]>(() => ReadCheckoutChoiceGroups(this._config()?.choiceGroups).Groups);
+    public choices = signal<CheckoutChoicesInput>({});
+    public readonly choiceValue = CheckoutChoiceOptionValue;
+    public readonly choiceLabel = CheckoutChoiceOptionLabel;
+    public readonly choiceCount = DescribeChoiceCount;
+
+    public isChosen(groupKey: string, value: string): boolean {
+        return (this.choices()[groupKey] ?? []).includes(value);
+    }
+
+    /**
+     * Pick or unpick an option. A group of one swaps the pick, as a radio would; a larger group
+     * stops at its maximum, and the template disables the rest until one is unpicked.
+     */
+    public toggleChoice(group: CheckoutChoiceGroup, value: string): void {
+        this.choices.update((current) => {
+            const picked = current[group.key] ?? [];
+            if (picked.includes(value)) return { ...current, [group.key]: picked.filter((v) => v !== value) };
+            if (group.max === 1) return { ...current, [group.key]: [value] };
+            if (picked.length >= group.max) return current;
+            return { ...current, [group.key]: [...picked, value] };
+        });
+    }
+
+    /** True when the group is full, so its unpicked options are disabled. */
+    public isGroupFull(group: CheckoutChoiceGroup): boolean {
+        return group.max > 1 && (this.choices()[group.key] ?? []).length >= group.max;
+    }
+
+    private choicesAreComplete(): boolean {
+        return !CheckChoicesAgainstGroups(this.choiceGroups(), this.choices()).Error;
+    }
 
     // Form state signals
     public email = signal<string>('');
@@ -298,6 +383,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     });
 
     public ngOnInit(): void {
+        this.applyPrefillEmail();
         this.syncUnits();
         this.applyCustomCSS(this.activeCSS());
         if (this.activeJS() && this.activeJS() !== this._lastMountedJS) {
@@ -309,7 +395,17 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         });
     }
 
+    private applyPrefillEmail(): void {
+        const prefill = (this.prefillEmail ?? '').trim();
+        if (prefill && !this.email().trim()) {
+            this.email.set(prefill);
+        }
+    }
+
     public ngOnChanges(changes: SimpleChanges): void {
+        if (changes['prefillEmail']) {
+            this.applyPrefillEmail();
+        }
         if (changes['config']) {
             this.syncUnits();
             this.applyCustomCSS(this.activeCSS());
@@ -517,6 +613,8 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             const fn = this.firstName().trim();
             const ln = this.lastName().trim();
             if (!em || !em.includes('@') || !fn || !ln) return false;
+            if (!this.answersAreComplete()) return false;
+            if (!this.choicesAreComplete()) return false;
             if (!this.isFree() && !this.isPaymentReady) return false;
             return true;
         }
@@ -550,6 +648,10 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             }
         }
 
+        if (!this.answersAreComplete() || !this.choicesAreComplete()) {
+            return false;
+        }
+
         if (!this.isFree() && !this.isPaymentReady) {
             return false;
         }
@@ -576,6 +678,8 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
                 units: isPerUnit ? currentUnits : undefined
             },
             totalGross: this.totalGross(),
+            answers: this.answers(),
+            choices: this.choices(),
             stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? undefined),
             sessionKey: finalSessionKey
         };
