@@ -214,9 +214,9 @@ export class StripePaymentProvider extends BasePaymentProvider {
         if (request.ExistingProviderCustomerRef) {
             return { Success: true, ProviderCustomerRef: request.ExistingProviderCustomerRef, WasExisting: true };
         }
-        const owner = request.BillToPersonID ?? request.BillToOrganizationID;
+        const owner = request.BillToPersonID ?? request.BillToOrganizationID ?? request.CheckoutSessionID;
         if (!owner) {
-            return { Success: false, Reason: 'A Stripe customer needs the person or organization it belongs to.' };
+            return { Success: false, Reason: 'A Stripe customer needs the person, organization or checkout it belongs to.' };
         }
 
         if (this.useStub) {
@@ -228,6 +228,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         if (request.Name) body.name = request.Name;
         if (request.BillToPersonID) body['metadata[PersonID]'] = request.BillToPersonID;
         if (request.BillToOrganizationID) body['metadata[OrganizationID]'] = request.BillToOrganizationID;
+        if (request.CheckoutSessionID) body['metadata[CheckoutSessionID]'] = request.CheckoutSessionID;
 
         const result = await this.call('POST', '/customers', body, request.IdempotencyKey);
         if (!result.Ok) return { Success: false, Reason: result.Reason };

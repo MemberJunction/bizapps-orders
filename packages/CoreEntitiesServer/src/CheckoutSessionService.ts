@@ -49,7 +49,7 @@ import { OpenPaymentIntent } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import {
     FindReusableProviderCustomerRef,
-    OrderSellsSubscription,
+    SnapshotSellsSubscription,
     SaveCheckoutInstrumentForRenewals,
 } from './CheckoutSavedInstrument.js';
 import {
@@ -1570,11 +1570,9 @@ export class CheckoutSessionService {
         // with different parameters, so a changed e-mail must not reuse the key: a short hash of the
         // address goes into it.
         const receiptEmail = sendReceipt && session.Email ? session.Email.trim().toLowerCase() : null;
-        let receiptKey = '';
-        if (receiptEmail) {
-            const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(receiptEmail)));
-            receiptKey = `-r${Array.from(digest.slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('')}`;
-        }
+        const receiptKey = receiptEmail ? `-r${await this.keyDigest(receiptEmail)}` : '';
+        // Likewise the customer the card is kept for: a changed e-mail can mean a different customer.
+        const keepKey = saveForRenewal ? `-k${await this.keyDigest(saveForRenewal)}` : '';
 
         const openResult = await OpenPaymentIntent({
             PaymentProviderID: paymentProviderId,
@@ -1587,7 +1585,7 @@ export class CheckoutSessionService {
             // returns the SAME gateway intent instead of minting a fresh one per retry. A
             // card-keeping intent, and a receipt to a given e-mail, each get their own key, because the
             // gateway refuses a repeated key whose request parameters differ.
-            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}${saveForRenewal ? '-keep' : ''}${receiptKey}`,
+            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}${keepKey}${receiptKey}`,
             Metadata: { CheckoutSessionID: sessionID },
             Description: description,
             ReceiptEmail: receiptEmail
@@ -1615,8 +1613,10 @@ export class CheckoutSessionService {
 
     /**
      * The gateway customer a renewal card will belong to, when this checkout sells a subscription:
-     * the one the buyer already has with this provider, or a new one. Null when nothing renews or the
-     * customer cannot be had — logged, and the sale goes ahead without keeping the card.
+     * the one the buyer already has with this provider, or a new one. A buyer with no person record
+     * yet — completion creates it — gets a customer opened for this checkout, keyed on the session and
+     * the e-mail; the card is filed under the person once the order is booked. Null when nothing
+     * renews or the customer cannot be had — logged, and the sale goes ahead without keeping the card.
      */
     private static async resolveCustomerForRenewal(
         session: mjBizAppsOrdersCheckoutSessionEntity,
@@ -1624,21 +1624,28 @@ export class CheckoutSessionService {
         mdProvider: IMetadataProvider,
         contextUser: UserInfo
     ): Promise<string | null> {
-        if (!session.DraftOrderID || !session.PersonID) {
+        const email = session.Email?.trim().toLowerCase() || null;
+        if (!session.PersonID && !email) {
             return null;
         }
         try {
-            if (!(await OrderSellsSubscription(session.DraftOrderID, contextUser))) {
+            if (!(await SnapshotSellsSubscription(session.MetadataJSON, contextUser))) {
                 return null;
             }
-            const existing = await FindReusableProviderCustomerRef(session.PersonID, paymentProviderId, contextUser);
             const driver = await ResolvePaymentProvider(paymentProviderId, mdProvider, contextUser);
-            const customer = await driver.EnsureCustomer({
-                ExistingProviderCustomerRef: existing,
-                Email: session.Email ?? null,
-                BillToPersonID: session.PersonID,
-                IdempotencyKey: `customer-${session.PersonID}-${paymentProviderId}`,
-            });
+            const customer = session.PersonID
+                ? await driver.EnsureCustomer({
+                      ExistingProviderCustomerRef: await FindReusableProviderCustomerRef(session.PersonID, paymentProviderId, contextUser),
+                      Email: email,
+                      BillToPersonID: session.PersonID,
+                      IdempotencyKey: `customer-${session.PersonID}-${paymentProviderId}`,
+                  })
+                : await driver.EnsureCustomer({
+                      ExistingProviderCustomerRef: null,
+                      Email: email,
+                      CheckoutSessionID: session.ID,
+                      IdempotencyKey: `customer-checkout-${session.ID}-${paymentProviderId}-${await this.keyDigest(email!)}`,
+                  });
             if (!customer.Success || !customer.ProviderCustomerRef) {
                 LogError(
                     `[CheckoutSessionService] Session ${session.ID}: no gateway customer for the renewal card ` +
@@ -1654,6 +1661,15 @@ export class CheckoutSessionService {
             );
             return null;
         }
+    }
+
+    /**
+     * Twelve hex characters of a SHA-256, for idempotency keys that must change with a value — an
+     * e-mail, a gateway customer — without carrying it.
+     */
+    private static async keyDigest(value: string): Promise<string> {
+        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
+        return Array.from(digest.slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('');
     }
 
     /**

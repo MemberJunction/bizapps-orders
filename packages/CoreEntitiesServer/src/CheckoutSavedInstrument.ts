@@ -6,12 +6,15 @@
  * payment — asking later is impossible, because the buyer and their card entry are gone. So this runs
  * in two places, and both are about the first purchase:
  *
- *   BEFORE PAYMENT   `OrderSellsSubscription` decides whether to ask at all, and
- *                    `FindReusableProviderCustomerRef` finds the gateway customer the card will belong
- *                    to. One customer per person per provider: a person's second subscription reuses
- *                    the customer their first created, found through their own wallet — never by
- *                    searching the gateway by e-mail, which would attach to records this application
- *                    did not create.
+ *   BEFORE PAYMENT   `SnapshotSellsSubscription` decides whether to ask at all, from the products in
+ *                    the session's priced draft: the order is created only after payment, so there is
+ *                    no order to read yet. `FindReusableProviderCustomerRef` finds the gateway
+ *                    customer the card will belong to. One customer per person per provider: a
+ *                    person's second subscription reuses the customer their first created, found
+ *                    through their own wallet — never by searching the gateway by e-mail, which would
+ *                    attach to records this application did not create. A first-time buyer has no
+ *                    person yet (completion creates it), so their customer is opened for the checkout
+ *                    session instead, and becomes that person's once the card is filed.
  *   AFTER PAYMENT    `SaveCheckoutInstrumentForRenewals` reads back the card the buyer paid with, puts
  *                    it in their wallet (`CustomerPaymentMethod` over its own `PaymentDetail`, D38/D39)
  *                    and makes it each new subscription's renewal card.
@@ -47,21 +50,23 @@ const CUSTOMER_PAYMENT_METHOD_ENTITY = 'MJ_BizApps_Orders: Customer Payment Meth
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 const PAYMENT_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Types';
 
-/** True when any line on the order sells a product that renews as a subscription. */
-export async function OrderSellsSubscription(orderID: string, user: UserInfo): Promise<boolean> {
-    const rv = new RunView();
-    const lines = await rv.RunView<{ ProductID: string | null }>(
-        {
-            EntityName: ORDER_LINE_ENTITY,
-            ExtraFilter: `OrderHeaderID = '${RequireUUID(orderID, 'OrderHeaderID')}'`,
-            Fields: ['ProductID'],
-            ResultType: 'simple',
-        },
-        user,
-    );
-    const productIDs = [...new Set((lines.Results ?? []).map((l) => l.ProductID).filter((id): id is string => !!id))];
+/**
+ * True when the session's priced draft sells a product that renews as a subscription. Read from the
+ * snapshot because the order does not exist until payment has settled.
+ */
+export async function SnapshotSellsSubscription(metadataJSON: string | null | undefined, user: UserInfo): Promise<boolean> {
+    let priced: Array<{ ProductID?: string | null }> = [];
+    if (metadataJSON) {
+        try {
+            priced = (JSON.parse(metadataJSON) as { PricedLines?: Array<{ ProductID?: string | null }> }).PricedLines ?? [];
+        } catch {
+            priced = [];
+        }
+    }
+    const productIDs = [...new Set(priced.map((l) => l.ProductID).filter((id): id is string => !!id))];
     if (productIDs.length === 0) return false;
 
+    const rv = new RunView();
     const products = await rv.RunView<{ ID: string }>(
         {
             EntityName: PRODUCT_ENTITY,

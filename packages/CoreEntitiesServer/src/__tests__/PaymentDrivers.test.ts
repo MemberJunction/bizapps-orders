@@ -630,6 +630,19 @@ describe('StripePaymentProvider — keeping a card for later charges', () => {
         }
     });
 
+    it('creates a customer for a checkout when the buyer has no person yet', async () => {
+        const { driver, calls, restore } = recordingLive({ id: 'cus_checkout' });
+        try {
+            const result = await driver.EnsureCustomer({ Email: 'new@example.com', CheckoutSessionID: 'sess-1' });
+            expect(result).toEqual({ Success: true, ProviderCustomerRef: 'cus_checkout', WasExisting: false });
+            expect(calls[0].body.get('email')).toBe('new@example.com');
+            expect(calls[0].body.get('metadata[CheckoutSessionID]')).toBe('sess-1');
+            expect(calls[0].body.get('metadata[PersonID]')).toBeNull();
+        } finally {
+            restore();
+        }
+    });
+
     it('refuses a customer with no owner', async () => {
         const result = await stripe({ IsLiveMode: true }).EnsureCustomer({ Email: 'buyer@example.com' });
         expect(result.Success).toBe(false);

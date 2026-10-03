@@ -33,7 +33,7 @@ vi.mock('../PaymentProviderResolver.js', () => ({
     ResolvePaymentProvider: async () => ({ RetrieveIntent: state.retrieve }),
 }));
 
-import { SaveCheckoutInstrumentForRenewals, OrderSellsSubscription } from '../CheckoutSavedInstrument.js';
+import { SaveCheckoutInstrumentForRenewals, SnapshotSellsSubscription } from '../CheckoutSavedInstrument.js';
 
 const user = { ID: 'u-1' } as unknown as UserInfo;
 
@@ -162,16 +162,28 @@ describe('SaveCheckoutInstrumentForRenewals', () => {
     });
 });
 
-describe('OrderSellsSubscription', () => {
-    it('is true when a line’s product has a subscription type', async () => {
-        state.views['MJ_BizApps_Orders: Products'] = [{ ID: 'p' }];
-        expect(await OrderSellsSubscription(ORDER, user)).toBe(true);
+describe('SnapshotSellsSubscription', () => {
+    const PRODUCT = 'aaaaaaaa-0000-0000-0000-0000000000a1';
+    const snapshot = JSON.stringify({ PricedLines: [{ ProductID: PRODUCT }], TotalGross: 200 });
+
+    it('is true when a drafted product has a subscription type', async () => {
+        state.views['MJ_BizApps_Orders: Products'] = [{ ID: PRODUCT }];
+        expect(await SnapshotSellsSubscription(snapshot, user)).toBe(true);
         const productFilter = state.filters.find((f) => f.EntityName === 'MJ_BizApps_Orders: Products')!.ExtraFilter!;
+        expect(productFilter).toContain(PRODUCT);
         expect(productFilter).toContain('SubscriptionTypeID IS NOT NULL');
+        // The order does not exist before payment, so its lines are never read.
+        expect(state.filters.some((f) => f.EntityName === 'MJ_BizApps_Orders: Order Lines')).toBe(false);
     });
 
-    it('is false for an order with no subscription product', async () => {
+    it('is false for a draft with no subscription product', async () => {
         state.views['MJ_BizApps_Orders: Products'] = [];
-        expect(await OrderSellsSubscription(ORDER, user)).toBe(false);
+        expect(await SnapshotSellsSubscription(snapshot, user)).toBe(false);
+    });
+
+    it('is false, without a query, for an empty or unreadable snapshot', async () => {
+        expect(await SnapshotSellsSubscription(null, user)).toBe(false);
+        expect(await SnapshotSellsSubscription('{not json', user)).toBe(false);
+        expect(state.filters).toHaveLength(0);
     });
 });

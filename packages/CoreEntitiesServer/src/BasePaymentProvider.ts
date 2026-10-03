@@ -176,6 +176,11 @@ export interface EnsureCustomerRequest {
     /** Ours, echoed into the gateway's record so the two can be matched. */
     BillToPersonID?: string | null;
     BillToOrganizationID?: string | null;
+    /**
+     * Ours: the checkout the customer is opened for, when the buyer has no person record yet. The
+     * person that checkout's completion creates owns the card filed against this customer.
+     */
+    CheckoutSessionID?: string | null;
     /** Sent to gateways that support one, so a retried call does not create a second customer. */
     IdempotencyKey?: string;
 }
