@@ -13,7 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
-    posted: [] as Array<{ MeasurementDate: string }>,
+    posted: [] as Array<{ ID: string; MeasurementDate: string; Status: string }>,
     events: [] as string[],
     raised: [] as Array<Array<Record<string, unknown>>>,
     typeReads: 0,
@@ -134,6 +134,7 @@ const ORDER_ID = '22222222-2222-4222-8222-222222222222';
 const COMPANY_ID = '33333333-3333-4333-8333-333333333333';
 const ATTESTER: UserInfo = { ID: '44444444-4444-4444-8444-444444444444', Name: 'Attester', Email: 'attester@example.com' } as unknown as UserInfo;
 const OBSERVATION_ID = '55555555-5555-4555-8555-555555555555';
+const PRIOR_ID = '66666666-6666-4666-8666-666666666666';
 
 const JUDGMENT = (config: Record<string, unknown>) => ({ Code: 'PROGRESS_JUDGMENT_CALL', IsActive: true, Configuration: config });
 const AGREED = { MaxSingleObservationAmount: 10000, FlagBackwardSlide: true, FlagFirstObservation: true };
@@ -277,7 +278,7 @@ describe('Orders.RecordProgress raises PROGRESS_JUDGMENT_CALL', () => {
     });
 
     it('a backward slide on an attested line raises for that reason alone', async () => {
-        h.posted = [{ MeasurementDate: '2026-08-31' }];
+        h.posted = [{ ID: PRIOR_ID, MeasurementDate: '2026-08-31', Status: 'Posted' }];
         await attest(0.2, 6000); // -2000
         expect(h.raised).toHaveLength(1);
         expect(h.raised[0][0].Amount).toBe(-2000);
@@ -285,7 +286,7 @@ describe('Orders.RecordProgress raises PROGRESS_JUDGMENT_CALL', () => {
     });
 
     it('an outsized forward catch-up on an attested line raises for the amount alone', async () => {
-        h.posted = [{ MeasurementDate: '2026-08-31' }];
+        h.posted = [{ ID: PRIOR_ID, MeasurementDate: '2026-08-31', Status: 'Posted' }];
         await attest(0.6, 0); // +12000
         expect(h.raised[0][0].Summary).toMatch(/: 12000\.00 is above the single-observation limit of 10000\.00\.$/);
     });
@@ -301,7 +302,7 @@ describe('Orders.RecordProgress raises PROGRESS_JUDGMENT_CALL', () => {
     });
 
     it('a forward catch-up below the limit on an attested line raises nothing, and still posts', async () => {
-        h.posted = [{ MeasurementDate: '2026-08-31' }];
+        h.posted = [{ ID: PRIOR_ID, MeasurementDate: '2026-08-31', Status: 'Posted' }];
         const res = await attest(0.5, 6000); // +4000
         expect(res.Success).toBe(true);
         expect(res.JournalEntryID).toBe('JE-1');

@@ -415,7 +415,11 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         order.Notes = reason ? `Subscription cancellation: ${reason}` : 'Subscription cancellation';
 
         for (const [index, slice] of slices.entries()) {
-            const line = await this.reversalLine(provider, user, slice.Term, slice.Decision, index + 1);
+            const { Line: line, OriginOrderHeaderID } = await this.reversalLine(provider, user, slice.Term, slice.Decision, index + 1);
+            // The order that sold the first reversed term. The booking save takes the reversal's
+            // addresses from it. Tax is mirrored per line from each term's own sale, so a reversal
+            // spanning two orders still refunds each line's tax where it was collected.
+            order.ReversesOrderHeaderID ??= OriginOrderHeaderID;
             // Attached rather than assigned: `Lines` is a RelatedRecordCollection on the generated
             // class, and `Add()` stamps OrderHeaderID and the LineNumber for us.
             order.Lines.Add(line);
@@ -430,14 +434,14 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         return { ID: order.ID, Number: order.OrderNumber };
     }
 
-    /** The negative slice of the line that bought `term`, as decided. */
+    /** The negative slice of the line that bought `term`, as decided, and the order that sold it. */
     private async reversalLine(
         provider: IMetadataProvider,
         user: UserInfo,
         term: TermRow,
         decision: CancellationDecision,
         lineNumber: number,
-    ): Promise<mjBizAppsOrdersOrderLineEntity> {
+    ): Promise<{ Line: mjBizAppsOrdersOrderLineEntity; OriginOrderHeaderID: string }> {
         const original = await this.loadOriginalLine(provider, user, term.OrderLineID);
         if (!original) {
             throw new Error(
@@ -487,7 +491,7 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         line.ReversesOrderLineID = original.ID;
         line.ServicePeriodStart = decision.EffectiveDate;
         line.ServicePeriodEnd = new Date(term.EndDate);
-        return line;
+        return { Line: line, OriginOrderHeaderID: original.OrderHeaderID };
     }
 
     private async loadOriginalLine(

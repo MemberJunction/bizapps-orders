@@ -25,6 +25,8 @@
  *        same two in date order credit 2,160 then 360 and the origin's billed ties to its revenue
  *   RV9  a subscription line earned ahead of billing (instalment 3 skipped) is refused on the staged
  *        earned figure, naming instalment 3; nothing is cancelled and nothing is booked
+ *   RV10 a taxed line billed by instalment, 4 of 10 returned: the memo credits 360 and the return
+ *        refunds no tax, because the tax reaches the ledger one instalment at a time (#266)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -51,6 +53,7 @@ import {
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from '../entity-names.js';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
 import { issue } from './payment-schedule.checks.js';
+import type { RequestedCharge } from '@mj-biz-apps/orders-core-entities-server';
 
 /** The order date every fixture here uses, so "due on the order date" is unambiguous. */
 const ORDER_DATE = '2026-07-01';
@@ -114,6 +117,8 @@ interface SaleSpec {
     instalments: { InstallmentNumber: number; DueDate: string; Amount: number }[];
     /** A deferred driver earns across a window and refuses to book without one. */
     servicePeriod?: { Start: string; End: string };
+    /** Charges stated on the order before confirm. The schedule must then tie to the charged gross. */
+    charges?: RequestedCharge[];
 }
 
 /**
@@ -136,6 +141,7 @@ async function confirmedOrder(ctx: IntegrationCheckContext, spec: SaleSpec) {
                 ServicePeriodEnd: spec.servicePeriod?.End,
             },
         ],
+        ...(spec.charges ? { Charges: spec.charges } : {}),
     });
     Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
     const orderID = draft.Order.ID as string;
@@ -586,6 +592,71 @@ export const ContractReversalChecks: NamedCheck[] = [
                     'nothing was cancelled',
                 );
                 AssertEqual(Number((await lineTotals(ctx, orderID))[0].BilledToDate), 5400, 'and nothing was booked against the origin');
+            }),
+    },
+    {
+        Id: 'contract-reversal.RV10',
+        Name: 'RV10: a taxed line billed by instalment, 4 of 10 returned, credits 360 and refunds no tax',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // Scenario 1 as ten units, with 10% tax stated on the order: 10,800 net, 1,080 tax,
+                // billed 2,970 a quarter. Tax reaches Sales Tax Payable one instalment at a time, so
+                // the tax on the line is the whole contract's. A return that refunded four tenths of
+                // it (432) would debit tax never invoiced.
+                const spec: SaleSpec = {
+                    ...SCENARIO_1(10),
+                    charges: [{ Code: 'SalesTax', Rate: 0.1 }],
+                    instalments: SCENARIO_1().instalments.map((r) => ({ ...r, Amount: 2970 })),
+                };
+                const sale = await confirmedOrder(ctx, spec);
+                Assert(sale.saved, `confirm: ${sale.message}`);
+                Assert((await issue(ctx, sale.ids[1])).Success, 'issue instalment 2');
+                const origin = await TxOne<{ ID: string; LineTax: number; BilledToDate: number }>(
+                    ctx,
+                    `SELECT ID, LineTax, BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${sale.orderID}'`,
+                );
+                AssertEqual(cents(origin!.LineTax), 1080, 'the sale must actually be taxed, or this check proves nothing');
+                AssertEqual(Number(origin!.BilledToDate), 5400, 'two instalments billed, on net');
+
+                const back = await reverse(ctx, origin!.ID, f.Products.DeferredA, {
+                    quantity: 4,
+                    orderDate: MONTH_FIVE,
+                    servicePeriod: SCENARIO_1().servicePeriod,
+                });
+                Assert(back.Saved, `the reversal must confirm: ${back.Message}`);
+                const backID = back.Order.ID as string;
+
+                const ar = await accountCodeForRole(ctx, 'Accounts Receivable', f.CoA.ID);
+                const memo = cents(
+                    (await valueLines(ctx, backID)).filter((l) => l.Code === ar).reduce((s, l) => s + Number(l.Credit ?? 0), 0),
+                );
+                AssertEqual(memo, 360, 'four tenths of the 900 billed and not yet earned');
+
+                const returned = await TxOne<{ Tax: number }>(
+                    ctx,
+                    `SELECT ISNULL(SUM(LineTax), 0) AS Tax FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${backID}'`,
+                );
+                AssertEqual(cents(returned!.Tax), 0, 'no tax refunded on the return line');
+                const taxCharges = await TxOne<{ N: number }>(
+                    ctx,
+                    `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderCharge c
+                       JOIN ${ORDERS_SCHEMA}.ChargeType t ON t.ID = c.ChargeTypeID
+                      WHERE c.OrderHeaderID = '${backID}' AND t.Category = 'Tax'`,
+                );
+                AssertEqual(Number(taxCharges!.N), 0, 'and no tax charge recorded on the return');
+                const taxLines = await TxOne<{ N: number }>(
+                    ctx,
+                    `SELECT COUNT(*) AS N
+                       FROM ${ACCT_SCHEMA}.vwJournalEntries je
+                       JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+                       JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                      WHERE gl.Name = 'Sales Tax Payable'
+                        AND je.LinkedRecordID IN
+                            (SELECT CAST(ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${backID}')`,
+                );
+                AssertEqual(Number(taxLines!.N), 0, 'and nothing posted to Sales Tax Payable');
             }),
     },
 ];

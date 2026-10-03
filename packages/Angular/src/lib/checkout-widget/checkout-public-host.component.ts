@@ -19,6 +19,7 @@ import {
     inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { WithOrderReference } from './checkout-redirect';
 import {
     ACCOUNT_STEP_FAILED,
     AccountMessage,
@@ -42,7 +43,18 @@ import {
     type CheckoutElementState,
 } from './checkout-events';
 import {
+    ACCESS_POLL_INTERVAL_MS,
+    ACCESS_POLL_TIMEOUT_MS,
+    AccessMessage,
+    CHECKOUT_ACCESS_STATE_EVENT,
+    IsFinalAccessState,
+    ReadAccessState,
+    type CheckoutAccessState,
+} from './checkout-access';
+import {
     MJCheckoutWidgetComponent,
+    type CheckoutAppliedPromotion,
+    type CheckoutServerPricedTotal,
     type CheckoutSubmissionEvent,
     type CheckoutWidgetConfig,
 } from './checkout-widget.component';
@@ -52,6 +64,7 @@ import {
     formatStripeError,
     type CheckoutAlreadySubscribedDetail,
     intentAlreadyCollected,
+    memberDiscountNotice,
     stripeConfirmAlreadyCollected,
 } from './checkout-draft-line';
 
@@ -68,7 +81,15 @@ interface StripeInstance {
     elements(): { create(type: string): StripeCard };
     confirmCardPayment(
         clientSecret: string,
-        opts: { payment_method: { card: StripeCard; billing_details?: { email?: string } } }
+        opts: {
+            payment_method: {
+                card: StripeCard;
+                billing_details?: {
+                    email?: string;
+                    address?: { country?: string; state?: string; postal_code?: string };
+                };
+            };
+        }
     ): Promise<{ error?: { message?: string }; paymentIntent?: { status?: string } }>;
 }
 
@@ -91,6 +112,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     @Input() public slug = '';
     @Input() public apiRoot = '/checkout';
+    /** A host-signed membership token, verified server-side on /draft and never stored (#324). */
+    @Input() public memberToken = '';
 
     /**
      * The buyer already subscribes to what they tried to buy (#323). As the `<mj-orders-checkout>`
@@ -108,6 +131,15 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public loadError: string | null = null;
     public successMessage: string | null = null;
     public orderNumber: string | null = null;
+    /** The code the server last priced, fed back to the widget so it shows the discounted total. */
+    public appliedPromotion: CheckoutAppliedPromotion | null = null;
+    /** Why the last code could not be used. */
+    public promotionError: string | null = null;
+    /** The total the server last priced the draft at, fed back so the widget charges what it shows. */
+    public serverPricedTotal: CheckoutServerPricedTotal | null = null;
+    /** The server's total and tax for the details last drafted — shown before the buyer is charged. */
+    public quotedTotal: number | null = null;
+    public quotedTax: number | null = null;
 
     /** The post-payment account step, when the host registered one (#292). */
     public account: CheckoutAccountView | null = null;
@@ -129,10 +161,23 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         return VerificationNote(this.account);
     }
 
+    /** Whether the buyer's access is ready (#325); null while nothing is tracked. */
+    public accessState: CheckoutAccessState | null = null;
+    /** How often, and for how long, the success screen asks. Fields so a test can shorten them. */
+    public accessPollIntervalMs = ACCESS_POLL_INTERVAL_MS;
+    public accessPollTimeoutMs = ACCESS_POLL_TIMEOUT_MS;
+    /** True while access is being asked for; the redirect waits on it. */
+    private accessTracking = false;
+
+    public get accessMessage(): string | null {
+        return AccessMessage(this.accessState, this.config?.accessMessages);
+    }
+
     private stripe: StripeInstance | null = null;
     private card: StripeCard | null = null;
     private cardMounted = false;
     private destroyed = false;
+    private memberNoticeShown = false;
     private state: CheckoutElementState | null = null;
     /** Bumped by Cancel: the template re-creates the widget, which clears everything the buyer entered. */
     public formGeneration = 0;
@@ -148,6 +193,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     }
 
     public async ngOnInit(): Promise<void> {
+        // A reset runs this again: a failure from the previous attempt must not outlive it.
+        this.loadError = null;
         this.readHostAttributes();
         if (!this.slug) {
             this.loadError = 'This checkout link is missing its reference.';
@@ -217,6 +264,69 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
+    /** The buyer pressed Apply: price the form with the code and show what it does. */
+    public async onPromotionCodeApplied(event: CheckoutSubmissionEvent): Promise<void> {
+        if (this.processing || !this.config?.productId || !event.promotionCode) {
+            return;
+        }
+        this.processing = true;
+        this.promotionError = null;
+        try {
+            const draft = await this.post('/draft', {
+                sessionId: this.sessionId,
+                clientSessionKey: this.sessionKey,
+                email: event.email,
+                lines: [buildCheckoutDraftLine(this.config.productId, event)],
+                billingAddress: event.billingAddress,
+                answers: event.answers,
+                choices: event.choices,
+                ...(this.attributionSource
+                    ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
+                    : {}),
+                ...(this.memberToken ? { memberToken: this.memberToken } : {}),
+                promotionCodes: [event.promotionCode],
+            });
+            this.applyPromotionOutcome(draft, event);
+        } catch {
+            this.promotionError = 'The code could not be checked. Please try again.';
+        } finally {
+            this.processing = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * Read a draft's verdict on the buyer's code into the widget's inputs. Returns true when the
+     * draft priced the code (or no code was sent), false when the code was refused.
+     */
+    private applyPromotionOutcome(draft: Record<string, unknown> | null | undefined, event: CheckoutSubmissionEvent): boolean {
+        if (!event.promotionCode) {
+            this.appliedPromotion = null;
+            return true;
+        }
+        if (!draft?.Success) {
+            this.appliedPromotion = null;
+            this.promotionError = this.str(draft?.ErrorMessage, 'That code could not be applied.');
+            return false;
+        }
+        const unusable = Array.isArray(draft.UnusablePromotionCodes)
+            ? (draft.UnusablePromotionCodes as Array<{ Code?: unknown; Reason?: unknown }>)
+            : [];
+        if (unusable.length > 0) {
+            this.appliedPromotion = null;
+            this.promotionError = `${this.str(unusable[0].Code, event.promotionCode)} can't be used: ${this.str(unusable[0].Reason, 'not valid for this order')}.`;
+            return false;
+        }
+        const applied = Array.isArray(draft.AppliedPromotionCodes) ? (draft.AppliedPromotionCodes as unknown[]) : [];
+        this.appliedPromotion = {
+            code: this.str(applied[0], event.promotionCode),
+            discount: Number(draft.Discount ?? 0),
+            total: Number(draft.TotalGross ?? 0),
+            quantity: event.quantity,
+        };
+        return true;
+    }
+
     /**
      * Cancel resets the checkout to a blank form and tells the host page, which may close the modal
      * the checkout sits in. The widget is re-created, so every field the buyer filled in is cleared,
@@ -278,6 +388,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     private resetForm(): void {
         this.errorMessage = null;
         this.stripePaymentMethodId = null;
+        this.serverPricedTotal = null;
         try {
             this.card?.destroy?.();
         } catch {
@@ -287,6 +398,14 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.cardMounted = false;
         this.isPaymentReady = !this.config?.stripePublishableKey;
         this.formGeneration++;
+    }
+
+    /** A price input changed: every total the server priced for the old inputs is stale, tax included. */
+    public onQuoteInvalidated(): void {
+        this.quotedTotal = null;
+        this.quotedTax = null;
+        this.serverPricedTotal = null;
+        this.appliedPromotion = null;
     }
 
     public async onSubmitted(event: CheckoutSubmissionEvent): Promise<void> {
@@ -303,23 +422,47 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 clientSessionKey: this.sessionKey,
                 email: event.email,
                 lines: [line],
+                billingAddress: event.billingAddress,
                 answers: event.answers,
                 ...(this.attributionSource
                     ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
                     : {}),
                 choices: event.choices,
+                ...(this.memberToken ? { memberToken: this.memberToken } : {}),
+                promotionCodes: event.promotionCode ? [event.promotionCode] : [],
             });
+            if (!this.applyPromotionOutcome(draft, event)) {
+                // The code was refused: say why and stop before any payment, so the buyer can remove
+                // it or try another rather than pay a price they did not expect.
+                return;
+            }
             if (!draft?.Success) {
                 this.emitIfAlreadySubscribed(draft);
                 throw new Error(this.str(draft?.ErrorMessage, 'Could not price this checkout.'));
+            }
+            // The widget cannot price a member discount itself, so it is told the server's total; a
+            // second press of Pay then carries that total and passes the check below.
+            this.serverPricedTotal = { total: Number(draft.TotalGross ?? 0), quantity: event.quantity };
+            const notice = memberDiscountNotice(draft, this.memberNoticeShown);
+            if (notice) {
+                this.memberNoticeShown = true;
+                this.errorMessage = notice;
+                return;
             }
             if (!draft.RequiresPayment) {
                 await this.finish();
                 return;
             }
+            // The server's total is the one charged. If it differs from what the buyer was shown
+            // (tax for the location, a code typed but never applied, or a price that changed), show
+            // it and ask for a second press rather than charge a different amount than the button said.
+            if (this.quoteChanged(draft, event.totalGross)) {
+                return;
+            }
             const intent = await this.post('/payment-intent', {
                 sessionId: this.sessionId,
                 clientSessionKey: this.sessionKey,
+                autoRenewConsent: event.autoRenewConsent === true,
             });
             if (!intent?.Success) {
                 this.emitIfAlreadySubscribed(intent);
@@ -338,7 +481,14 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             const result = await this.stripe.confirmCardPayment(String(intent.ClientSecret), {
                 payment_method: {
                     card: this.card,
-                    billing_details: { email: event.email },
+                    billing_details: {
+                        email: event.email,
+                        address: {
+                            country: event.billingAddress.Country,
+                            state: event.billingAddress.StateProvince,
+                            postal_code: event.billingAddress.PostalCode,
+                        },
+                    },
                 },
             });
             if (result.error) {
@@ -369,6 +519,25 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
+    /**
+     * Stop before charging when the server's total differs from what the buyer was shown. Tax
+     * depends on the billing location, so the first press of Pay is also the first time the total
+     * including tax is known; the buyer sees it and presses Pay again.
+     */
+    private quoteChanged(draft: Record<string, unknown>, shownTotal: number): boolean {
+        const total = typeof draft.TotalGross === 'number' ? draft.TotalGross : 0;
+        const tax = typeof draft.Tax === 'number' ? draft.Tax : 0;
+        if (Math.abs(total - shownTotal) <= 0.005) {
+            return false;
+        }
+        this.quotedTotal = total;
+        this.quotedTax = tax > 0 ? tax : null;
+        this.errorMessage = tax > 0
+            ? `The total is ${total.toFixed(2)}, including ${tax.toFixed(2)} sales tax. Review it and press Pay again.`
+            : `The total is ${total.toFixed(2)}. Review it and press Pay again.`;
+        return true;
+    }
+
     private async finish(): Promise<void> {
         // Remembered before completing, so a reload after payment returns to the account step.
         this.rememberCompleting(this.sessionId);
@@ -397,13 +566,51 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 coupon: null,
             })
         );
+        this.cdr.detectChanges();
+        // Access is tracked alongside the account step. A redirect waits for both, so the buyer sees
+        // "ready" (or the support text) before leaving. With nothing tracked the first answer ends the wait.
+        const access = this.trackAccess();
         if (done.AccountStep === true) {
             await this.loadAccount();
         } else {
             this.forgetCompleting();
             this.leaveIfDone();
         }
+        await access;
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Asks whether the order's access is ready until it is, it has failed, or the wait runs out.
+     * Never throws: a status that cannot be read leaves the confirmation as it is. Holds the
+     * redirect while it runs, and follows it once it ends if nothing else is left to do.
+     */
+    private async trackAccess(): Promise<void> {
+        this.accessTracking = true;
+        try {
+            const deadline = Date.now() + this.accessPollTimeoutMs;
+            for (;;) {
+                let state: CheckoutAccessState | null = null;
+                try {
+                    state = ReadAccessState(
+                        await this.post('/access-status', { sessionId: this.sessionId, clientSessionKey: this.sessionKey })
+                    );
+                } catch {
+                    return;
+                }
+                if (state === null || state === 'NotTracked') return;
+                if (state !== this.accessState) {
+                    this.accessState = state;
+                    this.dispatch(CHECKOUT_ACCESS_STATE_EVENT, { state });
+                    this.cdr.detectChanges();
+                }
+                if (IsFinalAccessState(state) || Date.now() >= deadline) return;
+                await new Promise((resolve) => setTimeout(resolve, this.accessPollIntervalMs));
+            }
+        } finally {
+            this.accessTracking = false;
+            this.leaveIfDone();
+        }
     }
 
     /** Asks for the account step of the completed checkout. The host is asked again only after a failure. */
@@ -422,6 +629,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.accountLoading = false;
         }
         if (IsAccountSettled(this.account)) this.forgetCompleting();
+        this.syncAccountState();
         this.leaveIfDone();
         this.cdr.detectChanges();
     }
@@ -456,6 +664,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.successMessage = 'Thank you. Your order is confirmed.';
             this.account = account;
             if (IsAccountSettled(account)) this.forgetCompleting();
+            this.syncAccountState();
             return true;
         } catch {
             return false;
@@ -481,6 +690,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             });
             this.account = ReadCheckoutAccount(res.Account) ?? this.account;
             if (IsAccountSettled(this.account)) this.forgetCompleting();
+            this.syncAccountState();
             if (res.Success) {
                 this.passwordSet = true;
                 this.password = '';
@@ -501,13 +711,28 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public skipPassword(): void {
         if (this.account) this.account = { ...this.account, CanSetPassword: false };
         this.forgetCompleting();
+        this.syncAccountState();
         this.leaveIfDone();
+    }
+
+    /**
+     * `PASSWORD` while the account step's password form shows, and `SUCCESS` once it no longer does.
+     * Nothing is sent when the form never showed: `finish()` has already reported `SUCCESS`, and a
+     * reload that resumes a settled step should not report a second sale.
+     */
+    private syncAccountState(): void {
+        if (this.account?.CanSetPassword) {
+            this.setState('PASSWORD');
+        } else if (this.state === 'PASSWORD') {
+            this.setState('SUCCESS');
+        }
     }
 
     /** Follows the widget's redirect once nothing is left for the buyer to do here. */
     private leaveIfDone(): void {
-        if (this.config?.redirectUrl && !this.accountLoading && MayRedirect(this.account, this.accountDismissed)) {
-            window.location.href = this.config.redirectUrl;
+        if (this.config?.redirectUrl && !this.accountLoading && !this.accessTracking && MayRedirect(this.account, this.accountDismissed)) {
+            // The landing page learns which order completed from `?order=` (#295).
+            window.location.href = WithOrderReference(this.config.redirectUrl, this.orderNumber, window.location.href);
         }
     }
 
@@ -586,6 +811,10 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         const apiRoot = el.getAttribute('api-root') || el.getAttribute('data-api-root');
         if (apiRoot) {
             this.apiRoot = apiRoot.replace(/\/+$/, '');
+        }
+        const memberToken = el.getAttribute('member-token') || el.getAttribute('data-member-token');
+        if (memberToken) {
+            this.memberToken = memberToken;
         }
         this.readConversationAttributes();
         el.addEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);

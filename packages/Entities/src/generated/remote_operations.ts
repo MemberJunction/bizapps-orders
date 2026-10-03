@@ -1016,7 +1016,9 @@ export interface ProgressWorklistRow {
     LineAmount: number;
     ServicePeriodStart?: string | null;
     ServicePeriodEnd?: string | null;
-    /** The last posted observation, or null when none has been recorded yet. */
+    /** The last posted observation that has not been superseded — what a supersede would replace. Null when none. */
+    LastMeasurementID?: string | null;
+    /** The last posted observation's date, or null when none has been recorded yet. A superseded observation is not "last". */
     LastMeasurementDate?: string | null;
     /** Cumulative fraction at the last observation; 0 when none. */
     LastPercentComplete: number;
@@ -1038,6 +1040,8 @@ export interface OrdersGetProgressWorklistOutput {
     RowCount: number;
     /** True when `MaxCount` clipped the result. */
     Truncated: boolean;
+    /** True when the caller holds `MJ.BizApps.Orders.Progress.Supersede`, so the screen can offer it. The operation checks again. */
+    CanSupersede: boolean;
 }
 
 /**
@@ -1403,6 +1407,17 @@ export interface OrdersRecordProgressInput {
     Notes?: string | null;
     /** Compute and return what WOULD post, writing nothing — for the confirmation step before finance commits. */
     Preview?: boolean;
+    /**
+     * SUPERSEDE: the posted observation this one replaces. It must be the line's latest observation
+     * that is not already superseded, and the caller must hold `MJ.BizApps.Orders.Progress.Supersede`.
+     * Nothing is edited: the replaced observation's recognition is reversed — on its own date while that
+     * month has no Posted batch for the line's company, else on day 1 of the first later month without
+     * one (`ReversalDate` on the output) — and this
+     * observation's catch-up is computed as if the replaced one had never posted. `MeasurementDate`
+     * must then be after the observation before the replaced one — not after the replaced one — which
+     * is what makes a mistyped future date recoverable.
+     */
+    SupersedesMeasurementID?: string | null;
 }
 
 /**
@@ -1444,6 +1459,32 @@ export interface OrdersRecordProgressOutput {
      * run, because an attestation must not depend on the availability of a hint.
      */
     ClosedPeriodWarning?: string | null;
+    /**
+     * Set when the measurement date is after the end of the current month on the business calendar.
+     * ADVISORY ONLY — forward dating is allowed with no cap. It exists because a mistyped year posts
+     * silently and only surfaces when the next month's attestation is refused.
+     */
+    FutureDateWarning?: string | null;
+    /** On a supersede: the observation replaced. Null otherwise. */
+    SupersededMeasurementID?: string | null;
+    /** On a supersede: the recognition taken back out (the replaced observation's RecognitionAmount, negated). Zero otherwise. */
+    ReversalAmount?: number;
+    /**
+     * On a supersede that reverses anything: the date the reversal is booked on. The replaced
+     * observation's own date while that month has no Posted batch for the line's company; otherwise
+     * day 1 of the first later month with none, so a correction never books into a closed period.
+     * Null otherwise.
+     */
+    ReversalDate?: string | null;
+    /**
+     * The date this observation's catch-up entry is booked on. `MeasurementDate` itself, except on a
+     * supersede whose replaced observation's month has a Posted batch for the line's company: then the
+     * later of `MeasurementDate` and `ReversalDate`'s first open day, so nothing new posts into the
+     * closed month. The observation row keeps `MeasurementDate`. Null when there is no catch-up.
+     */
+    CatchUpDate?: string | null;
+    /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */
+    ReversalJournalEntryID?: string | null;
 }
 
 /**
@@ -1914,7 +1955,7 @@ export class OrdersRecordAccessOverrideDecisionOperation extends BaseRemotableOp
 // ============================================================
 /**
  * Record Progress
- * Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated before the last posted one; a posted observation is immutable.
+ * Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted and booked no earlier than that reversal date, with no row edited.
  * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
  * under 'Orders.RecordProgress'. This generated base provides the typed contract only (client-safe).
  */

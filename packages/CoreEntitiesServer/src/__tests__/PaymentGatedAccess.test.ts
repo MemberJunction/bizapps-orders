@@ -14,6 +14,7 @@ import {
     InitialGrantStatus,
     IsPaymentSuspension,
     ReadTimeCutoffSuspension,
+    ReadTimeWaiverExpirySuspension,
     ReconcileGrantStatus,
     ResolveAccessOverrideOutcome,
     type OrderPaymentFacts,
@@ -289,6 +290,63 @@ describe('ReadTimeCutoffSuspension — the cutoff a read applies before the nigh
             const g = { Status: status, GrantTimingApplied: 'OnFirstPayment' };
             expect(ReadTimeCutoffSuspension(g, true, order({ DaysPastDue: 0, Balance: 0 }), 14, [], day)).toBeNull();
             expect(ReadTimeCutoffSuspension(g, true, order({ DaysPastDue: 40 }), 14, [], day)).toBeNull();
+        }
+    });
+});
+
+describe('ReadTimeWaiverExpirySuspension — a lapsed waiver a read applies before the nightly job (#404)', () => {
+    const firstPayment = { Status: 'Active', GrantTimingApplied: 'OnFirstPayment' } as const;
+    const paidInFull = { Status: 'Active', GrantTimingApplied: 'OnPaidInFull' } as const;
+    const awaiting = { Status: 'Suspended', Reason: 'AwaitingPayment' } as const;
+    const waive = (through: string) => ({ OverrideType: 'WaivePaymentHold', EffectiveThrough: through }) as const;
+    const day = '2026-10-01';
+    const unpaid = order();
+    const paid = order({ AmountPaid: 1200, Balance: 0 });
+
+    for (const [label, grant] of [
+        ['a new purchase', firstPayment],
+        ['an OnPaidInFull grant', paidInFull],
+    ] as const) {
+        it(`keeps ${label} through the waiver's last day`, () => {
+            expect(ReadTimeWaiverExpirySuspension(grant, false, unpaid, [waive(day)], day)).toBeNull();
+        });
+
+        it(`suspends ${label} the day after the waiver ends, unpaid`, () => {
+            expect(ReadTimeWaiverExpirySuspension(grant, false, unpaid, [waive('2026-09-30')], day)).toEqual(awaiting);
+        });
+
+        it(`leaves ${label} Active the day after the waiver ends, once paid`, () => {
+            expect(ReadTimeWaiverExpirySuspension(grant, false, paid, [waive('2026-09-30')], day)).toBeNull();
+        });
+    }
+
+    it('keeps the grant while a later waiver is still in force', () => {
+        expect(ReadTimeWaiverExpirySuspension(firstPayment, false, unpaid, [waive('2026-09-30'), waive('2026-10-15')], day)).toBeNull();
+    });
+
+    it('does nothing without a lapsed waiver: the payment path owns that hold', () => {
+        expect(ReadTimeWaiverExpirySuspension(firstPayment, false, unpaid, [], day)).toBeNull();
+        expect(
+            ReadTimeWaiverExpirySuspension(firstPayment, false, unpaid, [{ OverrideType: 'DeferCutoff', EffectiveThrough: '2026-09-30' }], day),
+        ).toBeNull();
+    });
+
+    it('leaves an OnFirstPayment renewal to the cutoff rule', () => {
+        expect(ReadTimeWaiverExpirySuspension(firstPayment, true, unpaid, [waive('2026-09-30')], day)).toBeNull();
+    });
+
+    it('leaves timings that do not wait for payment alone', () => {
+        for (const timing of ['OnConfirm', 'OnActivation', null]) {
+            const g = { Status: 'Active', GrantTimingApplied: timing };
+            expect(ReadTimeWaiverExpirySuspension(g, false, unpaid, [waive('2026-09-30')], day)).toBeNull();
+        }
+    });
+
+    it('only tightens: a grant that is not Active is never restored', () => {
+        for (const status of ['Suspended', 'Revoked', 'Expired']) {
+            const g = { Status: status, GrantTimingApplied: 'OnFirstPayment' };
+            expect(ReadTimeWaiverExpirySuspension(g, false, paid, [waive('2026-09-30')], day)).toBeNull();
+            expect(ReadTimeWaiverExpirySuspension(g, false, unpaid, [waive('2026-09-30')], day)).toBeNull();
         }
     });
 });

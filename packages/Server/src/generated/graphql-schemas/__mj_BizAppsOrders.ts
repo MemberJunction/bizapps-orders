@@ -589,6 +589,12 @@ export class CreatemjBizAppsOrdersCheckoutSessionInput {
     @Field({ nullable: true })
     MetadataJSON: string | null;
 
+    @Field({ nullable: true })
+    AutoRenewConsentAt: Date | null;
+
+    @Field({ nullable: true })
+    AutoRenewConsentText: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -631,6 +637,12 @@ export class UpdatemjBizAppsOrdersCheckoutSessionInput {
 
     @Field({ nullable: true })
     MetadataJSON?: string | null;
+
+    @Field({ nullable: true })
+    AutoRenewConsentAt?: Date | null;
+
+    @Field({ nullable: true })
+    AutoRenewConsentText?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -7455,7 +7467,7 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @MaxLength(36)
     OrderLineID: string;
         
-    @Field({description: `The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.`}) 
+    @Field({description: `The date this observation governs — the period it belongs to on the close calendar. One observation per line per date among observations that replace nothing (UQ_OLPM_Period, filtered); a superseding observation may carry the date of the one it replaces. It is also the recognition entry's EffectiveDate.`}) 
     MeasurementDate: Date;
         
     @Field(() => Float, {description: `CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.`}) 
@@ -7508,6 +7520,14 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true, description: `The posted observation this row replaces. Set only by Orders.RecordProgress for a user holding MJ.BizApps.Orders.Progress.Supersede. The replaced row is not edited: its recognition is reversed by ReversalJournalEntryID and it stops counting as the line's last observation. At most one row may supersede any observation.`}) 
+    @MaxLength(36)
+    SupersedesMeasurementID?: string;
+        
+    @Field({nullable: true, description: `Soft reference into accounting: the entry reversing the superseded observation's recognition. Dated on that observation's MeasurementDate while that month has no posted batch for the line's company, so the revenue it recognised nets to zero on that date; otherwise on the first day of the first later month with no posted batch. The Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`}) 
+    @MaxLength(36)
+    ReversalJournalEntryID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
@@ -7572,6 +7592,12 @@ export class CreatemjBizAppsOrdersOrderLineProgressMeasurementInput {
     @Field({ nullable: true })
     Status?: string;
 
+    @Field({ nullable: true })
+    SupersedesMeasurementID: string | null;
+
+    @Field({ nullable: true })
+    ReversalJournalEntryID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -7629,6 +7655,12 @@ export class UpdatemjBizAppsOrdersOrderLineProgressMeasurementInput {
 
     @Field({ nullable: true })
     Status?: string;
+
+    @Field({ nullable: true })
+    SupersedesMeasurementID?: string | null;
+
+    @Field({ nullable: true })
+    ReversalJournalEntryID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -16724,6 +16756,9 @@ export class CreatemjBizAppsOrdersSubscriptionInput {
     @Field({ nullable: true })
     MigratesToSubscriptionID: string | null;
 
+    @Field({ nullable: true })
+    DefaultCustomerPaymentMethodID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -16790,6 +16825,9 @@ export class UpdatemjBizAppsOrdersSubscriptionInput {
 
     @Field({ nullable: true })
     MigratesToSubscriptionID?: string | null;
+
+    @Field({ nullable: true })
+    DefaultCustomerPaymentMethodID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

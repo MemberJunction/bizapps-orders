@@ -1118,6 +1118,62 @@ export const EntitlementsChecks: NamedCheck[] = [
         AssertEqual(renewed.join(","), "IT-DEPT-MARKETING,SUB-SEATS", "so the renewal grants the same department for the next term");
       }),
   },
+  {
+    Id: "entitlements.EN24",
+    Name: "EN24: a new purchase whose payment-hold waiver has run out reads Suspended before the nightly job has run (#404)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.WidgetA, "OnFirstPayment", async () => {
+          const order = await buyWidget(ctx, 1, { BillToPersonID: f.Customers.PersonID });
+          const orderID = order.Order.ID as string;
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment"),
+            "unpaid, the new purchase is held for payment",
+          );
+
+          // The waiver's last day is two days back, a day's margin for the business zone. The pass run
+          // on that day lifts the hold, as it did while the waiver was in force.
+          const today = new Date().toISOString().slice(0, 10);
+          const lastDay = addDays(today, -2);
+          await TxQuery(ctx,
+            `INSERT INTO ${ORDERS_SCHEMA}.EntitlementAccessOverride
+               (ID, OrderHeaderID, OverrideType, Reason, EffectiveThrough, Status, RequestedByUserID, DecidedByUserID, DecidedAt)
+             VALUES ('${randomUUID()}', '${orderID}', 'WaivePaymentHold', 'EN24', '${lastDay}', 'Approved',
+                     '${ctx.User.ID}', '${ctx.User.ID}', SYSDATETIMEOFFSET())`);
+          const waived = await EnforcePaymentGatedAccess({ AsOfDate: lastDay }, ctx.Provider, ctx.User);
+          Assert(waived.Success, `the pass ran: ${waived.Message}`);
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Active"),
+            "on the waiver's last day the grants are Active, and the nightly job has not run since",
+          );
+
+          const checked = await readAccess<{ HasAccess: boolean; Decision: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "WIDGET-SUPPORT" });
+          AssertEqual(checked.HasAccess, false, "the waiver has run out unpaid, so the check denies access");
+          AssertEqual(checked.Decision, "Suspended", "and says it is suspended, as the row will once the job runs");
+
+          const listed = await readAccess<{ Items: Array<{ Code: string; HasAccess: boolean; Decision: string }> }>(
+            ctx, "Orders.ListEntitlements", { PersonID: f.Customers.PersonID });
+          const support = listed.Items.find((i) => i.Code === "WIDGET-SUPPORT");
+          Assert(support != null && !support.HasAccess && support.Decision === "Suspended", "ListEntitlements agrees");
+
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Active"),
+            "a read writes nothing: the suspension is still the nightly job's to record",
+          );
+
+          // Once the order is paid, the lapsed waiver no longer matters.
+          const gross = Number((await TxOne<{ TotalGross: number }>(ctx,
+            `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).TotalGross);
+          await payOrder(ctx, orderID, gross);
+          const paid = await readAccess<{ HasAccess: boolean; Decision: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "WIDGET-SUPPORT" });
+          AssertEqual(paid.Decision, "Granted", "paid, the grant reads Granted though its waiver has run out");
+        });
+      }),
+  },
 ];
 
 for (const check of EntitlementsChecks) {

@@ -4,6 +4,7 @@ import {
     buildCheckoutDraftLine,
     formatStripeError,
     intentAlreadyCollected,
+    memberDiscountNotice,
     stripeConfirmAlreadyCollected,
 } from '../lib/checkout-widget/checkout-draft-line';
 import type { CheckoutSubmissionEvent } from '../lib/checkout-widget/checkout-widget.component';
@@ -13,6 +14,7 @@ describe('buildCheckoutDraftLine', () => {
         const event: CheckoutSubmissionEvent = {
             email: 'jane@example.com',
             quantity: 2,
+            billingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' },
             attendees: [
                 { firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' },
             ],
@@ -43,6 +45,7 @@ describe('buildCheckoutDraftLine', () => {
         const event: CheckoutSubmissionEvent = {
             email: 'a@b.com',
             quantity: 1,
+            billingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' },
             attendees: [],
             extensionData: {},
             totalGross: 10,
@@ -95,5 +98,19 @@ describe('alreadySubscribedDetail (#323)', () => {
         expect(alreadySubscribedDetail({ Success: false, Refusal: { Code: 'Unverified', Source: 'built-in', ProductIDs: [] } })).toBeNull();
         expect(alreadySubscribedDetail({ Success: false, ErrorMessage: 'This checkout does not sell that product' })).toBeNull();
         expect(alreadySubscribedDetail(null)).toBeNull();
+    });
+});
+
+describe('memberDiscountNotice (#324)', () => {
+    it('stops once on a draft whose member token earned no discount', () => {
+        const draft = { Success: true, MemberDiscountApplied: false, MemberDiscountMessage: 'Membership has lapsed.' };
+        expect(memberDiscountNotice(draft, false)).toBe('Membership has lapsed. Submit again to continue at the standard rate.');
+        expect(memberDiscountNotice(draft, true)).toBeNull();
+    });
+
+    it('carries on when the discount applied or no token was sent', () => {
+        expect(memberDiscountNotice({ Success: true, MemberDiscountApplied: true }, false)).toBeNull();
+        expect(memberDiscountNotice({ Success: true }, false)).toBeNull();
+        expect(memberDiscountNotice(null, false)).toBeNull();
     });
 });

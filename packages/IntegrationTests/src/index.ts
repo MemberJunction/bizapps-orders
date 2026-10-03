@@ -39,7 +39,7 @@
  *   embedded-payment-detail PD1–PD14  PaymentDetail as an owner-held 1:1 embed (D38/D39)
  *   payment-schedule     PS1–PS13  instalments on the order: tie, issue, per-instalment rollup and ageing (D85–D88)
  *   payment-deposit      PM1–PM12  cash ahead of billing is a deposit, and only the operation issues (D91)
- *   contract-reversal    RV1–RV3   reversing a scheduled order: withdraw, credit back, or refuse (D92 §6)
+ *   contract-reversal    RV1–RV10  reversing a scheduled order: withdraw, credit back, or refuse (D92 §6)
  *   concessions          CS1–CS25  concessions valued in any form, approved before the customer sees them
  *   term-extension       TX1–TX9   a booked term extended at no charge, with recognition, access and renewal following
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
