@@ -33,13 +33,13 @@ import {
 } from './EntitlementBehavior.js';
 import { LoadReadTimeCutoffSuspensions } from './PaymentGatedAccess.js';
 import { EscapeText, InvalidOperationInputError, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { ResolvePersonByEmail } from './PersonByEmail.js';
 
 const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
-const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 
 export interface CheckEntitlementInput {
     /** Authoritative. When present, Email is ignored. */
@@ -254,8 +254,9 @@ async function runSimple<T>(
 }
 
 /**
- * PersonID is authoritative. Email is convenience: 0 or >1 matches → null, indistinguishable
- * from unknown. Never first-match.
+ * PersonID is authoritative. By e-mail, the Person is the one `ResolvePersonByEmail` chooses, the
+ * same rule the checkout uses to pick the buyer, so a check answers for the Person the purchase
+ * went to even when several Persons share the address. Null when none matches or a read fails.
  */
 async function resolvePersonID(
     rv: RunView,
@@ -264,23 +265,16 @@ async function resolvePersonID(
     email: string | null | undefined,
 ): Promise<string | null> {
     if (personID) return RequireUUID(personID, 'PersonID');
-    const normalised = normalizeEmail(email);
-    if (!normalised) return null;
-    const escaped = EscapeText(normalised);
-    const found = await runSimple<{ ID: string }>(
-        rv,
-        user,
-        PERSON_ENTITY,
-        `LOWER(Email) = '${escaped}'`,
-        ['ID'],
-        2,
-    );
-    if (!found.ok) return null;
-    if (found.rows.length !== 1) return null;
-    const id = found.rows[0]?.ID;
-    if (!id) return null;
+    // Throws for an address that is too long, which the operation reports as bad input.
+    if (!normalizeEmail(email)) return null;
+    const found = await ResolvePersonByEmail(email, rv, user);
+    if (!found.Success) {
+        LogError(`[ENTITLEMENT] person lookup by e-mail failed: ${found.ErrorMessage ?? 'unknown error'}`);
+        return null;
+    }
+    if (!found.PersonID) return null;
     try {
-        return RequireUUID(id, 'PersonID');
+        return RequireUUID(found.PersonID, 'PersonID');
     } catch {
         return null;
     }
