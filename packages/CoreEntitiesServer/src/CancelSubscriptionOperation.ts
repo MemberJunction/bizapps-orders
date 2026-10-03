@@ -450,12 +450,20 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
             );
         }
 
-        // NOT FOR AN ORDER BILLED BY INSTALMENT, YET (D92 §6). This reversal covers only the rest of
-        // the term, from the effective date, while the credit memo and the releases it mirrors are
-        // worked out against the origin's own window. Booked here they would disagree by the months
-        // already earned. Refused, so nothing half-right reaches the ledger; reverse the order line
-        // itself, which inherits the origin's window.
-        const context = await LoadReversalContext(original.ID, provider, user);
+        // A PARTIAL TERM ON AN ORDER BILLED BY INSTALMENT, NOT YET (D92 §6). A partial reversal covers
+        // only the rest of the term, from the effective date, while the credit memo and the releases
+        // it mirrors are worked out against the origin's own window. Booked here they would disagree
+        // by the months already earned. Refused, so nothing half-right reaches the ledger; reverse the
+        // order line itself, which inherits the origin's window.
+        //
+        // A WHOLE TERM IS NOT REFUSED. A term that never started — a renewal booked ahead, which
+        // since #305 always carries a one-row schedule — is reversed in full over its own window,
+        // which is the origin line's. That is exactly an order-line return: booking credits what
+        // was invoiced and, once the whole order is reversed, withdraws the instalments not yet
+        // invoiced.
+        const wholeTerm =
+            decision.ReversalFraction >= 1 && decision.EffectiveDate.getTime() <= new Date(term.StartDate).getTime();
+        const context = wholeTerm ? null : await LoadReversalContext(original.ID, provider, user);
         if (context?.OriginScheduled) {
             throw new Error(
                 `Term ${term.TermNumber} was sold on order ${context.Origin.OrderNumber ?? original.OrderHeaderID}, ` +

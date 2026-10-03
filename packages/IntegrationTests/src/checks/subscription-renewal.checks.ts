@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR20).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR21).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -34,6 +34,9 @@
  *   SR18  a subscription renews again at the end of the term its first renewal booked
  *   SR19  a renewal drafted by hand for this cycle holds the job off
  *   SR20  a voided renewal order does not hold the job off
+ *   SR21  cancelling after the renewal is booked and invoiced reverses the renewal in full: the
+ *         reversal points at the renewal order, and its credit memo takes the invoiced amount
+ *         back off AR (#406)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -159,6 +162,21 @@ async function draftRenewal(ctx: IntegrationCheckContext, subscriptionID: string
     });
     Assert(await built.Order.Save(), `saving the draft renewal failed: ${built.Order.LatestResult?.CompleteMessage}`);
     return built.Order;
+}
+
+/** `Orders.CancelSubscription`, resolved through the ClassFactory as any caller does. */
+async function cancelSubscription(
+    ctx: IntegrationCheckContext,
+    input: Record<string, unknown>,
+): Promise<{ Success: boolean; Message?: string; TotalRefundAmount?: number; ReversalOrderID?: string }> {
+    const op = MJGlobal.Instance.ClassFactory.CreateInstance<
+        BaseRemotableOperation<Record<string, unknown>, { Success: boolean; Message?: string; TotalRefundAmount?: number; ReversalOrderID?: string }>
+    >(BaseRemotableOperation, 'Orders.CancelSubscription');
+    Assert(op != null, "'Orders.CancelSubscription' is not registered");
+    const result = await op!.Execute(input, { provider: ctx.Provider, user: ctx.User });
+    Assert(result.Success, `the operation did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown'}`);
+    Assert(result.Output != null, 'the operation returned no payload');
+    return result.Output!;
 }
 
 /** The key both the Action metadata and the `@RegisterClass` decorator name. */
@@ -806,6 +824,67 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
                 AssertEqual(out.Placed, 1, `a voided renewal renews nothing, so the job places one: ${out.Message}`);
                 AssertEqual((await termsOf(ctx, SubscriptionID)).length, 2, 'term 2 was added');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR21',
+        Name: 'SR21: cancelling after the renewal is booked and invoiced reverses the renewal in full',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // AnnualRolling: EndOfTerm, NoRefund. Term 1 rides out; term 2 never starts.
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 30) });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Message}`);
+                const renewalID = out.Candidates[0].OrderID!;
+                const renewalLine = await TxOne<{ ID: string }>(
+                    ctx,
+                    `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${renewalID}'`,
+                );
+                const invoiced = await TxOne<{ Status: string }>(
+                    ctx,
+                    `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE OrderHeaderID = '${renewalID}'`,
+                );
+                AssertEqual(invoiced.Status, 'Invoiced', 'precondition: the renewal is billed by its one-row schedule');
+
+                const cancelled = await cancelSubscription(ctx, { SubscriptionID, RequestDate: daysBefore(Term.EndDate, 21) });
+                Assert(cancelled.Success, `the cancel must succeed: ${cancelled.Message}`);
+                AssertEqual(cancelled.TotalRefundAmount, 1200, 'the whole renewal comes back');
+
+                const terms = await TxQuery<{ TermNumber: number; Status: string }>(
+                    ctx,
+                    `SELECT TermNumber, Status FROM ${ORDERS_SCHEMA}.SubscriptionTerm
+                     WHERE SubscriptionID = '${SubscriptionID}' ORDER BY TermNumber`,
+                );
+                AssertEqual(terms.map((t) => t.Status).join(','), 'Completed,Canceled', 'term 1 rides out, term 2 is canceled');
+
+                const reversal = await TxOne<{ Status: string; ReversesOrderHeaderID: string | null }>(
+                    ctx,
+                    `SELECT Status, ReversesOrderHeaderID FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${cancelled.ReversalOrderID}'`,
+                );
+                AssertEqual(reversal.Status, 'Confirmed', 'the reversal is booked');
+                Assert(SameID(reversal.ReversesOrderHeaderID ?? '', renewalID), 'and points at the renewal order');
+                const lines = await TxQuery<{ ReversesOrderLineID: string; Quantity: number }>(
+                    ctx,
+                    `SELECT ReversesOrderLineID, Quantity FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${cancelled.ReversalOrderID}'`,
+                );
+                AssertEqual(lines.length, 1, 'one reversal line');
+                Assert(SameID(lines[0].ReversesOrderLineID, renewalLine.ID), 'reversing the renewal line');
+                AssertEqual(Number(lines[0].Quantity), -1, 'in full');
+
+                // The invoiced 1,200 is credited back off AR by the reversal's credit memo.
+                const ledger = await ledgerOf(
+                    ctx,
+                    `SELECT je.ID FROM ${ACCT_SCHEMA}.vwJournalEntries je
+                     WHERE je.LinkedRecordID IN (SELECT CAST(ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.OrderLine
+                                                 WHERE OrderHeaderID = '${cancelled.ReversalOrderID}')`,
+                );
+                AssertEqual(netOn(ledger, AR_CODE), -1200, `the credit memo credits AR the invoiced amount: ${JSON.stringify(ledger)}`);
+                const billed = await TxOne<{ BilledToDate: number }>(
+                    ctx,
+                    `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${renewalLine.ID}'`,
+                );
+                AssertEqual(Number(billed.BilledToDate), 0, 'the renewal line is no longer billed');
             }),
     },
 ];

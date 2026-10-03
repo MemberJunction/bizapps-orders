@@ -224,16 +224,42 @@ describe('cancelling a subscription with a later term (#406)', () => {
         expect(rec.terms.size).toBe(0);
     });
 
-    it('a later term on an instalment-billed order refuses the whole cancel and rolls back', async () => {
-        seed(PRORATE_NOW);
+    it('a later term on an instalment-billed order is reversed in full, as an order-line return is', async () => {
+        // Every automatic renewal carries a one-row payment schedule (#305), so this is the ordinary
+        // renewal: booked and invoiced ahead, cancelled before it starts.
+        seed({ CancellationMode: 'EndOfTerm', CancellationRefundMode: 'NoRefund' });
         mocks.instalmentLines.add(L2);
+        const { out, rec } = await cancel({ RequestDate: '2026-12-10' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(rec.tx).toEqual(['begin', 'commit']);
+        expect(rec.orders[0].Lines).toHaveLength(1);
+        const [later] = rec.orders[0].Lines;
+        expect([later.ReversesOrderLineID, later.Quantity]).toEqual([L2, -1]);
+        expect(day(later.ServicePeriodStart)).toBe('2027-01-01');
+        expect(day(later.ServicePeriodEnd)).toBe('2027-12-31');
+        expect(rec.orders[0].ReversesOrderHeaderID).toBe('oh-2');
+        expect(rec.terms.get(T2)?.Status).toBe('Canceled');
+        expect(out.TotalRefundAmount).toBe(1300);
+    });
+
+    it('part of a term on an instalment-billed order still refuses the whole cancel and rolls back', async () => {
+        seed(PRORATE_NOW);
+        mocks.instalmentLines.add(L1);
         const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
 
         expect(out.Success).toBe(false);
-        expect(out.Message).toMatch(/Term 2 was sold on order ORD-0002, which is billed by instalment/);
+        expect(out.Message).toMatch(/Term 1 was sold on order ORD-0002, which is billed by instalment/);
         expect(rec.tx).toEqual(['begin', 'rollback']);
         expect(rec.orders).toEqual([]);
         expect(rec.terms.size).toBe(0);
+    });
+
+    it('points the reversal order at the order that sold the first reversed term', async () => {
+        seed(PRORATE_NOW);
+        const { rec } = await cancel({ RequestDate: '2026-07-01' });
+
+        expect(rec.orders[0].ReversesOrderHeaderID).toBe('oh-1');
     });
 
     it('with no later term, behaves as before: one line, one term stamped', async () => {
