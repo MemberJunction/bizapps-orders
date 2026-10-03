@@ -1,5 +1,11 @@
 # @mj-biz-apps/orders-entities
 
+## 5.25.0
+
+### Minor Changes
+
+- 00f6713: The 5.25 Metadata_Sync ships the metadata 5.22 through 5.24 added without a migration, so hosts get it and not only a developer's own database. It covers four remote operations (Detect Overlapping Subscriptions, Replay Checkout Step, Detect Unattested Progress, Amend Arrangement), the Dispatch Outbound Events, Detect Overlapping Subscriptions and Detect Unattested Progress actions with their scheduled jobs (outbound dispatch every minute and Active; the two detectors daily and Disabled), the Overlapping Subscriptions query, the Checkout Replay and Progress Supersede authorizations with the Checkout Operator and Orders Revenue Supervisor roles, the AmendmentAcknowledgmentRole setting and the Checkouts: Needs Review view. It also updates the Record Progress and Get Progress Worklist operation contracts, the concession-limit fields' category and the Choices related-record collection. The seed is idempotent and safe on a host that already ran `mj sync push`. The ML bench output under metadata/ is not included.
+
 ## 5.24.0
 
 ### Minor Changes
@@ -467,8 +473,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                        The INSERT statement conflicted with the FOREIGN KEY constraint
-                        "FK_EntityFieldValue_EntityField"
+                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
