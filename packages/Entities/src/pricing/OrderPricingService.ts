@@ -111,6 +111,14 @@ export interface OrderPricingContext {
     ManualDiscounts: ManualDiscountRequest[];
     Charges: RequestedCharge[];
     /**
+     * Tax already settled for a line, which is used instead of resolving it from the ship-to address.
+     *
+     * A reversal line refunds the tax its origin collected, in the jurisdictions that collected it
+     * (D16). Every reversal line has an entry, an empty one when the origin was charged no tax. The
+     * charges are targeted at their line by the walk.
+     */
+    SettledTax?: ReadonlyMap<mjBizAppsOrdersOrderLineEntity, ReadonlyArray<Omit<RequestedCharge, 'TargetLineID'>>>;
+    /**
      * Force this list, ignoring customer assignment — PreviewPrice "what if" and tests.
      * `undefined` means resolve from the bill-to; explicit `null` means base price only.
      */
@@ -476,6 +484,9 @@ export class OrderPricingService {
      * The last three are recorded on the order's notes rather than swallowed. A zero tax line is
      * the same number in all four cases and an auditor asking "why was no tax charged" needs the
      * right answer, not the right total.
+     *
+     * A line with SETTLED tax (a reversal) takes that instead and is never resolved: the return's
+     * address and date say where the customer is now, not where the sale was taxed.
      */
     private async resolveTaxCharges(
         chargeable: Array<{ ID: string; Net: number }>,
@@ -485,14 +496,19 @@ export class OrderPricingService {
         // A stated tax charge wins, exactly as a stated UnitPrice does.
         if (this.ctx.Charges.some((c) => /tax/i.test(c.Code))) return [];
 
+        const out: RequestedCharge[] = [];
+        const settled = this.ctx.SettledTax;
         const addressID = this.ctx.ShipToAddressID;
         const address = addressID ? await this.loadAddress(addressID) : (this.ctx.ShipToAddress ?? null);
-        if (!address) return [];
-
-        const out: RequestedCharge[] = [];
 
         for (let i = 0; i < this.ctx.Lines.length; i++) {
             const line = this.ctx.Lines[i];
+            const settledCharges = settled?.get(line);
+            if (settledCharges) {
+                for (const c of settledCharges) out.push({ ...c, TargetLineID: String(i) });
+                continue;
+            }
+            if (!address) continue;
             // A line worth NOTHING is not taxed — but a NEGATIVE line is a reversal (D16), and it
             // owes a tax refund of exactly the same shape. `<= 0` collapsed those two: a return
             // came back with the goods refunded and the tax kept, which overcharges the customer
