@@ -98,6 +98,16 @@ export {
 export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
+    EffectiveObservations,
+    FutureDateWarning,
+    MonthEnd,
+    PlanSupersede,
+    PROGRESS_SUPERSEDE_AUTH,
+    SupersedeRefusal,
+    type ObservationLink,
+    type SupersedePlan,
+} from './ProgressSupersede.js';
+export {
     AddMonths,
     BuildPaymentSchedule,
     DefaultScheduleWeights,
@@ -276,6 +286,7 @@ export {
     ReconcileGrantStatus,
     IsPaymentSuspension,
     ReadTimeCutoffSuspension,
+    ReadTimeWaiverExpirySuspension,
     PAYMENT_GATED_TIMINGS,
     ReduceGrantForReturn,
     EvaluateGrantAccess,
@@ -544,7 +555,7 @@ export { ResolveDeliveryChannel, DeliveryChannelNotConfiguredError } from './Del
 export { LoadOrderDeliveryContacts, LoadOrderStatus, LoadExternallyInvoiced } from './DeliveryRecipientResolver.js';
 
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
-export { OpenPaymentIntent } from './PaymentIntentService.js';
+export { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 export type { OpenIntentRequest, OpenIntentResult } from './PaymentIntentService.js';
 export { SettlePaymentForEvent } from './PaymentSettlement.js';
 export type { SettlementOutcome } from './PaymentSettlement.js';
@@ -624,6 +635,12 @@ export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { EntitlementGrantEntityServer, LoadEntitlementGrantEntityServer } from './EntitlementGrantEntityServer.js';
+export {
+    GetCheckoutAccessStatus,
+    SummarizeAccessDeliveries,
+    type CheckoutAccessState,
+    type CheckoutAccessStatusResult,
+} from './CheckoutAccessStatus.js';
 export {
     OrdersOutboundConsumer,
     RecordOutboundEvent,
@@ -742,13 +759,24 @@ export {
     type CheckoutPasswordResult,
 } from './CheckoutAccountStep.js';
 export {
+    BaseCheckoutMemberDiscountResolver,
+    CheckoutMemberDiscountNotConfiguredError,
+    ResolveCheckoutMemberDiscountResolver,
+    IsRegisteredMemberPromotionCode,
+} from './CheckoutMemberDiscountResolver.js';
+export type {
+    CheckoutMemberDiscountContext,
+    CheckoutMemberDiscountDecision,
+    CheckoutTypedPromotionCodeContext,
+} from './CheckoutMemberDiscountResolver.js';
+export {
     CHECKOUT_CAPTURE_RETRY_WINDOW_MS,
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
     isCaptureRefusalRetryable,
     isTerminalCapturePrecheck,
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
-export { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
+export { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
 // The post-payment step record, its review queue and operator replay (#326).
 export { CheckoutStepLog, STALE_RUNNING_MINUTES } from './CheckoutStepLog.js';
 export type { CheckoutStepAttempt, CheckoutStepName, CheckoutStepSource, CheckoutStepStatus } from './CheckoutStepLog.js';
@@ -756,6 +784,7 @@ export { ReplayCheckoutStepOperation, LoadReplayCheckoutStepOperation, CHECKOUT_
 export type {
     AttendeeInput,
     CheckoutAttendeeInput,
+    CheckoutBillingAddressInput,
     CheckoutLineExtensionData,
     CheckoutLineInput,
     CheckoutLineSummary,

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Metadata, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { CanPriceOrderLocally, NetAfterDiscount, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, IsLinePriceOverridden, StatedLineUnitPrice, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { CanPriceOrderLocally, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, IsLinePriceOverridden, ReadPricedLineAmounts, StatedLineUnitPrice, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
 
@@ -74,15 +74,12 @@ export interface MJOEngineDefault {
 /**
  * What the entry screens may say about an order's money BEFORE it is confirmed.
  *
- * DELIBERATELY INCOMPLETE, and the omissions are the point. There is no
- * `GrossTotal`, no `TaxTotal`, no `ChargeTotal` — charges, tax and promotions are
- * decided inside `OrderEntityServer.Save()` and have no read-only entry point yet.
- * Reporting them as `0` would be a lie that reads as a number, and it is exactly
- * the failure the old pre-flight had (it once showed tax and discount as $0 on the
- * one screen whose whole job is saying what you are about to commit to).
+ * Both pricing paths — `Orders.PriceOrder` and the walk run in this browser — read these figures
+ * back off the same engine walk the booking runs, so `GrossTotal` includes the tax and charges that
+ * walk decided. Charges entered by hand are not sent to either path yet, so they are not in it.
  *
- * So the screens show a NET SUBTOTAL and say what it excludes. The engine remains
- * the authority on what the order actually comes to.
+ * Tax and charges are not reported as separate totals here. The engine remains the authority on
+ * what the order actually comes to.
  */
 export interface MJOEstimatedTotals {
     ListSubtotal: number;
@@ -359,28 +356,21 @@ export class MJOPricingScheduler {
 
         // Read back off the entities the walk just stamped — the same fields `Orders.PriceOrder`
         // reads before returning, so the two paths produce the same summary from the same numbers.
-        const priced = lines.map((line, i) => {
-            const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
-            // Through `NetAfterDiscount`, exactly as `Orders.PriceOrder` now does — the whole point
-            // of this file is that the local walk and the remote one are the same walk, and this was
-            // the one place they had each written the subtraction out by hand. Both had dropped
-            // `DiscountPct`, so a line carrying a percentage concession quoted above what it books.
-            const pct = Math.round(Number(line.DiscountPct ?? 0) * 1e4) / 1e4;
-            const net = NetAfterDiscount(gross, pct, Number(line.DiscountAmount ?? 0));
-            return {
-                UnitPrice: Number(line.UnitPrice ?? 0),
-                DiscountAmount: Math.round((gross - net) * 100) / 100,
-                LineTotalNet: net,
-                Components: result.PriceComponents.get(line)?.Components?.map((c) => ({
-                    Kind: String((c as { ComponentType?: string }).ComponentType ?? ''),
-                    Label: String((c as { Label?: string }).Label ?? ''),
-                    Amount: Number((c as { Amount?: number }).Amount ?? 0),
-                })),
-                TaxExemptReason: result.TaxReasons.get(i) ?? null,
-                ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
-                Default: engineDefault(result.EngineDefaults.get(line)),
-            };
-        });
+        const priced = lines.map((line, i) => ({
+            // Through the SAME read-back `Orders.PriceOrder` uses — the whole point of this file is
+            // that the local walk and the remote one are the same walk. This copy once wrote the
+            // arithmetic out by hand, dropped `DiscountPct`, and never read the charge and tax the
+            // walk had stamped, so its gross was the net and the header Total left out tax (#405).
+            ...ReadPricedLineAmounts(line),
+            Components: result.PriceComponents.get(line)?.Components?.map((c) => ({
+                Kind: String((c as { ComponentType?: string }).ComponentType ?? ''),
+                Label: String((c as { Label?: string }).Label ?? ''),
+                Amount: Number((c as { Amount?: number }).Amount ?? 0),
+            })),
+            TaxExemptReason: result.TaxReasons.get(i) ?? null,
+            ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
+            Default: engineDefault(result.EngineDefaults.get(line)),
+        }));
         const sum = (pick: (l: (typeof priced)[number]) => number) =>
             Math.round(priced.reduce((t, l) => t + pick(l), 0) * 100) / 100;
 
@@ -390,7 +380,7 @@ export class MJOPricingScheduler {
                 Totals: {
                     Net: sum((l) => l.LineTotalNet),
                     Discount: sum((l) => l.DiscountAmount),
-                    Gross: sum((l) => l.LineTotalNet),
+                    Gross: sum((l) => l.LineTotalGross),
                 },
             }),
             Loading: false,

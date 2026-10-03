@@ -62,6 +62,13 @@ import { DescribeOrder } from './IntentDescription.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 
+/**
+ * The only currency an intent may be opened in. Orders, lines and payment intents carry no currency
+ * column, so an amount taken in any other currency would be stored as a bare number that nothing can
+ * convert later. Widen this only together with the schema change that records currency.
+ */
+export const SUPPORTED_PAYMENT_CURRENCY = 'USD';
+
 /** What to ask the gateway to stand ready for. */
 export interface OpenIntentRequest {
     /** Which configured `PaymentProvider` account. Decides the driver and the credentials. */
@@ -77,8 +84,15 @@ export interface OpenIntentRequest {
     /** A saved instrument to charge — the recurring-renewal path, where the mandate already exists. */
     ProviderCustomerRef?: string | null;
     ProviderInstrumentRef?: string | null;
+    /**
+     * Keep the instrument the customer enters so it can be charged again later (the first purchase
+     * of an auto-renewing subscription). Needs `ProviderCustomerRef`. See `CreateIntentRequest`.
+     */
+    SaveInstrumentForReuse?: boolean;
     /** Echoed back on webhooks. Useful for reconciliation, never load-bearing. */
     Metadata?: Record<string, string>;
+    /** Where the gateway sends its own receipt for the charge. Omitted, it sends none. */
+    ReceiptEmail?: string | null;
     /**
      * What the gateway dashboard shows for the charge. When omitted and `OrderHeaderID` is set, it is
      * built from the order — see `DescribeOrder`.
@@ -131,6 +145,12 @@ export async function OpenPaymentIntent(
     if (!request?.PaymentProviderID) {
         return { Success: false, Reason: 'A payment intent needs a PaymentProviderID — it decides which gateway to ask.' };
     }
+    if ((request.CurrencyCode ?? '').trim().toUpperCase() !== SUPPORTED_PAYMENT_CURRENCY) {
+        return {
+            Success: false,
+            Reason: `Payments can only be taken in ${SUPPORTED_PAYMENT_CURRENCY} — '${request.CurrencyCode ?? ''}' is not supported, because orders do not yet record a currency.`,
+        };
+    }
 
     const driver = await ResolvePaymentProvider(request.PaymentProviderID, provider, user);
     const description =
@@ -144,8 +164,10 @@ export async function OpenPaymentIntent(
         BillToOrganizationID: request.BillToOrganizationID ?? null,
         ProviderCustomerRef: request.ProviderCustomerRef ?? null,
         ProviderInstrumentRef: request.ProviderInstrumentRef ?? null,
+        SaveInstrumentForReuse: request.SaveInstrumentForReuse ?? false,
         Metadata: request.Metadata,
         Description: description,
+        ReceiptEmail: request.ReceiptEmail?.trim() || null,
         IdempotencyKey: request.IdempotencyKey ?? undefined,
     });
 

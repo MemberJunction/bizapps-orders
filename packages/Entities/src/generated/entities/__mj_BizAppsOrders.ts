@@ -257,6 +257,16 @@ export const mjBizAppsOrdersCheckoutSessionSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    AutoRenewConsentAt: z.date().nullable().describe(`
+        * * Field Name: AutoRenewConsentAt
+        * * Display Name: Auto Renew Consent At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the buyer agreed to be charged automatically at renewal. NULL when the widget asked for no such agreement.`),
+    AutoRenewConsentText: z.string().nullable().describe(`
+        * * Field Name: AutoRenewConsentText
+        * * Display Name: Auto Renew Consent Text
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The automatic-renewal wording the buyer agreed to, copied from the widget's server-side configuration (autoRenewConsentText) at the moment of agreement.`),
     CheckoutWidget: z.string().describe(`
         * * Field Name: CheckoutWidget
         * * Display Name: Checkout Widget
@@ -2903,7 +2913,7 @@ export const mjBizAppsOrdersOrderLineProgressMeasurementSchema = z.object({
         * * Field Name: MeasurementDate
         * * Display Name: Measurement Date
         * * SQL Data Type: date
-        * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.`),
+        * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date among observations that replace nothing (UQ_OLPM_Period, filtered); a superseding observation may carry the date of the one it replaces. It is also the recognition entry's EffectiveDate.`),
     PercentComplete: z.number().describe(`
         * * Field Name: PercentComplete
         * * Display Name: Percent Complete
@@ -2986,6 +2996,17 @@ export const mjBizAppsOrdersOrderLineProgressMeasurementSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    SupersedesMeasurementID: z.string().nullable().describe(`
+        * * Field Name: SupersedesMeasurementID
+        * * Display Name: Supersedes Measurement ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Line Progress Measurements (vwOrderLineProgressMeasurements.ID)
+        * * Description: The posted observation this row replaces. Set only by Orders.RecordProgress for a user holding MJ.BizApps.Orders.Progress.Supersede. The replaced row is not edited: its recognition is reversed by ReversalJournalEntryID and it stops counting as the line's last observation. At most one row may supersede any observation.`),
+    ReversalJournalEntryID: z.string().nullable().describe(`
+        * * Field Name: ReversalJournalEntryID
+        * * Display Name: Reversal Journal Entry ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition. Dated on that observation's MeasurementDate while that month has no posted batch for the line's company, so the revenue it recognised nets to zero on that date; otherwise on the first day of the first later month with no posted batch. The Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`),
     AttestedByUser: z.string().nullable().describe(`
         * * Field Name: AttestedByUser
         * * Display Name: Attested By User
@@ -6475,6 +6496,12 @@ export const mjBizAppsOrdersSubscriptionSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    DefaultCustomerPaymentMethodID: z.string().nullable().describe(`
+        * * Field Name: DefaultCustomerPaymentMethodID
+        * * Display Name: Default Customer Payment Method ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Customer Payment Methods (vwCustomerPaymentMethods.ID)
+        * * Description: The saved card (wallet entry) this subscription is charged with at renewal. Set when the checkout that created the subscription kept the buyer's card. NULL means there is no renewal card and an automatic renewal cannot be charged.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -6507,6 +6534,10 @@ export const mjBizAppsOrdersSubscriptionSchema = z.object({
         * * Field Name: MigratesToSubscription
         * * Display Name: Migrates To Subscription
         * * SQL Data Type: nvarchar(40)`),
+    DefaultCustomerPaymentMethod: z.string().nullable().describe(`
+        * * Field Name: DefaultCustomerPaymentMethod
+        * * Display Name: Default Customer Payment Method
+        * * SQL Data Type: nvarchar(100)`),
 });
 
 export type mjBizAppsOrdersSubscriptionEntityType = z.infer<typeof mjBizAppsOrdersSubscriptionSchema>;
@@ -7133,6 +7164,32 @@ export class mjBizAppsOrdersCheckoutSessionEntity extends BaseEntity<mjBizAppsOr
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: AutoRenewConsentAt
+    * * Display Name: Auto Renew Consent At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the buyer agreed to be charged automatically at renewal. NULL when the widget asked for no such agreement.
+    */
+    get AutoRenewConsentAt(): Date | null {
+        return this.Get('AutoRenewConsentAt');
+    }
+    set AutoRenewConsentAt(value: Date | null) {
+        this.Set('AutoRenewConsentAt', value);
+    }
+
+    /**
+    * * Field Name: AutoRenewConsentText
+    * * Display Name: Auto Renew Consent Text
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The automatic-renewal wording the buyer agreed to, copied from the widget's server-side configuration (autoRenewConsentText) at the moment of agreement.
+    */
+    get AutoRenewConsentText(): string | null {
+        return this.Get('AutoRenewConsentText');
+    }
+    set AutoRenewConsentText(value: string | null) {
+        this.Set('AutoRenewConsentText', value);
     }
 
     /**
@@ -14498,7 +14555,7 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntit
     * * Field Name: MeasurementDate
     * * Display Name: Measurement Date
     * * SQL Data Type: date
-    * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date (UQ_OLPM_Period); it is also the recognition entry's EffectiveDate.
+    * * Description: The date this observation governs — the period it belongs to on the close calendar. One observation per line per date among observations that replace nothing (UQ_OLPM_Period, filtered); a superseding observation may carry the date of the one it replaces. It is also the recognition entry's EffectiveDate.
     */
     get MeasurementDate(): Date {
         return this.Get('MeasurementDate');
@@ -14701,6 +14758,33 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntit
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: SupersedesMeasurementID
+    * * Display Name: Supersedes Measurement ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Line Progress Measurements (vwOrderLineProgressMeasurements.ID)
+    * * Description: The posted observation this row replaces. Set only by Orders.RecordProgress for a user holding MJ.BizApps.Orders.Progress.Supersede. The replaced row is not edited: its recognition is reversed by ReversalJournalEntryID and it stops counting as the line's last observation. At most one row may supersede any observation.
+    */
+    get SupersedesMeasurementID(): string | null {
+        return this.Get('SupersedesMeasurementID');
+    }
+    set SupersedesMeasurementID(value: string | null) {
+        this.Set('SupersedesMeasurementID', value);
+    }
+
+    /**
+    * * Field Name: ReversalJournalEntryID
+    * * Display Name: Reversal Journal Entry ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition. Dated on that observation's MeasurementDate while that month has no posted batch for the line's company, so the revenue it recognised nets to zero on that date; otherwise on the first day of the first later month with no posted batch. The Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.
+    */
+    get ReversalJournalEntryID(): string | null {
+        return this.Get('ReversalJournalEntryID');
+    }
+    set ReversalJournalEntryID(value: string | null) {
+        this.Set('ReversalJournalEntryID', value);
     }
 
     /**
@@ -24931,6 +25015,20 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     }
 
     /**
+    * * Field Name: DefaultCustomerPaymentMethodID
+    * * Display Name: Default Customer Payment Method ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Customer Payment Methods (vwCustomerPaymentMethods.ID)
+    * * Description: The saved card (wallet entry) this subscription is charged with at renewal. Set when the checkout that created the subscription kept the buyer's card. NULL means there is no renewal card and an automatic renewal cannot be charged.
+    */
+    get DefaultCustomerPaymentMethodID(): string | null {
+        return this.Get('DefaultCustomerPaymentMethodID');
+    }
+    set DefaultCustomerPaymentMethodID(value: string | null) {
+        this.Set('DefaultCustomerPaymentMethodID', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
@@ -25000,5 +25098,14 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     */
     get MigratesToSubscription(): string | null {
         return this.Get('MigratesToSubscription');
+    }
+
+    /**
+    * * Field Name: DefaultCustomerPaymentMethod
+    * * Display Name: Default Customer Payment Method
+    * * SQL Data Type: nvarchar(100)
+    */
+    get DefaultCustomerPaymentMethod(): string | null {
+        return this.Get('DefaultCustomerPaymentMethod');
     }
 }

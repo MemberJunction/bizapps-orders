@@ -401,3 +401,57 @@
 @keyframes mj-spin {
     to { transform: rotate(360deg); }
 }
+
+.mj-checkout-consent {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    margin: 0.75rem 0;
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+.mj-checkout-consent input {
+    margin-top: 0.2rem;
+    flex: 0 0 auto;
+}
+
+.mj-checkout-promo {
+    margin: 0.75rem 0;
+}
+.mj-checkout-promo__label {
+    display: block;
+    font-size: 0.875rem;
+    margin-bottom: 0.25rem;
+}
+.mj-checkout-promo__row {
+    display: flex;
+    gap: 0.5rem;
+}
+.mj-checkout-promo__input {
+    flex: 1 1 auto;
+}
+.mj-checkout-promo__error {
+    color: var(--mj-error-color, #b91c1c);
+    font-size: 0.875rem;
+    margin: 0.35rem 0 0;
+}
+.mj-checkout-promo__applied {
+    color: var(--mj-success-color, #15803d);
+    font-size: 0.875rem;
+    margin: 0.35rem 0 0;
+}
+.mj-checkout-promo__apply {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    background: transparent;
+    color: var(--mj-primary-color, #2563eb);
+    border: 1px solid var(--mj-border-color, #cbd5e1);
+    border-radius: var(--mj-border-radius, 8px);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.mj-checkout-promo__apply:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

@@ -35,6 +35,7 @@ vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
         ReapExpiredOpenSessions: vi.fn().mockResolvedValue(0),
     },
     EscapeText: (value: string) => value.replace(/'/g, "''"),
+    GetCheckoutAccessStatus: vi.fn().mockResolvedValue({ Success: true, State: 'NotTracked' }),
     DispatchOutboundDeliveries: vi.fn().mockResolvedValue({ Success: true, Claimed: 0, Delivered: 0, Retrying: 0, DeadLettered: 0 }),
     EnsureCheckoutAccount: vi.fn().mockResolvedValue({ Success: true }),
     HasCheckoutAccountStep: vi.fn().mockReturnValue(false),
@@ -144,6 +145,7 @@ describe('CheckoutServerExtension', () => {
 
         expect(result.Success).toBe(true);
         expect(Object.keys(routes.post).sort()).toEqual([
+            '/checkout/access-status',
             '/checkout/account',
             '/checkout/account/password',
             '/checkout/complete',
@@ -160,8 +162,25 @@ describe('CheckoutServerExtension', () => {
             'POST /checkout/complete',
             'POST /checkout/account',
             'POST /checkout/account/password',
+            'POST /checkout/access-status',
             'GET /checkout/:slug',
         ]);
+    });
+
+    it('passes the buyer’s promotion codes through to the draft, unmodified', async () => {
+        const { app } = mockApp();
+        const ext = new CheckoutServerExtension();
+        await ext.Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({ Success: true } as never);
+        const res = mockRes();
+        const body = { sessionId: 's-1', clientSessionKey: 'k', email: 'a@b.com', lines: [], promotionCodes: ['SAVE10'] };
+        await (ext as unknown as { handleDraft(req: Request, res: Response): Promise<void> }).handleDraft(
+            { body, headers: {}, socket: {} } as unknown as Request,
+            res as unknown as Response,
+        );
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('s-1', 'k', 'a@b.com', [], null, expect.anything(), {
+            PromotionCodes: ['SAVE10'],
+        });
     });
 
     it('serves the element bundle and its source map to any origin', async () => {
@@ -312,6 +331,58 @@ describe('CheckoutServerExtension', () => {
         expect(mockRunView.mock.calls[0][0].ExtraFilter).toContain("Slug = 'summit_2027'");
     });
 
+    it('passes a member token from the /draft body to UpdateDraft, and omits it when absent or not a string (#324)', async () => {
+        mockRunView.mockResolvedValue({ Success: true, Results: [] });
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({
+            Success: true, SessionID: 'sess-1', Subtotal: 0, Tax: 0, Adjustments: 0, TotalGross: 0, RequiresPayment: false, Lines: [],
+        });
+        const { app, routes } = mockApp();
+        await new CheckoutServerExtension().Initialize(app, {
+            Enabled: true,
+            DriverClass: 'OrdersCheckoutEdge',
+            RootPath: '/checkout',
+            Settings: {},
+        });
+        const handler = routes.post['/checkout/draft'][1] as (req: Request, res: Response, next: () => void) => void;
+        const post = async (body: Record<string, unknown>) => {
+            handler(
+                { path: '/checkout/draft', body, headers: {}, socket: { remoteAddress: '127.0.0.1' } } as unknown as Request,
+                mockRes() as unknown as Response,
+                () => undefined
+            );
+            await vi.waitFor(() => expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalled());
+            const call = vi.mocked(CheckoutSessionService.UpdateDraft).mock.calls[0];
+            vi.mocked(CheckoutSessionService.UpdateDraft).mockClear();
+            return call;
+        };
+
+        const withToken = await post({ sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.test', lines: [], memberToken: 'signed.token' });
+        expect((withToken[6] as { MemberToken?: string })?.MemberToken).toBe('signed.token');
+        const without = await post({ sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.test', lines: [] });
+        expect((without[6] as { MemberToken?: string })?.MemberToken).toBeUndefined();
+        const notString = await post({ sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.test', lines: [], memberToken: { forged: true } });
+        expect((notString[6] as { MemberToken?: string })?.MemberToken).toBeUndefined();
+    });
+
+    it('passes the billing location from the draft body to UpdateDraft, and nothing when it is not an object', async () => {
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({ Success: true } as Awaited<ReturnType<typeof CheckoutSessionService.UpdateDraft>>);
+        const ext = new CheckoutServerExtension() as unknown as { handleDraft(req: Request, res: Response): Promise<void> };
+        const draft = (billingAddress: unknown) =>
+            ext.handleDraft(
+                { body: { sessionId: 's', clientSessionKey: 'k', email: 'a@b.com', lines: [], billingAddress } } as unknown as Request,
+                mockRes() as unknown as Response
+            );
+
+        await draft({ Country: 'US', StateProvince: 'IL', PostalCode: '60601' });
+        await draft('US');
+        await draft(['US']);
+
+        const calls = vi.mocked(CheckoutSessionService.UpdateDraft).mock.calls;
+        expect(calls[0][4]).toEqual({ Country: 'US', StateProvince: 'IL', PostalCode: '60601' });
+        expect(calls[1][4]).toBeNull();
+        expect(calls[2][4]).toBeNull();
+    });
+
     it('does not key rate limits on a spoofed leftmost X-Forwarded-For (default TrustedProxyHops=0)', async () => {
         const { app, routes } = mockApp();
         const ext = new CheckoutServerExtension();
@@ -336,6 +407,34 @@ describe('CheckoutServerExtension', () => {
         expect(await hit('1.1.1.1')).toBe(200);
         expect(await hit('2.2.2.2')).toBe(200);
         expect(await hit('3.3.3.3')).toBe(429);
+    });
+
+    it('counts access-status polling in its own window, so it cannot exhaust the password step', async () => {
+        const ext = new CheckoutServerExtension() as unknown as {
+            settings: Record<string, unknown>;
+            resolveEdgePolicy(req: Request): Promise<unknown>;
+            guardAndRun(req: Request, res: Response, handler: (req: Request, res: Response) => Promise<void>): Promise<void>;
+        };
+        ext.settings = { RateLimitMax: 2, RateLimitMaxGlobal: 100, RateLimitWindowMs: 60_000 };
+        ext.resolveEdgePolicy = async () => null;
+        const handler = vi.fn(async (_req: Request, res: Response) => {
+            res.status(200).json({ Success: true });
+        });
+        const hit = async (path: string) => {
+            const res = mockRes();
+            await ext.guardAndRun(
+                { path, body: { slug: 'summit-2027' }, headers: {}, socket: { remoteAddress: '10.0.0.9' } } as unknown as Request,
+                res as unknown as Response,
+                handler
+            );
+            return res.statusCode;
+        };
+        expect(await hit('/checkout/access-status')).toBe(200);
+        expect(await hit('/checkout/access-status')).toBe(200);
+        expect(await hit('/checkout/access-status')).toBe(429);
+        expect(await hit('/checkout/account/password')).toBe(200);
+        expect(await hit('/checkout/account/password')).toBe(200);
+        expect(await hit('/checkout/account/password')).toBe(429);
     });
 
     describe('outbound dispatch after completion (#293)', () => {
@@ -380,7 +479,7 @@ describe('CheckoutServerExtension', () => {
             { body: { sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.com', lines: [], attribution } } as unknown as Request,
             res as unknown as Response
         );
-        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('sess-1', 'k', 'a@b.com', [], user, { Attribution: attribution, Answers: undefined });
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('sess-1', 'k', 'a@b.com', [], null, user, { Attribution: attribution, Answers: undefined });
     });
 
     it('passes the buyer answers from the draft body to UpdateDraft (#322)', async () => {
@@ -400,7 +499,7 @@ describe('CheckoutServerExtension', () => {
         );
         expect(res.statusCode).toBe(200);
         expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith(
-            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], user, { Attribution: undefined, Answers: answers, Choices: undefined }
+            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], null, user, { Attribution: undefined, Answers: answers, Choices: undefined }
         );
     });
 
@@ -421,7 +520,7 @@ describe('CheckoutServerExtension', () => {
         );
         expect(res.statusCode).toBe(200);
         expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith(
-            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], user, { Attribution: undefined, Answers: undefined, Choices: choices }
+            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], null, user, { Attribution: undefined, Answers: undefined, Choices: choices }
         );
     });
 
