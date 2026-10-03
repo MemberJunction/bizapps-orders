@@ -39,6 +39,7 @@ export * from './OrderHeaderEntity';
 export * from './OrderLineEntity';
 export * from './SubscriptionTermEntity';
 export * from './ProductPriceEntity';
+export * from './ProductEntity';
 export * from './OrderLineExtensionCompanion';
 export * from './CustomerPaymentMethodEntity';
 export * from './PaymentHeaderEntity';
