@@ -53,6 +53,7 @@ import {
 import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  CreateProductPrice,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -110,6 +111,8 @@ async function sell(ctx: IntegrationCheckContext, amount: number, company?: { ID
   const f = Fx();
   const co = company ?? f.CoA;
   const productKey = co.ID === f.CoB.ID ? "WidgetB" : "WidgetA";
+  // The engine's price, so the stated amount is not a concession the confirm gate holds.
+  await CreateProductPrice(ctx, f.Products[productKey], amount);
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: co.ID,
     BillToOrganizationID: f.Customers.OrganizationID,

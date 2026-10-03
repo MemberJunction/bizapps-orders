@@ -58,8 +58,16 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import type { IntentStatus } from './PaymentProviderBehavior.js';
+import { DescribeOrder } from './IntentDescription.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
+
+/**
+ * The only currency an intent may be opened in. Orders, lines and payment intents carry no currency
+ * column, so an amount taken in any other currency would be stored as a bare number that nothing can
+ * convert later. Widen this only together with the schema change that records currency.
+ */
+export const SUPPORTED_PAYMENT_CURRENCY = 'USD';
 
 /** What to ask the gateway to stand ready for. */
 export interface OpenIntentRequest {
@@ -78,6 +86,11 @@ export interface OpenIntentRequest {
     ProviderInstrumentRef?: string | null;
     /** Echoed back on webhooks. Useful for reconciliation, never load-bearing. */
     Metadata?: Record<string, string>;
+    /**
+     * What the gateway dashboard shows for the charge. When omitted and `OrderHeaderID` is set, it is
+     * built from the order — see `DescribeOrder`.
+     */
+    Description?: string | null;
     /**
      * Sent to the gateway so a retried call does not open a SECOND intent — which, on a saved
      * instrument, would charge the customer twice. See the dedup note in {@link OpenPaymentIntent}.
@@ -125,8 +138,16 @@ export async function OpenPaymentIntent(
     if (!request?.PaymentProviderID) {
         return { Success: false, Reason: 'A payment intent needs a PaymentProviderID — it decides which gateway to ask.' };
     }
+    if ((request.CurrencyCode ?? '').trim().toUpperCase() !== SUPPORTED_PAYMENT_CURRENCY) {
+        return {
+            Success: false,
+            Reason: `Payments can only be taken in ${SUPPORTED_PAYMENT_CURRENCY} — '${request.CurrencyCode ?? ''}' is not supported, because orders do not yet record a currency.`,
+        };
+    }
 
     const driver = await ResolvePaymentProvider(request.PaymentProviderID, provider, user);
+    const description =
+        request.Description?.trim() || (request.OrderHeaderID ? await DescribeOrder(request.OrderHeaderID, provider, user) : null);
 
     const opened = await driver.CreateIntent({
         Amount: request.Amount,
@@ -137,6 +158,7 @@ export async function OpenPaymentIntent(
         ProviderCustomerRef: request.ProviderCustomerRef ?? null,
         ProviderInstrumentRef: request.ProviderInstrumentRef ?? null,
         Metadata: request.Metadata,
+        Description: description,
         IdempotencyKey: request.IdempotencyKey ?? undefined,
     });
 

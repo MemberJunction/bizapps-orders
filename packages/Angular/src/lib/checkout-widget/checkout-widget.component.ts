@@ -33,7 +33,15 @@ import type {
     CheckoutWidgetConfiguration
 } from '@mj-biz-apps/orders-entities';
 // Deep import on purpose: this module has no dependencies, while the package root would pull every
-// entity class into the public checkout bundle. The server runs the same check.
+// entity class into the public checkout bundle. The server checks the same lists.
+import {
+    BILLING_COUNTRIES,
+    BillingPostalCodeRequired,
+    BillingSubdivisionsFor,
+    CheckBillingLocation,
+    type LocationOption
+} from '@mj-biz-apps/orders-entities/dist/billing-location.js';
+// Same reason: a dependency-free module the server also runs.
 import {
     CheckAnswersAgainstQuestions,
     CheckoutAnswerMaxLength,
@@ -44,6 +52,16 @@ import {
     type CheckoutAnswersInput,
     type CheckoutQuestion
 } from '@mj-biz-apps/orders-entities/dist/checkout-questions.js';
+// Same reason: a dependency-free module the server also runs.
+import {
+    CheckChoicesAgainstGroups,
+    CheckoutChoiceOptionLabel,
+    CheckoutChoiceOptionValue,
+    DescribeChoiceCount,
+    ReadCheckoutChoiceGroups,
+    type CheckoutChoiceGroup,
+    type CheckoutChoicesInput
+} from '@mj-biz-apps/orders-entities/dist/checkout-choices.js';
 
 export interface CheckoutWidgetTheme extends CustomUIThemeConfiguration {
     primaryColor?: string;
@@ -95,9 +113,17 @@ export interface CheckoutWidgetConfig extends CheckoutWidgetConfiguration {
     isEvent?: boolean;
 }
 
+/** Codes only — Country is ISO 3166-1 alpha-2, StateProvince an ISO 3166-2 subdivision code. */
+export interface CheckoutBillingAddress {
+    Country: string;
+    StateProvince?: string;
+    PostalCode?: string;
+}
+
 export interface CheckoutSubmissionEvent {
     email: string;
     quantity: number;
+    billingAddress: CheckoutBillingAddress;
     attendees: CheckoutAttendee[];
     extensionData: {
         entityName?: string;
@@ -107,6 +133,8 @@ export interface CheckoutSubmissionEvent {
     totalGross: number;
     /** Answers to the widget's `questions`, keyed by question key. */
     answers: CheckoutAnswersInput;
+    /** Options chosen from the widget's `choiceGroups`, keyed by group key. */
+    choices: CheckoutChoicesInput;
     paymentToken?: string;
     stripePaymentMethodId?: string;
     stripePaymentIntentId?: string;
@@ -166,8 +194,32 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     /** An e-mail the embedding host already knows. Fills the field only while it is empty. */
     @Input() public prefillEmail: string | null = null;
 
+    /**
+     * The server's priced total and tax for the current details, once the host has drafted them.
+     * Tax depends on the billing location, so the client cannot compute it; while no quote is set
+     * the widget shows the pre-tax subtotal.
+     */
+    private _quotedTotal = signal<number | null>(null);
+    private _quotedTax = signal<number | null>(null);
+    @Input()
+    public set quotedTotal(val: number | null) {
+        this._quotedTotal.set(val);
+    }
+    public get quotedTotal(): number | null {
+        return this._quotedTotal();
+    }
+    @Input()
+    public set quotedTax(val: number | null) {
+        this._quotedTax.set(val);
+    }
+    public get quotedTax(): number | null {
+        return this._quotedTax();
+    }
+
     @Output() public submitted = new EventEmitter<CheckoutSubmissionEvent>();
     @Output() public cancelled = new EventEmitter<void>();
+    /** Emitted when an input that changes the price (quantity, location) changes, so the host drops its quote. */
+    @Output() public quoteInvalidated = new EventEmitter<void>();
 
     // Internal error message for client-side validation failures
     public internalErrorMessage = signal<string | null>(null);
@@ -197,6 +249,40 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         return !CheckAnswersAgainstQuestions(this.questions(), this.answers()).Error;
     }
 
+    /** The widget's choice groups. A malformed list shows none here; the server refuses the checkout. */
+    public choiceGroups = computed<CheckoutChoiceGroup[]>(() => ReadCheckoutChoiceGroups(this._config()?.choiceGroups).Groups);
+    public choices = signal<CheckoutChoicesInput>({});
+    public readonly choiceValue = CheckoutChoiceOptionValue;
+    public readonly choiceLabel = CheckoutChoiceOptionLabel;
+    public readonly choiceCount = DescribeChoiceCount;
+
+    public isChosen(groupKey: string, value: string): boolean {
+        return (this.choices()[groupKey] ?? []).includes(value);
+    }
+
+    /**
+     * Pick or unpick an option. A group of one swaps the pick, as a radio would; a larger group
+     * stops at its maximum, and the template disables the rest until one is unpicked.
+     */
+    public toggleChoice(group: CheckoutChoiceGroup, value: string): void {
+        this.choices.update((current) => {
+            const picked = current[group.key] ?? [];
+            if (picked.includes(value)) return { ...current, [group.key]: picked.filter((v) => v !== value) };
+            if (group.max === 1) return { ...current, [group.key]: [value] };
+            if (picked.length >= group.max) return current;
+            return { ...current, [group.key]: [...picked, value] };
+        });
+    }
+
+    /** True when the group is full, so its unpicked options are disabled. */
+    public isGroupFull(group: CheckoutChoiceGroup): boolean {
+        return group.max > 1 && (this.choices()[group.key] ?? []).length >= group.max;
+    }
+
+    private choicesAreComplete(): boolean {
+        return !CheckChoicesAgainstGroups(this.choiceGroups(), this.choices()).Error;
+    }
+
     // Form state signals
     public email = signal<string>('');
     public firstName = signal<string>('');
@@ -204,6 +290,20 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     public company = signal<string>('');
     public title = signal<string>('');
     public quantity = signal<number>(1);
+
+    // Billing location — required before payment so the sale can be placed in a tax jurisdiction
+    public readonly billingCountries: ReadonlyArray<LocationOption> = BILLING_COUNTRIES;
+    public billingCountry = signal<string>('');
+    public billingRegion = signal<string>('');
+    public billingPostalCode = signal<string>('');
+    public billingRegions = computed<ReadonlyArray<LocationOption>>(() => BillingSubdivisionsFor(this.billingCountry()));
+    public billingPostalRequired = computed<boolean>(() => BillingPostalCodeRequired(this.billingCountry()));
+    public billingAddress = computed<CheckoutBillingAddress>(() => ({
+        Country: this.billingCountry(),
+        StateProvince: this.billingRegion() || undefined,
+        PostalCode: this.billingPostalCode().trim() || undefined
+    }));
+    public isBillingLocationValid = computed<boolean>(() => CheckBillingLocation(this.billingAddress()).Valid);
 
     // Generic units array holding field maps for each unit
     public units = signal<Array<Record<string, unknown>>>([]);
@@ -271,7 +371,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         return price * this.quantity();
     });
 
-    public totalGross = computed(() => this.subtotal());
+    public totalGross = computed(() => this._quotedTotal() ?? this.subtotal());
 
     public currencySymbol = computed(() => {
         const c = this._config()?.currency?.toUpperCase() ?? 'USD';
@@ -406,7 +506,25 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         const clamped = Math.max(1, Math.min(newQty, this.config?.maxQuantity ?? 50));
         this.quantity.set(clamped);
         this.syncUnits();
+        this.quoteInvalidated.emit();
         this.executeLifecycleHook('onQuantityChange', { quantity: clamped });
+    }
+
+    public onBillingCountryChange(country: string): void {
+        this.billingCountry.set(country ?? '');
+        // A region belongs to one country; keeping it across a change would submit a wrong pairing.
+        this.billingRegion.set('');
+        this.quoteInvalidated.emit();
+    }
+
+    public onBillingRegionChange(region: string): void {
+        this.billingRegion.set(region ?? '');
+        this.quoteInvalidated.emit();
+    }
+
+    public onBillingPostalCodeChange(postalCode: string): void {
+        this.billingPostalCode.set(postalCode ?? '');
+        this.quoteInvalidated.emit();
     }
 
     public syncUnits(): void {
@@ -486,12 +604,17 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         const currentUnits = this.units();
         const fields = this.activeFieldDefs();
 
+        if (!this.isBillingLocationValid()) {
+            return false;
+        }
+
         if (!currentUnits || currentUnits.length === 0) {
             const em = this.email().trim();
             const fn = this.firstName().trim();
             const ln = this.lastName().trim();
             if (!em || !em.includes('@') || !fn || !ln) return false;
             if (!this.answersAreComplete()) return false;
+            if (!this.choicesAreComplete()) return false;
             if (!this.isFree() && !this.isPaymentReady) return false;
             return true;
         }
@@ -525,7 +648,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             }
         }
 
-        if (!this.answersAreComplete()) {
+        if (!this.answersAreComplete() || !this.choicesAreComplete()) {
             return false;
         }
 
@@ -547,6 +670,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         const submission: CheckoutSubmissionEvent = {
             email: String(currentUnits[0]?.['email'] || this.email()).trim().toLowerCase(),
             quantity: this.quantity(),
+            billingAddress: this.billingAddress(),
             attendees: isPerUnit ? this.attendees() : [],
             extensionData: {
                 entityName: this.config?.extensionEntityName,
@@ -555,6 +679,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             },
             totalGross: this.totalGross(),
             answers: this.answers(),
+            choices: this.choices(),
             stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? undefined),
             sessionKey: finalSessionKey
         };

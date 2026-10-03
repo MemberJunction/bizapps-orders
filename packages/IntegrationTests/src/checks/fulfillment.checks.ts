@@ -130,6 +130,11 @@ const statusOf = (ctx: IntegrationCheckContext, orderID: string) =>
 /** Confirm an order of `spec` lines. */
 async function sell(ctx: IntegrationCheckContext, spec: Array<[string, number]>) {
   const f = Fx();
+  // Each product's engine price is the lowest price stated for it, so no stated price is a
+  // concession the confirm gate would hold.
+  const lowest = new Map<string, number>();
+  for (const [product, price] of spec) lowest.set(product, Math.min(price, lowest.get(product) ?? price));
+  for (const [product, price] of lowest) await CreateProductPrice(ctx, f.Products[product], price);
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
     BillToOrganizationID: f.Customers.OrganizationID,

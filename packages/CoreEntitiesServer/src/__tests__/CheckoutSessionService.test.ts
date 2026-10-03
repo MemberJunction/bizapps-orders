@@ -4,6 +4,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { UserInfo } from '@memberjunction/core';
 
+// The post-payment step record (#326): observed, not exercised — CheckoutStepLog has its own suite.
+const stepMocks = vi.hoisted(() => {
+    type Attempt = { Step: { StepName: string } | null; PreviousStatus: string | null; PreviousRetryable: boolean | null };
+    return {
+        Begin: vi.fn(async (_sessionID: string, stepName: string): Promise<Attempt> => ({ Step: { StepName: stepName }, PreviousStatus: null, PreviousRetryable: null })),
+        Succeed: vi.fn(async () => undefined),
+        Fail: vi.fn(async () => undefined),
+        CloseIfOpen: vi.fn(async () => undefined),
+        IsNewTerminalFailure: vi.fn((a: Attempt) => !(a.PreviousStatus === 'Failed' && a.PreviousRetryable === false)),
+        Alert: vi.fn(async () => undefined),
+    };
+});
+
 const mocks = vi.hoisted(() => {
     const mockWidgetSave = vi.fn().mockResolvedValue(true);
     const mockWidgetLoad = vi.fn().mockResolvedValue(true);
@@ -107,6 +120,29 @@ const mocks = vi.hoisted(() => {
         Save = mockIntentSave;
     }
 
+    const mockAddressSave = vi.fn().mockResolvedValue(true);
+    const mockAddressLinkSave = vi.fn().mockResolvedValue(true);
+
+    class MockAddress {
+        ID = 'addr-1';
+        Country: string | null = null;
+        StateProvince: string | null = null;
+        PostalCode: string | null = null;
+        LatestResult = { Success: true, Message: '', CompleteMessage: '' };
+        NewRecord = vi.fn();
+        Save = mockAddressSave;
+    }
+
+    class MockAddressLink {
+        AddressID: string | null = null;
+        EntityID: string | null = null;
+        RecordID: string | null = null;
+        AddressTypeID: string | null = null;
+        LatestResult = { Success: true, Message: '', CompleteMessage: '' };
+        NewRecord = vi.fn();
+        Save = mockAddressLinkSave;
+    }
+
     class MockExtensionEntity {
         Set = vi.fn();
         Get = vi.fn();
@@ -137,6 +173,14 @@ const mocks = vi.hoisted(() => {
             EnsureEntity: vi.fn().mockImplementation(() => Promise.resolve(this.extensionInstance))
         };
         EnsureISAChild = vi.fn().mockImplementation(() => Promise.resolve(this.extensionInstance));
+        Choices = {
+            Items: [] as Array<{ GroupKey?: string; GroupLabel?: string; OptionValue?: string; OptionLabel?: string }>,
+            Create: vi.fn().mockImplementation(() => {
+                const row = {};
+                this.Choices.Items.push(row);
+                return Promise.resolve(row);
+            })
+        };
     }
 
     class MockOrderHeader {
@@ -149,6 +193,8 @@ const mocks = vi.hoisted(() => {
         BillToPersonID: string | null = null;
         BillToOrganizationID: string | null = null;
         ShipToPersonID: string | null = null;
+        BillToAddressID: string | null = null;
+        ShipToAddressID: string | null = null;
         TotalGross = 0;
         AmountPaid = 0;
         OrderDate: Date | null = null;
@@ -211,6 +257,10 @@ const mocks = vi.hoisted(() => {
         MockOrderLine,
         MockOrderHeader,
         MockOrderPricingService,
+        MockAddress,
+        MockAddressLink,
+        mockAddressSave,
+        mockAddressLinkSave,
         mockPricingPrice,
         mockWidgetSave,
         mockWidgetLoad,
@@ -239,6 +289,8 @@ const mocks = vi.hoisted(() => {
         mockProductTypeInstance: new MockProductType(),
         mockPersonInstance: new MockPerson(),
         mockPaymentIntentInstance: new MockPaymentIntent(),
+        mockAddressInstance: new MockAddress(),
+        mockAddressLinkInstance: new MockAddressLink(),
         lastRunViewParams: undefined as { EntityName?: string; MaxRows?: number; Fields?: string[]; ExtraFilter?: string } | undefined,
         sessionRunViewResults: undefined as Array<{ ID: string }> | undefined,
         mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
@@ -261,8 +313,33 @@ vi.mock('../identityClaimContracts.js', async (importOriginal) => ({
     }
 }));
 
+const describeMocks = vi.hoisted(() => ({
+    mockDescribeCheckoutSnapshot: vi.fn(),
+    mockSendOrderDescription: vi.fn(),
+}));
+
+vi.mock('../IntentDescription.js', () => ({
+    DescribeCheckoutSnapshot: (...args: unknown[]) => describeMocks.mockDescribeCheckoutSnapshot(...args),
+    SendOrderDescriptionToGateway: (...args: unknown[]) => describeMocks.mockSendOrderDescription(...args),
+}));
+
 vi.mock('../PaymentIntentService.js', () => ({
+    SUPPORTED_PAYMENT_CURRENCY: 'USD',
     OpenPaymentIntent: (request: unknown, provider: unknown, user: unknown) => mocks.mockOpenPaymentIntent(request, provider, user)
+}));
+
+vi.mock('../CheckoutStepLog.js', () => ({
+    CheckoutStepLog: {
+        Begin: (...args: Parameters<typeof stepMocks.Begin>) => stepMocks.Begin(...args),
+        Succeed: (...args: unknown[]) => stepMocks.Succeed(...args),
+        Fail: (...args: unknown[]) => stepMocks.Fail(...args),
+        CloseIfOpen: (...args: unknown[]) => stepMocks.CloseIfOpen(...args),
+        IsNewTerminalFailure: (...args: Parameters<typeof stepMocks.IsNewTerminalFailure>) => stepMocks.IsNewTerminalFailure(...args),
+    },
+}));
+
+vi.mock('../checkoutCaptureAlert.js', () => ({
+    raiseCheckoutCaptureTerminalAlert: (...args: unknown[]) => stepMocks.Alert(...args),
 }));
 
 vi.mock('../CapturePaymentOperation.js', () => ({
@@ -287,12 +364,15 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                     ],
                     ParentEntityFieldNames: new Set(['ID', 'ProductID', 'Quantity', 'UnitPrice'])
                 },
-                { Name: 'MJ_BizApps_Orders: Order Headers', ID: 'entity-order-headers-id', Fields: [] }
+                { Name: 'MJ_BizApps_Orders: Order Headers', ID: 'entity-order-headers-id', Fields: [] },
+                { Name: 'MJ_BizApps_Common: People', ID: 'entity-people-id', Fields: [] }
             ];
             EntityByName = vi.fn().mockImplementation((name: string) => {
                 return this.Entities.find((e: { Name: string }) => e.Name.toLowerCase() === name.toLowerCase());
             });
             GetEntityObject = vi.fn().mockImplementation((name: string) => {
+                if (name.includes('Address Links')) return Promise.resolve(mocks.mockAddressLinkInstance);
+                if (name.includes('Addresses')) return Promise.resolve(mocks.mockAddressInstance);
                 if (name.includes('Checkout Widgets')) return Promise.resolve(mocks.mockWidgetInstance);
                 if (name.includes('Checkout Sessions')) return Promise.resolve(mocks.mockSessionInstance);
                 if (name.includes('Order Headers')) return Promise.resolve(mocks.mockOrderInstance);
@@ -317,6 +397,9 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                         Success: true,
                         Results: mocks.sessionRunViewResults ?? [mocks.mockSessionInstance]
                     });
+                }
+                if (params.EntityName.includes('Address Types')) {
+                    return Promise.resolve({ Success: true, Results: [{ ID: 'addrtype-billing' }] });
                 }
                 if (params.EntityName.includes('People') || params.EntityName.includes('Persons')) {
                     return Promise.resolve({
@@ -369,6 +452,7 @@ import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-a
 import { ToISODate } from '@mj-biz-apps/orders-entities';
 
 const KEY = 'client-xyz';
+const BILLING = { Country: 'US', StateProvince: 'IL', PostalCode: '60601' };
 const testUser = { ID: 'test-user-1', Email: 'service@example.com' } as unknown as UserInfo;
 
 describe('CheckoutSessionService', () => {
@@ -390,6 +474,12 @@ describe('CheckoutSessionService', () => {
         mocks.mockOrderInstance.TotalGross = 0;
         mocks.mockOrderInstance.BillToPersonID = null;
         mocks.mockOrderInstance.ShipToPersonID = null;
+        mocks.mockOrderInstance.BillToAddressID = null;
+        mocks.mockOrderInstance.ShipToAddressID = null;
+        mocks.mockAddressInstance = new mocks.MockAddress();
+        mocks.mockAddressLinkInstance = new mocks.MockAddressLink();
+        mocks.mockAddressSave.mockResolvedValue(true);
+        mocks.mockAddressLinkSave.mockResolvedValue(true);
         mocks.mockOrderInstance.Lines.Items = [];
         mocks.mockOrderInstance.CheckoutAnswers.Items = [];
         mocks.mockWidgetInstance.Configuration = mocks.DEFAULT_WIDGET_CONFIG;
@@ -418,6 +508,8 @@ describe('CheckoutSessionService', () => {
         mocks.mockSessionSave.mockResolvedValue(true);
         mocks.mockClaimCreate.mockResolvedValue({ ID: 'claim-1' });
         mocks.mockLoadOrdersEngine.mockResolvedValue(undefined);
+        describeMocks.mockDescribeCheckoutSnapshot.mockResolvedValue(null);
+        describeMocks.mockSendOrderDescription.mockResolvedValue(undefined);
         mocks.mockProductBySKU.mockImplementation((sku: string | null | undefined) => {
             const wanted = sku?.trim().toLowerCase();
             if (wanted === 'conf-2027') return { ID: 'prod-1', SKU: 'CONF-2027' };
@@ -552,7 +644,8 @@ describe('CheckoutSessionService', () => {
                 'sess-123',
                 KEY,
                 'a@b.com',
-                [{ ProductID: 'prod-other-campaign', Quantity: 1 }]
+                [{ ProductID: 'prod-other-campaign', Quantity: 1 }],
+                BILLING
             );
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toMatch(/does not sell that product/i);
@@ -564,7 +657,8 @@ describe('CheckoutSessionService', () => {
                 'sess-123',
                 KEY,
                 'a@b.com',
-                [{ ProductID: 'prod-1', Quantity: 1 }]
+                [{ ProductID: 'prod-1', Quantity: 1 }],
+                BILLING
             );
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toMatch(/not configured with a product/i);
@@ -576,7 +670,8 @@ describe('CheckoutSessionService', () => {
                 'sess-123',
                 KEY,
                 'a@b.com',
-                [{ ProductID: 'prod-1', Quantity: 1 }]
+                [{ ProductID: 'prod-1', Quantity: 1 }],
+                BILLING
             );
             expect(res.ErrorMessage ?? '').not.toMatch(/not configured with a product/i);
             expect(res.ErrorMessage ?? '').not.toMatch(/does not sell that product/i);
@@ -590,7 +685,8 @@ describe('CheckoutSessionService', () => {
                 'sess-123',
                 KEY,
                 'a@b.com',
-                [{ ProductID: 'prod-1', Quantity: 1 }]
+                [{ ProductID: 'prod-1', Quantity: 1 }],
+                BILLING
             );
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toMatch(/does not sell that product/i);
@@ -603,7 +699,8 @@ describe('CheckoutSessionService', () => {
                 'sess-123',
                 KEY,
                 'a@b.com',
-                [{ ProductID: 'prod-foreign', Quantity: 1 }]
+                [{ ProductID: 'prod-foreign', Quantity: 1 }],
+                BILLING
             );
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toMatch(/does not sell that product/i);
@@ -615,7 +712,8 @@ describe('CheckoutSessionService', () => {
                 'sess-123',
                 KEY,
                 'a@b.com',
-                [{ ProductID: 'prod-same-company-other-sku', Quantity: 1 }]
+                [{ ProductID: 'prod-same-company-other-sku', Quantity: 1 }],
+                BILLING
             );
             expect(res.Success).toBe(true);
         });
@@ -627,21 +725,22 @@ describe('CheckoutSessionService', () => {
                 'sess-123',
                 KEY,
                 'a@b.com',
-                [{ ProductID: 'prod-arbitrary', Quantity: 1 }]
+                [{ ProductID: 'prod-arbitrary', Quantity: 1 }],
+                BILLING
             );
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toMatch(/not configured for open-catalog sale/i);
         });
 
         it('rejects a mismatched client session key', async () => {
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', 'wrong-key', 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }]);
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', 'wrong-key', 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING);
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('session key');
         });
 
         it('rejects and expires a session past its TTL', async () => {
             mocks.mockSessionInstance.ExpiresAt = new Date(Date.now() - 60_000);
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }]);
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING);
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('expired');
             expect(mocks.mockSessionInstance.Status).toBe('Expired');
@@ -652,7 +751,7 @@ describe('CheckoutSessionService', () => {
                 { ProductID: 'prod-1', Quantity: 2 }
             ];
 
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'guest@example.com', linesInput);
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'guest@example.com', linesInput, BILLING);
             expect(res.Success).toBe(true);
             expect(mocks.mockSessionInstance.Save).toHaveBeenCalled();
             expect(mocks.mockSessionInstance.MetadataJSON).toBeDefined();
@@ -663,7 +762,7 @@ describe('CheckoutSessionService', () => {
         it('does not create Person rows on the draft path (resolve-only)', async () => {
             const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'guest@example.com', [
                 { ProductID: 'prod-1', Quantity: 1, Attendees: [{ FirstName: 'Draft', LastName: 'Only', Email: 'draft@example.com' }] }
-            ]);
+            ], BILLING);
             expect(res.Success).toBe(true);
             // The Person RunView lookup returns [] and creation must NOT run on drafts.
             expect(mocks.mockPersonSave).not.toHaveBeenCalled();
@@ -680,7 +779,7 @@ describe('CheckoutSessionService', () => {
                 }
             ];
 
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'alice@example.com', linesInput);
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'alice@example.com', linesInput, BILLING);
             expect(res.Success).toBe(true);
             expect(mocks.mockSessionInstance.Save).toHaveBeenCalled();
             expect(res.Lines[0].Description).toContain('Alice Smith');
@@ -707,7 +806,7 @@ describe('CheckoutSessionService', () => {
                 }
             ];
 
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'bob@example.com', linesInput);
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'bob@example.com', linesInput, BILLING);
             expect(res.Success).toBe(true);
             expect(mocks.mockSessionInstance.Save).toHaveBeenCalled();
             expect(res.Lines[0].Description).toContain('Bob Jones');
@@ -732,23 +831,23 @@ describe('CheckoutSessionService', () => {
 
         it('rejects invalid or out-of-range quantities in UpdateDraft', async () => {
             // Negative quantity
-            const resNeg = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: -1 }]);
+            const resNeg = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: -1 }], BILLING);
             expect(resNeg.Success).toBe(false);
             expect(resNeg.ErrorMessage).toContain('positive integer');
 
             // Zero quantity
-            const resZero = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 0 }]);
+            const resZero = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 0 }], BILLING);
             expect(resZero.Success).toBe(false);
             expect(resZero.ErrorMessage).toContain('positive integer');
 
             // Float quantity
-            const resFloat = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 2.5 }]);
+            const resFloat = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 2.5 }], BILLING);
             expect(resFloat.Success).toBe(false);
             expect(resFloat.ErrorMessage).toContain('positive integer');
 
             // Exceeds maxQuantityPerLine
             mocks.mockProductInstance.MaxQuantityPerLine = 5;
-            const resMax = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 10 }]);
+            const resMax = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 10 }], BILLING);
             expect(resMax.Success).toBe(false);
             expect(resMax.ErrorMessage).toContain('exceeds maximum allowed quantity of 5');
             mocks.mockProductInstance.MaxQuantityPerLine = null;
@@ -756,17 +855,17 @@ describe('CheckoutSessionService', () => {
 
         it('applies the default server-side quantity ceiling when no max is configured', async () => {
             mocks.mockProductInstance.MaxQuantityPerLine = null;
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 101 }]);
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 101 }], BILLING);
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('exceeds maximum allowed quantity of 100');
         });
 
         it('detaches a previously opened payment intent when the priced total changes', async () => {
             mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
-            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 250 });
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 250, BillingAddress: BILLING });
 
             // New pricing walk yields 0 (default mock) — total changed → intent detaches
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }]);
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING);
             expect(res.Success).toBe(true);
             expect(mocks.mockSessionInstance.PaymentIntentID).toBeNull();
         });
@@ -784,7 +883,7 @@ describe('CheckoutSessionService', () => {
                 }
             ];
 
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a1@test.com', linesInput);
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a1@test.com', linesInput, BILLING);
             expect(res.Success).toBe(true);
             expect(res.Lines.length).toBe(2);
         });
@@ -792,7 +891,7 @@ describe('CheckoutSessionService', () => {
 
     describe('UpdateDraft — attribution', () => {
         const draft = (attribution?: unknown) =>
-            CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, { Attribution: attribution });
+            CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING, undefined, { Attribution: attribution });
         const stored = () => JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Attribution;
 
         it('keeps where the checkout came from with the draft', async () => {
@@ -821,7 +920,7 @@ describe('CheckoutSessionService', () => {
         });
 
         it('refuses when the session has no balance due', async () => {
-            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 0 });
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 0, BillingAddress: BILLING });
             const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('no balance due');
@@ -829,14 +928,14 @@ describe('CheckoutSessionService', () => {
         });
 
         it('refuses when the widget has no paymentProviderId configured', async () => {
-            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100 });
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: BILLING });
             const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('paymentProviderId');
         });
 
         it('opens an intent from the server-priced snapshot amount and stamps the session', async () => {
-            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100 });
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: BILLING });
             mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', currency: 'USD' });
 
             const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
@@ -849,6 +948,17 @@ describe('CheckoutSessionService', () => {
             const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as { Amount: number; PaymentProviderID: string };
             expect(request.Amount).toBe(100);
             expect(request.PaymentProviderID).toBe('pp-1');
+        });
+
+        it('describes the charge from the snapshot, since the order does not exist yet (#327)', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' } });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', currency: 'USD' });
+            describeMocks.mockDescribeCheckoutSnapshot.mockResolvedValue('Annual Membership +1 more');
+
+            await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(describeMocks.mockDescribeCheckoutSnapshot.mock.calls[0][0]).toBe(mocks.mockSessionInstance.MetadataJSON);
+            const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as { Description?: string | null };
+            expect(request.Description).toBe('Annual Membership +1 more');
         });
     });
 
@@ -880,6 +990,7 @@ describe('CheckoutSessionService', () => {
         it('confirms $0 order immediately, resolves the payer Person, and creates identity claim via IdentityClaimEngineServer', async () => {
             mocks.mockSessionInstance.Email = 'guest@example.com';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
 
@@ -903,6 +1014,7 @@ describe('CheckoutSessionService', () => {
         it('refuses completion when no payer can be resolved (no email captured)', async () => {
             mocks.mockSessionInstance.Email = null;
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
 
@@ -917,6 +1029,7 @@ describe('CheckoutSessionService', () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
             mocks.mockPaymentIntentInstance.Status = 'Succeeded';
@@ -950,12 +1063,39 @@ describe('CheckoutSessionService', () => {
             expect(captureInput.Allocations).toEqual([{ OrderHeaderID: 'order-999', Amount: 100 }]);
             expect(captureInput.PaymentDetail).toEqual({ PaymentProviderID: 'pp-1' });
             expect(mocks.mockPaymentIntentInstance.OrderHeaderID).toBe('order-999');
+            // Second step of the gateway description (#327): the order number exists only now.
+            expect(describeMocks.mockSendOrderDescription).toHaveBeenCalledTimes(1);
+            expect(describeMocks.mockSendOrderDescription.mock.calls[0][0]).toBe(mocks.mockPaymentIntentInstance);
+            expect(describeMocks.mockSendOrderDescription.mock.calls[0][1]).toBe('order-999');
+        });
+
+        it('does not resend the gateway description for an intent already stamped with its order (#327)', async () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' },
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.mockPaymentIntentInstance.OrderHeaderID = 'order-999';
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = 100;
+                    line.LineTotalGross = 100 * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+            expect(describeMocks.mockSendOrderDescription).not.toHaveBeenCalled();
         });
 
         it('still confirms the order when CapturePayment fails after commit', async () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
             mocks.mockPaymentIntentInstance.Status = 'Succeeded';
@@ -1021,6 +1161,7 @@ describe('CheckoutSessionService', () => {
         it('skips CapturePayment for a $0 order even when a context user is present', async () => {
             mocks.mockSessionInstance.Email = 'guest@example.com';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
 
@@ -1033,6 +1174,7 @@ describe('CheckoutSessionService', () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.PaymentIntentID = null;
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
 
@@ -1054,6 +1196,7 @@ describe('CheckoutSessionService', () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
             mocks.mockPaymentIntentInstance.Status = 'Processing'; // opened, not paid
@@ -1075,6 +1218,7 @@ describe('CheckoutSessionService', () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
             mocks.mockPaymentIntentInstance.Status = 'Succeeded';
@@ -1104,6 +1248,7 @@ describe('CheckoutSessionService', () => {
         it('creates a single order line with Quantity 3 when unitMode is perLine', async () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{
                     ProductID: 'prod-1',
                     Quantity: 3,
@@ -1124,6 +1269,7 @@ describe('CheckoutSessionService', () => {
         it('rejects invalid or out-of-range quantities in CompleteCheckout and unlatches session to Open', async () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: -3 }]
             });
 
@@ -1134,6 +1280,7 @@ describe('CheckoutSessionService', () => {
 
             mocks.mockSessionInstance.Status = 'Open';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 0 }]
             });
             const resZero = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
@@ -1145,6 +1292,7 @@ describe('CheckoutSessionService', () => {
         it('recovers and unlatches session to Open when pricing or order execution throws an unexpected error', async () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
 
@@ -1160,6 +1308,7 @@ describe('CheckoutSessionService', () => {
         it('reports success and never reverts to Open when a failure happens AFTER the order committed', async () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
             // The session save after Confirm() fails — the order EXISTS; a revert-to-Open here
@@ -1179,6 +1328,7 @@ describe('CheckoutSessionService', () => {
         it('spawns two concurrent CompleteCheckout calls and books exactly ONE order via database CAS', async () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
 
@@ -1208,6 +1358,163 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('Billing location (bc-aidp-next-golive#264)', () => {
+        const draft = (billing: unknown) =>
+            CheckoutSessionService.UpdateDraft(
+                'sess-123',
+                KEY,
+                'a@b.com',
+                [{ ProductID: 'prod-1', Quantity: 1 }],
+                billing as Parameters<typeof CheckoutSessionService.UpdateDraft>[4],
+                testUser
+            );
+
+        it('refuses a draft with no country, and saves nothing', async () => {
+            for (const billing of [undefined, null, {}, { Country: '' }]) {
+                const res = await draft(billing);
+                expect(res.Success).toBe(false);
+                expect(res.ErrorMessage).toMatch(/billing country is required/i);
+            }
+            expect(mocks.mockSessionSave).not.toHaveBeenCalled();
+        });
+
+        it('refuses a US draft with no state', async () => {
+            const res = await draft({ Country: 'US', PostalCode: '60601' });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/state or province is required/i);
+        });
+
+        it('refuses a free-text state such as "Illinois" or "Washington"', async () => {
+            for (const region of ['Illinois', 'Washington']) {
+                const res = await draft({ Country: 'US', StateProvince: region, PostalCode: '60601' });
+                expect(res.Success).toBe(false);
+                expect(res.ErrorMessage).toMatch(/not a state or province code/i);
+            }
+        });
+
+        it('stores the normalised location on the snapshot and prices tax from it inline', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number | null; LineTax?: number; Quantity: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = 100;
+                    // An unsaved line has no stored gross; the tax pricing resolved must still be charged.
+                    line.LineTotalGross = null;
+                    line.LineTax = 7.25;
+                }
+                return Promise.resolve({});
+            });
+
+            const res = await draft({ Country: 'us', StateProvince: 'us-il', PostalCode: '60601' });
+
+            expect(res.Success).toBe(true);
+            expect(res.Tax).toBe(7.25);
+            expect(res.Subtotal).toBe(100);
+            expect(res.TotalGross).toBe(107.25);
+            const ctx = mocks.mockPricingPrice.mock.calls[0][0] as { ShipToAddressID: string | null; ShipToAddress: unknown };
+            expect(ctx.ShipToAddressID).toBeNull();
+            expect(ctx.ShipToAddress).toEqual({ Country: 'US', StateProvince: 'IL', City: null, PostalCode: '60601' });
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}') as { BillingAddress: unknown; TotalGross: number };
+            expect(snapshot.BillingAddress).toEqual({ Country: 'US', StateProvince: 'IL', PostalCode: '60601' });
+            expect(snapshot.TotalGross).toBe(107.25);
+        });
+
+        it('accepts a country with no subdivision list without a region', async () => {
+            const res = await draft({ Country: 'GB', PostalCode: 'SW1A 1AA' });
+            expect(res.Success).toBe(true);
+        });
+
+        it('refuses to open a payment intent for a session drafted without a location', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100 });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1' });
+
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/billing country is required before payment/i);
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('opens the intent in USD when the widget names no currency, and passes a configured one through for refusal', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: BILLING });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1' });
+            await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect((mocks.mockOpenPaymentIntent.mock.calls[0][0] as { CurrencyCode: string }).CurrencyCode).toBe('USD');
+
+            mocks.mockOpenPaymentIntent.mockResolvedValueOnce({ Success: false, Reason: "Payments can only be taken in USD — 'GBP' is not supported" });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', currency: 'GBP' });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect((mocks.mockOpenPaymentIntent.mock.calls[1][0] as { CurrencyCode: string }).CurrencyCode).toBe('GBP');
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/only be taken in USD/);
+        });
+
+        it('refuses completion for a session drafted without a location and reverts it to Open', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toMatch(/billing country is required/i);
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockAddressSave).not.toHaveBeenCalled();
+        });
+
+        it('confirms the order with the location recorded as its bill-to and ship-to Address, linked to the buyer', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalled();
+            expect(mocks.mockAddressInstance.Country).toBe('US');
+            expect(mocks.mockAddressInstance.StateProvince).toBe('IL');
+            expect(mocks.mockAddressInstance.PostalCode).toBe('60601');
+            expect(mocks.mockOrderInstance.BillToAddressID).toBe('addr-1');
+            expect(mocks.mockOrderInstance.ShipToAddressID).toBe('addr-1');
+            expect(mocks.mockAddressLinkInstance.AddressID).toBe('addr-1');
+            expect(mocks.mockAddressLinkInstance.EntityID).toBe('entity-people-id');
+            expect(mocks.mockAddressLinkInstance.RecordID).toBe('person-new-1');
+            expect(mocks.mockAddressLinkInstance.AddressTypeID).toBe('addrtype-billing');
+            const ctx = mocks.mockPricingPrice.mock.calls[0][0] as { ShipToAddress: unknown };
+            expect(ctx.ShipToAddress).toEqual({ Country: 'US', StateProvince: 'IL', City: null, PostalCode: '60601' });
+        });
+
+        it('does not confirm the order when the Address cannot be saved', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.mockAddressSave.mockResolvedValueOnce(false);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toMatch(/Could not record the billing address/);
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+        });
+
+        it('still confirms the order when only the address-book link fails', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.mockAddressLinkSave.mockResolvedValueOnce(false);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOrderInstance.BillToAddressID).toBe('addr-1');
+        });
+    });
+
     describe('checkout questions (#322)', () => {
         const SOURCE_QUESTION = {
             key: 'source',
@@ -1221,7 +1528,7 @@ describe('CheckoutSessionService', () => {
             mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', questions: [SOURCE_QUESTION], ...extra });
         };
         const storedAnswers = (answers?: Record<string, { Value?: string; OtherText?: string }>) =>
-            JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }], TotalGross: 100, Answers: answers });
+            JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }], TotalGross: 100, BillingAddress: BILLING, Answers: answers });
 
         it('ships the questions to the client with the configuration', async () => {
             withQuestions();
@@ -1231,14 +1538,14 @@ describe('CheckoutSessionService', () => {
 
         it('stores a draft before the required question is answered, so the checkout can be priced', async () => {
             withQuestions();
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, { Answers: {} });
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING, undefined, { Answers: {} });
             expect(res.Success).toBe(true);
             expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Answers).toEqual({});
         });
 
         it('stores the answers with the draft, trimmed', async () => {
             withQuestions();
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING, undefined, {
                 Answers: { source: { Value: 'Other', OtherText: ' A podcast ' } },
             });
             expect(res.Success).toBe(true);
@@ -1249,7 +1556,7 @@ describe('CheckoutSessionService', () => {
 
         it('refuses a draft carrying an answer to a question the widget does not ask', async () => {
             withQuestions();
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], undefined, {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING, undefined, {
                 Answers: { forged: { Value: 'x' } },
             });
             expect(res.Success).toBe(false);
@@ -1259,7 +1566,7 @@ describe('CheckoutSessionService', () => {
 
         it('refuses a draft when the widget question list is malformed', async () => {
             mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', questions: [{ key: 'x' }] });
-            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }]);
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING);
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('questions are invalid');
         });
@@ -1321,6 +1628,136 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('checkout choice groups (#291)', () => {
+        const DEPARTMENT_GROUP = {
+            key: 'department',
+            label: 'Choose your departments',
+            options: [
+                { value: 'marketing', label: 'Marketing' },
+                { value: 'membership', label: 'Membership' },
+                { value: 'finance', label: 'Finance' },
+            ],
+            min: 2,
+            max: 2,
+        };
+        const withGroups = (extra: Record<string, unknown> = {}) => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', choiceGroups: [DEPARTMENT_GROUP], ...extra });
+        };
+        const storedChoices = (choices?: Record<string, string[]>) =>
+            JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }], TotalGross: 100, BillingAddress: BILLING, Choices: choices });
+        const draft = (choices?: unknown, lines = [{ ProductID: 'prod-1', Quantity: 1 }]) =>
+            CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', lines, BILLING, undefined, { Choices: choices as Record<string, string[]> });
+
+        it('ships the choice groups to the client with the configuration', async () => {
+            withGroups();
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            expect(res.Configuration?.choiceGroups).toEqual([DEPARTMENT_GROUP]);
+        });
+
+        it('stores a draft with fewer picks than the minimum, so the checkout can be priced first', async () => {
+            withGroups();
+            const res = await draft({ department: ['finance'] });
+            expect(res.Success).toBe(true);
+            expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Choices).toEqual({ department: ['finance'] });
+        });
+
+        it('stores the picks in option order, with a repeat counted once', async () => {
+            withGroups();
+            const res = await draft({ department: ['finance', 'marketing', 'finance'] });
+            expect(res.Success).toBe(true);
+            expect(JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Choices).toEqual({ department: ['marketing', 'finance'] });
+        });
+
+        it('refuses a draft with more picks than the maximum', async () => {
+            withGroups();
+            const res = await draft({ department: ['marketing', 'membership', 'finance'] });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('Please choose exactly 2 for "Choose your departments".');
+            expect(mocks.mockSessionSave).not.toHaveBeenCalled();
+        });
+
+        it('refuses a draft picking an option the group does not offer', async () => {
+            withGroups();
+            const res = await draft({ department: ['marketing', 'legal'] });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('"legal" is not one of the options');
+        });
+
+        it('refuses a draft picking from a group the widget does not offer', async () => {
+            withGroups();
+            const res = await draft({ forged: ['x'] });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('does not offer');
+        });
+
+        it('refuses a draft when the choice groups are malformed', async () => {
+            withGroups({ choiceGroups: [{ ...DEPARTMENT_GROUP, max: 5 }] });
+            const res = await draft({});
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('choices are invalid');
+        });
+
+        it('refuses a draft of more than one line when the widget has choice groups', async () => {
+            withGroups();
+            const res = await draft({}, [
+                { ProductID: 'prod-1', Quantity: 1 },
+                { ProductID: 'prod-1', Quantity: 1 },
+            ]);
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('This checkout sells one item at a time.');
+        });
+
+        it('opens no payment intent until the group has its minimum', async () => {
+            withGroups({ paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.MetadataJSON = storedChoices({ department: ['finance'] });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('Please choose exactly 2 for "Choose your departments".');
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('opens the payment intent once the picks are complete', async () => {
+            withGroups({ paymentProviderId: 'pp-1' });
+            mocks.mockSessionInstance.MetadataJSON = storedChoices({ department: ['marketing', 'finance'] });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOpenPaymentIntent).toHaveBeenCalled();
+        });
+
+        it('refuses completion before creating the payer when the picks are incomplete', async () => {
+            withGroups();
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = storedChoices(undefined);
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toBe('Please choose exactly 2 for "Choose your departments".');
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+        });
+
+        it('records each pick on the line, with its labels, before the order confirms', async () => {
+            withGroups();
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = storedChoices({ department: ['finance', 'marketing'] });
+            let choicesAtConfirm: unknown[] = [];
+            mocks.mockOrderInstance.Confirm.mockImplementationOnce(() => {
+                choicesAtConfirm = mocks.mockOrderInstance.Lines.Items.map((l) => [...l.Choices.Items]);
+                mocks.mockOrderInstance.Status = 'Confirmed';
+                return Promise.resolve();
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+            expect(res.Success).toBe(true);
+            expect(choicesAtConfirm).toEqual([
+                [
+                    { GroupKey: 'department', GroupLabel: 'Choose your departments', OptionValue: 'marketing', OptionLabel: 'Marketing' },
+                    { GroupKey: 'department', GroupLabel: 'Choose your departments', OptionValue: 'finance', OptionLabel: 'Finance' },
+                ],
+            ]);
+        });
+    });
+
     describe('ReapExpiredOpenSessions', () => {
         it('passes MaxRows so the bound is in the query, not after an unbounded fetch', async () => {
             mocks.mockSessionLoad.mockImplementation(async () => {
@@ -1356,6 +1793,119 @@ describe('CheckoutSessionService', () => {
      * `@mj-biz-apps/orders-entities` mock above) and assert on the VALUE the mock order instance
      * actually receives, so a regression back to `new Date()` fails them, not just the text check.
      */
+    describe('post-payment step record (#326)', () => {
+        const pricedAt100 = (ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+            for (const line of ctx.Lines) {
+                line.UnitPrice = 100;
+                line.LineTotalGross = 100 * line.Quantity;
+            }
+            return Promise.resolve({});
+        };
+        const paidCheckout = () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' }, Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+            mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
+        };
+        const confirmedUnpaid = (billTo: string | null = 'person-new-1') => {
+            mocks.mockSessionInstance.Status = 'Confirmed';
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockOrderInstance.TotalGross = 100;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = billTo;
+        };
+        const stepsBegun = () => stepMocks.Begin.mock.calls.map((c) => c[1]);
+
+        it('records Confirm and Capture as succeeded on a paid checkout', async () => {
+            paidCheckout();
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(stepMocks.Begin).toHaveBeenCalledWith('sess-123', 'Confirm', 'Checkout', testUser);
+            expect(stepMocks.Begin).toHaveBeenCalledWith('sess-123', 'Capture', 'Checkout', testUser, undefined);
+            expect(stepMocks.Succeed).toHaveBeenCalledTimes(2);
+            expect(stepMocks.Fail).not.toHaveBeenCalled();
+        });
+
+        it('records nothing for a $0 checkout: no payment, so no post-payment step', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' }, Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(stepMocks.Begin).not.toHaveBeenCalled();
+        });
+
+        it('records Confirm as failed when the booking rolls back after payment checked out', async () => {
+            paidCheckout();
+            mocks.mockOrderInstance.Confirm.mockRejectedValueOnce(new Error('booking failed'));
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(stepsBegun()).toEqual(['Confirm']);
+            const [attempt, message] = stepMocks.Fail.mock.calls[0] as [{ Step: { StepName: string } }, string];
+            expect(attempt.Step.StepName).toBe('Confirm');
+            expect(message).toContain('booking failed');
+        });
+
+        it('records Capture as failed, with the reason and whether it is retryable, while the order still confirms', async () => {
+            paidCheckout();
+            mocks.mockCaptureExecute.mockResolvedValueOnce({
+                Success: true,
+                Output: { Success: false, Message: 'UnknownTender', Blockers: [{ Message: 'nope' }] },
+            });
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const [attempt, message, retryable] = stepMocks.Fail.mock.calls[0] as [{ Step: { StepName: string } }, string, boolean];
+            expect(attempt.Step.StepName).toBe('Capture');
+            expect(message).toBe('UnknownTender');
+            expect(typeof retryable).toBe('boolean');
+        });
+
+        it('marks the webhook as the source of a capture it drives', async () => {
+            confirmedUnpaid();
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+            await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(stepMocks.Begin).toHaveBeenCalledWith('sess-123', 'Capture', 'Webhook', testUser, undefined);
+        });
+
+        it('raises the terminal-capture Task on the first terminal failure only', async () => {
+            confirmedUnpaid(null);
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(stepMocks.Alert).toHaveBeenCalledTimes(1);
+
+            // The replay of the same terminal failure: the record already says Failed, not retryable.
+            stepMocks.Begin.mockResolvedValueOnce({ Step: { StepName: 'Capture' }, PreviousStatus: 'Failed', PreviousRetryable: false });
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(stepMocks.Alert).toHaveBeenCalledTimes(1);
+            expect(stepMocks.Fail).toHaveBeenCalledTimes(2);
+        });
+
+        it('closes an open Capture record without counting an attempt when the order is already paid', async () => {
+            confirmedUnpaid();
+            mocks.mockOrderInstance.AmountPaid = 100;
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(stepMocks.CloseIfOpen).toHaveBeenCalledWith('sess-123', 'Capture', testUser);
+            expect(stepMocks.Begin).not.toHaveBeenCalled();
+            expect(mocks.mockCaptureExecute).not.toHaveBeenCalled();
+        });
+
+        it('ReplayCapture runs the same idempotent capture, recorded as a Replay by the operator', async () => {
+            confirmedUnpaid();
+            const result = await CheckoutSessionService.ReplayCapture('sess-123', testUser, 'operator-1');
+            expect(result).toEqual({ Attempted: true, Booked: true });
+            expect(stepMocks.Begin).toHaveBeenCalledWith('sess-123', 'Capture', 'Replay', testUser, 'operator-1');
+            const captureInput = mocks.mockCaptureExecute.mock.calls[0][0] as { IdempotencyKey: string };
+            expect(captureInput.IdempotencyKey).toBe('checkout-complete:sess-123');
+        });
+
+        it('ReplayCapture refuses a session with no confirmed order, and captures nothing', async () => {
+            const result = await CheckoutSessionService.ReplayCapture('sess-123', testUser, 'operator-1');
+            expect(typeof result).toBe('string');
+            expect(mocks.mockCaptureExecute).not.toHaveBeenCalled();
+            expect(stepMocks.Begin).not.toHaveBeenCalled();
+        });
+    });
+
     describe('OrderDate defaults come from the business day (bc-aidp-next-golive#168)', () => {
         const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
         const originalEngine = { rows: engine._configurations, loaded: engine._loaded };
@@ -1394,7 +1944,7 @@ describe('CheckoutSessionService', () => {
             try {
                 const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'guest@example.com', [
                     { ProductID: 'prod-1', Quantity: 1 }
-                ]);
+                ], BILLING);
                 expect(res.Success).toBe(true);
                 // The regression this guards: `order.OrderDate = new Date()` at BUG_INSTANT, read
                 // back the way a DATE column is (UTC parts), would name 2026-08-28 — tomorrow, from
@@ -1414,6 +1964,7 @@ describe('CheckoutSessionService', () => {
             pinEastern();
             mocks.mockSessionInstance.Email = 'guest@example.com';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
             const originalTZ = process.env.TZ;
@@ -1462,6 +2013,7 @@ describe('CheckoutSessionService', () => {
                     KEY,
                     'guest@example.com',
                     [{ ProductID: 'prod-1', Quantity: 1 }],
+                    BILLING,
                     testUser
                 );
                 expect(res.Success).toBe(true);
@@ -1479,6 +2031,7 @@ describe('CheckoutSessionService', () => {
         it('CompleteCheckout configures the engine, with the caller and the metadata provider, before deriving OrderDate from it', async () => {
             mocks.mockSessionInstance.Email = 'guest@example.com';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
             const provider = Metadata.Provider;

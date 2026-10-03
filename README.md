@@ -97,7 +97,7 @@ mj app remove mj-bizapps-orders   # Uninstall (--keep-data to preserve schema)
 | **Stored value** | `StoredValueAccount`, `StoredValueTransaction` | Gift cards / stored value — schema ships now; issuance/redemption flows are a later named item (§21) |
 | **Subscriptions** | `SubscriptionPlan`, `Subscription`, `SubscriptionEvent` | Continuity record that spawns a renewal Order each cycle (Draft at launch, D20); lifecycle + immutable event log |
 | **Revenue recognition** | `RevenueRecognitionSchedule`, `RevRecScheduleLine` | The **computed envelope** for MRR/ARR display and computation — the ledger truth is real forward-dated JEs written at booking (D14) |
-| **Entitlement grants** | `EntitlementGrant` | The provisioned instance of an entitlement, with a **beneficiary** (may differ from the buyer); consumers poll — no webhook system |
+| **Entitlement grants** | `EntitlementGrant` | The provisioned instance of an entitlement, with a **beneficiary** (may differ from the buyer); consumers can poll, or register an outbound consumer to be told of each grant change ([docs/outbound-events.md](docs/outbound-events.md)) |
 | **Sales governance** | `SalesRule`, `SalesAuthority`, `PaymentTermsType` | Metadata-driven discount/credit/authorization rules; per-rep limits; payment terms (owned here — Accounting delegates to it) |
 
 Tax tables (`ProductTaxCategory`, `OrderLineTaxLine`) land with the tax build (D23). Coupon recording columns land with the D22 schema freeze.
@@ -154,7 +154,7 @@ Product is the root of the app: it defines **how an item is billed** (one-time /
 - **`ProductBehavior` seam** — a pluggable class resolved most-specific-wins (`Product → ProductType → default`) via `ClassFactory` is the escape hatch for custom behavior. Schema ready; seam activation deferred *(D4)*.
 - **Pricing** — `PriceList` / `ProductPrice` / `PriceTier`: pricing models (flat / per-unit / tiered / volume / package / usage), fee types, effective-dated — **built**. `OrderLine.UnitPrice` direct entry stays valid as the base of the precedence chain; the `ResolvePrice` engine suggests/resolves on top, so pricing never blocks baseline flows *(D21)*.
 - **Bundles** — `ProductBundleItem` powers two order modes: a single **bundle line** or a **fast-path expansion** into individual lines (`OrderLine.SourceBundleProductID`).
-- **Entitlements** — `ProductEntitlement` defines *what a purchase grants*; `EntitlementGrant` is the instance created at booking, with a **beneficiary** defaulting to the buyer (a line may designate an attendee, gift-card recipient, honoree). Downstream apps **poll** grants — no bespoke webhook system *(D27)*.
+- **Entitlements** — `ProductEntitlement` defines *what a purchase grants*; `EntitlementGrant` is the instance created at booking, with a **beneficiary** defaulting to the buyer (a line may designate an attendee, gift-card recipient, honoree). Downstream apps can **poll** grants *(D27)*, or register an outbound consumer that is told when a sale confirms or a grant's status changes ([docs/outbound-events.md](docs/outbound-events.md)).
 - **ASC 606** — `ProductPerformanceObligation` + standalone selling price (SSP) fields ship now; the bundle allocation engine is future *(D21)*.
 
 *PhysicalGood* is inventory-aware via seams only (`FulfillmentStatus`, stock-tracking flags) — inventory, costing (FIFO/LIFO/Average), and COGS live in a future bolt-on **BizApps Inventory** app *(plan §21)*.

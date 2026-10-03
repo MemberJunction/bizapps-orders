@@ -1,0 +1,34 @@
+[
+  {
+    "_comments": [
+      "THE OUTBOUND DISPATCH JOB (#293). Every minute: a delivery is sent within a minute of becoming due, and a",
+      "checkout also kicks its own order's deliveries right after it completes, so a buyer does not wait for the clock.",
+      "",
+      "Ships Active, unlike the renewal and billing jobs. Those write money and access; this one only sends what a",
+      "host's own registered consumer asked for, and with no consumer registered a pass claims nothing.",
+      "ConcurrencyMode Skip: two passes are safe anyway (each claims rows under a lease), but there is no gain in",
+      "overlapping them. MissedRunPolicy RunOnce: a backlog is one catch-up pass, capped by MaxCount.",
+      "OwnerUserID / NotifyUserID deliberately unset: they name people, which differs per environment."
+    ],
+    "fields": {
+      "Name": "Orders — Dispatch Outbound Events (every minute)",
+      "Description": "Sends due outbound events (order confirmations and entitlement grant changes) to their registered consumers, retrying failures with backoff and dead-lettering them after their deadline.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 * * * * *",
+      "Timezone": "UTC",
+      "Status": "Active",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 5,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\": \"8633F2E7-5333-42E2-9CA0-E1A33DBD1908\", \"Params\": [{\"ActionParamID\": \"6FB07B15-899A-4257-B6BE-29B369DE2E13\", \"ValueType\": \"Static\", \"Value\": \"50\"}]}"
+    },
+    "primaryKey": {
+      "ID": "44CC9449-07CC-49D0-A243-82A91E177BD1"
+    }
+  }
+]

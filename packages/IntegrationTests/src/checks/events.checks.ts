@@ -38,6 +38,7 @@ import {
 import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  CreateProductPrice,
   createViaEntity,
   Fx,
   InRolledBackTransaction,
@@ -92,6 +93,8 @@ async function sellTickets(
   productKey = "EventTicket",
 ) {
   const f = Fx();
+  // The engine's price, so the stated price is not a concession the confirm gate holds.
+  await CreateProductPrice(ctx, f.Products[productKey], unitPrice);
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
     OrderDate: new Date("2026-08-01T00:00:00Z"),

@@ -53,7 +53,11 @@ const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${i}'`))].
  * Was a structural duck-type built on `Get`/`Set` — which meant every field this module touched
  * was a string literal the compiler could not check. It is the order-line entity; say so.
  */
-export type ExpandableLine = mjBizAppsOrdersOrderLineEntity;
+/**
+ * An order line as expansion handles it. `WrittenByBundleExpansion` is the server line's transient
+ * mark that expansion wrote its parent (see `OrderLineEntityServer.refuseParentNotFromExpansion`).
+ */
+export type ExpandableLine = mjBizAppsOrdersOrderLineEntity & { WrittenByBundleExpansion?: boolean };
 
 export interface BundleExpansionOutcome {
     /** How many parent lines were expanded. */
@@ -179,6 +183,7 @@ export async function ExpandBundleLines(
             row.Quantity = child.Quantity;
             row.UnitPrice = child.UnitPrice;
             row.ParentOrderLineID = line.ID;
+            row.WrittenByBundleExpansion = true;
             row.SourceBundleProductID = line.ProductID;
             row.IsRollupParent = false;
             row.IsQuantityOverridden = false;
