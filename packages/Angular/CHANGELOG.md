@@ -1,5 +1,30 @@
 # @mj-biz-apps/orders-ng
 
+## 5.23.1
+
+### Patch Changes
+
+- b49eff4: The order screen shows a saved line's stored price as the line total and header Total.
+
+  Once a line was saved and the order reopened, the pricing pass re-resolved it from today's rules
+  unless its price was being edited, so the line total and the header Total could show list price
+  while the unit price, Balance and the stored line carried the stored one. `StatedLineUnitPrice` now
+  holds a line's price when it is being edited or is a positive stored price, the same test the save
+  walk applies, and both pricing paths use it. The rules' price is still offered as the picker's
+  Default, and a held line not overridden by hand keeps its rule's name on the price badge.
+
+- 529fe84: A product now takes its product type's defaults when the type is chosen: revenue recognition type, subscription type and taxability (taxability resolves through the category chain first, then the type). Values the user sets are kept; a type switch replaces only values the previous type supplied. New products that reach save without them get the same defaults. The product header's type and rev-rec now follow edits instead of showing the values from when the form opened.
+- 398b678: Receivables subscription panel: coverage terms and history show their dates, the revenue
+  recognition card shows the subscription's real recognition journal entries (the same waterfall as
+  the subscription form), and the renewal countdown runs to the latest term end instead of the
+  subscription's final-service date. Term dates show the stored calendar day in every time zone. The
+  renewal warning follows the renewal engine's rules (lead days from the subscription or its type,
+  Active or Trialing only). A user without journal entry read permission sees a message instead of an
+  empty recognition card. Recognition entry lines load in one query.
+- Updated dependencies [b49eff4]
+- Updated dependencies [529fe84]
+  - @mj-biz-apps/orders-entities@5.23.1
+
 ## 5.23.0
 
 ### Minor Changes
@@ -432,8 +457,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                    "FK_EntityFieldValue_EntityField"
+                      The INSERT statement conflicted with the FOREIGN KEY constraint
+                      "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

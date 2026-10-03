@@ -1,5 +1,7 @@
 # @mj-biz-apps/orders-actions
 
+## 5.23.1
+
 ## 5.23.0
 
 ### Patch Changes
