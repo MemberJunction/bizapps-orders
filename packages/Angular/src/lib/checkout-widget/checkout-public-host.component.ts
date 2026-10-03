@@ -77,7 +77,15 @@ interface StripeInstance {
     elements(): { create(type: string): StripeCard };
     confirmCardPayment(
         clientSecret: string,
-        opts: { payment_method: { card: StripeCard; billing_details?: { email?: string } } }
+        opts: {
+            payment_method: {
+                card: StripeCard;
+                billing_details?: {
+                    email?: string;
+                    address?: { country?: string; state?: string; postal_code?: string };
+                };
+            };
+        }
     ): Promise<{ error?: { message?: string }; paymentIntent?: { status?: string } }>;
 }
 
@@ -119,6 +127,9 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public promotionError: string | null = null;
     /** The total the server last priced the draft at, fed back so the widget charges what it shows. */
     public serverPricedTotal: CheckoutServerPricedTotal | null = null;
+    /** The server's total and tax for the details last drafted — shown before the buyer is charged. */
+    public quotedTotal: number | null = null;
+    public quotedTax: number | null = null;
 
     /** The post-payment account step, when the host registered one (#292). */
     public account: CheckoutAccountView | null = null;
@@ -256,6 +267,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 clientSessionKey: this.sessionKey,
                 email: event.email,
                 lines: [buildCheckoutDraftLine(this.config.productId, event)],
+                billingAddress: event.billingAddress,
                 answers: event.answers,
                 choices: event.choices,
                 ...(this.attributionSource
@@ -378,6 +390,14 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.formGeneration++;
     }
 
+    /** A price input changed: every total the server priced for the old inputs is stale, tax included. */
+    public onQuoteInvalidated(): void {
+        this.quotedTotal = null;
+        this.quotedTax = null;
+        this.serverPricedTotal = null;
+        this.appliedPromotion = null;
+    }
+
     public async onSubmitted(event: CheckoutSubmissionEvent): Promise<void> {
         if (this.processing || !this.config?.productId) {
             return;
@@ -392,6 +412,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 clientSessionKey: this.sessionKey,
                 email: event.email,
                 lines: [line],
+                billingAddress: event.billingAddress,
                 answers: event.answers,
                 ...(this.attributionSource
                     ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
@@ -417,16 +438,14 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 this.errorMessage = notice;
                 return;
             }
-            // The server's total is the one charged. If it differs from what the buyer was shown
-            // (a code typed but never applied, or a price that changed), show it and ask for a
-            // second press rather than charge a different amount than the button said.
-            const serverTotal = Math.round(Number(draft.TotalGross ?? 0) * 100);
-            if (draft.RequiresPayment && serverTotal !== Math.round(Number(event.totalGross ?? 0) * 100)) {
-                this.errorMessage = `Your total is now ${(serverTotal / 100).toFixed(2)} ${(this.config.currency ?? 'USD').toUpperCase()}. Press Pay again to continue.`;
-                return;
-            }
             if (!draft.RequiresPayment) {
                 await this.finish();
+                return;
+            }
+            // The server's total is the one charged. If it differs from what the buyer was shown
+            // (tax for the location, a code typed but never applied, or a price that changed), show
+            // it and ask for a second press rather than charge a different amount than the button said.
+            if (this.quoteChanged(draft, event.totalGross)) {
                 return;
             }
             const intent = await this.post('/payment-intent', {
@@ -450,7 +469,14 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             const result = await this.stripe.confirmCardPayment(String(intent.ClientSecret), {
                 payment_method: {
                     card: this.card,
-                    billing_details: { email: event.email },
+                    billing_details: {
+                        email: event.email,
+                        address: {
+                            country: event.billingAddress.Country,
+                            state: event.billingAddress.StateProvince,
+                            postal_code: event.billingAddress.PostalCode,
+                        },
+                    },
                 },
             });
             if (result.error) {
@@ -472,6 +498,25 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.processing = false;
             this.cdr.detectChanges();
         }
+    }
+
+    /**
+     * Stop before charging when the server's total differs from what the buyer was shown. Tax
+     * depends on the billing location, so the first press of Pay is also the first time the total
+     * including tax is known; the buyer sees it and presses Pay again.
+     */
+    private quoteChanged(draft: Record<string, unknown>, shownTotal: number): boolean {
+        const total = typeof draft.TotalGross === 'number' ? draft.TotalGross : 0;
+        const tax = typeof draft.Tax === 'number' ? draft.Tax : 0;
+        if (Math.abs(total - shownTotal) <= 0.005) {
+            return false;
+        }
+        this.quotedTotal = total;
+        this.quotedTax = tax > 0 ? tax : null;
+        this.errorMessage = tax > 0
+            ? `The total is ${total.toFixed(2)}, including ${tax.toFixed(2)} sales tax. Review it and press Pay again.`
+            : `The total is ${total.toFixed(2)}. Review it and press Pay again.`;
+        return true;
     }
 
     private async finish(): Promise<void> {

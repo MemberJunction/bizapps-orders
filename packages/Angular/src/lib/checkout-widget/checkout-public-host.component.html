@@ -75,8 +75,11 @@
             [serverPricedTotal]="serverPricedTotal"
             [promotionError]="promotionError"
             (promotionCodeApplied)="onPromotionCodeApplied($event)"
+            [quotedTotal]="quotedTotal"
+            [quotedTax]="quotedTax"
             (submitted)="onSubmitted($event)"
-            (cancelled)="onCancelled()">
+            (cancelled)="onCancelled()"
+            (quoteInvalidated)="onQuoteInvalidated()">
         </mj-checkout-widget>
         }
     }

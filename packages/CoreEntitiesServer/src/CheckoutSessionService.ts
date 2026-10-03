@@ -9,12 +9,17 @@
  */
 
 import { BaseEntity, EntityFieldInfo, IMetadataProvider, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
-import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import {
+    BusinessTimeZoneEngine,
+    mjBizAppsCommonAddressEntity,
+    mjBizAppsCommonAddressLinkEntity
+} from '@mj-biz-apps/common-entities';
 // Local fallback engine — see identityClaimContracts.ts. Restore this import to
 // '@memberjunction/core-entities-server' once MJ publishes the engine.
 import { CalendarDayOrToday } from './calendar-day.js';
 import { IdentityClaimEngineServer } from './identityClaimContracts.js';
 import {
+    CheckBillingLocation,
     LoadOrdersEngine,
     OrderHeaderEntity,
     OrderLineEntity,
@@ -28,8 +33,10 @@ import {
     mjBizAppsOrdersProductEntity,
     mjBizAppsOrdersProductTypeEntity,
     TodayAsDateValue,
+    type BillingLocation,
     type CheckoutWidgetConfiguration,
     type ProductTypeConfiguration,
+    type TaxAddress,
     CheckAnswersAgainstQuestions,
     CheckCheckoutAnswers,
     ReadCheckoutQuestions,
@@ -37,6 +44,7 @@ import {
     type CheckoutAnswersInput,
     type ResolvedCheckoutAnswer,
     NormalizeCheckoutAttribution,
+    type CheckoutAttribution,
     CheckCheckoutChoices,
     ChoicesForStorage,
     ReadCheckoutChoiceGroups,
@@ -45,7 +53,7 @@ import {
     type CheckoutChoicesInput
 } from '@mj-biz-apps/orders-entities';
 import { EscapeText } from './sql-guards.js';
-import { OpenPaymentIntent } from './PaymentIntentService.js';
+import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import {
     FindReusableProviderCustomerRef,
@@ -74,6 +82,13 @@ const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
+const ADDRESS_LINK_ENTITY = 'MJ_BizApps_Common: Address Links';
+const ADDRESS_TYPE_ENTITY = 'MJ_BizApps_Common: Address Types';
+const BILLING_ADDRESS_TYPE = 'Billing';
+
+const MISSING_LOCATION_MESSAGE =
+    'A billing country is required before payment — and, for the United States, Canada and Australia, a state or province and a postal code.';
 
 /**
  * Server-side quantity ceiling applied when neither `Product.MaxQuantityPerLine` nor
@@ -136,6 +151,32 @@ export interface CheckoutLineInput {
     Attendees?: CheckoutAttendeeInput[];
 }
 
+/**
+ * The buyer's billing location as the widget sends it. Codes only: Country is ISO 3166-1 alpha-2
+ * and StateProvince an ISO 3166-2 subdivision code — see `CheckBillingLocation`.
+ */
+export interface CheckoutBillingAddressInput {
+    Country?: string;
+    StateProvince?: string;
+    PostalCode?: string;
+}
+
+/** What a session's MetadataJSON holds between draft and completion. */
+interface CheckoutSnapshot {
+    Lines?: CheckoutLineInput[];
+    PricedLines?: CheckoutLineSummary[];
+    TotalGross?: number;
+    BillingAddress?: BillingLocation;
+    Answers?: CheckoutAnswersInput;
+    Attribution?: CheckoutAttribution;
+    Choices?: CheckoutChoicesInput;
+    /** Promotion code a verified member token earned. The token itself is never stored. */
+    MemberPromotionCode?: string | null;
+    /** Codes the buyer entered that the draft priced with. */
+    PromotionCodes?: string[];
+    UpdatedAt?: string;
+}
+
 export interface CheckoutLineSummary {
     ID: string;
     ProductID: string;
@@ -167,16 +208,6 @@ export interface UpdateDraftResult {
     MemberDiscountApplied?: boolean;
     /** Why a member token earned no discount, for the buyer. Absent when no token was sent. */
     MemberDiscountMessage?: string;
-}
-
-/** The session snapshot a draft writes and `/complete` re-prices from. */
-interface CheckoutSessionSnapshot {
-    Lines?: CheckoutLineInput[];
-    TotalGross?: number;
-    /** Promotion code a verified member token earned. The token itself is never stored. */
-    MemberPromotionCode?: string | null;
-    /** Codes the buyer entered that the draft priced with. */
-    PromotionCodes?: string[];
 }
 
 /** Outcome of resolving a draft's member token. */
@@ -1059,12 +1090,17 @@ export class CheckoutSessionService {
     /**
      * Builds and prices draft order lines in memory, persisting the checkout state to the
      * CheckoutSession without creating premature draft rows in the OrderHeader database table.
+     *
+     * The billing location is required: tax is priced from it here, and completion records it as
+     * the order's address. Nothing is saved for it until completion, so an abandoned draft leaves
+     * no Address row behind.
      */
     public static async UpdateDraft(
         sessionID: string,
         clientSessionKey: string,
         email: string,
         lines: CheckoutLineInput[],
+        billingAddress: CheckoutBillingAddressInput | null | undefined,
         contextUser?: UserInfo,
         options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput; MemberToken?: string; PromotionCodes?: unknown }
     ): Promise<UpdateDraftResult> {
@@ -1099,6 +1135,12 @@ export class CheckoutSessionService {
         if (!(await this.enforceSessionExpiry(session))) {
             return failed('Checkout session has expired.');
         }
+
+        const locationCheck = CheckBillingLocation(billingAddress);
+        if (locationCheck.Valid === false) {
+            return failed(locationCheck.Reason);
+        }
+        const location = locationCheck.Location;
 
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
         await widget.Load(session.CheckoutWidgetID);
@@ -1322,6 +1364,8 @@ export class CheckoutSessionService {
                 User: contextUser ?? (order.ContextCurrentUser as UserInfo),
             });
 
+            // Nothing is saved yet, so the location is priced inline; completion prices the same
+            // location from the Address row it records.
             const priced = await pricingService.Price({
                 OrderHeaderID: order.ID || null,
                 CompanyID: widget.CompanyID,
@@ -1340,7 +1384,8 @@ export class CheckoutSessionService {
                     (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
                     contextUser ?? (order.ContextCurrentUser as UserInfo),
                 ),
-                ShipToAddressID: order.ShipToAddressID ?? null,
+                ShipToAddressID: null,
+                ShipToAddress: this.toTaxAddress(location),
                 Lines: [...order.Lines.Items],
                 PromotionCodes: CombineCheckoutPromotionCodes(promotionCodes, memberDiscount.PromotionCode),
                 ManualDiscounts: [],
@@ -1362,12 +1407,7 @@ export class CheckoutSessionService {
             }
 
             await this.settleLineTotals(order);
-            let sumGross = 0;
-            for (const line of order.Lines.Items) {
-                const extPrice = line.LineTotalGross ?? ((line.UnitPrice ?? 0) * (line.Quantity ?? 1));
-                sumGross += extPrice;
-            }
-            order.TotalGross = Math.round(sumGross * 100) / 100;
+            order.TotalGross = this.sumLineTotals(order.Lines.Items);
         } catch (pricingErr) {
             console.warn('[CheckoutSessionService] Pricing walk error on draft:', pricingErr);
             // A pricing failure with a code in play must not quote the undiscounted price as if the
@@ -1424,29 +1464,32 @@ export class CheckoutSessionService {
         // Store checkout state in session metadata JSON — no orphan OrderHeader rows
         // The applied code rides the snapshot so completion prices — and books — the same order the
         // buyer was shown and the payment intent was opened for. An unusable code is not kept.
-        session.MetadataJSON = JSON.stringify({
+        const snapshot: CheckoutSnapshot = {
             Lines: lines,
             PricedLines: lineSummaries,
             TotalGross: order.TotalGross,
+            BillingAddress: location,
             Answers: this.answersForStorage(draftAnswers.Answers),
             ...(attribution ? { Attribution: attribution } : {}),
             Choices: ChoicesForStorage(draftChoices.Choices),
             MemberPromotionCode: memberDiscount.PromotionCode,
             PromotionCodes: appliedCodes,
             UpdatedAt: new Date().toISOString()
-        });
+        };
+        session.MetadataJSON = JSON.stringify(snapshot);
         const sessionSaved = await session.Save();
         if (!sessionSaved) {
             return failed(`Failed to persist checkout state: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
 
+        const tax = this.sumLineTax(order.Lines.Items);
         return {
             Success: true,
             SessionID: sessionID,
             OrderID: session.DraftOrderID || '',
             OrderNumber: '',
-            Subtotal: Math.round(((order.TotalGross ?? 0) + discount) * 100) / 100,
-            Tax: 0,
+            Subtotal: Math.round(((order.TotalGross ?? 0) - tax + discount) * 100) / 100,
+            Tax: tax,
             Adjustments: -discount,
             TotalGross: order.TotalGross ?? 0,
             RequiresPayment: (order.TotalGross ?? 0) > 0,
@@ -1513,6 +1556,9 @@ export class CheckoutSessionService {
         }
         if (!(snapshotTotal > 0)) {
             return failed('This checkout has no balance due — complete it directly without a payment intent.');
+        }
+        if (!this.snapshotBillingLocation(session)) {
+            return failed(MISSING_LOCATION_MESSAGE);
         }
 
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
@@ -1587,7 +1633,8 @@ export class CheckoutSessionService {
         const openResult = await OpenPaymentIntent({
             PaymentProviderID: paymentProviderId,
             Amount: snapshotTotal,
-            CurrencyCode: currencyCode,
+            // Unset means USD; anything else is refused by OpenPaymentIntent until orders record a currency.
+            CurrencyCode: currencyCode ?? SUPPORTED_PAYMENT_CURRENCY,
             BillToPersonID: session.PersonID ?? undefined,
             ProviderCustomerRef: saveForRenewal ?? undefined,
             SaveInstrumentForReuse: !!saveForRenewal,
@@ -1773,25 +1820,27 @@ export class CheckoutSessionService {
             const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
             await widget.Load(session.CheckoutWidgetID);
 
-            let linesInput: CheckoutLineInput[] = [];
-            let memberPromotionCode: string | null = null;
-            let snapshotCodes: string[] = [];
-            if (session.MetadataJSON) {
-                try {
-                    const parsed = JSON.parse(session.MetadataJSON) as CheckoutSessionSnapshot;
-                    if (parsed.Lines && Array.isArray(parsed.Lines)) {
-                        linesInput = parsed.Lines;
-                    }
-                    if (typeof parsed.MemberPromotionCode === 'string' && parsed.MemberPromotionCode) {
-                        memberPromotionCode = parsed.MemberPromotionCode;
-                    }
-                    // Written by UpdateDraft, re-normalised anyway: the snapshot is ours, but the rule for
-                    // what a code may look like belongs in one place.
-                    const normalized = NormalizeCheckoutPromotionCodes(parsed.PromotionCodes);
-                    snapshotCodes = 'Codes' in normalized ? normalized.Codes : [];
-                } catch {
-                    // Ignore metadata parse error
-                }
+            const snapshot = this.readSnapshot(session);
+            const linesInput: CheckoutLineInput[] = Array.isArray(snapshot.Lines) ? snapshot.Lines : [];
+            const memberPromotionCode =
+                typeof snapshot.MemberPromotionCode === 'string' && snapshot.MemberPromotionCode ? snapshot.MemberPromotionCode : null;
+            // Written by UpdateDraft, re-normalised anyway: the snapshot is ours, but the rule for
+            // what a code may look like belongs in one place.
+            const normalizedSnapshotCodes = NormalizeCheckoutPromotionCodes(snapshot.PromotionCodes);
+            const snapshotCodes = 'Codes' in normalizedSnapshotCodes ? normalizedSnapshotCodes.Codes : [];
+
+            // A sale with no location can never be placed in a jurisdiction afterwards. A session
+            // drafted without one (or before the location was collected) must be drafted again.
+            const location = this.snapshotBillingLocation(session);
+            if (!location) {
+                await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
+                session.Status = 'Open';
+                return {
+                    Success: false,
+                    ErrorMessage: MISSING_LOCATION_MESSAGE,
+                    SessionID: sessionID,
+                    Status: 'Open'
+                };
             }
 
             // Refused before anything is written, so an unanswered checkout creates no Person.
@@ -1985,6 +2034,8 @@ export class CheckoutSessionService {
                 User: contextUser ?? (order.ContextCurrentUser as UserInfo),
             });
 
+            // Priced inline, exactly as the draft was: the Address row is recorded only once
+            // payment checks out, so a refused payment leaves no row behind.
             const priced = await pricingService.Price({
                 OrderHeaderID: order.ID || null,
                 CompanyID: widget.CompanyID,
@@ -2003,7 +2054,8 @@ export class CheckoutSessionService {
                     (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
                     contextUser ?? (order.ContextCurrentUser as UserInfo),
                 ),
-                ShipToAddressID: order.ShipToAddressID ?? null,
+                ShipToAddressID: null,
+                ShipToAddress: this.toTaxAddress(location),
                 Lines: [...order.Lines.Items],
                 PromotionCodes: order.PromotionCodes.Codes,
                 ManualDiscounts: [],
@@ -2020,12 +2072,8 @@ export class CheckoutSessionService {
             );
 
             await this.settleLineTotals(order);
-            let sumGross = 0;
-            for (const line of order.Lines.Items) {
-                const extPrice = line.LineTotalGross ?? ((line.UnitPrice ?? 0) * (line.Quantity ?? 1));
-                sumGross += extPrice;
-            }
-            order.TotalGross = Math.round(sumGross * 100) / 100;
+            const sumGross = this.sumLineTotals(order.Lines.Items);
+            order.TotalGross = sumGross;
 
             // Money-path safety: a paid order confirms only against a payment intent whose
             // STATE and AMOUNT check out server-side. Mere existence of an intent id is not
@@ -2060,6 +2108,13 @@ export class CheckoutSessionService {
                 // an order. Record the attempt; Confirm rolls back on failure, the record does not.
                 confirmStep = await CheckoutStepLog.Begin(sessionID, 'Confirm', 'Checkout', contextUser);
             }
+
+            // The billing location is the only location a self-serve sale has, so it is both the
+            // bill-to and the ship-to — the ship-to is what tax is resolved from when Confirm()
+            // re-prices the order.
+            const billingAddressID = await this.recordBillingAddress(location, session.PersonID, md, contextUser);
+            order.BillToAddressID = billingAddressID;
+            order.ShipToAddressID = billingAddressID;
 
             // Confirm order via BaseEntity lifecycle (executes GL booking, entitlement issuance, status latching)
             await order.Confirm();
@@ -2141,6 +2196,106 @@ export class CheckoutSessionService {
                 SessionID: sessionID,
                 Status: 'Open'
             };
+        }
+    }
+
+    /** The session's MetadataJSON, or an empty snapshot when it is absent or unreadable. */
+    private static readSnapshot(session: mjBizAppsOrdersCheckoutSessionEntity): CheckoutSnapshot {
+        if (!session.MetadataJSON) return {};
+        try {
+            const parsed = JSON.parse(session.MetadataJSON) as unknown;
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as CheckoutSnapshot) : {};
+        } catch {
+            return {};
+        }
+    }
+
+    /** The billing location the draft stored, re-checked — null when it is missing or no longer valid. */
+    private static snapshotBillingLocation(session: mjBizAppsOrdersCheckoutSessionEntity): BillingLocation | null {
+        const check = CheckBillingLocation(this.readSnapshot(session).BillingAddress);
+        return check.Valid ? check.Location : null;
+    }
+
+    private static toTaxAddress(location: BillingLocation): TaxAddress {
+        return {
+            Country: location.Country,
+            StateProvince: location.StateProvince,
+            City: null,
+            PostalCode: location.PostalCode
+        };
+    }
+
+    /**
+     * What the buyer pays: each line's gross including the tax pricing resolved onto it. A line
+     * that has not been saved has no stored `LineTotalGross`, so its tax is added explicitly —
+     * otherwise the intent would be opened for less than the confirmed order's total.
+     */
+    private static sumLineTotals(lines: ReadonlyArray<mjBizAppsOrdersOrderLineEntity>): number {
+        let sum = 0;
+        for (const line of lines) {
+            sum += line.LineTotalGross ?? ((line.UnitPrice ?? 0) * (line.Quantity ?? 1) + (line.LineTax ?? 0));
+        }
+        return Math.round(sum * 100) / 100;
+    }
+
+    private static sumLineTax(lines: ReadonlyArray<mjBizAppsOrdersOrderLineEntity>): number {
+        const sum = lines.reduce((total, line) => total + (line.LineTax ?? 0), 0);
+        return Math.round(sum * 100) / 100;
+    }
+
+    /**
+     * Records the billing location as a Common Address and links it to the buyer as their
+     * Billing address. Street and city are not collected by checkout and stay empty.
+     *
+     * A failed Address save throws: the order must not confirm without its location. A failed
+     * link is logged and tolerated — the order still references the Address; only the buyer's
+     * address book misses it.
+     */
+    private static async recordBillingAddress(
+        location: BillingLocation,
+        personID: string,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<string> {
+        const address = await md.GetEntityObject<mjBizAppsCommonAddressEntity>(ADDRESS_ENTITY, contextUser);
+        address.NewRecord();
+        address.Country = location.Country;
+        address.StateProvince = location.StateProvince;
+        address.PostalCode = location.PostalCode;
+        if (!(await address.Save())) {
+            throw new Error(`Could not record the billing address: ${address.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+        }
+        await this.linkBillingAddress(address.ID, personID, md, contextUser);
+        return address.ID;
+    }
+
+    private static async linkBillingAddress(
+        addressID: string,
+        personID: string,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<void> {
+        const personEntityID = md.EntityByName(PERSON_ENTITY)?.ID;
+        const rv = new RunView();
+        const typeRes = await rv.RunView<{ ID: string }>({
+            EntityName: ADDRESS_TYPE_ENTITY,
+            ExtraFilter: `Name = '${EscapeText(BILLING_ADDRESS_TYPE)}'`,
+            Fields: ['ID'],
+            ResultType: 'simple'
+        }, contextUser);
+        const addressTypeID = typeRes?.Success ? typeRes.Results?.[0]?.ID : undefined;
+        if (!personEntityID || !addressTypeID) {
+            LogError(`[CheckoutSessionService] Billing address ${addressID} not linked to person ${personID}: ${personEntityID ? `no '${BILLING_ADDRESS_TYPE}' address type` : 'Person entity not in metadata'}`);
+            return;
+        }
+        const link = await md.GetEntityObject<mjBizAppsCommonAddressLinkEntity>(ADDRESS_LINK_ENTITY, contextUser);
+        link.NewRecord();
+        link.AddressID = addressID;
+        link.EntityID = personEntityID;
+        link.RecordID = personID;
+        link.AddressTypeID = addressTypeID;
+        if (!(await link.Save())) {
+            LogError(`[CheckoutSessionService] Billing address ${addressID} not linked to person ${personID}: ${link.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
     }
 

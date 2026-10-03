@@ -178,7 +178,7 @@ describe('CheckoutServerExtension', () => {
             { body, headers: {}, socket: {} } as unknown as Request,
             res as unknown as Response,
         );
-        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('s-1', 'k', 'a@b.com', [], expect.anything(), {
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('s-1', 'k', 'a@b.com', [], null, expect.anything(), {
             PromotionCodes: ['SAVE10'],
         });
     });
@@ -357,11 +357,30 @@ describe('CheckoutServerExtension', () => {
         };
 
         const withToken = await post({ sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.test', lines: [], memberToken: 'signed.token' });
-        expect((withToken[5] as { MemberToken?: string })?.MemberToken).toBe('signed.token');
+        expect((withToken[6] as { MemberToken?: string })?.MemberToken).toBe('signed.token');
         const without = await post({ sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.test', lines: [] });
-        expect((without[5] as { MemberToken?: string })?.MemberToken).toBeUndefined();
+        expect((without[6] as { MemberToken?: string })?.MemberToken).toBeUndefined();
         const notString = await post({ sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.test', lines: [], memberToken: { forged: true } });
-        expect((notString[5] as { MemberToken?: string })?.MemberToken).toBeUndefined();
+        expect((notString[6] as { MemberToken?: string })?.MemberToken).toBeUndefined();
+    });
+
+    it('passes the billing location from the draft body to UpdateDraft, and nothing when it is not an object', async () => {
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({ Success: true } as Awaited<ReturnType<typeof CheckoutSessionService.UpdateDraft>>);
+        const ext = new CheckoutServerExtension() as unknown as { handleDraft(req: Request, res: Response): Promise<void> };
+        const draft = (billingAddress: unknown) =>
+            ext.handleDraft(
+                { body: { sessionId: 's', clientSessionKey: 'k', email: 'a@b.com', lines: [], billingAddress } } as unknown as Request,
+                mockRes() as unknown as Response
+            );
+
+        await draft({ Country: 'US', StateProvince: 'IL', PostalCode: '60601' });
+        await draft('US');
+        await draft(['US']);
+
+        const calls = vi.mocked(CheckoutSessionService.UpdateDraft).mock.calls;
+        expect(calls[0][4]).toEqual({ Country: 'US', StateProvince: 'IL', PostalCode: '60601' });
+        expect(calls[1][4]).toBeNull();
+        expect(calls[2][4]).toBeNull();
     });
 
     it('does not key rate limits on a spoofed leftmost X-Forwarded-For (default TrustedProxyHops=0)', async () => {
@@ -460,7 +479,7 @@ describe('CheckoutServerExtension', () => {
             { body: { sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.com', lines: [], attribution } } as unknown as Request,
             res as unknown as Response
         );
-        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('sess-1', 'k', 'a@b.com', [], user, { Attribution: attribution, Answers: undefined });
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('sess-1', 'k', 'a@b.com', [], null, user, { Attribution: attribution, Answers: undefined });
     });
 
     it('passes the buyer answers from the draft body to UpdateDraft (#322)', async () => {
@@ -480,7 +499,7 @@ describe('CheckoutServerExtension', () => {
         );
         expect(res.statusCode).toBe(200);
         expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith(
-            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], user, { Attribution: undefined, Answers: answers, Choices: undefined }
+            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], null, user, { Attribution: undefined, Answers: answers, Choices: undefined }
         );
     });
 
@@ -501,7 +520,7 @@ describe('CheckoutServerExtension', () => {
         );
         expect(res.statusCode).toBe(200);
         expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith(
-            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], user, { Attribution: undefined, Answers: undefined, Choices: choices }
+            'sess-1', 'k', 'a@b.com', [{ ProductID: 'p', Quantity: 1 }], null, user, { Attribution: undefined, Answers: undefined, Choices: choices }
         );
     });
 
