@@ -180,6 +180,28 @@ describe('DecideGrantStatus — the other timings are unchanged by renewal or cu
     });
 });
 
+describe('DecideGrantStatus — OnPaidInFull, paid after confirm (#296)', () => {
+    // A checkout confirms before it captures, so the grant is born held and a later payment must release it.
+    const held = { Status: 'Suspended', SuspensionReason: 'AwaitingPayment' };
+
+    it('is held at confirm, before any payment', () => {
+        expect(DecideGrantStatus('OnPaidInFull', false, order(), 14)).toEqual({ Status: 'Suspended', Reason: 'AwaitingPayment' });
+    });
+
+    it('stays held through a part-payment, even one that covers the first instalment', () => {
+        const part = order({ AmountPaid: 400, Balance: 800, FirstPaymentAmount: 400 });
+        const decided = DecideGrantStatus('OnPaidInFull', false, part, 14);
+        expect(decided).toEqual({ Status: 'Suspended', Reason: 'AwaitingPayment' });
+        expect(ReconcileGrantStatus(held, decided)).toBeNull();
+    });
+
+    it('is released by the payment that clears the balance', () => {
+        const decided = DecideGrantStatus('OnPaidInFull', false, order({ AmountPaid: 1200, Balance: 0 }), 14);
+        expect(decided).toEqual({ Status: 'Active', Reason: null });
+        expect(ReconcileGrantStatus(held, decided)).toEqual({ Status: 'Active', Reason: null });
+    });
+});
+
 describe('ReconcileGrantStatus — which grants a payment may move', () => {
     const active = { Status: 'Active', Reason: null } as const;
     const pastDue = { Status: 'Suspended', Reason: 'PastDue' } as const;
