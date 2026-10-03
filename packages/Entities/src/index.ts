@@ -127,5 +127,11 @@ export * from './checkout-attribution';
 export * from './checkout-choices';
 export * from './base-entity-augmentation';
 
+/**
+ * `CheckBillingLocation` and the ISO country/subdivision lists — the one definition of a valid
+ * billing location, read by the checkout widget's pickers and by the server that refuses payment
+ * without one.
+ */
+export * from './billing-location';
 // Pure decisions for money arriving on an external rail (Bill.com) — read by Orders.PollExternalPayments.
 export * from './ExternalPaymentBehavior.js';

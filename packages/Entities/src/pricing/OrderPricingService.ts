@@ -98,6 +98,11 @@ export interface OrderPricingContext {
     OrderDate: Date | string | null;
     ShipToAddressID: string | null;
     /**
+     * The ship-to location for an order whose Address row does not exist yet — a checkout draft is
+     * priced before anything is saved. Read only when `ShipToAddressID` is null.
+     */
+    ShipToAddress?: TaxAddress | null;
+    /**
      * The lines, as entities. They are MUTATED in place with the resolved money — that is what the
      * save path needs, and what lets the same call serve both callers.
      */
@@ -494,7 +499,7 @@ export class OrderPricingService {
         const out: RequestedCharge[] = [];
         const settled = this.ctx.SettledTax;
         const addressID = this.ctx.ShipToAddressID;
-        const address = addressID ? await this.loadAddress(addressID) : null;
+        const address = addressID ? await this.loadAddress(addressID) : (this.ctx.ShipToAddress ?? null);
 
         for (let i = 0; i < this.ctx.Lines.length; i++) {
             const line = this.ctx.Lines[i];
