@@ -35,7 +35,8 @@
  * ATOMICITY: the journal entry and the observation row share one transaction opened here. The entry
  * goes through `Accounting.CreateJournalEntries`, which joins the caller's transaction — no new
  * accounting API. `Preview` computes the draft and returns before the transaction is opened, so it
- * cannot write by construction.
+ * cannot write by construction. The finance exception an observation may raise for review (golive
+ * #279) is written inside the same transaction, so a failure to raise fails the attestation.
  *
  * FAILURE MODEL: logical failures (not a POC line, not booked, dated before the last observation) come
  * back INSIDE the output as `Success: false` with a message. Only genuine faults throw.
@@ -43,6 +44,7 @@
  * CONNECTS TO:
  *   ARITHMETIC: ComputeCatchUp, ProgressRecognitionDriver (./RevenueRecognition.ts)
  *   DRAFT:      OrderJournalEntryFactory.BuildProgressDraft (./OrderJournalEntryFactory.ts)
+ *   REVIEW:     RaiseProgressJudgmentCall (./ProgressJudgmentCall.ts)
  *   TABLE:      __mj_BizAppsOrders.OrderLineProgressMeasurement
  */
 import {
@@ -71,6 +73,7 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 import { RegisterOperationPost, ReleaseOperationPost } from './OrderLineProgressMeasurementEntityServer.js';
 import { OrderJournalEntryFactory, type JEDraft } from './OrderJournalEntryFactory.js';
+import { RaiseProgressJudgmentCall } from './ProgressJudgmentCall.js';
 import { ComputeCatchUp, ProgressRecognitionDriver } from './RevenueRecognition.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
@@ -185,6 +188,27 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             const journalEntryID = draft ? await this.createJournalEntry(draft, provider, ledger) : null;
             const measurementID = await this.writeObservation(line.ID, measurementDate, percent, methodCode, input, user, numbers, journalEntryID, provider);
             await this.advanceRecognizedToDate(line, catchUp.Delta);
+            // FINANCE EXCEPTION REVIEW (golive #279, type 1). A backward slide, a first observation or
+            // an outsized catch-up still posts; it also lands on accounting's review list. In this
+            // transaction, so the observation never commits without its review row: a failure to
+            // raise throws into the rollback below and the attestation fails. Raised as the ledger
+            // user like the entry, and signed by the attester.
+            await RaiseProgressJudgmentCall(
+                {
+                    ObservationID: measurementID,
+                    OrderLineID: line.ID,
+                    OrderNumber: order.OrderNumber,
+                    LineNumber: line.LineNumber,
+                    CompanyID: line.CompanyID,
+                    MeasurementDate: measurementDate,
+                    PercentComplete: percent,
+                    RecognitionAmount: catchUp.Delta,
+                    IsFirstObservation: last === null,
+                    AttestedByUserID: user.ID,
+                },
+                provider,
+                ledger,
+            );
             await dbProvider.CommitTransaction();
             return { Success: true, Preview: false, ...numbers, OrderLineProgressMeasurementID: measurementID, JournalEntryID: journalEntryID, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, false) };
         } catch (err) {

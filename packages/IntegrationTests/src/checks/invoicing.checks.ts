@@ -60,6 +60,7 @@ import {
 import {
   CreateBundleItem,
   CreateOrdersFixture,
+  CreateProductPrice,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -193,6 +194,8 @@ export const InvoicingChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        // WidgetB's engine price, so the stated 125 is not a concession the confirm gate holds.
+        await CreateProductPrice(ctx, f.Products.WidgetB, 125);
         const built = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,

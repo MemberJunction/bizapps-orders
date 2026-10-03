@@ -17,7 +17,7 @@
  * resolves by key — but that is a different package (`accounting-server`, wired up by the host app's
  * resolver paths) and is unaffected by how this one is imported.
  */
-import { BaseRemotableOperation, IMetadataProvider, Metadata, UserInfo } from '@memberjunction/core';
+import { BaseRemotableOperation, IMetadataProvider, LogStatus, Metadata, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import { AccountingEngineBase, pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
 import { GLAccountResolver, type ResolverEntityIDs } from './GLAccountResolver.js';
@@ -265,6 +265,136 @@ export async function SubmitJournalEntryDrafts(
     if (!payload.Success) {
         const detail = (payload.Errors ?? []).map((e) => `${e.Code ?? 'ERROR'}: ${e.Message ?? ''}`).join('; ');
         throw new Error(`Journal entry booking failed for ${what}. ${detail}`);
+    }
+    return payload;
+}
+
+// ─── Finance exception review (golive #279) ─────────────────────────────────────────────────────
+//
+// Accounting owns the review list, its types and their thresholds; orders only raises into it. Both
+// operations are resolved by key through the class factory, like `SubmitJournalEntryDrafts`, so
+// this package takes no build-time dependency on accounting's server package. An unregistered
+// operation throws: a detector that quietly did nothing would look exactly like a clean month.
+
+/** One exception type as `Accounting.GetFinanceExceptionTypes` reports it. */
+export interface FinanceExceptionTypeInfo {
+    Code: string;
+    IsActive: boolean;
+    Configuration: Record<string, unknown>;
+}
+
+interface GetFinanceExceptionTypesOutput {
+    Success: boolean;
+    Types: FinanceExceptionTypeInfo[];
+    Errors?: Array<{ Code: string; Message: string }>;
+}
+
+/** One exception to raise, in the shape `Accounting.RaiseFinanceExceptions` takes. */
+export interface FinanceExceptionToRaise {
+    TypeCode: string;
+    /** MJ entity name; accounting resolves it to SourceEntityID. */
+    SourceEntityName: string;
+    SourceRecordID: string;
+    CompanyID: string;
+    Amount?: number | null;
+    /** `YYYY-MM-DD` — the month the exception belongs to. */
+    ExceptionDate: string;
+    Summary: string;
+    DedupeKey: string;
+    SourceCreatedByUserID?: string | null;
+    /** True when a creator exists but has no linked login. */
+    CreatorUnresolved?: boolean;
+}
+
+/** What `Accounting.RaiseFinanceExceptions` answers with. */
+export interface RaiseFinanceExceptionsOutcome {
+    Success: boolean;
+    Results: Array<{ Index: number; FinanceExceptionID?: string; Created: boolean; Skipped?: boolean }>;
+    Errors?: Array<{ Index?: number; Code: string; Message: string }>;
+}
+
+/**
+ * The accounting operation registered under `key`, or a throw naming `what` could not be done.
+ *
+ * `TryCreateInstance`, not `CreateInstance`: for an unregistered key `CreateInstance` hands back a
+ * hollow `BaseRemotableOperation` rather than null, so a null check alone would never fire and the
+ * call would route with no operation key.
+ */
+export function ResolveAccountingOperation<I, O>(key: string, what: string): BaseRemotableOperation<I, O> {
+    const resolved = MJGlobal.Instance.ClassFactory.TryCreateInstance<BaseRemotableOperation<I, O>>(BaseRemotableOperation, key);
+    const op = resolved.Resolved ? resolved.Instance : null;
+    if (!op) {
+        throw new Error(
+            `The '${key}' operation is not registered. The BizApps Accounting server package must be loaded before orders can ${what}.`,
+        );
+    }
+    return op;
+}
+
+/**
+ * The ACTIVE configuration of one finance exception type, or null when accounting has no such type
+ * or has switched it off — in which case the caller skips. No defaults are invented here: the
+ * thresholds are finance's to set, and a guessed one would raise a list nobody asked for.
+ *
+ * @throws when the operation is unregistered or the read fails
+ */
+export async function GetActiveFinanceExceptionType(
+    code: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<FinanceExceptionTypeInfo | null> {
+    const key = 'Accounting.GetFinanceExceptionTypes';
+    const op = ResolveAccountingOperation<{ Codes?: string[] }, GetFinanceExceptionTypesOutput>(key, `read the ${code} exception type`);
+    const result = await op.Execute({ Codes: [code] }, { provider, user });
+    if (!result.Success) {
+        throw new Error(`${key} did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`);
+    }
+    const payload = result.Output;
+    if (!payload) throw new Error(`${key} returned no payload.`);
+    if (!payload.Success) {
+        throw new Error(`${key} failed. ${(payload.Errors ?? []).map((e) => `${e.Code}: ${e.Message}`).join('; ')}`);
+    }
+    const type = (payload.Types ?? []).find((t) => t.Code === code);
+    if (!type) {
+        LogStatus(`Finance exception type ${code} is not defined in accounting; nothing is raised for it.`);
+        return null;
+    }
+    if (!type.IsActive) {
+        LogStatus(`Finance exception type ${code} is inactive; nothing is raised for it.`);
+        return null;
+    }
+    return { ...type, Configuration: type.Configuration ?? {} };
+}
+
+/**
+ * Raise finance exceptions into accounting's review list and return its payload.
+ *
+ * SIDE EFFECT, DELIBERATELY NAMED: this writes review rows. It joins the CALLER'S transaction when
+ * there is one, so a raise made at save time commits or rolls back with the save. Idempotent on
+ * (type, dedupe key) on accounting's side: a repeat returns `Created: false`.
+ *
+ * @param what names the act in the error message
+ * @throws when the operation is unregistered, the call fails, or accounting refuses the batch
+ */
+export async function RaiseFinanceExceptions(
+    exceptions: FinanceExceptionToRaise[],
+    what: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<RaiseFinanceExceptionsOutcome> {
+    const key = 'Accounting.RaiseFinanceExceptions';
+    const op = ResolveAccountingOperation<{ Exceptions: FinanceExceptionToRaise[] }, RaiseFinanceExceptionsOutcome>(key, `raise ${what}`);
+    const result = await op.Execute({ Exceptions: exceptions }, { provider, user });
+    if (!result.Success) {
+        throw new Error(`${key} did not execute for ${what}: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`);
+    }
+    const payload = result.Output;
+    if (!payload) throw new Error(`${key} returned no payload for ${what}.`);
+    if (!payload.Success) {
+        const detail = (payload.Errors ?? [])
+            .map((e) => `${e.Index != null ? `#${e.Index} ` : ''}${e.Code}: ${e.Message}`)
+            .join('; ');
+        throw new Error(`Raising ${what} failed. ${detail}`);
     }
     return payload;
 }

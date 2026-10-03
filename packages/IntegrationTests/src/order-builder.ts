@@ -59,6 +59,11 @@ export interface LineSpec {
      * typo, and it books a real credit either way.
      */
     ReversesOrderLineID?: string;
+    /**
+     * Options the buyer chose for this line (#291), recorded as Order Line Choices in the line's
+     * graph. A conditional Product Entitlement grants only on a line carrying its choice.
+     */
+    Choices?: Array<{ GroupKey: string; OptionValue: string; GroupLabel?: string; OptionLabel?: string }>;
 }
 
 export interface OrderSpec {
@@ -232,6 +237,13 @@ export async function BuildOrder(
         if (ls.ShipToAddressID) line.ShipToAddressID = ls.ShipToAddressID;
         if (ls.RenewsSubscriptionID) line.RenewsSubscriptionID = ls.RenewsSubscriptionID;
         if (ls.ReversesOrderLineID) line.ReversesOrderLineID = ls.ReversesOrderLineID;
+        for (const c of ls.Choices ?? []) {
+            const row = await line.Choices.Create();
+            row.GroupKey = c.GroupKey;
+            row.GroupLabel = c.GroupLabel ?? c.GroupKey;
+            row.OptionValue = c.OptionValue;
+            row.OptionLabel = c.OptionLabel ?? c.OptionValue;
+        }
         lines.push(line);
     }
 

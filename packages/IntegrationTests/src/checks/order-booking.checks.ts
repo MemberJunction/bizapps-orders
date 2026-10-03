@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB24).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB26).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -30,6 +30,8 @@
  *   OB22 the database refuses a booked header's OrderDate change, however it is reached (51013)
  *   OB23 the database refuses a booked order leaving Confirmed (51014)
  *   OB24 the database refuses a booked line's CompanyID change (51003)
+ *   OB25 the database refuses clearing a booked line's JournalEntryID (51008, #262)
+ *   OB26 the database refuses re-pointing a booked line at another journal entry (51008, #262)
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -64,6 +66,8 @@ const UNBILLED_CODE = '11300';
 /** The three-line multi-company order OB1–OB6 all read from — built once per check, inside its tx. */
 async function confirmMultiCompanyOrder(ctx: IntegrationCheckContext) {
     const f = Fx();
+    // WidgetB's engine price, so its stated 50 is not a concession the confirm gate would hold.
+    await CreateProductPrice(ctx, f.Products.WidgetB, 50);
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         Lines: [
@@ -239,7 +243,8 @@ export const OrderBookingChecks: NamedCheck[] = [
                 // what the ledger says we are owed, or the two records of the same fact disagree —
                 // which is the one thing a general ledger exists to prevent.
                 const f = Fx();
-                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                // The lower of the two stated prices, so neither is a concession the confirm gate holds.
+                await CreateProductPrice(ctx, f.Products.WidgetA, 50);
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     BillToOrganizationID: f.Customers.OrganizationID,
@@ -916,6 +921,37 @@ export const OrderBookingChecks: NamedCheck[] = [
                 const orderID = await confirmedOrderID(ctx);
                 const refusal = await refusedBy(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderLine SET CompanyID = '${f.CoB.ID}' WHERE OrderHeaderID = '${orderID}'`);
                 Assert(/selling company cannot be changed/.test(refusal), `refused by 51003: ${refusal}`);
+            }),
+    },
+    {
+        Id: 'order-booking.OB25',
+        Name: "OB25: the database refuses clearing a booked line's JournalEntryID (51008)",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const orderID = await confirmedOrderID(ctx);
+                const refusal = await refusedBy(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderLine SET JournalEntryID = NULL WHERE OrderHeaderID = '${orderID}'`);
+                Assert(/JournalEntryID cannot be cleared or replaced/.test(refusal), `refused by 51008: ${refusal}`);
+            }),
+    },
+    {
+        Id: 'order-booking.OB26',
+        Name: 'OB26: the database refuses re-pointing a booked line at another journal entry (51008)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The replacement is a real entry, booked by a second order, so the foreign key
+                // accepts it and only the trigger stands in the way.
+                const orderID = await confirmedOrderID(ctx);
+                const otherOrderID = await confirmedOrderID(ctx);
+                const refusal = await refusedBy(
+                    ctx,
+                    `UPDATE ${ORDERS_SCHEMA}.OrderLine
+                        SET JournalEntryID = (SELECT TOP 1 JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine
+                                               WHERE OrderHeaderID = '${otherOrderID}' AND JournalEntryID IS NOT NULL)
+                      WHERE OrderHeaderID = '${orderID}'`,
+                );
+                Assert(/JournalEntryID cannot be cleared or replaced/.test(refusal), `refused by 51008: ${refusal}`);
             }),
     },
 ];

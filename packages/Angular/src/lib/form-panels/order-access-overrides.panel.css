@@ -1,0 +1,79 @@
+.mjo-ao-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--mj-space-3);
+    margin-bottom: var(--mj-space-4);
+}
+
+.mjo-ao-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-1);
+    font-size: var(--mj-text-sm);
+    color: var(--mj-text-muted);
+}
+
+.mjo-ao-field--wide,
+.mjo-ao-actions {
+    grid-column: 1 / -1;
+}
+
+.mjo-ao-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--mj-space-2);
+}
+
+.mjo-ao-error {
+    color: var(--mj-status-error-text);
+    margin: 0 0 var(--mj-space-3);
+}
+
+.mjo-ao-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-3);
+}
+
+.mjo-ao-item {
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-md);
+    padding: var(--mj-space-3);
+}
+
+.mjo-ao-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--mj-space-2);
+}
+
+.mjo-ao-reason {
+    margin: var(--mj-space-2) 0;
+}
+
+.mjo-ao-meta {
+    margin: 0;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+}
+
+.mjo-ao-decide {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--mj-space-2);
+    margin-top: var(--mj-space-3);
+}
+
+.mjo-ao-decide input {
+    flex: 1 1 12rem;
+}
+
+@media (max-width: 600px) {
+    .mjo-ao-form {
+        grid-template-columns: 1fr;
+    }
+}

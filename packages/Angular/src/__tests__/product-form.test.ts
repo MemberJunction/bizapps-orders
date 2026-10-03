@@ -386,3 +386,33 @@ describe('Product lookup names (walkthrough Pin 28)', () => {
         }
     });
 });
+
+describe('Product header follows lookup edits (bc-aidp-next-golive#277)', () => {
+    const engine = {
+        EnsureLoaded: async () => undefined,
+        ProductTypeByID: (id: string) => (id === 'pt-sub' ? { Name: 'Subscription' } : undefined),
+        ProductCategoryByID: () => undefined,
+        RevenueRecognitionTypeByID: (id: string) => (id === 'rr-even' ? { Name: 'Even Over Time' } : undefined),
+        ProductByID: () => undefined,
+    };
+
+    it('re-resolves Type and Rev-rec after the ids change in the form', async () => {
+        const spy = vi.spyOn(OrdersEngine, 'Instance', 'get').mockReturnValue(engine as never);
+        try {
+            const panel = Object.create(ProductHeaderPanel.prototype) as ProductHeaderPanel;
+            const record = { ProductTypeID: null, ProductCategoryID: null, RevenueRecognitionTypeID: null, SuccessorProductID: null };
+            Object.assign(panel, { Record: record, Lookups: { Type: '—', Category: '—', RevRec: '—', Successor: '—' } });
+            await panel.ngOnInit();
+            expect(panel.RevRec).toBe('—');
+
+            record.ProductTypeID = 'pt-sub' as never;
+            record.RevenueRecognitionTypeID = 'rr-even' as never;
+            panel.RevRec; // a change-detection read starts the resolve
+            await new Promise((r) => setTimeout(r, 0));
+            expect(panel.TypeName).toBe('Subscription');
+            expect(panel.RevRec).toBe('Even Over Time');
+        } finally {
+            spy.mockRestore();
+        }
+    });
+});

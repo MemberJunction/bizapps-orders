@@ -32,7 +32,7 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 set -a; . ./.env; set +a
 
-MJ_VERSION="${MJ_CORE_VERSION:-v6.1.0-edge.1}"
+MJ_VERSION="${MJ_CORE_VERSION:-v6.1.4}"
 COMMON_REPO="${BIZAPPS_COMMON_REPO:-$ROOT/../bizapps-common}"
 ACCOUNTING_REPO="${BIZAPPS_ACCOUNTING_REPO:-$ROOT/../bizapps-accounting}"
 TASKS_REPO="${BIZAPPS_TASKS_REPO:-$ROOT/../bizapps-tasks}"
