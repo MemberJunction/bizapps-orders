@@ -560,6 +560,44 @@ describe('cancellation policy', () => {
             expect(iso(d.AccessThroughDate)).toBe(iso(d.EffectiveDate));
         });
     });
+
+    describe('a later term that never started (#406)', () => {
+        const renewal = {
+            StartDate: new Date('2027-01-01T00:00:00Z'),
+            EndDate: new Date('2027-12-31T00:00:00Z'),
+            Amount: 1300,
+            TermNumber: 2,
+        };
+        const laterWith = (r: Partial<SubscriptionTypeRules>) =>
+            new SubscriptionBehavior().DecideLaterTermCancellation({
+                Rules: rules(r),
+                Term: renewal,
+                CoverageEndsDate: new Date('2026-12-31T00:00:00Z'),
+            });
+
+        it.each([
+            ['NoRefund', { CancellationRefundMode: 'NoRefund' as const }],
+            ['ProrateUnused', { CancellationRefundMode: 'ProrateUnused' as const }],
+            ['an expired refund window', { CancellationRefundMode: 'FullRefundWithinWindow' as const, CancellationWindowDays: 0 }],
+        ])('is canceled and reversed in full under %s', (_name, r) => {
+            const d = laterWith(r);
+            expect(d.RefundAmount).toBe(1300);
+            expect(d.ReversalFraction).toBe(1);
+            expect(d.TermStatus).toBe('Canceled');
+            expect(iso(d.EffectiveDate)).toBe('2027-01-01');
+            expect(d.Explanation).toMatch(/Term 2 starts 2027-01-01, after coverage ends 2026-12-31/);
+        });
+
+        it('reverses nothing when the term charged nothing', () => {
+            const d = new SubscriptionBehavior().DecideLaterTermCancellation({
+                Rules: rules(),
+                Term: { ...renewal, Amount: 0 },
+                CoverageEndsDate: new Date('2026-12-31T00:00:00Z'),
+            });
+            expect(d.ReversalFraction).toBe(0);
+            expect(d.TermStatus).toBe('Canceled');
+        });
+    });
 });
 
 describe('ResolveSubscriptionTypeID', () => {

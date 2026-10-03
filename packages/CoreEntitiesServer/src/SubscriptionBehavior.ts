@@ -126,6 +126,14 @@ export interface CancellationContext {
     Term: CancellableTerm;
 }
 
+/** A term that starts after the cancelled term's coverage ends (#406). */
+export interface LaterTermCancellationContext {
+    Rules: SubscriptionTypeRules;
+    Term: CancellableTerm;
+    /** The cancelled term's `EffectiveDate` — when the subscription's coverage ends. */
+    CoverageEndsDate: Date;
+}
+
 /**
  * What cancelling actually does. Like {@link SubscriptionDecision} this is COMPUTED ONLY — the
  * caller performs the reversal, updates the rows, and logs the event.
@@ -569,6 +577,30 @@ export class SubscriptionBehavior {
             // they paid for. Only a cut-short term is `Canceled`.
             TermStatus: effective.getTime() >= ctx.Term.EndDate.getTime() ? 'Completed' : 'Canceled',
             Explanation: explanation,
+        };
+    }
+
+    /**
+     * What cancelling does to a LATER term — one that starts after the cancelled term's effective
+     * date, such as a renewal already booked (#406). The subscription ends before it begins, so
+     * none of it is ever delivered: it is cancelled and reversed in full, whatever the type's
+     * refund mode. `CancellationRefundMode` governs coverage the customer has had; a term that
+     * never started has none. Override to change that.
+     */
+    public DecideLaterTermCancellation(rawContext: LaterTermCancellationContext): CancellationDecision {
+        const start = utcDay(rawContext.Term.StartDate);
+        const amount = money(Math.max(rawContext.Term.Amount, 0));
+        return {
+            EffectiveDate: start,
+            // Access is the subscription's, decided by the cancelled term; this term grants none.
+            AccessThroughDate: start,
+            RefundAmount: amount,
+            // A term that charged nothing has nothing to reverse, the same rule as DecideCancellation.
+            ReversalFraction: amount > 0 ? 1 : 0,
+            TermStatus: 'Canceled',
+            Explanation:
+                `Term ${rawContext.Term.TermNumber} starts ${isoDay(start)}, after coverage ends ` +
+                `${isoDay(utcDay(rawContext.CoverageEndsDate))}, so it is canceled and its full ${amount} reversed.`,
         };
     }
 
