@@ -1,10 +1,11 @@
 /**
  * `Orders.IssueExternalInvoice` — one billing unit, one invoice on the company's AR rail, once.
  *
- * WHAT A BILLING UNIT IS (design §4.1). An order billed as a whole has one unit per selling company
- * and is invoiceable at Confirmed; an order billed on a schedule has one unit per row and is
- * invoiceable once `Orders.IssueInstalmentInvoice` has frozen the row's number. For an order with no
- * schedule "locked" and "invoiceable" are the same moment — which is what golive #242 requires.
+ * WHAT A BILLING UNIT IS (design §4.1). An order billed as a whole is one unit, sent through the
+ * ORDER company's rail whatever company owns each product (golive #311), and is invoiceable at
+ * Confirmed; an order billed on a schedule has one unit per row and is invoiceable once
+ * `Orders.IssueInstalmentInvoice` has frozen the row's number. For an order with no schedule "locked"
+ * and "invoiceable" are the same moment — which is what golive #242 requires.
  *
  * THE SEND IS DECOUPLED FROM BOTH EVENTS (D-B1). Nothing in the confirm transaction or the instalment
  * issue calls this; the sweep and the order form do, and both may call it twice. Idempotency is a
@@ -37,7 +38,6 @@ import {
     EXTERNAL_INVOICE_ENTITY,
     ORDER_HEADER_ENTITY,
     ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
-    ORDER_LINE_ENTITY,
     ORGANIZATION_ENTITY,
     PAYMENT_LINE_ENTITY,
     PERSON_ENTITY,
@@ -51,7 +51,7 @@ import {
     type ExternalInvoiceUnitFacts,
 } from './ExternalInvoiceBehavior.js';
 import { FindInvoiceRailForCompany } from './InvoiceRailResolver.js';
-import { DocumentNumber as CompanyDocumentNumber, MAX_DOCUMENT_NUMBER_LENGTH, ReissueDocumentNumber } from './InvoiceBehavior.js';
+import { MAX_DOCUMENT_NUMBER_LENGTH, ReissueDocumentNumber } from './InvoiceBehavior.js';
 import { BuildInvoiceDocuments } from './InvoiceBuilder.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
@@ -162,32 +162,6 @@ export async function PaidOnBillingUnit(
     return money((r.Results ?? []).reduce((s, l) => s + Number(l.Amount), 0));
 }
 
-/**
- * Which suffix letter this company's document carries — `-A`, `-B` — on a split order.
- *
- * MUST AGREE WITH `BuildDocuments`, which sorts the lines' company ids as the database returns them
- * and takes the position in that array. The rail sends the number the customer's document prints; if
- * the two disagree the customer holds a document numbered differently from the invoice raising it.
- *
- * COMPARED CASE-INSENSITIVELY, and that is the whole point of this function existing. SQL Server
- * returns uppercase ids; a lower-cased needle found nothing, `Math.max(0, -1)` turned the miss into
- * position 0, and every company on the order was numbered `-A`. Two Bill.com organisations then each
- * received an invoice called `ORD-1234-A`; one organisation refused the second as a duplicate number
- * and that company was never billed at all.
- */
-export function companySuffixIndex(companies: readonly string[], companyID: string): number {
-    const index = [...companies].sort().findIndex((c) => UUIDsEqual(c, companyID));
-    // A miss cannot be silently position 0 again. On a single-company order the suffix is unused, so
-    // 0 is harmless; on a split order it is the bug above, so say so rather than mislabel a document.
-    if (index < 0 && companies.length > 1) {
-        throw new Error(
-            `Company ${companyID} does not appear among the companies selling on this order (${companies.join(', ')}), ` +
-                `so the document suffix cannot be derived. Refusing rather than numbering it as the first company.`,
-        );
-    }
-    return Math.max(0, index);
-}
-
 /** Registers {@link IssueExternalInvoiceOperation}. Called from the server bootstrap. */
 export function LoadIssueExternalInvoiceOperation(): void {
     void IssueExternalInvoiceOperation;
@@ -201,8 +175,8 @@ export interface IssueUnitOptions {
 }
 
 /**
- * Issue one unit. `unit.CompanyID` may be null when the order sells for one company or an instalment
- * is named. Exported so `Orders.SendExternalInvoices` can call it per worklist row without going
+ * Issue one unit. `unit.CompanyID` may be null, and is then the order's company or the named
+ * instalment's. Exported so `Orders.SendExternalInvoices` can call it per worklist row without going
  * back through the provider.
  */
 export async function IssueOneUnit(
@@ -219,25 +193,13 @@ export async function IssueOneUnit(
         ...extra,
     });
 
-    // 1. The order, its lines' companies, and (when the table exists) its schedule.
+    // 1. The order and (when the table exists) its schedule.
     const orderResult = await rv.RunView<OrderRow>(
         { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${unit.OrderHeaderID}'`, ResultType: 'simple' },
         user,
     );
     const order = orderResult.Results?.[0];
     if (!order) return refuse('ERROR', `No order with ID ${unit.OrderHeaderID}.`);
-
-    const lines = await rv.RunView<{ CompanyID: string }>(
-        { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID = '${unit.OrderHeaderID}'`, Fields: ['CompanyID'], ResultType: 'simple' },
-        user,
-    );
-    // Deduplicate case-insensitively, but keep the DATABASE's casing: this value becomes the unit's
-    // CompanyID and is compared against the order lines' own ids downstream. Handing on a lower-cased
-    // copy made `BuildInvoiceDocuments` match nothing and report "has no lines sold by company",
-    // which reads like missing data rather than the case fold it was.
-    const lineCompanies = [
-        ...new Map((lines.Results ?? []).map((l) => [String(l.CompanyID).toLowerCase(), String(l.CompanyID)])).values(),
-    ];
 
     const scheduleSupported = ScheduleSupported(provider);
     let scheduleRows: ScheduleRow[] = [];
@@ -257,18 +219,30 @@ export async function IssueOneUnit(
         return refuse('ERROR', `Instalment ${unit.OrderHeaderPaymentScheduleID} is not a live instalment of order ${order.OrderNumber}.`);
     }
 
-    // 2. Which selling company this unit bills for.
-    let companyID: string | null = row ? String(row.CompanyID) : unit.CompanyID;
-    if (!companyID) {
-        if (lineCompanies.length <= 1) companyID = lineCompanies[0] ?? String(order.CompanyID);
-        else {
+    // 2. Whose rail bills this unit: the ORDER's company (golive #311), so the customer pays the
+    // company that sold the order and the intercompany legs move the product companies' shares. An
+    // instalment carries its own company, which is the order's for every row since golive #311; a product
+    // company's own row left from a per-company schedule goes through that company's rail. The
+    // database's casing is kept: the id is compared against the document's company downstream.
+    if (!row && unit.CompanyID && !UUIDsEqual(unit.CompanyID, String(order.CompanyID))) {
+        return refuse(
+            'ERROR',
+            `Order ${order.OrderNumber} is invoiced by its own company (${companyNameOr(order, String(order.CompanyID))}), ` +
+                `not by company ${unit.CompanyID}: an order is one invoice, whatever company owns each product.`,
+        );
+    }
+    const companyID = RequireUUID(row ? String(row.CompanyID) : String(order.CompanyID), 'CompanyID');
+    if (!row) {
+        const split = await LoadLegacySplitInvoice(order.ID, companyID, provider, user);
+        if (split) {
             return refuse(
-                'NAME_THE_COMPANY',
-                `Order ${order.OrderNumber} sells for ${lineCompanies.length} companies; name the CompanyID to invoice — each company's document is its own rail invoice.`,
+                'ERROR',
+                `Order ${order.OrderNumber} already has ${split.DocumentNumber} on a rail for company ${split.CompanyID}, sent ` +
+                    `when an order was invoiced once per product company. Sending the order's own invoice now would bill ` +
+                    `those lines twice. Cancel ${split.DocumentNumber} (Orders.CancelExternalInvoice) first, then send.`,
             );
         }
     }
-    companyID = RequireUUID(companyID, 'CompanyID');
 
     // 3. The rail. None is the ordinary answer for a company that invoices natively.
     const rail = await FindInvoiceRailForCompany(companyID, provider, user);
@@ -315,10 +289,7 @@ export async function IssueOneUnit(
     // the first, and neither side would say a word.
     const wholeOrderNumber = row
         ? null
-        : ReissueDocumentNumber(
-              CompanyDocumentNumber(order.OrderNumber, companySuffixIndex(lineCompanies, companyID), Math.max(1, lineCompanies.length)),
-              await CountRailNumbersSpent(rail.Config.PaymentProviderID, unitKey, provider, user),
-          );
+        : ReissueDocumentNumber(order.OrderNumber, await CountRailNumbersSpent(rail.Config.PaymentProviderID, unitKey, provider, user));
     if (wholeOrderNumber && wholeOrderNumber.length > MAX_DOCUMENT_NUMBER_LENGTH) {
         // Refused rather than truncated: a truncated number is either a duplicate the rail rejects or a
         // different document's number, and both are worse than saying so.
@@ -333,7 +304,7 @@ export async function IssueOneUnit(
         ? {
               CompanyID: companyID,
               InstallmentNumber: Number(row.InstallmentNumber),
-              InstallmentCount: scheduleRows.filter((r) => String(r.CompanyID).toLowerCase() === companyID!.toLowerCase()).length,
+              InstallmentCount: scheduleRows.filter((r) => String(r.CompanyID).toLowerCase() === companyID.toLowerCase()).length,
               DueDate: isoDate(row.DueDate),
               Amount: Number(row.Amount),
               DocumentNumber: row.DocumentNumber,
@@ -557,6 +528,34 @@ export async function LoadExternalInvoiceForUnit(
     );
     const rows = r.Results ?? [];
     return rows.find((x) => x.Status === 'Sent' || x.Status === 'Sending') ?? rows[0] ?? null;
+}
+
+/**
+ * A live whole-order invoice this order already holds on a rail for a company OTHER than the order's,
+ * sent when an order was invoiced once per product company (before golive #311), or null.
+ *
+ * Its lines are already billed; the order company's invoice covers every line, so sending it beside
+ * this one bills them twice. The caller refuses and names the invoice to cancel.
+ */
+export async function LoadLegacySplitInvoice(
+    orderHeaderID: string,
+    orderCompanyID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<ExternalInvoiceRow | null> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<ExternalInvoiceRow>(
+        {
+            EntityName: EXTERNAL_INVOICE_ENTITY,
+            ExtraFilter:
+                `OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}' AND OrderHeaderPaymentScheduleID IS NULL ` +
+                `AND CompanyID <> '${RequireUUID(orderCompanyID, 'CompanyID')}' AND Status IN ('Sent', 'Sending')`,
+            ResultType: 'simple',
+        },
+        user,
+    );
+    // Re-checked here as well as in the filter, so the answer does not rest on how a provider compares ids.
+    return (r.Results ?? []).find((x) => !UUIDsEqual(String(x.CompanyID), orderCompanyID)) ?? null;
 }
 
 /**
