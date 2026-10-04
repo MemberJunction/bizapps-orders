@@ -110,9 +110,11 @@ export {
 export {
     AddMonths,
     BuildPaymentSchedule,
+    CompanySlices,
     DefaultScheduleWeights,
     ExplainShortfalls,
     SCHEDULE_DEFAULTS,
+    ScheduleCoverage,
     ScheduleShortfalls,
     ScheduledCompanyIDs,
 } from './PaymentScheduleBehavior.js';
@@ -123,6 +125,7 @@ export type {
     ScheduleRowFacts,
     ScheduleShortfall,
     ScheduleTimingFacts,
+    SliceableScheduleRow,
 } from './PaymentScheduleBehavior.js';
 
 // Fulfilment (D15) — a logistics fact, deliberately disconnected from revenue.

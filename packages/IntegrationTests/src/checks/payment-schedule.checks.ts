@@ -39,6 +39,8 @@
  *   PS-G  Scenario 3: an UpFront line earns in full at confirm, the unbilled part to the contract asset
  *   PS-H  a line carrying an Unbilled balance is invoiced against Unbilled FIRST, then Deferred
  *   PS-I  a discount spanning a due AND a future instalment is booked ONCE, at recognition
+ *   PS-V  a two-company order's schedule is the order company's; each instalment takes one number
+ *         and books one billing entry per product company, each in its own books (golive #311)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -327,6 +329,32 @@ function assertBalanced(lines: LedgerLine[], what: string): void {
     AssertEqual(debits, credits, `${what} must balance: ${JSON.stringify(lines)}`);
 }
 
+/** A ledger line tagged with the company whose books it is in. */
+interface CompanyLedgerLine extends LedgerLine {
+    CompanyID: string;
+    EntryID: string;
+}
+
+/**
+ * Every billing entry an instalment posted, found by provenance (each links to the row) rather than
+ * through the row's own JournalEntryID, which records only the first of a multi-company row's entries.
+ */
+const instalmentEntriesByCompany = (ctx: IntegrationCheckContext, scheduleID: string) =>
+    TxQuery<CompanyLedgerLine>(
+        ctx,
+        `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount, gl.CompanyID, je.ID AS EntryID
+           FROM ${ACCT_SCHEMA}.JournalEntry je
+           JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+           JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+          WHERE LOWER(je.LinkedRecordID) = LOWER('${scheduleID}')`,
+    );
+
+const netForCompany = (lines: CompanyLedgerLine[], companyID: string, code: string): number =>
+    netOn(
+        lines.filter((l) => String(l.CompanyID).toLowerCase() === companyID.toLowerCase()),
+        code,
+    );
+
 /** The two running totals per line, which are the whole of D92's balance-sheet position. */
 const lineTotals = (ctx: IntegrationCheckContext, orderID: string) =>
     TxQuery<{ ID: string; LineNumber: number; BilledToDate: number; RecognizedToDate: number }>(
@@ -430,7 +458,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
     },
     {
         Id: 'payment-schedule.PS3',
-        Name: 'PS3: CompanyID is stamped from the lines, whatever the caller passed',
+        Name: "PS3: CompanyID is stamped from the order's company, whatever the caller passed",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -440,7 +468,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 ]);
                 Assert(saved, `confirm: ${message}`);
                 const [row] = await schedule(ctx, orderID);
-                AssertEqual(String(row.CompanyID).toLowerCase(), f.CoA.ID.toLowerCase(), 'the line company, not the one the caller sent');
+                AssertEqual(String(row.CompanyID).toLowerCase(), f.CoA.ID.toLowerCase(), "the order's company, not the one the caller sent");
             }),
     },
     {
@@ -953,6 +981,64 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 const totals = await lineTotals(ctx, orderID);
                 AssertEqual(Number(totals[0].BilledToDate), 900, 'BilledToDate is net, not gross');
                 AssertEqual(Number(totals[0].RecognizedToDate), 900, 'and it has caught up to recognition');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-V',
+        Name: "PS-V: a two-company order is invoiced once per instalment, from the order's company, booked per product company",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // golive #311: the header is Co A, the lines are Co A (100) and Co B (200). The
+                // schedule is the ORDER's, so both rows carry Co A; each instalment takes ONE number
+                // with no company letter, and its billing entry is split so Co A books a third of it
+                // and Co B two thirds, each in its own accounts (D13).
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                await CreateProductPrice(ctx, f.Products.WidgetB, 200);
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [
+                        { ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 100 },
+                        { ProductID: f.Products.WidgetB, Quantity: 1, UnitPrice: 200 },
+                    ],
+                });
+                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+                const orderID = draft.Order.ID as string;
+                const ids = await addInstalments(ctx, orderID, [
+                    { InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 150, CompanyID: f.CoB.ID },
+                    { InstallmentNumber: 2, DueDate: '2027-07-01', Amount: 150 },
+                ]);
+                const confirmed = await confirm(ctx, orderID);
+                Assert(confirmed.saved, `confirm: ${confirmed.message}`);
+
+                const rows = await schedule(ctx, orderID);
+                for (const row of rows) {
+                    AssertEqual(String(row.CompanyID).toLowerCase(), f.CoA.ID.toLowerCase(), "every row is the order company's");
+                }
+                const orderNumber = String(confirmed.order.OrderNumber);
+                AssertEqual(rows[0].Status, 'Invoiced', 'the instalment due on the order date was issued by the confirm');
+                AssertEqual(rows[0].DocumentNumber, `${orderNumber}-1`, 'one number for the whole instalment, no company letter');
+
+                const first = await instalmentEntriesByCompany(ctx, ids[0]);
+                AssertEqual(new Set(first.map((l) => l.EntryID)).size, 2, 'one billing entry per product company');
+                assertBalanced(first, 'the first instalment');
+                AssertEqual(netForCompany(first, f.CoA.ID, AR_CODE), 50, "Co A books its third of the instalment");
+                AssertEqual(netForCompany(first, f.CoB.ID, AR_CODE), 100, 'Co B books its two thirds, in its own books');
+
+                const issued = await issue(ctx, ids[1]);
+                Assert(issued.Success, `issue row 2: ${issued.Message}`);
+                AssertEqual(issued.DocumentNumber, `${orderNumber}-2`, 'the second instalment is numbered -2');
+                const second = await instalmentEntriesByCompany(ctx, ids[1]);
+                assertBalanced(second, 'the second instalment');
+                AssertEqual(netForCompany([...first, ...second], f.CoA.ID, AR_CODE), 100, "Co A has billed its whole line");
+                AssertEqual(netForCompany([...first, ...second], f.CoB.ID, AR_CODE), 200, 'and Co B its whole line');
+
+                const totals = await lineTotals(ctx, orderID);
+                AssertEqual(Number(totals[0].BilledToDate), 100, 'BilledToDate reaches each line in full');
+                AssertEqual(Number(totals[1].BilledToDate), 200, 'on both companies');
             }),
     },
 ];
