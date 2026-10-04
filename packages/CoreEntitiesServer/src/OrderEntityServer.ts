@@ -2396,7 +2396,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      *
      * NOT A PLACE THAT REFUSES. An unmapped product yields no tags, which books untagged — the state
      * every line was in before this existed. Where a GL account link REQUIRES a dimension, that is
-     * the place to refuse, and it is a separate check.
+     * the place to refuse, and it is a separate check: `RefuseUntaggedLines`, which the journal
+     * entry factory runs on each line's finished entries (#417).
      */
     private async stampLineDimensions(
         persisted: mjBizAppsOrdersOrderLineEntity[],
