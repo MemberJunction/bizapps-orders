@@ -1698,6 +1698,62 @@ export function ContinuationStartFrom(state: MJOSubscriptionContinuation | null)
     return new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() + 1));
 }
 
+/**
+ * A live subscription the subscriber already holds for a product, with where its coverage ends —
+ * what a new line for that product would extend at confirm (golive #299).
+ */
+export interface MJOExistingHolding extends MJOSubscriptionContinuation {
+    SubscriptionID: string;
+    SubscriptionNumber: string;
+}
+
+/**
+ * The live (`Active`/`Trialing`) subscription to `productID` held by this organization or naming
+ * this person, newest first, or null.
+ *
+ * Broader than the server's duplicate test, which keys on the type's `BenefitModel`: matching on
+ * either side means the screen may ask about a subscription the server would not extend, never the
+ * reverse. Asking when it did not need to costs a click; not asking when it did is the silent date
+ * change this exists to prevent. The line's answer is still applied by the server's own rules.
+ */
+export async function GetExistingHolding(
+    productID: string,
+    organizationID: string | null,
+    personID: string | null,
+    user?: UserInfo,
+): Promise<MJOExistingHolding | null> {
+    if (!UUID_PATTERN.test(productID)) return null;
+    const holder = [
+        organizationID && UUID_PATTERN.test(organizationID) ? `HolderOrganizationID = '${organizationID}'` : '',
+        personID && UUID_PATTERN.test(personID) ? `BeneficiaryPersonID = '${personID}'` : '',
+    ].filter(Boolean);
+    if (holder.length === 0) return null;
+
+    const subs = await run<mjBizAppsOrdersSubscriptionEntity>(
+        MJO_ENTITIES.Subscription,
+        [`ProductID = '${productID}'`, `Status IN ('Active', 'Trialing')`, `(${holder.join(' OR ')})`],
+        '__mj_CreatedAt DESC',
+        1,
+        user,
+    );
+    const sub = subs[0];
+    if (!sub) return null;
+
+    const terms = await run<mjBizAppsOrdersSubscriptionTermEntity>(
+        MJO_ENTITIES.SubscriptionTerm,
+        [`SubscriptionID = '${sub.ID}'`],
+        'TermNumber DESC',
+        1,
+        user,
+    );
+    return {
+        SubscriptionID: sub.ID,
+        SubscriptionNumber: sub.SubscriptionNumber,
+        Status: sub.Status,
+        LatestTermEnd: terms[0]?.EndDate ?? null,
+    };
+}
+
 /** What happened to a subscription, newest first. */
 export async function GetSubscriptionEvents(
     subscriptionID: string,

@@ -3100,6 +3100,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // concurrency rule must not refuse it (D55).
                 IsRenewal: !!line.RenewsSubscriptionID,
                 RequestedStartDate: requestedStart,
+                // The line's answer to "the subscriber already holds this product" (golive #299).
+                RequestedAction: line.SubscriptionAction,
             });
 
             if (decision.Action === 'Reject') {
@@ -3128,7 +3130,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // subscription extends it (or is refused) instead of creating a second.
             // A real renewal target is left alone: it is already in the database, so
             // the ordinary lookup finds it.
-            if (decision.Term && !line.RenewsSubscriptionID) {
+            //
+            // Not for a line that deliberately starts a SECOND subscription beside one the subscriber
+            // already holds (`SubscriptionAction = CreateNew`). Recording it would point a later
+            // line at the existing subscription with this line's term end, pairing one
+            // subscription's id with another's coverage. A later line instead finds the existing
+            // subscription in the database, as it would on a separate order.
+            const deliberateSecond = decision.Action === 'CreateNew' && !!existing && line.SubscriptionAction === 'CreateNew';
+            if (decision.Term && !line.RenewsSubscriptionID && !deliberateSecond) {
                 pendingSiblings.set(dedupeKey, {
                     ID: existing?.ID ?? PENDING_SIBLING_ID,
                     Status: 'Active',
