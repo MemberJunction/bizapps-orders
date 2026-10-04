@@ -53,6 +53,8 @@ import {
     type CheckoutChoicesInput
 } from '@mj-biz-apps/orders-entities';
 import { EscapeText } from './sql-guards.js';
+import { RunPrePurchaseChecks, type CheckoutRefusal, type PrePurchaseRefusal } from './CheckoutPrePurchaseCheck.js';
+import { ResolvePersonByEmail } from './PersonByEmail.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import {
@@ -198,6 +200,8 @@ export interface UpdateDraftResult {
     TotalGross: number;
     RequiresPayment: boolean;
     Lines: CheckoutLineSummary[];
+    /** Set when a pre-purchase check refused the draft; `ErrorMessage` carries the buyer's message. */
+    Refusal?: CheckoutRefusal;
     /** The promotion code the draft was priced with, when it was usable. */
     AppliedPromotionCodes?: string[];
     /** Codes the buyer entered that did nothing, and why — shown to the buyer, never silently dropped. */
@@ -317,6 +321,8 @@ export interface OpenSessionPaymentIntentResult {
     ClientSecret?: string;
     Status?: string;
     Amount?: number;
+    /** Set when a pre-purchase check refused the purchase; `ErrorMessage` carries the buyer's message. */
+    Refusal?: CheckoutRefusal;
 }
 
 export class CheckoutSessionService {
@@ -764,16 +770,15 @@ export class CheckoutSessionService {
 
         const normalized = email.trim().toLowerCase();
         const rv = new RunView();
-        const escaped = EscapeText(normalized);
         try {
-            const personRes = await rv.RunView<{ ID: string }>({
-                EntityName: PERSON_ENTITY,
-                ExtraFilter: `Email = '${escaped}'`,
-                ResultType: 'simple'
-            }, contextUser);
-
-            if (personRes?.Success && personRes.Results && personRes.Results.length > 0) {
-                return personRes.Results[0].ID;
+            // Several Persons can share an e-mail; the shared rule picks the same one every time
+            // (the one with Orders history, then the oldest), and the one CheckEntitlement answers for.
+            const found = await ResolvePersonByEmail(normalized, rv, contextUser);
+            if (found.PersonID) {
+                return found.PersonID;
+            }
+            if (!found.Success) {
+                console.warn('[CheckoutSessionService] Person lookup error:', found.ErrorMessage);
             }
         } catch (err) {
             console.warn('[CheckoutSessionService] RunView Person lookup error:', err);
@@ -1349,6 +1354,17 @@ export class CheckoutSessionService {
             return failed('This checkout is not configured correctly (its choices cannot be recorded on this item).');
         }
 
+        const refused = await RunPrePurchaseChecks({
+            Email: normalizedEmail,
+            PersonID: session.PersonID ?? null,
+            CompanyID: widget.CompanyID,
+            Lines: lines.map((l) => ({ ProductID: l.ProductID, Quantity: l.Quantity })),
+            ContextUser: contextUser,
+        });
+        if (refused) {
+            return { ...failed(refused.Message), Refusal: refused.Refusal };
+        }
+
         const memberDiscount = await this.resolveMemberDiscount(
             options?.MemberToken, widgetConfig, widget, session, normalizedEmail, md, contextUser
         );
@@ -1576,6 +1592,13 @@ export class CheckoutSessionService {
             return failed(choicesCheck.Error);
         }
 
+        // Again here, not only at the draft: this is the last step before money moves, and a
+        // host's own records can change between the two calls.
+        const refused = await this.recheckDraftedPurchase(session, widget.CompanyID, contextUser);
+        if (refused) {
+            return { ...failed(refused.Message), Refusal: refused.Refusal };
+        }
+
         let paymentProviderId: string | undefined;
         let currencyCode: string | undefined;
         let autoRenewConsentText: string | undefined;
@@ -1666,6 +1689,28 @@ export class CheckoutSessionService {
             Status: openResult.Status,
             Amount: snapshotTotal
         };
+    }
+
+    /** Re-runs the pre-purchase checks against the lines the session's draft stored. */
+    private static async recheckDraftedPurchase(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        companyID: string,
+        contextUser: UserInfo,
+    ): Promise<PrePurchaseRefusal | null> {
+        let lines: CheckoutLineInput[] = [];
+        try {
+            const parsed = JSON.parse(session.MetadataJSON ?? '{}') as { Lines?: CheckoutLineInput[] };
+            lines = Array.isArray(parsed.Lines) ? parsed.Lines : [];
+        } catch {
+            lines = [];
+        }
+        return RunPrePurchaseChecks({
+            Email: session.Email ?? '',
+            PersonID: session.PersonID ?? null,
+            CompanyID: companyID,
+            Lines: lines.map((l) => ({ ProductID: l.ProductID, Quantity: l.Quantity })),
+            ContextUser: contextUser,
+        });
     }
 
     /**

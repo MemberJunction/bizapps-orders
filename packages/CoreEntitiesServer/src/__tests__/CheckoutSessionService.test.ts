@@ -306,6 +306,8 @@ const mocks = vi.hoisted(() => {
         /** Existing Person rows the e-mail lookup finds, keyed by normalized e-mail. */
         peopleByEmail: {} as Record<string, string>,
         personLookups: 0,
+        subscriptionRunViewResults: [] as Array<{ ProductID: string; Product: string }>,
+        subscriptionRunViewParams: [] as Array<{ ExtraFilter?: string }>,
         mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
         mockMemberResolve: vi.fn(),
         mockLookupMemberResolver: vi.fn(),
@@ -459,6 +461,13 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                         Results: id ? [{ ID: id }] : []
                     });
                 }
+                if (params.EntityName.includes('Subscriptions')) {
+                    mocks.subscriptionRunViewParams.push(params);
+                    return Promise.resolve({
+                        Success: true,
+                        Results: mocks.subscriptionRunViewResults
+                    });
+                }
                 if (params.EntityName.includes('Products') && !params.EntityName.includes('Product Types')) {
                     return Promise.resolve({
                         Success: true,
@@ -547,6 +556,8 @@ describe('CheckoutSessionService', () => {
         mocks.sessionRunViewResults = undefined;
         mocks.peopleByEmail = {};
         mocks.personLookups = 0;
+        mocks.subscriptionRunViewResults = [];
+        mocks.subscriptionRunViewParams = [];
         mocks.mockPaymentIntentInstance.Status = 'Succeeded';
         mocks.mockPaymentIntentInstance.Amount = 100;
         mocks.mockPaymentIntentInstance.PaymentProviderID = 'pp-1';
@@ -1067,6 +1078,65 @@ describe('CheckoutSessionService', () => {
             const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a1@test.com', linesInput, BILLING);
             expect(res.Success).toBe(true);
             expect(res.Lines.length).toBe(2);
+        });
+    });
+
+    describe('pre-purchase checks (#323)', () => {
+        it('refuses a draft when the resolved Person already holds an Active or Trialing subscription to the product', async () => {
+            mocks.peopleByEmail = { 'member@example.com': 'person-1' };
+            mocks.subscriptionRunViewResults = [{ ProductID: 'prod-1', Product: 'Annual Membership' }];
+
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING);
+
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('Annual Membership');
+            expect(res.Refusal).toEqual({ Code: 'AlreadySubscribed', Source: 'built-in', ProductIDs: ['prod-1'] });
+            const filter = mocks.subscriptionRunViewParams[0].ExtraFilter ?? '';
+            expect(filter).toContain("BeneficiaryPersonID = 'person-1'");
+            expect(filter).toContain("Status IN ('Active', 'Trialing')");
+            // A refused draft persists nothing, so no payment intent can be opened against it.
+            expect(mocks.mockSessionSave).not.toHaveBeenCalled();
+        });
+
+        it('allows the draft when the Person holds no subscription to the product', async () => {
+            mocks.peopleByEmail = { 'member@example.com': 'person-1' };
+
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING);
+
+            expect(res.Success).toBe(true);
+            expect(res.Refusal).toBeUndefined();
+        });
+
+        it('skips the subscription lookup for a buyer with no Person yet', async () => {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'new@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING);
+
+            expect(res.Success).toBe(true);
+            expect(mocks.subscriptionRunViewParams).toHaveLength(0);
+        });
+
+        it('drops the Person found for a previous e-mail when the buyer changes it', async () => {
+            mocks.mockSessionInstance.Email = 'first@example.com';
+            mocks.mockSessionInstance.PersonID = 'person-first';
+
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'second@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING);
+
+            expect(res.Success).toBe(true);
+            expect(mocks.mockSessionInstance.PersonID).toBeNull();
+            expect(mocks.subscriptionRunViewParams).toHaveLength(0);
+        });
+
+        it('refuses to open a payment intent when a subscription is now held for a drafted product', async () => {
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.PersonID = 'person-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: BILLING, Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', paymentProviderId: 'pp-1', currency: 'USD' });
+            mocks.subscriptionRunViewResults = [{ ProductID: 'prod-1', Product: 'Annual Membership' }];
+
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(false);
+            expect(res.Refusal?.Code).toBe('AlreadySubscribed');
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
         });
     });
 

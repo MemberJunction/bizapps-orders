@@ -24,8 +24,9 @@
  * Two independent guards, because this runs unattended and a double-spawn double-bills a customer:
  *   1. the SELECTION only finds subscriptions whose LATEST term ends inside the window — once a
  *      renewal is booked, term N+1 exists and the subscription no longer qualifies;
- *   2. an explicit check for an existing order with `RenewsSubscriptionID` covering that term,
- *      which catches the case where a prior pass booked the order but its term write failed.
+ *   2. an explicit check for a live renewal line that has not yet produced a term — one drafted or
+ *      quoted by hand for this cycle. Earlier cycles' renewals each booked a term, so they do not
+ *      count, and a subscription keeps renewing cycle after cycle.
  * Running the operation twice in a row is a no-op, and that is asserted by the check suite.
  *
  * CONNECTS TO:
@@ -266,35 +267,27 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
         return Array.isArray(rows) ? rows : [];
     }
 
-    /** True when an order already exists that renews this subscription past the expiring term. */
+    /**
+     * True when a renewal order for this cycle already exists.
+     *
+     * A subscription renews many times over its life, so a line with `RenewsSubscriptionID` is not
+     * by itself this cycle's renewal. Every earlier cycle's renewal booked a term that names its
+     * line (`SubscriptionTerm.OrderLineID`), and `findDue` has already chosen the latest term, so
+     * this cycle's renewal, if one exists, is a live line that has produced no term: drafted or
+     * quoted by hand and not yet confirmed. Placing another beside it would bill the customer
+     * twice. A voided order renews nothing and does not count.
+     */
     private async alreadyRenewed(provider: IMetadataProvider, user: UserInfo, due: DueRow): Promise<boolean> {
-        const rv = new RunView(provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<{ ID: string }>(
-            {
-                EntityName: ORDER_LINE_ENTITY,
-                ExtraFilter: `RenewsSubscriptionID='${due.SubscriptionID}'`,
-                Fields: ['ID'],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            user,
-        );
-        const orders = result?.Results ?? [];
-        if (orders.length === 0) return false;
-
-        // An order exists, but a subscription renews many times over its life — only a renewal that
-        // produced a term BEYOND the expiring one counts as this cycle's.
         const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
-        const beyond = (await db.ExecuteSQL(`
-            SELECT TOP 1 st.ID
-            FROM __mj_BizAppsOrders.SubscriptionTerm st
-            WHERE st.SubscriptionID = '${due.SubscriptionID}' AND st.TermNumber > ${due.TermNumber}
+        const pending = (await db.ExecuteSQL(`
+            SELECT TOP 1 ol.ID
+            FROM __mj_BizAppsOrders.OrderLine ol
+            JOIN __mj_BizAppsOrders.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+            WHERE ol.RenewsSubscriptionID = '${due.SubscriptionID}'
+              AND oh.Status <> 'Voided'
+              AND NOT EXISTS (SELECT 1 FROM __mj_BizAppsOrders.SubscriptionTerm st WHERE st.OrderLineID = ol.ID)
         `)) as unknown[];
-        if (Array.isArray(beyond) && beyond.length > 0) return true;
-
-        // No later term, but a renewal order exists — a prior pass booked the order and then failed
-        // before the term landed. Report rather than silently re-billing.
-        return true;
+        return Array.isArray(pending) && pending.length > 0;
     }
 
     /**
