@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610032200 — OrderLine.SubscriptionAction: extend the subscription the customer holds, or
+-- V202610032230 — OrderLine.SubscriptionAction: extend the subscription the customer holds, or
 -- start another one (MemberJunction/bc-aidp-next-golive#299)
 -- =============================================================================
 -- At confirm, a subscription line whose subscriber already holds an active subscription to the
