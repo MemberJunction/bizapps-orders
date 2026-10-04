@@ -35,6 +35,7 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  ReloadOrdersEngine,
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
@@ -199,6 +200,9 @@ async function addCollidingPriceRaw(
        (ID, ProductID, Name, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status, Description)
      VALUES ('${randomUUID()}','${productID}','${opts.description}','PerUnit','Standard',${opts.amount},'2020-01-01',
              ${opts.priority},'Active','${opts.description}')`);
+  // A raw INSERT fires no entity event, so `OrdersEngine` would price the line from the rules it
+  // already holds and never see the collision.
+  await ReloadOrdersEngine(ctx);
 }
 
 /** Confirm a one-line order WITHOUT stating a price, so the engine must resolve it. */

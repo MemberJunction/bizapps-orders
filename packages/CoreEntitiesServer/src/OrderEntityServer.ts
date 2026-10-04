@@ -82,6 +82,8 @@ import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
 import type { mjBizAppsOrdersOrderLineDimensionEntity } from '@mj-biz-apps/orders-entities';
+import type { DisplacedTermStartEventData } from '@mj-biz-apps/orders-entities';
+import { DisplacedStartEventData } from './displaced-start-event.js';
 import { ORDER_LINE_DIMENSION_ENTITY } from './entity-names.js';
 import {
     MergeOrderRollups,
@@ -209,6 +211,12 @@ interface SubscriptionDecisionForLine {
      * a placeholder for the second one, because the first is not written yet.
      */
     DedupeKey: string;
+    /**
+     * The start the line stated before the confirm, or null. Kept because the confirm overwrites
+     * `ServicePeriodStart` with the settled term, and a displaced start is recorded on the
+     * subscription's `Extended` event (golive #299).
+     */
+    RequestedStart: Date | null;
 }
 
 /**
@@ -2388,7 +2396,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      *
      * NOT A PLACE THAT REFUSES. An unmapped product yields no tags, which books untagged — the state
      * every line was in before this existed. Where a GL account link REQUIRES a dimension, that is
-     * the place to refuse, and it is a separate check.
+     * the place to refuse, and it is a separate check: `RefuseUntaggedLines`, which the journal
+     * entry factory runs on each line's finished entries (#417).
      */
     private async stampLineDimensions(
         persisted: mjBizAppsOrdersOrderLineEntity[],
@@ -2909,7 +2918,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const subscriptionID =
                 decision.Action === 'CreateNew'
                     ? await this.createSubscription(line, product, rules, decision, decided.Subscriber, options)
-                    : await this.touchExistingSubscription(decision, !!line.RenewsSubscriptionID, options);
+                    : await this.touchExistingSubscription(
+                          decision,
+                          !!line.RenewsSubscriptionID,
+                          options,
+                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart),
+                      );
 
             // Remember it so a later line for the same subscription resolves above.
             if (decision.Action === 'CreateNew') createdByDedupeKey.set(decided.DedupeKey, subscriptionID);
@@ -3087,6 +3101,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // concurrency rule must not refuse it (D55).
                 IsRenewal: !!line.RenewsSubscriptionID,
                 RequestedStartDate: requestedStart,
+                // The line's answer to "the subscriber already holds this product" (golive #299).
+                RequestedAction: line.SubscriptionAction,
             });
 
             if (decision.Action === 'Reject') {
@@ -3115,7 +3131,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // subscription extends it (or is refused) instead of creating a second.
             // A real renewal target is left alone: it is already in the database, so
             // the ordinary lookup finds it.
-            if (decision.Term && !line.RenewsSubscriptionID) {
+            //
+            // Not for a line that deliberately starts a SECOND subscription beside one the subscriber
+            // already holds (`SubscriptionAction = CreateNew`). Recording it would point a later
+            // line at the existing subscription with this line's term end, pairing one
+            // subscription's id with another's coverage. A later line instead finds the existing
+            // subscription in the database, as it would on a separate order.
+            const deliberateSecond = decision.Action === 'CreateNew' && !!existing && line.SubscriptionAction === 'CreateNew';
+            if (decision.Term && !line.RenewsSubscriptionID && !deliberateSecond) {
                 pendingSiblings.set(dedupeKey, {
                     ID: existing?.ID ?? PENDING_SIBLING_ID,
                     Status: 'Active',
@@ -3133,6 +3156,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Behavior: behavior,
                 Subscriber: subscriber,
                 DedupeKey: dedupeKey,
+                RequestedStart: requestedStart,
             });
         }
         return out;
@@ -3552,6 +3576,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         decision: SubscriptionDecision,
         isRenewal: boolean,
         options?: EntitySaveOptions,
+        displacedStart?: DisplacedTermStartEventData,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
@@ -3581,7 +3606,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 decision.SubscriptionID!,
                 decision.Action === 'Reactivate' ? 'Activated' : 'Extended',
                 options,
-                { TermNumber: decision.Term?.TermNumber, Action: decision.Action },
+                { TermNumber: decision.Term?.TermNumber, Action: decision.Action, ...displacedStart },
             );
         }
         return decision.SubscriptionID!;

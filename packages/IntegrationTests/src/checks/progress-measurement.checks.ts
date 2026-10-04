@@ -26,14 +26,15 @@
  *   PM10 a REVERSAL line stores its recognition NEGATIVE, so an origin and its reversal net to zero
  *   PM11 a DISCOUNTED project credits Sales the gross share and debits Sales Discounts its share on
  *        every attestation, closing at exactly the discount once the line reaches 100%
- *   PM12 attesting into a month accounting has already posted WARNS and never blocks
+ *   PM12 a date two or more months before the current month WARNS and still posts; the prior month
+ *        and earlier this month do not, and a Posted batch in the month adds no warning (golive #316)
  *   PM13 a Posted observation can only be written by the operation — hand-insert and Draft→Posted
  *        are both refused, by the entity guard and by the trigger respectively
  *   PM14 and the operation itself still posts, so the guard admits exactly one writer
  *   PM15 a user whose ONLY role is Engagement Lead attests: the observation and its entry land
  *   PM16 a UI-only user is refused before anything is written — observation and ledger counts unchanged
  *   PM17 an Account Director (OverrideAny, no Attest) is refused too, so the two grants are separable
- *   PM18 a date after the current business month WARNS and still posts
+ *   PM18 a date after today WARNS and still posts; today does not
  *   PM19 a mistyped future date is recoverable: a supervisor supersedes it, the reversal nets it to
  *        zero ON ITS OWN DATE, the replacement catches up from the restored total, and the next
  *        month's ordinary attestation is accepted again
@@ -83,6 +84,7 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
+import { Today } from '@mj-biz-apps/orders-entities';
 import { ConfirmOrder } from '../order-builder.js';
 import { ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from '../entity-names.js';
 import { issue, scheduledOrder, type Instalment } from './payment-schedule.checks.js';
@@ -97,11 +99,28 @@ const DISCOUNTS = '41000';
 /** Sales tax payable — the account that separates the net basis from the AR debit. */
 const TAX = '21500';
 
+/** Day 1 of the month `offset` months from the one containing `isoDate`, on the date's own parts. */
+function monthStart(isoDate: string, offset: number): string {
+    const [y, m] = isoDate.slice(0, 10).split('-').map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + offset, 1));
+    return d.toISOString().slice(0, 10);
+}
+
+function dayBefore(isoDate: string): string {
+    const [y, m, d] = isoDate.slice(0, 10).split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+function dayAfter(isoDate: string): string {
+    const [y, m, d] = isoDate.slice(0, 10).split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
 interface RecordOutput {
     Success: boolean;
     Message?: string;
-    ClosedPeriodWarning?: string | null;
     FutureDateWarning?: string | null;
+    BackDatedWarning?: string | null;
     SupersededMeasurementID?: string | null;
     ReversalAmount?: number;
     ReversalJournalEntryID?: string | null;
@@ -681,45 +700,51 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
     },
     {
         Id: 'progress-measurement.PM12',
-        Name: 'PM12: attesting into a month accounting has already POSTED warns, and never blocks',
+        Name: 'PM12: a date two or more months back WARNS and still posts; the prior month, this month and a posted batch do not',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
                 const { lineID } = await bookedProjectLine(ctx);
                 const companyID = (await TxOne<{ CompanyID: string }>(ctx, `SELECT CompanyID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID}'`)).CompanyID;
+                // Relative to the BUSINESS today the operation reads, so the check holds in any month.
+                const today = Today();
+                const twoBack = monthStart(today, -2);
+                const priorEnd = dayBefore(monthStart(today, 0));
 
-                // An OPEN month first, so the warning cannot be something this check always sees.
-                const open = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.2, Preview: true });
-                Assert(open.Success, open.Message ?? '');
-                AssertEqual(open.ClosedPeriodWarning ?? null, null, 'no batch has been posted for July, so nothing to warn about');
+                // A Posted batch in both months, the way daily batches leave every past month. A
+                // posted batch says nothing about whether finance has closed the month, so it adds
+                // no warning.
+                for (const [n, date] of [[1, twoBack], [2, priorEnd]] as const) {
+                    await TxQuery(
+                        ctx,
+                        `INSERT INTO ${ACCT_SCHEMA}.JournalEntryBatch (JournalEntryBatchNumber, CompanyID, PostingDate, TargetSystem, BatchedByUserID, Status, PostedAt)
+                         VALUES ('PM12-B${n}', '${companyID}', '${date}', 'BusinessCentral', '${ctx.User.ID}', 'Posted', SYSDATETIMEOFFSET())`,
+                    );
+                }
 
-                // Close August the way accounting closes it: a batch in Posted status, dated in the
-                // month, for this company. Pending and Approved are periods being worked, not closed,
-                // which is why the operation looks for Posted specifically.
-                await TxQuery(
-                    ctx,
-                    `INSERT INTO ${ACCT_SCHEMA}.JournalEntryBatch (JournalEntryBatchNumber, CompanyID, PostingDate, TargetSystem, BatchedByUserID, Status, PostedAt)
-                     VALUES ('PM12-AUG', '${companyID}', '2026-08-31', 'BusinessCentral', '${ctx.User.ID}', 'Posted', SYSDATETIMEOFFSET())`,
-                );
+                const preview = await record(ctx, { OrderLineID: lineID, MeasurementDate: twoBack, PercentComplete: 0.2, Preview: true });
+                Assert(preview.Success, `a back-dated preview must not fail: ${preview.Message}`);
+                Assert(new RegExp(twoBack).test(String(preview.BackDatedWarning ?? '')), `the warning names the date: ${JSON.stringify(preview.BackDatedWarning)}`);
+                AssertEqual(preview.FutureDateWarning ?? null, null, 'a past date is not a future date');
 
-                const closed = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.4, Preview: true });
-                Assert(closed.Success, `a closed period must not fail the preview: ${closed.Message}`);
-                Assert(
-                    /PM12-AUG/.test(String(closed.ClosedPeriodWarning ?? '')),
-                    `the warning must name the batch: ${JSON.stringify(closed.ClosedPeriodWarning)}`,
-                );
-                Assert(/2026-08-31/.test(String(closed.ClosedPeriodWarning ?? '')), 'and the date that landed in it');
-
-                // AND IT POSTS ANYWAY. Jeremy's whole point: the batch build is the control, the
-                // warning is so nobody walks into it by accident. A guard that blocked here would
-                // gate revenue recognition on a state the attester cannot see or change.
-                const posted = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.4 });
-                Assert(posted.Success, `a closed period must not block the post: ${posted.Message}`);
+                const posted = await record(ctx, { OrderLineID: lineID, MeasurementDate: twoBack, PercentComplete: 0.2 });
+                Assert(posted.Success, `a back-dated date must not block the post: ${posted.Message}`);
                 Assert(!!posted.JournalEntryID, 'the entry is written');
-                Assert(
-                    /PM12-AUG/.test(String(posted.ClosedPeriodWarning ?? '')),
-                    'and the live output carries the same warning, so the screen can show it after the fact',
-                );
+                Assert(!!posted.BackDatedWarning, 'and the live output carries the warning, so the screen can show it after the fact');
+                AssertEqual(JSON.stringify(posted).includes('PM12-B'), false, 'no batch is named: a posted batch is not a closed month');
+
+                // The prior month is the ordinary attestation month, posted batch or not.
+                const prior = await record(ctx, { OrderLineID: lineID, MeasurementDate: priorEnd, PercentComplete: 0.4 });
+                Assert(prior.Success, prior.Message ?? '');
+                AssertEqual(prior.BackDatedWarning ?? null, null, 'the prior month does not warn');
+                AssertEqual(prior.FutureDateWarning ?? null, null, 'nor is it a future date');
+                AssertEqual('ClosedPeriodWarning' in prior, false, 'the posted-batch warning is gone from the output');
+
+                // Earlier this month (here, today) is ordinary too: a project can finish mid-month.
+                const current = await record(ctx, { OrderLineID: lineID, MeasurementDate: today, PercentComplete: 0.6, Preview: true });
+                Assert(current.Success, current.Message ?? '');
+                AssertEqual(current.BackDatedWarning ?? null, null, 'this month does not warn');
+                AssertEqual(current.FutureDateWarning ?? null, null, 'and today is not after today');
             }),
     },
     {
@@ -838,19 +863,25 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
     })),
     {
         Id: 'progress-measurement.PM18',
-        Name: 'PM18: a date after the current business month WARNS and still posts',
+        Name: 'PM18: a date after today WARNS and still posts; today does not',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
                 const { lineID } = await bookedProjectLine(ctx);
-                const past = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.2, Preview: true });
-                Assert(past.Success, past.Message ?? '');
-                AssertEqual(past.FutureDateWarning ?? null, null, 'a date in a past month is not a future date');
+                const today = Today();
+                const current = await record(ctx, { OrderLineID: lineID, MeasurementDate: today, PercentComplete: 0.2, Preview: true });
+                Assert(current.Success, current.Message ?? '');
+                AssertEqual(current.FutureDateWarning ?? null, null, 'today is not a future date');
+
+                // Tomorrow warns even inside the current month: the test is today, not the month end.
+                const tomorrow = await record(ctx, { OrderLineID: lineID, MeasurementDate: dayAfter(today), PercentComplete: 0.2, Preview: true });
+                Assert(new RegExp(dayAfter(today)).test(String(tomorrow.FutureDateWarning ?? '')), `tomorrow warns: ${JSON.stringify(tomorrow.FutureDateWarning)}`);
 
                 const ahead = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2099-12-31', PercentComplete: 0.4 });
                 Assert(ahead.Success, `forward dating must not be blocked: ${ahead.Message}`);
                 Assert(!!ahead.JournalEntryID, 'the entry is written');
                 Assert(/2099-12-31/.test(String(ahead.FutureDateWarning ?? '')), `the warning names the date: ${JSON.stringify(ahead.FutureDateWarning)}`);
+                AssertEqual(ahead.BackDatedWarning ?? null, null, 'a future date is not back-dated');
             }),
     },
     {

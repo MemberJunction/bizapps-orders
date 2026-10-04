@@ -1229,6 +1229,10 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: Person
         * * Display Name: Person
         * * SQL Data Type: nvarchar(201)`),
+    SubscriptionAction: z.string().nullable().describe(`
+        * * Field Name: SubscriptionAction
+        * * Display Name: Subscription Action
+        * * SQL Data Type: nvarchar(20)`),
 });
 
 export type mjBizAppsOrdersEventOrderLineEntityType = z.infer<typeof mjBizAppsOrdersEventOrderLineSchema>;
@@ -3232,6 +3236,15 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Display Name: Ship To Address Snapshot
         * * SQL Data Type: nvarchar(MAX)
         * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`),
+    SubscriptionAction: z.union([z.literal('CreateNew'), z.literal('ExtendExisting')]).nullable().describe(`
+        * * Field Name: SubscriptionAction
+        * * Display Name: Subscription Action
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * CreateNew
+    *   * ExtendExisting
+        * * Description: What to do at confirm when the subscriber already holds an active subscription to this product. ExtendExisting adds a term to that subscription, starting the day after its coverage ends. CreateNew starts a separate subscription on this line's service period. NULL follows the subscription type's ConcurrencyMode. A type that rejects duplicates still refuses CreateNew.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header Display
@@ -9932,6 +9945,19 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     get Person(): string {
         return this.Get('Person');
     }
+
+    /**
+    * * Field Name: SubscriptionAction
+    * * Display Name: Subscription Action
+    * * SQL Data Type: nvarchar(20)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get SubscriptionAction(): string | null {
+        return this.Get('SubscriptionAction');
+    }
+    set SubscriptionAction(value: string | null) {
+        this.Set('SubscriptionAction', value);
+    }
 }
 
 
@@ -15550,6 +15576,23 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set ShipToAddressSnapshot(value: string | null) {
         this.Set('ShipToAddressSnapshot', value);
+    }
+
+    /**
+    * * Field Name: SubscriptionAction
+    * * Display Name: Subscription Action
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * CreateNew
+    *   * ExtendExisting
+    * * Description: What to do at confirm when the subscriber already holds an active subscription to this product. ExtendExisting adds a term to that subscription, starting the day after its coverage ends. CreateNew starts a separate subscription on this line's service period. NULL follows the subscription type's ConcurrencyMode. A type that rejects duplicates still refuses CreateNew.
+    */
+    get SubscriptionAction(): 'CreateNew' | 'ExtendExisting' | null {
+        return this.Get('SubscriptionAction');
+    }
+    set SubscriptionAction(value: 'CreateNew' | 'ExtendExisting' | null) {
+        this.Set('SubscriptionAction', value);
     }
 
     /**
