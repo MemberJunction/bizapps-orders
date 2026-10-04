@@ -619,3 +619,100 @@ describe('SubscriptionTypeRulesFrom', () => {
         expect(mapped.DefaultTermMonths).toBeNull();
     });
 });
+
+describe("the line's own choice when the subscriber already holds the product (golive #299)", () => {
+    // The reported case: the customer holds the product through 9/30/2027 and orders it again with
+    // a 10/1/2026 start. Under ExtendExisting that became term 2, starting 10/1/2027.
+    const PURCHASE = new Date('2026-09-29T00:00:00Z');
+    const STATED = new Date('2026-10-01T00:00:00Z');
+    const active = { ID: 'sub-1', Status: 'Active', LatestTermEnd: new Date('2027-09-30T00:00:00Z'), LatestTermNumber: 1 };
+
+    it('starts a separate subscription on the stated dates when the line asks for one', () => {
+        const decision = decide(rules(), PURCHASE, 1200, {
+            Existing: active,
+            RequestedStartDate: STATED,
+            RequestedAction: 'CreateNew',
+        });
+        expect(decision.Action).toBe('CreateNew');
+        expect(decision.SubscriptionID).toBeUndefined();
+        expect(iso(decision.Term!.StartDate)).toBe('2026-10-01');
+        expect(iso(decision.Term!.EndDate)).toBe('2027-09-30');
+        // Term 1 of the NEW subscription, not term 2 of the one the subscriber already holds.
+        expect(decision.Term!.TermNumber).toBe(1);
+        expect(decision.StartOverrideIgnored).toBe(false);
+    });
+
+    it('still extends when the line asks to extend, and reports the displaced start', () => {
+        const decision = decide(rules(), PURCHASE, 1200, {
+            Existing: active,
+            RequestedStartDate: STATED,
+            RequestedAction: 'ExtendExisting',
+        });
+        expect(decision.Action).toBe('ExtendExisting');
+        expect(decision.SubscriptionID).toBe('sub-1');
+        expect(iso(decision.Term!.StartDate)).toBe('2027-10-01');
+        expect(decision.StartOverrideIgnored).toBe(true);
+    });
+
+    it('extends under AllowMultiple when the line asks to', () => {
+        const decision = decide(rules({ ConcurrencyMode: 'AllowMultiple' }), PURCHASE, 1200, {
+            Existing: active,
+            RequestedAction: 'ExtendExisting',
+        });
+        expect(decision.Action).toBe('ExtendExisting');
+        expect(iso(decision.Term!.StartDate)).toBe('2027-10-01');
+    });
+
+    it('follows ConcurrencyMode when the line states no choice', () => {
+        expect(decide(rules(), PURCHASE, 1200, { Existing: active, RequestedAction: null }).Action).toBe('ExtendExisting');
+        expect(decide(rules({ ConcurrencyMode: 'AllowMultiple' }), PURCHASE, 1200, { Existing: active }).Action).toBe(
+            'CreateNew',
+        );
+    });
+
+    it('cannot override a type that rejects a second subscription, and says so', () => {
+        const decision = decide(rules({ ConcurrencyMode: 'RejectDuplicate' }), PURCHASE, 1200, {
+            Existing: active,
+            RequestedAction: 'CreateNew',
+        });
+        expect(decision.Action).toBe('Reject');
+        expect(decision.RejectReason).toMatch(/asks for a new subscription/);
+    });
+
+    it('extending is not a duplicate, so a RejectDuplicate type allows it', () => {
+        const decision = decide(rules({ ConcurrencyMode: 'RejectDuplicate' }), PURCHASE, 1200, {
+            Existing: active,
+            RequestedAction: 'ExtendExisting',
+        });
+        expect(decision.Action).toBe('ExtendExisting');
+    });
+
+    it('ignores the choice on a renewal, which continues the subscription it names', () => {
+        const decision = decide(rules(), PURCHASE, 1200, {
+            Existing: active,
+            IsRenewal: true,
+            RequestedAction: 'CreateNew',
+        });
+        expect(decision.Action).toBe('ExtendExisting');
+    });
+
+    it('starts a new subscription for a lapsed holder when the line asks, whatever the reactivation policy', () => {
+        const lapsed = { ...active, Status: 'Canceled' };
+        const decision = decide(rules({ ReactivationMode: 'ReactivateExisting' }), PURCHASE, 1200, {
+            Existing: lapsed,
+            RequestedStartDate: STATED,
+            RequestedAction: 'CreateNew',
+        });
+        expect(decision.Action).toBe('CreateNew');
+        expect(iso(decision.Term!.StartDate)).toBe('2026-10-01');
+    });
+
+    it('leaves a lapsed holder to the reactivation policy when the line asks to extend', () => {
+        const lapsed = { ...active, Status: 'Canceled' };
+        const decision = decide(rules({ ReactivationMode: 'ReactivateExisting' }), PURCHASE, 1200, {
+            Existing: lapsed,
+            RequestedAction: 'ExtendExisting',
+        });
+        expect(decision.Action).toBe('Reactivate');
+    });
+});

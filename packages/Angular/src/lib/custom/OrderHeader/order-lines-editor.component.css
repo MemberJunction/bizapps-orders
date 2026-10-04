@@ -766,3 +766,39 @@
     color: var(--mj-status-success-text);
     background: color-mix(in srgb, var(--mj-status-success-text) 16%, transparent);
 }
+
+/* The customer already holds this product (golive #299). */
+.mjo-ol-holding {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-2);
+    margin-top: var(--mj-space-2);
+    padding: var(--mj-space-2) var(--mj-space-3);
+    border: 1px solid var(--mj-status-warning-border);
+    border-radius: var(--mj-radius-md);
+    background: var(--mj-status-warning-bg);
+    font-size: var(--mj-text-sm);
+    color: var(--mj-text-primary);
+}
+
+.mjo-ol-holding__choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--mj-space-2);
+}
+
+.mjo-ol-holding__choice {
+    padding: 4px 10px;
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-full);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-primary);
+    font: inherit;
+    cursor: pointer;
+}
+
+.mjo-ol-holding__choice.is-selected {
+    border-color: var(--mj-brand-primary);
+    color: var(--mj-brand-primary);
+    font-weight: var(--mj-font-semibold);
+}
