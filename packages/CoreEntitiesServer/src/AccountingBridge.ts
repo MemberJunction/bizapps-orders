@@ -20,7 +20,7 @@
 import { BaseRemotableOperation, IMetadataProvider, LogStatus, Metadata, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import { AccountingEngineBase, pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
-import { GLAccountResolver, type ResolverEntityIDs } from './GLAccountResolver.js';
+import { GLAccountResolver, type LinkedAccountHit, type ResolverEntityIDs } from './GLAccountResolver.js';
 import type { IntercompanyLookup } from './PaymentAllocationFactory.js';
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 
@@ -41,14 +41,19 @@ export interface AccountingEngineSurface {
         recordId: string,
         role: string,
         asOfDate: Date,
-    ): { Link?: { GLAccountID?: string } } | null;
-    GLAccountByID(glAccountId: string): { CompanyID?: string } | undefined;
+    ): {
+        Link?: { GLAccountID?: string };
+        /** The link's `GLAccountLinkDimension` rows: the dimensions a JE line built from it must carry. */
+        Dimensions?: Array<{ DimensionID: string }>;
+    } | null;
+    GLAccountByID(glAccountId: string): { CompanyID?: string; Code?: string; Name?: string } | undefined;
     /**
      * The raw cached links and roles, needed for the COMPANY-SCOPED lookup (D71): a globally-shared
      * record such as a charge type has one link per company, and `ResolveLinkedAccount` has no
      * company dimension to choose between them.
      */
     GLAccountLinks: Array<{
+        ID: string;
         EntityID: string;
         RecordID: string;
         GLAccountID: string;
@@ -58,6 +63,12 @@ export interface AccountingEngineSurface {
         EndedAt: Date | null;
     }>;
     GLAccountRoles: Array<{ ID: string; Name: string }>;
+    /**
+     * Which dimensions each link requires on the journal entry lines built from it. Read for the
+     * company-scoped lookup, which picks its link from `GLAccountLinks` itself and so does not get
+     * them from `ResolveLinkedAccount`.
+     */
+    GLAccountLinkDimensions: Array<{ GLAccountLinkID: string; DimensionID: string; Sequence: number }>;
     /**
      * The analysis axes and their permitted values, as accounting caches them.
      *
@@ -129,6 +140,27 @@ export async function BuildGLAccountResolver(
     user: UserInfo,
 ): Promise<GLAccountResolver> {
     const engine = await LoadAccountingEngine(provider, user);
+    const key = (v: string | null | undefined) => (v ?? '').trim().toLowerCase();
+
+    // The link's dimension requirements and the account's label travel with every hit, so the
+    // booking paths can refuse a line that lacks a dimension the link requires (#417). Codes, not
+    // ids, because the refusal is read by a person.
+    const hitFor = (glAccountID: string, requiredIDs: string[]): LinkedAccountHit => {
+        const account = engine.GLAccountByID(glAccountID);
+        return {
+            GLAccountID: glAccountID,
+            // The company comes from the ACCOUNT, not the link. Accounting derives the entry's
+            // company that way (their CH-2), so it is the value D6's cross-company guard must
+            // compare — reading it off the link would compare the wrong thing and let a mismatch
+            // through.
+            CompanyID: account?.CompanyID ?? '',
+            AccountLabel: account?.Code ? `${account.Code}${account.Name ? ` ${account.Name}` : ''}` : glAccountID,
+            RequiredDimensions: requiredIDs.map((id) => ({
+                DimensionID: id,
+                Code: engine.Dimensions.find((d) => key(d.ID) === key(id))?.Code ?? id,
+            })),
+        };
+    };
 
     return new GLAccountResolver(ResolverEntities(), provider, user, (entityId, recordId, role, asOf, forCompanyID) => {
         // COMPANY-SCOPED LOOKUP (D71). Some linked records are GLOBAL while their accounts are
@@ -140,7 +172,6 @@ export async function BuildGLAccountResolver(
         // When the caller names the company, filter the candidates by the ACCOUNT's company first
         // and let the ordinary window/status rules choose among what is left.
         if (forCompanyID) {
-            const key = (v: string | null | undefined) => (v ?? '').trim().toLowerCase();
             const candidates = engine.GLAccountLinks.filter((l) => {
                 if (key(l.EntityID) !== key(entityId)) return false;
                 if (key(l.RecordID) !== key(recordId)) return false;
@@ -155,20 +186,19 @@ export async function BuildGLAccountResolver(
             );
             if (winner === -1) return null;
             const chosen = candidates[winner];
-            const acct = engine.GLAccountByID(chosen.GLAccountID);
-            return { GLAccountID: chosen.GLAccountID, CompanyID: acct?.CompanyID ?? '' };
+            const required = engine.GLAccountLinkDimensions
+                .filter((d) => key(d.GLAccountLinkID) === key(chosen.ID))
+                .sort((a, b) => a.Sequence - b.Sequence)
+                .map((d) => d.DimensionID);
+            return hitFor(chosen.GLAccountID, required);
         }
 
-        // ResolveLinkedAccount returns { Link, Dimensions } — the account is on the link.
+        // ResolveLinkedAccount returns { Link, Dimensions } — the account is on the link, and
+        // Dimensions are what a JE line built from it must carry.
         const hit = engine.ResolveLinkedAccount(entityId, recordId, role, asOf);
         const glAccountID = hit?.Link?.GLAccountID;
         if (!glAccountID) return null;
-
-        // The company comes from the ACCOUNT, not the link. Accounting derives the entry's company
-        // that way (their CH-2), so it is the value D6's cross-company guard must compare — reading
-        // it off the link would compare the wrong thing and let a mismatch through.
-        const account = engine.GLAccountByID(glAccountID);
-        return { GLAccountID: glAccountID, CompanyID: account?.CompanyID ?? '' };
+        return hitFor(glAccountID, (hit?.Dimensions ?? []).map((d) => d.DimensionID));
     });
 }
 
