@@ -17,7 +17,8 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 │     ├── Auto-Discover ProductType.OrderLineExtensionEntity via Metadata                 │
 │     └── Merge customUI (Theming + Custom CSS + Lifecycle JS Hooks)                       │
 │                                                                                          │
-│  2. UpdateDraft(sessionId, clientKey, email, lines)                                      │
+│  2. UpdateDraft(sessionId, clientKey, email, lines, billingAddress)                      │
+│     ├── Billing location required (ISO country + subdivision) — CheckBillingLocation    │
 │     └── In-Memory Pricing Engine (OrderPricingService) — No DB clutter                  │
 │                                                                                          │
 │  2b. OpenPaymentIntentForSession(sessionId, clientKey)   [paid orders]                   │
@@ -51,11 +52,13 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 5. [The `Configuration` JSONType & `customUI` Engine](#the-configuration-jsontype--customui-engine)
 6. [Multi-Unit Discrete Expansion (`unitMode`)](#multi-unit-discrete-expansion-unitmode)
 7. [Questions at Checkout (`questions`)](#questions-at-checkout-questions)
-8. [Zero-DB-Draft In-Memory Pricing & Atomic Booking](#zero-db-draft-in-memory-pricing--atomic-booking)
-9. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
-10. [Account Step After Payment (`CheckoutAccountStep`)](#account-step-after-payment-checkoutaccountstep)
-11. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
-12. [Server API & Service Reference](#server-api--service-reference)
+8. [Choice Groups at Checkout (`choiceGroups`)](#choice-groups-at-checkout-choicegroups)
+9. [Zero-DB-Draft In-Memory Pricing & Atomic Booking](#zero-db-draft-in-memory-pricing--atomic-booking)
+10. [Post-Payment Step Record, Review Queue and Replay](#post-payment-step-record-review-queue-and-replay)
+11. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
+12. [Account Step After Payment (`CheckoutAccountStep`)](#account-step-after-payment-checkoutaccountstep)
+13. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
+14. [Server API & Service Reference](#server-api--service-reference)
 
 ---
 
@@ -256,7 +259,8 @@ export interface CheckoutWidgetConfiguration {
     maxQuantity?: number;
     stripePublishableKey?: string;
     successMessage?: string;
-    redirectUrl?: string;
+    redirectUrl?: string;          // followed after confirmation, with ?order=<order number> appended
+    sendReceipt?: boolean;         // ask the gateway to e-mail its own receipt to the buyer (Stripe receipt_email); off by default
     extensionEntityName?: string;
     extensionFields?: ExtensionFieldDef[];
     /**
@@ -359,6 +363,41 @@ The shared check is `CheckCheckoutAnswers` in `@mj-biz-apps/orders-entities` (`c
 
 ---
 
+## Choice Groups at Checkout (`choiceGroups`)
+
+Some products require the buyer to choose from a fixed list, such as "choose exactly 2 of these 8 departments", and the choice decides what the buyer is entitled to. The groups are defined in the widget's `Configuration`:
+
+```json
+{
+  "choiceGroups": [
+    {
+      "key": "department",
+      "label": "Choose your departments",
+      "options": [{ "value": "marketing", "label": "Marketing" }, { "value": "finance", "label": "Finance" }, "Operations"],
+      "min": 2,
+      "max": 2
+    }
+  ]
+}
+```
+
+- `min` and `max` are whole numbers: `0 <= min <= max <= options`, and `max >= 1`. `min: 0` makes the group optional.
+- A bare string option is both value and label. Keys and option values are at most 100 characters.
+- A malformed list refuses the checkout instead of being skipped.
+- A widget with choice groups sells a single line, and not an extension-type (IS-A) line such as an event line: `/draft` refuses either.
+
+**Flow.** The widget renders each group as checkboxes. A group of one swaps the pick; a larger group stops at `max` and disables the rest. Pay stays disabled until every group has at least `min`. `/draft` stores the picks with the priced snapshot and refuses more than `max` or an option not in the list, but accepts fewer than `min`, so the checkout can be priced first. `/payment-intent` and `/complete` check the stored picks in full against the widget's current groups.
+
+**Storage.** `CompleteCheckout` adds one `OrderLineChoice` row per pick to each line's `Choices` collection before `Confirm()`, so the rows save in the booking transaction. In `perUnit` mode every line gets the picks. Each row records `GroupKey`, `GroupLabel`, `OptionValue` and `OptionLabel`, with the labels as the buyer saw them.
+
+**Entitlements.** A `ProductEntitlement` with `ChoiceGroupKey` and `ChoiceOptionValue` set is conditional: it is granted only on a line carrying that pick. One without them is granted on every line of its product, as before. To grant a code per department, add one conditional row per option, for example `ChoiceGroupKey = department`, `ChoiceOptionValue = marketing`, `Code = MARKETING-ACCESS`.
+
+**Renewals.** `Orders.SpawnRenewals` copies the renewed line's picks onto the renewal line, so the conditional entitlements renew with them. Changing a pick after purchase is not supported.
+
+The shared check is `CheckCheckoutChoices` in `@mj-biz-apps/orders-entities` (`checkout-choices.ts`), used by both the widget and the server.
+
+---
+
 ## Zero-DB-Draft In-Memory Pricing & Atomic Booking
 
 ### Draft Phase
@@ -367,6 +406,47 @@ When a user adds items or inputs coupon codes:
 - Executes `OrderPricingService` in memory to evaluate price tiers, volume breaks, and tax estimates.
 - Returns the computed pricing to the client while storing the snapshot in `CheckoutSession.MetadataJSON`.
 - **Zero draft rows are written to the `OrderHeader` database table.**
+
+### Verified-member discount
+A host can price members of a partner organisation without a typed code. The host page sets a signed
+token on the element (`<mj-orders-checkout slug="…" member-token="…">`), the element sends it as
+`memberToken` on `/draft`, and the widget's registered resolver verifies it server-side:
+
+```typescript
+@RegisterClass(BaseCheckoutMemberDiscountResolver, 'PARTNER-MEMBER')
+export class PartnerMemberResolver extends BaseCheckoutMemberDiscountResolver {
+    public async Resolve(ctx: CheckoutMemberDiscountContext): Promise<CheckoutMemberDiscountDecision> {
+        const member = await verifyHostToken(ctx.MemberToken); // the host's own verification, including expiry
+        // Bind the token to one buyer: a copied token is useless under another email.
+        const sameBuyer = !!member && !!ctx.Email && member.email.toLowerCase() === ctx.Email.toLowerCase();
+        return sameBuyer ? { PromotionCode: 'PARTNER-RATE' } : { PromotionCode: null, Message: 'Membership could not be confirmed.' };
+    }
+
+    // Names the codes this resolver hands out, so a buyer cannot type one instead.
+    public override async IsMemberPromotionCode(ctx: CheckoutTypedPromotionCodeContext): Promise<boolean> {
+        return ctx.Code.toUpperCase() === 'PARTNER-RATE';
+    }
+}
+```
+
+The widget names it with `Configuration.memberDiscountResolver: "PARTNER-MEMBER"` (server-side only).
+
+The token sits in the host page, so anyone who copies it can replay it. Issue **short-lived** tokens
+(minutes, not days) and tie each to the member's email, then have the resolver compare that email with
+`ctx.Email`, the buyer email captured on the draft, as the sample does.
+
+A member code is an ordinary promotion code, so a buyer who learns it could type it into a checkout that
+takes codes and get the member price without a token. Before a typed code is priced, `/draft` asks every
+registered resolver `IsMemberPromotionCode`, and refuses a code any of them claims, at every widget —
+promotion codes are not scoped to one. A resolver that throws counts as claiming the code. The base class
+claims **every** code, so a resolver that does not override it turns typed codes off at every checkout
+until it names its own.
+
+- The resolver returns a **promotion code**, priced through the ordinary promotion engine — dates, qualifiers and redemption limits apply as they do to any code.
+- The session snapshot keeps only the resolved code (`MemberPromotionCode`); **the token is never stored**. `/complete` re-prices from the snapshot and carries the code on the order, so the booked total equals the charged total.
+- A rejected token, a resolver that throws, or a code the engine declines prices at the standard rate and returns `MemberDiscountMessage`. The element stops once on that message before payment; submitting again pays the standard rate.
+- A token sent to a widget with no `memberDiscountResolver`, or one naming an unregistered class, is refused.
+- If the engine declines the code at `/complete` (the promotion ended or reached its redemption limit after the draft), the re-priced total exceeds the payment, so no order is booked. The buyer gets a plain message, and a checkout alert (log marker plus a Task when bizapps-tasks is installed) names the session and payment intent so staff can refund. Any settled payment that falls short of the re-priced total raises the same alert.
 
 ### Confirmation & Booking Phase
 When the user clicks **Pay & Register**:
@@ -399,6 +479,26 @@ if (!confirmed) {
 5. Emits real-time notification events across MemberJunction.
 
 ---
+
+## Post-Payment Step Record, Review Queue and Replay
+
+Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row per session (`CheckoutStepLog.ts`):
+
+| Step | Runs in | Failure leaves |
+|---|---|---|
+| `Confirm` | `CompleteCheckout`, once payment has checked out | the session `Open`; the buyer's next complete call retries it |
+| `Capture` | `CompleteCheckout`, its replay, and the `payment_intent.succeeded` webhook | the order `Confirmed` and unpaid |
+
+- Every attempt sets the row `Running`, adds one to `Attempts` and records its source (`Checkout`, `Webhook` or `Replay`). It then ends `Succeeded` or `Failed` with `LastError` and `Retryable`.
+- Rows are written outside the step's own transaction, so a rolled-back `Confirm` still records its failure. A write that fails is logged; it never fails the step.
+- The shared view **Checkouts: Needs Review** lists `Failed` rows, plus `Running` rows whose last attempt started more than 15 minutes ago (`STALE_RUNNING_MINUTES`).
+- `Orders.ReplayCheckoutStep` (authorization `MJ.BizApps.Orders.Checkout.Replay`, held by the **Checkout Operator** role) re-drives one step:
+  - a `Succeeded` step is a no-op;
+  - a step still `Running` inside the stale window is refused;
+  - `Capture` re-runs the same idempotent `CapturePayment` (`checkout-complete:${session.ID}`);
+  - `Confirm` is not replayable here.
+- The terminal-capture Task is raised on the first non-retryable failure only, not again on every replay of it.
+- GuestOrder claim minting is not recorded: it is dormant until MJ publishes the identity-claim engine.
 
 ## Guest Record Claiming Workflow
 
@@ -434,7 +534,7 @@ export class MyAccountStep extends CheckoutAccountStep {
         // find or create the login for ctx.Email; never change an existing one
         // create it unable to sign in, and send a verification link to ctx.Email
         // 'NotApplicable' when this checkout is not one you make logins for (another company's widget)
-        return { Outcome: 'Created', VerificationRequired: true }; // or 'Exists' / 'Failed', with an optional buyer-facing Message
+        return { Outcome: 'Created' }; // or 'Exists' / 'Failed', with an optional buyer-facing Message
     }
     public override async SetPassword(ctx: CheckoutAccountContext & { Password: string }): Promise<CheckoutPasswordResult> {
         // set the password of the account EnsureAccount created; refuse any other
@@ -446,14 +546,14 @@ export class MyAccountStep extends CheckoutAccountStep {
 Reference the class from the server bootstrap so the decorator is not tree-shaken away. With nothing registered the step is off and checkout behaves as before.
 
 **The host must verify the e-mail.** The checkout never proves the buyer owns the e-mail they typed. Anyone can check out with someone else's e-mail, for the price of the widget or for nothing on a free one, and set the password in the widget. So:
-- An account answered `Created` must not be able to sign in until the host has verified the e-mail, for example with a link sent to it. Answer `VerificationRequired: true` and the widget tells the buyer to use that link.
+- An account answered `Created` must not be able to sign in until the host has verified the e-mail, for example with a link sent to it. The widget tells the buyer of every `Created` account to use that link before signing in. `CheckoutAccountResult.VerificationRequired` is deprecated and ignored.
 - Until the e-mail is verified, do not link the new login to `ctx.PersonID`. That Person was matched by e-mail alone, and may be an existing member whose orders and memberships would come with the login.
 - Never change an account the checkout did not create, in either method.
 
 **Flow.**
 1. `POST /checkout/complete` confirms the order and answers straight away, without calling the host. When a step is registered the response carries `AccountStep: true`.
-2. The widget then calls `POST /checkout/account` with `{ sessionId, clientSessionKey }`, showing "Setting up your account…". Orders calls `EnsureAccount` with the buyer's e-mail, name, Person, order, company, session id and when the session began, and answers `Account: { Outcome, Message?, CanSetPassword, VerificationRequired }`. A step that throws, or doesn't answer within `HostTimeoutSeconds` (default 10), is reported as `Failed`. It never changes the confirmed order.
-3. `Created`: the widget shows a password form, with the verification note when `VerificationRequired`. `POST /checkout/account/password` with `{ sessionId, clientSessionKey, password }` passes the password to `SetPassword`. The password is never stored or logged.
+2. The widget then calls `POST /checkout/account` with `{ sessionId, clientSessionKey }`, showing "Setting up your account…". Orders calls `EnsureAccount` with the buyer's e-mail, name, Person, order, company, session id and when the session began, and answers `Account: { Outcome, Message?, CanSetPassword, VerificationRequired }`, where `VerificationRequired` is true for every `Created` account. A step that throws, or doesn't answer within `HostTimeoutSeconds` (default 10), is reported as `Failed`. It never changes the confirmed order.
+3. `Created`: the widget shows a password form with the verification note, and after the password is set tells the buyer to verify the e-mail before signing in. `POST /checkout/account/password` with `{ sessionId, clientSessionKey, password }` passes the password to `SetPassword`. The password is never stored or logged.
 4. `Exists`: the widget shows the step's message, or a default telling the buyer to sign in.
 5. `Failed`: the widget says the order is confirmed and offers "Try again", which calls `/checkout/account` again. "Not now" follows the redirect.
 6. `NotApplicable`: the session has no account step. The response carries no `Account`, exactly as when no step is registered.
@@ -533,7 +633,7 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 
 | Event | When | `detail` |
 |---|---|---|
-| `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `ERROR` | `{ state }` |
+| `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `PASSWORD`, `ERROR`. `PASSWORD` is sent while the account step's password form shows after a sale (after `SUCCESS`, or on a reload that returns to the form); `SUCCESS` follows once the password is set or skipped | `{ state }` |
 | `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units, `currency` upper-case, `coupon` the applied promotion code or `null` |
 | `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
 | `checkout-cancel` | the buyer pressed Cancel; the form has been reset to blank | `{}` |
@@ -582,7 +682,7 @@ The app ships its own public REST edge: **`CheckoutServerExtension`** (`@mj-biz-
 6. `POST /checkout/account` — body `{ sessionId, clientSessionKey }` → the account step's outcome (see [Account Step After Payment](#account-step-after-payment-checkoutaccountstep))
 7. `POST /checkout/account/password` — body `{ sessionId, clientSessionKey, password }`
 
-The edge enforces, in order and fail-closed: a body-size cap, per-IP(+slug) fixed-window rate limiting, the widget's `Configuration.allowedOrigins` allowlist (with CORS grants only for allowed origins), and — when the widget sets `requireTurnstile` — Cloudflare Turnstile verification against the secret named by the extension's `Settings.TurnstileSecretEnvVar`. Writes run as the principal named by `Settings.ServiceUserEmail`, falling back to MJ's system user. **No request body carries an amount, a price, a product resolution, or a payment provider** — those all resolve server-side.
+The edge enforces, in order and fail-closed: a body-size cap, per-IP(+slug) fixed-window rate limiting (`access-status`, which the success screen polls, counts in a window of its own), the widget's `Configuration.allowedOrigins` allowlist (with CORS grants only for allowed origins), and — when the widget sets `requireTurnstile` — Cloudflare Turnstile verification against the secret named by the extension's `Settings.TurnstileSecretEnvVar`. Writes run as the principal named by `Settings.ServiceUserEmail`, falling back to MJ's system user. **No request body carries an amount, a price, a product resolution, or a payment provider** — those all resolve server-side.
 
 ---
 
@@ -626,8 +726,10 @@ Initializes a new checkout session (or reuses the caller's open, unexpired one).
 }
 ```
 
-### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines, contextUser?, options?)`
-Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Attribution` carries the checkout's source. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
+### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines, billingAddress, contextUser?, options?)`
+Recalculates draft pricing in memory and persists the priced snapshot to the session. `options.Answers` carries the buyer's answers to the widget's `questions` (see [Questions at Checkout](#questions-at-checkout-questions)); `options.Choices` carries their picks from its `choiceGroups` (see [Choice Groups at Checkout](#choice-groups-at-checkout-choicegroups)); `options.Attribution` carries the checkout's source; `options.MemberToken` applies a [verified-member discount](#verified-member-discount), and the response then carries `MemberDiscountApplied` and, when no discount applied, `MemberDiscountMessage`.
+
+The billing location is required. `Country` is an ISO 3166-1 alpha-2 code; `StateProvince` is an ISO 3166-2 subdivision code without its country prefix (`IL`, not `US-IL`), required for US, CA and AU; `PostalCode` is required and shape-checked for those three. Free text such as `"Illinois"` is refused. The lists and the check live in `@mj-biz-apps/orders-entities` (`billing-location.ts`), shared by the widget's pickers and the server. Tax is priced from the location inline (nothing is saved for it at draft), and the result's `Tax` is the tax resolved; `TotalGross` includes it. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
 
 **Request Parameters:**
 ```json
@@ -635,6 +737,7 @@ Recalculates draft pricing in memory and persists the priced snapshot to the ses
   "sessionId": "d1c080b0-379e-4b7f-a2e6-64156641e7d2",
   "clientSessionKey": "client-uuid-12345",
   "email": "janet@example.com",
+  "billingAddress": { "Country": "US", "StateProvince": "IL", "PostalCode": "60601" },
   "lines": [
     {
       "ProductID": "79b4a2c1-...",
@@ -647,12 +750,15 @@ Recalculates draft pricing in memory and persists the priced snapshot to the ses
   ],
   "answers": {
     "source": { "Value": "Other", "OtherText": "A podcast" }
+  },
+  "choices": {
+    "department": ["marketing", "finance"]
   }
 }
 ```
 
 ### 3. `OpenPaymentIntentForSession(sessionID, clientSessionKey)`
-Refuses while a required question is unanswered. Opens (or idempotently re-opens) a payment intent for the session's **current server-priced total**. The amount comes from the session's own priced snapshot; the provider from the widget's `Configuration.paymentProviderId`. Returns the gateway `ClientSecret` (never persisted) for Stripe.js confirmation and stamps `session.PaymentIntentID`.
+Refuses while a required question is unanswered. Opens (or idempotently re-opens) a payment intent for the session's **current server-priced total**. Refused when the session's snapshot holds no valid billing location. The currency is the widget's `Configuration.currency`, defaulting to USD; `OpenPaymentIntent` refuses any other currency, because orders do not yet record one. The amount comes from the session's own priced snapshot; the provider from the widget's `Configuration.paymentProviderId`. Returns the gateway `ClientSecret` (never persisted) for Stripe.js confirmation and stamps `session.PaymentIntentID`.
 
 **Response:**
 ```json
@@ -667,6 +773,8 @@ Refuses while a required question is unanswered. Opens (or idempotently re-opens
 
 ### 4. `CompleteCheckout(sessionID, clientSessionKey)`
 Refuses while a required question is unanswered, before anything is written. Executes payer-Person resolution (find-or-create by the session's captured email), payment verification (intent `Succeeded` + amount covers the re-priced total), line creation from the session's own snapshot (never fresh client input), companion extension hydration, the buyer's answers as Order Checkout Answers, atomic lifecycle booking, and GuestOrder claim generation. **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
+
+Once payment checks out, the snapshot's billing location is recorded as a Common `Address` (street and city empty), linked to the buyer as their `Billing` address, and set as the order's `BillToAddressID` and `ShipToAddressID` before `Confirm()`. The ship-to is what tax is resolved from. A session whose snapshot holds no valid location is refused and reverted to `Open`; an Address that cannot be saved fails the checkout, while a failed address-book link is logged and tolerated.
 
 **Request Parameters:**
 ```json

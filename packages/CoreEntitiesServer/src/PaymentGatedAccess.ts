@@ -30,7 +30,8 @@
  *   RULE:     @mj-biz-apps/orders-entities overdue.ts (DaysOverdue — the one definition of overdue)
  *   SETTING:  OrdersSettings.RenewalAccessCutoffDaysPastDue
  *   CALLERS:  PaymentHeaderEntityServer.Save, OrderEntityServer.grantEntitlements,
- *             packages/Server/src/custom/enforce-payment-gated-access.action.ts
+ *             packages/Server/src/custom/enforce-payment-gated-access.action.ts,
+ *             ./EntitlementRead.ts (LoadReadTimePaymentSuspensions)
  */
 import {
     CompositeKey,
@@ -42,7 +43,7 @@ import {
     RunView,
     UserInfo,
 } from '@memberjunction/core';
-import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { BusinessTimeZoneEngine, CalendarDayIn } from '@mj-biz-apps/common-entities';
 import {
     DaysOverdue,
     OverdueFilter,
@@ -55,9 +56,12 @@ import {
     DecideGrantStatus,
     FirstPaymentAmount,
     PAYMENT_GATED_TIMINGS,
+    ReadTimeCutoffSuspension,
+    ReadTimeWaiverExpirySuspension,
     ReconcileGrantStatus,
     type AccessOverrideFacts,
     type AccessOverrideType,
+    type GrantStatusDecision,
     type GrantTiming,
     type OrderPaymentFacts,
     type FirstPaymentScheduleRow,
@@ -334,6 +338,91 @@ export async function ReconcilePaymentGatedGrants(
         });
     }
     return changes;
+}
+
+/** A grant the entitlement read path is evaluating, with what is needed to find its order. */
+export interface ReadTimeGrant {
+    ID: string;
+    Status: string;
+    OrderLineID: string | null;
+    GrantTimingApplied: string | null;
+}
+
+/**
+ * The payment suspensions these grants have reached that the nightly job has not written yet,
+ * keyed by lowercased grant ID. Two kinds, each decided as the job would decide it:
+ *
+ *   · a renewal past its cutoff (#287) — see `ReadTimeCutoffSuspension`;
+ *   · a new purchase, or an `OnPaidInFull` grant, whose `WaivePaymentHold` has run out unpaid (#404)
+ *     — see `ReadTimeWaiverExpirySuspension`.
+ *
+ * Only Active `OnFirstPayment` and `OnPaidInFull` grants are candidates; every other grant costs no
+ * query. One order-line query keeps only the lines either rule can reach — renewal lines while the
+ * cutoff is on, and lines on orders holding an Approved `WaivePaymentHold` whose last day has passed —
+ * so a read with neither costs nothing more. Payment facts and approved overrides are then read once
+ * for those orders. Days are counted on `asOf`'s business-time-zone day, the day the nightly job uses.
+ * Payment facts are read as they stand now, so a historical `asOf` is measured on today's balance.
+ *
+ * Throws on a failed read; the caller fails closed.
+ */
+export async function LoadReadTimePaymentSuspensions(
+    grants: ReadTimeGrant[],
+    asOf: Date,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, GrantStatusDecision>> {
+    const out = new Map<string, GrantStatusDecision>();
+    const candidates = grants.filter(
+        (g) =>
+            g.Status === 'Active' &&
+            (g.GrantTimingApplied === 'OnFirstPayment' || g.GrantTimingApplied === 'OnPaidInFull') &&
+            !!g.OrderLineID,
+    );
+    if (!candidates.length) return out;
+
+    await OrdersSettings.Load(provider, user);
+    const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+    const asOfDay = CalendarDayIn(asOf, BusinessTimeZoneEngine.Instance.Zone);
+
+    const lapsedWaiver =
+        `OrderHeaderID IN (SELECT OrderHeaderID FROM __mj_BizAppsOrders.EntitlementAccessOverride ` +
+        `WHERE Status = 'Approved' AND OverrideType = 'WaivePaymentHold' ` +
+        `AND EffectiveThrough < '${RequireDate(asOfDay, 'AsOfDay')}')`;
+    const reachable = cutoff == null ? lapsedWaiver : `(RenewsSubscriptionID IS NOT NULL OR ${lapsedWaiver})`;
+
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const lines = await rv.RunView<{ ID: string; OrderHeaderID: string; RenewsSubscriptionID: string | null }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `ID IN (${quote(candidates.map((g) => g.OrderLineID!), 'OrderLineID')}) AND ${reachable}`,
+            Fields: ['ID', 'OrderHeaderID', 'RenewsSubscriptionID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!lines.Success) throw new Error(`Could not read order lines for access decisions: ${lines.ErrorMessage}`);
+    const lineByID = new Map((lines.Results ?? []).map((l) => [key(l.ID), l]));
+    if (!lineByID.size) return out;
+
+    const orderIDs = [...new Set([...lineByID.values()].map((l) => key(l.OrderHeaderID)))];
+    const facts = await LoadOrderPaymentFacts(orderIDs, provider, user, asOfDay);
+    const overrides = await LoadApprovedAccessOverrides(orderIDs, provider, user);
+
+    for (const g of candidates) {
+        const line = lineByID.get(key(g.OrderLineID));
+        const order = line ? facts.get(key(line.OrderHeaderID)) : undefined;
+        if (!line || !order) continue;
+        const isRenewal = !!line.RenewsSubscriptionID;
+        const orderOverrides = overrides.get(key(line.OrderHeaderID)) ?? [];
+        const pending =
+            g.GrantTimingApplied === 'OnFirstPayment' && isRenewal
+                ? ReadTimeCutoffSuspension(g, true, order, cutoff, orderOverrides, asOfDay)
+                : ReadTimeWaiverExpirySuspension(g, isRenewal, order, orderOverrides, asOfDay);
+        if (pending) out.set(key(g.ID), pending);
+    }
+    return out;
 }
 
 async function writeGrantStatus(

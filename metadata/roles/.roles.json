@@ -26,5 +26,33 @@
       "lastModified": "2026-09-28T21:24:38.829Z",
       "checksum": "78b6449738667ab6cea602fb91f7ce79bed757bca69e7553fbfa9f36e0934b7f"
     }
+  },
+  {
+    "fields": {
+      "Name": "Checkout Operator",
+      "Description": "Reviews checkout sessions whose post-payment steps failed or never finished, and replays a step (MJ.BizApps.Orders.Checkout.Replay).",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "40B0F538-69BD-4D08-AF87-2D3A01C78BD9"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T23:39:39.833Z",
+      "checksum": "ca41d9bd30e3341cc3c7bed26bdedc9be2688e1f5a394f1e3a8511a6ce2a4571"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Orders Revenue Supervisor",
+      "Description": "Supervises percentage-of-completion revenue in BizApps Orders. Holds MJ.BizApps.Orders.Progress.Supersede, which replaces a posted progress observation through Orders.RecordProgress — the recovery path for a mistyped measurement date or percent. Additive: a supersede is itself an attestation, so assign it alongside Engagement Lead, and only to the people who sign off project revenue.",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "F4810AB1-C226-426E-8FDC-6D51E310DDD9"
+    },
+    "sync": {
+      "lastModified": "2026-10-03T21:47:05.839Z",
+      "checksum": "574a632b0f0f0764ddfb53b9b7898772c24dc452081fd085d9551343f7277ffb"
+    }
   }
 ]

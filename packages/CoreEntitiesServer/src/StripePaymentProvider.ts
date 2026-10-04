@@ -34,10 +34,15 @@ import {
     type CaptureResult,
     type CreateIntentRequest,
     type CreateIntentResult,
+    type EnsureCustomerRequest,
+    type EnsureCustomerResult,
     type RefundRequest,
     type RefundResult,
     type RetrieveIntentRequest,
     type RetrieveIntentResult,
+    type RetrievedInstrument,
+    type UpdateIntentRequest,
+    type UpdateIntentResult,
     type WebhookEvent,
 } from './BasePaymentProvider.js';
 import {
@@ -133,10 +138,17 @@ export class StripePaymentProvider extends BasePaymentProvider {
             // confirmation that will never come.
             confirm: request.ProviderInstrumentRef ? 'true' : 'false',
         };
+        if (request.Description) body.description = request.Description;
         if (request.ProviderCustomerRef) body.customer = request.ProviderCustomerRef;
+        if (request.ReceiptEmail) body.receipt_email = request.ReceiptEmail;
         if (request.ProviderInstrumentRef) {
             body.payment_method = request.ProviderInstrumentRef;
             body.off_session = 'true';
+        } else if (request.SaveInstrumentForReuse && request.ProviderCustomerRef) {
+            // Stripe attaches the card the customer confirms to `customer` and records the mandate
+            // to charge it again without them present. Without a customer there is nothing to
+            // attach it to, so the flag alone is not sent.
+            body.setup_future_usage = 'off_session';
         }
         for (const [k, v] of Object.entries(request.Metadata ?? {})) body[`metadata[${k}]`] = v;
         if (request.OrderHeaderID) body['metadata[OrderHeaderID]'] = request.OrderHeaderID;
@@ -153,6 +165,23 @@ export class StripePaymentProvider extends BasePaymentProvider {
         };
     }
 
+    public override async UpdateIntent(request: UpdateIntentRequest): Promise<UpdateIntentResult> {
+        if (!request.ProviderIntentID) {
+            return { Success: false, Reason: 'A Stripe update needs a provider intent id.' };
+        }
+        const body: Record<string, string> = {};
+        if (request.Description) body.description = request.Description;
+        for (const [k, v] of Object.entries(request.Metadata ?? {})) body[`metadata[${k}]`] = v;
+        if (this.useStub || Object.keys(body).length === 0) return { Success: true };
+
+        const result = await this.call(
+            'POST',
+            `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}`,
+            body,
+        );
+        return result.Ok ? { Success: true } : { Success: false, Reason: result.Reason };
+    }
+
     public override async RetrieveIntent(request: RetrieveIntentRequest): Promise<RetrieveIntentResult> {
         if (!request.ProviderIntentID) {
             return { Success: false, Reason: 'A Stripe retrieve needs a provider intent id.' };
@@ -164,7 +193,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         }
         const result = await this.call(
             'GET',
-            `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}`,
+            `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}?expand[]=payment_method`,
         );
         if (!result.Ok) {
             return { Success: false, Reason: result.Reason };
@@ -175,7 +204,35 @@ export class StripePaymentProvider extends BasePaymentProvider {
             Success: true,
             Status: MapStripeIntentStatus(result.Body.status as string),
             Amount: Number.isFinite(minor) && minor > 0 ? FromMinorUnits(minor, currency) : undefined,
+            Instrument: StripeInstrumentFromIntent(result.Body),
         };
+    }
+
+    // ─── Customer ──────────────────────────────────────────────────────────────
+
+    public override async EnsureCustomer(request: EnsureCustomerRequest): Promise<EnsureCustomerResult> {
+        if (request.ExistingProviderCustomerRef) {
+            return { Success: true, ProviderCustomerRef: request.ExistingProviderCustomerRef, WasExisting: true };
+        }
+        const owner = request.BillToPersonID ?? request.BillToOrganizationID ?? request.CheckoutSessionID;
+        if (!owner) {
+            return { Success: false, Reason: 'A Stripe customer needs the person, organization or checkout it belongs to.' };
+        }
+
+        if (this.useStub) {
+            return { Success: true, ProviderCustomerRef: `cus_stub_${owner.replace(/-/g, '').slice(0, 24)}`, WasExisting: false };
+        }
+
+        const body: Record<string, string> = {};
+        if (request.Email) body.email = request.Email;
+        if (request.Name) body.name = request.Name;
+        if (request.BillToPersonID) body['metadata[PersonID]'] = request.BillToPersonID;
+        if (request.BillToOrganizationID) body['metadata[OrganizationID]'] = request.BillToOrganizationID;
+        if (request.CheckoutSessionID) body['metadata[CheckoutSessionID]'] = request.CheckoutSessionID;
+
+        const result = await this.call('POST', '/customers', body, request.IdempotencyKey);
+        if (!result.Ok) return { Success: false, Reason: result.Reason };
+        return { Success: true, ProviderCustomerRef: String(result.Body.id), WasExisting: false };
     }
 
     // ─── Capture ───────────────────────────────────────────────────────────────
@@ -489,6 +546,35 @@ export function stripeCaptureAlreadyCollected(
         msg.includes('already been captured') ||
         msg.includes('already succeeded')
     );
+}
+
+/**
+ * The instrument behind an intent retrieved with `expand[]=payment_method`, or undefined when the
+ * intent has no payment method yet. `customer` and `payment_method` are ids on an unexpanded read and
+ * objects on an expanded one, so both shapes are read.
+ */
+export function StripeInstrumentFromIntent(intent: Record<string, unknown>): RetrievedInstrument | undefined {
+    const idOf = (value: unknown): string | null => {
+        if (typeof value === 'string') return value;
+        if (value && typeof value === 'object') return ((value as Record<string, unknown>).id as string) ?? null;
+        return null;
+    };
+    const instrumentRef = idOf(intent.payment_method);
+    if (!instrumentRef) return undefined;
+
+    const method = (typeof intent.payment_method === 'object' ? intent.payment_method : {}) as Record<string, unknown>;
+    const card = (method.card ?? {}) as Record<string, unknown>;
+    const billing = (method.billing_details ?? {}) as Record<string, unknown>;
+    const instrument: RetrievedInstrument = {
+        ProviderCustomerRef: idOf(intent.customer) ?? idOf(method.customer),
+        ProviderInstrumentRef: instrumentRef,
+    };
+    if (typeof card.brand === 'string') instrument.Brand = card.brand;
+    if (typeof card.last4 === 'string') instrument.Last4 = card.last4;
+    if (Number.isInteger(card.exp_month)) instrument.ExpiryMonth = card.exp_month as number;
+    if (Number.isInteger(card.exp_year)) instrument.ExpiryYear = card.exp_year as number;
+    if (typeof billing.name === 'string' && billing.name) instrument.HolderName = billing.name;
+    return instrument;
 }
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */

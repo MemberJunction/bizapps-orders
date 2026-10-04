@@ -49,5 +49,39 @@
       "lastModified": "2026-09-28T21:24:42.627Z",
       "checksum": "f520ff9bc7c58d0826392a64afd9d0b4f4560e0a5370f0b881a8d8a4bb276221"
     }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps",
+      "RoleID": "@lookup:MJ: Roles.Name=Checkout Operator",
+      "CanCreate": false,
+      "CanRead": true,
+      "CanUpdate": false,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "73B18A83-D7D1-49FD-AE75-6C6CB30F8D4F"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T23:39:40.104Z",
+      "checksum": "540ca0f503c53430a72984a708233a495cda9bc5a62bb097cb49854a5edb0363"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Sessions",
+      "RoleID": "@lookup:MJ: Roles.Name=Checkout Operator",
+      "CanCreate": false,
+      "CanRead": true,
+      "CanUpdate": false,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "6A33CC29-93C1-4266-9F62-0392B3F2161D"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T23:39:40.118Z",
+      "checksum": "56251a68272c994b9be95139244ae78ad500b6f16cf53a8f8d9a2ef8bc4b52d9"
+    }
   }
 ]

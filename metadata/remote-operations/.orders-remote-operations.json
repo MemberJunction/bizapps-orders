@@ -454,7 +454,7 @@
     "fields": {
       "Name": "Record Progress",
       "OperationKey": "Orders.RecordProgress",
-      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated before the last posted one; a posted observation is immutable.",
+      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted and booked no earlier than that reversal date, with no row edited.",
       "InputTypeName": "OrdersRecordProgressInput",
       "InputTypeDefinition": "@file:types/orders-record-progress.input.ts",
       "OutputTypeName": "OrdersRecordProgressOutput",
@@ -473,8 +473,8 @@
       "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F20"
     },
     "sync": {
-      "lastModified": "2026-09-28T21:24:27.118Z",
-      "checksum": "0a615fe8b82942eeb9cf8a2a537d208eb84d39596c8f58e16f7b595149d23893"
+      "lastModified": "2026-10-02T19:39:06.000Z",
+      "checksum": "1698753314ad012a44edbf700c06c8f11cfc21d416653efe5df0dcbf64fadfe0"
     }
   },
   {
@@ -500,8 +500,8 @@
       "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F21"
     },
     "sync": {
-      "lastModified": "2026-09-20T20:17:13.467Z",
-      "checksum": "0b0670c1a165041a4f67206cb880c8af9d8ab0d7b530cca773edd2dc27269f47"
+      "lastModified": "2026-10-03T21:46:45.903Z",
+      "checksum": "a1faa336d8edac00f9ef2e8e8e8685b83c8f2b0c422e3aa7892ab5da3842e987"
     }
   },
   {
@@ -556,6 +556,87 @@
     "sync": {
       "lastModified": "2026-09-29T14:02:14.742Z",
       "checksum": "474135cf152aa6d6833c348aea26caa63738e0f0947ca3495409d6c479184339"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Replay Checkout Step",
+      "OperationKey": "Orders.ReplayCheckoutStep",
+      "Description": "Re-drive one post-payment step of a checkout session from its CheckoutSessionStep record. Requires the MJ.BizApps.Orders.Checkout.Replay authorization. A Succeeded step is a no-op. A step still Running inside the stale window is refused. Capture re-runs the checkout's idempotent CapturePayment; Confirm is not replayable here.",
+      "InputTypeName": "OrdersReplayCheckoutStepInput",
+      "InputTypeDefinition": "@file:types/orders-replay-checkout-step.input.ts",
+      "OutputTypeName": "OrdersReplayCheckoutStepOutput",
+      "OutputTypeDefinition": "@file:types/orders-replay-checkout-step.output.ts",
+      "RequiredScope": "orders:write",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "InputTypeIsArray": false,
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "0A86B760-12E3-4E5A-BD8F-B2AE43430FB7"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T23:39:39.487Z",
+      "checksum": "ee3fee072d7f0ea337e5c1f3d8d3447a6bd6e95b15d79bbcc8a4c80e084d7d02"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Detect Unattested Progress",
+      "OperationKey": "Orders.DetectUnattestedProgress",
+      "Description": "The nightly finance-exception pass for percentage-of-completion lines (golive #279, type 2): every active, booked, not-complete POC line from the progress worklist whose last attestation - or, when it has never been attested, whose booking - is more than the PROGRESS_UNATTESTED type's MaxDaysWithoutAttestation days before the business day goes on accounting's review list. One exception per line per month; a repeat in the same month finds the one already raised. Nothing is blocked. A type accounting does not define or has switched off raises nothing.",
+      "InputTypeName": "OrdersDetectUnattestedProgressInput",
+      "InputTypeDefinition": "@file:types/orders-detect-unattested-progress.input.ts",
+      "OutputTypeName": "OrdersDetectUnattestedProgressOutput",
+      "OutputTypeDefinition": "@file:types/orders-detect-unattested-progress.output.ts",
+      "RequiredScope": "orders:write",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "InputTypeIsArray": false,
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "LongRunning",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "5EA18521-B7F5-4C05-8B21-12C62C697F39"
+    },
+    "sync": {
+      "lastModified": "2026-10-03T21:46:45.963Z",
+      "checksum": "25dd58f21d21f92d35c579643a551b1511c12707be8688a0a8fd16139dafc3fa"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Amend Arrangement",
+      "OperationKey": "Orders.AmendArrangement",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount is refused until its credit-memo path exists.",
+      "InputTypeName": "AmendArrangementInput",
+      "InputTypeDefinition": "@file:types/orders-amend-arrangement.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "AmendArrangementOutput",
+      "OutputTypeDefinition": "@file:types/orders-amend-arrangement.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "subscriptions:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "6B24D4FD-3DD2-4E28-841C-3B64535DADDC"
+    },
+    "sync": {
+      "lastModified": "2026-10-03T21:46:45.993Z",
+      "checksum": "d0117c8e110a0913c461b40e377ba593d599bff248ec2d49b4a55861b1c52a46"
     }
   },
   {

@@ -42,7 +42,7 @@
  *
  * @module @mj-biz-apps/orders-ng
  */
-import { Metadata, RunView, type RunViewParams, type UserInfo } from '@memberjunction/core';
+import { Metadata, RunView, type IMetadataProvider, type RunViewParams, type UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
 import { IsBefore, LoadOrdersEngine, OrdersEngine, OverdueFilter, Today, ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
@@ -1711,6 +1711,122 @@ export async function GetSubscriptionEvents(
         undefined,
         user,
     );
+}
+
+/** Subscription term id (either case) → the label the recognition waterfall colours it by. */
+export type SubscriptionTermLookup = Record<string, { TermNumber: number; Label: string }>;
+
+/**
+ * A subscription's revenue recognition journal entries, with their lines loaded.
+ *
+ * A recognition entry points at the TERM it recognizes (`LinkedRecordID`, D25), so the search runs
+ * over the subscription's terms as well as the subscription and its originating order line. The
+ * subscription form and the Receivables subscription panel both read the schedule through here, so
+ * the two cannot disagree about what is scheduled.
+ *
+ * Pass `terms` when the caller has already loaded them, so they are not read a second time. Lines
+ * for every entry come back in one batched query (`IncludeRelatedRecords`), not one per entry.
+ *
+ * `CanRead` is false when the user has no read permission on journal entries; nothing is queried
+ * then, so the caller can say why the schedule is empty instead of showing an empty chart.
+ */
+export async function LoadSubscriptionRevRec(
+    record: { ID: string; OrderLineID?: string | null },
+    provider: IMetadataProvider,
+    terms?: ReadonlyArray<{ ID: string; TermNumber?: number | null }>,
+): Promise<{
+    Entries: mjBizAppsAccountingJournalEntryEntity[];
+    TermLookup: SubscriptionTermLookup;
+    TermIDs: string[];
+    CanRead: boolean;
+}> {
+    const rv = RunView.FromMetadataProvider(provider);
+    const user = provider.CurrentUser;
+    const loadedTerms = terms ?? (await loadTermKeys(rv, record.ID, user));
+    const termIds = loadedTerms.map((t) => t.ID);
+    const lookup: SubscriptionTermLookup = {};
+    loadedTerms.forEach((term, index) => {
+        const num = term.TermNumber ?? index + 1;
+        const label = `Term ${num}`;
+        lookup[term.ID.toLowerCase()] = { TermNumber: num, Label: label };
+        lookup[term.ID.toUpperCase()] = { TermNumber: num, Label: label };
+    });
+
+    const journalEntity = provider.Entities?.find((e) => e.Name === MJO_ACCOUNTING_ENTITIES.JournalEntry);
+    const canRead = !journalEntity || !user || journalEntity.GetUserPermisions(user).CanRead;
+    if (!canRead) {
+        return { Entries: [], TermLookup: lookup, TermIDs: termIds, CanRead: false };
+    }
+
+    const targets = [...termIds, record.ID];
+    if (record.OrderLineID) targets.push(record.OrderLineID);
+    const quoted = targets.map((id) => `'${id}'`).join(',');
+    const jeRes = await rv.RunView<mjBizAppsAccountingJournalEntryEntity>({
+        EntityName: MJO_ACCOUNTING_ENTITIES.JournalEntry,
+        ExtraFilter: `LinkedRecordID IN (${quoted})`,
+        OrderBy: 'EffectiveDate ASC',
+        ResultType: 'entity_object',
+        IncludeRelatedRecords: ['Lines'],
+        MaxRows: 500,
+    }, user);
+    const all = jeRes.Success && jeRes.Results ? jeRes.Results : [];
+    const recognized = FilterRecognitionEntries(all, termIds);
+    return {
+        Entries: recognized.length > 0 ? recognized : all,
+        TermLookup: lookup,
+        TermIDs: termIds,
+        CanRead: true,
+    };
+}
+
+async function loadTermKeys(
+    rv: RunView,
+    subscriptionID: string,
+    user: UserInfo | undefined,
+): Promise<Array<{ ID: string; TermNumber?: number }>> {
+    const termsRes = await rv.RunView<{ ID: string; TermNumber?: number }>({
+        EntityName: MJO_ENTITIES.SubscriptionTerm,
+        ExtraFilter: `SubscriptionID = '${subscriptionID}'`,
+        OrderBy: 'TermNumber ASC',
+        Fields: ['ID', 'TermNumber'],
+        ResultType: 'simple',
+        MaxRows: 200,
+    }, user);
+    return termsRes.Success && termsRes.Results ? termsRes.Results : [];
+}
+
+/**
+ * The subscription type's renewal lead days — the fallback the renewal engine uses when the
+ * subscription does not set its own. Null when the type has none or cannot be read.
+ */
+export async function GetSubscriptionTypeRenewalLeadDays(
+    subscriptionTypeID: string,
+    user?: UserInfo,
+): Promise<number | null> {
+    if (!UUID_PATTERN.test(subscriptionTypeID)) return null;
+    const result = await new RunView().RunView<{ RenewalLeadDays: number | null }>(
+        {
+            EntityName: MJO_ENTITIES.SubscriptionType,
+            ExtraFilter: `ID = '${subscriptionTypeID}'`,
+            Fields: ['ID', 'RenewalLeadDays'],
+            ResultType: 'simple',
+            MaxRows: 1,
+        },
+        user ?? currentUser(),
+    );
+    return result.Success ? (result.Results?.[0]?.RenewalLeadDays ?? null) : null;
+}
+
+function FilterRecognitionEntries(
+    entries: mjBizAppsAccountingJournalEntryEntity[],
+    termIds: string[],
+): mjBizAppsAccountingJournalEntryEntity[] {
+    return entries.filter((je) => {
+        const desc = (je.Description || '').toLowerCase();
+        const type = (je.EntryType || '').toLowerCase();
+        const isTerm = termIds.some((id) => id.toLowerCase() === String(je.LinkedRecordID).toLowerCase());
+        return isTerm || desc.includes('recognize') || type.includes('recognition');
+    });
 }
 
 /* ── Catalog ─────────────────────────────────────────────────────────────────── */

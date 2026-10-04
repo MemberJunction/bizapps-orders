@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Check every metadata folder is in directoryOrder
+        run: ./.github/scripts/validate-metadata-directory-order.sh
+
       - name: Resolve current base branch tip
         id: base
         run: |

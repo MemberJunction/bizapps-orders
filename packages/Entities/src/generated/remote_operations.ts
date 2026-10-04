@@ -561,6 +561,122 @@ export interface CheckEntitlementOutput {
 }
 
 /**
+ * Input for `Orders.DetectOverlappingSubscriptions`.
+ *
+ * The nightly check behind finance exception type OVERLAPPING_SUBSCRIPTION: one exception per
+ * pair of live subscriptions for one holder whose terms overlap, raised through accounting's
+ * `Accounting.RaiseFinanceExceptions`. Re-running is safe — an exception already raised for a
+ * pair is left as it is.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersDetectOverlappingSubscriptionsInput {
+    /**
+     * The business day the exceptions are dated to (YYYY-MM-DD). Omit for today in the business
+     * time zone, which is what the schedule uses.
+     */
+    AsOfDate?: string;
+}
+
+/**
+ * Output for `Orders.DetectOverlappingSubscriptions`.
+ *
+ * Counts, plus every error, so an unattended run that raised nothing can be told apart from one
+ * that found nothing.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OverlappingSubscriptionsDetectionError {
+    /** `<EarlierSubscriptionID>|<LaterSubscriptionID>` when the error belongs to one pair. */
+    DedupeKey?: string;
+    Code: string;
+    Message: string;
+}
+
+export interface OrdersDetectOverlappingSubscriptionsOutput {
+    /** False when any pair could not be raised; every reason is in Errors. */
+    Success: boolean;
+    Message?: string;
+    /**
+     * False when the OVERLAPPING_SUBSCRIPTION exception type is missing or inactive. The check then
+     * does not run: the type's configuration is the only source of its settings.
+     */
+    TypeActive: boolean;
+    /** The business day the exceptions were dated to (YYYY-MM-DD). */
+    ExceptionDate: string;
+    /** Pairs the "Overlapping Subscriptions" query returned. */
+    PairsFound: number;
+    /** Pairs left after the IncludeSameCategory setting: the ones an exception was raised for. */
+    PairsConsidered: number;
+    /** Exceptions created by this run. */
+    Created: number;
+    /** Pairs that already had an exception, in any status. Left unchanged. */
+    AlreadyRaised: number;
+    /** Pairs accounting skipped. */
+    Skipped: number;
+    Errors: OverlappingSubscriptionsDetectionError[];
+}
+
+/**
+ * Input for `Orders.DetectUnattestedProgress`.
+ *
+ * The nightly pass that puts a percentage-of-completion line on finance's review list when nobody
+ * has attested its progress for too long (golive #279, type 2). The threshold is the
+ * PROGRESS_UNATTESTED type's `MaxDaysWithoutAttestation`, owned by accounting.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersDetectUnattestedProgressInput {
+    /** Treat this business day as "today" (YYYY-MM-DD). Omit for the actual business day, which is what the schedule uses. */
+    AsOfDate?: string;
+}
+
+/**
+ * Output for `Orders.DetectUnattestedProgress`.
+ *
+ * Every line found overdue for attestation comes back, with what was raised for it. One exception
+ * per line per month: a line still unattested next month is raised again, and a second run in the
+ * same month finds the one already raised.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface UnattestedProgressLine {
+    OrderLineID: string;
+    OrderNumber: string;
+    LineNumber: number;
+    CompanyID: string;
+    /** The last posted observation, or null when the line has never been attested. */
+    LastMeasurementDate?: string | null;
+    /** The business day the order was booked — the clock for a line never attested. */
+    ConfirmedOn?: string | null;
+    /** Whole days from the last attestation (or the booking) to the as-of day. */
+    DaysWithoutAttestation: number;
+    /** The line value not yet recognised. */
+    UnrecognizedAmount?: number | null;
+    /** `<OrderLineID>|<YYYY-MM>` — one exception per line per month. */
+    DedupeKey: string;
+    /** The review row, when accounting created or already held one. */
+    FinanceExceptionID?: string | null;
+    /** True when this pass created the review row; false when it already existed. */
+    Created?: boolean;
+}
+
+export interface OrdersDetectUnattestedProgressOutput {
+    Success: boolean;
+    Message?: string;
+    /** The business day the pass measured against. */
+    AsOfDate: string;
+    /** True when accounting does not define the type or has switched it off, so nothing was raised. */
+    TypeInactive: boolean;
+    MaxDaysWithoutAttestation?: number | null;
+    Lines: UnattestedProgressLine[];
+    /** Review rows this pass created. */
+    Raised: number;
+    /** Lines whose review row for this month already existed. */
+    AlreadyRaised: number;
+}
+
+/**
  * Input for `Orders.FulfillOrderLines`.
  *
  * Flipping lines to Fulfilled and advancing the order when the last one is done are ONE decision,
@@ -936,7 +1052,9 @@ export interface ProgressWorklistRow {
     LineAmount: number;
     ServicePeriodStart?: string | null;
     ServicePeriodEnd?: string | null;
-    /** The last posted observation, or null when none has been recorded yet. */
+    /** The last posted observation that has not been superseded — what a supersede would replace. Null when none. */
+    LastMeasurementID?: string | null;
+    /** The last posted observation's date, or null when none has been recorded yet. A superseded observation is not "last". */
     LastMeasurementDate?: string | null;
     /** Cumulative fraction at the last observation; 0 when none. */
     LastPercentComplete: number;
@@ -944,7 +1062,11 @@ export interface ProgressWorklistRow {
     RecognizedToDate: number;
     /** Who signed the last observation. */
     LastAttestedBy?: string | null;
+    /** The user ID behind `LastAttestedBy`, or null when the line has never been attested. */
+    LastAttestedByUserID?: string | null;
     OrderStatus: string;
+    /** When the order was booked, as an ISO instant. */
+    ConfirmedAt?: string | null;
 }
 
 export interface OrdersGetProgressWorklistOutput {
@@ -954,6 +1076,8 @@ export interface OrdersGetProgressWorklistOutput {
     RowCount: number;
     /** True when `MaxCount` clipped the result. */
     Truncated: boolean;
+    /** True when the caller holds `MJ.BizApps.Orders.Progress.Supersede`, so the screen can offer it. The operation checks again. */
+    CanSupersede: boolean;
 }
 
 /**
@@ -1319,6 +1443,17 @@ export interface OrdersRecordProgressInput {
     Notes?: string | null;
     /** Compute and return what WOULD post, writing nothing — for the confirmation step before finance commits. */
     Preview?: boolean;
+    /**
+     * SUPERSEDE: the posted observation this one replaces. It must be the line's latest observation
+     * that is not already superseded, and the caller must hold `MJ.BizApps.Orders.Progress.Supersede`.
+     * Nothing is edited: the replaced observation's recognition is reversed — on its own date while that
+     * month has no Posted batch for the line's company, else on day 1 of the first later month without
+     * one (`ReversalDate` on the output) — and this
+     * observation's catch-up is computed as if the replaced one had never posted. `MeasurementDate`
+     * must then be after the observation before the replaced one — not after the replaced one — which
+     * is what makes a mistyped future date recoverable.
+     */
+    SupersedesMeasurementID?: string | null;
 }
 
 /**
@@ -1360,6 +1495,32 @@ export interface OrdersRecordProgressOutput {
      * run, because an attestation must not depend on the availability of a hint.
      */
     ClosedPeriodWarning?: string | null;
+    /**
+     * Set when the measurement date is after the end of the current month on the business calendar.
+     * ADVISORY ONLY — forward dating is allowed with no cap. It exists because a mistyped year posts
+     * silently and only surfaces when the next month's attestation is refused.
+     */
+    FutureDateWarning?: string | null;
+    /** On a supersede: the observation replaced. Null otherwise. */
+    SupersededMeasurementID?: string | null;
+    /** On a supersede: the recognition taken back out (the replaced observation's RecognitionAmount, negated). Zero otherwise. */
+    ReversalAmount?: number;
+    /**
+     * On a supersede that reverses anything: the date the reversal is booked on. The replaced
+     * observation's own date while that month has no Posted batch for the line's company; otherwise
+     * day 1 of the first later month with none, so a correction never books into a closed period.
+     * Null otherwise.
+     */
+    ReversalDate?: string | null;
+    /**
+     * The date this observation's catch-up entry is booked on. `MeasurementDate` itself, except on a
+     * supersede whose replaced observation's month has a Posted batch for the line's company: then the
+     * later of `MeasurementDate` and `ReversalDate`'s first open day, so nothing new posts into the
+     * closed month. The observation row keeps `MeasurementDate`. Null when there is no catch-up.
+     */
+    CatchUpDate?: string | null;
+    /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */
+    ReversalJournalEntryID?: string | null;
 }
 
 /**
@@ -1410,6 +1571,45 @@ export interface RefundPaymentOutput {
         UnappliedAmount: number;
         BalanceAfter: number;
     }>;
+}
+
+/**
+ * Input for `Orders.ReplayCheckoutStep`.
+ *
+ * Names one post-payment step of one checkout session, as recorded in CheckoutSessionStep.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersReplayCheckoutStepInput {
+    /** The checkout session whose step is replayed. */
+    CheckoutSessionID: string;
+    /** The step to replay: 'Capture' or 'Confirm'. Only Capture is replayable today. */
+    StepName: string;
+}
+
+/**
+ * Output for `Orders.ReplayCheckoutStep`.
+ *
+ * Outcome says what happened:
+ *   Replayed          the step ran again; Status is how it ended
+ *   AlreadySucceeded  the step had already succeeded, so nothing ran
+ *   Refused           the step was not run (no record, not replayable, still running, not authorized)
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersReplayCheckoutStepOutput {
+    /** True when the step is Succeeded after the call, whether it ran now or before. */
+    Success: boolean;
+    Outcome: 'Replayed' | 'AlreadySucceeded' | 'Refused';
+    Message?: string;
+    CheckoutSessionID?: string;
+    StepName?: string;
+    /** The step's Status after the call: Running, Succeeded or Failed. */
+    Status?: string;
+    /** The step's Attempts after the call. */
+    Attempts?: number;
+    /** The last attempt's error, when Status is Failed. */
+    LastError?: string | null;
 }
 
 /**
@@ -1595,6 +1795,38 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
 }
 
 // ============================================================
+// Orders.DetectOverlappingSubscriptions — Detect Overlapping Subscriptions
+// ============================================================
+/**
+ * Detect Overlapping Subscriptions
+ * Raise a finance exception for each pair of live subscriptions for one holder whose terms overlap: the same product, or (when the exception type's IncludeSameCategory setting is on) products in the same category with the same subscription type. Each overlap is billed and recognized twice unless one is cancelled. Reads its settings from the OVERLAPPING_SUBSCRIPTION exception type and does nothing when that type is missing or inactive. The source record is the later subscription and the creator is whoever confirmed the order that booked it; when no confirmer is recorded (an order confirmed before that was recorded, or no order), the exception has no creator restriction. Re-running is safe: a pair that already has an exception raises nothing new.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.DetectOverlappingSubscriptions'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersDetectOverlappingSubscriptionsOperation extends BaseRemotableOperation<OrdersDetectOverlappingSubscriptionsInput, OrdersDetectOverlappingSubscriptionsOutput> {
+    public readonly OperationKey = "Orders.DetectOverlappingSubscriptions";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "subscriptions:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.DetectUnattestedProgress — Detect Unattested Progress
+// ============================================================
+/**
+ * Detect Unattested Progress
+ * The nightly finance-exception pass for percentage-of-completion lines (golive #279, type 2): every active, booked, not-complete POC line from the progress worklist whose last attestation - or, when it has never been attested, whose booking - is more than the PROGRESS_UNATTESTED type's MaxDaysWithoutAttestation days before the business day goes on accounting's review list. One exception per line per month; a repeat in the same month finds the one already raised. Nothing is blocked. A type accounting does not define or has switched off raises nothing.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.DetectUnattestedProgress'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersDetectUnattestedProgressOperation extends BaseRemotableOperation<OrdersDetectUnattestedProgressInput, OrdersDetectUnattestedProgressOutput> {
+    public readonly OperationKey = "Orders.DetectUnattestedProgress";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
 // Orders.FulfillOrderLines — Fulfill Order Lines
 // ============================================================
 /**
@@ -1775,7 +2007,7 @@ export class OrdersRecordAccessOverrideDecisionOperation extends BaseRemotableOp
 // ============================================================
 /**
  * Record Progress
- * Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated before the last posted one; a posted observation is immutable.
+ * Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted and booked no earlier than that reversal date, with no row edited.
  * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
  * under 'Orders.RecordProgress'. This generated base provides the typed contract only (client-safe).
  */
@@ -1799,6 +2031,22 @@ export class OrdersRefundPaymentOperation extends BaseRemotableOperation<RefundP
     public readonly OperationKey = "Orders.RefundPayment";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "payments:refund";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ReplayCheckoutStep — Replay Checkout Step
+// ============================================================
+/**
+ * Replay Checkout Step
+ * Re-drive one post-payment step of a checkout session from its CheckoutSessionStep record. Requires the MJ.BizApps.Orders.Checkout.Replay authorization. A Succeeded step is a no-op. A step still Running inside the stale window is refused. Capture re-runs the checkout's idempotent CapturePayment; Confirm is not replayable here.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ReplayCheckoutStep'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersReplayCheckoutStepOperation extends BaseRemotableOperation<OrdersReplayCheckoutStepInput, OrdersReplayCheckoutStepOutput> {
+    public readonly OperationKey = "Orders.ReplayCheckoutStep";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 

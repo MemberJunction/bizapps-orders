@@ -152,6 +152,28 @@ export function ResolveGrantQuantity(
     return Math.ceil(Math.round(scaled * 1e6) / 1e6);
 }
 
+/** One option a buyer chose for a line: the group and the option value (an Order Line Choice). */
+export interface LineChoiceKey {
+    GroupKey: string;
+    OptionValue: string;
+}
+
+/**
+ * Whether an entitlement template applies to a line, given the options chosen for it.
+ *
+ * A template with no `ChoiceGroupKey` is unconditional and applies to every line of its product. A
+ * conditional one applies only when the line carries that exact group and option: a buyer who chose
+ * two of eight departments is granted those two, not all eight. Values match exactly, as they were
+ * checked against the widget's options when the buyer chose them.
+ */
+export function TemplateAppliesToLineChoices(
+    template: { ChoiceGroupKey: string | null; ChoiceOptionValue: string | null },
+    lineChoices: ReadonlyArray<LineChoiceKey>,
+): boolean {
+    if (!template.ChoiceGroupKey) return true;
+    return lineChoices.some((c) => c.GroupKey === template.ChoiceGroupKey && c.OptionValue === template.ChoiceOptionValue);
+}
+
 /** Everything a validity window might need to know, so the pure function needs no lookups. */
 export interface ValidityContext {
     /** When the grant takes effect — normally the order date. */
@@ -454,6 +476,64 @@ export function ApplyAccessOverrides(
 }
 
 /**
+ * The past-due cutoff as a read sees it, before the nightly job has written it (#287).
+ *
+ * A renewal crosses `RenewalAccessCutoffDaysPastDue` with nothing written, so its grant still reads
+ * `Active` until `EnforcePaymentGatedAccess` next runs. The read path asks this instead of trusting
+ * the row, and decides with the same `DecideGrantStatus` and `ApplyAccessOverrides` the job runs.
+ *
+ * TIGHTEN ONLY. It answers a `PastDue` suspension for an Active `OnFirstPayment` renewal grant, or
+ * null. It never activates a grant: lifting a suspension stays with the payment that writes it.
+ *
+ * @param asOfDay - The business-time-zone day `order.DaysPastDue` was measured on, `YYYY-MM-DD`.
+ */
+export function ReadTimeCutoffSuspension(
+    grant: { Status: string; GrantTimingApplied: string | null },
+    isRenewal: boolean,
+    order: OrderPaymentFacts,
+    cutoffDaysPastDue: number | null,
+    overrides: readonly AccessOverrideFacts[],
+    asOfDay: string,
+): GrantStatusDecision | null {
+    if (grant.Status !== 'Active' || grant.GrantTimingApplied !== 'OnFirstPayment' || !isRenewal) return null;
+    const decided = ApplyAccessOverrides(DecideGrantStatus('OnFirstPayment', true, order, cutoffDaysPastDue), overrides, asOfDay);
+    return decided.Status === 'Suspended' && decided.Reason === 'PastDue' ? decided : null;
+}
+
+/**
+ * A lapsed payment-hold waiver as a read sees it, before the nightly job has written it (#404).
+ *
+ * An approved `WaivePaymentHold` keeps an unpaid grant Active through its `EffectiveThrough` day.
+ * The day after, nothing is written until `EnforcePaymentGatedAccess` next runs, so the row still
+ * reads `Active`. The read path asks this instead, deciding with the same `DecideGrantStatus` and
+ * `ApplyAccessOverrides` the job runs.
+ *
+ * Applies only to an order with a `WaivePaymentHold` whose last day is before `asOfDay`, and only to
+ * the grants that override can hold up: `OnPaidInFull`, and `OnFirstPayment` on a new purchase (see
+ * {@link AccessOverrideCanApply}). A later waiver still in force keeps the grant Active.
+ *
+ * TIGHTEN ONLY. It answers an `AwaitingPayment` suspension for an Active grant, or null. It never
+ * activates a grant: lifting a suspension stays with the payment that writes it.
+ *
+ * @param overrides - Every APPROVED override on the grant's order, expired or not.
+ * @param asOfDay - The business-time-zone day being decided, `YYYY-MM-DD`.
+ */
+export function ReadTimeWaiverExpirySuspension(
+    grant: { Status: string; GrantTimingApplied: string | null },
+    isRenewal: boolean,
+    order: OrderPaymentFacts,
+    overrides: readonly AccessOverrideFacts[],
+    asOfDay: string,
+): GrantStatusDecision | null {
+    if (grant.Status !== 'Active') return null;
+    const timing = grant.GrantTimingApplied;
+    if (timing !== 'OnPaidInFull' && !(timing === 'OnFirstPayment' && !isRenewal)) return null;
+    if (!overrides.some((o) => o.OverrideType === 'WaivePaymentHold' && o.EffectiveThrough < asOfDay)) return null;
+    const decided = ApplyAccessOverrides(DecideGrantStatus(timing, isRenewal, order, null), overrides, asOfDay);
+    return decided.Status === 'Suspended' && decided.Reason === 'AwaitingPayment' ? decided : null;
+}
+
+/**
  * Whether an override of this type could lift anything on an order holding these grants: some grant
  * must follow a rule that can impose the suspension the type names. `AwaitingPayment` comes from
  * `OnPaidInFull`, and from `OnFirstPayment` on a new purchase; `PastDue` only from `OnFirstPayment`
@@ -550,6 +630,12 @@ export interface GrantAccessFacts {
     LinkedToSubscription?: boolean;
     /** True when `EntitlementGrant.SubscriptionTermID` is set. Missing term row → fail closed. */
     LinkedToTerm?: boolean;
+    /**
+     * A suspension the payment rule has reached that the row does not show yet, from
+     * {@link ReadTimeCutoffSuspension} or {@link ReadTimeWaiverExpirySuspension}.
+     * Only ever denies: an Active row reads as Suspended.
+     */
+    PendingSuspension?: GrantStatusDecision | null;
 }
 
 /** Subscription facts that can cut access short or extend it through grace. */
@@ -613,6 +699,7 @@ export function EvaluateGrantAccess(
     if (grant.Status === 'Suspended') return denied('Suspended');
     if (grant.Status === 'Expired') return denied('Expired');
     if (grant.Status !== 'Active') return denied('NoGrant');
+    if (grant.PendingSuspension?.Status === 'Suspended') return denied('Suspended');
 
     if (grant.ValidFrom && asOf.getTime() < grant.ValidFrom.getTime()) {
         return denied('NotYetValid');

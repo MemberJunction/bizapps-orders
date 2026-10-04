@@ -11,6 +11,7 @@
  *
  * CONNECTS TO:
  *   PURE:   ./EntitlementBehavior.ts
+ *   GATED:  ./PaymentGatedAccess.ts (LoadReadTimePaymentSuspensions — cutoffs and lapsed waivers not yet written)
  *   OPS:    ./CheckEntitlementOperation.ts, ./ListEntitlementsOperation.ts
  *   DOC:    plans/entitlement-read-contract.md
  */
@@ -28,7 +29,9 @@ import {
     PickWinningAccess,
     type EntitlementDecision,
     type GrantAccessEvaluation,
+    type GrantStatusDecision,
 } from './EntitlementBehavior.js';
+import { LoadReadTimePaymentSuspensions } from './PaymentGatedAccess.js';
 import { EscapeText, InvalidOperationInputError, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 
 const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
@@ -106,7 +109,22 @@ interface GrantRow {
     Quantity: number | null;
     SubscriptionID: string | null;
     SubscriptionTermID: string | null;
+    OrderLineID: string | null;
+    GrantTimingApplied: string | null;
 }
+
+const GRANT_FIELDS = [
+    'ID',
+    'ProductEntitlementID',
+    'Status',
+    'ValidFrom',
+    'ValidTo',
+    'Quantity',
+    'SubscriptionID',
+    'SubscriptionTermID',
+    'OrderLineID',
+    'GrantTimingApplied',
+];
 
 interface SubRow {
     ID: string;
@@ -327,12 +345,28 @@ async function loadContext(
     return { ok: true, subs, terms };
 }
 
+/** Payment suspensions the rows do not show yet (#287, #404). Null on a fault, so the caller fails closed. */
+async function loadPendingSuspensions(
+    grants: GrantRow[],
+    asOf: Date,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, GrantStatusDecision> | null> {
+    try {
+        return await LoadReadTimePaymentSuspensions(grants, asOf, provider, user);
+    } catch (err) {
+        LogError(`[ENTITLEMENT-READ] payment facts lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+        return null;
+    }
+}
+
 function evaluateGrant(
     grant: GrantRow,
     asOf: Date,
     code: string,
     subs: Map<string, SubRow>,
     terms: Map<string, TermRow>,
+    pendingSuspensions: Map<string, GrantStatusDecision>,
 ): EvaluatedNamedGrant {
     const sub = grant.SubscriptionID ? subs.get(grant.SubscriptionID.toLowerCase()) : undefined;
     const term = grant.SubscriptionTermID ? terms.get(grant.SubscriptionTermID.toLowerCase()) : undefined;
@@ -343,6 +377,7 @@ function evaluateGrant(
             ValidTo: toDate(grant.ValidTo),
             LinkedToSubscription: !!grant.SubscriptionID,
             LinkedToTerm: !!grant.SubscriptionTermID,
+            PendingSuspension: pendingSuspensions.get(grant.ID.toLowerCase()) ?? null,
         },
         asOf,
         sub
@@ -423,22 +458,15 @@ export async function CheckPersonEntitlement(
                 matching.map((t) => t.ID),
                 'ProductEntitlementID',
             )})`,
-            [
-                'ID',
-                'ProductEntitlementID',
-                'Status',
-                'ValidFrom',
-                'ValidTo',
-                'Quantity',
-                'SubscriptionID',
-                'SubscriptionTermID',
-            ],
+            GRANT_FIELDS,
         );
         if (!grants.ok) return closed('grant-lookup-failed');
         if (!grants.rows.length) return closed('no-grant');
 
         const ctx = await loadContext(rv, user, grants.rows);
         if (!ctx.ok) return closed('context-lookup-failed');
+        const pendingSuspensions = await loadPendingSuspensions(grants.rows, evaluatedAt, provider, user);
+        if (!pendingSuspensions) return closed('payment-lookup-failed');
 
         const codeByTemplate = new Map(matching.map((t) => [t.ID.toLowerCase(), t.Code]));
         const evaluated = grants.rows.map((g) =>
@@ -448,6 +476,7 @@ export async function CheckPersonEntitlement(
                 codeByTemplate.get(g.ProductEntitlementID.toLowerCase()) ?? code,
                 ctx.subs,
                 ctx.terms,
+                pendingSuspensions,
             ),
         );
         const picked = PickWinningAccess(evaluated);
@@ -499,16 +528,7 @@ export async function ListPersonEntitlements(
             user,
             ENTITLEMENT_GRANT_ENTITY,
             `BeneficiaryPersonID = '${personID}'`,
-            [
-                'ID',
-                'ProductEntitlementID',
-                'Status',
-                'ValidFrom',
-                'ValidTo',
-                'Quantity',
-                'SubscriptionID',
-                'SubscriptionTermID',
-            ],
+            GRANT_FIELDS,
         );
         if (!grants.ok) return empty();
         if (!grants.rows.length) {
@@ -540,10 +560,12 @@ export async function ListPersonEntitlements(
 
         const ctx = await loadContext(rv, user, inScope);
         if (!ctx.ok) return empty();
+        const pendingSuspensions = await loadPendingSuspensions(inScope, evaluatedAt, provider, user);
+        if (!pendingSuspensions) return empty();
 
         const evaluated = inScope.map((g) => {
             const template = templateByID.get(g.ProductEntitlementID.toLowerCase())!;
-            return evaluateGrant(g, evaluatedAt, template.Code, ctx.subs, ctx.terms);
+            return evaluateGrant(g, evaluatedAt, template.Code, ctx.subs, ctx.terms, pendingSuspensions);
         });
 
         const byCode = new Map<string, EvaluatedNamedGrant[]>();

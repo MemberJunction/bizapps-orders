@@ -26,5 +26,33 @@
       "lastModified": "2026-09-28T21:24:42.758Z",
       "checksum": "5cd8769f6d6308693ab8a50888ff59718d8cacc117b90934f6e302def468156e"
     }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Checkout.Replay",
+      "RoleID": "@lookup:MJ: Roles.Name=Checkout Operator",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "E05A3F8D-39CB-4F8B-82D7-9F4187B4E469"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T23:39:40.137Z",
+      "checksum": "5f65cdf9667452553af7ea658de007912a04091e36a4a04ea88ed647d3bd7e89"
+    }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Progress.Supersede",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Revenue Supervisor",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "48240466-28E4-4967-98B4-71225560D805"
+    },
+    "sync": {
+      "lastModified": "2026-10-03T21:47:06.219Z",
+      "checksum": "25bbaa1c928af178bace82394419c622255f3320a367382fe4aae3e8878f123b"
+    }
   }
 ]

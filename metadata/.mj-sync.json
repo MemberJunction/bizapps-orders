@@ -36,7 +36,11 @@
     "entity-relationships",
     "entity-permissions",
     "authorization-roles",
-    "user-views"
+    "user-views",
+    "record-processes",
+    "ml-training-pipelines",
+    "ml-models",
+    "ml-model-scoring-bindings"
   ],
   "sqlLogging": {
     "enabled": true,

@@ -784,6 +784,24 @@
         {
           "fields": {
             "ActionID": "@parent:ID",
+            "Name": "Description",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "What the gateway dashboard shows for this charge. When omitted and OrderHeaderID is set, it is built from the order: the first line's product, '+N more' for further lines, and the order number."
+          },
+          "primaryKey": {
+            "ID": "D917975D-1896-4157-AC5A-3A91C6EF63A1"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:46.067Z",
+            "checksum": "980e7dcffcacf035d0056a707add098a6ebf6e180e87a78f77f9d0f0f56a7114"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
             "Name": "PaymentIntentID",
             "Type": "Output",
             "ValueType": "Scalar",

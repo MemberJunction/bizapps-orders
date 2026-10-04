@@ -66,6 +66,7 @@ function realLine(calls: { asked: number }) {
         Fields: [],
         Quantity: 1,
         ReversesOrderLineID: null,
+        ParentOrderLineID: null,
         // Read by the dimension-pair check in ValidateAsync. Shadowed like the fields above
         // because Object.create leaves the generated accessors unusable on a bare prototype.
         DimensionID: null,

@@ -150,8 +150,31 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Checkout Answers"
     },
     "sync": {
-      "lastModified": "2026-09-29T13:47:48.335Z",
+      "lastModified": "2026-09-29T14:35:59.532Z",
       "checksum": "96d1c2ca79c90658e20fca619920ed2d12487341e0178f87c1dcf5a80c8a3b7b"
+    }
+  },
+  {
+    "_comments": [
+      "Declares Order Lines -> Order Line Choices as a related-record collection (#291).",
+      "",
+      "A checkout adds the buyer's picks to the line before Confirm(), so they save in the booking",
+      "transaction, and the entitlement walk reads them from the line to decide which conditional",
+      "Product Entitlements to grant. A renewal copies them onto its own line the same way.",
+      "",
+      "RelatedEntity and RelatedEntityJoinField (Order Line Choices / OrderLineID) are already columns",
+      "on this row and are deliberately not duplicated here. No Sequence policy: a pick is identified",
+      "by its group and option, not by position."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:choices-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Lines&RelatedEntity=MJ_BizApps_Orders: Order Line Choices"
+    },
+    "sync": {
+      "lastModified": "2026-09-29T14:35:59.554Z",
+      "checksum": "1cd27c591a4e70be76fae10007e0e0c140778168846b374c140f88107a1e71f5"
     }
   }
 ]
