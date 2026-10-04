@@ -1,5 +1,78 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.25.0
+
+### Patch Changes
+
+- Updated dependencies [00f6713]
+  - @mj-biz-apps/orders-entities@5.25.0
+
+## 5.24.0
+
+### Minor Changes
+
+- 36b3869: The anonymous checkout now keeps the buyer's card when the order sells an auto-renewing subscription, so the renewal can be charged later. Before paying — when the order does not exist yet, so the decision is made from the products in the priced draft — it reuses or creates the buyer's gateway customer (found through their own wallet, never by e-mail; a first-time buyer with no person record yet gets a customer opened for the checkout session, and the card is filed under the person completion creates) and asks the gateway to keep the card (`setup_future_usage: off_session` on Stripe); after the capture books, it files the card in the buyer's wallet (`PaymentDetail` + `CustomerPaymentMethod`) and sets it as each new subscription's renewal card (new `Subscription.DefaultCustomerPaymentMethodID`). Keeping the card is fail-soft: a failure is logged and never blocks or reverses the sale.
+
+  A widget can require an automatic-renewal agreement (`autoRenewConsentText`): the widget shows a required checkbox, the server refuses to open a payment intent without it, and the checkout session records the widget's own wording and the time (new `CheckoutSession.AutoRenewConsentAt` / `AutoRenewConsentText`).
+
+  New on the payment driver seam: `BasePaymentProvider.EnsureCustomer` (with `CheckoutSessionID` as an owner for a buyer with no person yet), `CreateIntentRequest.SaveInstrumentForReuse`, and `RetrieveIntentResult.Instrument` (the paid card's token and display fields). Charging the kept card at renewal is not in this release.
+
+- 4f68e25: Public checkout can apply a verified-member discount. A host sets `member-token` on `<mj-orders-checkout>`; `/draft` passes it to the `BaseCheckoutMemberDiscountResolver` the widget names in `Configuration.memberDiscountResolver`, which returns a promotion code priced through the promotion engine. The session keeps the code, never the token, and `/complete` re-prices and books with it. A rejected token prices at the standard rate with a message; a token sent to a widget that cannot verify one is refused. The checkout total now includes line discounts, which it previously omitted. It also now includes tax and charges, so a taxable product sold through the public checkout charges tax at checkout; before, the charge left tax out while the order still booked it. If a settled payment no longer covers the re-priced total at `/complete` (for example, the member promotion ended after the draft), no order is booked, the buyer gets a plain message, and a checkout alert is raised so staff can refund.
+- 5c49cb5: A typed promotion code that belongs to a member promotion is refused at the public checkout, so a member price needs a verified token. `BaseCheckoutMemberDiscountResolver` gains `IsMemberPromotionCode`; `/draft` asks every registered resolver before pricing a typed code and refuses one any of them claims. The base implementation claims every code, so a host's resolver must override it to name its own codes, or typed codes stay off at every checkout.
+- 297fe94: A posted progress observation can be superseded, so a mistyped date no longer freezes the line (bc-aidp-next-golive#260). `Orders.RecordProgress` takes an optional `SupersedesMeasurementID` naming the line's latest observation; for a user holding the new `MJ.BizApps.Orders.Progress.Supersede` authorization (shipped with an `Orders Revenue Supervisor` role, assigned alongside Engagement Lead because a supersede is itself an attestation and still needs `MJ.BizApps.Orders.Progress.Attest`), it reverses that observation's recognition on the observation's own date — or, when that month already has a Posted batch for the line's company, on day 1 of the first later month without one (returned as `ReversalDate`; a failed batch read refuses the supersede) — then posts the new observation's catch-up from the restored total, booked no earlier than that reversal date so nothing new posts into the closed month (returned as `CatchUpDate`; the observation keeps the date the supervisor chose) — all in one transaction, with no row edited. `OrderLineProgressMeasurement` gains `SupersedesMeasurementID` (at most one row per observation, by filtered unique index) and `ReversalJournalEntryID`; a superseded row stays Posted and immutable and stops counting as the line's last observation, in the ordering guard and on the worklist. `UQ_OLPM_Period` becomes a unique index filtered to observations that replace nothing, so a replacement may carry the replaced observation's date and a wrong percent is corrected on the day it was attested. A measurement date after the current business month's end now returns an advisory `FutureDateWarning` on preview and post; forward dating is still allowed. The attestation screen offers "Supersede last" to users with the grant and shows the new warning in the preview and the confirm dialog; the same users get "Show 100%", since the worklist omits completed lines and a mistyped 100% must stay reachable.
+
+### Patch Changes
+
+- 21ade73: Checkout account step: every `Created` account now gets the verification wording (#395). After the buyer sets a password the widget tells them to verify the e-mail before signing in, instead of saying they can sign in straight away when the host left out `VerificationRequired`. `/checkout/account` reports `VerificationRequired: true` for every `Created` account. `CheckoutAccountResult.VerificationRequired` is deprecated and ignored; hosts need not set it.
+- 5939a65: The public checkout's success screen says whether the buyer's access is ready. `POST /checkout/access-status` reduces the order's outbound deliveries from consumers that declare `GatesAccess` to `Ready`, `Pending`, `Failed` or `NotTracked`; the success screen polls it for up to a minute, in a rate-limit window of its own so polling cannot use up the buyer's allowance for the password step, shows copy the widget can override in `accessMessages`, dispatches `checkout-access-state`, and follows `redirectUrl` once the state settles. With no gating consumer nothing changes.
+- fee2c37: Self-serve checkout collects the buyer's billing location and refuses payment without it, and payment
+  intents refuse any currency but USD.
+
+  - The checkout widget asks for billing country, state or province (US, CA and AU) and postal code, from
+    ISO 3166 lists. `CheckBillingLocation` and the lists are exported from `orders-entities`.
+  - `CheckoutSessionService.UpdateDraft` takes the location as a new argument before `contextUser`,
+    prices tax from it, and returns the tax in `Tax`. A draft, payment intent or completion without a
+    valid location is refused.
+  - `CompleteCheckout` records the location as a Common `Address`, links it to the buyer as their Billing
+    address, and sets it as the order's bill-to and ship-to address.
+  - `OpenPaymentIntent` refuses a currency other than USD (`SUPPORTED_PAYMENT_CURRENCY`), since orders do
+    not record a currency. A widget with no configured currency opens in USD.
+  - `OrderPricingContext.ShipToAddress` lets a caller price tax for a location that has no Address row yet.
+
+- 54d4e4a: Checkout: when a later draft changes the session's e-mail, the payer Person is resolved again for the new address (or left for completion to resolve or create), so pricing and the order's bill-to and ship-to follow the new e-mail. Booking the settled payment now restamps the payment intent's bill-to person with the order's when an earlier intent still names the previous payer (#393).
+- 7126955: After a confirmed checkout, the redirect to `redirectUrl` carries the order number as `?order=<number>` (both the Angular element and the fallback host page), so the landing page knows which order completed. A widget can set `sendReceipt: true` to have the payment gateway e-mail its own receipt to the buyer: the intent carries a new `ReceiptEmail` (Stripe `receipt_email`). The e-mail is hashed into the intent's idempotency key, so a buyer who changes their e-mail can still reopen payment.
+- 3b94fb5: The anonymous checkout takes a promotion code when the widget sets `allowCoupons: true`. The widget shows a promo-code field with Apply; `/draft` accepts `promotionCodes` (at most one, trimmed, up to 60 characters; refused when the widget doesn't take codes), prices it through the promotion engine and returns `AppliedPromotionCodes`, `UnusablePromotionCodes` (with the engine's reason) and `Discount`. An unusable code is priced without and not kept. The applied code rides the session snapshot, so `/complete` prices and books the order with the same code — the engine writes the adjustment and counts the redemption, and the total still equals the amount paid. If the server's total differs from what the buyer was shown, the first Pay press stops and shows the new total. Promotions on renewal orders are not in this release.
+- 266995a: The order header Total now includes tax and charges when lines are priced in the browser (#405). Both pricing paths read a priced line back through one shared helper, `ReadPricedLineAmounts`, so the local path's gross is net plus charges plus tax, matching `Orders.PriceOrder`.
+- 71ad081: A return refunds the tax its sale collected, in the jurisdictions that collected it.
+
+  A reversal line's tax is no longer resolved from the return's own ship-to address and date. It is
+  the origin line's tax charges, per jurisdiction, scaled by the quantity returned and negated, with
+  cumulative rounding so a series of partial returns refunds exactly what was collected. Before this, a
+  return that named no address refunded no tax, and one that named an address refunded at that
+  address's current rate.
+
+  A return of a line billed by instalment refunds no tax: its tax reaches the ledger one instalment
+  at a time, so a share of the line's tax would debit Sales Tax Payable for tax never invoiced. The
+  test is the one the credit memo uses, so the two cannot disagree about a line.
+
+  A reversal order that states no address now takes its bill-to and ship-to from the order it
+  reverses, and a reversal line its origin line's ship-to; confirm copies the origin's address
+  snapshot rather than re-reading the Address row. A subscription cancellation now records the order
+  it reverses.
+
+- 09e42d1: `Orders.CheckEntitlement` and `Orders.ListEntitlements` deny an `OnPaidInFull` grant, or an `OnFirstPayment` new purchase, from the day after its order's approved `WaivePaymentHold` ends unpaid, instead of granting until the nightly `EnforcePaymentGatedAccess` job suspends the grant (#404). The read path uses the job's `DecideGrantStatus` and `ApplyAccessOverrides` on the business-time-zone day, only ever tightens access, applies whether or not the renewal cutoff is on, and fails closed when the order's payment facts cannot be read. New pure helper `ReadTimeWaiverExpirySuspension`; the internal loader `LoadReadTimeCutoffSuspensions` is now `LoadReadTimePaymentSuspensions`.
+- Updated dependencies [5939a65]
+- Updated dependencies [fee2c37]
+- Updated dependencies [36b3869]
+- Updated dependencies [4f68e25]
+- Updated dependencies [7126955]
+- Updated dependencies [3b94fb5]
+- Updated dependencies [266995a]
+- Updated dependencies [59efbe7]
+- Updated dependencies [297fe94]
+- Updated dependencies [71ad081]
+  - @mj-biz-apps/orders-entities@5.24.0
+
 ## 5.23.1
 
 ### Patch Changes
@@ -500,8 +573,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                      The INSERT statement conflicted with the FOREIGN KEY constraint
-                      "FK_EntityFieldValue_EntityField"
+                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

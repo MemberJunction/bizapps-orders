@@ -15,6 +15,10 @@
     "relatedEntities": {},
     "primaryKey": {
       "ID": "8DF27980-FE2C-4555-A481-27DD1C3285D3"
+    },
+    "sync": {
+      "lastModified": "2026-10-03T21:47:05.720Z",
+      "checksum": "5d82e8c17c8ff497e77f599293941ed6d569364c57761f9c5fce7d75ae03fc1c"
     }
   }
 ]
