@@ -46,6 +46,7 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  ReloadOrdersEngine,
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
@@ -63,7 +64,17 @@ async function addPrice(ctx: IntegrationCheckContext, productID: string, amount:
   await CreateProductPrice(ctx, productID, amount);
 }
 
-/** Set taxability at whichever level the check is exercising. */
+/**
+ * Set taxability at whichever level the check is exercising, then reload the engine.
+ *
+ * Confirm reads products and categories from `OrdersEngine`'s cache, and these raw `UPDATE`s fire
+ * no entity event, so without the reload the cache keeps the rows as they were before the check
+ * and the line is taxed anyway.
+ *
+ * Raw SQL rather than the object model because these columns are nullable bits, and the entity
+ * layer's dirty check treats null and false as the same value: moving a category from "inherit"
+ * (null) to "exempt" (false) is not seen as a change, and the save writes nothing.
+ */
 async function setTaxability(
   ctx: IntegrationCheckContext,
   opts: {
@@ -89,6 +100,7 @@ async function setTaxability(
           SET DefaultIsTaxable = ${b(opts.categoryIsTaxable)}, DefaultTaxCategory = ${q(opts.categoryTaxCategory)}
         WHERE ID = '${opts.categoryID}'`);
   }
+  await ReloadOrdersEngine(ctx);
 }
 
 /** Record a customer exemption, optionally scoped to a jurisdiction and/or a product category. */

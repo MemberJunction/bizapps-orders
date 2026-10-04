@@ -241,11 +241,11 @@ const provider = (ctx: IntegrationCheckContext) =>
  * the checks after it. The body's own error propagates so the driver reports the real failure and
  * not a teardown artifact.
  *
- * The rollback restores the database but not `OrdersEngine`, which caught every price a check
- * saved and still holds it afterwards. So the engine's prices are reloaded after each rollback:
- * without that, a price one check set for itself becomes the engine price every later check is
- * judged against. Only the prices — reloading the whole engine per check multiplies the suite's
- * run time many times over.
+ * The rollback restores the database but not `OrdersEngine`, which caught every product, price,
+ * category and type a check saved and still holds it afterwards. So the whole engine is reloaded
+ * after each rollback: reloading only the prices left a product or category one check changed as
+ * the cached row every later check was judged against, which made checks pass or fail depending on
+ * which bundles ran before them.
  */
 export async function InRolledBackTransaction(
     ctx: IntegrationCheckContext,
@@ -277,8 +277,20 @@ export async function InRolledBackTransaction(
             if (!aborted) throw e;
             resetTransactionState(p);
         }
-        await OrdersEngine.Instance.RefreshItem('_productPrices');
+        await ReloadOrdersEngine(ctx);
     }
+}
+
+/**
+ * Reload every `OrdersEngine` item from the database, reading on the check's own connection.
+ *
+ * Call it after writing cached rows with raw SQL, which fires no entity event, so the engine never
+ * sees the write. The read goes through `ctx.Provider` because inside a check that is the
+ * connection holding the transaction: a read on any other connection would block on the
+ * transaction's own locks.
+ */
+export async function ReloadOrdersEngine(ctx: IntegrationCheckContext): Promise<void> {
+    await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
 }
 
 /**
