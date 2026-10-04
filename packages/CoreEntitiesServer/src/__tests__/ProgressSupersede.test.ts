@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthorizationInfo, UserInfo } from '@memberjunction/core';
 import {
+    BackDatedWarning,
     CatchUpDate,
     EffectiveObservations,
     FutureDateWarning,
@@ -66,22 +67,57 @@ describe('PlanSupersede', () => {
     });
 });
 
-describe('MonthEnd and FutureDateWarning', () => {
+describe('MonthEnd', () => {
     it('knows month lengths, including a leap February', () => {
         expect(MonthEnd('2026-09-23')).toBe('2026-09-30');
         expect(MonthEnd('2028-02-10')).toBe('2028-02-29');
         expect(MonthEnd('2026-12-01')).toBe('2026-12-31');
     });
+});
 
-    it('is silent up to and including the current month end', () => {
-        expect(FutureDateWarning('2026-09-30', '2026-09-23')).toBeNull();
-        expect(FutureDateWarning('2026-08-31', '2026-09-23')).toBeNull();
+describe('FutureDateWarning', () => {
+    it('is silent up to and including today', () => {
+        expect(FutureDateWarning('2026-10-03', '2026-10-03')).toBeNull();
+        expect(FutureDateWarning('2026-10-02', '2026-10-03')).toBeNull();
+        expect(FutureDateWarning('2026-08-31', '2026-10-03')).toBeNull();
     });
 
-    it('warns, naming both dates, once the date passes the month end', () => {
-        const warning = FutureDateWarning('2027-12-31', '2026-09-23');
-        expect(warning).toMatch(/2027-12-31/);
-        expect(warning).toMatch(/2026-09-30/);
+    it('warns on any later day, including later this month', () => {
+        expect(FutureDateWarning('2026-10-04', '2026-10-03')).toMatch(/after today/);
+        expect(FutureDateWarning('2026-10-31', '2026-10-03')).toMatch(/2026-10-31/);
+    });
+
+    it('names both dates for a wrong-year typo', () => {
+        const warning = FutureDateWarning('2027-08-31', '2026-10-03');
+        expect(warning).toMatch(/2027-08-31/);
+        expect(warning).toMatch(/2026-10-03/);
+    });
+});
+
+describe('BackDatedWarning', () => {
+    it('is silent for the prior month and earlier this month', () => {
+        expect(BackDatedWarning('2026-09-01', '2026-10-03')).toBeNull();
+        expect(BackDatedWarning('2026-09-30', '2026-10-03')).toBeNull();
+        expect(BackDatedWarning('2026-10-02', '2026-10-03')).toBeNull();
+    });
+
+    it('warns two or more months before the current month', () => {
+        expect(BackDatedWarning('2026-08-31', '2026-10-03')).toMatch(/2026-08-31/);
+        expect(BackDatedWarning('2026-08-31', '2026-10-03')).toMatch(/2026-10/);
+        expect(BackDatedWarning('2025-10-31', '2026-10-03')).not.toBeNull();
+    });
+
+    it('steps back across a year boundary', () => {
+        expect(BackDatedWarning('2025-12-01', '2026-01-15')).toBeNull();
+        expect(BackDatedWarning('2025-11-30', '2026-01-15')).not.toBeNull();
+    });
+
+    it('is silent for a future date, which FutureDateWarning covers', () => {
+        expect(BackDatedWarning('2027-08-31', '2026-10-03')).toBeNull();
+    });
+
+    it('reads the date part of a timestamp', () => {
+        expect(BackDatedWarning('2026-09-01T00:00:00Z', '2026-10-03')).toBeNull();
     });
 });
 

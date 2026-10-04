@@ -98,6 +98,7 @@ export {
 export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
+    BackDatedWarning,
     EffectiveObservations,
     FutureDateWarning,
     MonthEnd,

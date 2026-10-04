@@ -37,6 +37,7 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  ReloadOrdersEngine,
   PRODUCT_ENTITLEMENT_ENTITY,
   PRODUCT_ENTITY,
   TeardownOrdersFixture,
@@ -295,9 +296,10 @@ export const EntitlementsChecks: NamedCheck[] = [
         const f = Fx();
         // Set the mode on the PRODUCT, overriding the type's PerUnit default. This is the walk being
         // exercised end to end rather than in a unit test: the column, the query, and the resolution.
-        await TxQuery(ctx,
-          `UPDATE ${ORDERS_SCHEMA}.Product SET EntitlementQuantityMode = 'Flat'
-            WHERE ID = '${f.Products.WidgetA}'`);
+        // Through the object model with the engine reloaded, because confirm reads the product from
+        // `OrdersEngine`'s cache and a raw UPDATE would leave it holding the PerUnit row.
+        await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.WidgetA, { EntitlementQuantityMode: "Flat" });
+        await ReloadOrdersEngine(ctx);
 
         const order = await buyWidget(ctx, 4);
         const g = byCode(await grantsFor(ctx, order.Order.ID as string));
@@ -468,9 +470,9 @@ export const EntitlementsChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        await TxQuery(ctx,
-          `UPDATE ${ORDERS_SCHEMA}.Product SET EntitlementGrantTiming = 'OnPaidInFull'
-            WHERE ID = '${f.Products.WidgetA}'`);
+        // Through the object model with the engine reloaded, for the reason EN4 gives.
+        await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.WidgetA, { EntitlementGrantTiming: "OnPaidInFull" });
+        await ReloadOrdersEngine(ctx);
 
         const unpaid = await buyWidget(ctx, 1);
         const u = await grantsFor(ctx, unpaid.Order.ID as string);
