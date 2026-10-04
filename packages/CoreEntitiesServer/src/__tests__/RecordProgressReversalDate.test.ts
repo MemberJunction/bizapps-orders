@@ -1,9 +1,8 @@
 /**
  * Where `Orders.RecordProgress` books a supersede's reversal, and what a failed batch read means.
  *
- * The two batch reads share one query and differ in one thing: the closed-period WARNING fails open
- * (a hint must not block an attestation), and the reversal DATE fails closed (guessing "open" would
- * book into a period finance has closed). Both are asserted here against a stubbed batch read.
+ * The reversal DATE fails closed: guessing "open" would book into a period finance has closed.
+ * Asserted here against a stubbed batch read.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -46,7 +45,6 @@ const COMPANY = '11111111-2222-4333-8444-555555555555';
 
 interface Internals {
     reversalDate(line: { CompanyID: string | null }, replacedDate: string, p: IMetadataProvider, u: UserInfo): Promise<{ Date: string } | { Refusal: string }>;
-    closedPeriodWarning(line: { CompanyID: string | null }, date: string, p: IMetadataProvider, u: UserInfo): Promise<string | null>;
 }
 const op = new RecordProgressOperation() as unknown as Internals;
 const line = { CompanyID: COMPANY };
@@ -98,22 +96,3 @@ describe('reversal date', () => {
     });
 });
 
-describe('closed-period warning, on the same query', () => {
-    it('names the batch when the month is posted', async () => {
-        mocks.posted = ['2026-08-31'];
-        expect(await op.closedPeriodWarning(line, '2026-08-31', provider, user)).toMatch(/batch B1/);
-    });
-
-    it('is bounded to the one month', async () => {
-        mocks.posted = ['2026-09-30'];
-        expect(await op.closedPeriodWarning(line, '2026-08-31', provider, user)).toBeNull();
-    });
-
-    it('still fails open', async () => {
-        mocks.fail = 'accounting is not installed';
-        expect(await op.closedPeriodWarning(line, '2026-08-31', provider, user)).toBeNull();
-        mocks.fail = null;
-        mocks.throws = true;
-        expect(await op.closedPeriodWarning(line, '2026-08-31', provider, user)).toBeNull();
-    });
-});

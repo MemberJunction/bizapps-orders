@@ -30,19 +30,17 @@ export interface OrdersRecordProgressOutput {
     /** The RevenueRecognition journal entry. Null on a preview and when the delta was zero. */
     JournalEntryID?: string | null;
     /**
-     * Set when the measurement date falls in a month accounting has already posted a batch for.
-     * ADVISORY ONLY — nothing is blocked, on either the preview or the live path. Period close is
-     * not built into AIDP; the batch build is the control, and this only stops someone walking into
-     * a closed period by accident. Null when the period is open, and null when the check could not
-     * run, because an attestation must not depend on the availability of a hint.
-     */
-    ClosedPeriodWarning?: string | null;
-    /**
-     * Set when the measurement date is after the end of the current month on the business calendar.
-     * ADVISORY ONLY — forward dating is allowed with no cap. It exists because a mistyped year posts
-     * silently and only surfaces when the next month's attestation is refused.
+     * Set when the measurement date is after today on the business calendar. ADVISORY ONLY — forward
+     * dating is allowed with no cap. It exists because a mistyped year posts silently and only
+     * surfaces when the next attestation is refused. Null when the calendar could not be read.
      */
     FutureDateWarning?: string | null;
+    /**
+     * Set when the measurement date is two or more months before the current month on the business
+     * calendar. ADVISORY ONLY — nothing is blocked, on either the preview or the live path. The prior
+     * month and earlier in the current month do not warn. Null when the calendar could not be read.
+     */
+    BackDatedWarning?: string | null;
     /** On a supersede: the observation replaced. Null otherwise. */
     SupersededMeasurementID?: string | null;
     /** On a supersede: the recognition taken back out (the replaced observation's RecognitionAmount, negated). Zero otherwise. */
