@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610020900 — the progress-measurement guard ignores the nested
+-- V202610032200 — the progress-measurement guard ignores the nested
 -- __mj_UpdatedAt update
 -- =============================================================================
 -- OrderLineProgressMeasurement has two AFTER UPDATE triggers and SQL Server
