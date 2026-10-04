@@ -82,6 +82,8 @@ import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
 import type { mjBizAppsOrdersOrderLineDimensionEntity } from '@mj-biz-apps/orders-entities';
+import type { DisplacedTermStartEventData } from '@mj-biz-apps/orders-entities';
+import { DisplacedStartEventData } from './displaced-start-event.js';
 import { ORDER_LINE_DIMENSION_ENTITY } from './entity-names.js';
 import {
     MergeOrderRollups,
@@ -208,6 +210,12 @@ interface SubscriptionDecisionForLine {
      * a placeholder for the second one, because the first is not written yet.
      */
     DedupeKey: string;
+    /**
+     * The start the line stated before the confirm, or null. Kept because the confirm overwrites
+     * `ServicePeriodStart` with the settled term, and a displaced start is recorded on the
+     * subscription's `Extended` event (golive #299).
+     */
+    RequestedStart: Date | null;
 }
 
 /**
@@ -2875,7 +2883,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const subscriptionID =
                 decision.Action === 'CreateNew'
                     ? await this.createSubscription(line, product, rules, decision, decided.Subscriber, options)
-                    : await this.touchExistingSubscription(decision, !!line.RenewsSubscriptionID, options);
+                    : await this.touchExistingSubscription(
+                          decision,
+                          !!line.RenewsSubscriptionID,
+                          options,
+                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart),
+                      );
 
             // Remember it so a later line for the same subscription resolves above.
             if (decision.Action === 'CreateNew') createdByDedupeKey.set(decided.DedupeKey, subscriptionID);
@@ -3099,6 +3112,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Behavior: behavior,
                 Subscriber: subscriber,
                 DedupeKey: dedupeKey,
+                RequestedStart: requestedStart,
             });
         }
         return out;
@@ -3518,6 +3532,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         decision: SubscriptionDecision,
         isRenewal: boolean,
         options?: EntitySaveOptions,
+        displacedStart?: DisplacedTermStartEventData,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
@@ -3547,7 +3562,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 decision.SubscriptionID!,
                 decision.Action === 'Reactivate' ? 'Activated' : 'Extended',
                 options,
-                { TermNumber: decision.Term?.TermNumber, Action: decision.Action },
+                { TermNumber: decision.Term?.TermNumber, Action: decision.Action, ...displacedStart },
             );
         }
         return decision.SubscriptionID!;

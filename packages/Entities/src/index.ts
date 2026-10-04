@@ -110,6 +110,7 @@ export * from './pricing/linePricePick';
  * the answer is to stop asking callers to know.
  */
 export * from './date-cell';
+export * from './displaced-term-start';
 
 /**
  * `IsOverdue` / `DaysOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.
