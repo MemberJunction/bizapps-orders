@@ -161,6 +161,18 @@
             </div>
         }
 
+        @if (DisplacedStartNotices.length > 0) {
+            <div class="mjo-oh-todo mjo-oh-moved" role="status">
+                <i class="fa-solid fa-calendar-xmark"></i>
+                <span>Service dates changed at confirm</span>
+                <ul class="mjo-oh-moved__list">
+                    @for (notice of DisplacedStartNotices; track $index) {
+                        <li>{{ notice }}</li>
+                    }
+                </ul>
+            </div>
+        }
+
         <mj-tab-nav
             class="mjo-oh-tabs"
             [Tabs]="ContextTabs"

@@ -6,7 +6,7 @@ import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
-import { LoadOrdersEngine, OrderHeaderEntity, type DateCell, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
+import { DescribeDisplacedTermStart, LoadOrdersEngine, OrderHeaderEntity, type DateCell, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
 import {
     BuildOrderJournalEntryRows,
@@ -120,6 +120,11 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public Confirming = false;
     public StatusError: string | null = null;
+    /**
+     * One sentence per subscription line whose stated start the confirm replaced (golive #299).
+     * Read from the confirm's own record, so it shows right after Confirm and on every later visit.
+     */
+    public DisplacedStartNotices: string[] = [];
     public PaymentTypes: mjBizAppsOrdersPaymentTypeEntity[] = [];
 
     public get ContextTabs(): TabConfig[] {
@@ -168,6 +173,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         await LoadOrdersEngine(Metadata.Provider, new Metadata().CurrentUser);
         await this.loadPaymentTypes();
         await this.refreshAccountingIfNeeded();
+        await this.loadDisplacedStartNotices();
 
         this.RegisterToolbarItem({
             Key: 'confirm-order',
@@ -315,7 +321,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
                     );
                 }
             }
-            await this.record.Confirm();
+            const outcome = await this.record.Confirm();
+            this.DisplacedStartNotices = outcome.DisplacedTermStarts.map(DescribeDisplacedTermStart);
             this.updateLineBadge();
             if (this.EditMode) {
                 this.EditMode = false;
@@ -626,6 +633,17 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     /** The one fetched snapshot every accounting view is derived from. Null until the tab is opened. */
     private journalData: OrderJournalData | null = null;
+
+    /** Booked orders only. A failed read shows no notice rather than blocking the form. */
+    private async loadDisplacedStartNotices(): Promise<void> {
+        if (!this.record?.IsBookedOrder) return;
+        try {
+            const moved = await this.record.LoadDisplacedTermStarts();
+            this.DisplacedStartNotices = moved.map(DescribeDisplacedTermStart);
+        } catch (error) {
+            console.warn('Could not read changed service dates for this order', error);
+        }
+    }
 
     private async loadPaymentTypes(): Promise<void> {
         try {

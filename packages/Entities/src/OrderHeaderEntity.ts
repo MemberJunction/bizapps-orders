@@ -38,6 +38,15 @@ import { ResolveActiveEmployerOrganization } from './PartyAffiliationBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
+import { ParseDisplacedTermStart, type DisplacedTermStart } from './displaced-term-start';
+
+const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
+
+/** What {@link OrderHeaderEntity.Confirm} reports beyond success. */
+export interface OrderConfirmOutcome {
+    /** Subscription lines whose stated start the confirm replaced. Empty when none moved. */
+    DisplacedTermStarts: DisplacedTermStart[];
+}
 import { OrdersEngine } from './pricing/OrdersEngine';
 import { anyFieldIsDirty } from './field-dirty';
 import { AsDateValue, TodayAsDateValue } from './date-cell';
@@ -636,12 +645,54 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * There is no dry run in front of it. Every rule is enforced by the engine itself, and a browser
      * has already run the tier-independent ones through `Validate()`, so the user is told about a
      * missing payer without a round trip.
+     *
+     * The confirm can move a subscription line's dates: a line for a product the subscriber already
+     * holds extends that subscription, and the new term starts the day after current coverage ends,
+     * whatever start the line stated. The confirm writes the settled term onto lines it loads
+     * itself, so the lines held here still carry the stated dates; they are reloaded to show what
+     * was stored, and the lines whose stated start moved are returned for the caller to show.
      */
-    public async Confirm(): Promise<void> {
+    public async Confirm(): Promise<OrderConfirmOutcome> {
         if (this.IsSaved && !this.Lines.IsLoaded) {
             await this.Lines.Load();
         }
         await this.SaveStatus('Confirmed', 'The order could not be confirmed.');
+
+        if (!this.IsSaved) return { DisplacedTermStarts: [] };
+        await this.Lines.Load(true);
+        return { DisplacedTermStarts: await this.LoadDisplacedTermStarts() };
+    }
+
+    /**
+     * Subscription lines of this order whose stated start the confirm replaced, read from the
+     * `Extended` events the confirm recorded. Empty for an order that is not booked.
+     *
+     * Read from the events rather than worked out on the client so every path that confirms an
+     * order (the form, fast entry, a deal close, an API call) leaves the same record, and a screen
+     * opened later shows the same notice. Lines are named from `Lines` when it is loaded.
+     */
+    public async LoadDisplacedTermStarts(): Promise<DisplacedTermStart[]> {
+        if (!this.IsSaved || !this.IsBookedOrder) return [];
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        if (!provider) return [];
+
+        const result = await new RunView(provider).RunView<{ EventData: string | null }>(
+            {
+                EntityName: SUBSCRIPTION_EVENT_ENTITY,
+                ExtraFilter: `RelatedOrderHeaderID='${this.ID}' AND EventType='Extended'`,
+                Fields: ['EventData'],
+                OrderBy: 'OccurredAt',
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!result?.Success) {
+            throw new Error(`Could not read this order's subscription events: ${result?.ErrorMessage ?? 'unknown error'}`);
+        }
+        const lines = this.Lines.IsLoaded ? this.Lines.Items : [];
+        return (result.Results ?? [])
+            .map((row) => ParseDisplacedTermStart(row.EventData, lines))
+            .filter((d): d is DisplacedTermStart => d !== null);
     }
 
     /**
