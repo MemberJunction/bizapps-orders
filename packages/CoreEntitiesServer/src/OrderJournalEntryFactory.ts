@@ -89,6 +89,7 @@ import {
     GLAccountResolver,
     GLAccountResolutionError,
     IsRoleNotLinked,
+    RefuseUntaggedLines,
     UnbilledReceivableNotLinkedError,
     type GLRole,
 } from './GLAccountResolver.js';
@@ -451,14 +452,21 @@ export class OrderJournalEntryFactory {
 
         const drafts: OrderLineDraft[] = [];
         for (const line of lines) {
-            drafts.push(
-                ...(await this.buildLineDrafts(
-                    order, line, products, revRecTypes, dimensions, effectiveDate, asOf, giftCardTypeIDs,
-                    scheduledCompanies,
-                    termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
-                    creditMemoByLine?.get(String(line.ID)),
-                )),
+            this._resolver.TakeResolved();
+            const lineDrafts = await this.buildLineDrafts(
+                order, line, products, revRecTypes, dimensions, effectiveDate, asOf, giftCardTypeIDs,
+                scheduledCompanies,
+                termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
+                creditMemoByLine?.get(String(line.ID)),
             );
+            // A LINK THAT REQUIRES A DIMENSION IS OBEYED HERE (#417), on the finished lines, after
+            // Dimension Defaults, derived tags and the line's own tag have all been merged.
+            RefuseUntaggedLines(
+                `Order ${order.OrderNumber} line ${line.LineNumber}`,
+                this._resolver.TakeResolved(),
+                lineDrafts.flatMap((d) => d.Draft.Lines),
+            );
+            drafts.push(...lineDrafts);
         }
         return drafts;
     }
@@ -1045,6 +1053,7 @@ export class OrderJournalEntryFactory {
         }
         const companyID = line.CompanyID ?? product.CompanyID;
         const asOf = new Date(measurementDate);
+        this._resolver.TakeResolved();
         const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
             this._resolver.Resolve(role, product.ID, product.ProductCategoryID, companyID, asOf, product.ProductTypeID);
         const lineDims = MergeLineDimensions(
@@ -1126,6 +1135,7 @@ export class OrderJournalEntryFactory {
             { GLAccountID: await resolve(GL_ROLE.Sales), CreditAmount: salesCredit, Description: `Revenue — ${product.Name}`, Dimensions: lineDims },
         ]);
         this.assertBalanced(lines, order, line, 'progress recognition');
+        RefuseUntaggedLines(`Order ${order.OrderNumber} line ${line.LineNumber}`, this._resolver.TakeResolved(), lines);
 
         return {
             EffectiveDate: measurementDate,

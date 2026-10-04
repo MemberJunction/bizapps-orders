@@ -111,8 +111,11 @@ export interface ResolverEntityIDs {
  *   is optional and fall back.
  * - `CrossCompany` — an account is linked but belongs to another company (plan D6). Never
  *   recoverable: the entry would book to the wrong legal entity, so no caller may fall back on it.
+ * - `MissingDimensions` — the account's link lists dimensions a journal entry line built from it
+ *   must carry, and the line does not carry them (#417). Never recoverable by falling back: the
+ *   line would reach the ledger untagged. Raised by {@link RefuseUntaggedLines}.
  */
-export type GLAccountResolutionFailure = 'NotLinked' | 'CrossCompany';
+export type GLAccountResolutionFailure = 'NotLinked' | 'CrossCompany' | 'MissingDimensions';
 
 export class GLAccountResolutionError extends Error {
     constructor(
@@ -215,6 +218,108 @@ interface CategoryRow {
     ParentProductCategoryID: string | null;
 }
 
+/** A dimension a GL account link requires, by id and by the code a person recognises. */
+export interface RequiredDimension {
+    DimensionID: string;
+    Code: string;
+}
+
+/** What the link lookup answers: the account, its company, and what the winning link requires. */
+export interface LinkedAccountHit {
+    GLAccountID: string;
+    CompanyID: string;
+    /**
+     * The winning link's `GLAccountLinkDimension` rows: the dimensions a journal entry line built
+     * from this link must carry. Empty, or absent, when the link requires none.
+     */
+    RequiredDimensions?: RequiredDimension[];
+    /** The account as a person reads it (code and name); the id when the account is not cached. */
+    AccountLabel?: string;
+}
+
+/** One successful resolution, as {@link GLAccountResolver.TakeResolved} hands it back. */
+export interface ResolvedAccountRequirement {
+    Role: string;
+    GLAccountID: string;
+    AccountLabel: string;
+    RequiredDimensions: RequiredDimension[];
+}
+
+/** The JE line fields the dimension check reads; `JELineDraft` satisfies it. */
+export interface TaggedJELine {
+    GLAccountID: string;
+    DebitAmount?: number;
+    CreditAmount?: number;
+    Dimensions?: Array<{ DimensionID: string; DimensionValueID: string }>;
+}
+
+/**
+ * Refuse journal entry lines that lack a dimension their account's link requires (#417).
+ *
+ * A GL account link can list dimensions (`GLAccountLinkDimension`) that every journal entry line
+ * built from it must carry. Accounting takes the dimensions it is handed and checks only that each
+ * value belongs to its dimension, so a line missing one posts untagged and the gap shows only in
+ * the ledger. This is the check that stops it, run on the FINISHED lines — after Dimension
+ * Defaults, the derived tags and the line's own tag are merged — so it judges exactly what would
+ * post.
+ *
+ * ONLY LINES THAT POST ARE JUDGED. A zero-amount line is dropped before submission, and an account
+ * resolved but never written to (a fully comped line's AR) posts nothing to tag.
+ *
+ * `resolved` must cover only the resolutions made for the lines being checked: the same account can
+ * be reached through different links for different products, each with its own requirement. Where
+ * one account was reached through more than one link for the same lines, the requirements are
+ * combined.
+ *
+ * @param where names the lines for the person reading the error, e.g. `Order 1042 line 2`
+ * @throws GLAccountResolutionError with `Failure: 'MissingDimensions'`, naming each role, account
+ *   and missing dimension code
+ */
+export function RefuseUntaggedLines(
+    where: string,
+    resolved: readonly ResolvedAccountRequirement[],
+    lines: readonly TaggedJELine[],
+): void {
+    const key = (v: string) => v.trim().toLowerCase();
+    const problems: string[] = [];
+    const reported = new Set<string>();
+    let firstRole = '';
+
+    for (const line of lines) {
+        if (!Number(line.DebitAmount ?? 0) && !Number(line.CreditAmount ?? 0)) continue;
+        const reqs = resolved.filter((r) => key(r.GLAccountID) === key(line.GLAccountID));
+        if (!reqs.length) continue;
+
+        const carried = new Set((line.Dimensions ?? []).filter((d) => d.DimensionValueID).map((d) => key(d.DimensionID)));
+        const missing = new Map<string, string>();
+        for (const req of reqs) {
+            for (const dim of req.RequiredDimensions) {
+                if (!carried.has(key(dim.DimensionID))) missing.set(key(dim.DimensionID), dim.Code);
+            }
+        }
+        if (!missing.size) continue;
+
+        const roles = [...new Set(reqs.map((r) => r.Role))];
+        const signature = `${key(line.GLAccountID)}|${[...missing.keys()].sort().join(',')}`;
+        if (reported.has(signature)) continue;
+        reported.add(signature);
+        firstRole ||= roles[0];
+        problems.push(
+            `the '${roles.join("' / '")}' account ${reqs[0].AccountLabel} requires dimension ` +
+                `${[...missing.values()].join(', ')}, which this line does not carry`,
+        );
+    }
+
+    if (!problems.length) return;
+    throw new GLAccountResolutionError(
+        firstRole,
+        null,
+        'MissingDimensions',
+        `${where}: ${problems.join('; ')}. Nothing was posted. Add a Dimension Default for the ` +
+            `product (or its category, product type or company), or tag the line itself, then try again.`,
+    );
+}
+
 /**
  * Resolves role→account for products, caching the category tree for the life of one booking.
  * Construct per unit of work; do not hold across requests (the category tree is read once).
@@ -235,8 +340,32 @@ export class GLAccountResolver {
             asOf: Date,
             /** When given, only links whose ACCOUNT belongs to this company are considered (D71). */
             forCompanyID?: string,
-        ) => { GLAccountID: string; CompanyID: string } | null,
+        ) => LinkedAccountHit | null,
     ) {}
+
+    /** Every successful resolution since the last {@link TakeResolved}, for the dimension check. */
+    private readonly _resolved: ResolvedAccountRequirement[] = [];
+
+    /**
+     * Take what this resolver has resolved since the last call, and clear it.
+     *
+     * Feed it to {@link RefuseUntaggedLines} with the lines built from those resolutions. Take once
+     * before building a unit (an order line, an instalment line) to discard earlier units' entries,
+     * and once after: an account reached through one product's link must not lend its requirement
+     * to another product that reached the same account through a different link.
+     */
+    public TakeResolved(): ResolvedAccountRequirement[] {
+        return this._resolved.splice(0, this._resolved.length);
+    }
+
+    private record(role: string, hit: LinkedAccountHit): void {
+        this._resolved.push({
+            Role: role,
+            GLAccountID: hit.GLAccountID,
+            AccountLabel: hit.AccountLabel ?? hit.GLAccountID,
+            RequiredDimensions: hit.RequiredDimensions ?? [],
+        });
+    }
 
     /**
      * Walk product → category → ancestors → product type → company for `role`.
@@ -260,7 +389,7 @@ export class GLAccountResolver {
         productTypeID?: string | null,
     ): Promise<string> {
         const company = expectedCompanyID;
-        const hit =
+        const hit: LinkedAccountHit | null =
             (productID ? this._resolveLink(this._entityIDs.Product, productID, role, asOf, company) : null) ??
             (await this.resolveUpCategoryTree(role, productCategoryID, asOf, company)) ??
             (productTypeID
@@ -296,6 +425,7 @@ export class GLAccountResolver {
             );
         }
 
+        this.record(role, hit);
         return hit.GLAccountID;
     }
 
@@ -328,6 +458,7 @@ export class GLAccountResolver {
                     `but this books to company ${expectedCompanyID}. Cross-company account mapping is refused.`,
             );
         }
+        this.record(role, hit);
         return hit.GLAccountID;
     }
 
@@ -337,7 +468,7 @@ export class GLAccountResolver {
         startCategoryID: string | null,
         asOf: Date,
         forCompanyID: string,
-    ): Promise<{ GLAccountID: string; CompanyID: string } | null> {
+    ): Promise<LinkedAccountHit | null> {
         if (!startCategoryID) return null;
         await this.ensureCategoriesLoaded();
 
