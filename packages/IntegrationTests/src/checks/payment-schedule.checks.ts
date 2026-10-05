@@ -60,6 +60,7 @@ import {
     type IntegrationCheckContext,
     type NamedCheck,
 } from '@memberjunction/testing-integration';
+import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
 import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { BuildInvoiceDocuments, type OrderHeaderPaymentScheduleEntityServer } from '@mj-biz-apps/orders-core-entities-server';
 import {
@@ -67,6 +68,7 @@ import {
     ACCT_SCHEMA,
     CreateOrdersFixture,
     createViaEntity,
+    EnsureGLAccount,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
@@ -74,7 +76,7 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
-import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from '../entity-names.js';
+import { GL_ACCOUNT_LINK_ENTITY, ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from '../entity-names.js';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
 import type { RequestedCharge } from '@mj-biz-apps/orders-core-entities-server';
 import { CreatePayment } from '../payment-builder.js';
@@ -362,6 +364,36 @@ const lineTotals = (ctx: IntegrationCheckContext, orderID: string) =>
         `SELECT ID, LineNumber, BilledToDate, RecognizedToDate
            FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}' ORDER BY LineNumber`,
     );
+
+/**
+ * Give a company an Unbilled Receivable account and a company-level link to it, through the object
+ * model, inside the check's transaction. Reloads the accounting engine so booking sees the link.
+ */
+async function linkUnbilledReceivable(ctx: IntegrationCheckContext, companyID: string): Promise<void> {
+    const f = Fx();
+    const accountID = await EnsureGLAccount(ctx, companyID, UNBILLED_CODE, 'Unbilled Revenue (Contract Asset)', 'Asset');
+    const role = await TxOne<{ ID: string }>(ctx, `SELECT ID FROM ${ACCT_SCHEMA}.GLAccountRole WHERE Name='Unbilled Receivable'`);
+    await createViaEntity(ctx, GL_ACCOUNT_LINK_ENTITY, {
+        GLAccountID: accountID,
+        GLAccountRoleID: role.ID,
+        EntityID: f.CompanyEntityID,
+        RecordID: companyID,
+        Status: 'Active',
+    });
+    await AccountingEngineBase.Instance.Config(true, ctx.User, ctx.Provider);
+}
+
+/**
+ * Run `body`, then reload the accounting engine. The rollback removes a link the check created but
+ * not the engine's cached copy, which would let later checks book to an account that is gone.
+ */
+async function reloadingAccountingAfter(ctx: IntegrationCheckContext, body: () => Promise<void>): Promise<void> {
+    try {
+        await body();
+    } finally {
+        await AccountingEngineBase.Instance.Config(true, ctx.User, ctx.Provider);
+    }
+}
 
 /** Every ledger line the order touched, confirm and instalments together. */
 const allLedger = async (ctx: IntegrationCheckContext, orderID: string): Promise<LedgerLine[]> => [
@@ -988,58 +1020,64 @@ export const PaymentScheduleChecks: NamedCheck[] = [
         Name: "PS-V: a two-company order is invoiced once per instalment, from the order's company, booked per product company",
         RequiresMutation: true,
         Fn: async (ctx) =>
-            InRolledBackTransaction(ctx, async () => {
-                // golive #311: the header is Co A, the lines are Co A (100) and Co B (200). The
-                // schedule is the ORDER's, so both rows carry Co A; each instalment takes ONE number
-                // with no company letter, and its billing entry is split so Co A books a third of it
-                // and Co B two thirds, each in its own accounts (D13).
-                const f = Fx();
-                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
-                await CreateProductPrice(ctx, f.Products.WidgetB, 200);
-                const draft = await BuildOrder(ctx.User, {
-                    CompanyID: f.CoA.ID,
-                    BillToOrganizationID: f.Customers.OrganizationID,
-                    OrderDate: new Date('2026-07-01T00:00:00Z'),
-                    Lines: [
-                        { ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 100 },
-                        { ProductID: f.Products.WidgetB, Quantity: 1, UnitPrice: 200 },
-                    ],
-                });
-                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
-                const orderID = draft.Order.ID as string;
-                const ids = await addInstalments(ctx, orderID, [
-                    { InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 150, CompanyID: f.CoB.ID },
-                    { InstallmentNumber: 2, DueDate: '2027-07-01', Amount: 150 },
-                ]);
-                const confirmed = await confirm(ctx, orderID);
-                Assert(confirmed.saved, `confirm: ${confirmed.message}`);
+            reloadingAccountingAfter(ctx, () =>
+                InRolledBackTransaction(ctx, async () => {
+                    // golive #311: the header is Co A, the lines are Co A (100) and Co B (200). The
+                    // schedule is the ORDER's, so both rows carry Co A; each instalment takes ONE number
+                    // with no company letter, and its billing entry is split so Co A books a third of it
+                    // and Co B two thirds, each in its own accounts (D13).
+                    const f = Fx();
+                    await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                    await CreateProductPrice(ctx, f.Products.WidgetB, 200);
+                    // Co B's widget recognises at confirm, ahead of the instalments that bill it, so Co B
+                    // needs an Unbilled Receivable account. The fixture links one for Co A only (Co B is
+                    // left unlinked for the refusal checks), so this check links Co B's.
+                    await linkUnbilledReceivable(ctx, f.CoB.ID);
+                    const draft = await BuildOrder(ctx.User, {
+                        CompanyID: f.CoA.ID,
+                        BillToOrganizationID: f.Customers.OrganizationID,
+                        OrderDate: new Date('2026-07-01T00:00:00Z'),
+                        Lines: [
+                            { ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 100 },
+                            { ProductID: f.Products.WidgetB, Quantity: 1, UnitPrice: 200 },
+                        ],
+                    });
+                    Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+                    const orderID = draft.Order.ID as string;
+                    const ids = await addInstalments(ctx, orderID, [
+                        { InstallmentNumber: 1, DueDate: '2026-07-01', Amount: 150, CompanyID: f.CoB.ID },
+                        { InstallmentNumber: 2, DueDate: '2027-07-01', Amount: 150 },
+                    ]);
+                    const confirmed = await confirm(ctx, orderID);
+                    Assert(confirmed.saved, `confirm: ${confirmed.message}`);
 
-                const rows = await schedule(ctx, orderID);
-                for (const row of rows) {
-                    AssertEqual(String(row.CompanyID).toLowerCase(), f.CoA.ID.toLowerCase(), "every row is the order company's");
-                }
-                const orderNumber = String(confirmed.order.OrderNumber);
-                AssertEqual(rows[0].Status, 'Invoiced', 'the instalment due on the order date was issued by the confirm');
-                AssertEqual(rows[0].DocumentNumber, `${orderNumber}-1`, 'one number for the whole instalment, no company letter');
+                    const rows = await schedule(ctx, orderID);
+                    for (const row of rows) {
+                        AssertEqual(String(row.CompanyID).toLowerCase(), f.CoA.ID.toLowerCase(), "every row is the order company's");
+                    }
+                    const orderNumber = String(confirmed.order.OrderNumber);
+                    AssertEqual(rows[0].Status, 'Invoiced', 'the instalment due on the order date was issued by the confirm');
+                    AssertEqual(rows[0].DocumentNumber, `${orderNumber}-1`, 'one number for the whole instalment, no company letter');
 
-                const first = await instalmentEntriesByCompany(ctx, ids[0]);
-                AssertEqual(new Set(first.map((l) => l.EntryID)).size, 2, 'one billing entry per product company');
-                assertBalanced(first, 'the first instalment');
-                AssertEqual(netForCompany(first, f.CoA.ID, AR_CODE), 50, "Co A books its third of the instalment");
-                AssertEqual(netForCompany(first, f.CoB.ID, AR_CODE), 100, 'Co B books its two thirds, in its own books');
+                    const first = await instalmentEntriesByCompany(ctx, ids[0]);
+                    AssertEqual(new Set(first.map((l) => l.EntryID)).size, 2, 'one billing entry per product company');
+                    assertBalanced(first, 'the first instalment');
+                    AssertEqual(netForCompany(first, f.CoA.ID, AR_CODE), 50, "Co A books its third of the instalment");
+                    AssertEqual(netForCompany(first, f.CoB.ID, AR_CODE), 100, 'Co B books its two thirds, in its own books');
 
-                const issued = await issue(ctx, ids[1]);
-                Assert(issued.Success, `issue row 2: ${issued.Message}`);
-                AssertEqual(issued.DocumentNumber, `${orderNumber}-2`, 'the second instalment is numbered -2');
-                const second = await instalmentEntriesByCompany(ctx, ids[1]);
-                assertBalanced(second, 'the second instalment');
-                AssertEqual(netForCompany([...first, ...second], f.CoA.ID, AR_CODE), 100, "Co A has billed its whole line");
-                AssertEqual(netForCompany([...first, ...second], f.CoB.ID, AR_CODE), 200, 'and Co B its whole line');
+                    const issued = await issue(ctx, ids[1]);
+                    Assert(issued.Success, `issue row 2: ${issued.Message}`);
+                    AssertEqual(issued.DocumentNumber, `${orderNumber}-2`, 'the second instalment is numbered -2');
+                    const second = await instalmentEntriesByCompany(ctx, ids[1]);
+                    assertBalanced(second, 'the second instalment');
+                    AssertEqual(netForCompany([...first, ...second], f.CoA.ID, AR_CODE), 100, "Co A has billed its whole line");
+                    AssertEqual(netForCompany([...first, ...second], f.CoB.ID, AR_CODE), 200, 'and Co B its whole line');
 
-                const totals = await lineTotals(ctx, orderID);
-                AssertEqual(Number(totals[0].BilledToDate), 100, 'BilledToDate reaches each line in full');
-                AssertEqual(Number(totals[1].BilledToDate), 200, 'on both companies');
-            }),
+                    const totals = await lineTotals(ctx, orderID);
+                    AssertEqual(Number(totals[0].BilledToDate), 100, 'BilledToDate reaches each line in full');
+                    AssertEqual(Number(totals[1].BilledToDate), 200, 'on both companies');
+                }),
+            ),
     },
 ];
 
