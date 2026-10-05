@@ -683,7 +683,7 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             const op = source('IssueInstalmentInvoiceOperation.ts');
             expect(op).toMatch(/const invoiceDay = await CalendarDayOrToday\(null, provider, user\);/);
             expect(op).toMatch(/InvoiceDay: invoiceDay,/);
-            expect(op).toMatch(/BuildInstalmentLineFacts\(lineEntities\.Results \?\? \[\], company, invoiceDay\)/);
+            expect(op).toMatch(/BuildInstalmentLineFacts\(lineEntities\.Results \?\? \[\], row\.CompanyID, invoiceDay\)/);
         });
 
         it('InstalmentInvoiceEntry dates the entry by that day, not by the UTC day of an instant', () => {

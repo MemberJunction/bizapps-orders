@@ -295,10 +295,9 @@ export interface FirstPaymentScheduleRow {
  * How much has to be paid before a new purchase counts as paid for its first payment.
  *
  * An order with no schedule is due in one amount, so its first payment is the whole order. An order
- * with a schedule bills from the order's company (golive #311), so its first payment is its first
- * live instalment. A schedule written before golive #311 may still carry rows per selling company; its first
- * payment is then the first live instalment of EACH company's rows, summed — the customer's first
- * bill either way. A cancelled instalment was never due and does not count.
+ * with a schedule carries one schedule per selling company (D86), so its first payment is the first
+ * live instalment of EACH company's schedule, summed — the customer's first bill, however many
+ * companies it bills for. A cancelled instalment was never due and does not count.
  */
 export function FirstPaymentAmount(totalGross: number | null, schedule: FirstPaymentScheduleRow[]): number {
     const firstByCompany = new Map<string, FirstPaymentScheduleRow>();

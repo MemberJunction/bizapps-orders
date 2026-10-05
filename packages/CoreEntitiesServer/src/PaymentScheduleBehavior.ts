@@ -6,19 +6,8 @@
  * a cadence and a first due date and emits rows that tie by construction, through the same
  * largest-remainder split the invoice already uses for its per-company money.
  *
- * ONE SCHEDULE PER ORDER, FROM THE ORDER'S COMPANY (D61, golive #311). An order is billed by the
- * company that sold it, whatever company owns each product, so its rows carry the order's
- * `CompanyID` and together bill the whole order. The LEDGER stays per product company (D13): every
- * consumer that books or splits cash reads the schedule through {@link CompanySlices}, which divides
- * each order-level row among the companies whose lines it bills.
- *
- * Orders that already issued an instalment under the old per-company rows keep them. A row whose
- * company is not the order's covers only that company's lines; the order company's rows cover
- * everything else ({@link ScheduleCoverage}). New rows are always the order company's, so this case
- * only shrinks.
- *
- * THE SCHEDULE MUST TIE. Each covering company's live rows must sum to the gross of the lines they
- * cover. Leniency here would be a mistake: treating an unscheduled remainder as "due on the header
+ * THE SCHEDULE MUST TIE. Per (order, company), the live rows must sum to that company's gross on the
+ * order. Leniency here would be a mistake: treating an unscheduled remainder as "due on the header
  * DueDate" silently under-bills, which is the failure the invoice module already names. The check is
  * one function, {@link ScheduleShortfalls}, read at confirm (OrderEntityServer) and at invoicing
  * (Orders.IssueInstalmentInvoice) so the two refuse for the same reason in the same words.
@@ -120,23 +109,23 @@ export function BuildPaymentSchedule(input: {
 }
 
 /**
- * A spawned renewal's schedule (orders #305): one instalment, from the order's company, for the
- * order's whole gross, due on `dueDate` ({@link RenewalDueDate}). Under D92 confirm then issues it at
- * once, so the receivable is dated the day the invoice goes out rather than the first day of the new
- * term.
+ * A spawned renewal's schedule (orders #305): one instalment per company for that company's whole
+ * gross, due on `dueDate` ({@link RenewalDueDate}). Under D92 confirm then issues it at once, so the
+ * receivable is dated the day the invoice goes out rather than the first day of the new term.
  *
- * An order whose lines come to nothing gets no row: there is nothing to bill, and no rows is the
- * implicit single instalment.
+ * A company whose lines come to nothing gets no row: there is nothing to bill, and an absent row
+ * still ties (a zero-gross company is never a shortfall).
  */
-export function RenewalScheduleRows(
-    lines: ScheduleLineFacts[],
-    dueDate: string,
-    orderCompanyID: string,
-): Array<ScheduleRowDraft & { CompanyID: string }> {
-    const total = Money(lines.reduce((sum, l) => sum + Number(l.LineTotalGross ?? 0), 0));
-    if (total <= 0) return [];
-    const [row] = BuildPaymentSchedule({ Total: total, Count: 1, Cadence: 'Annual', FirstDueDate: dueDate });
-    return [{ ...row, CompanyID: orderCompanyID }];
+export function RenewalScheduleRows(lines: ScheduleLineFacts[], dueDate: string): Array<ScheduleRowDraft & { CompanyID: string }> {
+    const gross = new Map<string, number>();
+    for (const l of lines) gross.set(l.CompanyID, Money((gross.get(l.CompanyID) ?? 0) + Number(l.LineTotalGross ?? 0)));
+    const out: Array<ScheduleRowDraft & { CompanyID: string }> = [];
+    for (const [companyID, total] of gross) {
+        if (total <= 0) continue;
+        const [row] = BuildPaymentSchedule({ Total: total, Count: 1, Cadence: 'Annual', FirstDueDate: dueDate });
+        out.push({ ...row, CompanyID: companyID });
+    }
+    return out;
 }
 
 /**
@@ -172,9 +161,8 @@ export interface ScheduleLineFacts {
     LineTotalGross: number;
 }
 
-/** One covering company whose schedule does not match the lines it covers. */
+/** One company whose schedule does not match its lines. */
 export interface ScheduleShortfall {
-    /** The company on the rows: the order's company, or a product company on a pre-golive-#311 order. */
     CompanyID: string;
     Scheduled: number;
     Lines: number;
@@ -185,46 +173,22 @@ export interface ScheduleShortfall {
 /** Statuses whose amount still counts toward the tie. A cancelled row has left the schedule. */
 const LIVE_STATUSES = new Set(['Scheduled', 'Invoiced', 'Paid', 'WrittenOff']);
 
-const lower = (id: string | null | undefined): string => String(id ?? '').toLowerCase();
-
 /**
- * Which company's rows bill each line company, lower-cased: line company → row company.
+ * Where the schedule fails to tie, per company. Empty means it ties — including the case of no rows
+ * at all, which is the implicit single instalment and needs nothing.
  *
- * A product company with live rows of its own (a schedule written before golive #311 that had
- * already issued an instalment, so the migration left it) is billed by those rows. Every other line
- * company, the order's own included, is billed by the order company's rows. A company that appears
- * only on rows is not in the map; {@link ScheduleShortfalls} reports it, since it has no lines.
+ * Every company with lines OR rows is checked, so a company that has lines and no schedule while
+ * another company on the same order has rows is reported rather than silently unbilled.
  */
-export function ScheduleCoverage(rows: ScheduleRowFacts[], lineCompanyIDs: string[], orderCompanyID: string): Map<string, string> {
-    const order = lower(orderCompanyID);
-    const own = new Set(rows.filter((r) => LIVE_STATUSES.has(r.Status)).map((r) => lower(r.CompanyID)));
-    const out = new Map<string, string>();
-    for (const id of lineCompanyIDs) {
-        const company = lower(id);
-        out.set(company, company !== order && own.has(company) ? company : order);
-    }
-    return out;
-}
-
-/**
- * Where the schedule fails to tie, per covering company. Empty means it ties — including the case of
- * no rows at all, which is the implicit single instalment and needs nothing.
- *
- * Every covering company with lines OR rows is checked, so rows that bill nothing are reported, and
- * so are lines no row covers.
- */
-export function ScheduleShortfalls(rows: ScheduleRowFacts[], lines: ScheduleLineFacts[], orderCompanyID: string): ScheduleShortfall[] {
+export function ScheduleShortfalls(rows: ScheduleRowFacts[], lines: ScheduleLineFacts[]): ScheduleShortfall[] {
     const live = rows.filter((r) => LIVE_STATUSES.has(r.Status));
     if (!live.length) return [];
 
-    const coverage = ScheduleCoverage(live, lines.map((l) => l.CompanyID), orderCompanyID);
+    const key = (id: string): string => String(id).toLowerCase();
     const scheduled = new Map<string, number>();
-    for (const r of live) scheduled.set(lower(r.CompanyID), Money((scheduled.get(lower(r.CompanyID)) ?? 0) + Number(r.Amount)));
+    for (const r of live) scheduled.set(key(r.CompanyID), Money((scheduled.get(key(r.CompanyID)) ?? 0) + Number(r.Amount)));
     const lineGross = new Map<string, number>();
-    for (const l of lines) {
-        const owner = coverage.get(lower(l.CompanyID)) as string;
-        lineGross.set(owner, Money((lineGross.get(owner) ?? 0) + Number(l.LineTotalGross ?? 0)));
-    }
+    for (const l of lines) lineGross.set(key(l.CompanyID), Money((lineGross.get(key(l.CompanyID)) ?? 0) + Number(l.LineTotalGross ?? 0)));
 
     const companies = [...new Set([...scheduled.keys(), ...lineGross.keys()])].sort();
     const out: ScheduleShortfall[] = [];
@@ -235,105 +199,6 @@ export function ScheduleShortfalls(rows: ScheduleRowFacts[], lines: ScheduleLine
         if (Math.abs(s - g) >= 0.005) out.push({ CompanyID: company, Scheduled: s, Lines: g, Difference: Money(g - s) });
     }
     return out;
-}
-
-/** A schedule row as {@link CompanySlices} divides it. Fields it does not read pass through. */
-export interface SliceableScheduleRow extends ScheduleRowFacts {
-    ID: string;
-    InstallmentNumber?: number;
-    AmountPaid?: number;
-}
-
-/**
- * The schedule as the LEDGER sees it: every row divided among the product companies whose lines it
- * bills (golive #311, D13).
- *
- * An order-company row on a multi-company order bills every company's lines, but each company books
- * its own receivable, deposits and revenue. So each live row becomes one copy per covered company,
- * with that company's `CompanyID`, its piece of `Amount` and its piece of `AmountPaid`, and the same
- * `ID`, number, dates, status and document number. Everything that already reads rows per company —
- * the booking switch, the cash split, the deposit release — then works on these copies unchanged.
- *
- * THE PIECES TIE BOTH WAYS when the schedule does: one row's pieces sum to the row, and each
- * company's pieces across all rows sum to that company's gross. Each row in instalment order splits
- * across what each company still has unscheduled, and the last takes the remainder — the same rule
- * the billing entry uses for lines (`TiedSlice`). When the schedule does not tie (a draft being
- * edited, an order whose lines changed), each row is split by gross instead, so the pieces still sum
- * to the row and a payment can still be booked.
- *
- * Where the rows cover one company, which is nearly every order, the copies are the rows with that
- * company stamped and the amounts unchanged. Cancelled rows and a product company's own rows pass
- * through as they are. `AmountPaid` is divided in proportion to the row's pieces.
- */
-export function CompanySlices<T extends SliceableScheduleRow>(rows: T[], lines: ScheduleLineFacts[], orderCompanyID: string): T[] {
-    const live = rows.filter((r) => LIVE_STATUSES.has(r.Status));
-    const coverage = ScheduleCoverage(live, lines.map((l) => l.CompanyID), orderCompanyID);
-
-    // Gross per covered company, per covering company, in id order so the split is stable. The
-    // pieces carry each company's id as the lines spell it, since GL lookups key on it.
-    const spelling = new Map<string, string>();
-    const grossByOwner = new Map<string, Map<string, number>>();
-    for (const l of lines) {
-        const company = lower(l.CompanyID);
-        if (!spelling.has(company)) spelling.set(company, String(l.CompanyID));
-        const owner = coverage.get(company) as string;
-        const bucket = grossByOwner.get(owner) ?? new Map<string, number>();
-        bucket.set(company, Money((bucket.get(company) ?? 0) + Number(l.LineTotalGross ?? 0)));
-        grossByOwner.set(owner, bucket);
-    }
-
-    const sliced = new Map<string, Array<{ CompanyID: string; Amount: number }>>();
-    for (const [owner, gross] of grossByOwner) {
-        const companies = [...gross.keys()].sort();
-        const ownerRows = live
-            .filter((r) => lower(r.CompanyID) === owner)
-            .sort((a, b) => Number(a.InstallmentNumber ?? 0) - Number(b.InstallmentNumber ?? 0) || lower(a.ID).localeCompare(lower(b.ID)));
-        if (!ownerRows.length) continue;
-        const totals = companies.map((c) => gross.get(c) as number);
-        const amounts = ownerRows.map((r) => Money(Number(r.Amount)));
-        const pieces = companies.length === 1 ? amounts.map((a) => [a]) : splitRows(totals, amounts);
-        ownerRows.forEach((r, i) =>
-            sliced.set(lower(r.ID), companies.map((c, j) => ({ CompanyID: spelling.get(c) as string, Amount: pieces[i][j] }))),
-        );
-    }
-
-    const out: T[] = [];
-    for (const row of rows) {
-        const parts = LIVE_STATUSES.has(row.Status) ? sliced.get(lower(row.ID)) : undefined;
-        if (!parts) {
-            out.push(row);
-            continue;
-        }
-        if (parts.length === 1) {
-            out.push({ ...row, CompanyID: parts[0].CompanyID });
-            continue;
-        }
-        const paid = row.AmountPaid == null ? null : SplitExactly(Number(row.AmountPaid), parts.map((p) => Math.max(0, p.Amount)));
-        parts.forEach((p, j) => out.push({ ...row, CompanyID: p.CompanyID, Amount: p.Amount, ...(paid ? { AmountPaid: paid[j] } : {}) }));
-    }
-    return out;
-}
-
-/**
- * Split each row across companies so the pieces tie both ways, or by gross when the rows do not sum
- * to the totals. `pieces[i][j]` is row `i`'s share for company `j`.
- */
-function splitRows(totals: number[], rows: number[]): number[][] {
-    const cents = (n: number): number => Math.round(Number(n) * 100);
-    const weights = totals.map((t) => Math.max(0, t));
-    const ties =
-        totals.every((t) => t >= 0) && rows.reduce((s, r) => s + cents(r), 0) === totals.reduce((s, t) => s + cents(t), 0);
-    if (!ties) return rows.map((r) => SplitExactly(r, weights));
-
-    let remaining = totals.map(cents);
-    return rows.map((row, i) => {
-        const mine =
-            i === rows.length - 1
-                ? remaining
-                : SplitExactly(row, remaining.map((r) => r / 100)).map(cents);
-        remaining = remaining.map((r, j) => r - mine[j]);
-        return mine.map((c) => c / 100);
-    });
 }
 
 /**
@@ -355,17 +220,14 @@ export interface ScheduleTimingFacts extends ScheduleRowFacts {
 }
 
 /**
- * The line companies on this order that are BILLED BY INSTALMENT, lower-cased (D92).
+ * The companies on this order that are BILLED BY INSTALMENT, lower-cased (D92).
  *
- * This is the whole scope trigger for the new booking model. A company whose lines are covered by
- * at least one live schedule row raises no BILLING entry at confirm — its receivable reaches the
- * ledger one instalment at a time, as each is invoiced. An order with no rows is untouched.
+ * This is the whole scope trigger for the new booking model. A company with at least one live
+ * schedule row raises no BILLING entry at confirm — its receivable reaches the ledger one
+ * instalment at a time, as each is invoiced. A company with none is every order that exists today
+ * and is untouched.
  *
- * Coverage is {@link ScheduleCoverage}: under golive #311 the order company's rows bill every
- * product company's lines, so every line company is scheduled once the order company has a live
- * row, though the rows carry only the order's `CompanyID`.
- *
- * `Canceled` rows have left the schedule, so a company whose only rows were cancelled is NOT
+ * `Canceled` rows have left the schedule, so a company whose only row was cancelled is NOT
  * scheduled and books normally. That is the same liveness rule {@link ScheduleShortfalls} uses, by
  * the same constant, so the tie check and the ledger cannot disagree about which rows count.
  *
@@ -376,12 +238,10 @@ export interface ScheduleTimingFacts extends ScheduleRowFacts {
  * date test into this one would couple "does the new model apply" to "what is due today", and a
  * company whose instalments all fall next year would then book as if it had no schedule.
  */
-export function ScheduledCompanyIDs(rows: ScheduleTimingFacts[], orderCompanyID: string, lineCompanyIDs: string[]): Set<string> {
-    const live = rows.filter((r) => LIVE_STATUSES.has(r.Status));
-    const owners = new Set(live.map((r) => lower(r.CompanyID)));
+export function ScheduledCompanyIDs(rows: ScheduleTimingFacts[]): Set<string> {
     const out = new Set<string>();
-    for (const [company, owner] of ScheduleCoverage(live, lineCompanyIDs, orderCompanyID)) {
-        if (owners.has(owner)) out.add(company);
+    for (const row of rows) {
+        if (LIVE_STATUSES.has(row.Status)) out.add(String(row.CompanyID).toLowerCase());
     }
     return out;
 }

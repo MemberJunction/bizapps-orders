@@ -18,8 +18,8 @@ import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberj
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import type { GiftCardSaleLine, OrderLineShare } from './PaymentAllocationFactory.js';
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
-import { CompanySlices, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
-import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_DIMENSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import type { InstalmentCashFacts } from './PaymentScheduleBehavior.js';
+import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_DIMENSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
@@ -143,13 +143,7 @@ async function loadLineDimensions(
 }
 
 /**
- * Every live instalment on an order, for deciding how much of a payment settles a receivable (D91),
- * divided among the product companies whose lines it bills ({@link CompanySlices}, golive #311).
- *
- * The rows carry the order's company, but cash is split per product company (`AllocateByCompany`)
- * and each company books its own receivable and deposits, so each row comes back as one copy per
- * company it covers: same `ID`, that company's piece of `Amount` and `AmountPaid`. A row that covers
- * one company comes back unchanged apart from its `CompanyID`.
+ * Every live instalment on an order, for deciding how much of a payment settles a receivable (D91).
  *
  * READ THIS BEFORE THE PAYMENT LINE IS SAVED. `AmountPaid` on these rows is maintained by
  * `spRecalcOrderHeaderPaymentSchedule`, which `spRecalcOrderHeaderTotals` calls from the PaymentLine
@@ -164,52 +158,26 @@ export async function LoadInstalmentCashFacts(
     user: UserInfo,
     orderHeaderID: string,
 ): Promise<InstalmentCashFacts[]> {
-    const orderID = RequireUUID(orderHeaderID, 'OrderHeaderID');
     const rv = new RunView(provider);
-    const res = await rv.RunView<InstalmentCashFacts & { InstallmentNumber: number }>(
+    const res = await rv.RunView<InstalmentCashFacts>(
         {
             EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
-            ExtraFilter: `OrderHeaderID='${orderID}' AND Status <> 'Canceled'`,
-            Fields: ['ID', 'CompanyID', 'Status', 'Amount', 'AmountPaid', 'DocumentNumber', 'InstallmentNumber'],
+            ExtraFilter: `OrderHeaderID='${RequireUUID(orderHeaderID, 'OrderHeaderID')}' AND Status <> 'Canceled'`,
+            Fields: ['ID', 'CompanyID', 'Status', 'Amount', 'AmountPaid', 'DocumentNumber'],
             OrderBy: 'DueDate, InstallmentNumber',
             ResultType: 'simple',
             BypassCache: true,
         },
         user,
     );
-    const rows = (res?.Results ?? []).map((r) => ({
+    return (res?.Results ?? []).map((r) => ({
         ID: String(r.ID),
         CompanyID: String(r.CompanyID),
         Status: String(r.Status),
         Amount: Number(r.Amount ?? 0),
         AmountPaid: Number(r.AmountPaid ?? 0),
         DocumentNumber: r.DocumentNumber ? String(r.DocumentNumber) : null,
-        InstallmentNumber: Number(r.InstallmentNumber ?? 0),
     }));
-    if (!rows.length) return [];
-
-    const [header, lines] = await Promise.all([
-        rv.RunView<{ CompanyID: string }>(
-            { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID='${orderID}'`, Fields: ['CompanyID'], ResultType: 'simple', BypassCache: true },
-            user,
-        ),
-        rv.RunView<{ CompanyID: string; LineTotalGross: number }>(
-            { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID='${orderID}'`, Fields: ['CompanyID', 'LineTotalGross'], ResultType: 'simple', BypassCache: true },
-            user,
-        ),
-    ]);
-    const orderCompanyID = header?.Results?.[0]?.CompanyID;
-    if (!header?.Success || !lines?.Success || !orderCompanyID) {
-        throw new Error(
-            `Could not read order ${orderID} to divide its payment schedule among its companies: ` +
-                `${header?.ErrorMessage ?? lines?.ErrorMessage ?? 'order not found'}`,
-        );
-    }
-    return CompanySlices(
-        rows,
-        (lines.Results ?? []).map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
-        orderCompanyID,
-    ).map(({ InstallmentNumber: _number, ...fact }) => fact);
 }
 
 /**

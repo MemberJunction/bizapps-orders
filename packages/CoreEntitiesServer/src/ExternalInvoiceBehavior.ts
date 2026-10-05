@@ -1,14 +1,10 @@
 /**
  * @fileoverview Pure decisions for sending one billing unit to an external rail (Bill.com).
  *
- * A BILLING UNIT is what one rail invoice represents: `(order, order's company, instalment | none)`.
- * An order is invoiced by its own company through that company's rail, whatever company owns each
- * product (golive #311), so the money arrives at the order's company and the intercompany legs
- * move each product company's share. An order without a payment schedule is one unit and
- * becomes invoiceable at Confirmed; an order with a schedule has one unit per row and it becomes
- * invoiceable when `Orders.IssueInstalmentInvoice` has frozen the row's number (design §4.1, golive
- * #242). A product company's own row, left from a pre-golive-#311 per-company schedule, is its own unit on
- * that company's rail.
+ * A BILLING UNIT is what one rail invoice represents: `(order, selling company, instalment | none)`.
+ * An order without a payment schedule has one unit per selling company and it becomes invoiceable at
+ * Confirmed; an order with a schedule has one unit per row and it becomes invoiceable when
+ * `Orders.IssueInstalmentInvoice` has frozen the row's number (design §4.1, golive #242).
  *
  * Nothing here does I/O. `Orders.IssueExternalInvoice` reads the order, the document and the
  * existing external-invoice row, then asks these functions what to do — so the rules are testable
@@ -86,10 +82,10 @@ export function BuildExternalInvoicePayload(
     unit: ExternalInvoiceUnitFacts,
     invoiceDate: string,
     /**
-     * Money captured against THIS unit, from `PaidOnBillingUnit`. Pass it: `doc.AmountPaid` is what
-     * the document prints, which for an instalment of a pre-golive-#311 per-company schedule is a pro-rata
-     * share of the order's payments, not what was paid on the unit. Omitted only by tests that
-     * construct a document directly.
+     * Money captured against THIS unit, from `PaidOnBillingUnit`. Pass it: `doc.AmountPaid` is a
+     * pro-rata spread across the order's selling companies, which on a split order credited one
+     * company's payment to another and refused that other company's invoice as part-paid forever.
+     * Omitted only by tests that construct a document directly.
      */
     paidOnUnit?: number,
 ): { OK: true; Payload: ExternalInvoicePayload } | { OK: false; Reason: string } {

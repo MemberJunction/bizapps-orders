@@ -383,7 +383,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             // it; confirm then sees the date already set and leaves it.
             await order.resolveDueDate();
             const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate);
-            await this.addRenewalSchedule(provider, user, order.ID, String(order.CompanyID), order.Lines.Items, rowDueDate);
+            await this.addRenewalSchedule(provider, user, order.ID, order.Lines.Items, rowDueDate);
 
             order.Status = 'Confirmed';
             if (!(await order.Save())) {
@@ -405,19 +405,17 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
         }
     }
 
-    /** Write the renewal's one-row schedule, from the order's company, due on `dueDate`. */
+    /** Write the renewal's one-row-per-company schedule, due on `dueDate`. */
     private async addRenewalSchedule(
         provider: IMetadataProvider,
         user: UserInfo,
         orderID: string,
-        orderCompanyID: string,
         lines: readonly mjBizAppsOrdersOrderLineEntity[],
         dueDate: string,
     ): Promise<void> {
         const drafts = RenewalScheduleRows(
             lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
             dueDate,
-            orderCompanyID,
         );
         for (const draft of drafts) {
             const row = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity>(

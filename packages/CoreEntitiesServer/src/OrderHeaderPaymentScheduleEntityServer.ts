@@ -1,12 +1,11 @@
 /**
  * OrderHeaderPaymentSchedule server subclass — two rules the database cannot state (AIDP-24).
  *
- * 1. `CompanyID` IS THE ORDER'S, NEVER AUTHORED (D86, golive #311). An order is invoiced once per
- *    instalment by the company that sold it, whatever company owns each product (D61), so a new row
- *    is stamped with the order header's `CompanyID` whatever the caller sent. The ledger divides the
- *    row among the product companies (`CompanySlices`). A row that already exists keeps its company:
- *    an order that issued an instalment under the old per-company rows finishes on them, and moving
- *    one of its rows would leave that schedule out of tie.
+ * 1. `CompanyID` IS DERIVED, NEVER AUTHORED (D86). The row bills for a selling company, and which
+ *    company is a fact about the order's lines. A single-company order — nearly all of them — gets
+ *    its one company stamped whatever the caller sent. A multi-company order keeps a `CompanyID`
+ *    that names one of its line companies and refuses anything else, because there is no honest
+ *    way to guess.
  *
  * 2. THE ROLLUPS ARE THE DATABASE'S. `AmountPaid` and `Balance` are maintained by
  *    `spRecalcOrderHeaderPaymentSchedule`, and `spUpdateOrderHeaderPaymentSchedule` would obey a
@@ -25,7 +24,7 @@
 import { BaseEntity, BaseEntityResult, EntitySaveOptions, IRunViewProvider, RunView } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
-import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
+import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
 import { RequireUUID } from './sql-guards.js';
 
@@ -73,20 +72,38 @@ export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrder
         );
     }
 
-    /** Stamp a new row with the order's `CompanyID`. Returns the refusal when the order cannot be read. */
+    /** Stamp `CompanyID` from the order's lines. Returns the refusal when it cannot be derived. */
     private async stampCompany(): Promise<string | null> {
-        if (this.IsSaved) return null;
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const orderID = RequireUUID(this.OrderHeaderID, 'OrderHeaderID');
-        const header = await rv.RunView<{ CompanyID: string }>(
-            { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID='${orderID}'`, Fields: ['CompanyID'], ResultType: 'simple' },
+        const lines = await rv.RunView<{ CompanyID: string }>(
+            { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID='${orderID}'`, Fields: ['CompanyID'], ResultType: 'simple' },
             this.ContextCurrentUser,
         );
-        if (!header.Success) return `Could not read the order to place the instalment: ${header.ErrorMessage ?? 'unknown error'}`;
-        const companyID = header.Results?.[0]?.CompanyID;
-        if (!companyID) return `Order ${orderID} was not found, so the instalment has no company to bill from.`;
-        this.CompanyID = companyID;
-        return null;
+        if (!lines.Success) return `Could not read the order's lines to place the instalment: ${lines.ErrorMessage ?? 'unknown error'}`;
+
+        const companies = [...new Set((lines.Results ?? []).map((l) => String(l.CompanyID).toLowerCase()))];
+        if (companies.length === 0) {
+            // No lines yet (a draft being composed): the header company is the only fact there is.
+            const header = await rv.RunView<{ CompanyID: string }>(
+                { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID='${orderID}'`, Fields: ['CompanyID'], ResultType: 'simple' },
+                this.ContextCurrentUser,
+            );
+            const companyID = header.Results?.[0]?.CompanyID;
+            if (!companyID) return `Order ${orderID} was not found, so the instalment has no company to bill for.`;
+            this.CompanyID = companyID;
+            return null;
+        }
+        if (companies.length === 1) {
+            this.CompanyID = (lines.Results ?? [])[0].CompanyID;
+            return null;
+        }
+        const chosen = String(this.CompanyID ?? '').toLowerCase();
+        if (companies.includes(chosen)) return null;
+        // ponytail: a multi-company order needs the caller to say which company's schedule this row
+        // joins; the authoring helper does, a hand-typed row must. Splitting one row across companies
+        // is not a thing — that is two rows.
+        return `This order sells for ${companies.length} companies; the instalment must name one of them (CompanyID).`;
     }
 
     /** Copy the trigger-maintained rollups back onto this object so the update cannot erase them. */

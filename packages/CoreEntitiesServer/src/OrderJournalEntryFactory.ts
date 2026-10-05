@@ -71,7 +71,7 @@ import {
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
-import { ScheduleCoverage, ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import {
     BuildCreditMemoLines,
     ProratedCreditMemo,
@@ -434,22 +434,18 @@ export class OrderJournalEntryFactory {
         const dimensions = await this.loadLineDimensions(lines.map((l) => l.ID));
         const effectiveDate = await this.effectiveDateOf(order);
         const asOf = new Date(effectiveDate);
-        const lineCompanies = [...new Set(lines.map((l) => String(l.CompanyID ?? '').toLowerCase()))];
-        const scheduledCompanies = ScheduledCompanyIDs(scheduleRows ?? [], String(order.CompanyID ?? ''), lineCompanies);
+        const scheduledCompanies = ScheduledCompanyIDs(scheduleRows ?? []);
 
         // The tie check (OrderEntityServer.verifyScheduleTies) already refuses a confirm whose
-        // schedule has rows covering no lines. Assert it here anyway: if it were ever false, those
-        // rows' value would silently never reach the ledger — no confirm entry because they are
-        // scheduled, and no invoice entry because they have no lines to slice.
-        const coverage = ScheduleCoverage(scheduleRows ?? [], lineCompanies, String(order.CompanyID ?? ''));
-        const covering = new Set(coverage.values());
-        for (const row of scheduleRows ?? []) {
-            if (row.Status === 'Canceled') continue;
-            const company = String(row.CompanyID).toLowerCase();
-            if (!covering.has(company)) {
+        // schedule names a company with no lines. Assert it here anyway: if it were ever false, a
+        // company's whole value would silently never reach the ledger — no confirm entry because it
+        // is scheduled, and no invoice entry because it has no lines to slice.
+        const lineCompanies = new Set(lines.map((l) => String(l.CompanyID ?? '').toLowerCase()));
+        for (const scheduled of scheduledCompanies) {
+            if (!lineCompanies.has(scheduled)) {
                 throw new Error(
-                    `Order ${order.OrderNumber} has payment schedule rows for company ${company}, ` +
-                        `which covers no lines on this order. Nothing would ever book for them.`,
+                    `Order ${order.OrderNumber} has payment schedule rows for company ${scheduled}, ` +
+                        `which has no lines on this order. Nothing would ever book for it.`,
                 );
             }
         }
