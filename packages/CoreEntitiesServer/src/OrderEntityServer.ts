@@ -209,6 +209,10 @@ interface AccountingEngineSurface {
  */
 const uuidKey = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 
+/** How live a subscription is, lowest first: the order a re-purchase prefers among several. */
+const subscriptionStatusRank = (status: string): number =>
+    status === 'Active' || status === 'Trialing' ? 0 : status === 'Paused' ? 1 : status === 'Canceled' ? 2 : 3;
+
 /** A line's subscription decision, carried from the pre-insert pass to the persistence pass. */
 interface SubscriptionDecisionForLine {
     Product: ProductRow;
@@ -3104,6 +3108,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const existing = line.RenewsSubscriptionID
                 ? await this.loadSubscriptionState(`ID='${line.RenewsSubscriptionID}'`)
                 : (pendingSiblings.get(dedupeKey) ??
+                   (match.OrNoPerson ? pendingSiblings.get(`${product.ID}|${identity.OrganizationID}|`) : undefined) ??
                    (await this.findExistingSubscription(product.ID, match)));
 
             // NAMING a subscription IS the statement of who the subscriber is. Requiring the line to
@@ -3160,7 +3165,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // outright, so it continues that subscription and is not checked.
             if (decision.Term && product.SubscriptionFamilyID && !line.RenewsSubscriptionID) {
                 const familyKey = `${uuidKey(product.SubscriptionFamilyID)}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
-                const siblings = (pendingFamily.get(familyKey) ?? []).filter((s) => !UUIDsEqual(s.ProductID, product.ID));
+                const noPersonKey = `${uuidKey(product.SubscriptionFamilyID)}|${identity.OrganizationID ?? ''}|`;
+                const siblings = [
+                    ...(pendingFamily.get(familyKey) ?? []),
+                    ...(match.OrNoPerson ? (pendingFamily.get(noPersonKey) ?? []) : []),
+                ].filter((s) => !UUIDsEqual(s.ProductID, product.ID));
                 const overlaps = OverlappingCoverage(
                     [...siblings, ...(await this.loadFamilyCoverage(product, match, decision.Term.StartDate))],
                     decision.Term.StartDate,
@@ -3284,7 +3293,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             this.ContextCurrentUser as UserInfo,
         );
         const inferred = await this.organizationAsOf(subscriber.PersonID, asOf);
-        return inferred ? { ...subscriber, OrganizationID: inferred } : subscriber;
+        return inferred ? { ...subscriber, OrganizationID: inferred, OrganizationInferred: true } : subscriber;
     }
 
     /**
@@ -3495,7 +3504,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
     ): Promise<ExistingSubscription | null> {
         const holder = this.holderFilter(match);
         if (!holder) return null;
-        return this.loadSubscriptionState(`ProductID='${productID}' AND ${holder}`);
+        const person = match.PersonID === 'Any' ? null : match.PersonID;
+        return this.loadSubscriptionState(`ProductID='${productID}' AND ${holder}`, person);
     }
 
     /**
@@ -3512,10 +3522,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ? `HolderOrganizationID='${RequireUUID(match.OrganizationID, 'HolderOrganizationID')}'`
             : `HolderOrganizationID IS NULL`;
         if (match.PersonID === 'Any') return org;
-        const person = match.PersonID
-            ? `BeneficiaryPersonID='${RequireUUID(match.PersonID, 'BeneficiaryPersonID')}'`
-            : `BeneficiaryPersonID IS NULL`;
-        return `${org} AND ${person}`;
+        if (!match.PersonID) return `${org} AND BeneficiaryPersonID IS NULL`;
+        const person = `BeneficiaryPersonID='${RequireUUID(match.PersonID, 'BeneficiaryPersonID')}'`;
+        return match.OrNoPerson
+            ? `${org} AND (${person} OR BeneficiaryPersonID IS NULL)`
+            : `${org} AND ${person}`;
     }
 
     /** Family names by ID, for the overlap message. One read for every family on the order. */
@@ -3638,8 +3649,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
         return out;
     }
 
-    /** Load a subscription plus the end and number of its latest term, by whatever filter. */
-    private async loadSubscriptionState(filter: string): Promise<ExistingSubscription | null> {
+    /**
+     * Load a subscription plus the end and number of its latest term, by whatever filter.
+     *
+     * When the filter matches several, the most live one wins: Active or Trialing, then Paused,
+     * then Canceled, then the rest; among equals, one stored for `personID`, then the newest.
+     */
+    private async loadSubscriptionState(filter: string, personID?: string | null): Promise<ExistingSubscription | null> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const res = await rv.RunView<{
             ID: string;
@@ -3657,10 +3673,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
             },
             this.ContextCurrentUser,
         );
-        // A live subscription before the newest one. An org-held match ignores the stored person, so
-        // an org can match several, and a newer canceled one must not hide the one still running.
-        const rows = res?.Results ?? [];
-        const sub = rows.find((s) => s.Status === 'Active' || s.Status === 'Trialing') ?? rows[0];
+        // An org-held match ignores the stored person, so an org can match several, and a newer
+        // canceled one must not hide one still running or paused. Rows arrive newest first and the
+        // sort is stable, so the newest wins among equals.
+        const rows = [...(res?.Results ?? [])].sort(
+            (a, b) =>
+                subscriptionStatusRank(a.Status) - subscriptionStatusRank(b.Status) ||
+                Number(!UUIDsEqual(a.BeneficiaryPersonID, personID)) - Number(!UUIDsEqual(b.BeneficiaryPersonID, personID)),
+        );
+        const sub = rows[0];
         if (!sub) return null;
 
         const terms = await rv.RunView<{ EndDate: string; TermNumber: number }>(

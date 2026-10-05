@@ -1,5 +1,5 @@
 /**
- * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS15).
+ * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS17).
  *
  * Subscriptions were a HEADER concern: the flow read `OrderHeader.HolderOrganizationID` and every
  * line on an order therefore had the same subscriber. An association buying ten memberships for ten
@@ -28,6 +28,8 @@
  *   LS13 an org-held subscription bought with a contact person is found again — a re-order extends it
  *   LS14 …and a RejectDuplicate org-held type refuses that re-order
  *   LS15 a Holder type keeps the person: two people at one org are two subscriptions, and each re-order extends its own
+ *   LS16 …but an org's Holder subscription bought with no contact is found when a re-order names one
+ *   LS17 …only when the org is stated: an org inferred from the person's employer is not the holder
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -724,6 +726,74 @@ LineSubscriberChecks.push({
       Assert(again.Saved, `re-order confirm failed: ${again.Message}`);
       const [subAgain] = await subscriptionsOf(ctx, again.Order.ID as string);
       Assert(SameID(subAgain.ID, subA.ID), "the first person's re-order extends their own subscription");
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS16",
+  Name: "LS16: an org's Holder subscription bought with no contact is extended by a re-order naming one",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      // SubRolling is Holder + ExtendExisting. Stored with no person, the subscription is the
+      // organization's, not a coworker's. Requiring the re-order's contact to match it missed it,
+      // and the organization was sold a second subscription for the same dates.
+      const contact = await makePerson(ctx, "LateContact");
+      const first = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        OrderDate: new Date("2026-01-15T00:00:00Z"),
+      });
+      Assert(first.Saved, `first confirm failed: ${first.Message}`);
+      const [firstSub] = await subscriptionsOf(ctx, first.Order.ID as string);
+      Assert(firstSub.BeneficiaryPersonID == null, "the first subscription stores no person");
+
+      const second = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        BillToPersonID: contact,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        OrderDate: new Date("2026-07-01T00:00:00Z"),
+      });
+      Assert(second.Saved, `second confirm failed: ${second.Message}`);
+      const [secondSub] = await subscriptionsOf(ctx, second.Order.ID as string);
+      Assert(SameID(firstSub.ID, secondSub.ID), "the re-order extends the organization's subscription");
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS17",
+  Name: "LS17: an org inferred from the person's employer does not find the org's no-contact subscription",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      // The org's own subscription, bought with no contact.
+      const orgOrder = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.SecondOrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        OrderDate: new Date("2026-01-15T00:00:00Z"),
+      });
+      Assert(orgOrder.Saved, `org confirm failed: ${orgOrder.Message}`);
+      const [orgSub] = await subscriptionsOf(ctx, orgOrder.Order.ID as string);
+
+      // An employee buys for themselves, naming no organization. The employer is filled in, but
+      // that does not make this the organization's purchase.
+      const employee = await makePerson(ctx, "Employee");
+      await affiliate(ctx, employee, f.Customers.SecondOrganizationID, "Employee", "2020-01-01");
+      const own = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToPersonID: employee,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        OrderDate: new Date("2026-07-01T00:00:00Z"),
+      });
+      Assert(own.Saved, `employee confirm failed: ${own.Message}`);
+      const [ownSub] = await subscriptionsOf(ctx, own.Order.ID as string);
+      Assert(!SameID(ownSub.ID, orgSub.ID), "the employee gets their own subscription");
+      Assert(SameID(ownSub.BeneficiaryPersonID, employee), "and it is stored for them");
     }),
 });
 

@@ -448,9 +448,16 @@ describe('benefit model (D62)', () => {
             expect(behavior.DedupeMatch(rules(), { OrganizationID: ORG })).toEqual({ OrganizationID: ORG, PersonID: 'Any' });
         });
 
-        it('Holder with a resolved person matches only that person at that org', () => {
-            // A coworker at the same org must not find, and extend, this person's subscription.
-            expect(behavior.DedupeMatch(rules(), subscriber)).toEqual({ OrganizationID: ORG, PersonID: PERSON });
+        it('Holder with a stated org and a person matches that person, or the org with no person stored', () => {
+            // A coworker's personal subscription is not found, but the org's own one bought with no
+            // contact is: missing it sold the org a second subscription for the same dates.
+            expect(behavior.DedupeMatch(rules(), subscriber)).toEqual({ OrganizationID: ORG, PersonID: PERSON, OrNoPerson: true });
+        });
+
+        it('Holder with an org inferred from the person matches only that person at that org', () => {
+            // The org is only the buyer's employer, so its subscription is not the person's.
+            expect(behavior.DedupeMatch(rules(), { ...subscriber, OrganizationInferred: true }))
+                .toEqual({ OrganizationID: ORG, PersonID: PERSON });
         });
 
         it('Holder held by a person matches only a personal subscription, never an org-held one', () => {

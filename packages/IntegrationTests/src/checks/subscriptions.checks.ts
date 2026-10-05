@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB21).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB23).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -29,6 +29,8 @@
  *   SB19  two bands on ONE order are checked against each other
  *   SB20  Orders.CheckCoverageOverlap reports what confirm will do, and writes nothing
  *   SB21  a product cannot join a subscription family of another company
+ *   SB22  a band bought with no contact still blocks another band ordered naming one
+ *   SB23  a product created on the server takes its product type's defaults (golive #277)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -41,6 +43,7 @@ import {
 } from '@memberjunction/testing-integration';
 import {
     ACCT_SCHEMA,
+    COMMON_SCHEMA,
     CreateOrdersFixture,
     CreateProductPrice,
     Fx,
@@ -51,6 +54,7 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
+import { randomUUID } from 'node:crypto';
 import { BaseRemotableOperation, Metadata } from '@memberjunction/core';
 import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 import { MJGlobal } from '@memberjunction/global';
@@ -94,6 +98,13 @@ async function buySubscription(
         ...overrides,
     });
     return result;
+}
+
+/** A person to name as the order's contact. Written directly, as a referenced row. */
+async function makeContact(ctx: IntegrationCheckContext, label: string): Promise<string> {
+    const id = randomUUID();
+    await TxQuery(ctx, `INSERT INTO ${COMMON_SCHEMA}.Person (ID, FirstName, LastName) VALUES ('${id}','${label}','${Fx().Run}')`);
+    return id;
 }
 
 /** The terms bought by a given order, newest term last. */
@@ -875,6 +886,61 @@ export const SubscriptionChecks: NamedCheck[] = [
                     /belongs to another company/.test(product.LatestResult?.CompleteMessage ?? ''),
                     `the refusal should say why, got: ${product.LatestResult?.CompleteMessage}`,
                 );
+            }),
+    },
+    {
+        Id: 'subscriptions.SB22',
+        Name: 'SB22: a band bought with no contact still blocks another band ordered naming one',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The organization is stated on both orders, so the first band, stored with no
+                // person, is the organization's and cannot be a coworker's personal subscription.
+                const contact = await makeContact(ctx, 'BandContact');
+                const first = await buySubscription(ctx, 'SubTierStandard', 300);
+                Assert(first.Saved, `first confirm failed: ${first.Message}`);
+
+                const second = await buySubscription(ctx, 'SubTierPremium', 500, { BillToPersonID: contact });
+                Assert(!second.Saved, 'a second band overlapping the organization\'s coverage must be refused');
+                Assert(/family Tiered Membership \(MEM-TIER\)/.test(second.Message), `the refusal should name the family, got: ${second.Message}`);
+                AssertEqual((await subscriptionsFor(ctx, 'SubTierPremium')).length, 0, 'no second subscription left behind');
+            }),
+    },
+    {
+        Id: 'subscriptions.SB23',
+        Name: "SB23: a product created on the server takes its product type's defaults",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // A loader states only the type. The server's product class must still fill the
+                // revenue recognition type (NOT NULL), the subscription type and taxability.
+                const type = await TxOne<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.ProductType WHERE Code = 'Membership'`);
+                const evenOverTime = await TxOne<{ ID: string }>(
+                    ctx,
+                    `SELECT ID FROM ${ORDERS_SCHEMA}.RevenueRecognitionType WHERE Code = 'EvenOverTime'`,
+                );
+                const annualRolling = await TxOne<{ ID: string }>(
+                    ctx,
+                    `SELECT ID FROM ${ORDERS_SCHEMA}.SubscriptionType WHERE Code = 'AnnualRolling'`,
+                );
+                const category = await TxOne<{ ProductCategoryID: string }>(
+                    ctx,
+                    `SELECT ProductCategoryID FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${f.Products.SubTierStandard}'`,
+                );
+                Assert(!!type && !!evenOverTime && !!annualRolling && !!category, 'the Membership type, its defaults and a category exist');
+
+                const product = await new Metadata().GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, ctx.User);
+                product.NewRecord();
+                product.CompanyID = f.CoA.ID;
+                product.ProductCategoryID = category!.ProductCategoryID;
+                product.Name = `Server-created membership ${f.Run}`;
+                product.SKU = `SB23-${f.Run}`;
+                product.ProductTypeID = type!.ID;
+                Assert(await product.Save(), `a product stating only its type must save: ${product.LatestResult?.CompleteMessage}`);
+                Assert(SameID(product.RevenueRecognitionTypeID, evenOverTime!.ID), 'the type\'s revenue recognition type was filled in');
+                Assert(SameID(product.SubscriptionTypeID, annualRolling!.ID), 'the type\'s subscription type was filled in');
+                AssertEqual(product.IsTaxable, true, 'the type\'s taxability was filled in');
             }),
     },
 ];

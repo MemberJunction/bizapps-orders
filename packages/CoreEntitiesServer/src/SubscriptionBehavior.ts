@@ -222,12 +222,20 @@ export interface CoverageOverlapDecision {
 export interface SubscriberIdentity {
     OrganizationID?: string | null;
     PersonID?: string | null;
+    /**
+     * True when the organization was filled in from the person's affiliation rather than stated on
+     * the line or the order. A stated organization is a holder; an inferred one may be only the
+     * buyer's employer.
+     */
+    OrganizationInferred?: boolean;
 }
 
 /** How a stored subscription is matched on each side: a value, `null` for empty, or `'Any'`. */
 export interface SubscriberMatch {
     OrganizationID: string | null;
     PersonID: string | null | 'Any';
+    /** Also match a stored subscription with no person, when `PersonID` names one. */
+    OrNoPerson?: boolean;
 }
 
 export interface SubscriptionPurchaseContext {
@@ -509,12 +517,21 @@ export class SubscriptionBehavior {
      * A seat under `Individual`, and a `Holder` purchase that resolved a person, keep the person, so
      * subscriptions for different people stay distinct. A personal subscription keeps
      * `HolderOrganizationID IS NULL`, so it never matches an org's.
+     *
+     * A `Holder` purchase whose organization was stated on the order also matches that
+     * organization's subscription stored with no person. One bought with no contact cannot be a
+     * coworker's personal subscription, and missing it sold the organization a second one for the
+     * same dates. An organization inferred from the person's employer keeps the exact match.
      */
     public DedupeMatch(rules: SubscriptionTypeRules, subscriber: SubscriberIdentity): SubscriberMatch {
         const identity = this.DedupeIdentity(rules, subscriber);
         const organizationID = identity.OrganizationID ?? null;
         const personID = identity.PersonID ?? null;
-        return { OrganizationID: organizationID, PersonID: organizationID && !personID ? 'Any' : personID };
+        if (!organizationID || !personID) {
+            return { OrganizationID: organizationID, PersonID: organizationID ? 'Any' : personID };
+        }
+        const orNoPerson = rules.BenefitModel === 'Holder' && !subscriber.OrganizationInferred;
+        return { OrganizationID: organizationID, PersonID: personID, ...(orNoPerson ? { OrNoPerson: true } : {}) };
     }
 
     protected ChooseAction(ctx: SubscriptionPurchaseContext): SubscriptionDecision['Action'] {
