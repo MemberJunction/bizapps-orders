@@ -8,7 +8,9 @@
  * off for it without anything saying so. These subclasses refuse that at save:
  *
  *   - `ProductEntityServer`: a product's family must belong to the product's company, and a product
- *     cannot be newly put into a retired (inactive) family.
+ *     cannot be newly put into a retired (inactive) family. It extends `ProductEntity`, not the
+ *     generated class: registered on the server it replaces `ProductEntity`, and a product created
+ *     there must still take its type's defaults (golive #277).
  *   - `SubscriptionFamilyEntityServer`: a saved family's company cannot change, since its products
  *     were validated against the old one.
  *
@@ -19,7 +21,7 @@
  */
 import { BaseEntity, RunView, ValidationErrorInfo, ValidationResult, type IRunViewProvider } from '@memberjunction/core';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
-import { mjBizAppsOrdersProductEntity, mjBizAppsOrdersSubscriptionFamilyEntity } from '@mj-biz-apps/orders-entities';
+import { ProductEntity, mjBizAppsOrdersSubscriptionFamilyEntity } from '@mj-biz-apps/orders-entities';
 
 import { SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
@@ -27,7 +29,7 @@ import { RequireUUID } from './sql-guards.js';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 
 @RegisterClass(BaseEntity, PRODUCT_ENTITY)
-export class ProductEntityServer extends mjBizAppsOrdersProductEntity {
+export class ProductEntityServer extends ProductEntity {
     /** BaseEntity skips ValidateAsync by default; without this the check never runs. */
     public override get DefaultSkipAsyncValidation(): boolean {
         return false;
