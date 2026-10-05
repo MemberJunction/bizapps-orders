@@ -696,7 +696,8 @@ export function BuildDocuments(input: {
 
     const lineCompany = new Map(lines.map((l) => [l.ID, l.CompanyID]));
 
-    // Companies in ID order, so the -A/-B suffixes are stable across renders. An order with no
+    // Companies in ID order, so a legacy per-company instalment keeps stable -A/-B suffixes across
+    // renders; every other document has the order's company alone. An order with no
     // lines still produces one document — for the header company, showing nothing — because an
     // empty invoice is a visible problem and no invoice at all is not.
     const companyIDs = [...new Set(lines.map((l) => l.CompanyID))].sort();
