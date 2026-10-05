@@ -1,5 +1,37 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.26.0
+
+### Minor Changes
+
+- 3ebb622: Booking now obeys the dimensions a GL account link requires (`GLAccountLinkDimension`). Confirm, progress recognition and instalment billing refuse an order line whose journal entry lines lack a dimension their account's link lists, after Dimension Defaults, derived tags and the line's own tag are merged. The error names the line, the role, the account and the missing dimension codes, and nothing is posted.
+
+  **Upgrade note:** a host with dimensions listed on GL account links but no Dimension Defaults loaded will start refusing those bookings. Load Dimension Defaults (or remove link dimensions that are not meant to be enforced) before upgrading.
+
+- d1fd2e0: Progress attestation warns on the date entered instead of on posted batches (bc-aidp-next-golive#316). `Orders.RecordProgress` no longer returns `ClosedPeriodWarning`: a Posted journal-entry batch in the month said nothing about whether finance had closed it once batches are built daily, so every past month warned. It now returns an advisory `BackDatedWarning` when `MeasurementDate` is two or more months before the current business month, and `FutureDateWarning` now fires for any date after today rather than after the current month's end. The prior month and earlier in the current month do not warn. Both are advisory on preview and post, supersede included. The supersede's reversal and catch-up dating is unchanged. The attestation screen shows the new warning in the preview, the confirm dialog and the notice after posting.
+
+### Patch Changes
+
+- bf3ed93: `Orders.CancelSubscription` now cancels the subscription's later terms too (#406). A term that starts after coverage ends, such as a renewal booked ahead, is stamped Canceled and reversed in full on the same reversal order, whatever the type's refund mode; the policy is `SubscriptionBehavior.DecideLaterTermCancellation` and can be overridden. The output, preview included, gains `LaterTerms` and `TotalRefundAmount`, and the lifecycle event records the later terms. A request that falls before every term now acts on the next term to start rather than the latest. A whole term sold on an instalment-billed order, which every automatic renewal is, is reversed as an order-line return is: booking credits what was invoiced and withdraws the instalments not yet invoiced. Only part of a term on such an order still refuses the cancel. The reversal order points at the order that sold the first reversed term, so it takes that order's addresses.
+- 8ab937f: Self-serve checkout refuses a purchase the buyer already has (#323). The draft step refuses when the resolved Person holds an Active or Trialing subscription to a product on the draft, and a host can refuse for its own reasons by registering a `CheckoutPrePurchaseCheck` subclass. The payment-intent step runs both checks again. The draft now resolves the Person again when the buyer changes their e-mail. `<mj-orders-checkout>` shows the refusal and, when the reason is an existing subscription, dispatches a `checkout-already-subscribed` DOM event whose detail carries product ids and no personal data.
+- 8df4d53: Confirm now says when it moves a subscription line's service dates. A line for a product the subscriber already holds extends that subscription and starts the day after current coverage ends; the stated start used to disappear with only a server log line. The confirm records the stated and settled dates on the subscription's `Extended` event, `OrderHeaderEntity.Confirm()` reloads the lines and returns the moved lines, `OrderHeaderEntity.LoadDisplacedTermStarts()` reads them back for a booked order, and the order form shows a notice after Confirm and whenever the order is opened.
+- 5ca8b93: A subscription line can now say what confirm should do when the customer already holds the product. The line editor finds the live subscription and asks: add the line as that subscription's next term, or start a new subscription that keeps the line's dates. The answer is stored in `OrderLine.SubscriptionAction` and applied by `SubscriptionBehavior`; a `RejectDuplicate` type still refuses a second subscription. A new subscription now starts at term 1 even when the subscriber holds another one; it used to continue the other subscription's term count.
+- d0b9bbd: One rule for which Person an e-mail address means, shared by the checkout and the entitlement reads. When several Persons carry the same address, the checkout used to take whichever row came back first, and `Orders.CheckEntitlement` / `ListPersonEntitlements` answered no grant. Both now use `ResolvePersonByEmail`: the Person that already has Orders activity (an order billed to them, a subscription or grant for them), then the oldest, then the lowest ID. A returning buyer stays on one Person, and an entitlement check by e-mail answers for the Person the purchase went to.
+- 2b8d2a5: Reject a bill-to name or invoice number too long for the invoice rail instead of failing at send time. When an order whose selling company invoices through Bill.com is created, changes payer, or books, the bill-to organization or person name is checked against BILL's customer name. The check runs again before the BILL customer is created, and the invoice number is checked against BILL's before the invoice is sent. The message names the field and the limit, and nothing is truncated. Limits come from the BillCom connector's integration metadata.
+- f697eee: `Orders.SpawnRenewals` renews a subscription every cycle, not only the first (#267).
+
+  The idempotency guard treated any order line naming the subscription in `RenewsSubscriptionID` as this cycle's renewal, and returned true on both of its branches. Once a subscription had renewed once, every later cycle was skipped as "a renewal order already exists for this term", and the subscription ended at the close of its second term.
+
+  The guard now counts only a renewal line on an order that is not voided and that has not yet produced a term. Earlier cycles' renewals each booked a term naming their line, so they no longer count. A renewal drafted or quoted by hand for the current cycle still holds the job off, so the customer is not billed twice. A voided renewal no longer blocks the job.
+
+- Updated dependencies [bf3ed93]
+- Updated dependencies [8df4d53]
+- Updated dependencies [8dd30b8]
+- Updated dependencies [25b0dd1]
+- Updated dependencies [d1fd2e0]
+- Updated dependencies [aab09c1]
+  - @mj-biz-apps/orders-entities@5.26.0
+
 ## 5.25.0
 
 ### Patch Changes
@@ -573,8 +605,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                          The INSERT statement conflicted with the FOREIGN KEY constraint
-                          "FK_EntityFieldValue_EntityField"
+                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

@@ -37,6 +37,7 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  ReloadOrdersEngine,
   PRODUCT_ENTITLEMENT_ENTITY,
   PRODUCT_ENTITY,
   TeardownOrdersFixture,
@@ -295,9 +296,10 @@ export const EntitlementsChecks: NamedCheck[] = [
         const f = Fx();
         // Set the mode on the PRODUCT, overriding the type's PerUnit default. This is the walk being
         // exercised end to end rather than in a unit test: the column, the query, and the resolution.
-        await TxQuery(ctx,
-          `UPDATE ${ORDERS_SCHEMA}.Product SET EntitlementQuantityMode = 'Flat'
-            WHERE ID = '${f.Products.WidgetA}'`);
+        // Through the object model with the engine reloaded, because confirm reads the product from
+        // `OrdersEngine`'s cache and a raw UPDATE would leave it holding the PerUnit row.
+        await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.WidgetA, { EntitlementQuantityMode: "Flat" });
+        await ReloadOrdersEngine(ctx);
 
         const order = await buyWidget(ctx, 4);
         const g = byCode(await grantsFor(ctx, order.Order.ID as string));
@@ -468,9 +470,9 @@ export const EntitlementsChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        await TxQuery(ctx,
-          `UPDATE ${ORDERS_SCHEMA}.Product SET EntitlementGrantTiming = 'OnPaidInFull'
-            WHERE ID = '${f.Products.WidgetA}'`);
+        // Through the object model with the engine reloaded, for the reason EN4 gives.
+        await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.WidgetA, { EntitlementGrantTiming: "OnPaidInFull" });
+        await ReloadOrdersEngine(ctx);
 
         const unpaid = await buyWidget(ctx, 1);
         const u = await grantsFor(ctx, unpaid.Order.ID as string);
@@ -755,6 +757,46 @@ export const EntitlementsChecks: NamedCheck[] = [
           Assert(
             (await gatesFor(ctx, orderID)).every((g) => g.Status === "Active"),
             "the rest arrives, and access goes live",
+          );
+        });
+      }),
+  },
+  {
+    // #296: a checkout confirms before it captures, so an OnPaidInFull grant is born Suspended and
+    // only the later payment can make it live. EN9 pays at confirm; this pays afterwards.
+    Id: "entitlements.EN24",
+    Name: "EN24: OnPaidInFull holds an unpaid purchase through a part-payment; the payment that clears the balance releases it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.WidgetA, "OnPaidInFull", async () => {
+          const order = await buyWidget(ctx, 1);
+          const orderID = order.Order.ID as string;
+          const held = await gatesFor(ctx, orderID);
+          Assert(held.length > 0, "the grants exist while unpaid, so what is coming is visible");
+          Assert(
+            held.every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment" && g.SuspendedAt != null),
+            "confirmed before any payment, so held for payment, and each one says so and says when",
+          );
+          Assert(
+            held.every((g) => g.GrantTimingApplied === "OnPaidInFull"),
+            "the grant records the rule it was written under, so a later payment re-decides by it",
+          );
+
+          const gross = Number((await TxOne<{ TotalGross: number }>(ctx,
+            `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).TotalGross);
+          const part = Math.round(gross * 40) / 100;
+          await payOrder(ctx, orderID, part);
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment"),
+            "a part-payment leaves a balance, and OnPaidInFull waits for the whole of it",
+          );
+
+          await payOrder(ctx, orderID, Math.round((gross - part) * 100) / 100);
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Active" && g.SuspensionReason == null && g.SuspendedAt == null),
+            "the payment that clears the balance makes access live, inside the same capture",
           );
         });
       }),

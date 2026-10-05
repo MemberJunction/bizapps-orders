@@ -57,6 +57,7 @@ import {
     GL_ROLE,
     IsRoleNotLinked,
     RefuseUnlinkedCustomerDeposits,
+    RefuseUntaggedLines,
     UnbilledReceivableNotLinkedError,
     type GLAccountResolver,
 } from './GLAccountResolver.js';
@@ -320,6 +321,7 @@ export async function EmitInstalmentInvoiceEntry(
         // Magnitudes: a reversal line is mirrored once at the end, as booking does (D16).
         const [netPiece, uncreditedPiece, ...creditPieces] = allPieces.slice(at, at + 2 + line.ChargeCredits.length).map((p) => Math.abs(p));
         at += 2 + line.ChargeCredits.length;
+        resolver.TakeResolved();
         const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]): Promise<string> =>
             resolver.Resolve(role, line.ProductID, line.ProductCategoryID, context.CompanyID, asOf, line.ProductTypeID);
 
@@ -407,6 +409,13 @@ export async function EmitInstalmentInvoiceEntry(
                 Dimensions: line.Dimensions,
             });
         }
+        // A link that requires a dimension is obeyed here too (#417): an instalment can be issued
+        // long after confirm, against links configured since.
+        RefuseUntaggedLines(
+            `Order ${context.OrderNumber} line ${line.LineNumber}, instalment ${context.InstallmentNumber}`,
+            resolver.TakeResolved(),
+            built,
+        );
 
         // What this instalment BILLED of this line's revenue — its NET piece, not the AR debit.
         //
@@ -518,19 +527,26 @@ async function depositApplicationLines(
     for (let i = 0; i < receivables.length; i++) {
         if (!(pieces[i] > 0)) continue;
         const { Line: line, ARAccount } = receivables[i];
+        resolver.TakeResolved();
         const depositAccount = await RefuseUnlinkedCustomerDeposits(
             () => resolver.Resolve(GL_ROLE.CustomerDeposits, line.ProductID, line.ProductCategoryID, context.CompanyID, asOf, line.ProductTypeID),
             `Order ${context.OrderNumber} instalment ${context.InstallmentNumber}`,
             context.CompanyID,
             applied,
         );
+        const depositLine: JELineDraft = {
+            GLAccountID: depositAccount,
+            DebitAmount: pieces[i],
+            Description: `Customer deposit applied — ${line.ProductName}`,
+            Dimensions: line.Dimensions,
+        };
+        RefuseUntaggedLines(
+            `Order ${context.OrderNumber} line ${line.LineNumber}, instalment ${context.InstallmentNumber}`,
+            resolver.TakeResolved(),
+            [depositLine],
+        );
         out.push(
-            {
-                GLAccountID: depositAccount,
-                DebitAmount: pieces[i],
-                Description: `Customer deposit applied — ${line.ProductName}`,
-                Dimensions: line.Dimensions,
-            },
+            depositLine,
             {
                 GLAccountID: ARAccount,
                 CreditAmount: pieces[i],
