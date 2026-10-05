@@ -49,6 +49,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@mj-biz-apps/orders-entities')>();
     const engine = {
         ProductByID: () => ({ ID: 'P', RevenueRecognitionTypeID: 'RT', ProductTypeID: 'PT' }),
+        RequireProduct: () => Promise.resolve({ ID: 'P', RevenueRecognitionTypeID: 'RT', ProductTypeID: 'PT' }),
         ProductTypeByID: () => ({ DefaultRevenueRecognitionTypeID: null }),
         RevenueRecognitionTypes: [{ ID: 'RT', ScheduleBasis: 'OnMeasurement', DriverClass: 'ManualAttestation', Code: 'POC' }],
     };
