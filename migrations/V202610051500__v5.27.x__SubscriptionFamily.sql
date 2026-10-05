@@ -1047,6 +1047,7 @@ SELECT
     __mj_isa_p1.[BilledToDate],
     __mj_isa_p1.[RecognizedToDate],
     __mj_isa_p1.[ShipToAddressSnapshot],
+    __mj_isa_p1.[SubscriptionAction],
     __mj_isa_p1.[AcknowledgesCoverageOverlap],
     mjBizAppsCommonPerson_PersonID.[DisplayName] AS [Person]
 FROM
@@ -1826,6 +1827,8 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateOrderLine]
     @RecognizedToDate decimal(18, 2) = NULL,
     @ShipToAddressSnapshot_Clear bit = 0,
     @ShipToAddressSnapshot nvarchar(MAX) = NULL,
+    @SubscriptionAction_Clear bit = 0,
+    @SubscriptionAction nvarchar(20) = NULL,
     @AcknowledgesCoverageOverlap bit = NULL
 AS
 BEGIN
@@ -1873,6 +1876,7 @@ BEGIN
                 [BilledToDate],
                 [RecognizedToDate],
                 [ShipToAddressSnapshot],
+                [SubscriptionAction],
                 [AcknowledgesCoverageOverlap]
             )
         OUTPUT INSERTED.[ID] INTO @InsertedRow
@@ -1914,6 +1918,7 @@ BEGIN
                 ISNULL(@BilledToDate, 0),
                 ISNULL(@RecognizedToDate, 0),
                 CASE WHEN @ShipToAddressSnapshot_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressSnapshot, NULL) END,
+                CASE WHEN @SubscriptionAction_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionAction, NULL) END,
                 ISNULL(@AcknowledgesCoverageOverlap, 0)
             )
     END
@@ -1957,6 +1962,7 @@ BEGIN
                 [BilledToDate],
                 [RecognizedToDate],
                 [ShipToAddressSnapshot],
+                [SubscriptionAction],
                 [AcknowledgesCoverageOverlap]
             )
         OUTPUT INSERTED.[ID] INTO @InsertedRow
@@ -1997,6 +2003,7 @@ BEGIN
                 ISNULL(@BilledToDate, 0),
                 ISNULL(@RecognizedToDate, 0),
                 CASE WHEN @ShipToAddressSnapshot_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressSnapshot, NULL) END,
+                CASE WHEN @SubscriptionAction_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionAction, NULL) END,
                 ISNULL(@AcknowledgesCoverageOverlap, 0)
             )
     END
@@ -2088,6 +2095,8 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderLine]
     @RecognizedToDate decimal(18, 2) = NULL,
     @ShipToAddressSnapshot_Clear bit = 0,
     @ShipToAddressSnapshot nvarchar(MAX) = NULL,
+    @SubscriptionAction_Clear bit = 0,
+    @SubscriptionAction nvarchar(20) = NULL,
     @AcknowledgesCoverageOverlap bit = NULL
 AS
 BEGIN
@@ -2130,6 +2139,7 @@ BEGIN
         [BilledToDate] = ISNULL(@BilledToDate, [BilledToDate]),
         [RecognizedToDate] = ISNULL(@RecognizedToDate, [RecognizedToDate]),
         [ShipToAddressSnapshot] = CASE WHEN @ShipToAddressSnapshot_Clear = 1 THEN NULL ELSE ISNULL(@ShipToAddressSnapshot, [ShipToAddressSnapshot]) END,
+        [SubscriptionAction] = CASE WHEN @SubscriptionAction_Clear = 1 THEN NULL ELSE ISNULL(@SubscriptionAction, [SubscriptionAction]) END,
         [AcknowledgesCoverageOverlap] = ISNULL(@AcknowledgesCoverageOverlap, [AcknowledgesCoverageOverlap])
     WHERE
         [ID] = @ID
