@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610032300 — Payment schedule rows belong to the order's company
+-- V202610051600 — Payment schedule rows belong to the order's company
 -- (bc-aidp-next-golive#311)
 -- =============================================================================
 -- An order is invoiced once per instalment, from the order's company, whatever
