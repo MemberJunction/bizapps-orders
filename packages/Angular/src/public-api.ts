@@ -74,7 +74,7 @@ export {
 export {
     CheckoutPublicHostComponent,
 } from './lib/checkout-widget/checkout-public-host.component';
-export { buildCheckoutDraftLine } from './lib/checkout-widget/checkout-draft-line';
+export { buildCheckoutDraftLine, type CheckoutAlreadySubscribedDetail } from './lib/checkout-widget/checkout-draft-line';
 
 /** Explorer sections — the four top-level tabs of the Orders application. */
 export {

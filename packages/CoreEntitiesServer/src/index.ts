@@ -98,6 +98,7 @@ export {
 export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
+    BackDatedWarning,
     EffectiveObservations,
     FutureDateWarning,
     MonthEnd,
@@ -742,6 +743,7 @@ export type { CustomerTermsFacts, TermsFacts, TermsResolution, TermsResolutionIn
 export { EntitlementGrantClaimDriver, LoadEntitlementGrantClaimDriver } from './EntitlementGrantClaimDriver.js';
 export { GuestOrderClaimDriver, LoadGuestOrderClaimDriver } from './GuestOrderClaimDriver.js';
 export { resolvePersonID } from './claimDriverHelpers.js';
+export { ResolvePersonByEmail, ChoosePersonForEmail, NormalizePersonEmail, MAX_PERSON_EMAIL_LENGTH, type PersonCandidate, type ResolvePersonByEmailResult } from './PersonByEmail.js';
 export { CheckoutSessionService } from './CheckoutSessionService.js';
 export {
     CheckoutAccountStep,
@@ -797,6 +799,15 @@ export type {
     OpenSessionPaymentIntentResult,
     BookCheckoutPaymentResult,
 } from './CheckoutSessionService.js';
+// The host seam for refusing a checkout (#323): subclass and register `CheckoutPrePurchaseCheck`.
+export { ALREADY_SUBSCRIBED_REASON, CheckoutPrePurchaseCheck, RunPrePurchaseChecks } from './CheckoutPrePurchaseCheck.js';
+export type {
+    CheckoutRefusal,
+    PrePurchaseContext,
+    PrePurchaseLine,
+    PrePurchaseRefusal,
+    PrePurchaseVerdict,
+} from './CheckoutPrePurchaseCheck.js';
 
 // SQL boundary guards — the sanctioned escaping/validation helpers for remote-caller input
 // (see the repo CLAUDE.md "SQL Safety" rule). Exported so the Server package's edge can use

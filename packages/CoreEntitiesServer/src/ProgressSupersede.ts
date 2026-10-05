@@ -11,8 +11,8 @@
  * WHERE THE REVERSAL LANDS ({@link ReversalDate}). On the replaced observation's own date while that
  * month is open, so a mistyped future date nets to zero on the day it names. When that month is
  * closed, on the first day of the first later month that is open: finance's ruling is that a closed
- * period is not reopened by a correction. "Closed" is the test the closed-period warning uses — the
- * month has a Posted batch for the line's company.
+ * period is not reopened by a correction. "Closed" is a month with a Posted batch for the line's
+ * company, until finance's books-closed-through date replaces that test.
  *
  * THE REPLACEMENT'S CATCH-UP FOLLOWS IT ({@link CatchUpDate}). When the reversal moves, the catch-up
  * books no earlier than the reversal's date, so nothing new posts into the closed month. The
@@ -136,20 +136,49 @@ export function CatchUpDate(measurementDate: string, replacedDate: string, first
 }
 
 /**
- * The advisory for a measurement date after the current business month's end — or null.
+ * The "are you sure?" for a measurement date after today — or null.
  *
- * Warns, never blocks: forward dating is allowed with no cap. `today` is the BUSINESS calendar day
- * (`BusinessTimeZoneEngine.Today()`), so "this month" means the organisation's month, not the
- * server clock's.
+ * Warns, never blocks: forward dating is allowed with no cap. It exists because a mistyped year
+ * posts silently and only surfaces when the next attestation is refused. `today` is the BUSINESS
+ * calendar day (`BusinessTimeZoneEngine.Today()`), not the server clock's.
  */
 export function FutureDateWarning(measurementDate: string, today: string): string | null {
-    const monthEnd = MonthEnd(today);
-    if (measurementDate <= monthEnd) return null;
+    const day = measurementDate.slice(0, 10);
+    const now = today.slice(0, 10);
+    if (day <= now) return null;
     return (
-        `Measurement date ${measurementDate} is after the end of the current month (${monthEnd}). ` +
-        `Nothing is blocked, but no later observation can be dated on or before it — check the year ` +
-        `and month before posting.`
+        `Measurement date ${day} is after today (${now}). Are you sure? Nothing is blocked, but no ` +
+        `later observation can be dated on or before it — check the year and month before posting.`
     );
+}
+
+/**
+ * The "are you sure?" for a measurement date two or more months before the current month — or null.
+ *
+ * Warns, never blocks. The prior month and anything earlier in the current month are ordinary (a
+ * month's progress is attested after it ends; a project can finish mid-month), so neither warns.
+ * Whether a month is CLOSED is not decided here: that is finance's books-closed-through date, a
+ * refusal rather than a warning. `today` is the BUSINESS calendar day.
+ */
+export function BackDatedWarning(measurementDate: string, today: string): string | null {
+    const day = measurementDate.slice(0, 10);
+    const floor = PriorMonthStart(today);
+    if (day >= floor) return null;
+    return (
+        `Measurement date ${day} is two or more months before the current month (${today.slice(0, 7)}). ` +
+        `Are you sure? Nothing is blocked — check the date before posting.`
+    );
+}
+
+/** Day 1 of the month before the one containing `isoDate`, stepped on the date's own parts. */
+function PriorMonthStart(isoDate: string): string {
+    let [y, m] = isoDate.slice(0, 10).split('-').map(Number);
+    m -= 1;
+    if (m < 1) {
+        m = 12;
+        y -= 1;
+    }
+    return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-01`;
 }
 
 /**
