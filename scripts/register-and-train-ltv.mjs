@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const DB_CONFIG = {
-  user: 'sa',
-  password: 'KRiUffvIjuP5GoLtxYvVkWIQ1BxHQEEMO7j4T684oPR7',
+  user: process.env.DB_USER ?? 'sa',
+  password: process.env.DB_PASSWORD,
   server: 'localhost',
   port: 1433,
   database: 'MJ_6_1_0',
