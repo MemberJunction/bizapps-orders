@@ -256,7 +256,7 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
         slot: 'after-fields',
         sortKey: 40,
         contributionKey: 'subscriptions',
-        // Claims the generated `subscriptionAndEntitlements` section — every one of its four
+        // Claims the generated `subscriptionAndEntitlements` section — every one of its five
         // fields is already rendered by this panel or the fulfillment panel.
         replacesSectionKey: 'subscriptionAndEntitlements',
     },
@@ -290,6 +290,15 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
                     [ShowLabel]="true"
                     FieldName="EntitlementValidityMode"
                     Type="select"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="RenewalIncreasePercent"
+                    Type="number"
                     [EditMode]="EditMode"
                     [FormContext]="FormContext"
                     (Navigate)="FormComponent.OnFormNavigate($event)">

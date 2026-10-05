@@ -108,7 +108,7 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
         {
             name: 'subscriptions',
             panel: ProductSubscriptionsPanel,
-            fields: ['SubscriptionTypeID', 'EntitlementValidityMode'],
+            fields: ['SubscriptionTypeID', 'EntitlementValidityMode', 'RenewalIncreasePercent'],
         },
         {
             name: 'accounting',

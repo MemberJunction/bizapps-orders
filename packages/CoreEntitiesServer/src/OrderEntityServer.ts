@@ -247,6 +247,31 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
     /** Price decompositions produced during this save, written once the lines have IDs (D69). */
     private _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
+    /** Lines the renewal pass priced, with the price it wrote; see {@link MarkRenewalPriced}. */
+    private _renewalPricedLines = new Map<mjBizAppsOrdersOrderLineEntity, number>();
+
+    /**
+     * Record that the renewal pass priced this line (golive #304).
+     *
+     * A renewal is priced from the prior term, not today's list: a lapsed discount, a grandfathered
+     * price raised by the annual increase. That can sit below the engine's price, and it is the
+     * price finance chose, not a concession someone typed. While the line still carries the price
+     * the pass wrote, the concession gate and the below-engine review treat it as engine-priced.
+     * Change the price and both judge it as usual.
+     */
+    public MarkRenewalPriced(line: mjBizAppsOrdersOrderLineEntity): void {
+        this._renewalPricedLines.set(line, Number(line.UnitPrice));
+    }
+
+    /** True for a line the renewal pass priced whose price is unchanged; matched by entity or saved ID. */
+    private isUneditedRenewalPrice(line: { ID?: string | null; UnitPrice: number | null }): boolean {
+        for (const [marked, price] of this._renewalPricedLines) {
+            const same =
+                marked === line || (!!line.ID && marked.IsSaved && marked.ID.toLowerCase() === String(line.ID).toLowerCase());
+            if (same) return Math.abs(Number(line.UnitPrice ?? 0) - price) < 0.005;
+        }
+        return false;
+    }
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
     private _taxReasons = new Map<number, string>();
     private _manualDiscounts: ManualDiscountRequest[] = [];
@@ -1007,8 +1032,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             Quantity: line.Quantity,
             UnitPrice: line.UnitPrice,
             ProductPriceID: line.ProductPriceID,
+            // A renewal line's price is the renewal pass's own decision (golive #304), not a stated one.
             PriceStated:
-                line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0,
+                !this.isUneditedRenewalPrice(line) &&
+                (line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0),
             LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
         }));
         const problems = await FindUnapprovedConcessions(
@@ -1058,7 +1085,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     Quantity: line.Quantity,
                     UnitPrice: line.UnitPrice,
                     ProductPriceID: line.ProductPriceID,
-                    PriceStated: true,
+                    PriceStated: !this.isUneditedRenewalPrice(line),
                     CompanyID: line.CompanyID,
                 })),
                 BusinessDay: () => BusinessDay(provider, user as UserInfo),
@@ -2932,6 +2959,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                           !!line.RenewsSubscriptionID,
                           options,
                           DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart),
+                          line.RenewsSubscriptionID ? { ProductID: product.ID, SubscriptionTypeID: rules.ID } : undefined,
                       );
 
             // Remember it so a later line for the same subscription resolves above.
@@ -3588,12 +3616,20 @@ export class OrderEntityServer extends OrderHeaderEntity {
         }
     }
 
-    /** Extension or reactivation — the term is what changes; the subscription just re-activates. */
+    /**
+     * Extension or reactivation — the term is what changes; the subscription just re-activates.
+     *
+     * `renewedOnto` is the product a renewal line names. When it is not the subscription's product,
+     * the subscription moved to a successor at renewal (golive #304), and from this term on it is a
+     * subscription to the successor: its product and type follow, so the next renewal, entitlement
+     * checks and reports all read the product the customer now holds.
+     */
     private async touchExistingSubscription(
         decision: SubscriptionDecision,
         isRenewal: boolean,
         options?: EntitySaveOptions,
         displacedStart?: DisplacedTermStartEventData,
+        renewedOnto?: { ProductID: string; SubscriptionTypeID: string },
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
@@ -3601,6 +3637,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
             CompositeKey.FromID(decision.SubscriptionID!),
             this.ContextCurrentUser,
         );
+        if (renewedOnto && sub.ProductID.toLowerCase() !== renewedOnto.ProductID.toLowerCase()) {
+            sub.ProductID = renewedOnto.ProductID;
+            sub.SubscriptionTypeID = renewedOnto.SubscriptionTypeID;
+            if (!(await sub.Save(options))) {
+                throw new Error(
+                    `Failed to move subscription ${sub.SubscriptionNumber} onto its successor product: ` +
+                        `${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+        }
         if (decision.Action === 'Reactivate') {
             sub.Status = 'Active';
             sub.CanceledAt = null;
