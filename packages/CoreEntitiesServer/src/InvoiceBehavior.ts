@@ -12,15 +12,23 @@
  * point-in-time snapshot of a customer's position, so re-deriving it later gives you a DIFFERENT
  * document with the same date on it. That one needs storage. This one must not have it.)
  *
- * WHY THE SPLIT BY SELLING COMPANY IS THE LOAD-BEARING DECISION HERE. An order's lines can be sold
- * by more than one company — 14 of the 75 orders in the review seed are — and each company carries
- * its own receivable, its own tax registration and its own remit-to address. One document covering
- * two companies would name one of them as the payee for money the other is owed. So an order
- * produces one document PER SELLING COMPANY, and the invariant that matters is that the documents
- * sum back to the order: `Σ documents.Gross === OrderHeader.TotalGross`. Everything below exists to
- * keep that true, which is why unattributable amounts are pushed onto the header company rather
- * than dropped. A dropped charge produces an invoice that is internally consistent, adds up
- * perfectly, and undercharges the customer.
+ * ONE ORDER, ONE PAYER, ONE INVOICE (D61, golive #311). An order's lines can belong to products of
+ * more than one company, but the order is sold, and billed, by the company on its header. So an
+ * order produces ONE document — per instalment when it has a schedule — from the order's company,
+ * listing every line whatever company owns its product. A/R and revenue stay in each product's
+ * company (D13) and cash the order's company receives for another company's lines moves through the
+ * intercompany legs; none of that is the customer's business, and none of it is printed.
+ *
+ * The invariant that matters is that the document sums to the order: `document.Gross ===
+ * OrderHeader.TotalGross`. A dropped charge produces an invoice that is internally consistent, adds
+ * up perfectly, and undercharges the customer.
+ *
+ * THE ONE EXCEPTION is an instalment from a schedule written per product company before golive #311, on an
+ * order that had already issued under it. Such a row bills only its company's lines, and its
+ * document is rebuilt the way it was issued: that company's lines, from that company, under the
+ * number it froze. The per-company machinery below (attribution through line allocations, the
+ * header company taking what no line claims) exists for that case; for every other order there is
+ * one company and it attributes everything to it.
  *
  * THE LADDER MUST TIE. `ListSubtotal − Discounts + Charges + Tax === Gross`, always. The named
  * discount rows are a BREAKDOWN of the line-level discount, not a second source of it — promotions
@@ -139,11 +147,9 @@ export interface InvoicePartyFacts {
 }
 
 /**
- * Who is asking to be paid.
- *
- * One per selling company, because on a split order they are genuinely different businesses with
- * different registrations. `CurrencyCode` belongs here rather than on the order: it is the selling
- * company's functional currency, which is a property of the seller and not of the sale.
+ * Who is asking to be paid: the order's company. `CurrencyCode` belongs here rather than on the
+ * order: it is the selling company's functional currency, which is a property of the seller and not
+ * of the sale.
  */
 export interface InvoiceIssuerFacts {
     CompanyID: string;
@@ -236,10 +242,10 @@ export function ImplicitInstalment(input: {
     };
 }
 
-/** One sendable document: an order, restricted to what one selling company is owed for. */
+/** One sendable document: an order, or one instalment of it, from the order's company. */
 export interface InvoiceDocument {
     Kind: DocumentKind;
-    /** `ORD-1005` when the order is single-company, `ORD-1005-A` when it had to be split. */
+    /** `ORD-1005`, or `ORD-1005-2` for the second of several instalments. */
     DocumentNumber: string;
     OrderNumber: string;
     OrderHeaderID: string;
@@ -367,10 +373,11 @@ export function PaymentStatusLabel(gross: number, paid: number): string {
 /**
  * The document number.
  *
- * A single-company order prints the ORDER number, unchanged: the customer, the ledger, the aging
- * report and the person answering the phone all say the same string. Only when one order has to
- * become several documents does a suffix appear, and then it is stable — companies are ordered by
- * ID, so re-rendering the same order tomorrow produces the same `-A` and `-B`.
+ * An order prints the ORDER number, unchanged: the customer, the ledger, the aging report and the
+ * person answering the phone all say the same string. The company letter (`-A`, `-B`) survives only
+ * for an instalment of a schedule written per product company before golive #311 (`total > 1`),
+ * so such an order's later instalments cannot collide with what it already issued. Companies are
+ * ordered by ID, so the letter is stable across renders.
  */
 export function DocumentNumber(orderNumber: string, index: number, total: number): string {
     if (total <= 1) return orderNumber;
@@ -412,9 +419,9 @@ export function ReissueDocumentNumber(baseNumber: string, attempts: number): str
 }
 
 /**
- * The instalment's document number, derived from position — `ORD-1234-2`, or `ORD-1234-B2` when the
- * order is also split by company. A one-instalment schedule prints the plain order number, so an order
- * without a schedule is unchanged.
+ * The instalment's document number, derived from position — `ORD-1234-2`, or `ORD-1234-B2` for a
+ * product company's own row left from a pre-golive-#311 per-company schedule. A one-instalment schedule
+ * prints the plain order number, so an order without a schedule is unchanged.
  *
  * ONE FUNCTION, because the format is unconfirmed against what Bill.com and Business Central accept
  * and must be cheap to change. It is computed ONCE, by `Orders.IssueInstalmentInvoice`, and frozen on
@@ -641,8 +648,9 @@ export function BuildLadder(input: {
 }
 
 /**
- * Everything above, in the right order: an order and its satellites become one document per selling
- * company.
+ * Everything above, in the right order: an order and its satellites become one document, from the
+ * order's company (golive #311). An instalment of a pre-golive-#311 per-company schedule is the one case
+ * that still renders per company; see the module note.
  *
  * @param asOf The date the document is being produced, used only for the days-until-due countdown.
  */
@@ -659,7 +667,11 @@ export function BuildDocuments(input: {
     /** Company ID -> issuer block. A company with no entry still gets a document, with just a name. */
     Issuers?: Map<string, InvoiceIssuerFacts>;
     AsOf: string;
-    /** Render only this company's document. Omit for all of them. */
+    /**
+     * Render only this company's document. Every order has one document, from the order's company,
+     * so this narrows only an instalment of a pre-golive-#311 per-company schedule; any other company
+     * yields nothing.
+     */
     OnlyCompanyID?: string | null;
     /**
      * The instalment to demand. Omit for the implicit one — the whole of each company's gross, due on
@@ -667,7 +679,16 @@ export function BuildDocuments(input: {
      */
     Instalment?: InvoiceInstalmentFacts | null;
 }): InvoiceDocument[] {
-    const { Order: order, Lines: lines, Charges: charges, Adjustments: adjustments, Payments: payments } = input;
+    const { Order: order, Charges: charges, Adjustments: adjustments, Payments: payments } = input;
+
+    // ONE DOCUMENT FROM THE ORDER'S COMPANY: every line is attributed to it, so the per-company
+    // machinery below produces exactly one document for the header company with no letter. Only an
+    // instalment of a product company's own pre-golive-#311 row keeps the lines' own companies, so its
+    // document is rebuilt as it was issued.
+    const legacyCompanyInstalment = !!input.Instalment && !UUIDsEqual(input.Instalment.CompanyID, order.CompanyID);
+    const lines = legacyCompanyInstalment
+        ? input.Lines
+        : input.Lines.map((l) => ({ ...l, CompanyID: order.CompanyID, CompanyName: order.CompanyName }));
 
     const kind = DeriveDocumentKind(order);
     const dueDate = DueDateFor(order);
@@ -675,14 +696,15 @@ export function BuildDocuments(input: {
 
     const lineCompany = new Map(lines.map((l) => [l.ID, l.CompanyID]));
 
-    // Companies in ID order, so the -A/-B suffixes are stable across renders. An order with no
+    // Companies in ID order, so a legacy per-company instalment keeps stable -A/-B suffixes across
+    // renders; every other document has the order's company alone. An order with no
     // lines still produces one document — for the header company, showing nothing — because an
     // empty invoice is a visible problem and no invoice at all is not.
     const companyIDs = [...new Set(lines.map((l) => l.CompanyID))].sort();
     if (!companyIDs.length) companyIDs.push(order.CompanyID);
 
     const companyName = (id: string): string =>
-        input.CompanyNames?.get(id) ?? lines.find((l) => l.CompanyID === id)?.CompanyName ?? order.CompanyName;
+        input.CompanyNames?.get(id) || lines.find((l) => l.CompanyID === id)?.CompanyName || order.CompanyName;
 
     const grossByCompany = companyIDs.map((id) => ({
         CompanyID: id,

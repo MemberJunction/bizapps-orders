@@ -12,7 +12,6 @@ describe('CatalogOptionFrom', () => {
                 ProductTypeID: 'type-event',
                 CompanyID: 'co-1',
                 Company: 'Meridian',
-                StandaloneSellingPrice: 0,
                 IsTaxable: true,
                 MaxQuantityPerLine: 1,
                 SubscriptionTypeID: null,
@@ -39,7 +38,6 @@ describe('CatalogOptionFrom', () => {
                 ProductTypeID: 'type-missing',
                 CompanyID: 'co-1',
                 Company: 'Meridian',
-                StandaloneSellingPrice: 1,
                 IsTaxable: false,
                 MaxQuantityPerLine: null,
                 SubscriptionTypeID: null,
@@ -60,7 +58,6 @@ describe('CatalogOptionFrom', () => {
                 ProductTypeID: 'type-goods',
                 CompanyID: 'co-1',
                 Company: 'Meridian',
-                StandaloneSellingPrice: 12,
                 IsTaxable: false,
                 MaxQuantityPerLine: null,
                 SubscriptionTypeID: null,
@@ -70,7 +67,7 @@ describe('CatalogOptionFrom', () => {
         );
 
         expect(option.OrderLineExtensionEntity).toBeNull();
-        expect(option.ListPrice).toBe(12);
+        expect(option.ListPrice).toBe(0);
         // A mug starts no term, which is what keeps term-only fields off its line.
         expect(option.SubscriptionTypeID).toBeNull();
     });
@@ -84,7 +81,6 @@ describe('CatalogOptionFrom', () => {
                 ProductType: 'Membership',
                 ProductTypeID: 'type-membership',
                 Company: 'Meridian',
-                StandaloneSellingPrice: 1200,
                 IsTaxable: false,
                 MaxQuantityPerLine: null,
                 SubscriptionTypeID: 'subtype-annual',
@@ -94,5 +90,27 @@ describe('CatalogOptionFrom', () => {
         );
 
         expect(option.SubscriptionTypeID).toBe('subtype-annual');
+    });
+
+    it('shows no list price when the product has no base price row', () => {
+        const option = CatalogOptionFrom(
+            {
+                ID: 'prod-5',
+                Name: 'Unpriced Add-on',
+                SKU: 'ADD-1',
+                ProductType: 'Service',
+                ProductTypeID: 'type-service',
+                CompanyID: 'co-1',
+                Company: 'Meridian',
+                IsTaxable: false,
+                MaxQuantityPerLine: null,
+                SubscriptionTypeID: null,
+            },
+            { OrderLineExtensionEntity: null },
+            null,
+        );
+
+        // Null, not $0.00: the line will not price it, and zero reads as free.
+        expect(option.ListPrice).toBeNull();
     });
 });

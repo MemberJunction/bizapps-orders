@@ -632,6 +632,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
 
             await this.expandBundles();
+            // EVERY LINE'S PRODUCT IN THE CATALOG CACHE, reloaded once if any is missing (golive #301).
+            // Subscription decisions, the company stamp, dimension tags and booking all read the
+            // product from `OrdersEngine`; a product written outside this process since it started
+            // was invisible to all of them. One reload here serves the whole save.
+            await OrdersEngine.Instance.EnsureProducts(
+                this.Lines.Items.map((l) => l.ProductID),
+                this.ContextCurrentUser as UserInfo,
+                this.ProviderToUse as unknown as IMetadataProvider,
+            );
             const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
                 booking ? await this.decideSubscriptions() : new Map();
             // Ahead of pricing, so an ordinary line on a reversal order is taxed at the address the
@@ -3357,12 +3366,20 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
-        await LoadOrdersEngine(provider, user);
+        await OrdersEngine.Instance.EnsureProducts(lines.map((l) => l.ProductID), user, provider);
 
         const products = new Map<string, ProductRow>();
         for (const line of lines) {
+            if (!line.ProductID) continue;
             const p = OrdersEngine.Instance.ProductByID(line.ProductID);
-            if (!p) continue;
+            // Not skipped: a skipped line was silently treated as no subscription, so it got no term
+            // and no service period (golive #301).
+            if (!p) {
+                throw new Error(
+                    `Order line ${line.LineNumber}: product ${line.ProductID} was not found in the product catalog, ` +
+                        `even after reloading it from the database.`,
+                );
+            }
             products.set(uuidKey(p.ID), {
                 ID: p.ID,
                 Name: p.Name,
@@ -4113,6 +4130,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const shortfalls = ScheduleShortfalls(
             rows.Results ?? [],
             lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
+            String(this.CompanyID ?? ''),
         );
         if (!shortfalls.length) return rows.Results ?? [];
         const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
