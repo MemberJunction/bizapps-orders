@@ -3878,6 +3878,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const shortfalls = ScheduleShortfalls(
             rows.Results ?? [],
             lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
+            String(this.CompanyID ?? ''),
         );
         if (!shortfalls.length) return rows.Results ?? [];
         const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
