@@ -30,7 +30,7 @@
     "@memberjunction/core-entities": "^6.1.4",
     "@memberjunction/integration-engine": "^6.1.4",
     "@memberjunction/integration-engine-base": "6.1.4",
-    "@mj-biz-apps/accounting-engine-base": ">=0.17.0",
+    "@mj-biz-apps/accounting-engine-base": ">=0.21.0",
     "@mj-biz-apps/common-entities": ">=5.49.0",
     "@mj-biz-apps/orders-entities": "5.27.0"
   },

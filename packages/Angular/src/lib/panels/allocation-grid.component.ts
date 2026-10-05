@@ -1,6 +1,8 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe, FormatMoney, FormatDate } from './money-format';
+import { CrossesLegalEntities } from './allocation-math';
+import { LegalEntityForHint } from './legal-entity-hint';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** An open order a payment can be applied to. */
@@ -154,7 +156,7 @@ export type MJOAllocationMap = Record<string, number>;
             </mj-alert>
         }
 
-        @if (companiesInvolved.length > 1) {
+        @if (crossesLegalEntities) {
             <mj-alert Variant="warning" Icon="fa-solid fa-building-columns" class="mjo-ag__effect">
                     <strong>This allocation crosses companies.</strong>
                     Intercompany entries will be created for {{ companiesInvolved.join(' and ') }}.
@@ -275,6 +277,12 @@ export class MJOAllocationGridComponent {
             (o) => o.CompanyName ?? o.CompanyID,
         );
         return [...new Set(names)];
+    }
+
+    /** Intercompany entries are raised only between legal entities, not between a company and its Division. */
+    protected get crossesLegalEntities(): boolean {
+        const companies = this.Orders.filter((o) => this.applied(o) > 0).map((o) => o.CompanyID);
+        return CrossesLegalEntities(companies, LegalEntityForHint);
     }
 
     protected applied(order: MJOAllocatableOrder): number {

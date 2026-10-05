@@ -24,7 +24,7 @@
     "@memberjunction/ng-entity-viewer": "^6.1.4",
     "@memberjunction/ng-graph-view": "^6.1.4",
     "@memberjunction/ng-hierarchy-tree": "^6.1.4",
-    "@mj-biz-apps/accounting-engine-base": ">=0.17.0",
+    "@mj-biz-apps/accounting-engine-base": ">=0.21.0",
     "@mj-biz-apps/accounting-ng": ">=0.17.0",
     "@mj-biz-apps/common-entities": ">=5.49.0",
     "@mj-biz-apps/common-ng": ">=5.49.0",

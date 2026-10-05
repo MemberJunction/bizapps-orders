@@ -235,6 +235,7 @@ export type {
     DimensionSlice,
     IntercompanyPair,
     IntercompanyLookup,
+    LegalEntityLookup,
     PaymentLineAllocationContext,
     PaymentAllocationResult,
 } from './PaymentAllocationFactory.js';
