@@ -19,7 +19,7 @@
       "OutputTypeDefinition": "@file:types/orders-detect-overlapping-subscriptions.output.ts",
       "OutputTypeIsArray": false,
       "ExecutionMode": "LongRunning",
-      "RequiredScope": "subscriptions:write",
+      "RequiredScope": "orders:subscriptions:write",
       "RequiresSystemUser": false,
       "GenerationType": "Manual",
       "CodeApprovalStatus": "Approved",

@@ -1688,7 +1688,7 @@ export class OrdersAdvanceOrderStateOperation extends BaseRemotableOperation<Ord
 export class OrdersApplyAccountCreditOperation extends BaseRemotableOperation<ApplyAccountCreditInput, ApplyAccountCreditOutput> {
     public readonly OperationKey = "Orders.ApplyAccountCredit";
     public readonly ExecutionMode = 'Sync' as const;
-    public readonly RequiredScope = "payments:write";
+    public readonly RequiredScope = "orders:payments:write";
     public readonly RequiresSystemUser = false;
 }
 
@@ -1704,7 +1704,7 @@ export class OrdersApplyAccountCreditOperation extends BaseRemotableOperation<Ap
 export class OrdersCancelSubscriptionOperation extends BaseRemotableOperation<CancelSubscriptionInput, CancelSubscriptionOutput> {
     public readonly OperationKey = "Orders.CancelSubscription";
     public readonly ExecutionMode = 'Sync' as const;
-    public readonly RequiredScope = "subscriptions:write";
+    public readonly RequiredScope = "orders:subscriptions:write";
     public readonly RequiresSystemUser = false;
 }
 
@@ -1752,7 +1752,7 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
 export class OrdersDetectOverlappingSubscriptionsOperation extends BaseRemotableOperation<OrdersDetectOverlappingSubscriptionsInput, OrdersDetectOverlappingSubscriptionsOutput> {
     public readonly OperationKey = "Orders.DetectOverlappingSubscriptions";
     public readonly ExecutionMode = 'LongRunning' as const;
-    public readonly RequiredScope = "subscriptions:write";
+    public readonly RequiredScope = "orders:subscriptions:write";
     public readonly RequiresSystemUser = false;
 }
 
@@ -1976,7 +1976,7 @@ export class OrdersRecordProgressOperation extends BaseRemotableOperation<Orders
 export class OrdersRefundPaymentOperation extends BaseRemotableOperation<RefundPaymentInput, RefundPaymentOutput> {
     public readonly OperationKey = "Orders.RefundPayment";
     public readonly ExecutionMode = 'Sync' as const;
-    public readonly RequiredScope = "payments:refund";
+    public readonly RequiredScope = "orders:payments:refund";
     public readonly RequiresSystemUser = false;
 }
 
@@ -2024,7 +2024,7 @@ export class OrdersRequestAccessOverrideOperation extends BaseRemotableOperation
 export class OrdersSpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewalsInput, SpawnRenewalsOutput> {
     public readonly OperationKey = "Orders.SpawnRenewals";
     public readonly ExecutionMode = 'LongRunning' as const;
-    public readonly RequiredScope = "subscriptions:write";
+    public readonly RequiredScope = "orders:subscriptions:write";
     public readonly RequiresSystemUser = false;
 }
 
