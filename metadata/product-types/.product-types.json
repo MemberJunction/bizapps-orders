@@ -201,7 +201,7 @@
       "DefaultIsTaxable": 1,
       "DefaultSubscriptionTypeID": "@lookup:MJ_BizApps_Orders: Subscription Types.Code=AnnualRolling",
       "IsActive": 1,
-      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementGrantTiming": "OnFirstPayment",
       "DefaultEntitlementQuantityMode": "Flat",
       "DefaultEntitlementValidityMode": "SubscriptionTerm"
     },
@@ -243,7 +243,7 @@
       "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=PercentComplete",
       "DefaultIsTaxable": 1,
       "IsActive": 1,
-      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementGrantTiming": "OnFirstPayment",
       "DefaultEntitlementQuantityMode": "Flat",
       "DefaultEntitlementValidityMode": "Perpetual"
     },
