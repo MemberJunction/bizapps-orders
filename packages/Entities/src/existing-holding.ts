@@ -147,7 +147,8 @@ export async function FindExistingHolding(
  * no renewal target, and a subscriber who already holds the product.
  *
  * Renewal lines are left out: they name the subscription they continue. Lines are returned in the
- * order given.
+ * order given. Three reads whatever the line count: products, then the candidate subscriptions,
+ * then their terms.
  */
 export async function FindUnansweredHeldLines(
     order: HoldingOrder | null,
@@ -155,15 +156,67 @@ export async function FindUnansweredHeldLines(
     provider?: IRunViewProvider,
     user?: UserInfo,
 ): Promise<UnansweredHeldLine[]> {
+    const rv = new RunView(provider);
+    const asked = await subscriptionLinesToAsk(rv, order, lines, user);
+    if (asked.length === 0) return [];
+
+    const subs = await liveSubscriptionsFor(rv, asked, user);
+    if (subs.length === 0) return [];
+    const termEnds = await latestTermEnds(rv, subs.map((s) => s.ID), user);
+
+    const found: UnansweredHeldLine[] = [];
+    for (const { Line, Subscriber } of asked) {
+        // Newest first, as `FindExistingHolding` reads it.
+        const sub = subs.find(
+            (s) =>
+                UUIDsEqual(s.ProductID, Line.ProductID) &&
+                ((!!Subscriber.OrganizationID && UUIDsEqual(s.HolderOrganizationID, Subscriber.OrganizationID)) ||
+                    (!!Subscriber.PersonID && UUIDsEqual(s.BeneficiaryPersonID, Subscriber.PersonID))),
+        );
+        if (!sub) continue;
+        found.push({
+            LineID: Line.ID,
+            LineNumber: Line.LineNumber,
+            ProductID: Line.ProductID,
+            Holding: {
+                SubscriptionID: sub.ID,
+                SubscriptionNumber: sub.SubscriptionNumber,
+                Status: sub.Status,
+                LatestTermEnd: termEnds.get(sub.ID.toLowerCase()) ?? null,
+            },
+        });
+    }
+    return found;
+}
+
+interface AskedLine {
+    Line: HoldingLine;
+    Subscriber: HoldingSubscriber;
+}
+
+interface SubscriptionRow {
+    ID: string;
+    SubscriptionNumber: string;
+    Status: string;
+    ProductID: string;
+    HolderOrganizationID: string | null;
+    BeneficiaryPersonID: string | null;
+}
+
+/** Unanswered, non-renewal lines for a subscription product that name a subscriber. */
+async function subscriptionLinesToAsk(
+    rv: RunView,
+    order: HoldingOrder | null,
+    lines: readonly HoldingLine[],
+    user?: UserInfo,
+): Promise<AskedLine[]> {
     const open = lines.filter((l) => !l.SubscriptionAction && !l.RenewsSubscriptionID && UUID_PATTERN.test(l.ProductID ?? ''));
     if (open.length === 0) return [];
 
-    const productIDs = [...new Set(open.map((l) => l.ProductID.toLowerCase()))];
-    const rv = new RunView(provider);
     const products = await rv.RunView<{ ID: string; SubscriptionTypeID: string | null }>(
         {
             EntityName: PRODUCT_ENTITY,
-            ExtraFilter: `ID IN (${productIDs.map((id) => `'${id}'`).join(', ')})`,
+            ExtraFilter: `ID IN (${inList(open.map((l) => l.ProductID))})`,
             Fields: ['ID', 'SubscriptionTypeID'],
             ResultType: 'simple',
         },
@@ -172,18 +225,70 @@ export async function FindUnansweredHeldLines(
     if (!products.Success) {
         throw new Error(`Could not read the products on the order: ${products.ErrorMessage}`);
     }
-    const isSubscription = (productID: string): boolean =>
-        products.Results.some((p) => UUIDsEqual(p.ID, productID) && !!p.SubscriptionTypeID);
 
-    const found: UnansweredHeldLine[] = [];
+    const asked: AskedLine[] = [];
     for (const line of open) {
-        if (!isSubscription(line.ProductID)) continue;
-        const subscriber = HoldingSubscriberFor(line, order);
-        if (!subscriber) continue;
-        const holding = await FindExistingHolding(line.ProductID, subscriber, provider, user);
-        if (holding) {
-            found.push({ LineID: line.ID, LineNumber: line.LineNumber, ProductID: line.ProductID, Holding: holding });
-        }
+        const isSubscription = products.Results.some((p) => UUIDsEqual(p.ID, line.ProductID) && !!p.SubscriptionTypeID);
+        const subscriber = isSubscription ? HoldingSubscriberFor(line, order) : null;
+        if (subscriber) asked.push({ Line: line, Subscriber: subscriber });
     }
-    return found;
+    return asked;
+}
+
+/** Live subscriptions to any asked product held by any asked subscriber, newest first. */
+async function liveSubscriptionsFor(rv: RunView, asked: readonly AskedLine[], user?: UserInfo): Promise<SubscriptionRow[]> {
+    const orgs = asked.map((a) => a.Subscriber.OrganizationID).filter((id): id is string => !!id && UUID_PATTERN.test(id));
+    const people = asked.map((a) => a.Subscriber.PersonID).filter((id): id is string => !!id && UUID_PATTERN.test(id));
+    const holder = [
+        orgs.length ? `HolderOrganizationID IN (${inList(orgs)})` : '',
+        people.length ? `BeneficiaryPersonID IN (${inList(people)})` : '',
+    ].filter(Boolean);
+    if (holder.length === 0) return [];
+
+    const subs = await rv.RunView<SubscriptionRow>(
+        {
+            EntityName: SUBSCRIPTION_ENTITY,
+            ExtraFilter:
+                `ProductID IN (${inList(asked.map((a) => a.Line.ProductID))}) AND Status IN ('Active', 'Trialing') ` +
+                `AND (${holder.join(' OR ')})`,
+            OrderBy: '__mj_CreatedAt DESC',
+            Fields: ['ID', 'SubscriptionNumber', 'Status', 'ProductID', 'HolderOrganizationID', 'BeneficiaryPersonID'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    if (!subs.Success) {
+        throw new Error(`Could not read existing subscriptions: ${subs.ErrorMessage}`);
+    }
+    return subs.Results;
+}
+
+/** Each subscription's latest term end, keyed by lower-cased subscription id. */
+async function latestTermEnds(rv: RunView, subscriptionIDs: readonly string[], user?: UserInfo): Promise<Map<string, Date | null>> {
+    const terms = await rv.RunView<{ SubscriptionID: string; TermNumber: number; EndDate: Date | string | null }>(
+        {
+            EntityName: SUBSCRIPTION_TERM_ENTITY,
+            ExtraFilter: `SubscriptionID IN (${inList(subscriptionIDs)})`,
+            OrderBy: 'TermNumber DESC',
+            Fields: ['SubscriptionID', 'TermNumber', 'EndDate'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    if (!terms.Success) {
+        throw new Error(`Could not read subscription terms: ${terms.ErrorMessage}`);
+    }
+    const ends = new Map<string, Date | null>();
+    for (const t of terms.Results) {
+        const key = t.SubscriptionID.toLowerCase();
+        if (ends.has(key)) continue;   // highest TermNumber first
+        ends.set(key, t.EndDate === null ? null : t.EndDate instanceof Date ? t.EndDate : new Date(t.EndDate));
+    }
+    return ends;
+}
+
+/** A SQL `IN` list of validated, distinct, lower-cased ids. */
+function inList(ids: readonly string[]): string {
+    const valid = [...new Set(ids.filter((id) => UUID_PATTERN.test(id)).map((id) => id.toLowerCase()))];
+    return valid.map((id) => `'${id}'`).join(', ');
 }

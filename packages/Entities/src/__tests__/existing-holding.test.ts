@@ -54,8 +54,13 @@ const held: Rows = {
         { ID: PRODUCT, SubscriptionTypeID: 'type-1' },
         { ID: ONE_TIME, SubscriptionTypeID: null },
     ],
-    'MJ_BizApps_Orders: Subscriptions': [{ ID: SUB, SubscriptionNumber: 'SUB-1', Status: 'Active' }],
-    'MJ_BizApps_Orders: Subscription Terms': [{ EndDate: '2027-09-30' }],
+    'MJ_BizApps_Orders: Subscriptions': [
+        { ID: SUB, SubscriptionNumber: 'SUB-1', Status: 'Active', ProductID: PRODUCT, HolderOrganizationID: ORG, BeneficiaryPersonID: null },
+    ],
+    'MJ_BizApps_Orders: Subscription Terms': [
+        { SubscriptionID: SUB, TermNumber: 2, EndDate: '2027-09-30' },
+        { SubscriptionID: SUB, TermNumber: 1, EndDate: '2026-09-30' },
+    ],
 };
 
 describe('HoldingSubscriberFor', () => {
@@ -95,6 +100,19 @@ describe('FindUnansweredHeldLines', () => {
         expect(found).toHaveLength(1);
         expect(found[0].LineNumber).toBe(1);
         expect(found[0].Holding.SubscriptionID).toBe(SUB);
+        expect(found[0].Holding.LatestTermEnd?.toISOString().slice(0, 10)).toBe('2027-09-30');
+    });
+
+    it('reads three times however many lines there are', async () => {
+        const p = provider(held);
+        const found = await FindUnansweredHeldLines(order, [line(), line({ ID: 'b', LineNumber: 2 }), line({ ID: 'c', LineNumber: 3 })], p);
+        expect(found.map((f) => f.LineNumber)).toEqual([1, 2, 3]);
+        expect(p.RunView).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not match a subscription held by someone else', async () => {
+        const other = { ...held, 'MJ_BizApps_Orders: Subscriptions': [{ ...(held['MJ_BizApps_Orders: Subscriptions'][0] as object), HolderOrganizationID: SUB }] };
+        expect(await FindUnansweredHeldLines(order, [line()], provider(other))).toEqual([]);
     });
 
     it('leaves out answered lines, renewal lines and one-time products', async () => {
