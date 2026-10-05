@@ -142,10 +142,11 @@ export async function LoadReversalContext(
     const statusByOrder = new Map<string, string>();
     const numberByOrder = new Map<string, string | null>();
     const dateByOrder = new Map<string, string | null>();
+    const companyByOrder = new Map<string, string>();
     {
         const wanted = [...new Set([origin.OrderHeaderID, ...priors.map((p) => p.OrderHeaderID)])];
         const ids = wanted.map((id) => `'${id}'`).join(',');
-        const headers = await rv.RunView<{ ID: string; Status: string; OrderNumber: string | null; OrderDate: Date | string | null }>(
+        const headers = await rv.RunView<{ ID: string; Status: string; OrderNumber: string | null; OrderDate: Date | string | null; CompanyID: string | null }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
                 ExtraFilter: `ID IN (${ids})`,
@@ -157,6 +158,7 @@ export async function LoadReversalContext(
             statusByOrder.set(String(h.ID).toLowerCase(), String(h.Status ?? ''));
             numberByOrder.set(String(h.ID).toLowerCase(), h.OrderNumber ?? null);
             dateByOrder.set(String(h.ID).toLowerCase(), ToISODate(h.OrderDate));
+            companyByOrder.set(String(h.ID).toLowerCase(), String(h.CompanyID ?? '').toLowerCase());
         }
     }
 
@@ -231,8 +233,13 @@ export async function LoadReversalContext(
         AlreadyReversed: Math.round(alreadyReversed * 1e4) / 1e4,
         ScheduleRows: scheduleRows,
         PriorReversals: priorReversals,
-        OriginScheduled: scheduleRows.some(
-            (r) => r.CompanyID.toLowerCase() === String(origin.CompanyID ?? '').toLowerCase(),
+        // Billed by instalment when the origin line's company has rows of its own (a per-company
+        // schedule from before golive #311) or the origin ORDER's company has rows, which since
+        // golive #311 bill every product company's lines.
+        OriginScheduled: scheduleRows.some((r) =>
+            [String(origin.CompanyID ?? '').toLowerCase(), companyByOrder.get(String(origin.OrderHeaderID).toLowerCase())].includes(
+                r.CompanyID.toLowerCase(),
+            ),
         ),
     };
 }
