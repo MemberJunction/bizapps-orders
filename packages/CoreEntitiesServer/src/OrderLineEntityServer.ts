@@ -46,13 +46,13 @@ import {
     HostOrderLineEditVeto,
     IsBooked,
     LineGross,
-    LoadOrdersEngine,
     NetAfterDiscount,
     OrderLineEntity,
     OrdersEngine,
     PRICE_OVERRIDE_REASON_REQUIRED,
     ResolveOrderLineEditRefusal,
     priceOverrideReasonMissing,
+    type mjBizAppsOrdersProductEntity,
     type OrderLineEditKind,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
@@ -450,12 +450,26 @@ export class OrderLineEntityServer extends OrderLineEntity {
      *
      * The status is only read when the product's company actually differs from the line's, so the
      * common save — nothing moved — costs no extra query.
+     *
+     * A PRODUCT THIS PROCESS HAS NOT CACHED IS RELOADED, NOT SKIPPED (golive #301). Returning on a
+     * cache miss left `CompanyID` null for any product written outside this process after it
+     * started, and the save failed on "Company cannot be null", which names neither the product nor
+     * the cache. `RequireProduct` reloads the catalog once and throws naming the product if it is
+     * still not there.
      */
     private async stampCompanyFromProduct(): Promise<void> {
         if (!this.ProductID) return;
-        await LoadOrdersEngine(this.ProviderToUse as never, this.ContextCurrentUser);
-        const product = OrdersEngine.Instance.ProductByID(this.ProductID);
-        if (!product?.CompanyID || product.CompanyID === this.CompanyID) return;
+        let product: mjBizAppsOrdersProductEntity;
+        try {
+            product = await OrdersEngine.Instance.RequireProduct(
+                this.ProductID,
+                this.ContextCurrentUser,
+                this.ProviderToUse as unknown as IMetadataProvider,
+            );
+        } catch (err) {
+            throw new Error(`Order line ${this.LineNumber}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (!product.CompanyID || product.CompanyID === this.CompanyID) return;
         if (this.IsSaved && this.CompanyID && IsBooked((await this.storedOrderStatus()) ?? '')) return;
         this.CompanyID = product.CompanyID;
     }

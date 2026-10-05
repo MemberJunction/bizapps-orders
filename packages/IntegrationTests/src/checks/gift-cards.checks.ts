@@ -29,6 +29,8 @@
  *   GC14  spending the card through the stored-value driver lowers its balance and writes a Redeem;
  *         a re-save with a late allocation spends nothing more; a second spend past what is left is
  *         refused with nothing spent; a refund puts it back (#302)
+ *   GC15  a card named on a NEW instrument, written by the same save that captures the payment,
+ *         is spent: the capture reads the unsaved detail rather than the database
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -692,6 +694,43 @@ export const GiftCardChecks: NamedCheck[] = [
         AssertEqual(Number(refunds[0].Amount), 20, "signed as money coming back");
         AssertEqual(Number(refunds[0].BalanceAfter), 50, "and the ledger agrees with the account");
         Assert(!!refunds[0].RelatedPaymentID, "and it names the refund payment");
+      }),
+  },
+  {
+    Id: "gift-cards.GC15",
+    Name: "GC15: a card on an instrument created in the capturing save is spent, not refused as missing",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const sale = await sellGiftCards(ctx, 1, 60);
+        const [card] = await cardsOf(ctx, sale.Order.ID as string);
+
+        const spend = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 45 }],
+        });
+        Assert(spend.Saved, `confirm failed: ${spend.Message}`);
+
+        // The payment form's shape: the instrument is embedded on the header and first written by
+        // the save that captures. The card has to be read from that unsaved detail.
+        const giftCardType = f.PaymentTypeIDs.get("GiftCard");
+        Assert(!!giftCardType, "PaymentType 'GiftCard' missing — push the orders app metadata");
+        const paid = await CreatePayment(ctx.User, {
+          PaymentNumber: `IT-${randomUUID().slice(0, 8).toUpperCase()}`,
+          ReceivingCompanyID: f.CoA.ID,
+          PaymentTypeID: giftCardType!,
+          Amount: 45,
+          NewPaymentDetail: { CompanyID: f.CoA.ID, PaymentTypeID: giftCardType!, StoredValueAccountID: card.ID },
+          Allocations: [{ OrderHeaderID: spend.Order.ID as string, Amount: 45 }],
+        });
+        Assert(paid.Saved, `capturing with a new instrument failed: ${paid.Message}`);
+        Assert(!!paid.Payment.PaymentDetailID, "the instrument was written with the payment");
+
+        const redeems = (await ledgerOf(ctx, card.ID)).filter((t) => t.TransactionType === "Redeem");
+        AssertEqual(redeems.length, 1, "the card was spent once");
+        AssertEqual(Number(redeems[0].BalanceAfter), 15, "down by the payment amount");
       }),
   },
 ];

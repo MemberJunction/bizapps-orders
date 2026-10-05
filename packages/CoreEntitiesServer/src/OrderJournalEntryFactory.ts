@@ -1195,7 +1195,8 @@ export class OrderJournalEntryFactory {
     }
 
     private async loadProducts(productIDs: string[]): Promise<Map<string, ProductRow>> {
-        await LoadOrdersEngine(this._provider, this._contextUser);
+        // Reloaded once on a miss (golive #301); a product still missing fails the line build by name.
+        await OrdersEngine.Instance.EnsureProducts(productIDs, this._contextUser, this._provider);
         const out = new Map<string, ProductRow>();
         for (const id of productIDs) {
             const p = OrdersEngine.Instance.ProductByID(id);

@@ -84,7 +84,7 @@ const registry = IntegrationCheckRegistry.Instance;
  */
 const EXPECTED_BUNDLES: Record<string, number> = {
     'catalog-world': 1,
-    'order-booking': 26,
+    'order-booking': 28,
     'revenue-recognition': 8,
     subscriptions: 15,
     'subscription-cancellation': 10,
@@ -101,7 +101,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     tax: 15,
     composition: 10,
     returns: 16,
-    'gift-cards': 14,
+    'gift-cards': 15,
     bundles: 13,
     fulfillment: 12,
     'capture-payment': 12,
@@ -116,7 +116,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'entitlement-read': 7,
     'payment-providers': 12,
     'ach-settlement': 17,
-    'embedded-payment-detail': 14,
+    'embedded-payment-detail': 15,
     'payment-schedule': 22,
     'payment-deposit': 15,
     'contract-reversal': 10,
