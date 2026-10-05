@@ -54,6 +54,7 @@ import { FindInvoiceRailForCompany } from './InvoiceRailResolver.js';
 import { DocumentNumber as CompanyDocumentNumber, MAX_DOCUMENT_NUMBER_LENGTH, ReissueDocumentNumber } from './InvoiceBehavior.js';
 import { BuildInvoiceDocuments } from './InvoiceBuilder.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
+import { CheckRailCustomerName, CheckRailInvoiceNumber, OrganizationCustomerName, PersonCustomerName } from './RailCustomerNameLimit.js';
 
 // ── Rows as RunView returns them ─────────────────────────────────────────────────────────────────
 
@@ -384,6 +385,19 @@ export async function IssueOneUnit(
             DueDate: payload.Payload.DueDate,
             Payload: payload.Payload,
         };
+    }
+
+    // 5b. The invoice number must fit the rail's field (bc-aidp-next-golive#280). Refused before the
+    // customer is created, so nothing reaches the rail for an invoice that cannot be sent.
+    const numberTooLong = await CheckRailInvoiceNumber(rail, payload.Payload.DocumentNumber, provider, user);
+    if (numberTooLong) {
+        const failed = await writeExternalInvoice(
+            provider,
+            user,
+            { ...unitKey, PaymentProviderID: rail.Config.PaymentProviderID, DocumentNumber: payload.Payload.DocumentNumber, Amount: payload.Payload.Amount, DueDate: payload.Payload.DueDate },
+            { Status: 'Failed', LastError: numberTooLong },
+        );
+        return refuse('RAIL_REFUSED', `Not sent to ${rail.Config.Name}: ${numberTooLong}`, { ExternalInvoiceID: failed, DocumentNumber: payload.Payload.DocumentNumber, Amount: payload.Payload.Amount });
     }
 
     // 6. The customer on the rail.
@@ -737,6 +751,10 @@ async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: 
 
     const facts = await loadPartyFacts(orgID, personID, provider, user);
     if (!facts) return { OK: false, Code: 'ERROR', Reason: `The bill-to party on order ${order.OrderNumber} could not be read.` };
+    // Refused here rather than by the rail: the rail would refuse the same name, days after entry,
+    // with an error that does not say which field or limit (bc-aidp-next-golive#280).
+    const tooLong = await CheckRailCustomerName(rail, facts.PartyKind, facts.Name, provider, user);
+    if (tooLong) return { OK: false, Code: 'RAIL_REFUSED', Reason: `Not sent to ${rail.Config.Name}: ${tooLong}` };
 
     const created = await rail.EnsureCustomer(facts);
     if (created.Success === false) {
@@ -780,7 +798,7 @@ async function loadPartyFacts(orgID: string | null, personID: string | null, pro
         return {
             PartyKind: 'Organization',
             PartyID: orgID,
-            Name: String(o.Name ?? o.LegalName ?? 'Customer'),
+            Name: OrganizationCustomerName(o),
             Email: (o.Email as string | null) ?? (o.PrimaryEmail as string | null) ?? null,
             AddressLines: [o.PrimaryAddressLine1, o.PrimaryAddressLine2].filter(Boolean).map(String),
             City: (o.PrimaryAddressCity as string | null) ?? null,
@@ -795,7 +813,7 @@ async function loadPartyFacts(orgID: string | null, personID: string | null, pro
     return {
         PartyKind: 'Person',
         PartyID: personID!,
-        Name: String(p.DisplayName ?? [p.FirstName, p.LastName].filter(Boolean).join(' ') ?? 'Customer'),
+        Name: PersonCustomerName(p),
         Email: (p.Email as string | null) ?? (p.PrimaryEmail as string | null) ?? null,
         AddressLines: [p.PrimaryAddressLine1, p.PrimaryAddressLine2].filter(Boolean).map(String),
         City: (p.PrimaryAddressCity as string | null) ?? null,

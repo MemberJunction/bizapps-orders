@@ -82,6 +82,8 @@ import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
 import type { mjBizAppsOrdersOrderLineDimensionEntity } from '@mj-biz-apps/orders-entities';
+import type { DisplacedTermStartEventData } from '@mj-biz-apps/orders-entities';
+import { DisplacedStartEventData } from './displaced-start-event.js';
 import { ORDER_LINE_DIMENSION_ENTITY } from './entity-names.js';
 import {
     MergeOrderRollups,
@@ -95,6 +97,7 @@ import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from 
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
+import { CheckOrderBillToName, LoadBillToName } from './RailCustomerNameLimit.js';
 import { Today, AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
@@ -223,6 +226,12 @@ interface SubscriptionDecisionForLine {
      * a placeholder for the second one, because the first is not written yet.
      */
     DedupeKey: string;
+    /**
+     * The start the line stated before the confirm, or null. Kept because the confirm overwrites
+     * `ServicePeriodStart` with the settled term, and a displaced start is recorded on the
+     * subscription's `Extended` event (golive #299).
+     */
+    RequestedStart: Date | null;
 }
 
 /**
@@ -412,7 +421,40 @@ export class OrderEntityServer extends OrderHeaderEntity {
             );
         }
 
+        for (const message of await this.checkBillToNameFitsRails()) {
+            result.Success = false;
+            const field = this.BillToOrganizationID ? 'BillToOrganizationID' : 'BillToPersonID';
+            result.Errors.push(new ValidationErrorInfo(field, message, this.BillToOrganizationID ?? this.BillToPersonID, ValidationErrorType.Failure));
+        }
+
         return result;
+    }
+
+    /**
+     * The bill-to name must fit the customer fields of every invoice rail a selling company on
+     * this order invoices through (bc-aidp-next-golive#280). The rail creates its customer from
+     * that name, so a name it cannot hold would otherwise fail at send time, days later.
+     *
+     * Checked when the payer is set or changed and when the order books, so an existing draft
+     * edited for any other reason is not refused. The send checks again for anything saved before.
+     */
+    private async checkBillToNameFitsRails(): Promise<string[]> {
+        const payerChanged = !this.IsSaved || !!this.GetFieldByName('BillToOrganizationID')?.Dirty || !!this.GetFieldByName('BillToPersonID')?.Dirty;
+        if (!payerChanged && !this.willBookOnThisSave()) return [];
+        const companyIDs = this.sellingCompanyIDs();
+        if (companyIDs.length === 0) return [];
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const billTo = await LoadBillToName(this.BillToOrganizationID, this.BillToOrganizationID ? null : this.BillToPersonID, provider, this.ContextCurrentUser);
+        return billTo ? CheckOrderBillToName(companyIDs, billTo, provider, this.ContextCurrentUser) : [];
+    }
+
+    /** The header's company and every company a line in memory sells for, without duplicates. */
+    private sellingCompanyIDs(): string[] {
+        const byKey = new Map<string, string>();
+        for (const id of [this.CompanyID, ...this.Lines.Items.map((line) => line.CompanyID)]) {
+            if (id && !byKey.has(id.toLowerCase())) byKey.set(id.toLowerCase(), id);
+        }
+        return [...byKey.values()];
     }
 
     // ─── Save Override ─────────────────────────────────────────────────────────
@@ -2369,7 +2411,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      *
      * NOT A PLACE THAT REFUSES. An unmapped product yields no tags, which books untagged — the state
      * every line was in before this existed. Where a GL account link REQUIRES a dimension, that is
-     * the place to refuse, and it is a separate check.
+     * the place to refuse, and it is a separate check: `RefuseUntaggedLines`, which the journal
+     * entry factory runs on each line's finished entries (#417).
      */
     private async stampLineDimensions(
         persisted: mjBizAppsOrdersOrderLineEntity[],
@@ -2890,7 +2933,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const subscriptionID =
                 decision.Action === 'CreateNew'
                     ? await this.createSubscription(line, product, rules, decision, decided.Subscriber, options)
-                    : await this.touchExistingSubscription(decision, !!line.RenewsSubscriptionID, options);
+                    : await this.touchExistingSubscription(
+                          decision,
+                          !!line.RenewsSubscriptionID,
+                          options,
+                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart),
+                      );
 
             // Remember it so a later line for the same subscription resolves above.
             if (decision.Action === 'CreateNew') createdByDedupeKey.set(decided.DedupeKey, subscriptionID);
@@ -3093,6 +3141,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // concurrency rule must not refuse it (D55).
                 IsRenewal: !!line.RenewsSubscriptionID,
                 RequestedStartDate: requestedStart,
+                // The line's answer to "the subscriber already holds this product" (golive #299).
+                RequestedAction: line.SubscriptionAction,
             });
 
             if (decision.Action === 'Reject') {
@@ -3163,7 +3213,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // subscription extends it (or is refused) instead of creating a second.
             // A real renewal target is left alone: it is already in the database, so
             // the ordinary lookup finds it.
-            if (decision.Term && !line.RenewsSubscriptionID) {
+            //
+            // Not for a line that deliberately starts a SECOND subscription beside one the subscriber
+            // already holds (`SubscriptionAction = CreateNew`). Recording it would point a later
+            // line at the existing subscription with this line's term end, pairing one
+            // subscription's id with another's coverage. A later line instead finds the existing
+            // subscription in the database, as it would on a separate order.
+            const deliberateSecond = decision.Action === 'CreateNew' && !!existing && line.SubscriptionAction === 'CreateNew';
+            if (decision.Term && !line.RenewsSubscriptionID && !deliberateSecond) {
                 pendingSiblings.set(dedupeKey, {
                     ID: existing?.ID ?? PENDING_SIBLING_ID,
                     Status: 'Active',
@@ -3181,6 +3238,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Behavior: behavior,
                 Subscriber: subscriber,
                 DedupeKey: dedupeKey,
+                RequestedStart: requestedStart,
             });
         }
         return out;
@@ -3732,6 +3790,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         decision: SubscriptionDecision,
         isRenewal: boolean,
         options?: EntitySaveOptions,
+        displacedStart?: DisplacedTermStartEventData,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
@@ -3761,7 +3820,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 decision.SubscriptionID!,
                 decision.Action === 'Reactivate' ? 'Activated' : 'Extended',
                 options,
-                { TermNumber: decision.Term?.TermNumber, Action: decision.Action },
+                { TermNumber: decision.Term?.TermNumber, Action: decision.Action, ...displacedStart },
             );
         }
         return decision.SubscriptionID!;

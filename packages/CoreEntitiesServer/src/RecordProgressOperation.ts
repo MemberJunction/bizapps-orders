@@ -39,9 +39,9 @@
  * reversal of the replaced observation's recognition, then this observation's catch-up computed from
  * the restored total. The reversal is dated on the replaced observation's own date while that month
  * is open, and on day 1 of the first later open month when it is not (finance's ruling; see
- * {@link ReversalDate}). "Closed" is the closed-period warning's test, a Posted batch for the line's
- * company, and here a read that fails REFUSES the supersede instead of passing it. When the reversal
- * moves, this observation's catch-up books no earlier than the reversal's date, so nothing new posts
+ * {@link ReversalDate}). "Closed" is a month with a Posted batch for the line's company, until
+ * finance's books-closed-through date replaces that test; a read that fails REFUSES the supersede.
+ * When the reversal moves, this observation's catch-up books no earlier than the reversal's date, so nothing new posts
  * into the closed month; the observation keeps its chosen date (see {@link CatchUpDate}). The replaced
  * row stays Posted and immutable; it stops counting because a row points at it. A replacement may carry the replaced
  * observation's date, so a wrong percent is corrected on the day it was attested. See
@@ -54,8 +54,10 @@
  * contra legs land differently on that date and the line's end balances are still exactly what they
  * would have been without the mistake.
  *
- * A DATE AFTER THIS BUSINESS MONTH WARNS, it does not block. Forward dating stays allowed with no cap;
- * the warning is there because a mistyped year posts silently.
+ * A DATE AFTER TODAY, OR TWO OR MORE MONTHS BEFORE THE CURRENT MONTH, WARNS; it does not block. The
+ * prior month and earlier this month are ordinary. A posted batch in the month does NOT warn: with
+ * batches built daily, every past month has one, so it said nothing about whether finance had closed
+ * the month (golive #316).
  *
  * ATOMICITY: the journal entry and the observation row share one transaction opened here. The entry
  * goes through `Accounting.CreateJournalEntries`, which joins the caller's transaction — no new
@@ -99,7 +101,7 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 import { RegisterOperationPost, ReleaseOperationPost } from './OrderLineProgressMeasurementEntityServer.js';
 import { OrderJournalEntryFactory, type JEDraft } from './OrderJournalEntryFactory.js';
-import { CatchUpDate, EffectiveObservations, FutureDateWarning, PlanSupersede, ReversalDate, SupersedeRefusal } from './ProgressSupersede.js';
+import { BackDatedWarning, CatchUpDate, EffectiveObservations, FutureDateWarning, PlanSupersede, ReversalDate, SupersedeRefusal } from './ProgressSupersede.js';
 import { RaiseProgressJudgmentCall } from './ProgressJudgmentCall.js';
 import { ComputeCatchUp, ProgressRecognitionDriver } from './RevenueRecognition.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
@@ -253,10 +255,10 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             if (reversal !== 0) reversalDate = resolved.Date;
             catchUpDate = CatchUpDate(measurementDate, replaced.MeasurementDate, resolved.Date);
         }
-        // Read once, echoed on BOTH paths: the preview is where it is meant to be seen, and the live
-        // output carries it so the screen can show it after a post that was made anyway. Tested on the
-        // catch-up's booking date, which on a moved supersede is already open.
-        const closed = await this.closedPeriodWarning(line, catchUpDate, provider, ledger);
+        // Echoed on BOTH paths: the preview is where they are meant to be seen, and the live output
+        // carries them so the screen can show them after a post that was made anyway. Tested on the
+        // date the attester entered, supersede included.
+        const dateWarnings = await this.dateWarnings(measurementDate, provider, ledger);
         const numbers = {
             ...echo,
             PercentComplete: percent,
@@ -264,8 +266,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             RecognizedToDateBefore: plan ? plan.Restored : recognizedToDate,
             RecognizedToDateAfter: catchUp.Target,
             RecognitionAmount: catchUp.Delta,
-            ClosedPeriodWarning: closed,
-            FutureDateWarning: await this.futureDateWarning(measurementDate, provider, ledger),
+            ...dateWarnings,
             SupersededMeasurementID: replaced?.ID ?? null,
             ReversalAmount: reversal,
             ReversalDate: reversalDate,
@@ -376,57 +377,22 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
     }
 
     /**
-     * {@link FutureDateWarning} against the BUSINESS calendar's today — or null.
+     * {@link FutureDateWarning} and {@link BackDatedWarning} against the BUSINESS calendar's today.
      *
-     * Advisory, so a calendar that cannot be read produces no warning rather than a refusal, for the
-     * reason {@link closedPeriodWarning} gives.
+     * Advisory, so a calendar that cannot be read produces no warning rather than a refusal:
+     * blocking revenue recognition on the availability of a hint would be the worse failure.
      */
-    private async futureDateWarning(measurementDate: string, provider: IMetadataProvider, user: UserInfo): Promise<string | null> {
-        try {
-            await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
-            return FutureDateWarning(measurementDate, BusinessTimeZoneEngine.Instance.Today());
-        } catch {
-            return null;
-        }
-    }
-
-    /**
-     * A warning when this observation lands in a month accounting has already closed — or null.
-     *
-     * WARNS, NEVER BLOCKS (Jeremy on #227). Period close is not built into AIDP for go-live and the
-     * batch build stays the control; attestation is manual and must not be gated on a state the
-     * attester cannot see or change. This only stops someone walking into it by accident.
-     *
-     * CLOSED MEANS A POSTED BATCH, which is accounting's own word for it: `JournalEntryBatch` runs
-     * Pending → Approved → Sent → Posted, and `Posted` is the one that means the ERP has it. A batch
-     * still Pending or Approved is a period being worked, not a period closed, so attesting into it
-     * is ordinary. The batch is per company and carries a single accountant-set `PostingDate`, so
-     * the month of that date is the period, and the company is the LINE's company — the same one the
-     * entry will book against, not the order header's.
-     *
-     * A read that fails is not a refusal. This is advisory; if the query cannot run — accounting not
-     * installed, no permission on its entity — the attestation still proceeds without a warning,
-     * because blocking revenue recognition on the availability of a hint would be the worse failure.
-     */
-    private async closedPeriodWarning(
-        line: mjBizAppsOrdersOrderLineEntity,
+    private async dateWarnings(
         measurementDate: string,
         provider: IMetadataProvider,
         user: UserInfo,
-    ): Promise<string | null> {
-        const companyID = line.CompanyID;
-        if (!companyID) return null;
-        const month = measurementDate.slice(0, 7);
+    ): Promise<{ FutureDateWarning: string | null; BackDatedWarning: string | null }> {
         try {
-            const batch = (await this.postedBatches(companyID, month, month, provider, user)).at(-1);
-            if (!batch) return null;
-            return (
-                `Measurement date ${measurementDate} falls in a period already posted in batch ` +
-                `${batch.JournalEntryBatchNumber}. The entry will still be written and will be swept into a ` +
-                `later batch; nothing is blocked. Check with finance before posting if this period is closed.`
-            );
+            await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+            const today = BusinessTimeZoneEngine.Instance.Today();
+            return { FutureDateWarning: FutureDateWarning(measurementDate, today), BackDatedWarning: BackDatedWarning(measurementDate, today) };
         } catch {
-            return null;
+            return { FutureDateWarning: null, BackDatedWarning: null };
         }
     }
 
@@ -435,8 +401,8 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
      * replaced observation's onward, that have a Posted batch for the line's company. The catch-up's
      * date is derived from it too ({@link CatchUpDate}).
      *
-     * FAILS CLOSED, unlike {@link closedPeriodWarning}: that one is a hint, this is a posting date.
-     * A read that fails returns a refusal, not the replaced date. A line with no company has no
+     * FAILS CLOSED: this is a posting date, and guessing "open" books into a period finance has
+     * closed. A read that fails returns a refusal, not the replaced date. A line with no company has no
      * batch to test against, so its reversal stays on the replaced date.
      */
     private async reversalDate(
@@ -462,8 +428,9 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
      * Posted batches for `companyID` from `fromMonth` through `toMonth` (or with no upper bound),
      * oldest first. THROWS when the read fails; each caller decides what a failure means.
      *
-     * CLOSED MEANS A POSTED BATCH (see {@link closedPeriodWarning}); the month of its `PostingDate`
-     * is the period.
+     * CLOSED MEANS A POSTED BATCH, until finance's books-closed-through date replaces the test:
+     * `JournalEntryBatch` runs Pending → Approved → Sent → Posted, and the month of a Posted batch's
+     * `PostingDate`, for the line's company, is the period.
      */
     private async postedBatches(
         companyID: string,

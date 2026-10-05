@@ -37,9 +37,9 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
  * completed lines by default, and a mistyped 100% would otherwise leave the only screen that can
  * correct it. The tiles count open lines either way.
  *
- * A DATE AFTER THIS MONTH WARNS. Forward dating is allowed, but a mistyped year is the mistake that
- * made supersede necessary, so the warning rides the preview and the confirm like the closed-period
- * one does.
+ * A DATE AFTER TODAY, OR TWO OR MORE MONTHS BACK, WARNS. Neither is blocked, but a mistyped year is
+ * the mistake that made supersede necessary, so both warnings ride the preview, the confirm and the
+ * notice after posting.
  *
  * ## Example
  *
@@ -126,9 +126,9 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                     <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ future }}
                 </div>
             }
-            @if (Draft?.ClosedPeriodWarning; as closed) {
+            @if (Draft?.BackDatedWarning; as backDated) {
                 <div class="mjo-pg__closed" role="status">
-                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ closed }}
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ backDated }}
                 </div>
             }
         }
@@ -272,12 +272,12 @@ export class MJOProgressPageComponent implements OnInit {
         const draft = this.Draft ?? (await this.record(true));
         if (!draft) return;
         const superseding = this.Supersede && row.LastMeasurementDate ? `, superseding the ${FormatDate(row.LastMeasurementDate, { Short: true })} observation` : '';
-        const warnings = [this.reversalNote(draft, row), draft.FutureDateWarning, draft.ClosedPeriodWarning].filter((w): w is string => !!w);
+        const warnings = [this.reversalNote(draft, row), draft.FutureDateWarning, draft.BackDatedWarning].filter((w): w is string => !!w);
         const proceed = await this.confirm.Confirm({
             title: `Attest ${row.OrderNumber} line ${row.LineNumber} at ${this.percent(Number(this.PercentInput) / 100)}${superseding}?`,
             message: draft.Message ?? '',
             // THE WARNING RIDES THE CONFIRM, not just the strip above the table. It is advisory —
-            // nothing blocks a closed period — so the one place it has to be unmissable is the
+            // an unusual date is not blocked — so the one place it has to be unmissable is the
             // moment before the entry is written, which is exactly where this dialog sits.
             detail:
                 `Signed by you, dated ${FormatDate(this.MeasurementDate, { Short: true })}. A posted observation cannot be changed; a correction is a new observation in a later period` +
@@ -290,7 +290,7 @@ export class MJOProgressPageComponent implements OnInit {
         if (!proceed) return;
         const output = await this.record(false);
         if (!output) return;
-        const after = [output.FutureDateWarning, output.ClosedPeriodWarning].filter((w): w is string => !!w);
+        const after = [output.FutureDateWarning, output.BackDatedWarning].filter((w): w is string => !!w);
         this.Notice = after.length
             ? { Tone: 'warning', Text: `${output.Message ?? 'Posted.'} ${after.join(' ')}` }
             : { Tone: 'success', Text: output.Message ?? 'Posted.' };

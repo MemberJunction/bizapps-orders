@@ -2809,6 +2809,10 @@ export class mjBizAppsOrdersEventOrderLine_ {
     ShipToAddressSnapshot?: string;
         
     @Field({nullable: true}) 
+    @MaxLength(20)
+    SubscriptionAction?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
     @Field(() => Float) 
@@ -2982,6 +2986,9 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
 
+    @Field({ nullable: true })
+    SubscriptionAction: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3144,6 +3151,9 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
+
+    @Field({ nullable: true })
+    SubscriptionAction?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -7905,6 +7915,10 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field({nullable: true, description: `The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`}) 
     ShipToAddressSnapshot?: string;
         
+    @Field({nullable: true, description: `What to do at confirm when the subscriber already holds an active subscription to this product. ExtendExisting adds a term to that subscription, starting the day after its coverage ends. CreateNew starts a separate subscription on this line's service period. NULL follows the subscription type's ConcurrencyMode. A type that rejects duplicates still refuses CreateNew.`}) 
+    @MaxLength(20)
+    SubscriptionAction?: string;
+        
     @Field({nullable: true}) 
     @Field(() => Float, {description: `Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
     BilledToDate: number;
@@ -8093,6 +8107,9 @@ export class CreatemjBizAppsOrdersOrderLineInput {
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
 
+    @Field({ nullable: true })
+    SubscriptionAction: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -8213,6 +8230,9 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
+
+    @Field({ nullable: true })
+    SubscriptionAction?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

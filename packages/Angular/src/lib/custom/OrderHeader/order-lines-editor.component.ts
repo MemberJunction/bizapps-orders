@@ -47,10 +47,12 @@ import {
     GetCatalogOptions,
     GetDimensionOptions,
     GetDiscountAuthority,
+    GetExistingHolding,
     GetSubscriptionContinuation,
     RankCatalogMatches,
     type MJODimensionOption,
     type MJODiscountAuthority,
+    type MJOExistingHolding,
     type MJOProductOption,
 } from '../../data/orders-queries';
 import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
@@ -361,7 +363,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      */
     public ContinuationStartFor(line: mjBizAppsOrdersOrderLineEntity): Date | null {
         const subscriptionID = line.RenewsSubscriptionID;
-        if (!subscriptionID) return null;
+        // A line that chose to extend what the customer already holds is a continuation too.
+        if (!subscriptionID) {
+            return line.SubscriptionAction === 'ExtendExisting' ? ContinuationStartFrom(this.ExistingHoldingFor(line)) : null;
+        }
 
         if (this.continuationStarts.has(subscriptionID)) {
             return this.continuationStarts.get(subscriptionID) ?? null;
@@ -470,6 +475,82 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             for (const row of result.Output.Lines) this.coverageByLine.set(row.OrderLineID.toLowerCase(), row);
         }
         this.cdr.detectChanges();
+    }
+
+    /* ── The customer already holds this product (golive #299) ──
+     *
+     * At confirm, a subscription line whose subscriber already holds a live subscription to the
+     * product follows the type's ConcurrencyMode, and under ExtendExisting it becomes the next term
+     * and starts the day after current coverage ends, whatever start the line states. So when such a
+     * subscription exists, the card asks which is meant and stores the answer on the line
+     * (`SubscriptionAction`), which the server applies: add a term to the existing subscription, or
+     * start a separate one on this line's dates.
+     *
+     * Renewal lines are left out: they name the subscription they continue.
+     */
+
+    /** Holdings by `product|org|person`. A present key with `null` means "holds none". */
+    private readonly holdings = new Map<string, MJOExistingHolding | null>();
+    private readonly loadingHoldings = new Set<string>();
+
+    /** Who this line is for, resolved the way the server does: the line's ship-to, then the order's. */
+    private holdingKey(line: mjBizAppsOrdersOrderLineEntity): { key: string; org: string | null; person: string | null } | null {
+        if (!line.ProductID) return null;
+        const order = this._order;
+        const org = line.ShipToOrganizationID ?? order?.ShipToOrganizationID ?? order?.BillToOrganizationID ?? null;
+        const person = line.ShipToPersonID ?? order?.ShipToPersonID ?? order?.BillToPersonID ?? null;
+        if (!org && !person) return null;
+        return { key: `${line.ProductID}|${org ?? ''}|${person ?? ''}`.toLowerCase(), org, person };
+    }
+
+    /**
+     * The live subscription this line's subscriber already holds for its product, or null.
+     *
+     * Sync for the template, cached per subscriber and product like `ContinuationStartFor`: an
+     * unseen key starts one read, and a cached `null` is a real answer that is not retried.
+     */
+    public ExistingHoldingFor(line: mjBizAppsOrdersOrderLineEntity): MJOExistingHolding | null {
+        // Draft lines only. Once booked, the subscriber "holds" the subscription this very line created.
+        if (this._order?.MoneyLocked || line.RenewsSubscriptionID || !this.IsSubscriptionLine(line)) return null;
+        const who = this.holdingKey(line);
+        if (!who) return null;
+        if (this.holdings.has(who.key)) return this.holdings.get(who.key) ?? null;
+        void this.loadHolding(who.key, line.ProductID, who.org, who.person);
+        return null;
+    }
+
+    private async loadHolding(key: string, productID: string, org: string | null, person: string | null): Promise<void> {
+        if (this.loadingHoldings.has(key)) return;
+        this.loadingHoldings.add(key);
+        try {
+            let holding: MJOExistingHolding | null = null;
+            try {
+                holding = await GetExistingHolding(productID, org, person);
+            } finally {
+                // Cached even on failure, so a failing read does not restart on every change
+                // detection. The server still applies its rule, and the confirm reports a moved start.
+                this.holdings.set(key, holding);
+            }
+            this.cdr.detectChanges();
+        } finally {
+            this.loadingHoldings.delete(key);
+        }
+    }
+
+    /** Where the existing coverage ends, for the prompt. */
+    public HoldingCoverageEnd(holding: MJOExistingHolding): string {
+        return this.dateInputValue(holding.LatestTermEnd);
+    }
+
+    /** The start an extension would get: the day after the existing coverage ends. */
+    public HoldingContinuationStart(holding: MJOExistingHolding): string {
+        return this.dateInputValue(ContinuationStartFrom(holding));
+    }
+
+    /** Store the line's answer. Editable while the order's money is; a booked line's answer is history. */
+    public SetSubscriptionAction(line: mjBizAppsOrdersOrderLineEntity, action: 'ExtendExisting' | 'CreateNew'): void {
+        if (!this.EditMode || this._order?.MoneyLocked) return;
+        line.SubscriptionAction = action;
     }
 
     public SetTermStart(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {

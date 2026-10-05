@@ -34,11 +34,16 @@ import {
 } from './BaseInvoiceRail.js';
 import { BillComGateway, type BillComGatewaySeams } from './BillComGateway.js';
 import type { MJCompanyIntegrationEntity } from '@memberjunction/core-entities';
+import type { ExternalFieldTarget } from '@mj-biz-apps/common-entities';
 
 /** What a retry could plausibly change. Anything else is a fact about the data, and retrying it is noise. */
 // HTTP status codes count only when they stand alone: `500.00` (money) and `INV-500` (a document
 // number) must not read as a server error, or a permanent refusal is retried forever.
 export const BILLCOM_TRANSIENT = /timeout|timed out|ECONN|ETIMEDOUT|EAI_AGAIN|socket|rate limit|too many|session|(?<![\d.\-])(?:5\d\d|401|429)(?![\d.])/i;
+
+/** BILL's customer name and invoice number, as the connector's integration metadata names them. */
+const BILLCOM_CUSTOMER_NAME: ExternalFieldTarget = { Integration: 'Bill.com', Object: 'customers', Field: 'name' };
+const BILLCOM_INVOICE_NUMBER: ExternalFieldTarget = { Integration: 'Bill.com', Object: 'invoices', Field: 'invoiceNumber' };
 
 const num = (v: unknown): number => (v == null || v === '' ? 0 : Number(v));
 
@@ -105,6 +110,15 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
         } catch (e) {
             return { Success: false, Transient: false, Reason: e instanceof Error ? e.message : String(e) };
         }
+    }
+
+    /** BILL's customer name. Business Central holds no customer data, so BILL's limit is the only one. */
+    public override CustomerNameTargets(): ExternalFieldTarget[] {
+        return [BILLCOM_CUSTOMER_NAME];
+    }
+
+    public override InvoiceNumberTargets(): ExternalFieldTarget[] {
+        return [BILLCOM_INVOICE_NUMBER];
     }
 
     public override async EnsureCustomer(f: RailCustomerFacts): Promise<RailResult<{ ExternalCustomerRef: string }>> {

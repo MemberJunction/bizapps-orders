@@ -1233,6 +1233,10 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: AcknowledgesCoverageOverlap
         * * Display Name: Acknowledges Coverage Overlap
         * * SQL Data Type: bit`),
+    SubscriptionAction: z.string().nullable().describe(`
+        * * Field Name: SubscriptionAction
+        * * Display Name: Subscription Action
+        * * SQL Data Type: nvarchar(20)`),
 });
 
 export type mjBizAppsOrdersEventOrderLineEntityType = z.infer<typeof mjBizAppsOrdersEventOrderLineSchema>;
@@ -3246,6 +3250,15 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 0
         * * Description: True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`),
+    SubscriptionAction: z.union([z.literal('CreateNew'), z.literal('ExtendExisting')]).nullable().describe(`
+        * * Field Name: SubscriptionAction
+        * * Display Name: Subscription Action
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * CreateNew
+    *   * ExtendExisting
+        * * Description: What to do at confirm when the subscriber already holds an active subscription to this product. ExtendExisting adds a term to that subscription, starting the day after its coverage ends. CreateNew starts a separate subscription on this line's service period. NULL follows the subscription type's ConcurrencyMode. A type that rejects duplicates still refuses CreateNew.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header Display
@@ -10023,6 +10036,19 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     set AcknowledgesCoverageOverlap(value: boolean) {
         this.Set('AcknowledgesCoverageOverlap', value);
     }
+
+    /**
+    * * Field Name: SubscriptionAction
+    * * Display Name: Subscription Action
+    * * SQL Data Type: nvarchar(20)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get SubscriptionAction(): string | null {
+        return this.Get('SubscriptionAction');
+    }
+    set SubscriptionAction(value: string | null) {
+        this.Set('SubscriptionAction', value);
+    }
 }
 
 
@@ -15668,6 +15694,23 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set AcknowledgesCoverageOverlap(value: boolean) {
         this.Set('AcknowledgesCoverageOverlap', value);
+    }
+
+    /**
+    * * Field Name: SubscriptionAction
+    * * Display Name: Subscription Action
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * CreateNew
+    *   * ExtendExisting
+    * * Description: What to do at confirm when the subscriber already holds an active subscription to this product. ExtendExisting adds a term to that subscription, starting the day after its coverage ends. CreateNew starts a separate subscription on this line's service period. NULL follows the subscription type's ConcurrencyMode. A type that rejects duplicates still refuses CreateNew.
+    */
+    get SubscriptionAction(): 'CreateNew' | 'ExtendExisting' | null {
+        return this.Get('SubscriptionAction');
+    }
+    set SubscriptionAction(value: 'CreateNew' | 'ExtendExisting' | null) {
+        this.Set('SubscriptionAction', value);
     }
 
     /**

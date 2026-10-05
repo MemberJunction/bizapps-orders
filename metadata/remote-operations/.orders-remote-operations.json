@@ -103,8 +103,8 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C408"
     },
     "sync": {
-      "lastModified": "2026-09-02T03:26:26.168Z",
-      "checksum": "73cd5bf00bf1ecc1ed7d98baa0676481e7cdf3091bc5055d8fb25eb0c86b57d4"
+      "lastModified": "2026-10-05T14:47:07.581Z",
+      "checksum": "6c8208bd5bec282608c6293c00e7014e327f91ec60922d063611426da83b66a5"
     }
   },
   {
@@ -320,7 +320,7 @@
       "Name": "Check Entitlement",
       "OperationKey": "Orders.CheckEntitlement",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Entitlements",
-      "Description": "Does this person currently have this entitlement? Asked by Code (the capability), not SKU. PersonID is authoritative; email is a convenience and is refused when it matches more than one person. Access is evaluated (status + window + subscription access-through), never read off EntitlementGrant.Status. Unknown person and known person without access return the same shape. Fail closed. v1 evaluates person grants only.",
+      "Description": "Does this person currently have this entitlement? Asked by Code (the capability), not SKU. PersonID is authoritative; email is a convenience, resolved to one Person by the same rule the checkout uses when several share it (Orders history, then oldest). Access is evaluated (status + window + subscription access-through), never read off EntitlementGrant.Status. Unknown person and known person without access return the same shape. Fail closed. v1 evaluates person grants only.",
       "InputTypeName": "CheckEntitlementInput",
       "InputTypeDefinition": "@file:types/orders-check-entitlement.input.ts",
       "InputTypeIsArray": false,
@@ -338,8 +338,8 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C420"
     },
     "sync": {
-      "lastModified": "2026-09-02T03:26:26.413Z",
-      "checksum": "163183f152df80fbe630f888ce73da83a4b52311221c21a01638de0fcb56a40b"
+      "lastModified": "2026-10-05T14:47:07.610Z",
+      "checksum": "f77c01cfba960a423c2bedc7b87c08a95f8d6fda36fc640c2cfeeff674a448e0"
     }
   },
   {
@@ -454,7 +454,7 @@
     "fields": {
       "Name": "Record Progress",
       "OperationKey": "Orders.RecordProgress",
-      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after the current business month end warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted and booked no earlier than that reversal date, with no row edited.",
+      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after today, or two or more months before the current business month, warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted and booked no earlier than that reversal date, with no row edited.",
       "InputTypeName": "OrdersRecordProgressInput",
       "InputTypeDefinition": "@file:types/orders-record-progress.input.ts",
       "OutputTypeName": "OrdersRecordProgressOutput",
@@ -473,8 +473,8 @@
       "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F20"
     },
     "sync": {
-      "lastModified": "2026-10-02T19:39:06.000Z",
-      "checksum": "1698753314ad012a44edbf700c06c8f11cfc21d416653efe5df0dcbf64fadfe0"
+      "lastModified": "2026-10-04T00:20:31.000Z",
+      "checksum": "a383d539ce469797d9b1ef7ab0336ba058eab7c36fee33bb46b026e242bbe3a3"
     }
   },
   {
