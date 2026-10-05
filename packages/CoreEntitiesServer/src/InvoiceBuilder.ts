@@ -59,6 +59,8 @@ const ACCOUNTING_COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Com
 /** What a render attempt produced, or why it produced nothing. */
 export interface InvoiceBuildResult {
     Success: boolean;
+    /** Set on a refusal that has its own result code: a company named that issues no document for the order. */
+    Code?: 'NOT_ORDER_COMPANY';
     Message?: string;
     Documents: InvoiceDocument[];
 }
@@ -437,6 +439,7 @@ export async function BuildInvoiceDocuments(
     if (onlyCompanyID && !documents.length) {
         return {
             Success: false,
+            Code: 'NOT_ORDER_COMPANY',
             Message:
                 `Order ${orderFacts.OrderNumber} is invoiced by its own company (${orderFacts.CompanyName || orderFacts.CompanyID}), ` +
                 `not by company ${onlyCompanyID}: an order has one document, whatever company owns each product.`,

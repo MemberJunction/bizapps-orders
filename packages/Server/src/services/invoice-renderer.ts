@@ -62,7 +62,13 @@ export interface RenderInvoiceOptions {
 }
 
 /** A refusal carries a code so the caller can map it to an action result without parsing prose. */
-export type RenderFailureCode = 'ORDER_NOT_FOUND' | 'NOT_INVOICEABLE' | 'TEMPLATE_NOT_FOUND' | 'RENDER_FAILED' | 'INVALID_AS_OF_DATE';
+export type RenderFailureCode =
+    | 'ORDER_NOT_FOUND'
+    | 'NOT_INVOICEABLE'
+    | 'NOT_ORDER_COMPANY'
+    | 'TEMPLATE_NOT_FOUND'
+    | 'RENDER_FAILED'
+    | 'INVALID_AS_OF_DATE';
 
 /**
  * A flat result rather than a discriminated union, matching `RefundPaymentOutput` and the driver
@@ -120,7 +126,7 @@ export async function RenderInvoiceDocuments(
         return {
             Success: false,
             Documents: [],
-            Code: built.Message?.includes('voided') ? 'NOT_INVOICEABLE' : 'ORDER_NOT_FOUND',
+            Code: built.Code ?? (built.Message?.includes('voided') ? 'NOT_INVOICEABLE' : 'ORDER_NOT_FOUND'),
             Message: built.Message ?? `Order '${orderID}' produced no documents.`,
         };
     }

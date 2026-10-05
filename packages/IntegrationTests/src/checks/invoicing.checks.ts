@@ -228,6 +228,7 @@ export const InvoicingChecks: NamedCheck[] = [
 
         const narrowed = await invoice(ctx, { OrderID: orderID, CompanyID: f.CoB.ID });
         Assert(!narrowed.Result.Success, "a product company has no document of its own");
+        AssertEqual(narrowed.Result.ResultCode, "NOT_ORDER_COMPANY", "and the refusal says why, in the result code");
         Assert(
           String(narrowed.Result.Message).includes("invoiced by its own company"),
           `the refusal names the order's company, got: ${narrowed.Result.Message}`,
