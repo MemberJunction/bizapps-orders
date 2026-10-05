@@ -224,6 +224,38 @@ describe('with accounting loaded', () => {
         expect(accounting.raised[0].Exceptions[1].Summary).toContain('same category');
     });
 
+    it('raises a SameFamily pair, naming it as another band, whatever IncludeSameCategory says', async () => {
+        accounting.types = activeType({ IncludeSameCategory: false });
+        mocks.queryRows = [pair(1, { MatchBasis: 'SameFamily', LaterOverlapAcknowledged: false })];
+
+        const out = await detect();
+
+        expect(out).toMatchObject({ PairsFound: 1, PairsConsidered: 1, Created: 1 });
+        expect(accounting.raised[0].Exceptions[0].Summary).toContain('another band of the same subscription family');
+    });
+
+    it('leaves out a SameFamily pair whose later line acknowledged the overlap', async () => {
+        accounting.types = activeType({ IncludeSameCategory: true });
+        mocks.queryRows = [pair(1), pair(2, { MatchBasis: 'SameFamily', LaterOverlapAcknowledged: true })];
+
+        const out = await detect();
+
+        expect(out).toMatchObject({ PairsFound: 2, PairsConsidered: 1, Created: 1 });
+        expect(accounting.raised[0].Exceptions.map((e) => e.SourceRecordID)).toEqual([pair(1).LaterSubscriptionID]);
+    });
+
+    it('raises SameProduct and SameCategory pairs even when the later line is flagged as acknowledged', async () => {
+        accounting.types = activeType({ IncludeSameCategory: true });
+        mocks.queryRows = [
+            pair(1, { LaterOverlapAcknowledged: true }),
+            pair(2, { MatchBasis: 'SameCategory', LaterOverlapAcknowledged: true }),
+        ];
+
+        const out = await detect();
+
+        expect(out).toMatchObject({ PairsFound: 2, PairsConsidered: 2, Created: 2 });
+    });
+
     it.each([
         ['missing', { Success: true, Types: [] }],
         ['inactive', { Success: true, Types: [{ Code: 'OVERLAPPING_SUBSCRIPTION', IsActive: false, Configuration: { IncludeSameCategory: true } }] }],
