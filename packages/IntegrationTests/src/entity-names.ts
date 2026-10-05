@@ -27,6 +27,7 @@
 export const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 export const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 export const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
+export const SUBSCRIPTION_FAMILY_ENTITY = 'MJ_BizApps_Orders: Subscription Families';
 export const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 export const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
 export const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
@@ -105,6 +106,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PRODUCT_TYPE_ENTITY,
     PRODUCT_CATEGORY_ENTITY,
     PRODUCT_ENTITY,
+    SUBSCRIPTION_FAMILY_ENTITY,
     PRODUCT_ENTITLEMENT_ENTITY,
     EVENT_PRODUCT_ENTITY,
     PRODUCT_PRICE_ENTITY,
