@@ -480,11 +480,11 @@ export class SubscriptionBehavior {
     public DedupeIdentity(rules: SubscriptionTypeRules, subscriber: SubscriberIdentity): SubscriberIdentity {
         switch (rules.BenefitModel) {
             case 'Holder':
-                // Key on whichever side holds it, so a personal membership dedupes by person and an
-                // org-held one by org — without either leaking into the other's identity.
-                return subscriber.PersonID && !subscriber.OrganizationID
-                    ? { OrganizationID: null, PersonID: subscriber.PersonID }
-                    : { OrganizationID: subscriber.OrganizationID ?? null, PersonID: null };
+                // A resolved person keys on the PAIR, a bare org on the org. The organization is
+                // usually filled in from the buyer's employer, so "an org is present" does not mean
+                // the org holds it: keyed on the org alone, a coworker's purchase would extend this
+                // person's subscription and leave the coworker with nothing.
+                return { OrganizationID: subscriber.OrganizationID ?? null, PersonID: subscriber.PersonID ?? null };
             case 'Organization':
                 // The org holds ONE, however many of its people benefit — so a second purchase
                 // extends rather than duplicating.
@@ -506,8 +506,9 @@ export class SubscriptionBehavior {
      * empty: doing so missed every org-held subscription bought with a contact, and a re-order
      * booked a second subscription for the same dates without `ConcurrencyMode` ever running.
      *
-     * A seat under `Individual` keeps its person, so seats for different people stay distinct. A
-     * personal subscription keeps `HolderOrganizationID IS NULL`, so it never matches an org's.
+     * A seat under `Individual`, and a `Holder` purchase that resolved a person, keep the person, so
+     * subscriptions for different people stay distinct. A personal subscription keeps
+     * `HolderOrganizationID IS NULL`, so it never matches an org's.
      */
     public DedupeMatch(rules: SubscriptionTypeRules, subscriber: SubscriberIdentity): SubscriberMatch {
         const identity = this.DedupeIdentity(rules, subscriber);

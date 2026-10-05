@@ -1,5 +1,5 @@
 /**
- * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS14).
+ * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS15).
  *
  * Subscriptions were a HEADER concern: the flow read `OrderHeader.HolderOrganizationID` and every
  * line on an order therefore had the same subscriber. An association buying ten memberships for ten
@@ -27,6 +27,7 @@
  *   LS9  ACROSS orders the dedupe scope bites: a different person is new, the same person is refused
  *   LS13 an org-held subscription bought with a contact person is found again — a re-order extends it
  *   LS14 …and a RejectDuplicate org-held type refuses that re-order
+ *   LS15 a Holder type keeps the person: two people at one org are two subscriptions, and each re-order extends its own
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -685,6 +686,44 @@ LineSubscriberChecks.push({
         /second concurrent subscription/i.test(second.Message),
         `the refusal should name the concurrency rule, got: ${second.Message}`,
       );
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS15",
+  Name: "LS15: a Holder type keeps the person — a coworker at the same org gets their own subscription",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      // SubRolling is Holder + ExtendExisting. The org is often inferred from the buyer's employer,
+      // so an org being present does not make the org the holder. Keyed on the org alone, the
+      // coworker's paid year was added to the first person's subscription and the coworker got none.
+      const first = await makePerson(ctx, "HolderFirst");
+      const coworker = await makePerson(ctx, "HolderCoworker");
+      const buy = (person: string, day: string) =>
+        ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          BillToPersonID: person,
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+          OrderDate: new Date(`${day}T00:00:00Z`),
+        });
+
+      const a = await buy(first, "2026-07-01");
+      Assert(a.Saved, `first confirm failed: ${a.Message}`);
+      const b = await buy(coworker, "2026-07-15");
+      Assert(b.Saved, `coworker confirm failed: ${b.Message}`);
+      const [subA] = await subscriptionsOf(ctx, a.Order.ID as string);
+      const [subB] = await subscriptionsOf(ctx, b.Order.ID as string);
+      Assert(!SameID(subA.ID, subB.ID), "two people at one org, two subscriptions");
+      Assert(SameID(subB.BeneficiaryPersonID, coworker), "the coworker's subscription is the coworker's");
+
+      // The same person again still finds their own and extends it.
+      const again = await buy(first, "2026-08-01");
+      Assert(again.Saved, `re-order confirm failed: ${again.Message}`);
+      const [subAgain] = await subscriptionsOf(ctx, again.Order.ID as string);
+      Assert(SameID(subAgain.ID, subA.ID), "the first person's re-order extends their own subscription");
     }),
 });
 

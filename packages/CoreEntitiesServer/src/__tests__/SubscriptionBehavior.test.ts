@@ -43,6 +43,7 @@ function rules(overrides: Partial<SubscriptionTypeRules> = {}): SubscriptionType
 
 const ORG = 'org-1';
 const PERSON = 'person-1';
+const OTHER_PERSON = 'person-2';
 
 const decide = (r: SubscriptionTypeRules, purchase: Date, amount = 1200, extra = {}) =>
     new SubscriptionBehavior().Decide({
@@ -423,6 +424,14 @@ describe('benefit model (D62)', () => {
             expect(behavior.DedupeIdentity(rules(), { OrganizationID: ORG }))
                 .toEqual({ OrganizationID: ORG, PersonID: null });
         });
+
+        it('Holder keeps a resolved person, so two people at one org are two subscriptions', () => {
+            // The org is usually inferred from the buyer's employer. Keyed on the org alone, a
+            // coworker's purchase would extend this person's subscription.
+            expect(behavior.DedupeIdentity(rules(), subscriber)).toEqual({ OrganizationID: ORG, PersonID: PERSON });
+            expect(behavior.DedupeIdentity(rules(), { OrganizationID: ORG, PersonID: OTHER_PERSON }))
+                .not.toEqual(behavior.DedupeIdentity(rules(), subscriber));
+        });
     });
 
     describe('dedupe match — how a stored subscription is found (#317)', () => {
@@ -435,9 +444,13 @@ describe('benefit model (D62)', () => {
                 .toEqual({ OrganizationID: ORG, PersonID: 'Any' });
         });
 
-        it('Holder held by an org matches the org whatever person is stored', () => {
-            expect(behavior.DedupeMatch(rules(), subscriber)).toEqual({ OrganizationID: ORG, PersonID: 'Any' });
+        it('Holder held by an org with no person resolved matches the org whatever person is stored', () => {
             expect(behavior.DedupeMatch(rules(), { OrganizationID: ORG })).toEqual({ OrganizationID: ORG, PersonID: 'Any' });
+        });
+
+        it('Holder with a resolved person matches only that person at that org', () => {
+            // A coworker at the same org must not find, and extend, this person's subscription.
+            expect(behavior.DedupeMatch(rules(), subscriber)).toEqual({ OrganizationID: ORG, PersonID: PERSON });
         });
 
         it('Holder held by a person matches only a personal subscription, never an org-held one', () => {
