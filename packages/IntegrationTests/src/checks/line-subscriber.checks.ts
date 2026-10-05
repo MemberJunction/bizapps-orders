@@ -670,7 +670,7 @@ LineSubscriberChecks.push({
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
         BillToPersonID: contact,
-        Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 900 }],
+        Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 1200 }],
         OrderDate: new Date("2026-07-01T00:00:00Z"),
       });
       Assert(first.Saved, `first confirm failed: ${first.Message}`);
@@ -678,7 +678,7 @@ LineSubscriberChecks.push({
       const second = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
-        Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 900 }],
+        Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 1200 }],
         OrderDate: new Date("2026-08-01T00:00:00Z"),
       });
       Assert(!second.Saved, "the re-order must be refused by ConcurrencyMode=RejectDuplicate");
