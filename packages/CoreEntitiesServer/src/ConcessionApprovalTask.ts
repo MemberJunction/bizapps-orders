@@ -61,8 +61,12 @@ export const TASK_DECISION_OUTCOME_ENTITY = 'MJ_BizApps_Tasks: Task Decision Out
 /** The entity the tasks app resolves an assignee through, for its notices and its approvals inbox. */
 export const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 
-/** The tasks app's seeded approval type, resolved by Code — the type its approvals inbox lists. */
-export const APPROVAL_TASK_TYPE_CODE = 'APPROVAL_REQUEST';
+/**
+ * The concession approval task type, resolved by Code. Shipped in this app's metadata. It is its own type,
+ * not the tasks app's generic Approval Request, so that its OnAssign action (a Teams channel post) fires for
+ * concessions only. It is flagged IsApproval, so the tasks app's approvals inbox lists its tasks.
+ */
+export const APPROVAL_TASK_TYPE_CODE = 'ORDERS_CONCESSION_APPROVAL';
 
 const USER_ENTITY = 'MJ: Users';
 const USER_ROLE_ENTITY = 'MJ: User Roles';
