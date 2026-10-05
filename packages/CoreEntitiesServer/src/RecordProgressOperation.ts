@@ -86,7 +86,6 @@ import { UserCache } from '@memberjunction/generic-database-provider';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
-    LoadOrdersEngine,
     OrdersEngine,
     OrdersRecordProgressOperation as OrdersRecordProgressOperationBase,
     ToISODate,
@@ -333,10 +332,9 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
 
     /** The line's rev-rec type, resolved the way booking resolves it: the product's, else its type's default. */
     private async revRecTypeOf(line: mjBizAppsOrdersOrderLineEntity, provider: IMetadataProvider, user: UserInfo) {
-        await LoadOrdersEngine(provider, user);
         const engine = OrdersEngine.Instance;
-        const product = engine.ProductByID(line.ProductID);
-        if (!product) throw new Error(`Order line ${line.ID} references product ${line.ProductID}, which was not found.`);
+        // Reloaded once on a miss, and throws naming the product if still missing (golive #301).
+        const product = await engine.RequireProduct(line.ProductID, user, provider);
         const id = ResolveRevenueRecognitionTypeID(product.RevenueRecognitionTypeID, engine.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID);
         return id ? engine.RevenueRecognitionTypes.find((t) => t.ID.toLowerCase() === id.toLowerCase()) ?? null : null;
     }
