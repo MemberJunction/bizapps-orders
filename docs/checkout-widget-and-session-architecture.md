@@ -443,6 +443,19 @@ promotion codes are not scoped to one. A resolver that throws counts as claiming
 claims **every** code, so a resolver that does not override it turns typed codes off at every checkout
 until it names its own.
 
+A member code and a typed code **never stack**. When a buyer with a verified token also types a code, the
+resolver's decision says which one is priced through `TypedCode`:
+
+| `TypedCode` | Priced | The other code |
+|---|---|---|
+| `'Replace'` (default, and any value other than `'Yield'`) | the member code | the typed code comes back in `UnusablePromotionCodes`; the element shows why and stops, so the buyer can remove it |
+| `'Yield'` | the typed code | the member code is set aside and `MemberDiscountMessage` says so |
+
+Either way, when the engine declines the winning code (dates, limits, qualifier), the other one is priced
+instead, so a usable code is never dropped for a dead one. The snapshot keeps only the code that was
+priced — `MemberPromotionCode` or `PromotionCodes`, never both — so `/complete` charges what the draft
+quoted.
+
 - The resolver returns a **promotion code**, priced through the ordinary promotion engine — dates, qualifiers and redemption limits apply as they do to any code.
 - The session snapshot keeps only the resolved code (`MemberPromotionCode`); **the token is never stored**. `/complete` re-prices from the snapshot and carries the code on the order, so the booked total equals the charged total.
 - A rejected token, a resolver that throws, or a code the engine declines prices at the standard rate and returns `MemberDiscountMessage`. The element stops once on that message before payment; submitting again pays the standard rate.

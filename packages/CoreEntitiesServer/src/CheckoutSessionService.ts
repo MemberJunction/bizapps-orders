@@ -64,8 +64,10 @@ import {
 } from './CheckoutSavedInstrument.js';
 import {
     CheckoutMemberDiscountNotConfiguredError,
+    DEFAULT_TYPED_CODE_PRECEDENCE,
     IsRegisteredMemberPromotionCode,
     ResolveCheckoutMemberDiscountResolver,
+    type CheckoutTypedCodePrecedence,
 } from './CheckoutMemberDiscountResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
 import { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
@@ -172,7 +174,10 @@ interface CheckoutSnapshot {
     Answers?: CheckoutAnswersInput;
     Attribution?: CheckoutAttribution;
     Choices?: CheckoutChoicesInput;
-    /** Promotion code a verified member token earned. The token itself is never stored. */
+    /**
+     * Promotion code a verified member token earned. The token itself is never stored. A draft
+     * snapshots this or `PromotionCodes`, never both (#358).
+     */
     MemberPromotionCode?: string | null;
     /** Codes the buyer entered that the draft priced with. */
     PromotionCodes?: string[];
@@ -218,6 +223,8 @@ export interface UpdateDraftResult {
 interface MemberDiscountResolution {
     PromotionCode: string | null;
     Message?: string;
+    /** Whether the member code replaces a typed code or yields to it. */
+    TypedCode?: CheckoutTypedCodePrecedence;
     /** Set when the widget cannot verify tokens at all — the draft is refused. */
     Refusal?: string;
 }
@@ -255,7 +262,9 @@ export function NormalizeCheckoutPromotionCodes(input: unknown): { Codes: string
 
 /**
  * The codes a checkout prices with: the buyer's own codes plus the code a verified member token
- * earned, de-duplicated case-insensitively. Whether they stack is the promotion engine's call.
+ * earned, de-duplicated case-insensitively. A draft never snapshots both (see
+ * {@link PlanCheckoutPromotionCodes}), so at `/complete` this passes one side through; a session
+ * drafted before that rule may still carry both, and is priced as it was drafted.
  */
 export function CombineCheckoutPromotionCodes(buyerCodes: string[], memberCode: string | null | undefined): string[] {
     if (!memberCode || buyerCodes.some((c) => c.toLowerCase() === memberCode.toLowerCase())) {
@@ -263,6 +272,38 @@ export function CombineCheckoutPromotionCodes(buyerCodes: string[], memberCode: 
     }
     return [...buyerCodes, memberCode];
 }
+
+/** One set of codes to price a draft with: the buyer's typed codes and the member code. */
+export interface CheckoutPromotionCodeAttempt {
+    Buyer: string[];
+    Member: string | null;
+}
+
+/**
+ * The code sets a draft tries, in order, when a member code and a typed code may both be present (#358).
+ * They never stack: the precedence picks which is priced first, and the other is the fallback when the
+ * engine declines every code in the first. With only one side present, or the same code on both, there
+ * is a single attempt.
+ */
+export function PlanCheckoutPromotionCodes(
+    buyerCodes: string[],
+    memberCode: string | null | undefined,
+    precedence: CheckoutTypedCodePrecedence | undefined,
+): CheckoutPromotionCodeAttempt[] {
+    const member = memberCode || null;
+    const contested = !!member && buyerCodes.some((c) => c.toLowerCase() !== member.toLowerCase());
+    if (!contested) {
+        return [{ Buyer: [...buyerCodes], Member: member }];
+    }
+    const memberOnly: CheckoutPromotionCodeAttempt = { Buyer: [], Member: member };
+    const typedOnly: CheckoutPromotionCodeAttempt = { Buyer: [...buyerCodes], Member: null };
+    return (precedence ?? DEFAULT_TYPED_CODE_PRECEDENCE) === 'Yield' ? [typedOnly, memberOnly] : [memberOnly, typedOnly];
+}
+
+/** Why a typed code did nothing when the member code replaced it. Shown as "<code> can't be used: <reason>." */
+const TYPED_CODE_REPLACED_BY_MEMBER = 'your member discount applies instead, and the two cannot be combined';
+/** Why a member code was set aside for the buyer's typed code. */
+const MEMBER_CODE_YIELDED_TO_TYPED = 'Your member discount cannot be combined with a promotion code, so the code you entered is used instead.';
 
 const MEMBER_DISCOUNT_UNAVAILABLE = 'Your member discount could not be verified, so this checkout is priced at the standard rate.';
 /**
@@ -948,7 +989,9 @@ export class CheckoutSessionService {
             );
             const code = typeof decision?.PromotionCode === 'string' ? decision.PromotionCode.trim() : '';
             if (code) {
-                return { PromotionCode: code };
+                // Anything but an explicit 'Yield' takes the default, so a misspelt value cannot hand
+                // the price to a typed code the host meant to override.
+                return { PromotionCode: code, TypedCode: decision.TypedCode === 'Yield' ? 'Yield' : DEFAULT_TYPED_CODE_PRECEDENCE };
             }
             return { PromotionCode: null, Message: decision?.Message || MEMBER_DISCOUNT_UNAVAILABLE };
         } catch (err) {
@@ -1382,7 +1425,7 @@ export class CheckoutSessionService {
 
             // Nothing is saved yet, so the location is priced inline; completion prices the same
             // location from the Address row it records.
-            const priced = await pricingService.Price({
+            const priceWith = async (codes: string[]) => pricingService.Price({
                 OrderHeaderID: order.ID || null,
                 CompanyID: widget.CompanyID,
                 BillToPersonID: order.BillToPersonID ?? null,
@@ -1403,23 +1446,50 @@ export class CheckoutSessionService {
                 ShipToAddressID: null,
                 ShipToAddress: this.toTaxAddress(location),
                 Lines: [...order.Lines.Items],
-                PromotionCodes: CombineCheckoutPromotionCodes(promotionCodes, memberDiscount.PromotionCode),
+                PromotionCodes: codes,
                 ManualDiscounts: [],
                 Charges: [],
             });
-            // Only the buyer's own codes are reported as unusable; a declined member code is explained
-            // through MemberDiscountMessage below.
-            const buyerKeys = new Set(promotionCodes.map((c) => c.toLowerCase()));
-            unusableCodes = (priced?.UnusableCodes ?? []).filter((u) => buyerKeys.has(u.Code.toLowerCase()));
+
+            // A member code and a typed code never stack (#358): the resolver's precedence picks which
+            // is priced, and the other is priced only when the engine declines the first.
+            const attempts = PlanCheckoutPromotionCodes(promotionCodes, memberDiscount.PromotionCode, memberDiscount.TypedCode);
+            // Every code the engine declined on any attempt, with its reason.
+            const declinedCodes = new Map<string, { Code: string; Reason: string }>();
+            let chosen = attempts[0];
+            for (let i = 0; i < attempts.length; i++) {
+                if (i > 0) {
+                    // The pricing walk keeps a discount a line already carries, so clear the previous
+                    // attempt's before re-pricing. Draft lines carry no other discount.
+                    for (const l of order.Lines.Items as OrderLineEntity[]) l.DiscountAmount = 0;
+                }
+                chosen = attempts[i];
+                const codes = CombineCheckoutPromotionCodes(chosen.Buyer, chosen.Member);
+                const priced = await priceWith(codes);
+                const declinedNow = new Set((priced?.UnusableCodes ?? []).map((u) => u.Code.toLowerCase()));
+                for (const u of priced?.UnusableCodes ?? []) declinedCodes.set(u.Code.toLowerCase(), u);
+                if (codes.some((c) => !declinedNow.has(c.toLowerCase()))) break;
+            }
+
+            // Only the buyer's own codes are reported as unusable; a declined or set-aside member code
+            // is explained through MemberDiscountMessage below.
+            const pricedBuyerKeys = new Set(chosen.Buyer.map((c) => c.toLowerCase()));
+            unusableCodes = promotionCodes.flatMap((c) => {
+                const declined = declinedCodes.get(c.toLowerCase());
+                if (declined) return [declined];
+                return pricedBuyerKeys.has(c.toLowerCase()) ? [] : [{ Code: c, Reason: TYPED_CODE_REPLACED_BY_MEMBER }];
+            });
 
             // The engine may still decline the code (dates, limits, qualifier). Price at full rate
             // and say why, rather than snapshotting a code `/complete` would also decline.
-            const declined = memberDiscount.PromotionCode
-                ? (priced?.UnusableCodes ?? []).find((u) => u.Code.toLowerCase() === memberDiscount.PromotionCode!.toLowerCase())
-                : undefined;
+            const memberCode = memberDiscount.PromotionCode;
+            const declined = memberCode ? declinedCodes.get(memberCode.toLowerCase()) : undefined;
             if (declined) {
                 memberDiscount.PromotionCode = null;
                 memberDiscount.Message = `Your member discount does not apply to this order: ${declined.Reason}.`;
+            } else if (memberCode && !chosen.Member) {
+                memberDiscount.PromotionCode = null;
+                memberDiscount.Message = MEMBER_CODE_YIELDED_TO_TYPED;
             }
 
             await this.settleLineTotals(order);
