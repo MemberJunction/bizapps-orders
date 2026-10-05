@@ -123,7 +123,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'party-roster': 2,
     'progress-measurement': 25,
     'outbound-events': 6,
-    concessions: 25,
+    concessions: 27,
     'term-extension': 9,
 };
 
