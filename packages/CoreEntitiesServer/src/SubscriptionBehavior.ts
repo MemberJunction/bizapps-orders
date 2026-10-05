@@ -216,6 +216,17 @@ export interface SubscriptionPurchaseContext {
      * An EXTENSION ignores it — see `Decide`.
      */
     RequestedStartDate?: Date | null;
+    /**
+     * What the line says to do when the subscriber already holds this product
+     * (`OrderLine.SubscriptionAction`, golive #299). Absent or null, `ConcurrencyMode` decides.
+     *
+     * `CreateNew` starts a separate subscription on the line's own dates: a second seat, a second
+     * site, a separate program. A `RejectDuplicate` type still refuses it — the line cannot
+     * override a type that forbids two. `ExtendExisting` adds a term to the existing subscription
+     * even under `AllowMultiple`. Neither applies to a renewal, which always continues the
+     * subscription it names.
+     */
+    RequestedAction?: 'ExtendExisting' | 'CreateNew' | null;
 }
 
 function money(v: number): number {
@@ -292,7 +303,10 @@ export class SubscriptionBehavior {
                 Action: 'Reject',
                 RejectReason:
                     `This subscription type (${ctx.Rules.Code}) does not allow a second concurrent ` +
-                    `subscription for the same subscriber, and an active one already exists.`,
+                    `subscription for the same subscriber, and an active one already exists.` +
+                    (ctx.RequestedAction === 'CreateNew'
+                        ? ` The line asks for a new subscription, which this type cannot have; extend the existing one instead.`
+                        : ''),
             };
         }
 
@@ -324,7 +338,9 @@ export class SubscriptionBehavior {
             Term: {
                 StartDate: start,
                 EndDate: end,
-                TermNumber: (ctx.Existing?.LatestTermNumber ?? 0) + 1,
+                // A new subscription starts at term 1 even when the subscriber holds another one:
+                // the existing subscription's term count is not this one's.
+                TermNumber: action === 'CreateNew' ? 1 : (ctx.Existing?.LatestTermNumber ?? 0) + 1,
                 IsProrated: isProrated,
                 ProrationFactor: isProrated ? factor : null,
                 Amount: money(ctx.Amount * (isProrated ? factor : 1)),
@@ -413,6 +429,14 @@ export class SubscriptionBehavior {
         // after a lapse should revive it rather than silently extend a dead one.
         const isActive = existing.Status === 'Active' || existing.Status === 'Trialing';
         if (ctx.IsRenewal && isActive) return 'ExtendExisting';
+        // The line's own answer, when it gives one (golive #299). Before this the type's rule was
+        // the only answer, so every same-product purchase under `ExtendExisting` became the next
+        // term and started a year late.
+        if (!ctx.IsRenewal && ctx.RequestedAction === 'CreateNew') {
+            if (isActive && ctx.Rules.ConcurrencyMode === 'RejectDuplicate') return 'Reject';
+            return 'CreateNew';
+        }
+        if (!ctx.IsRenewal && ctx.RequestedAction === 'ExtendExisting' && isActive) return 'ExtendExisting';
         if (isActive) {
             switch (ctx.Rules.ConcurrencyMode) {
                 case 'AllowMultiple': return 'CreateNew';

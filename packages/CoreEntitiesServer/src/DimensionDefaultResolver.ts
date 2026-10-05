@@ -23,7 +23,8 @@
  * NOTHING HERE FAILS. An unmapped product yields no defaults, which is a line that books untagged —
  * legal, and the state every line was in before this existed. Refusing to book would turn a
  * half-configured mapping into an outage across every order. Where a GL account link genuinely
- * REQUIRES a dimension, that is the place to refuse, and it is a separate check.
+ * REQUIRES a dimension, that is the place to refuse, and it is a separate check:
+ * `RefuseUntaggedLines` (./GLAccountResolver.ts), run on the finished journal entry lines.
  *
  * CONNECTS TO:
  *   SHAPE:    __mj_BizAppsOrders.DimensionDefault (V202609221500)
