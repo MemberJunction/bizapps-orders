@@ -1935,7 +1935,8 @@ export interface MJOProductOption {
     OrderLineExtensionEntity: string | null;
     CompanyName: string;
     CompanyID: string;
-    ListPrice: number;
+    /** First base price row's amount; NULL when the product has none, so the picker can say so. */
+    ListPrice: number | null;
     Taxable: boolean;
     /** NULL = no cap. 1 = one unit per line (conference tickets). */
     MaxQuantityPerLine: number | null;
@@ -1962,13 +1963,12 @@ export function CatalogOptionFrom(
         | 'ProductTypeID'
         | 'CompanyID'
         | 'Company'
-        | 'StandaloneSellingPrice'
         | 'IsTaxable'
         | 'MaxQuantityPerLine'
         | 'SubscriptionTypeID'
     >,
     type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
-    listPrice: number,
+    listPrice: number | null,
 ): MJOProductOption {
     return {
         ID: product.ID,
@@ -1979,7 +1979,7 @@ export function CatalogOptionFrom(
         OrderLineExtensionEntity: type?.OrderLineExtensionEntity ?? null,
         CompanyName: product.Company ?? '',
         CompanyID: product.CompanyID ?? '',
-        ListPrice: product.StandaloneSellingPrice || listPrice || 0,
+        ListPrice: listPrice,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
         SubscriptionTypeID: product.SubscriptionTypeID ?? null,
@@ -2045,18 +2045,18 @@ export function RankCatalogMatches(
 /**
  * Products the picker can add, with an indicative list price.
  *
- * The figure comes from the PRICE RULES, not `StandaloneSellingPrice`: SSP is
- * null for anything priced by a rule, and rendering that as $0.00 tells an
+ * The figure comes from the PRICE RULES, not `StandaloneSellingPrice`: the line
+ * prices only from rules, so showing SSP advertises a price the line will not
+ * use. A product with no base rule gets NULL, not $0.00, which would tell an
  * order taker the item is free. The engine still resolves the real price on
- * the line.
+ * the line. Catalog rows come from OrdersEngine — live, not a session snapshot.
  */
-/** Catalog picker rows from OrdersEngine — live, not a session snapshot. */
 export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
     const products = await GetProducts({ User: user });
     const engine = OrdersEngine.Instance;
     return products.map((product) => {
         const list = engine.BaseProductPrices(product.ID)[0];
-        return CatalogOptionFrom(product, engine.ProductTypeByID(product.ProductTypeID), Number(list?.Amount ?? 0));
+        return CatalogOptionFrom(product, engine.ProductTypeByID(product.ProductTypeID), list ? Number(list.Amount) : null);
     });
 }
 

@@ -433,7 +433,7 @@
                             </span>
                         </span>
                         <span class="end">
-                            <span class="mjo-ol-pick__price">{{ product.ListPrice | mjoMoney }}</span>
+                            <span class="mjo-ol-pick__price">{{ product.ListPrice === null ? 'No price' : (product.ListPrice | mjoMoney) }}</span>
                             <span class="sub">{{ product.Taxable ? 'taxable' : 'untaxable' }}</span>
                         </span>
                     </button>
