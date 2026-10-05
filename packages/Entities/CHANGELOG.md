@@ -1,5 +1,16 @@
 # @mj-biz-apps/orders-entities
 
+## 5.27.0
+
+### Minor Changes
+
+- 148b74c: The 5.27 Metadata_Sync brings the Generate Invoice action's description and its CompanyID, HTML and DocumentCount parameter descriptions up to date on hosts: an order produces one document, from the order's company, and naming any other company is refused with NOT_ORDER_COMPANY. The seed is idempotent and safe on a host that already ran `mj sync push`. The ML bench output under metadata/ is not included.
+- d1cfdcf: Migration: payment schedule rows move to the order's company. On an order with no issued instalment and no payment line or external invoice naming one of its rows, the Scheduled rows that share a due date become one row for the order's company, for their combined amount, numbered after any cancelled row that company already holds. Orders with an issued instalment keep their rows and finish on them. The ledger is untouched; the schedule rollup recalculates AmountPaid and Balance.
+
+### Patch Changes
+
+- b9900b7: An order line for a product written outside the API process after it started (a catalog loader, raw SQL, another replica) no longer fails with "CompanyID: Company cannot be null". `OrdersEngine.EnsureProducts` / `RequireProduct` reload the product catalog once on a cache miss; the company stamp, subscription term and service period, journal-entry and progress recognition lookups use them, and fail naming the product when it is still missing.
+
 ## 5.26.0
 
 ### Minor Changes
@@ -487,8 +498,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                            The INSERT statement conflicted with the FOREIGN KEY constraint
-                            "FK_EntityFieldValue_EntityField"
+                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

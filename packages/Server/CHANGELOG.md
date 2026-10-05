@@ -1,5 +1,24 @@
 # @mj-biz-apps/orders-server
 
+## 5.27.0
+
+### Minor Changes
+
+- d1cfdcf: An order is invoiced as one document, from the order's company, whatever company owns each product: one per instalment when it has a schedule, one for the whole order otherwise. The -A/-B company letters are gone from new document numbers. Only an instalment of a schedule written per product company before this release, on an order that had already issued under it, is still rebuilt per company under the number it froze. Asking for a product company's document (`OnlyCompanyID`, the `CompanyID` action input) now returns a refusal with result code `NOT_ORDER_COMPANY` that names the order's company. `Orders: Generate Invoice` no longer returns `SPLIT_BY_COMPANY`.
+
+### Patch Changes
+
+- Updated dependencies [d1cfdcf]
+- Updated dependencies [a023cbc]
+- Updated dependencies [b9900b7]
+- Updated dependencies [d1cfdcf]
+- Updated dependencies [148b74c]
+- Updated dependencies [d1cfdcf]
+- Updated dependencies [d1cfdcf]
+  - @mj-biz-apps/orders-core-entities-server@5.27.0
+  - @mj-biz-apps/orders-entities@5.27.0
+  - @mj-biz-apps/orders-actions@5.27.0
+
 ## 5.26.0
 
 ### Minor Changes
@@ -541,8 +560,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                            The INSERT statement conflicted with the FOREIGN KEY constraint
-                            "FK_EntityFieldValue_EntityField"
+                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
