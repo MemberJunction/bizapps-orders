@@ -768,10 +768,12 @@ export {
     CheckoutMemberDiscountNotConfiguredError,
     ResolveCheckoutMemberDiscountResolver,
     IsRegisteredMemberPromotionCode,
+    DEFAULT_TYPED_CODE_PRECEDENCE,
 } from './CheckoutMemberDiscountResolver.js';
 export type {
     CheckoutMemberDiscountContext,
     CheckoutMemberDiscountDecision,
+    CheckoutTypedCodePrecedence,
     CheckoutTypedPromotionCodeContext,
 } from './CheckoutMemberDiscountResolver.js';
 export {
