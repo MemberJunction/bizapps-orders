@@ -7,7 +7,7 @@
  * clean, the arithmetic on the page is self-consistent, and the number at the bottom is wrong.
  *
  * So the assertions here are about AMOUNTS TYING, not about shapes being present, and the one that
- * matters most is that an order's one document, from the order's company, sums to the order.
+ * matters most is the last: the documents an order produces must sum back to the order.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -367,7 +367,7 @@ describe('assembling documents', () => {
         expect(docs[0].Kind).toBe('Invoice');
     });
 
-    it("bills a two-company order as ONE document from the order's company, totalling the order (golive #311)", () => {
+    it('splits a two-company order and the parts sum back to the order', () => {
         const lines = [
             line({ ID: 'l-a', LineNumber: 1, CompanyID: CO_A, CompanyName: 'Acme', LineTotalNet: 100, ChargeAmount: 6, LineTax: 8, LineTotalGross: 114 }),
             line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, CompanyName: 'Beta', LineTotalNet: 200, ChargeAmount: 4, LineTax: 0, LineTotalGross: 204 }),
@@ -399,16 +399,14 @@ describe('assembling documents', () => {
             AsOf: '2026-07-01',
         });
 
-        expect(docs).toHaveLength(1);
-        const [doc] = docs;
-        expect(doc.DocumentNumber).toBe('ORD-1005');
-        expect(doc.CompanyID).toBe(CO_A);
-        expect(doc.Issuer.Name).toBe('Acme');
-        expect(doc.Rows.map((r) => r.LineID)).toEqual(['l-a', 'l-b']);
-        expect(doc.Gross).toBe(318);
-        expect(doc.ChargeTotal).toBe(10);
-        expect(doc.TaxTotal).toBe(8);
-        expect(doc.Notes).toEqual([]);
+        expect(docs.map((d) => d.DocumentNumber)).toEqual(['ORD-1005-A', 'ORD-1005-B']);
+        expect(docs.reduce((s, d) => s + d.Gross, 0)).toBe(318);
+        expect(docs[0].TaxTotal).toBe(8);
+        expect(docs[1].TaxTotal).toBe(0);
+        // Beta has no nexus, and its document says so rather than staying silent about tax.
+        expect(docs[1].Ladder.some((r) => r.Kind === 'Tax')).toBe(true);
+        expect(docs.every((d) => d.Notes).valueOf()).toBe(true);
+        expect(docs.flatMap((d) => d.Notes)).toEqual([]);
     });
 
     it('shows tax as zero when there is none, but only once', () => {
@@ -502,7 +500,7 @@ describe('assembling documents', () => {
         expect(named.Ladder.find((r) => r.Kind === 'Discount')!.Note).toBe('SPRING10');
     });
 
-    it('keeps an unallocated charge on the bill, without a note, when one document carries everything', () => {
+    it('keeps an unallocated charge on the bill instead of losing it between two documents', () => {
         const lines = [
             line({ ID: 'l-a', CompanyID: CO_A, LineTotalNet: 100, ChargeAmount: 10, LineTotalGross: 110 }),
             line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, LineTotalNet: 200, LineTotalGross: 200 }),
@@ -517,13 +515,11 @@ describe('assembling documents', () => {
             ShipTo: null,
             AsOf: '2026-07-01',
         });
-        expect(docs).toHaveLength(1);
-        expect(docs[0].ChargeTotal).toBe(10);
-        expect(docs[0].Gross).toBe(310);
-        expect(docs[0].Notes).toEqual([]);
+        expect(docs.reduce((s, d) => s + d.ChargeTotal, 0)).toBe(10);
+        expect(docs[0].Notes.join(' ')).toMatch(/not allocated/i);
     });
 
-    it('credits an order-level payment once, on the one document', () => {
+    it('spreads an order-level payment across both documents and neither claims to be paid', () => {
         const lines = [
             line({ ID: 'l-a', CompanyID: CO_A, LineTotalNet: 100, LineTotalGross: 100 }),
             line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, LineTotalNet: 100, LineTotalGross: 100 }),
@@ -548,9 +544,10 @@ describe('assembling documents', () => {
             ShipTo: null,
             AsOf: '2026-07-05',
         });
-        expect(docs.map((d) => d.AmountPaid)).toEqual([50]);
-        expect(docs[0].AmountDue).toBe(150);
-        expect(docs[0].PaymentStatusLabel).toBe('Partly paid');
+        expect(docs.map((d) => d.AmountPaid)).toEqual([25, 25]);
+        expect(docs.reduce((s, d) => s + d.AmountDue, 0)).toBe(150);
+        // The header says "Partly paid" for the order; neither half may claim to be settled.
+        expect(docs.every((d) => d.PaymentStatusLabel === 'Partly paid')).toBe(true);
     });
 
     it('names the promotion on the ladder and still ties to the total', () => {
@@ -583,7 +580,7 @@ describe('assembling documents', () => {
         expect(doc.Notes).toEqual([]);
     });
 
-    it("yields nothing when asked for a product company's document — there is only the order's", () => {
+    it('narrows to one company on request without renumbering the others', () => {
         const lines = [
             line({ ID: 'l-a', CompanyID: CO_A, LineTotalGross: 100 }),
             line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, LineTotalGross: 100 }),
@@ -599,7 +596,9 @@ describe('assembling documents', () => {
             AsOf: '2026-07-01',
             OnlyCompanyID: CO_B,
         });
-        expect(docs).toEqual([]);
+        expect(docs).toHaveLength(1);
+        // Still -B: the suffix describes the order, not the size of this result set.
+        expect(docs[0].DocumentNumber).toBe('ORD-1005-B');
     });
 
     it('counts down to the due date only while something is owed', () => {
@@ -707,38 +706,6 @@ describe('instalment documents', () => {
         expect(doc.DocumentNumber).toBe('ORD-1005-2');
         expect(doc.Ladder.map((r) => r.Kind)).toEqual(['Subtotal', 'Total', 'Instalment', 'Due']);
         expect(doc.Ladder.find((r) => r.Kind === 'Instalment')?.Label).toBe('Instalment 2 of 4');
-    });
-
-    it("bills an order-company instalment of a two-company order as one document for every line (golive #311)", () => {
-        const lines = [
-            line({ ID: 'l-a', CompanyID: CO_A, LineTotalNet: 100, LineTotalGross: 100 }),
-            line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, CompanyName: 'Beta', LineTotalNet: 300, LineTotalGross: 300 }),
-        ];
-        const docs = build({ Order: order({ TotalGross: 400 }), Lines: lines, Instalment: instalment({ Amount: 100 }) });
-        expect(docs).toHaveLength(1);
-        expect(docs[0].DocumentNumber).toBe('ORD-1005-2');
-        expect(docs[0].CompanyID).toBe(CO_A);
-        expect(docs[0].Gross).toBe(400);
-        expect(docs[0].AmountDue).toBe(100);
-        expect(docs[0].Rows).toHaveLength(2);
-    });
-
-    it("rebuilds a product company's own pre-golive-#311 instalment as it was issued: its lines, from it", () => {
-        const lines = [
-            line({ ID: 'l-a', CompanyID: CO_A, LineTotalNet: 100, LineTotalGross: 100 }),
-            line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, CompanyName: 'Beta', LineTotalNet: 300, LineTotalGross: 300 }),
-        ];
-        const docs = build({
-            Order: order({ TotalGross: 400 }),
-            Lines: lines,
-            Instalment: instalment({ CompanyID: CO_B, Amount: 150, InstallmentCount: 2, InstallmentNumber: 1, DocumentNumber: 'ORD-1005-B1' }),
-            OnlyCompanyID: CO_B,
-        });
-        expect(docs).toHaveLength(1);
-        expect(docs[0].CompanyID).toBe(CO_B);
-        expect(docs[0].DocumentNumber).toBe('ORD-1005-B1');
-        expect(docs[0].Gross).toBe(300);
-        expect(docs[0].Rows.map((r) => r.LineID)).toEqual(['l-b']);
     });
 
     it('prints the FROZEN number when the row has one, never a recomputed one', () => {

@@ -59,8 +59,6 @@ const ACCOUNTING_COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Com
 /** What a render attempt produced, or why it produced nothing. */
 export interface InvoiceBuildResult {
     Success: boolean;
-    /** Set on a refusal that has its own result code: a company named that issues no document for the order. */
-    Code?: 'NOT_ORDER_COMPANY';
     Message?: string;
     Documents: InvoiceDocument[];
 }
@@ -116,11 +114,11 @@ function addressLines(row: Row | OrderAddressSnapshot | undefined): string[] {
 }
 
 /**
- * Read one order and produce its document: one, from the order's company (golive #311).
+ * Read one order and produce its documents — one per selling company.
  *
  * @param orderHeaderID The order to render.
- * @param options `AsOf` drives only the days-until-due countdown; `OnlyCompanyID` must name the
- *   order's company (or, for an instalment of a pre-golive-#311 per-company schedule, that row's company).
+ * @param options `AsOf` drives only the days-until-due countdown; `OnlyCompanyID` narrows a split
+ *   order to a single document without changing how the others are numbered.
  */
 export async function BuildInvoiceDocuments(
     orderHeaderID: string,
@@ -131,7 +129,7 @@ export async function BuildInvoiceDocuments(
         OnlyCompanyID?: string | null;
         /**
          * Render one instalment of the order's schedule: that row's frozen number, due date and
-         * balance. Omit for the whole order — the implicit single instalment.
+         * balance, for its company only. Omit for the whole order — the implicit single instalment.
          */
         PaymentScheduleID?: string | null;
     },
@@ -439,10 +437,7 @@ export async function BuildInvoiceDocuments(
     if (onlyCompanyID && !documents.length) {
         return {
             Success: false,
-            Code: 'NOT_ORDER_COMPANY',
-            Message:
-                `Order ${orderFacts.OrderNumber} is invoiced by its own company (${orderFacts.CompanyName || orderFacts.CompanyID}), ` +
-                `not by company ${onlyCompanyID}: an order has one document, whatever company owns each product.`,
+            Message: `Order ${orderFacts.OrderNumber} has no lines sold by company ${onlyCompanyID}.`,
             Documents: [],
         };
     }
@@ -451,9 +446,8 @@ export async function BuildInvoiceDocuments(
 }
 
 /**
- * One schedule row as instalment facts, plus how many live instalments share its company — the
- * order's company for every schedule since golive #311 — which is what makes `2 of 4` printable and
- * the derived number correct when the row has no frozen one.
+ * One schedule row as instalment facts, plus how many live instalments its company has — the count
+ * is what makes `2 of 4` printable and the derived number correct when the row has no frozen one.
  */
 async function readInstalment(
     provider: IMetadataProvider,

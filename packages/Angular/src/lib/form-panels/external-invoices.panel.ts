@@ -337,8 +337,9 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         try {
             // THE SELECTED ROW'S UNIT, NOT THE ORDER'S. A re-issue that names only the order resolves to
             // the whole-order unit, which is a different billing unit from the one whose claim is stuck:
-            // on a scheduled order it is refused with "name the instalment", and the stuck row is never
-            // superseded. The copy above names this document, so the call has to mean it.
+            // on a scheduled order it is refused with "name the instalment", on a split-company order
+            // with "name the company", and the stuck row is never superseded either way. The copy above
+            // names this document, so the call has to mean it.
             const result = await new OrdersIssueExternalInvoiceOperation().Execute({
                 OrderHeaderID: this.Record.ID,
                 CompanyID: row.CompanyID,

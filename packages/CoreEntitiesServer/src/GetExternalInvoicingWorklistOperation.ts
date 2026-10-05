@@ -2,12 +2,9 @@
  * `Orders.GetExternalInvoicingWorklist` — what is invoiceable on a rail and not yet sent.
  *
  * Two sources, one list:
- *   · orders billed as a whole: Confirmed, Balance > 0, no schedule rows, the ORDER's company has an
- *     active rail (golive #311: one invoice per order, from the order's company, whatever company
- *     owns each product), and NO `ExternalInvoice` history for the unit (a cancelled or failed unit
- *     is a person's call — design D-B7 — and appears only under `IncludeFailed`). An order that
- *     already holds a live invoice for another company, sent when orders were invoiced once per
- *     product company, is left off: `Orders.IssueExternalInvoice` refuses it and names that invoice;
+ *   · orders billed as a whole: Confirmed, Balance > 0, no schedule rows, selling company has an
+ *     active rail, and NO `ExternalInvoice` history for the unit (a cancelled or failed unit is a
+ *     person's call — design D-B7 — and appears only under `IncludeFailed`);
  *   · instalments: `Invoiced` with `SentAt IS NULL`, company has a rail, same history rule.
  *
  * Built like `GetBillingWorklist`: computed per request from the rows, never stored, because "unsent"
@@ -24,8 +21,9 @@ import {
     type OrdersGetExternalInvoicingWorklistOutput,
 } from '@mj-biz-apps/orders-entities';
 
-import { EXTERNAL_INVOICE_ENTITY, ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
+import { EXTERNAL_INVOICE_ENTITY, ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { money } from './ExternalInvoiceBehavior.js';
+import { DocumentNumber as CompanyDocumentNumber } from './InvoiceBehavior.js';
 import { ListInvoiceRailProviderIDs } from './InvoiceRailResolver.js';
 import { ScheduleSupported, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
 import { RequireUUID } from './sql-guards.js';
@@ -176,39 +174,45 @@ export async function BuildExternalInvoicingWorklist(
         { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `Status = 'Confirmed' AND Balance > 0`, OrderBy: 'ConfirmedAt', ResultType: 'simple' },
         user,
     );
-    // Orders already holding a live whole-order invoice for a company other than their own were
-    // split per product company before golive #311; sending the order's own invoice would bill those
-    // lines twice, so they are not offered.
-    const splitOrderIDs = new Set<string>();
-    for (const h of history.Results ?? []) {
-        if (h.OrderHeaderPaymentScheduleID || (h.Status !== 'Sent' && h.Status !== 'Sending')) continue;
-        splitOrderIDs.add(`${String(h.OrderHeaderID)}|${String(h.CompanyID)}`.toLowerCase());
-    }
     const candidates = (confirmed.Results ?? []).filter((o) => !scheduledOrderIDs.has(String(o.ID).toLowerCase()));
-    for (const o of candidates) {
-        const company = String(o.CompanyID).toLowerCase();
-        if (!railCompanies.has(company)) continue;
-        const orderKey = String(o.ID).toLowerCase();
-        if ([...splitOrderIDs].some((k) => k.startsWith(`${orderKey}|`) && k !== `${orderKey}|${company}`)) continue;
-        const st = stateOf(byUnit.get(unitKey(String(o.ID), company, null)));
-        if (st.State === 'Sent' || st.State === 'Skip') continue;
-        if (st.State !== 'Unsent' && !opts.IncludeFailed) continue;
-        out.push({
-            OrderHeaderID: String(o.ID),
-            OrderNumber: o.OrderNumber,
-            CompanyID: String(o.CompanyID),
-            CompanyName: o.Company ?? '',
-            OrderHeaderPaymentScheduleID: null,
-            InstallmentNumber: null,
-            DocumentNumber: st.Row?.DocumentNumber ?? o.OrderNumber,
-            Amount: st.Row ? money(Number(st.Row.Amount)) : money(Number(o.Balance)),
-            DueDate: isoDate(o.DueDate),
-            CustomerName: o.BillToOrganization ?? o.BillToPerson ?? '—',
-            State: st.State,
-            ExternalInvoiceID: st.Row?.ID ?? null,
-            LastError: st.Row?.LastError ?? null,
-            SinceAt: iso(o.ConfirmedAt),
-        });
+    if (candidates.length) {
+        const lines = await rv.RunView<{ OrderHeaderID: string; CompanyID: string }>(
+            { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID IN (${candidates.map((o) => `'${RequireUUID(o.ID, 'OrderHeaderID')}'`).join(',')})`, Fields: ['OrderHeaderID', 'CompanyID'], ResultType: 'simple' },
+            user,
+        );
+        const companiesByOrder = new Map<string, string[]>();
+        for (const l of lines.Results ?? []) {
+            const k = String(l.OrderHeaderID).toLowerCase();
+            const set = companiesByOrder.get(k) ?? [];
+            const c = String(l.CompanyID).toLowerCase();
+            if (!set.includes(c)) set.push(c);
+            companiesByOrder.set(k, set);
+        }
+        for (const o of candidates) {
+            const companies = (companiesByOrder.get(String(o.ID).toLowerCase()) ?? [String(o.CompanyID).toLowerCase()]).sort();
+            companies.forEach((c, idx) => {
+                if (!railCompanies.has(c)) return;
+                const st = stateOf(byUnit.get(unitKey(String(o.ID), c, null)));
+                if (st.State === 'Sent' || st.State === 'Skip') return;
+                if (st.State !== 'Unsent' && !opts.IncludeFailed) return;
+                out.push({
+                    OrderHeaderID: String(o.ID),
+                    OrderNumber: o.OrderNumber,
+                    CompanyID: c,
+                    CompanyName: String(o.CompanyID).toLowerCase() === c ? (o.Company ?? '') : '',
+                    OrderHeaderPaymentScheduleID: null,
+                    InstallmentNumber: null,
+                    DocumentNumber: st.Row?.DocumentNumber ?? CompanyDocumentNumber(o.OrderNumber, idx, companies.length),
+                    Amount: st.Row ? money(Number(st.Row.Amount)) : companies.length === 1 ? money(Number(o.Balance)) : 0,
+                    DueDate: isoDate(o.DueDate),
+                    CustomerName: o.BillToOrganization ?? o.BillToPerson ?? '—',
+                    State: st.State,
+                    ExternalInvoiceID: st.Row?.ID ?? null,
+                    LastError: st.Row?.LastError ?? null,
+                    SinceAt: iso(o.ConfirmedAt),
+                });
+            });
+        }
     }
 
     out.sort((a, b) => (a.SinceAt ?? '').localeCompare(b.SinceAt ?? ''));

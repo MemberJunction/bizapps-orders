@@ -20,7 +20,7 @@
     "fields": {
       "Name": "Generate Invoice",
       "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
-      "Description": "Render an order as the document you send a customer: an invoice, a quote (for a draft or quoted order) or a credit memo (for a reversal). Returns self-contained HTML ready for a PDF renderer or an email body, plus the underlying figures so a caller can reconcile without parsing markup. Writes nothing. An order produces one document, from the order's company, listing every line whatever company owns each product.",
+      "Description": "Render an order as the document you send a customer: an invoice, a quote (for a draft or quoted order) or a credit memo (for a reversal). Returns self-contained HTML ready for a PDF renderer or an email body, plus the underlying figures so a caller can reconcile without parsing markup. Writes nothing. An order sold by more than one company produces one document per company, each billing only what that company is owed.",
       "Type": "Custom",
       "DriverClass": "Orders.GenerateInvoice",
       "IconClass": "fa-regular fa-file-lines",
@@ -59,7 +59,7 @@
             "ValueType": "Scalar",
             "IsArray": false,
             "IsRequired": false,
-            "Description": "The order's company, which issues its document. Naming any other company is refused with NOT_ORDER_COMPANY. Omit to render the order's document."
+            "Description": "Render only the document for this selling company. Omit to get every document the order produces. Narrowing does not renumber the others: the -A/-B suffix describes the order, not the size of the result."
           },
           "primaryKey": {
             "ID": "6F3C65E4-890A-446A-986F-3BCD857999C3"
@@ -221,7 +221,7 @@
             "ValueType": "Scalar",
             "IsArray": false,
             "IsRequired": false,
-            "Description": "The rendered document. NULL if a render ever produced more than one, rather than handing back the first as though it were the whole bill."
+            "Description": "The rendered document, for the overwhelmingly common single-company order. NULL when the order produced more than one — handing back the first of two as though it were the whole bill is the failure this deliberately refuses."
           },
           "primaryKey": {
             "ID": "8E24A600-C4AE-42BE-A392-8FBA8731B565"
@@ -239,7 +239,7 @@
             "ValueType": "Scalar",
             "IsArray": false,
             "IsRequired": false,
-            "Description": "How many documents this order produced: one, from the order's company."
+            "Description": "How many documents this order produced. Greater than one means the order was split by selling company, and the ResultCode says SPLIT_BY_COMPANY."
           },
           "primaryKey": {
             "ID": "2BABEA0E-C323-453F-89DD-F0F3ED292998"

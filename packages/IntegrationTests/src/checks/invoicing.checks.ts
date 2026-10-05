@@ -5,14 +5,14 @@
  * There is no Invoice record. The confirmed order IS the receivable, so an invoice is that order
  * presented — and every defect in a presentation layer looks exactly like a working one. A charge
  * that never got allocated simply is not on the bill. A discount recorded as a percentage prints as
- * no discount. A two-company order billed by a product company names the wrong payee for the money.
+ * no discount. A two-company order billed as one document names the wrong payee for half the money.
  * None of those throw, none of them look wrong on the page, and all of them undercharge or
  * misdirect real cash.
  *
  * THE CHECKS THAT EARN THEIR KEEP
- *   · IV2 — the document SUMS BACK to the order. An order sold by two companies produces ONE
- *     document, from the order's company (golive #311), and its gross must equal
- *     `OrderHeader.TotalGross`. A line left off it is money nobody is ever billed for.
+ *   · IV2 — the documents SUM BACK to the order. This is the invariant the whole design is arranged
+ *     around: an order sold by two companies produces two documents, and their grosses must add to
+ *     `OrderHeader.TotalGross`. Anything lost between them is money nobody is ever billed for.
  *   · IV6 — a PERCENTAGE discount appears on the ladder. `OrderLine.DiscountAmount` is zero on those
  *     lines, so a renderer that trusts the column prints a subtotal and a total sixty dollars apart
  *     with nothing between them.
@@ -25,7 +25,7 @@
  *
  * WHAT IT PROVES
  *   IV1   a confirmed order renders as an Invoice, with its number on it
- *   IV2   a two-company order renders one document, from the order's company, that sums to the order
+ *   IV2   a two-company order splits, and the documents sum to the order
  *   IV3   a draft renders as a Quote, not a bill
  *   IV4   a voided order is refused rather than rendered
  *   IV5   a return renders as a Credit Memo with credit wording
@@ -189,7 +189,7 @@ export const InvoicingChecks: NamedCheck[] = [
   },
   {
     Id: "invoicing.IV2",
-    Name: "IV2: a two-company order renders one document, from the order's company, that sums back to the order",
+    Name: "IV2: a two-company order splits, and the documents sum back to the order",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -216,23 +216,25 @@ export const InvoicingChecks: NamedCheck[] = [
 
         const run = await invoice(ctx, { OrderID: orderID });
         Assert(run.Result.Success, `render failed: ${run.Result.Message}`);
-        AssertEqual(run.Invoices.length, 1, "one document for the order, whatever company owns each product");
-        AssertEqual(run.Result.ResultCode, "SUCCESS", "nothing split, so nothing to tell the caller");
-        AssertEqual(run.Invoices[0].CompanyID.toLowerCase(), f.CoA.ID.toLowerCase(), "issued by the order's company");
-        AssertEqual(run.Invoices[0].DocumentNumber, header.OrderNumber, "numbered as the order, with no company letter");
+        AssertEqual(run.Invoices.length, 2, "one document per selling company");
+        AssertEqual(run.Result.ResultCode, "SPLIT_BY_COMPANY", "and the caller is told, in the result code");
 
-        // THE INVARIANT. A line left off the document is money the customer is never billed for, on a
-        // page that adds up perfectly.
-        AssertEqual(money(run.Invoices[0].Gross), money(header.TotalGross), "the document sums to the order");
-        Assert(run.HTML != null, "the scalar HTML is the whole bill");
+        // THE INVARIANT. Anything that falls between the two documents is money the customer is
+        // never billed for, on a page that adds up perfectly.
+        const summed = money(run.Invoices.reduce((s, d) => s + d.Gross, 0));
+        AssertEqual(summed, money(header.TotalGross), "the documents sum to the order");
 
-        const narrowed = await invoice(ctx, { OrderID: orderID, CompanyID: f.CoB.ID });
-        Assert(!narrowed.Result.Success, "a product company has no document of its own");
-        AssertEqual(narrowed.Result.ResultCode, "NOT_ORDER_COMPANY", "and the refusal says why, in the result code");
-        Assert(
-          String(narrowed.Result.Message).includes("invoiced by its own company"),
-          `the refusal names the order's company, got: ${narrowed.Result.Message}`,
-        );
+        // Suffixed, and stable: companies are ordered by ID, so re-rendering gives the same letters.
+        AssertEqual(run.Invoices[0].DocumentNumber, `${header.OrderNumber}-A`, "the first is -A");
+        AssertEqual(run.Invoices[1].DocumentNumber, `${header.OrderNumber}-B`, "the second is -B");
+        Assert(run.Invoices[0].CompanyID !== run.Invoices[1].CompanyID, "and they are different companies");
+
+        // Handing back the first of two as though it were the whole bill is the failure this refuses.
+        AssertEqual(run.HTML, null, "the scalar HTML is null rather than half the bill");
+
+        const narrowed = await invoice(ctx, { OrderID: orderID, CompanyID: run.Invoices[1].CompanyID });
+        AssertEqual(narrowed.Invoices.length, 1, "narrowing to one company gives one document");
+        AssertEqual(narrowed.Invoices[0].DocumentNumber, `${header.OrderNumber}-B`, "still -B — the suffix describes the order");
       }),
   },
   {
