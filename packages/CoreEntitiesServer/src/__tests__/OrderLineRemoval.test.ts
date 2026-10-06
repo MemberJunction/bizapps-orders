@@ -224,6 +224,8 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
         // vocabulary. The removal ORDER is what this file pins; the tagging is its own subject.
         stampLineDimensions: vi.fn().mockResolvedValue(undefined),
         savePriceComponents: vi.fn().mockResolvedValue(undefined),
+        // Replacing a draft's earlier tax rows is its own subject.
+        deleteTaxRecords: vi.fn().mockResolvedValue(undefined),
         refreshRolledUpTotals: vi.fn(async () => {
             log.push('refresh-rollups');
         }),
@@ -238,6 +240,7 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
     Object.defineProperty(instance, 'OrderNumber', { value: 'ORD-000003', writable: true });
     // A draft: the address-snapshot fill that a booked order's save runs is not this file's subject.
     Object.defineProperty(instance, 'IsBookedOrder', { value: false });
+    Object.defineProperty(instance, 'MoneyLocked', { value: false });
 
     const headerSave = vi.spyOn(OrderHeaderEntity.prototype, 'Save').mockImplementation(async () => {
         log.push('save-header');
