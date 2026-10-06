@@ -1007,6 +1007,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             Quantity: line.Quantity,
             UnitPrice: line.UnitPrice,
             ProductPriceID: line.ProductPriceID,
+            DiscountPct: line.DiscountPct,
+            RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
             PriceStated:
                 line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0,
             LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
@@ -1058,6 +1060,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     Quantity: line.Quantity,
                     UnitPrice: line.UnitPrice,
                     ProductPriceID: line.ProductPriceID,
+                    DiscountPct: line.DiscountPct,
+                    RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
                     PriceStated: true,
                     CompanyID: line.CompanyID,
                 })),
