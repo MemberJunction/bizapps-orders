@@ -55,3 +55,6 @@ export const CHECKOUT_SESSION_STEP_ENTITY = 'MJ_BizApps_Orders: Checkout Session
 
 /** A concession granted on an order, valued whatever form it takes (golive #222). */
 export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
+
+/** Subscription families — the bands of one subscription offering, per company (golive #276). */
+export const SUBSCRIPTION_FAMILY_ENTITY = 'MJ_BizApps_Orders: Subscription Families';

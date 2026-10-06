@@ -143,6 +143,7 @@ export {
 export type { FulfillableLine, FulfillmentStatus, FlipRefusal, QueueGrouping } from './FulfillmentBehavior.js';
 export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from './GetFulfillmentQueueOperation.js';
 export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
+export { CheckCoverageOverlapOperation, LoadCheckCoverageOverlapOperation } from './CheckCoverageOverlapOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
 export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
@@ -254,6 +255,11 @@ export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPrice
 export { PriceOrderOperation, LoadPriceOrderOperation } from './PriceOrderOperation.js';
 export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
 export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
+export {
+    ProductEntityServer,
+    SubscriptionFamilyEntityServer,
+    LoadSubscriptionFamilyRules,
+} from './SubscriptionFamilyRules.js';
 export {
     BasePriceResolver,
     DefaultPriceResolver,
