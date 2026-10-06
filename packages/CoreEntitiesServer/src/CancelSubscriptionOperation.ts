@@ -51,6 +51,8 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import {
+    OrdersCancelSubscriptionOperation as OrdersCancelSubscriptionOperationBase,
+    type CancellationDecisionResult,
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersSubscriptionEntity,
     mjBizAppsOrdersSubscriptionEventEntity,
@@ -93,7 +95,7 @@ export interface CancelSubscriptionOutput {
     Success: boolean;
     Message?: string;
     /** What the rules decided. Present even on a preview. */
-    Decision?: CancellationDecision;
+    Decision?: CancellationDecisionResult;
     /** The term that was (or would be) cancelled. */
     SubscriptionTermID?: string;
     /**
@@ -112,7 +114,7 @@ export interface CancelSubscriptionOutput {
 export interface CanceledLaterTerm {
     SubscriptionTermID: string;
     TermNumber: number;
-    Decision: CancellationDecision;
+    Decision: CancellationDecisionResult;
 }
 
 /** One term's share of the cancellation: the row, and what the rules decided for it. */
@@ -151,13 +153,17 @@ interface OrderLineRow {
     DiscountPct: number | null;
 }
 
-@RegisterClass(BaseRemotableOperation, 'Orders.CancelSubscription')
-export class CancelSubscriptionOperation extends BaseRemotableOperation<
-    CancelSubscriptionInput,
-    CancelSubscriptionOutput
-> {
-    public OperationKey = 'Orders.CancelSubscription';
+/** The decision as it crosses the transport: dates as ISO strings, the form JSON gives a `Date`. */
+function decisionResult(decision: CancellationDecision): CancellationDecisionResult {
+    return {
+        ...decision,
+        EffectiveDate: decision.EffectiveDate.toISOString(),
+        AccessThroughDate: decision.AccessThroughDate.toISOString(),
+    };
+}
 
+@RegisterClass(BaseRemotableOperation, 'Orders.CancelSubscription')
+export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperationBase {
     protected async InternalExecute(
         input: CancelSubscriptionInput,
         provider: IMetadataProvider,
@@ -238,7 +244,7 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         const laterTerms: CanceledLaterTerm[] = later.map((l) => ({
             SubscriptionTermID: l.Term.ID,
             TermNumber: l.Term.TermNumber,
-            Decision: l.Decision,
+            Decision: decisionResult(l.Decision),
         }));
         const totalRefund =
             Math.round((decision.RefundAmount + later.reduce((sum, l) => sum + l.Decision.RefundAmount, 0)) * 100) / 100;
@@ -246,7 +252,7 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         const summary = { SubscriptionTermID: term.ID, LaterTerms: laterTerms, TotalRefundAmount: totalRefund };
 
         if (input.Preview) {
-            return { Success: true, Decision: decision, ...summary, Message: message };
+            return { Success: true, Decision: decisionResult(decision), ...summary, Message: message };
         }
 
         const all: TermCancellation[] = [{ Term: term, Decision: decision }, ...later];
@@ -270,7 +276,7 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
             return {
                 Success: true,
                 Message: message,
-                Decision: decision,
+                Decision: decisionResult(decision),
                 ...summary,
                 ReversalOrderID: reversal?.ID,
                 ReversalOrderNumber: reversal?.Number,
@@ -285,7 +291,7 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
             return {
                 Success: false,
                 Message: err instanceof Error ? err.message : String(err),
-                Decision: decision,
+                Decision: decisionResult(decision),
                 SubscriptionTermID: term.ID,
             };
         }

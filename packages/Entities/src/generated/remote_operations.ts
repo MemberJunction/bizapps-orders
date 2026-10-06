@@ -2171,7 +2171,7 @@ export class OrdersAdvanceOrderStateOperation extends BaseRemotableOperation<Ord
 export class OrdersAmendArrangementOperation extends BaseRemotableOperation<AmendArrangementInput, AmendArrangementOutput> {
     public readonly OperationKey = "Orders.AmendArrangement";
     public readonly ExecutionMode = 'Sync' as const;
-    public readonly RequiredScope = "subscriptions:write";
+    public readonly RequiredScope = "orders:subscriptions:write";
     public readonly RequiresSystemUser = false;
 }
 

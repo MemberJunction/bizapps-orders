@@ -2231,6 +2231,33 @@ describe('CheckoutSessionService', () => {
             expect(snapshot.PromotionCodes).toEqual(['SAVE10']);
         });
 
+        it('a resolver that stacks prices both codes together, and keeps both for completion', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20', TypedCode: 'Stack' });
+            mocks.mockPricingPrice.mockImplementation(priceCodes());
+
+            const res = await draft();
+
+            expect(mocks.mockPricingPrice).toHaveBeenCalledTimes(1);
+            expect(mocks.mockPricingPrice.mock.calls[0][0].PromotionCodes).toEqual(['SAVE10', 'MEMBER20']);
+            expect(res.TotalGross).toBe(70);
+            expect(res.MemberDiscountApplied).toBe(true);
+            expect(res.AppliedPromotionCodes).toEqual(['SAVE10']);
+            expect(res.UnusablePromotionCodes).toEqual([]);
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON!);
+            expect(snapshot.MemberPromotionCode).toBe('MEMBER20');
+            expect(snapshot.PromotionCodes).toEqual(['SAVE10']);
+        });
+
+        it('a misspelt precedence takes the default rather than stacking', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20', TypedCode: 'stack' });
+            mocks.mockPricingPrice.mockImplementation(priceCodes());
+
+            const res = await draft();
+
+            expect(mocks.mockPricingPrice.mock.calls[0][0].PromotionCodes).toEqual(['MEMBER20']);
+            expect(res.TotalGross).toBe(80);
+        });
+
         it('when the member code wins but the engine declines it, the typed code is priced instead', async () => {
             mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20' });
             mocks.mockPricingPrice.mockImplementation(priceCodes({ MEMBER20: 'the code is outside its valid dates' }));
@@ -2999,6 +3026,10 @@ describe('PlanCheckoutPromotionCodes', () => {
         expect(PlanCheckoutPromotionCodes(['SAVE10'], null, undefined)).toEqual([{ Buyer: ['SAVE10'], Member: null }]);
         expect(PlanCheckoutPromotionCodes([], 'MEMBER20', 'Yield')).toEqual([{ Buyer: [], Member: 'MEMBER20' }]);
         expect(PlanCheckoutPromotionCodes(['member20'], 'MEMBER20', undefined)).toEqual([{ Buyer: ['member20'], Member: 'MEMBER20' }]);
+    });
+
+    it('prices a contested pair in one attempt when the resolver stacks', () => {
+        expect(PlanCheckoutPromotionCodes(['SAVE10'], 'MEMBER20', 'Stack')).toEqual([{ Buyer: ['SAVE10'], Member: 'MEMBER20' }]);
     });
 
     it('never stacks a contested pair: member first by default, typed first when the resolver yields', () => {

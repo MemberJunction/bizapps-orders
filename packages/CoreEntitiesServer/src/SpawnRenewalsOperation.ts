@@ -59,6 +59,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    OrdersSpawnRenewalsOperation as OrdersSpawnRenewalsOperationBase,
     AsDateValue,
     BuildLinePriceContext,
     PriceRenewal,
@@ -189,9 +190,7 @@ interface PricedRenewal {
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.SpawnRenewals')
-export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewalsInput, SpawnRenewalsOutput> {
-    public OperationKey = 'Orders.SpawnRenewals';
-
+export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
     protected async InternalExecute(
         input: SpawnRenewalsInput,
         provider: IMetadataProvider,

@@ -25,6 +25,7 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { OrdersPreviewPriceOperation as OrdersPreviewPriceOperationBase } from '@mj-biz-apps/orders-entities';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { LoadOrdersEngine, OrderPricingService, OrdersEngine, PriceResolutionError, ResolvePriceListForCustomer } from '@mj-biz-apps/orders-entities';
 import { RequireOptionalDay, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
@@ -71,9 +72,7 @@ export interface PreviewPriceOutput {
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.PreviewPrice')
-export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceInput, PreviewPriceOutput> {
-    public OperationKey = 'Orders.PreviewPrice';
-
+export class PreviewPriceOperation extends OrdersPreviewPriceOperationBase {
     protected async InternalExecute(
         input: PreviewPriceInput,
         provider: IMetadataProvider,

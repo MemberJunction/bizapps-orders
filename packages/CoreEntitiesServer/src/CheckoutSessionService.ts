@@ -176,7 +176,7 @@ interface CheckoutSnapshot {
     Choices?: CheckoutChoicesInput;
     /**
      * Promotion code a verified member token earned. The token itself is never stored. A draft
-     * snapshots this or `PromotionCodes`, never both (#358).
+     * snapshots this or `PromotionCodes`, not both, unless the resolver chose `'Stack'` (#358).
      */
     MemberPromotionCode?: string | null;
     /** Codes the buyer entered that the draft priced with. */
@@ -262,9 +262,9 @@ export function NormalizeCheckoutPromotionCodes(input: unknown): { Codes: string
 
 /**
  * The codes a checkout prices with: the buyer's own codes plus the code a verified member token
- * earned, de-duplicated case-insensitively. A draft never snapshots both (see
- * {@link PlanCheckoutPromotionCodes}), so at `/complete` this passes one side through; a session
- * drafted before that rule may still carry both, and is priced as it was drafted.
+ * earned, de-duplicated case-insensitively. A draft snapshots both only when the resolver chose
+ * `'Stack'` (see {@link PlanCheckoutPromotionCodes}), so at `/complete` this usually passes one side
+ * through; a session drafted before that rule may still carry both, and is priced as it was drafted.
  */
 export function CombineCheckoutPromotionCodes(buyerCodes: string[], memberCode: string | null | undefined): string[] {
     if (!memberCode || buyerCodes.some((c) => c.toLowerCase() === memberCode.toLowerCase())) {
@@ -281,9 +281,9 @@ export interface CheckoutPromotionCodeAttempt {
 
 /**
  * The code sets a draft tries, in order, when a member code and a typed code may both be present (#358).
- * They never stack: the precedence picks which is priced first, and the other is the fallback when the
- * engine declines every code in the first. With only one side present, or the same code on both, there
- * is a single attempt.
+ * They do not stack: the precedence picks which is priced first, and the other is the fallback when the
+ * engine declines every code in the first. `'Stack'` prices both in one attempt. With only one side
+ * present, or the same code on both, there is a single attempt.
  */
 export function PlanCheckoutPromotionCodes(
     buyerCodes: string[],
@@ -292,7 +292,7 @@ export function PlanCheckoutPromotionCodes(
 ): CheckoutPromotionCodeAttempt[] {
     const member = memberCode || null;
     const contested = !!member && buyerCodes.some((c) => c.toLowerCase() !== member.toLowerCase());
-    if (!contested) {
+    if (!contested || precedence === 'Stack') {
         return [{ Buyer: [...buyerCodes], Member: member }];
     }
     const memberOnly: CheckoutPromotionCodeAttempt = { Buyer: [], Member: member };
@@ -989,9 +989,10 @@ export class CheckoutSessionService {
             );
             const code = typeof decision?.PromotionCode === 'string' ? decision.PromotionCode.trim() : '';
             if (code) {
-                // Anything but an explicit 'Yield' takes the default, so a misspelt value cannot hand
-                // the price to a typed code the host meant to override.
-                return { PromotionCode: code, TypedCode: decision.TypedCode === 'Yield' ? 'Yield' : DEFAULT_TYPED_CODE_PRECEDENCE };
+                // Anything but an explicit 'Yield' or 'Stack' takes the default, so a misspelt value
+                // cannot hand the price to a typed code the host meant to override.
+                const precedence = decision.TypedCode === 'Yield' || decision.TypedCode === 'Stack' ? decision.TypedCode : DEFAULT_TYPED_CODE_PRECEDENCE;
+                return { PromotionCode: code, TypedCode: precedence };
             }
             return { PromotionCode: null, Message: decision?.Message || MEMBER_DISCOUNT_UNAVAILABLE };
         } catch (err) {
@@ -1451,8 +1452,9 @@ export class CheckoutSessionService {
                 Charges: [],
             });
 
-            // A member code and a typed code never stack (#358): the resolver's precedence picks which
-            // is priced, and the other is priced only when the engine declines the first.
+            // A member code and a typed code do not stack unless the resolver says 'Stack' (#358): the
+            // resolver's precedence picks which is priced, and the other is priced only when the engine
+            // declines the first.
             const attempts = PlanCheckoutPromotionCodes(promotionCodes, memberDiscount.PromotionCode, memberDiscount.TypedCode);
             // Every code the engine declined on any attempt, with its reason.
             const declinedCodes = new Map<string, { Code: string; Reason: string }>();
