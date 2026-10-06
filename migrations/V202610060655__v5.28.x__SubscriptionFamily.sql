@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610051630 — Subscription families: the bands of one subscription offering
+-- V202610060655 — Subscription families: the bands of one subscription offering
 -- (bc-aidp-next-golive#276)
 -- =============================================================================
 -- Confirm looks for an existing subscription by (ProductID, holder). Two bands
