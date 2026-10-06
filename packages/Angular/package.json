@@ -25,7 +25,7 @@
     "@memberjunction/ng-graph-view": "^6.1.4",
     "@memberjunction/ng-hierarchy-tree": "^6.1.4",
     "@mj-biz-apps/accounting-engine-base": ">=0.21.0",
-    "@mj-biz-apps/accounting-ng": ">=0.17.0",
+    "@mj-biz-apps/accounting-ng": ">=0.21.0",
     "@mj-biz-apps/common-entities": ">=5.49.0",
     "@mj-biz-apps/common-ng": ">=5.49.0",
     "@mj-biz-apps/orders-entities": "5.27.0",
@@ -66,7 +66,7 @@
     "@babel/core": "^7.28.0",
     "esbuild": "^0.25.0",
     "zone.js": "^0.16.0",
-    "@mj-biz-apps/accounting-entities": ">=0.17.0",
+    "@mj-biz-apps/accounting-entities": ">=0.21.0",
     "typescript": "^5.9.3"
   },
   "repository": {

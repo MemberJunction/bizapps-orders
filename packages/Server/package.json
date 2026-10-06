@@ -42,8 +42,8 @@
   "license": "BUSL-1.1",
   "devDependencies": {
     "@mj-biz-apps/accounting-engine-base": ">=0.21.0",
-    "@mj-biz-apps/accounting-entities": ">=0.17.0",
-    "@mj-biz-apps/accounting-server": ">=0.17.0",
+    "@mj-biz-apps/accounting-entities": ">=0.21.0",
+    "@mj-biz-apps/accounting-server": ">=0.21.0",
     "@types/express": "^5.0.6",
     "typescript": "^5.9.3"
   },
@@ -64,8 +64,8 @@
     "@memberjunction/generic-database-provider": "^6.1.4",
     "@memberjunction/templates": "^6.1.4",
     "@mj-biz-apps/accounting-engine-base": ">=0.21.0",
-    "@mj-biz-apps/accounting-entities": ">=0.17.0",
-    "@mj-biz-apps/accounting-server": ">=0.17.0"
+    "@mj-biz-apps/accounting-entities": ">=0.21.0",
+    "@mj-biz-apps/accounting-server": ">=0.21.0"
   },
   "repository": {
     "type": "git",

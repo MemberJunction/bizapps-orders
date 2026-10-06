@@ -11,4 +11,4 @@ Intercompany is between legal entities, not companies (golive #313). A Division,
 - A Division with no parent, a parent with no profile, or a loop refuses booking with a message naming the company.
 - The "intercompany entries will be created" hints on the allocation grid and the account-credit page count legal entities.
 
-Requires `@mj-biz-apps/accounting-engine-base` >= 0.21.0 and BizApps Accounting >= 0.21.0.
+Requires BizApps Accounting >= 0.21.0: every `@mj-biz-apps/accounting-*` dependency is `>=0.21.0`, so one copy of `accounting-engine-base` loads.
