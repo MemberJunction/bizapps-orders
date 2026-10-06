@@ -3373,6 +3373,9 @@ export class mjBizAppsOrdersEventProduct_ {
     @MaxLength(36)
     SubscriptionFamilyID?: string;
         
+    @Field(() => Float, {nullable: true}) 
+    RenewalIncreasePercent?: number;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
         
@@ -3473,6 +3476,9 @@ export class CreatemjBizAppsOrdersEventProductInput {
     @Field({ nullable: true })
     SubscriptionFamilyID: string | null;
 
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3572,6 +3578,9 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field({ nullable: true })
     SubscriptionFamilyID?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -5546,6 +5555,9 @@ export class mjBizAppsOrdersOrderCompanyPolicy_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
+    @Field(() => Float, {nullable: true, description: `Percent added to a subscription's price when it renews, for every product this company sells. The last step of the inheritance walk: a subscription, its product or its product category overrides it. NULL means no increase. The increase applies from the first day of the renewal term, so every invoice in that term carries the same price.`}) 
+    RenewalIncreasePercent?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultPriceList?: string;
@@ -5581,6 +5593,9 @@ export class CreatemjBizAppsOrdersOrderCompanyPolicyInput {
     @Field({ nullable: true })
     PricingDriverClass: string | null;
 
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -5611,6 +5626,9 @@ export class UpdatemjBizAppsOrdersOrderCompanyPolicyInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -12114,6 +12132,9 @@ export class mjBizAppsOrdersProductCategory_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
+    @Field(() => Float, {nullable: true, description: `Percent added to a subscription's price when it renews, for every product in this category and its child categories. NULL means inherit from the parent category, then the company's OrderCompanyPolicy. A subscription or product value overrides it.`}) 
+    RenewalIncreasePercent?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -12187,6 +12208,9 @@ export class CreatemjBizAppsOrdersProductCategoryInput {
     @Field({ nullable: true })
     PricingDriverClass: string | null;
 
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -12235,6 +12259,9 @@ export class UpdatemjBizAppsOrdersProductCategoryInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -13345,6 +13372,9 @@ export class mjBizAppsOrdersProduct_ {
     @MaxLength(36)
     SubscriptionFamilyID?: string;
         
+    @Field(() => Float, {nullable: true, description: `Percent added to a subscription's price when it renews onto this product. Overrides the product's category and the company. NULL means inherit from the category and its ancestors, then the company's OrderCompanyPolicy. A subscription's own value overrides it.`}) 
+    RenewalIncreasePercent?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     ProductType?: string;
@@ -13449,6 +13479,9 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field({ nullable: true })
     SubscriptionFamilyID: string | null;
 
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -13524,6 +13557,9 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field({ nullable: true })
     SubscriptionFamilyID?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -16904,6 +16940,16 @@ export class mjBizAppsOrdersSubscription_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `The saved card (wallet entry) this subscription is charged with at renewal. Set when the checkout that created the subscription kept the buyer's card. NULL means there is no renewal card and an automatic renewal cannot be charged.`}) 
+    @MaxLength(36)
+    DefaultCustomerPaymentMethodID?: string;
+        
+    @Field(() => Float, {nullable: true, description: `Percent added to this subscription's price when it renews: the contract's negotiated annual increase. Overrides the product, its category and the company. NULL means inherit from the product, then its category and ancestors, then the company's OrderCompanyPolicy; NULL everywhere means no increase. Set 0 to renew with no increase where a default would apply.`}) 
+    RenewalIncreasePercent?: number;
+        
+    @Field(() => Boolean, {nullable: true, description: `Whether the discount on the term being renewed carries into the renewal. Off by default: a first-term discount lapses and the renewal starts from the undiscounted price. Set it for a discount agreed to continue, such as a multi-year concession.`}) 
+    CarryDiscountOnRenewal?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -17006,6 +17052,12 @@ export class CreatemjBizAppsOrdersSubscriptionInput {
     @Field({ nullable: true })
     DefaultCustomerPaymentMethodID: string | null;
 
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    CarryDiscountOnRenewal?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -17075,6 +17127,12 @@ export class UpdatemjBizAppsOrdersSubscriptionInput {
 
     @Field({ nullable: true })
     DefaultCustomerPaymentMethodID?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    CarryDiscountOnRenewal?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
