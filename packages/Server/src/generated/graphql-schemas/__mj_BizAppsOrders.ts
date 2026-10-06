@@ -17,7 +17,7 @@ import { MaxLength } from 'class-validator';
 import * as mj_core_schema_server_object_types from '@memberjunction/server'
 
 
-import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionFamilyEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
     
 
 //****************************************************************************
@@ -2818,6 +2818,9 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @Field(() => Float) 
     BilledToDate: number;
         
+    @Field(() => Boolean, {nullable: true}) 
+    AcknowledgesCoverageOverlap?: boolean;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
     @Field(() => Float) 
@@ -2979,6 +2982,9 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     ShipToAddressSnapshot: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    AcknowledgesCoverageOverlap?: boolean;
 
     @Field({ nullable: true })
     SubscriptionAction: string | null;
@@ -3142,6 +3148,9 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     ShipToAddressSnapshot?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    AcknowledgesCoverageOverlap?: boolean;
 
     @Field({ nullable: true })
     SubscriptionAction?: string | null;
@@ -3360,6 +3369,10 @@ export class mjBizAppsOrdersEventProduct_ {
     @MaxLength(255)
     VenueAddress?: string;
         
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    SubscriptionFamilyID?: string;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
         
@@ -3457,6 +3470,9 @@ export class CreatemjBizAppsOrdersEventProductInput {
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine: number | null;
 
+    @Field({ nullable: true })
+    SubscriptionFamilyID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3553,6 +3569,9 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine?: number | null;
+
+    @Field({ nullable: true })
+    SubscriptionFamilyID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -7903,6 +7922,8 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field({nullable: true}) 
     @Field(() => Float, {description: `Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
     BilledToDate: number;
+    @Field(() => Boolean, {nullable: true, description: `True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`}) 
+    AcknowledgesCoverageOverlap?: boolean;
         
     @Field(() => Float, {description: `Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. ADVANCED FOR UP-FRONT AND ATTESTED LINES ONLY. A deferred driver stages its monthly releases as forward-dated entries at confirm; those credit Sales on their own dates without passing through rule 2, so they leave this total untouched. A subscription line therefore depends on its instalments being invoiced on time for the gap between the two totals to mean anything. Routing the staged releases through rule 2 is orders #241, parked. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
     RecognizedToDate: number;
@@ -8083,6 +8104,9 @@ export class CreatemjBizAppsOrdersOrderLineInput {
     @Field({ nullable: true })
     ShipToAddressSnapshot: string | null;
 
+    @Field(() => Boolean, { nullable: true })
+    AcknowledgesCoverageOverlap?: boolean;
+
     @Field({ nullable: true })
     SubscriptionAction: string | null;
 
@@ -8203,6 +8227,9 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field({ nullable: true })
     ShipToAddressSnapshot?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    AcknowledgesCoverageOverlap?: boolean;
 
     @Field({ nullable: true })
     SubscriptionAction?: string | null;
@@ -13314,6 +13341,10 @@ export class mjBizAppsOrdersProduct_ {
     @Field(() => Float, {nullable: true, description: `Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`}) 
     MaxQuantityPerLine?: number;
         
+    @Field({nullable: true, description: `The subscription family this product is a band of. At confirm, a line for this product is checked against the holder's subscriptions to the family's other products. NULL means the product has no other bands. Must belong to the product's company.`}) 
+    @MaxLength(36)
+    SubscriptionFamilyID?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     ProductType?: string;
@@ -13337,6 +13368,10 @@ export class mjBizAppsOrdersProduct_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     SubscriptionType?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    SubscriptionFamily?: string;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
@@ -13411,6 +13446,9 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine: number | null;
 
+    @Field({ nullable: true })
+    SubscriptionFamilyID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -13483,6 +13521,9 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine?: number | null;
+
+    @Field({ nullable: true })
+    SubscriptionFamilyID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -15806,6 +15847,192 @@ export class mjBizAppsOrdersSubscriptionEventResolver extends ResolverBase {
         const provider = GetReadWriteProvider(providers);
         const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
         return this.DeleteRecord('MJ_BizApps_Orders: Subscription Events', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Subscription Families
+//****************************************************************************
+@ObjectType({ description: `The products that are bands of one subscription offering (for example a standard and a premium tier), within one selling company. At confirm, a line for one band is checked against the holder\'s subscriptions to the family\'s other bands, and overlapping coverage is refused or allowed according to the subscription types\' ConcurrencyMode.` })
+export class mjBizAppsOrdersSubscriptionFamily_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true, description: `The selling company that owns the family. Only that company's products can belong to it.`}) 
+    @MaxLength(36)
+    CompanyID?: string;
+        
+    @Field({nullable: true, description: `Short code for the family, unique within its company.`}) 
+    @MaxLength(40)
+    Code?: string;
+        
+    @Field({nullable: true, description: `Display name of the offering the family's bands belong to.`}) 
+    @MaxLength(200)
+    Name?: string;
+        
+    @Field({nullable: true, description: `Optional notes on the offering and its bands.`}) 
+    Description?: string;
+        
+    @Field(() => Boolean, {nullable: true, description: `False retires the family from new product assignments. Products already in it keep it, and the overlap check still applies to them.`}) 
+    IsActive?: boolean;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(50)
+    Company?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Subscription Families
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersSubscriptionFamilyInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string;
+
+    @Field({ nullable: true })
+    Code?: string;
+
+    @Field({ nullable: true })
+    Name?: string;
+
+    @Field({ nullable: true })
+    Description: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Subscription Families
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersSubscriptionFamilyInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string;
+
+    @Field({ nullable: true })
+    Code?: string;
+
+    @Field({ nullable: true })
+    Name?: string;
+
+    @Field({ nullable: true })
+    Description?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Subscription Families
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersSubscriptionFamilyViewResult {
+    @Field(() => [mjBizAppsOrdersSubscriptionFamily_])
+    Results: mjBizAppsOrdersSubscriptionFamily_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersSubscriptionFamily_)
+export class mjBizAppsOrdersSubscriptionFamilyResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersSubscriptionFamilyViewResult)
+    async RunmjBizAppsOrdersSubscriptionFamilyViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersSubscriptionFamilyViewResult)
+    async RunmjBizAppsOrdersSubscriptionFamilyViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersSubscriptionFamilyViewResult)
+    async RunmjBizAppsOrdersSubscriptionFamilyDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Subscription Families';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersSubscriptionFamily_, { nullable: true })
+    async mjBizAppsOrdersSubscriptionFamily(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersSubscriptionFamily_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Subscription Families', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwSubscriptionFamilies')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Subscription Families', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Subscription Families', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersSubscriptionFamily_)
+    async CreatemjBizAppsOrdersSubscriptionFamily(
+        @Arg('input', () => CreatemjBizAppsOrdersSubscriptionFamilyInput) input: CreatemjBizAppsOrdersSubscriptionFamilyInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Subscription Families', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersSubscriptionFamily_)
+    async UpdatemjBizAppsOrdersSubscriptionFamily(
+        @Arg('input', () => UpdatemjBizAppsOrdersSubscriptionFamilyInput) input: UpdatemjBizAppsOrdersSubscriptionFamilyInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Subscription Families', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersSubscriptionFamily_)
+    async DeletemjBizAppsOrdersSubscriptionFamily(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Subscription Families', key, options, provider, userPayload, pubSub);
     }
     
 }
