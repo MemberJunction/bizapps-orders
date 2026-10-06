@@ -6,7 +6,7 @@
  * auto initial payment all fire exactly as they do in production. A check that inserted rows
  * directly would test the schema and nothing else.
  */
-import { Metadata } from '@memberjunction/core';
+import { Metadata, RunView, type IRunViewProvider } from '@memberjunction/core';
 import type {
     mjBizAppsOrdersOrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
@@ -18,6 +18,7 @@ import type {
     OrderEntityServer,
     RequestedCharge,
 } from '@mj-biz-apps/orders-core-entities-server';
+import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY, SALES_AUTHORITY_ENTITY } from './entity-names.js';
 import { Fx } from './fixture.js';
 import type { BaseEntity, IMetadataProvider, UserInfo } from '@memberjunction/core';
 
@@ -273,6 +274,12 @@ export async function BuildOrder(
  * Build and confirm in one step, returning the saved order.
  * `Save()` returning false is the normal failure signal — the caller decides whether that's the
  * expected outcome (all-or-none checks) or a failure.
+ *
+ * A LINE WITH A `DiscountPct` IS A CONCESSION (golive #305), and the confirm gate holds it until an
+ * Approved Price concession covers it. A fixture that discounts a line is testing what the discount
+ * books, not the gate, so the order is saved as a draft, its discounts approved through
+ * {@link ApproveLineDiscounts}, and then confirmed — the path a rep takes. The concessions bundle
+ * builds its orders with `BuildOrder` and records its own concessions, so the gate stays tested there.
  */
 export async function ConfirmOrder(
     user: UserInfo,
@@ -280,6 +287,12 @@ export async function ConfirmOrder(
     provider?: IMetadataProvider,
 ): Promise<BuiltOrder & { Saved: boolean; Message: string }> {
     const built = await BuildOrder(user, spec, provider);
+    if (spec.Lines.some(isGatedDiscount)) {
+        if (!(await built.Order.Save())) {
+            return { ...built, Saved: false, Message: (built.Order.LatestResult?.CompleteMessage as string) ?? '' };
+        }
+        await ApproveLineDiscounts(user, built.Order.ID as string, provider);
+    }
     built.Order.Status = 'Confirmed';
     const saved = await built.Order.Save();
     return {
@@ -287,6 +300,82 @@ export async function ConfirmOrder(
         Saved: saved,
         Message: (built.Order.LatestResult?.CompleteMessage as string) ?? '',
     };
+}
+
+/** A discounted line the confirm gate counts: not a reversal, which carries its origin's price. */
+function isGatedDiscount(line: LineSpec): boolean {
+    return (line.DiscountPct ?? 0) > 0 && !line.ReversesOrderLineID && line.Quantity > 0;
+}
+
+/**
+ * Record an Approved Price concession on every discounted line of a saved draft, so the confirm gate
+ * lets it through. Bundle components and reversals are skipped, as the gate skips them.
+ *
+ * The concession is Approved only inside the user's SalesAuthority, so one is granted when the user
+ * holds none. The caller is inside a rolled-back transaction, as every mutating check is, so neither
+ * the authority nor the concessions outlive the check. A user who already holds an authority keeps
+ * it: a check that set limits meant them, and a concession outside them fails here, naming why.
+ */
+export async function ApproveLineDiscounts(
+    user: UserInfo,
+    orderID: string,
+    provider?: IMetadataProvider,
+): Promise<void> {
+    const md = provider ?? new Metadata();
+    const rv = new RunView(provider as unknown as IRunViewProvider | undefined);
+    const lines = await rv.RunView<{ ID: string; LineNumber: number }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter:
+                `OrderHeaderID = '${orderID}' AND DiscountPct > 0 AND ParentOrderLineID IS NULL ` +
+                `AND ReversesOrderLineID IS NULL AND Quantity > 0`,
+            Fields: ['ID', 'LineNumber'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!lines.Success) throw new Error(`could not read the order's lines: ${lines.ErrorMessage}`);
+    if (lines.Results.length === 0) return;
+
+    const held = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: SALES_AUTHORITY_ENTITY,
+            ExtraFilter: `SalesRepUserID = '${user.ID}' AND IsActive = 1`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if ((held.Results ?? []).length === 0) {
+        const authority = await md.GetEntityObject<BaseEntity>(SALES_AUTHORITY_ENTITY, user);
+        authority.NewRecord();
+        authority.Set('SalesRepUserID', user.ID);
+        authority.Set('MaxDiscountPct', 1);
+        // A null MaxConcessionValue grants no authority at all, so the cap is stated, and set above
+        // anything a fixture sells.
+        authority.Set('MaxConcessionValue', 1_000_000);
+        authority.Set('IsActive', 1);
+        if (!(await authority.Save())) {
+            throw new Error(`could not grant a SalesAuthority: ${authority.LatestResult?.CompleteMessage}`);
+        }
+    }
+
+    for (const line of lines.Results) {
+        const concession = await md.GetEntityObject<BaseEntity>(ORDER_CONCESSION_ENTITY, user);
+        concession.NewRecord();
+        concession.Set('DeliveryForm', 'Price');
+        concession.Set('OrderLineID', line.ID);
+        concession.Set('ReasonCategory', 'Retention');
+        concession.Set('Reason', 'fixture line discount');
+        if (!(await concession.Save())) {
+            throw new Error(`line ${line.LineNumber}: the Price concession did not save: ${concession.LatestResult?.CompleteMessage}`);
+        }
+        if (concession.Get('Status') !== 'Approved') {
+            throw new Error(`line ${line.LineNumber}: the Price concession is ${concession.Get('Status')}, not Approved`);
+        }
+    }
 }
 
 
