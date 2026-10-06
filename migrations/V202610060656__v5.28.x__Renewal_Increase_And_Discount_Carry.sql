@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610051700 — Renewal repricing inputs: RenewalIncreasePercent on
+-- V202610060656 — Renewal repricing inputs: RenewalIncreasePercent on
 --                 OrderCompanyPolicy, ProductCategory, Product and Subscription,
 --                 and Subscription.CarryDiscountOnRenewal
 --                 (MemberJunction/bc-aidp-next-golive#304)
