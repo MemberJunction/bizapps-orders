@@ -1,5 +1,15 @@
 # @mj-biz-apps/orders-ng
 
+## 5.27.0
+
+### Patch Changes
+
+- 352599e: The order line product picker shows the list price from the product's base price row only. It no longer shows `StandaloneSellingPrice`, which the line never prices from, and shows "No price" instead of $0.00 when the product has no base price row.
+- Updated dependencies [b9900b7]
+- Updated dependencies [148b74c]
+- Updated dependencies [d1cfdcf]
+  - @mj-biz-apps/orders-entities@5.27.0
+
 ## 5.26.0
 
 ### Minor Changes
@@ -534,8 +544,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                            The INSERT statement conflicted with the FOREIGN KEY constraint
-                            "FK_EntityFieldValue_EntityField"
+                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

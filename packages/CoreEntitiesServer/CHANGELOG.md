@@ -1,5 +1,22 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.27.0
+
+### Minor Changes
+
+- d1cfdcf: The Bill.com rail invoices an order once, through the order company's connection, whatever company owns each product, so payment arrives at the order's company and the intercompany legs move each product company's share. The external invoicing worklist offers one whole-order unit per order, for the order's company, numbered as the order. Issuing refuses a product company named for a whole-order unit, and refuses to send beside a per-company invoice an order already holds from before this release, naming the invoice to cancel. Instalments are unchanged: each is its own unit, through the rail of the company on the row.
+- d1cfdcf: An order is invoiced as one document, from the order's company, whatever company owns each product: one per instalment when it has a schedule, one for the whole order otherwise. The -A/-B company letters are gone from new document numbers. Only an instalment of a schedule written per product company before this release, on an order that had already issued under it, is still rebuilt per company under the number it froze. Asking for a product company's document (`OnlyCompanyID`, the `CompanyID` action input) now returns a refusal with result code `NOT_ORDER_COMPANY` that names the order's company. `Orders: Generate Invoice` no longer returns `SPLIT_BY_COMPANY`.
+- d1cfdcf: A payment schedule now belongs to the order's company: new rows are stamped with the order header's CompanyID and together bill the whole order, whatever company owns each product. The ledger stays per product company: `CompanySlices` divides each row among the companies whose lines it bills, tying both ways, and the booking switch, the cash split, the deposit release and the instalment billing entry all read the schedule through it. Issuing an instalment on a multi-company order posts one billing entry per product company under one document number, with no company letter. Renewal orders get one schedule row for the whole order. Rows written per company by an order that had already issued an instalment keep working as before.
+
+### Patch Changes
+
+- a023cbc: A payment captured in the same save that creates its payment detail (the payment form's Capture & Book on an unsaved payment) no longer fails with "Could not read the payment's instrument to book a gift card redemption: no such record". The gift card lookup ran before the save wrote the new detail; it now reads a new or edited detail from memory and only reads the database for an unchanged saved one.
+- b9900b7: An order line for a product written outside the API process after it started (a catalog loader, raw SQL, another replica) no longer fails with "CompanyID: Company cannot be null". `OrdersEngine.EnsureProducts` / `RequireProduct` reload the product catalog once on a cache miss; the company stamp, subscription term and service period, journal-entry and progress recognition lookups use them, and fail naming the product when it is still missing.
+- Updated dependencies [b9900b7]
+- Updated dependencies [148b74c]
+- Updated dependencies [d1cfdcf]
+  - @mj-biz-apps/orders-entities@5.27.0
+
 ## 5.26.0
 
 ### Minor Changes
@@ -605,8 +622,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                            The INSERT statement conflicted with the FOREIGN KEY constraint
-                            "FK_EntityFieldValue_EntityField"
+                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
