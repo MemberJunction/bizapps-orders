@@ -51,11 +51,13 @@ export {
     FindConcessionLimitRule,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
+    LineConcessionTerms,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
     OrderConcessionTotal,
     OrderNetTotal,
     type ConcessionLineFacts,
+    type LineConcessionFacts,
     type LinePriceConcession,
     type UncoveredLinePrice,
 } from './ConcessionGate.js';

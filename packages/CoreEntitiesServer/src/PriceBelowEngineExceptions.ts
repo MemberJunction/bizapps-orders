@@ -1,6 +1,7 @@
 /**
  * Finance exception type 4 — a line booked below its engine price with no approved concession
- * (golive #279).
+ * (golive #279). A `DiscountPct` the gate counts is raised here too (golive #305): it gives away value
+ * the same way, and the gate and this report must agree about what a concession is.
  *
  * NOTHING HERE BLOCKS POSTING. The concession gate on `OrderEntityServer` refuses a confirm whose
  * lines give away value no approved concession covers, but some bookings still get past it — the
@@ -23,7 +24,12 @@
  */
 import { LogStatus, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 import { GetActiveFinanceExceptionType, RaiseFinanceExceptions, type FinanceExceptionToRaise } from './AccountingBridge.js';
-import { FindUncoveredLinePrices, type ConcessionLineFacts, type UncoveredLinePrice } from './ConcessionGate.js';
+import {
+    FindUncoveredLinePrices,
+    LineConcessionTerms,
+    type ConcessionLineFacts,
+    type UncoveredLinePrice,
+} from './ConcessionGate.js';
 import { ORDER_LINE_ENTITY } from './entity-names.js';
 
 export const PRICE_BELOW_ENGINE_TYPE_CODE = 'PRICE_BELOW_ENGINE_UNAPPROVED';
@@ -122,8 +128,8 @@ function summaryFor(u: UncoveredLinePrice, booking: PriceBelowEngineBooking): st
             ? `an approved concession covers ${u.ApprovedValue.toFixed(2)} of it`
             : 'no approved concession covers it';
     return (
-        `Line ${u.Line.LineNumber ?? '?'} of order ${booking.OrderNumber ?? booking.OrderHeaderID} was booked at ` +
-        `${Number(u.Line.UnitPrice ?? 0).toFixed(2)} against an engine price of ${u.Concession.EngineUnitPrice.toFixed(2)}, ` +
-        `a ${u.Concession.Form} concession worth ${u.Concession.Valuation.Value.toFixed(2)}; ${covered}.`
+        `Line ${u.Line.LineNumber ?? '?'} of order ${booking.OrderNumber ?? booking.OrderHeaderID} was booked ` +
+        `${LineConcessionTerms(u.Line, u.Concession)}, a ${u.Concession.Form} concession worth ` +
+        `${u.Concession.Valuation.Value.toFixed(2)}; ${covered}.`
     );
 }
