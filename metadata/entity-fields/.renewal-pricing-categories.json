@@ -1,0 +1,80 @@
+[
+  {
+    "_comments": [
+      "The renewal repricing inputs (bc-aidp-next-golive#304) sit with each entity's other renewal",
+      "and default settings: on a subscription beside AutoRenew and RenewalLeadDays, on a product with",
+      "its subscription type, on a category with its other defaults, and on the company policy with",
+      "its pricing policies."
+    ],
+    "fields": {
+      "Category": "Renewal Settings"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscriptions&Name=RenewalIncreasePercent"
+    },
+    "sync": {
+      "lastModified": "2026-10-05T21:01:49.246Z",
+      "checksum": "f069e2b2e1369aa7376172637729521991c546b388f652f66e25d3904383174d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Renewal Settings"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscriptions&Name=CarryDiscountOnRenewal"
+    },
+    "sync": {
+      "lastModified": "2026-10-05T21:01:49.276Z",
+      "checksum": "f069e2b2e1369aa7376172637729521991c546b388f652f66e25d3904383174d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Subscription and Entitlements"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products&Name=RenewalIncreasePercent"
+    },
+    "sync": {
+      "lastModified": "2026-10-05T21:01:49.319Z",
+      "checksum": "2510bf49330305b1e4eda6cc9ff8bac47ca6147e8a799535959db39153828b3e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Product Details"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=RenewalIncreasePercent"
+    },
+    "sync": {
+      "lastModified": "2026-10-05T21:01:49.355Z",
+      "checksum": "dc9fdd9754eca58852135a39355da8ff413be1920959a9d52e9ce312e984fd69"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Default Settings"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=RenewalIncreasePercent"
+    },
+    "sync": {
+      "lastModified": "2026-10-05T21:01:49.394Z",
+      "checksum": "4aaaa1a2f1ec2098d6b6eecdfe367c027eff2e904545e1e9ffce751d5f7dbb04"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing Policies"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Company Policies&Name=RenewalIncreasePercent"
+    },
+    "sync": {
+      "lastModified": "2026-10-05T21:01:49.430Z",
+      "checksum": "6bb7c8d18e1a86e2aba575c00f44fba373dbcfaf2963683c8230af9b28ccce54"
+    }
+  }
+]

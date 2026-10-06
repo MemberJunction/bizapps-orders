@@ -1396,6 +1396,10 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: SubscriptionFamilyID
         * * Display Name: Subscription Family
         * * SQL Data Type: uniqueidentifier`),
+    RenewalIncreasePercent: z.number().nullable().describe(`
+        * * Field Name: RenewalIncreasePercent
+        * * Display Name: Renewal Increase Percent
+        * * SQL Data Type: decimal(7, 4)`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -2107,6 +2111,11 @@ export const mjBizAppsOrdersOrderCompanyPolicySchema = z.object({
         * * Display Name: Pricing Driver Class
         * * SQL Data Type: nvarchar(255)
         * * Description: ClassFactory key of this company's house BasePriceResolver, or NULL. This is where every plugin registered before this column existed was keyed (Company:<id>), so it is the level that makes those visible to metadata.`),
+    RenewalIncreasePercent: z.number().nullable().describe(`
+        * * Field Name: RenewalIncreasePercent
+        * * Display Name: Renewal Increase Percent
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: Percent added to a subscription's price when it renews, for every product this company sells. The last step of the inheritance walk: a subscription, its product or its product category overrides it. NULL means no increase. The increase applies from the first day of the renewal term, so every invoice in that term carries the same price.`),
     DefaultPriceList: z.string().nullable().describe(`
         * * Field Name: DefaultPriceList
         * * Display Name: Default Price List
@@ -4685,6 +4694,11 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Display Name: Pricing Driver Class
         * * SQL Data Type: nvarchar(255)
         * * Description: ClassFactory key of a BasePriceResolver subclass for every product in this category (and, unless overridden, its child categories), or NULL. See Product.PricingDriverClass for the resolution order.`),
+    RenewalIncreasePercent: z.number().nullable().describe(`
+        * * Field Name: RenewalIncreasePercent
+        * * Display Name: Renewal Increase Percent
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: Percent added to a subscription's price when it renews, for every product in this category and its child categories. NULL means inherit from the parent category, then the company's OrderCompanyPolicy. A subscription or product value overrides it.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company
@@ -5269,6 +5283,11 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscription Families (vwSubscriptionFamilies.ID)
         * * Description: The subscription family this product is a band of. At confirm, a line for this product is checked against the holder's subscriptions to the family's other products. NULL means the product has no other bands. Must belong to the product's company.`),
+    RenewalIncreasePercent: z.number().nullable().describe(`
+        * * Field Name: RenewalIncreasePercent
+        * * Display Name: Renewal Increase Percent
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: Percent added to a subscription's price when it renews onto this product. Overrides the product's category and the company. NULL means inherit from the category and its ancestors, then the company's OrderCompanyPolicy. A subscription's own value overrides it.`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
         * * Display Name: Product Type Name
@@ -6593,6 +6612,17 @@ export const mjBizAppsOrdersSubscriptionSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Customer Payment Methods (vwCustomerPaymentMethods.ID)
         * * Description: The saved card (wallet entry) this subscription is charged with at renewal. Set when the checkout that created the subscription kept the buyer's card. NULL means there is no renewal card and an automatic renewal cannot be charged.`),
+    RenewalIncreasePercent: z.number().nullable().describe(`
+        * * Field Name: RenewalIncreasePercent
+        * * Display Name: Renewal Increase Percent
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: Percent added to this subscription's price when it renews: the contract's negotiated annual increase. Overrides the product, its category and the company. NULL means inherit from the product, then its category and ancestors, then the company's OrderCompanyPolicy; NULL everywhere means no increase. Set 0 to renew with no increase where a default would apply.`),
+    CarryDiscountOnRenewal: z.boolean().describe(`
+        * * Field Name: CarryDiscountOnRenewal
+        * * Display Name: Carry Discount On Renewal
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: Whether the discount on the term being renewed carries into the renewal. Off by default: a first-term discount lapses and the renewal starts from the undiscounted price. Set it for a discount agreed to continue, such as a multi-year concession.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -10563,6 +10593,19 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     set SubscriptionFamilyID(value: string | null) {
         this.Set('SubscriptionFamilyID', value);
     }
+
+    /**
+    * * Field Name: RenewalIncreasePercent
+    * * Display Name: Renewal Increase Percent
+    * * SQL Data Type: decimal(7, 4)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get RenewalIncreasePercent(): number | null {
+        return this.Get('RenewalIncreasePercent');
+    }
+    set RenewalIncreasePercent(value: number | null) {
+        this.Set('RenewalIncreasePercent', value);
+    }
 }
 
 
@@ -12479,6 +12522,19 @@ export class mjBizAppsOrdersOrderCompanyPolicyEntity extends BaseEntity<mjBizApp
     }
     set PricingDriverClass(value: string | null) {
         this.Set('PricingDriverClass', value);
+    }
+
+    /**
+    * * Field Name: RenewalIncreasePercent
+    * * Display Name: Renewal Increase Percent
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: Percent added to a subscription's price when it renews, for every product this company sells. The last step of the inheritance walk: a subscription, its product or its product category overrides it. NULL means no increase. The increase applies from the first day of the renewal term, so every invoice in that term carries the same price.
+    */
+    get RenewalIncreasePercent(): number | null {
+        return this.Get('RenewalIncreasePercent');
+    }
+    set RenewalIncreasePercent(value: number | null) {
+        this.Set('RenewalIncreasePercent', value);
     }
 
     /**
@@ -19809,6 +19865,19 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: RenewalIncreasePercent
+    * * Display Name: Renewal Increase Percent
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: Percent added to a subscription's price when it renews, for every product in this category and its child categories. NULL means inherit from the parent category, then the company's OrderCompanyPolicy. A subscription or product value overrides it.
+    */
+    get RenewalIncreasePercent(): number | null {
+        return this.Get('RenewalIncreasePercent');
+    }
+    set RenewalIncreasePercent(value: number | null) {
+        this.Set('RenewalIncreasePercent', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company
     * * SQL Data Type: nvarchar(50)
@@ -21519,6 +21588,19 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
     set SubscriptionFamilyID(value: string | null) {
         this.Set('SubscriptionFamilyID', value);
+    }
+
+    /**
+    * * Field Name: RenewalIncreasePercent
+    * * Display Name: Renewal Increase Percent
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: Percent added to a subscription's price when it renews onto this product. Overrides the product's category and the company. NULL means inherit from the category and its ancestors, then the company's OrderCompanyPolicy. A subscription's own value overrides it.
+    */
+    get RenewalIncreasePercent(): number | null {
+        return this.Get('RenewalIncreasePercent');
+    }
+    set RenewalIncreasePercent(value: number | null) {
+        this.Set('RenewalIncreasePercent', value);
     }
 
     /**
@@ -25351,6 +25433,33 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     }
     set DefaultCustomerPaymentMethodID(value: string | null) {
         this.Set('DefaultCustomerPaymentMethodID', value);
+    }
+
+    /**
+    * * Field Name: RenewalIncreasePercent
+    * * Display Name: Renewal Increase Percent
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: Percent added to this subscription's price when it renews: the contract's negotiated annual increase. Overrides the product, its category and the company. NULL means inherit from the product, then its category and ancestors, then the company's OrderCompanyPolicy; NULL everywhere means no increase. Set 0 to renew with no increase where a default would apply.
+    */
+    get RenewalIncreasePercent(): number | null {
+        return this.Get('RenewalIncreasePercent');
+    }
+    set RenewalIncreasePercent(value: number | null) {
+        this.Set('RenewalIncreasePercent', value);
+    }
+
+    /**
+    * * Field Name: CarryDiscountOnRenewal
+    * * Display Name: Carry Discount On Renewal
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: Whether the discount on the term being renewed carries into the renewal. Off by default: a first-term discount lapses and the renewal starts from the undiscounted price. Set it for a discount agreed to continue, such as a multi-year concession.
+    */
+    get CarryDiscountOnRenewal(): boolean {
+        return this.Get('CarryDiscountOnRenewal');
+    }
+    set CarryDiscountOnRenewal(value: boolean) {
+        this.Set('CarryDiscountOnRenewal', value);
     }
 
     /**
