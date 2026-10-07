@@ -6,7 +6,10 @@
       "rows every API-key call to either operation is refused on a host that installs Orders, and nothing says why.",
       "",
       "A parent `orders` with one child per operation, matching how MJ lays out its own scopes. The application",
-      "ceiling that allows them on MJAPI is in metadata/api-application-scopes. A host then only issues API keys."
+      "ceiling that allows them on MJAPI is in metadata/api-application-scopes. A host then only issues API keys.",
+      "",
+      "THE REST OF THE ORDERS OPERATIONS (#383). orders:read and orders:write, plus the payment and subscription scopes,",
+      "which sit under orders: so they cannot collide with another app's scopes. Each is a direct child of orders."
     ],
     "fields": {
       "Name": "orders",
@@ -52,6 +55,71 @@
           "sync": {
             "lastModified": "2026-09-29T17:25:54.707Z",
             "checksum": "373d56d307149d1564aa4eec22aaa041dccafa4e6ca2e2a68c2ce0ec18ec0cfa"
+          }
+        },
+        {
+          "fields": {
+            "ParentID": "@parent:ID",
+            "Name": "read",
+            "FullPath": "orders:read",
+            "Category": "Orders",
+            "Description": "Read-only Orders operations: pricing, previews, worklists and queues",
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "3599A29A-DB15-4AEE-89D3-2F19F5124BDC"
+          }
+        },
+        {
+          "fields": {
+            "ParentID": "@parent:ID",
+            "Name": "write",
+            "FullPath": "orders:write",
+            "Category": "Orders",
+            "Description": "Orders operations that change orders: state, fulfilment, capture, invoicing and progress",
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "D6071985-2297-4500-AC27-4F24210D0719"
+          }
+        },
+        {
+          "fields": {
+            "ParentID": "@parent:ID",
+            "Name": "payments:refund",
+            "FullPath": "orders:payments:refund",
+            "Category": "Orders",
+            "Description": "Refund a payment (Orders.RefundPayment)",
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "3F957084-0543-45E1-AD99-8BF56C1EC04E"
+          }
+        },
+        {
+          "fields": {
+            "ParentID": "@parent:ID",
+            "Name": "payments:write",
+            "FullPath": "orders:payments:write",
+            "Category": "Orders",
+            "Description": "Spend a customer's account credit (Orders.ApplyAccountCredit)",
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "05683886-9743-43D5-9E20-FB8DFBAF7818"
+          }
+        },
+        {
+          "fields": {
+            "ParentID": "@parent:ID",
+            "Name": "subscriptions:write",
+            "FullPath": "orders:subscriptions:write",
+            "Category": "Orders",
+            "Description": "Change subscriptions: cancel, renew, amend and the overlap check",
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "D965B6FB-2B83-4F10-91BD-EFF8F82B2BC3"
           }
         }
       ]

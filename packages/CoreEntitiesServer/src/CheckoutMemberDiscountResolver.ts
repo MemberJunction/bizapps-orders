@@ -24,6 +24,10 @@
  * enter it in a checkout's code field and get the member price without a token (#358). Before a typed
  * code is priced, every registered resolver is asked `IsMemberPromotionCode`, and a code any of them
  * claims is refused — on every widget, because promotion codes are not scoped to one.
+ *
+ * A MEMBER CODE AND A TYPED CODE DO NOT STACK unless the host says so. When a buyer with a verified
+ * token also types a code, the decision's `TypedCode` says which one is priced, or `'Stack'` to price
+ * both (#358); the default is the member code alone.
  */
 import { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
@@ -47,12 +51,32 @@ export interface CheckoutTypedPromotionCodeContext {
     SessionID: string;
 }
 
+/**
+ * Which code wins when a verified token earns a member code and the buyer also typed one.
+ * - `'Replace'` — the member code is priced and the typed code is reported as not used.
+ * - `'Yield'` — the typed code is priced and the member code is set aside.
+ * - `'Stack'` — both are priced together, and the promotions' own stacking settings decide whether
+ *   both apply. Only a host that means its member discount to combine with other offers returns it.
+ *
+ * Under `'Replace'` and `'Yield'`, when the promotion engine declines the winning code, the other one
+ * is priced instead, so the buyer is never left at full price while a usable code is in play.
+ */
+export type CheckoutTypedCodePrecedence = 'Replace' | 'Yield' | 'Stack';
+
+/** Used when a resolver's decision names no precedence. */
+export const DEFAULT_TYPED_CODE_PRECEDENCE: CheckoutTypedCodePrecedence = 'Replace';
+
 /** A resolver's verdict. */
 export interface CheckoutMemberDiscountDecision {
     /** The promotion code to price with, or null when the token earns no discount. */
     PromotionCode: string | null;
     /** Shown to the buyer when no discount applies — e.g. why the token was not accepted. */
     Message?: string;
+    /**
+     * Whether `PromotionCode` replaces a code the buyer typed or yields to it. Defaults to
+     * {@link DEFAULT_TYPED_CODE_PRECEDENCE} (`'Replace'`). Ignored when no code was typed.
+     */
+    TypedCode?: CheckoutTypedCodePrecedence;
 }
 
 /**
