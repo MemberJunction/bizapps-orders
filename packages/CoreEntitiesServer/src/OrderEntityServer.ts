@@ -59,6 +59,8 @@ import {
     mjBizAppsOrdersSubscriptionEventEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
     ToISODate,
+    HostOrderConfirmVeto,
+    ResolveOrderConfirmRefusal,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
@@ -456,6 +458,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             result.Errors.push(new ValidationErrorInfo(field, message, this.BillToOrganizationID ?? this.BillToPersonID, ValidationErrorType.Failure));
         }
 
+        await this.refuseVetoedConfirm(result);
+
         return result;
     }
 
@@ -475,6 +479,45 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const billTo = await LoadBillToName(this.BillToOrganizationID, this.BillToOrganizationID ? null : this.BillToPersonID, provider, this.ContextCurrentUser);
         return billTo ? CheckOrderBillToName(companyIDs, billTo, provider, this.ContextCurrentUser) : [];
+    }
+
+    /**
+     * ASKS ANOTHER APP WHETHER THIS ORDER MAY BOOK (bc-aidp-next-golive#323).
+     *
+     * Orders enforces its own rules above. This is the seam for a rule it cannot know: Sales closes a
+     * deal Won, which mints this order, and the deal is then REOPENED. Twenty seconds later the order
+     * was confirmed from the order screen and booked — a booking entry, a subscription and twelve
+     * recognition entries — leaving an Open deal at 75% sitting on a booked order. Sales already
+     * refuses the reverse, so this is the direction nothing checked.
+     *
+     * GATED ON `willBookOnThisSave()`, the same gate as the no-lines check above, so an ordinary edit
+     * to a confirmed order never consults it and a host with no vetoer pays nothing.
+     *
+     * FROM the saved status, not the pending one: a vetoer asked "may this confirm" should be told
+     * where the order IS, not where this save wants it to go.
+     *
+     * Failure is a REFUSAL, decided in `ResolveOrderConfirmRefusal` rather than here — a vetoer that
+     * throws has not said yes, and booking on "could not tell" reaches the outcome this prevents by
+     * another route.
+     */
+    private async refuseVetoedConfirm(result: ValidationResult): Promise<void> {
+        if (!this.willBookOnThisSave()) return;
+        const veto = HostOrderConfirmVeto();
+        if (!veto || !this.ID) return;
+
+        const refusal = await ResolveOrderConfirmRefusal(
+            veto,
+            {
+                OrderHeaderID: this.ID,
+                FromStatus: String(this.GetFieldByName('Status')?.OldValue ?? this.Status ?? ''),
+                ContextUser: this.ContextCurrentUser ?? null,
+            },
+            `Order ${this.OrderNumber ?? ''} was not confirmed.`,
+        );
+        if (!refusal) return;
+
+        result.Success = false;
+        result.Errors.push(new ValidationErrorInfo('Status', refusal, this.Status, ValidationErrorType.Failure));
     }
 
     /** The header's company and every company a line in memory sells for, without duplicates. */
