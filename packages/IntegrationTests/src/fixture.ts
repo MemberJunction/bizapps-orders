@@ -31,9 +31,10 @@
  */
 import { randomUUID } from 'node:crypto';
 import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/core';
-import type { mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
+import { OrdersEngine, type mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
+import { ORDERS_SETTING, OrdersSettings } from '@mj-biz-apps/orders-core-entities-server';
 import { LoadWorld } from './world/load-world.js';
 import { SetWorld } from './world/world.js';
 import { FindId, FindRows, Quote } from './world/entity-io.js';
@@ -239,6 +240,12 @@ const provider = (ctx: IntegrationCheckContext) =>
  * A check that fails still rolls back (the rollback is in `finally`), so one failure never poisons
  * the checks after it. The body's own error propagates so the driver reports the real failure and
  * not a teardown artifact.
+ *
+ * The rollback restores the database but not `OrdersEngine`, which caught every product, price,
+ * category and type a check saved and still holds it afterwards. So the whole engine is reloaded
+ * after each rollback: reloading only the prices left a product or category one check changed as
+ * the cached row every later check was judged against, which made checks pass or fail depending on
+ * which bundles ran before them.
  */
 export async function InRolledBackTransaction(
     ctx: IntegrationCheckContext,
@@ -250,6 +257,12 @@ export async function InRolledBackTransaction(
         await body();
     } finally {
         try {
+            // A trigger that refused a write has already rolled the transaction back on the server.
+            // mssql marks it `_aborted` but leaves its last request recorded as active, and from 6.1.4
+            // MJ waits on that request before rolling back and then throws "still in flight" rather
+            // than reaching mssql's "Transaction has been aborted". So an aborted transaction is
+            // recognised here, before the rollback is attempted.
+            if (transactionAborted(p)) throw new Error('Transaction has been aborted.');
             await p.RollbackTransaction();
         } catch (e) {
             // "Transaction has been aborted" means SQL Server already rolled it back — a
@@ -264,7 +277,20 @@ export async function InRolledBackTransaction(
             if (!aborted) throw e;
             resetTransactionState(p);
         }
+        await ReloadOrdersEngine(ctx);
     }
+}
+
+/**
+ * Reload every `OrdersEngine` item from the database, reading on the check's own connection.
+ *
+ * Call it after writing cached rows with raw SQL, which fires no entity event, so the engine never
+ * sees the write. The read goes through `ctx.Provider` because inside a check that is the
+ * connection holding the transaction: a read on any other connection would block on the
+ * transaction's own locks.
+ */
+export async function ReloadOrdersEngine(ctx: IntegrationCheckContext): Promise<void> {
+    await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
 }
 
 /**
@@ -274,6 +300,10 @@ export async function InRolledBackTransaction(
  * poisoning every check after it. Prefer {@link OutsideTransaction} for checks that EXPECT to
  * trigger a database guard; this is the safety net, not the plan.
  */
+function transactionAborted(p: unknown): boolean {
+    return (p as { _transaction?: { _aborted?: boolean } | null })._transaction?._aborted === true;
+}
+
 function resetTransactionState(p: unknown): void {
     const internals = p as { _transaction?: unknown; _transactionDepth?: number; _savepointStack?: unknown[] };
     internals._transaction = null;
@@ -372,6 +402,9 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             SubFiscal: requireProduct('SubFiscal'),
             SubSeat: requireProduct('SubSeat'),
             SubMonthly: requireProduct('SubMonthly'),
+            /** Two bands of one offering (subscription family MEM-TIER) on an ExtendExisting type. */
+            SubTierStandard: requireProduct('SubTierStandard'),
+            SubTierPremium: requireProduct('SubTierPremium'),
             EventTicket: requireProduct('EventTicket'),
             EventTicketB: requireProduct('EventTicketB'),
         },
@@ -958,6 +991,9 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
             (SELECT ID FROM ${ORDERS_SCHEMA}.ProductEntitlement WHERE ProductID IN
                 (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies})))`,
 
+        // Concessions point at the order, a line and a term, so they go before any of those.
+        `DELETE FROM ${ORDERS_SCHEMA}.OrderConcession WHERE OrderHeaderID IN (${orderScope})`,
+
         // Money DETAIL that hangs off the lines — price components, adjustments and charges with
         // their allocations. These are what a line is made of, so they go before it.
         `DELETE FROM ${ORDERS_SCHEMA}.OrderLinePriceComponent WHERE OrderLineID IN
@@ -1070,4 +1106,33 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
     ];
 
+}
+
+/**
+ * Configure who acknowledges an amendment, for the check that is running (bc-aidp-next-golive#221).
+ *
+ * An approved Duration concession extends its term and assigns accounting a task to confirm the re-cut, and
+ * is refused when no one but the requester holds the acknowledgment role. So this names a role the context
+ * user LACKS and some other active user holds — giving one a holder inside the caller's rolled-back
+ * transaction when none has — and points the setting at it. The override lasts until a bundle's teardown
+ * clears it; the holder rolls back with the check.
+ */
+export async function AcknowledgeAmendmentsWith(ctx: IntegrationCheckContext): Promise<{ RoleID: string; RoleName: string; HolderID: string }> {
+    const lacks = `NOT EXISTS (SELECT 1 FROM __mj.UserRole mine WHERE mine.RoleID = r.ID AND mine.UserID = '${ctx.User.ID}')`;
+    const held = await TxQuery<{ RoleID: string; RoleName: string; HolderID: string }>(ctx,
+        `SELECT TOP 1 r.ID AS RoleID, r.Name AS RoleName, ur.UserID AS HolderID
+           FROM __mj.Role r
+           JOIN __mj.UserRole ur ON ur.RoleID = r.ID
+           JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1
+          WHERE ur.UserID <> '${ctx.User.ID}' AND ${lacks}`);
+    let found = held[0];
+    if (!found) {
+        const role = await TxOne<{ ID: string; Name: string }>(ctx, `SELECT TOP 1 r.ID, r.Name FROM __mj.Role r WHERE ${lacks}`);
+        const other = await TxOne<{ ID: string }>(ctx, `SELECT TOP 1 ID FROM __mj.[User] WHERE IsActive = 1 AND ID <> '${ctx.User.ID}'`);
+        Assert(role?.ID != null && other?.ID != null, 'no role and second active user to acknowledge amendments with');
+        await createViaEntity(ctx, 'MJ: User Roles', { UserID: other.ID, RoleID: role.ID });
+        found = { RoleID: role.ID, RoleName: role.Name, HolderID: other.ID };
+    }
+    OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, found.RoleName);
+    return found;
 }

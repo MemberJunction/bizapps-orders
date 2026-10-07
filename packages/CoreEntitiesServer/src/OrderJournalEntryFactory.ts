@@ -71,7 +71,7 @@ import {
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
-import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { ScheduleCoverage, ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import {
     BuildCreditMemoLines,
     ProratedCreditMemo,
@@ -89,6 +89,7 @@ import {
     GLAccountResolver,
     GLAccountResolutionError,
     IsRoleNotLinked,
+    RefuseUntaggedLines,
     UnbilledReceivableNotLinkedError,
     type GLRole,
 } from './GLAccountResolver.js';
@@ -433,32 +434,43 @@ export class OrderJournalEntryFactory {
         const dimensions = await this.loadLineDimensions(lines.map((l) => l.ID));
         const effectiveDate = await this.effectiveDateOf(order);
         const asOf = new Date(effectiveDate);
-        const scheduledCompanies = ScheduledCompanyIDs(scheduleRows ?? []);
+        const lineCompanies = [...new Set(lines.map((l) => String(l.CompanyID ?? '').toLowerCase()))];
+        const scheduledCompanies = ScheduledCompanyIDs(scheduleRows ?? [], String(order.CompanyID ?? ''), lineCompanies);
 
         // The tie check (OrderEntityServer.verifyScheduleTies) already refuses a confirm whose
-        // schedule names a company with no lines. Assert it here anyway: if it were ever false, a
-        // company's whole value would silently never reach the ledger — no confirm entry because it
-        // is scheduled, and no invoice entry because it has no lines to slice.
-        const lineCompanies = new Set(lines.map((l) => String(l.CompanyID ?? '').toLowerCase()));
-        for (const scheduled of scheduledCompanies) {
-            if (!lineCompanies.has(scheduled)) {
+        // schedule has rows covering no lines. Assert it here anyway: if it were ever false, those
+        // rows' value would silently never reach the ledger — no confirm entry because they are
+        // scheduled, and no invoice entry because they have no lines to slice.
+        const coverage = ScheduleCoverage(scheduleRows ?? [], lineCompanies, String(order.CompanyID ?? ''));
+        const covering = new Set(coverage.values());
+        for (const row of scheduleRows ?? []) {
+            if (row.Status === 'Canceled') continue;
+            const company = String(row.CompanyID).toLowerCase();
+            if (!covering.has(company)) {
                 throw new Error(
-                    `Order ${order.OrderNumber} has payment schedule rows for company ${scheduled}, ` +
-                        `which has no lines on this order. Nothing would ever book for it.`,
+                    `Order ${order.OrderNumber} has payment schedule rows for company ${company}, ` +
+                        `which covers no lines on this order. Nothing would ever book for them.`,
                 );
             }
         }
 
         const drafts: OrderLineDraft[] = [];
         for (const line of lines) {
-            drafts.push(
-                ...(await this.buildLineDrafts(
-                    order, line, products, revRecTypes, dimensions, effectiveDate, asOf, giftCardTypeIDs,
-                    scheduledCompanies,
-                    termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
-                    creditMemoByLine?.get(String(line.ID)),
-                )),
+            this._resolver.TakeResolved();
+            const lineDrafts = await this.buildLineDrafts(
+                order, line, products, revRecTypes, dimensions, effectiveDate, asOf, giftCardTypeIDs,
+                scheduledCompanies,
+                termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
+                creditMemoByLine?.get(String(line.ID)),
             );
+            // A LINK THAT REQUIRES A DIMENSION IS OBEYED HERE (#417), on the finished lines, after
+            // Dimension Defaults, derived tags and the line's own tag have all been merged.
+            RefuseUntaggedLines(
+                `Order ${order.OrderNumber} line ${line.LineNumber}`,
+                this._resolver.TakeResolved(),
+                lineDrafts.flatMap((d) => d.Draft.Lines),
+            );
+            drafts.push(...lineDrafts);
         }
         return drafts;
     }
@@ -1045,6 +1057,7 @@ export class OrderJournalEntryFactory {
         }
         const companyID = line.CompanyID ?? product.CompanyID;
         const asOf = new Date(measurementDate);
+        this._resolver.TakeResolved();
         const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
             this._resolver.Resolve(role, product.ID, product.ProductCategoryID, companyID, asOf, product.ProductTypeID);
         const lineDims = MergeLineDimensions(
@@ -1126,6 +1139,7 @@ export class OrderJournalEntryFactory {
             { GLAccountID: await resolve(GL_ROLE.Sales), CreditAmount: salesCredit, Description: `Revenue — ${product.Name}`, Dimensions: lineDims },
         ]);
         this.assertBalanced(lines, order, line, 'progress recognition');
+        RefuseUntaggedLines(`Order ${order.OrderNumber} line ${line.LineNumber}`, this._resolver.TakeResolved(), lines);
 
         return {
             EffectiveDate: measurementDate,
@@ -1185,7 +1199,8 @@ export class OrderJournalEntryFactory {
     }
 
     private async loadProducts(productIDs: string[]): Promise<Map<string, ProductRow>> {
-        await LoadOrdersEngine(this._provider, this._contextUser);
+        // Reloaded once on a miss (golive #301); a product still missing fails the line build by name.
+        await OrdersEngine.Instance.EnsureProducts(productIDs, this._contextUser, this._provider);
         const out = new Map<string, ProductRow>();
         for (const id of productIDs) {
             const p = OrdersEngine.Instance.ProductByID(id);

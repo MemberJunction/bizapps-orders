@@ -7,11 +7,16 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+    AccessOverrideCanApply,
+    ApplyAccessOverrides,
     DecideGrantStatus,
     FirstPaymentAmount,
     InitialGrantStatus,
     IsPaymentSuspension,
+    ReadTimeCutoffSuspension,
+    ReadTimeWaiverExpirySuspension,
     ReconcileGrantStatus,
+    ResolveAccessOverrideOutcome,
     type OrderPaymentFacts,
 } from '../EntitlementBehavior.js';
 
@@ -176,6 +181,28 @@ describe('DecideGrantStatus — the other timings are unchanged by renewal or cu
     });
 });
 
+describe('DecideGrantStatus — OnPaidInFull, paid after confirm (#296)', () => {
+    // A checkout confirms before it captures, so the grant is born held and a later payment must release it.
+    const held = { Status: 'Suspended', SuspensionReason: 'AwaitingPayment' };
+
+    it('is held at confirm, before any payment', () => {
+        expect(DecideGrantStatus('OnPaidInFull', false, order(), 14)).toEqual({ Status: 'Suspended', Reason: 'AwaitingPayment' });
+    });
+
+    it('stays held through a part-payment, even one that covers the first instalment', () => {
+        const part = order({ AmountPaid: 400, Balance: 800, FirstPaymentAmount: 400 });
+        const decided = DecideGrantStatus('OnPaidInFull', false, part, 14);
+        expect(decided).toEqual({ Status: 'Suspended', Reason: 'AwaitingPayment' });
+        expect(ReconcileGrantStatus(held, decided)).toBeNull();
+    });
+
+    it('is released by the payment that clears the balance', () => {
+        const decided = DecideGrantStatus('OnPaidInFull', false, order({ AmountPaid: 1200, Balance: 0 }), 14);
+        expect(decided).toEqual({ Status: 'Active', Reason: null });
+        expect(ReconcileGrantStatus(held, decided)).toEqual({ Status: 'Active', Reason: null });
+    });
+});
+
 describe('ReconcileGrantStatus — which grants a payment may move', () => {
     const active = { Status: 'Active', Reason: null } as const;
     const pastDue = { Status: 'Suspended', Reason: 'PastDue' } as const;
@@ -216,5 +243,180 @@ describe('IsPaymentSuspension', () => {
         expect(IsPaymentSuspension({ Status: 'Suspended', SuspensionReason: 'AwaitingActivation' })).toBe(false);
         expect(IsPaymentSuspension({ Status: 'Suspended', SuspensionReason: null })).toBe(false);
         expect(IsPaymentSuspension({ Status: 'Active', SuspensionReason: null })).toBe(false);
+    });
+});
+
+describe('ApplyAccessOverrides', () => {
+    const active = { Status: 'Active', Reason: null } as const;
+    const awaiting = { Status: 'Suspended', Reason: 'AwaitingPayment' } as const;
+    const pastDue = { Status: 'Suspended', Reason: 'PastDue' } as const;
+    const waive = { OverrideType: 'WaivePaymentHold', EffectiveThrough: '2026-10-31' } as const;
+    const defer = { OverrideType: 'DeferCutoff', EffectiveThrough: '2026-10-31' } as const;
+
+    it('lifts only the suspension its type names', () => {
+        expect(ApplyAccessOverrides(awaiting, [waive], '2026-10-01')).toEqual(active);
+        expect(ApplyAccessOverrides(pastDue, [defer], '2026-10-01')).toEqual(active);
+        expect(ApplyAccessOverrides(awaiting, [defer], '2026-10-01')).toEqual(awaiting);
+        expect(ApplyAccessOverrides(pastDue, [waive], '2026-10-01')).toEqual(pastDue);
+    });
+
+    it('holds through its last day and not after', () => {
+        expect(ApplyAccessOverrides(pastDue, [defer], '2026-10-31')).toEqual(active);
+        expect(ApplyAccessOverrides(pastDue, [defer], '2026-11-01')).toEqual(pastDue);
+    });
+
+    it('leaves an Active decision and a non-payment suspension alone', () => {
+        expect(ApplyAccessOverrides(active, [waive, defer], '2026-10-01')).toEqual(active);
+        const activation = { Status: 'Suspended', Reason: 'AwaitingActivation' } as const;
+        expect(ApplyAccessOverrides(activation, [waive, defer], '2026-10-01')).toEqual(activation);
+    });
+
+    it('is the payment rule when there is no override', () => {
+        expect(ApplyAccessOverrides(pastDue, [], '2026-10-01')).toEqual(pastDue);
+    });
+});
+
+describe('ReadTimeCutoffSuspension — the cutoff a read applies before the nightly job (#287)', () => {
+    const active = { Status: 'Active', GrantTimingApplied: 'OnFirstPayment' } as const;
+    const pastDue = { Status: 'Suspended', Reason: 'PastDue' } as const;
+    const defer = (through: string) => ({ OverrideType: 'DeferCutoff', EffectiveThrough: through }) as const;
+    const day = '2026-10-01';
+
+    it('suspends an Active renewal on the cutoff day, not the day before', () => {
+        expect(ReadTimeCutoffSuspension(active, true, order({ DaysPastDue: 14 }), 14, [], day)).toEqual(pastDue);
+        expect(ReadTimeCutoffSuspension(active, true, order({ DaysPastDue: 13 }), 14, [], day)).toBeNull();
+    });
+
+    it('never cuts off when the cutoff is switched off', () => {
+        expect(ReadTimeCutoffSuspension(active, true, order({ DaysPastDue: 400 }), null, [], day)).toBeNull();
+    });
+
+    it('honours an approved DeferCutoff through its last day', () => {
+        expect(ReadTimeCutoffSuspension(active, true, order({ DaysPastDue: 20 }), 14, [defer(day)], day)).toBeNull();
+        expect(ReadTimeCutoffSuspension(active, true, order({ DaysPastDue: 20 }), 14, [defer('2026-09-30')], day)).toEqual(pastDue);
+    });
+
+    it('leaves a new purchase alone: its hold is written by the payment path, not the clock', () => {
+        expect(ReadTimeCutoffSuspension(active, false, order({ DaysPastDue: 40 }), 14, [], day)).toBeNull();
+    });
+
+    it('leaves other timings alone', () => {
+        for (const timing of ['OnConfirm', 'OnPaidInFull', 'OnActivation', null]) {
+            const g = { Status: 'Active', GrantTimingApplied: timing };
+            expect(ReadTimeCutoffSuspension(g, true, order({ DaysPastDue: 40 }), 14, [], day)).toBeNull();
+        }
+    });
+
+    it('only tightens: a suspended grant whose order is paid is not restored', () => {
+        for (const status of ['Suspended', 'Revoked', 'Expired']) {
+            const g = { Status: status, GrantTimingApplied: 'OnFirstPayment' };
+            expect(ReadTimeCutoffSuspension(g, true, order({ DaysPastDue: 0, Balance: 0 }), 14, [], day)).toBeNull();
+            expect(ReadTimeCutoffSuspension(g, true, order({ DaysPastDue: 40 }), 14, [], day)).toBeNull();
+        }
+    });
+});
+
+describe('ReadTimeWaiverExpirySuspension — a lapsed waiver a read applies before the nightly job (#404)', () => {
+    const firstPayment = { Status: 'Active', GrantTimingApplied: 'OnFirstPayment' } as const;
+    const paidInFull = { Status: 'Active', GrantTimingApplied: 'OnPaidInFull' } as const;
+    const awaiting = { Status: 'Suspended', Reason: 'AwaitingPayment' } as const;
+    const waive = (through: string) => ({ OverrideType: 'WaivePaymentHold', EffectiveThrough: through }) as const;
+    const day = '2026-10-01';
+    const unpaid = order();
+    const paid = order({ AmountPaid: 1200, Balance: 0 });
+
+    for (const [label, grant] of [
+        ['a new purchase', firstPayment],
+        ['an OnPaidInFull grant', paidInFull],
+    ] as const) {
+        it(`keeps ${label} through the waiver's last day`, () => {
+            expect(ReadTimeWaiverExpirySuspension(grant, false, unpaid, [waive(day)], day)).toBeNull();
+        });
+
+        it(`suspends ${label} the day after the waiver ends, unpaid`, () => {
+            expect(ReadTimeWaiverExpirySuspension(grant, false, unpaid, [waive('2026-09-30')], day)).toEqual(awaiting);
+        });
+
+        it(`leaves ${label} Active the day after the waiver ends, once paid`, () => {
+            expect(ReadTimeWaiverExpirySuspension(grant, false, paid, [waive('2026-09-30')], day)).toBeNull();
+        });
+    }
+
+    it('keeps the grant while a later waiver is still in force', () => {
+        expect(ReadTimeWaiverExpirySuspension(firstPayment, false, unpaid, [waive('2026-09-30'), waive('2026-10-15')], day)).toBeNull();
+    });
+
+    it('does nothing without a lapsed waiver: the payment path owns that hold', () => {
+        expect(ReadTimeWaiverExpirySuspension(firstPayment, false, unpaid, [], day)).toBeNull();
+        expect(
+            ReadTimeWaiverExpirySuspension(firstPayment, false, unpaid, [{ OverrideType: 'DeferCutoff', EffectiveThrough: '2026-09-30' }], day),
+        ).toBeNull();
+    });
+
+    it('leaves an OnFirstPayment renewal to the cutoff rule', () => {
+        expect(ReadTimeWaiverExpirySuspension(firstPayment, true, unpaid, [waive('2026-09-30')], day)).toBeNull();
+    });
+
+    it('leaves timings that do not wait for payment alone', () => {
+        for (const timing of ['OnConfirm', 'OnActivation', null]) {
+            const g = { Status: 'Active', GrantTimingApplied: timing };
+            expect(ReadTimeWaiverExpirySuspension(g, false, unpaid, [waive('2026-09-30')], day)).toBeNull();
+        }
+    });
+
+    it('only tightens: a grant that is not Active is never restored', () => {
+        for (const status of ['Suspended', 'Revoked', 'Expired']) {
+            const g = { Status: status, GrantTimingApplied: 'OnFirstPayment' };
+            expect(ReadTimeWaiverExpirySuspension(g, false, paid, [waive('2026-09-30')], day)).toBeNull();
+            expect(ReadTimeWaiverExpirySuspension(g, false, unpaid, [waive('2026-09-30')], day)).toBeNull();
+        }
+    });
+});
+
+describe('ResolveAccessOverrideOutcome', () => {
+    const approve = { IsApproval: true };
+    const reject = { IsApproval: false };
+
+    it('leaves the override alone while the task is open or blocked', () => {
+        for (const TaskStatus of ['Open', 'InProgress', 'Blocked']) {
+            expect(ResolveAccessOverrideOutcome({ TaskStatus, Decision: approve })).toBeNull();
+        }
+    });
+
+    it('approves on a completed task with an approving decision', () => {
+        expect(ResolveAccessOverrideOutcome({ TaskStatus: 'Completed', Decision: approve })).toBe('Approved');
+    });
+
+    it('rejects on a cancelled task with a rejecting decision', () => {
+        expect(ResolveAccessOverrideOutcome({ TaskStatus: 'Cancelled', Decision: reject })).toBe('Rejected');
+    });
+
+    it('withdraws a task closed without a matching decision, so the order is freed', () => {
+        expect(ResolveAccessOverrideOutcome({ TaskStatus: 'Cancelled', Decision: null })).toBe('Withdrawn');
+        expect(ResolveAccessOverrideOutcome({ TaskStatus: 'Completed', Decision: null })).toBe('Withdrawn');
+        expect(ResolveAccessOverrideOutcome({ TaskStatus: 'Completed', Decision: reject })).toBe('Withdrawn');
+        expect(ResolveAccessOverrideOutcome({ TaskStatus: 'Cancelled', Decision: approve })).toBe('Withdrawn');
+    });
+});
+
+describe('AccessOverrideCanApply', () => {
+    const newFirst = { Timing: 'OnFirstPayment', IsRenewal: false } as const;
+    const renewalFirst = { Timing: 'OnFirstPayment', IsRenewal: true } as const;
+    const paidInFull = { Timing: 'OnPaidInFull', IsRenewal: true } as const;
+
+    it('waives a hold only where a grant waits for payment', () => {
+        expect(AccessOverrideCanApply('WaivePaymentHold', [newFirst])).toBe(true);
+        expect(AccessOverrideCanApply('WaivePaymentHold', [paidInFull])).toBe(true);
+        expect(AccessOverrideCanApply('WaivePaymentHold', [renewalFirst])).toBe(false);
+    });
+
+    it('defers a cutoff only on an OnFirstPayment renewal', () => {
+        expect(AccessOverrideCanApply('DeferCutoff', [renewalFirst])).toBe(true);
+        expect(AccessOverrideCanApply('DeferCutoff', [newFirst, paidInFull])).toBe(false);
+    });
+
+    it('applies to nothing on an order with no payment-gated grants', () => {
+        expect(AccessOverrideCanApply('WaivePaymentHold', [])).toBe(false);
+        expect(AccessOverrideCanApply('DeferCutoff', [])).toBe(false);
     });
 });

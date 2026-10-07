@@ -15,16 +15,23 @@
  *     payment-suspended grant, so a payment written by a path that did not call the hook is caught
  *     within a day rather than never.
  *
+ * APPROVED EXCEPTIONS (bizapps-orders#268). An approved, unexpired `EntitlementAccessOverride` on a
+ * grant's order answers Active in place of the suspension it names — see
+ * `ApplyAccessOverrides`. The nightly pass also picks up orders whose overrides have run out, re-decides
+ * their grants without them, and marks those overrides Expired.
+ *
  * WHAT IT WILL NOT TOUCH. Grants written before `GrantTimingApplied` existed (NULL), grants whose
  * timing does not follow cash, revoked or expired grants, and grants suspended for a reason that is
  * not a payment reason. See `ReconcileGrantStatus`.
  *
  * CONNECTS TO:
- *   PURE:     ./EntitlementBehavior.ts (DecideGrantStatus, FirstPaymentAmount, ReconcileGrantStatus)
+ *   PURE:     ./EntitlementBehavior.ts (DecideGrantStatus, ApplyAccessOverrides, FirstPaymentAmount,
+ *             ReconcileGrantStatus)
  *   RULE:     @mj-biz-apps/orders-entities overdue.ts (DaysOverdue — the one definition of overdue)
  *   SETTING:  OrdersSettings.RenewalAccessCutoffDaysPastDue
  *   CALLERS:  PaymentHeaderEntityServer.Save, OrderEntityServer.grantEntitlements,
- *             packages/Server/src/custom/enforce-payment-gated-access.action.ts
+ *             packages/Server/src/custom/enforce-payment-gated-access.action.ts,
+ *             ./EntitlementRead.ts (LoadReadTimePaymentSuspensions)
  */
 import {
     CompositeKey,
@@ -36,18 +43,25 @@ import {
     RunView,
     UserInfo,
 } from '@memberjunction/core';
-import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { BusinessTimeZoneEngine, CalendarDayIn } from '@mj-biz-apps/common-entities';
 import {
     DaysOverdue,
     OverdueFilter,
     ToISODate,
+    mjBizAppsOrdersEntitlementAccessOverrideEntity,
     mjBizAppsOrdersEntitlementGrantEntity,
 } from '@mj-biz-apps/orders-entities';
 import {
+    ApplyAccessOverrides,
     DecideGrantStatus,
     FirstPaymentAmount,
     PAYMENT_GATED_TIMINGS,
+    ReadTimeCutoffSuspension,
+    ReadTimeWaiverExpirySuspension,
     ReconcileGrantStatus,
+    type AccessOverrideFacts,
+    type AccessOverrideType,
+    type GrantStatusDecision,
     type GrantTiming,
     type OrderPaymentFacts,
     type FirstPaymentScheduleRow,
@@ -59,6 +73,7 @@ import { RequireDate, RequireUUID } from './sql-guards.js';
 
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
+export const ACCESS_OVERRIDE_ENTITY = 'MJ_BizApps_Orders: Entitlement Access Overrides';
 
 const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 const quote = (ids: string[], label: string): string =>
@@ -186,6 +201,41 @@ export async function LoadOrderPaymentFacts(
     return out;
 }
 
+/**
+ * The approved overrides on these orders, keyed by order. Expiry is not filtered here:
+ * `ApplyAccessOverrides` compares `EffectiveThrough` with the day being decided, so an override that
+ * ran out yesterday is ignored even before the nightly pass marks it Expired.
+ */
+export async function LoadApprovedAccessOverrides(
+    orderIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, AccessOverrideFacts[]>> {
+    const out = new Map<string, AccessOverrideFacts[]>();
+    const unique = [...new Set(orderIDs.filter(Boolean).map(key))];
+    if (!unique.length) return out;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<{ OrderHeaderID: string; OverrideType: AccessOverrideType; EffectiveThrough: unknown }>(
+        {
+            EntityName: ACCESS_OVERRIDE_ENTITY,
+            ExtraFilter: `Status = 'Approved' AND OrderHeaderID IN (${quote(unique, 'OrderHeaderID')})`,
+            Fields: ['OrderHeaderID', 'OverrideType', 'EffectiveThrough'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!res.Success) throw new Error(`Could not read access overrides: ${res.ErrorMessage}`);
+    for (const row of res.Results ?? []) {
+        const through = ToISODate(row.EffectiveThrough);
+        if (!through) continue;
+        const list = out.get(key(row.OrderHeaderID)) ?? [];
+        list.push({ OverrideType: row.OverrideType, EffectiveThrough: through });
+        out.set(key(row.OrderHeaderID), list);
+    }
+    return out;
+}
+
 /** The business day, with the time zone engine loaded so it is the business zone's day. */
 export async function BusinessDay(provider: IMetadataProvider, user: UserInfo): Promise<string> {
     await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
@@ -258,6 +308,7 @@ export async function ReconcilePaymentGatedGrants(
     const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
     const asOf = options.AsOfDay ?? (await BusinessDay(provider, user));
     const facts = await LoadOrderPaymentFacts(unique, provider, user, asOf);
+    const overrides = await LoadApprovedAccessOverrides(unique, provider, user);
 
     const changes: GrantStatusChange[] = [];
     for (const g of grantRows) {
@@ -265,7 +316,11 @@ export async function ReconcilePaymentGatedGrants(
         const order = line ? facts.get(key(line.OrderHeaderID)) : undefined;
         if (!line || !order) continue;
 
-        const decided = DecideGrantStatus(g.GrantTimingApplied, !!line.RenewsSubscriptionID, order, cutoff);
+        const decided = ApplyAccessOverrides(
+            DecideGrantStatus(g.GrantTimingApplied, !!line.RenewsSubscriptionID, order, cutoff),
+            overrides.get(key(line.OrderHeaderID)) ?? [],
+            asOf,
+        );
         const change = ReconcileGrantStatus(g, decided);
         if (!change) continue;
 
@@ -283,6 +338,91 @@ export async function ReconcilePaymentGatedGrants(
         });
     }
     return changes;
+}
+
+/** A grant the entitlement read path is evaluating, with what is needed to find its order. */
+export interface ReadTimeGrant {
+    ID: string;
+    Status: string;
+    OrderLineID: string | null;
+    GrantTimingApplied: string | null;
+}
+
+/**
+ * The payment suspensions these grants have reached that the nightly job has not written yet,
+ * keyed by lowercased grant ID. Two kinds, each decided as the job would decide it:
+ *
+ *   · a renewal past its cutoff (#287) — see `ReadTimeCutoffSuspension`;
+ *   · a new purchase, or an `OnPaidInFull` grant, whose `WaivePaymentHold` has run out unpaid (#404)
+ *     — see `ReadTimeWaiverExpirySuspension`.
+ *
+ * Only Active `OnFirstPayment` and `OnPaidInFull` grants are candidates; every other grant costs no
+ * query. One order-line query keeps only the lines either rule can reach — renewal lines while the
+ * cutoff is on, and lines on orders holding an Approved `WaivePaymentHold` whose last day has passed —
+ * so a read with neither costs nothing more. Payment facts and approved overrides are then read once
+ * for those orders. Days are counted on `asOf`'s business-time-zone day, the day the nightly job uses.
+ * Payment facts are read as they stand now, so a historical `asOf` is measured on today's balance.
+ *
+ * Throws on a failed read; the caller fails closed.
+ */
+export async function LoadReadTimePaymentSuspensions(
+    grants: ReadTimeGrant[],
+    asOf: Date,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, GrantStatusDecision>> {
+    const out = new Map<string, GrantStatusDecision>();
+    const candidates = grants.filter(
+        (g) =>
+            g.Status === 'Active' &&
+            (g.GrantTimingApplied === 'OnFirstPayment' || g.GrantTimingApplied === 'OnPaidInFull') &&
+            !!g.OrderLineID,
+    );
+    if (!candidates.length) return out;
+
+    await OrdersSettings.Load(provider, user);
+    const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+    const asOfDay = CalendarDayIn(asOf, BusinessTimeZoneEngine.Instance.Zone);
+
+    const lapsedWaiver =
+        `OrderHeaderID IN (SELECT OrderHeaderID FROM __mj_BizAppsOrders.EntitlementAccessOverride ` +
+        `WHERE Status = 'Approved' AND OverrideType = 'WaivePaymentHold' ` +
+        `AND EffectiveThrough < '${RequireDate(asOfDay, 'AsOfDay')}')`;
+    const reachable = cutoff == null ? lapsedWaiver : `(RenewsSubscriptionID IS NOT NULL OR ${lapsedWaiver})`;
+
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const lines = await rv.RunView<{ ID: string; OrderHeaderID: string; RenewsSubscriptionID: string | null }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `ID IN (${quote(candidates.map((g) => g.OrderLineID!), 'OrderLineID')}) AND ${reachable}`,
+            Fields: ['ID', 'OrderHeaderID', 'RenewsSubscriptionID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!lines.Success) throw new Error(`Could not read order lines for access decisions: ${lines.ErrorMessage}`);
+    const lineByID = new Map((lines.Results ?? []).map((l) => [key(l.ID), l]));
+    if (!lineByID.size) return out;
+
+    const orderIDs = [...new Set([...lineByID.values()].map((l) => key(l.OrderHeaderID)))];
+    const facts = await LoadOrderPaymentFacts(orderIDs, provider, user, asOfDay);
+    const overrides = await LoadApprovedAccessOverrides(orderIDs, provider, user);
+
+    for (const g of candidates) {
+        const line = lineByID.get(key(g.OrderLineID));
+        const order = line ? facts.get(key(line.OrderHeaderID)) : undefined;
+        if (!line || !order) continue;
+        const isRenewal = !!line.RenewsSubscriptionID;
+        const orderOverrides = overrides.get(key(line.OrderHeaderID)) ?? [];
+        const pending =
+            g.GrantTimingApplied === 'OnFirstPayment' && isRenewal
+                ? ReadTimeCutoffSuspension(g, true, order, cutoff, orderOverrides, asOfDay)
+                : ReadTimeWaiverExpirySuspension(g, isRenewal, order, orderOverrides, asOfDay);
+        if (pending) out.set(key(g.ID), pending);
+    }
+    return out;
 }
 
 async function writeGrantStatus(
@@ -327,6 +467,8 @@ export interface EnforcePaymentGatedAccessOutput {
     Activated: number;
     Suspended: number;
     Changes: GrantStatusChange[];
+    /** Approved overrides whose last day had passed, re-decided without and marked Expired. None on a preview. */
+    OverridesExpired: number;
     /** Orders whose re-decision failed. Each was rolled back on its own; the rest of the pass stands. */
     Failures: Array<{ OrderID: string; Error: string }>;
 }
@@ -335,11 +477,14 @@ export interface EnforcePaymentGatedAccessOutput {
  * The nightly pass: cut off renewals that have gone past the cutoff, and restore anything whose
  * payment has since arrived.
  *
- * CANDIDATES, not every order. Two sets:
+ * CANDIDATES, not every order. Three sets:
  *   · orders holding a grant suspended for a payment reason — the ones cash may have released;
  *   · overdue orders holding an Active `OnFirstPayment` grant on a renewal line — the ones the
- *     clock may have cut off. A new purchase's Active grant is not a candidate: the clock cannot
- *     change its answer, only a payment can, and the payment path handles that.
+ *     clock may have cut off. A new purchase's Active grant is otherwise not a candidate: the clock
+ *     cannot change its answer, only a payment can, and the payment path handles that;
+ *   · orders with an Approved access override whose last day has passed — the one case where the
+ *     clock does change a new purchase's answer. Their grants are re-decided without the override,
+ *     and the override is marked Expired in the same transaction, so it is not picked up again.
  *
  * Each order is re-decided in its own transaction, so one failure does not undo the others and a
  * half-written order cannot happen.
@@ -364,6 +509,7 @@ export async function EnforcePaymentGatedAccess(
         Activated: 0,
         Suspended: 0,
         Changes: [],
+        OverridesExpired: 0,
         Failures: [],
     };
 
@@ -376,8 +522,10 @@ export async function EnforcePaymentGatedAccess(
             }
             await dbProvider.BeginTransaction();
             const changes = await ReconcilePaymentGatedGrants([orderID], provider, user, { AsOfDay: asOf });
+            const expired = await expireAccessOverrides(orderID, asOf, provider, user);
             await dbProvider.CommitTransaction();
             out.Changes.push(...changes);
+            out.OverridesExpired += expired;
         } catch (err) {
             if (!input.Preview) {
                 try {
@@ -397,6 +545,7 @@ export async function EnforcePaymentGatedAccess(
     out.Message =
         `${out.Changes.length} grant(s) ${verb} across ${selected.length} order(s): ` +
         `${out.Activated} to Active, ${out.Suspended} to Suspended` +
+        (out.OverridesExpired ? `; ${out.OverridesExpired} access override(s) expired` : '') +
         (out.Failures.length ? `; ${out.Failures.length} order(s) failed` : '') +
         (selected.length < candidates.length ? `; ${candidates.length - selected.length} order(s) left for the next pass` : '') +
         '.';
@@ -405,7 +554,7 @@ export async function EnforcePaymentGatedAccess(
 
 async function findCandidateOrders(asOf: string, provider: IMetadataProvider, user: UserInfo): Promise<string[]> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const [suspendedLines, overdueRenewals] = await Promise.all([
+    const [suspendedLines, overdueRenewals, lapsedOverrides] = await Promise.all([
         rv.RunView<{ OrderLineID: string }>(
             {
                 EntityName: ENTITLEMENT_GRANT_ENTITY,
@@ -434,11 +583,25 @@ async function findCandidateOrders(asOf: string, provider: IMetadataProvider, us
             },
             user,
         ),
+        rv.RunView<{ OrderHeaderID: string }>(
+            {
+                EntityName: ACCESS_OVERRIDE_ENTITY,
+                ExtraFilter: `Status = 'Approved' AND EffectiveThrough < '${RequireDate(asOf, 'AsOfDate')}'`,
+                Fields: ['OrderHeaderID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        ),
     ]);
     if (!suspendedLines.Success) throw new Error(`Could not read suspended grants: ${suspendedLines.ErrorMessage}`);
     if (!overdueRenewals.Success) throw new Error(`Could not read overdue renewals: ${overdueRenewals.ErrorMessage}`);
+    if (!lapsedOverrides.Success) throw new Error(`Could not read lapsed access overrides: ${lapsedOverrides.ErrorMessage}`);
 
-    const orderIDs = new Set((overdueRenewals.Results ?? []).map((o) => key(o.ID)));
+    const orderIDs = new Set([
+        ...(overdueRenewals.Results ?? []).map((o) => key(o.ID)),
+        ...(lapsedOverrides.Results ?? []).map((o) => key(o.OrderHeaderID)),
+    ]);
     const lineIDs = [...new Set((suspendedLines.Results ?? []).map((g) => g.OrderLineID).filter(Boolean))];
     if (lineIDs.length) {
         const lines = await rv.RunView<{ OrderHeaderID: string }>(
@@ -454,4 +617,34 @@ async function findCandidateOrders(asOf: string, provider: IMetadataProvider, us
         for (const l of lines.Results ?? []) orderIDs.add(key(l.OrderHeaderID));
     }
     return [...orderIDs];
+}
+
+/**
+ * Mark Expired the Approved overrides on this order whose last day is before `asOf`. Runs
+ * after the order's grants have been re-decided — which already ignored them — and in the same
+ * transaction, so an override is never marked Expired while its grants still stand on it.
+ */
+async function expireAccessOverrides(orderID: string, asOf: string, provider: IMetadataProvider, user: UserInfo): Promise<number> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<mjBizAppsOrdersEntitlementAccessOverrideEntity>(
+        {
+            EntityName: ACCESS_OVERRIDE_ENTITY,
+            ExtraFilter:
+                `Status = 'Approved' AND EffectiveThrough < '${RequireDate(asOf, 'AsOfDate')}' ` +
+                `AND OrderHeaderID = '${RequireUUID(orderID, 'OrderHeaderID')}'`,
+            ResultType: 'entity_object',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!res.Success) throw new Error(`Could not read lapsed access overrides for order ${orderID}: ${res.ErrorMessage}`);
+    for (const override of res.Results ?? []) {
+        override.Status = 'Expired';
+        if (!(await override.Save())) {
+            throw new Error(
+                `Failed to expire access override ${override.ID}: ${override.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+    }
+    return res.Results?.length ?? 0;
 }

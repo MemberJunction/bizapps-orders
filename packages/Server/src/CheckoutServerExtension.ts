@@ -52,7 +52,7 @@
  */
 import BodyParser from 'body-parser';
 import type { Application, NextFunction, Request, Response } from 'express';
-import { LogError, LogStatus, RunView, UserInfo } from '@memberjunction/core';
+import { LogError, LogStatus, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { UserCache } from '@memberjunction/generic-database-provider';
 import { RegisterClass } from '@memberjunction/global';
 import {
@@ -61,8 +61,18 @@ import {
     type ExtensionInitResult,
     type ServerExtensionConfig,
 } from '@memberjunction/server-extensions-core';
-import { CheckoutSessionService, EscapeText, type CheckoutLineInput } from '@mj-biz-apps/orders-core-entities-server';
-import type { CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
+import {
+    CheckoutSessionService,
+    DispatchOutboundDeliveries,
+    EnsureCheckoutAccount,
+    EscapeText,
+    GetCheckoutAccessStatus,
+    HasCheckoutAccountStep,
+    SetCheckoutAccountPassword,
+    type CheckoutBillingAddressInput,
+    type CheckoutLineInput,
+} from '@mj-biz-apps/orders-core-entities-server';
+import type { CheckoutAnswersInput, CheckoutChoicesInput, CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -209,6 +219,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
             [`${root}/draft`, (req, res) => this.handleDraft(req, res)],
             [`${root}/payment-intent`, (req, res) => this.handlePaymentIntent(req, res)],
             [`${root}/complete`, (req, res) => this.handleComplete(req, res)],
+            [`${root}/account`, (req, res) => this.handleAccount(req, res)],
+            [`${root}/account/password`, (req, res) => this.handleAccountPassword(req, res)],
+            [`${root}/access-status`, (req, res) => this.handleAccessStatus(req, res)],
         ];
 
         for (const [path, handler] of routes) {
@@ -224,7 +237,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const hostPath = `${root}/:slug`;
         app.get(hostPath, (req: Request, res: Response) => this.handleGetHost(req, res));
 
-        LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete}`);
+        LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete,account,account/password,access-status}`);
         return {
             Success: true,
             Message: 'Orders anonymous checkout edge mounted (public GET host, rate-limited POSTs, origin-gated, optional Turnstile).',
@@ -255,7 +268,10 @@ export class CheckoutServerExtension extends BaseServerExtension {
             const ip = this.clientIp(req);
             const slug = typeof req.body?.slug === 'string' ? req.body.slug : '';
             const globalMax = this.settings.RateLimitMaxGlobal ?? DEFAULT_RATE_MAX_GLOBAL;
-            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(`${ip}|${slug}`)) {
+            // The success screen polls access-status for up to a minute. It counts in its own window
+            // so that polling cannot use up the per-slug allowance the buyer's password step needs.
+            const bucket = req.path?.endsWith('/access-status') ? `${ip}|access-status|${slug}` : `${ip}|${slug}`;
+            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(bucket)) {
                 res.status(429).json({ Success: false, ErrorMessage: 'Too many requests — slow down and try again shortly.' });
                 return;
             }
@@ -552,7 +568,23 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
         const email = typeof req.body?.email === 'string' ? req.body.email : '';
         const lines = Array.isArray(req.body?.lines) ? (req.body.lines as CheckoutLineInput[]) : [];
-        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user);
+        // Shape-checked by the service (CheckBillingLocation); anything that is not an object is absent.
+        const rawAddress: unknown = req.body?.billingAddress;
+        const billingAddress = rawAddress && typeof rawAddress === 'object' && !Array.isArray(rawAddress)
+            ? (rawAddress as CheckoutBillingAddressInput)
+            : null;
+        // Passed through unchecked: UpdateDraft keeps the attribution only when it reads as one, and
+        // judges the answers and choices against the widget's own questions and choice groups. The
+        // member token is verified server-side by the widget's registered resolver and never stored (#324).
+        // Promotion codes are passed as sent; the service normalises and bounds them
+        // (NormalizeCheckoutPromotionCodes).
+        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, billingAddress, user, {
+            Attribution: req.body?.attribution,
+            Answers: req.body?.answers as CheckoutAnswersInput | undefined,
+            Choices: req.body?.choices as CheckoutChoicesInput | undefined,
+            PromotionCodes: req.body?.promotionCodes,
+            MemberToken: typeof req.body?.memberToken === 'string' ? req.body.memberToken : undefined,
+        });
         res.status(result.Success ? 200 : 400).json(result);
     }
 
@@ -564,7 +596,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
-        const result = await CheckoutSessionService.OpenPaymentIntentForSession(sessionId, clientSessionKey, user);
+        const result = await CheckoutSessionService.OpenPaymentIntentForSession(sessionId, clientSessionKey, user, {
+            AutoRenewConsent: req.body?.autoRenewConsent === true,
+        });
         res.status(result.Success ? 200 : 400).json(result);
     }
 
@@ -577,7 +611,60 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
         const result = await CheckoutSessionService.CompleteCheckout(sessionId, clientSessionKey, user);
-        res.status(result.Success ? 200 : 409).json(result);
+        if (!result.Success) {
+            res.status(409).json(result);
+            return;
+        }
+        // The confirmation is answered without waiting on the host's identity provider. When a host
+        // registered an account step, the widget asks for it next through /checkout/account.
+        res.status(200).json(HasCheckoutAccountStep() ? { ...result, AccountStep: true } : result);
+        // The order's outbound events are committed by now; send them rather than waiting for the
+        // minute job, so a buyer's access is not a minute late. After the response, and never
+        // awaited by it: a slow or failing consumer must not hold the buyer's checkout.
+        if (result.OrderID) {
+            DispatchOutboundDeliveries({ OrderHeaderID: result.OrderID }, Metadata.Provider, user).catch((err) =>
+                LogError(`[OrdersCheckoutEdge] outbound dispatch after session ${sessionId} completed failed: ${err instanceof Error ? err.message : String(err)}`)
+            );
+        }
+    }
+
+    /** The account step's outcome for a completed checkout, asking the host again only after a failure. */
+    private async handleAccount(req: Request, res: Response): Promise<void> {
+        const user = this.resolveActingUser();
+        if (!user) {
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            return;
+        }
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+        const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const result = await EnsureCheckoutAccount(sessionId, clientSessionKey, user);
+        res.status(result.Success ? 200 : 400).json(result);
+    }
+
+    /** Sets the password of the account this checkout created. The password is passed on, never logged. */
+    private async handleAccountPassword(req: Request, res: Response): Promise<void> {
+        const user = this.resolveActingUser();
+        if (!user) {
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            return;
+        }
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+        const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const result = await SetCheckoutAccountPassword(sessionId, clientSessionKey, req.body?.password, user);
+        res.status(result.Success ? 200 : 400).json(result);
+    }
+
+    /** Whether a completed checkout's access is ready, for the success screen to poll (#325). */
+    private async handleAccessStatus(req: Request, res: Response): Promise<void> {
+        const user = this.resolveActingUser();
+        if (!user) {
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            return;
+        }
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+        const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const result = await GetCheckoutAccessStatus(sessionId, clientSessionKey, user);
+        res.status(result.Success ? 200 : 400).json(result);
     }
 
     // ─── Infrastructure ──────────────────────────────────────────────────────

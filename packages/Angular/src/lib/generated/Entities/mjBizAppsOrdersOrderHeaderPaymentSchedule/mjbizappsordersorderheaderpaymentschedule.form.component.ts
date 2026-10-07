@@ -17,7 +17,8 @@ export class mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent extends Base
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
-            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersExternalInvoices', sectionName: 'External Invoices', isExpanded: false }
         ]);
     }
 }

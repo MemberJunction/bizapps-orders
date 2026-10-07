@@ -37,6 +37,8 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  ReloadOrdersEngine,
+  PRODUCT_ENTITLEMENT_ENTITY,
   PRODUCT_ENTITY,
   TeardownOrdersFixture,
   TxOne,
@@ -206,6 +208,18 @@ const addDays = (iso: string, n: number): string => {
   return d.toISOString().slice(0, 10);
 };
 
+/** Ask `Orders.CheckEntitlement` / `Orders.ListEntitlements` the way a downstream app does. */
+async function readAccess<TOut>(ctx: IntegrationCheckContext, key: string, input: Record<string, unknown>): Promise<TOut> {
+  const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<Record<string, unknown>, TOut>>(
+    BaseRemotableOperation,
+    key,
+  );
+  Assert(op != null, `'${key}' is not registered`);
+  const result = await op!.Execute(input, { provider: ctx.Provider, user: ctx.User });
+  Assert(result.Success && result.Output != null, `${key} did not execute: ${result.ResultCode ?? result.ErrorMessage ?? "unknown"}`);
+  return result.Output!;
+}
+
 export const EntitlementsChecks: NamedCheck[] = [
   {
     Id: "entitlements.EN1",
@@ -282,9 +296,10 @@ export const EntitlementsChecks: NamedCheck[] = [
         const f = Fx();
         // Set the mode on the PRODUCT, overriding the type's PerUnit default. This is the walk being
         // exercised end to end rather than in a unit test: the column, the query, and the resolution.
-        await TxQuery(ctx,
-          `UPDATE ${ORDERS_SCHEMA}.Product SET EntitlementQuantityMode = 'Flat'
-            WHERE ID = '${f.Products.WidgetA}'`);
+        // Through the object model with the engine reloaded, because confirm reads the product from
+        // `OrdersEngine`'s cache and a raw UPDATE would leave it holding the PerUnit row.
+        await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.WidgetA, { EntitlementQuantityMode: "Flat" });
+        await ReloadOrdersEngine(ctx);
 
         const order = await buyWidget(ctx, 4);
         const g = byCode(await grantsFor(ctx, order.Order.ID as string));
@@ -384,6 +399,8 @@ export const EntitlementsChecks: NamedCheck[] = [
         // DeferredA's template states no ValidityMode, and its type is the Subscription type — whose
         // default is SubscriptionTerm. But a plain deferred line has no term, so the engine cannot
         // honour that and falls back to Perpetual. The fallback is correct; ADMITTING it is the point.
+        // DeferredA's engine price, so the stated 240 is not a concession the confirm gate holds.
+        await CreateProductPrice(ctx, f.Products.DeferredA, 240);
         const order = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,
@@ -453,9 +470,9 @@ export const EntitlementsChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        await TxQuery(ctx,
-          `UPDATE ${ORDERS_SCHEMA}.Product SET EntitlementGrantTiming = 'OnPaidInFull'
-            WHERE ID = '${f.Products.WidgetA}'`);
+        // Through the object model with the engine reloaded, for the reason EN4 gives.
+        await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.WidgetA, { EntitlementGrantTiming: "OnPaidInFull" });
+        await ReloadOrdersEngine(ctx);
 
         const unpaid = await buyWidget(ctx, 1);
         const u = await grantsFor(ctx, unpaid.Order.ID as string);
@@ -745,6 +762,46 @@ export const EntitlementsChecks: NamedCheck[] = [
       }),
   },
   {
+    // #296: a checkout confirms before it captures, so an OnPaidInFull grant is born Suspended and
+    // only the later payment can make it live. EN9 pays at confirm; this pays afterwards.
+    Id: "entitlements.EN24",
+    Name: "EN24: OnPaidInFull holds an unpaid purchase through a part-payment; the payment that clears the balance releases it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.WidgetA, "OnPaidInFull", async () => {
+          const order = await buyWidget(ctx, 1);
+          const orderID = order.Order.ID as string;
+          const held = await gatesFor(ctx, orderID);
+          Assert(held.length > 0, "the grants exist while unpaid, so what is coming is visible");
+          Assert(
+            held.every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment" && g.SuspendedAt != null),
+            "confirmed before any payment, so held for payment, and each one says so and says when",
+          );
+          Assert(
+            held.every((g) => g.GrantTimingApplied === "OnPaidInFull"),
+            "the grant records the rule it was written under, so a later payment re-decides by it",
+          );
+
+          const gross = Number((await TxOne<{ TotalGross: number }>(ctx,
+            `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).TotalGross);
+          const part = Math.round(gross * 40) / 100;
+          await payOrder(ctx, orderID, part);
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment"),
+            "a part-payment leaves a balance, and OnPaidInFull waits for the whole of it",
+          );
+
+          await payOrder(ctx, orderID, Math.round((gross - part) * 100) / 100);
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Active" && g.SuspensionReason == null && g.SuspendedAt == null),
+            "the payment that clears the balance makes access live, inside the same capture",
+          );
+        });
+      }),
+  },
+  {
     Id: "entitlements.EN18",
     Name: "EN18: an OnFirstPayment RENEWAL keeps access at confirm, is cut off at the cutoff, and payment restores it",
     RequiresMutation: true,
@@ -893,6 +950,269 @@ export const EntitlementsChecks: NamedCheck[] = [
             standing.every((g) => g.Status === "Active"),
             "a refund the seller chose does not take away access the customer paid for",
           );
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN21",
+    Name: "EN21: an approved DeferCutoff override keeps a renewal live past the cutoff until its last day, then expires",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.SubRolling, "OnFirstPayment", async () => {
+          const first = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            OrderDate: new Date("2026-01-01T00:00:00Z"),
+            BillToOrganizationID: f.Customers.OrganizationID,
+            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1 }],
+          });
+          Assert(first.Saved, `confirm failed: ${first.Message}`);
+          const term = await TxOne<{ SubscriptionID: string; EndDate: Date; Gross: number }>(ctx,
+            `SELECT st.SubscriptionID, st.EndDate, oh.TotalGross AS Gross
+               FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+               JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+              WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+          await payOrder(ctx, first.Order.ID as string, Number(term.Gross));
+          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+
+          const due = await TxOne<{ NextDueDate: Date | null }>(ctx,
+            `SELECT NextDueDate FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${renewalID}'`);
+          Assert(due.NextDueDate != null, "the renewal carries a due date");
+          const dueDay = new Date(due.NextDueDate!).toISOString().slice(0, 10);
+          await OrdersSettings.Load(ctx.Provider, ctx.User);
+          const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+          Assert(cutoff != null && cutoff > 0, "the cutoff setting is on, with a positive number of days");
+          const cutoffDay = addDays(dueDay, cutoff!);
+          const lastDay = addDays(cutoffDay, 2);
+
+          // The approval flow is the operations' job; this check is about enforcement, so the
+          // approved row is written directly.
+          const overrideID = randomUUID();
+          await TxQuery(ctx,
+            `INSERT INTO ${ORDERS_SCHEMA}.EntitlementAccessOverride
+               (ID, OrderHeaderID, OverrideType, Reason, EffectiveThrough, Status, RequestedByUserID, DecidedByUserID, DecidedAt)
+             VALUES ('${overrideID}', '${renewalID}', 'DeferCutoff', 'EN21', '${lastDay}', 'Approved',
+                     '${ctx.User.ID}', '${ctx.User.ID}', SYSDATETIMEOFFSET())`);
+
+          const held = await EnforcePaymentGatedAccess({ AsOfDate: cutoffDay }, ctx.Provider, ctx.User);
+          Assert(held.Success, `the pass ran: ${held.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "on the cutoff day the override keeps the renewal's access",
+          );
+
+          const through = await EnforcePaymentGatedAccess({ AsOfDate: lastDay }, ctx.Provider, ctx.User);
+          Assert(through.Success, `the pass ran: ${through.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "the override holds through its last day",
+          );
+
+          const after = await EnforcePaymentGatedAccess({ AsOfDate: addDays(lastDay, 1) }, ctx.Provider, ctx.User);
+          Assert(after.Success, `the pass ran: ${after.Message}`);
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "PastDue"),
+            "the day after, the payment rule decides again and the renewal is cut off",
+          );
+          const status = await TxOne<{ Status: string }>(ctx,
+            `SELECT Status FROM ${ORDERS_SCHEMA}.EntitlementAccessOverride WHERE ID = '${overrideID}'`);
+          AssertEqual(status.Status, "Expired", "and the override is marked Expired, so the pass does not pick it up again");
+          Assert(after.OverridesExpired >= 1, "the pass reports the expiry");
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN22",
+    Name: "EN22: a renewal past its cutoff reads Suspended at CheckEntitlement before the nightly job has run (#287)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.SubRolling, "OnFirstPayment", async () => {
+          await OrdersSettings.Load(ctx.Provider, ctx.User);
+          const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+          Assert(cutoff != null && cutoff > 0, "the cutoff setting is on, with a positive number of days");
+
+          // CheckEntitlement refuses a future AsOf, so the dates are placed behind today instead:
+          // the first annual term ended 90 days ago, so its renewal is in force now and long past due.
+          const today = new Date().toISOString().slice(0, 10);
+          const firstStart = new Date(`${addDays(today, -90)}T00:00:00Z`);
+          firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
+          const first = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            OrderDate: firstStart,
+            BillToOrganizationID: f.Customers.OrganizationID,
+            BillToPersonID: f.Customers.PersonID,
+            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1 }],
+          });
+          Assert(first.Saved, `confirm failed: ${first.Message}`);
+          const term = await TxOne<{ SubscriptionID: string; EndDate: Date; Gross: number }>(ctx,
+            `SELECT st.SubscriptionID, st.EndDate, oh.TotalGross AS Gross
+               FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+               JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+              WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+          await payOrder(ctx, first.Order.ID as string, Number(term.Gross));
+          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+
+          const due = await TxOne<{ NextDueDate: Date | null }>(ctx,
+            `SELECT NextDueDate FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${renewalID}'`);
+          Assert(due.NextDueDate != null, "the renewal carries a due date");
+          const cutoffDay = addDays(new Date(due.NextDueDate!).toISOString().slice(0, 10), cutoff!);
+          Assert(cutoffDay < addDays(today, -1), `the renewal's cutoff (${cutoffDay}) is behind today, with a day's margin for the business zone`);
+
+          const renewalGrants = await gatesFor(ctx, renewalID);
+          Assert(renewalGrants.length > 0, "the renewal grants the next term");
+          Assert(renewalGrants.every((g) => g.Status === "Active"), "the nightly job has not run, so the rows still read Active");
+
+          const checked = await readAccess<{ HasAccess: boolean; Decision: string; GrantID?: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
+          AssertEqual(checked.HasAccess, false, "past the cutoff, the check denies access");
+          AssertEqual(checked.Decision, "Suspended", "and says it is suspended, as the row will once the job runs");
+          Assert(
+            renewalGrants.some((g) => g.ID.toLowerCase() === (checked.GrantID ?? "").toLowerCase()),
+            "the answer is the renewal's grant",
+          );
+
+          const listed = await readAccess<{ Items: Array<{ Code: string; HasAccess: boolean; Decision: string }> }>(
+            ctx, "Orders.ListEntitlements", { PersonID: f.Customers.PersonID });
+          const seats = listed.Items.find((i) => i.Code === "SUB-SEATS");
+          Assert(seats != null && !seats.HasAccess && seats.Decision === "Suspended", "ListEntitlements agrees");
+
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "a read writes nothing: the suspension is still the nightly job's to record",
+          );
+
+          // An approved DeferCutoff is honoured at read time, as the job honours it.
+          await TxQuery(ctx,
+            `INSERT INTO ${ORDERS_SCHEMA}.EntitlementAccessOverride
+               (ID, OrderHeaderID, OverrideType, Reason, EffectiveThrough, Status, RequestedByUserID, DecidedByUserID, DecidedAt)
+             VALUES ('${randomUUID()}', '${renewalID}', 'DeferCutoff', 'EN22', '${addDays(today, 2)}', 'Approved',
+                     '${ctx.User.ID}', '${ctx.User.ID}', SYSDATETIMEOFFSET())`);
+          const deferred = await readAccess<{ HasAccess: boolean; Decision: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
+          AssertEqual(deferred.Decision, "Granted", "an approved DeferCutoff keeps access at read time");
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN23",
+    Name: "EN23: a conditional entitlement is granted only for the option the buyer chose, and a renewal keeps the choice",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        // Two conditional templates beside the product's unconditional seat count: the buyer
+        // picks one department, and only that department is granted (#291).
+        for (const dept of ["marketing", "finance"]) {
+          await upsertViaEntity(ctx, PRODUCT_ENTITLEMENT_ENTITY, randomUUID(), {
+            ProductID: f.Products.SubRolling,
+            EntitlementType: "AccessLevel",
+            Code: `IT-DEPT-${dept.toUpperCase()}`,
+            Name: `Department: ${dept}`,
+            ValidityMode: "SubscriptionTerm",
+            IsActive: true,
+            ChoiceGroupKey: "department",
+            ChoiceOptionValue: dept,
+          });
+        }
+
+        const first = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2026-01-01T00:00:00Z"),
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{
+            ProductID: f.Products.SubRolling,
+            Quantity: 1,
+            Choices: [{ GroupKey: "department", GroupLabel: "Department", OptionValue: "marketing", OptionLabel: "Marketing" }],
+          }],
+        });
+        Assert(first.Saved, `confirm failed: ${first.Message}`);
+        const bought = (await grantsFor(ctx, first.Order.ID as string)).map((g) => g.Code);
+        AssertEqual(
+          bought.join(","),
+          "IT-DEPT-MARKETING,SUB-SEATS",
+          "the chosen department and the unconditional seats are granted; the department not chosen is not",
+        );
+
+        const term = await TxOne<{ SubscriptionID: string; EndDate: Date }>(ctx,
+          `SELECT st.SubscriptionID, st.EndDate
+             FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+             JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+            WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+        const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+
+        const carried = await TxQuery<{ GroupKey: string; GroupLabel: string; OptionValue: string; OptionLabel: string }>(ctx,
+          `SELECT c.GroupKey, c.GroupLabel, c.OptionValue, c.OptionLabel
+             FROM ${ORDERS_SCHEMA}.OrderLineChoice c
+             JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = c.OrderLineID
+            WHERE ol.OrderHeaderID = '${renewalID}'`);
+        AssertEqual(carried.length, 1, "the renewal line carries the buyer's one choice");
+        AssertEqual(
+          `${carried[0].GroupKey}/${carried[0].OptionValue}/${carried[0].GroupLabel}/${carried[0].OptionLabel}`,
+          "department/marketing/Department/Marketing",
+          "copied with its labels",
+        );
+        const renewed = (await grantsFor(ctx, renewalID)).map((g) => g.Code);
+        AssertEqual(renewed.join(","), "IT-DEPT-MARKETING,SUB-SEATS", "so the renewal grants the same department for the next term");
+      }),
+  },
+  {
+    Id: "entitlements.EN24",
+    Name: "EN24: a new purchase whose payment-hold waiver has run out reads Suspended before the nightly job has run (#404)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.WidgetA, "OnFirstPayment", async () => {
+          const order = await buyWidget(ctx, 1, { BillToPersonID: f.Customers.PersonID });
+          const orderID = order.Order.ID as string;
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment"),
+            "unpaid, the new purchase is held for payment",
+          );
+
+          // The waiver's last day is two days back, a day's margin for the business zone. The pass run
+          // on that day lifts the hold, as it did while the waiver was in force.
+          const today = new Date().toISOString().slice(0, 10);
+          const lastDay = addDays(today, -2);
+          await TxQuery(ctx,
+            `INSERT INTO ${ORDERS_SCHEMA}.EntitlementAccessOverride
+               (ID, OrderHeaderID, OverrideType, Reason, EffectiveThrough, Status, RequestedByUserID, DecidedByUserID, DecidedAt)
+             VALUES ('${randomUUID()}', '${orderID}', 'WaivePaymentHold', 'EN24', '${lastDay}', 'Approved',
+                     '${ctx.User.ID}', '${ctx.User.ID}', SYSDATETIMEOFFSET())`);
+          const waived = await EnforcePaymentGatedAccess({ AsOfDate: lastDay }, ctx.Provider, ctx.User);
+          Assert(waived.Success, `the pass ran: ${waived.Message}`);
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Active"),
+            "on the waiver's last day the grants are Active, and the nightly job has not run since",
+          );
+
+          const checked = await readAccess<{ HasAccess: boolean; Decision: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "WIDGET-SUPPORT" });
+          AssertEqual(checked.HasAccess, false, "the waiver has run out unpaid, so the check denies access");
+          AssertEqual(checked.Decision, "Suspended", "and says it is suspended, as the row will once the job runs");
+
+          const listed = await readAccess<{ Items: Array<{ Code: string; HasAccess: boolean; Decision: string }> }>(
+            ctx, "Orders.ListEntitlements", { PersonID: f.Customers.PersonID });
+          const support = listed.Items.find((i) => i.Code === "WIDGET-SUPPORT");
+          Assert(support != null && !support.HasAccess && support.Decision === "Suspended", "ListEntitlements agrees");
+
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Active"),
+            "a read writes nothing: the suspension is still the nightly job's to record",
+          );
+
+          // Once the order is paid, the lapsed waiver no longer matters.
+          const gross = Number((await TxOne<{ TotalGross: number }>(ctx,
+            `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).TotalGross);
+          await payOrder(ctx, orderID, gross);
+          const paid = await readAccess<{ HasAccess: boolean; Decision: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "WIDGET-SUPPORT" });
+          AssertEqual(paid.Decision, "Granted", "paid, the grant reads Granted though its waiver has run out");
         });
       }),
   },

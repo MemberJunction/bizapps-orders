@@ -1,0 +1,128 @@
+[
+  {
+    "_comments": [
+      "THE UNATTESTED-PROGRESS ACTION (bc-aidp-next-golive#279, type 2). Its own dot-json so parallel work on",
+      "other actions conflicts on nothing.",
+      "",
+      "WHY AN ACTION. A percentage-of-completion line goes unattested with nothing being written, so no save",
+      "path can notice it. MJ's scheduler dispatches Actions, and this row is how the nightly job reaches",
+      "Orders.DetectUnattestedProgress. The class behind it holds no detection logic.",
+      "",
+      "SAFE TO SHIP Active: nothing invokes it until the ScheduledJob in metadata/scheduled-jobs/ is enabled,",
+      "and that job ships Disabled. Running it by hand only adds rows to finance's review list, and a repeat",
+      "in the same month finds the rows already raised."
+    ],
+    "fields": {
+      "Name": "Detect Unattested Progress",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Put every active, booked, not-complete percentage-of-completion order line whose last attestation (or, if never attested, whose booking) is older than the PROGRESS_UNATTESTED type's MaxDaysWithoutAttestation on accounting's finance exception review list. One exception per line per month. Runs the Orders.DetectUnattestedProgress operation; this Action only reads parameters and reports the result. Nothing is blocked.",
+      "Type": "Custom",
+      "DriverClass": "Orders.DetectUnattestedProgress",
+      "IconClass": "fa-solid fa-clipboard-check",
+      "UserPrompt": "Find percentage-of-completion lines overdue for a progress attestation and put them on the finance review list.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C5F2CA57-5359-458A-B46A-BB392BD1ED7C"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AsOfDate",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Treat this date as today (YYYY-MM-DD) when measuring days without attestation and choosing the month of the exception. Omit for the business day, which is what the schedule uses. An unreadable value is refused rather than replaced with today."
+          },
+          "primaryKey": {
+            "ID": "67D82678-8904-4680-952C-DDDD91A6F7BE"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:46.986Z",
+            "checksum": "b6ac7c7bc6abddc7e2db1e5dd25934bdabe052f43912e7e480aefebfb3a6769f"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "LineCount",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many lines were overdue for attestation as of the run date, raised or not."
+          },
+          "primaryKey": {
+            "ID": "12C89730-E95E-42AA-9464-2F3875F0E187"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:47.024Z",
+            "checksum": "c9392415f1589326cb4f0d8d9296c6b9e48dc2224c50d0b6d13a40ac8b340359"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Raised",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many review rows this pass created."
+          },
+          "primaryKey": {
+            "ID": "B7D33247-BFE2-472A-A9CC-1A28E8FC128C"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:47.061Z",
+            "checksum": "a97fa9521ca943d58e53493eed70381d0322ae1e3d2cea39d1881a9186ed57ee"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AlreadyRaised",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many overdue lines already had this month's review row, from an earlier pass."
+          },
+          "primaryKey": {
+            "ID": "1FCCBFB5-693D-411E-A788-832AF4F62B40"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:47.091Z",
+            "checksum": "793a2f5d4e0a16b9935ab2db8d3fc210737024431d2358f45ce53041062f5d97"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Lines",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every overdue line: the order and line number, the last attestation or booking day, the days without attestation, the value not yet recognised, the dedupe key and the review row raised for it."
+          },
+          "primaryKey": {
+            "ID": "A60B6D01-8BA2-40D4-8727-D01D300FD3AE"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:47.122Z",
+            "checksum": "cdf8a6cf50b083df55a7684e25410abf911de89282fd0a54eaf4377cc06ebea6"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-10-03T21:46:46.952Z",
+      "checksum": "9d826c7b35364fcfe238d01fe152af3123e3f57395050448820fc8b282cb3299"
+    }
+  }
+]

@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { mjBizAppsOrdersSalesRuleEntity } from '@mj-biz-apps/orders-entities';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import {  } from "@memberjunction/ng-entity-viewer"
 
 @RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Sales Rules') // Tell MemberJunction about this class
 @Component({
@@ -18,7 +19,8 @@ export class mjBizAppsOrdersSalesRuleFormComponent extends BaseFormComponent {
             { sectionKey: 'ruleConfiguration', sectionName: 'Rule Configuration', isExpanded: true },
             { sectionKey: 'scopeAndTargeting', sectionName: 'Scope and Targeting', isExpanded: true },
             { sectionKey: 'logicAndApproval', sectionName: 'Logic and Approval', isExpanded: true },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderConcessions', sectionName: 'Order Concessions', isExpanded: false }
         ]);
     }
 }

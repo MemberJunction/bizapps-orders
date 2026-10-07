@@ -10,9 +10,49 @@
     padding: 4px 0;
 }
 
+/*
+ * Labels sit above their controls in this form. mj-form-field lays a field out as a
+ * fixed 200px label column beside the control, and only stacks them below a 640px
+ * viewport. In this form's multi-column grids, and in the order line card that hosts
+ * it, a column is narrower than that label plus gap, so the control was left with no
+ * width: the Person lookup's input was all padding and no attendee could be typed.
+ */
+.mjo-eol-form ::ng-deep .mj-forms-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+}
+
+.mjo-eol-form ::ng-deep .mj-forms-field-validation {
+    grid-column: 1;
+}
+
+.mjo-eol-event {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    font-size: 13px;
+    color: var(--mj-text-secondary);
+}
+
+.mjo-eol-event i {
+    font-size: 12px;
+    color: var(--mj-brand-primary);
+}
+
+.mjo-eol-event__name {
+    font-weight: 600;
+    color: var(--mj-text-primary);
+}
+
+.mjo-eol-event--missing,
+.mjo-eol-event--missing i {
+    color: var(--mj-text-muted);
+}
+
 .mjo-eol-primary-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
     gap: 12px;
     align-items: start;
 }

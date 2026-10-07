@@ -21,7 +21,7 @@ export class mjBizAppsOrdersOrderLineFormComponent extends BaseFormComponent {
             { sectionKey: 'pricingAndFinancials', sectionName: 'Pricing and Financials', isExpanded: true },
             { sectionKey: 'shippingDetails', sectionName: 'Shipping Details', isExpanded: true },
             { sectionKey: 'subscriptionDetails', sectionName: 'Subscription Details', isExpanded: true },
-            { sectionKey: 'financialDimensions', sectionName: 'Financial Dimensions', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLinePriceComponents', sectionName: 'Order Line Price Components', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false },
@@ -35,6 +35,8 @@ export class mjBizAppsOrdersOrderLineFormComponent extends BaseFormComponent {
             { sectionKey: 'mJBizAppsOrdersStoredValueAccounts', sectionName: 'Stored Value Accounts', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderChargeAllocations', sectionName: 'Order Charge Allocations', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderConcessions', sectionName: 'Order Concessions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLineProgressMeasurements', sectionName: 'Order Line Progress Measurements', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLineChoices', sectionName: 'Order Line Choices', isExpanded: false }
         ]);
     }

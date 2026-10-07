@@ -53,12 +53,19 @@ export interface LineSpec {
     ShipToAddressID?: string;
     /** Renew this exact subscription rather than letting the engine resolve one (D61). */
     RenewsSubscriptionID?: string;
+    /** `OrderLine.AcknowledgesCoverageOverlap` — the line is meant to run alongside another band. */
+    AcknowledgesCoverageOverlap?: boolean;
     /**
      * The line this one UNWINDS (D16). Required for a negative quantity — `OrderLineEntityServer`
      * refuses one without it, because a negative line with no origin is indistinguishable from a
      * typo, and it books a real credit either way.
      */
     ReversesOrderLineID?: string;
+    /**
+     * Options the buyer chose for this line (#291), recorded as Order Line Choices in the line's
+     * graph. A conditional Product Entitlement grants only on a line carrying its choice.
+     */
+    Choices?: Array<{ GroupKey: string; OptionValue: string; GroupLabel?: string; OptionLabel?: string }>;
 }
 
 export interface OrderSpec {
@@ -91,6 +98,8 @@ export interface OrderSpec {
     ShipToPersonID?: string;
     /** The ship-to ADDRESS — what tax jurisdiction resolution matches on (D73). */
     ShipToAddressID?: string;
+    /** The order this one reverses — a return names it, and takes its addresses from it. */
+    ReversesOrderHeaderID?: string;
     /** D42 initial-payment intent, captured at order entry and turned into a real payment at confirm. */
     InitialPaymentTypeID?: string;
     InitialPaymentAmount?: number;
@@ -179,6 +188,7 @@ export async function BuildOrder(
     if (spec.ShipToOrganizationID) order.ShipToOrganizationID = spec.ShipToOrganizationID;
     if (spec.ShipToPersonID) order.ShipToPersonID = spec.ShipToPersonID;
     if (spec.ShipToAddressID) order.ShipToAddressID = spec.ShipToAddressID;
+    if (spec.ReversesOrderHeaderID) order.ReversesOrderHeaderID = spec.ReversesOrderHeaderID;
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;
 
     // A REFERENCE-REQUIRING TENDER GETS AN INSTRUMENT, because a real one always would.
@@ -228,7 +238,15 @@ export async function BuildOrder(
         if (ls.ShipToPersonID) line.ShipToPersonID = ls.ShipToPersonID;
         if (ls.ShipToAddressID) line.ShipToAddressID = ls.ShipToAddressID;
         if (ls.RenewsSubscriptionID) line.RenewsSubscriptionID = ls.RenewsSubscriptionID;
+        if (ls.AcknowledgesCoverageOverlap) line.AcknowledgesCoverageOverlap = true;
         if (ls.ReversesOrderLineID) line.ReversesOrderLineID = ls.ReversesOrderLineID;
+        for (const c of ls.Choices ?? []) {
+            const row = await line.Choices.Create();
+            row.GroupKey = c.GroupKey;
+            row.GroupLabel = c.GroupLabel ?? c.GroupKey;
+            row.OptionValue = c.OptionValue;
+            row.OptionLabel = c.OptionLabel ?? c.OptionValue;
+        }
         lines.push(line);
     }
 

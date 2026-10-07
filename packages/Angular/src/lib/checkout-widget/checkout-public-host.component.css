@@ -69,3 +69,103 @@
     font-weight: 600;
     color: #334155;
 }
+
+/* Whether the buyer's access is ready yet (#325). */
+.mj-checkout-success__access {
+    margin: 0.75rem 0 0;
+    color: #334155;
+    font-size: 0.95rem;
+}
+
+.mj-checkout-success__access.is-failed {
+    color: #991b1b;
+}
+
+/* Post-payment account step: set a password for the account the host created (#292). */
+.mj-checkout-account {
+    margin: 1.5rem auto 0;
+    max-width: 320px;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mj-checkout-account__title {
+    margin: 0 0 0.5rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #0f172a;
+    text-align: center;
+}
+
+.mj-checkout-account__label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.mj-checkout-account__input {
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-family: inherit;
+}
+
+.mj-checkout-account__input:focus {
+    outline: none;
+    border-color: var(--mj-primary-color, #2563eb);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.mj-checkout-account__error {
+    margin: 4px 0 0;
+    color: #991b1b;
+    font-size: 0.85rem;
+}
+
+.mj-checkout-account__submit {
+    margin-top: 10px;
+    padding: 10px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--mj-primary-color, #2563eb);
+    color: #ffffff;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.mj-checkout-account__skip {
+    padding: 6px;
+    border: 0;
+    background: none;
+    color: #64748b;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.mj-checkout-account__submit:disabled,
+.mj-checkout-account__skip:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.mj-checkout-account__msg {
+    margin: 1rem 0 0;
+    color: #334155;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.mj-checkout-account__note {
+    margin: 0 0 0.5rem;
+    color: #475569;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    text-align: center;
+}
+
+.mj-checkout-account--actions {
+    margin-top: 0.75rem;
+}

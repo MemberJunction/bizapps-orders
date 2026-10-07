@@ -19,6 +19,7 @@ import {
 import {
     OrderHeaderEntity,
     OrderLineEntity,
+    OrdersCheckCoverageOverlapOperation,
     ClampLineQuantity,
     CanRestoreLineDefault,
     IsLinePriceOverridden,
@@ -32,6 +33,7 @@ import {
     priceOverrideCatalogInstalled,
     userPriceOverrideKind,
     type ApplicablePrice,
+    type CheckCoverageOverlapOutput,
     type PriceOverrideKind,
     type mjBizAppsOrdersOrderAdjustmentEntity,
     type mjBizAppsOrdersOrderLineEntity,
@@ -45,10 +47,12 @@ import {
     GetCatalogOptions,
     GetDimensionOptions,
     GetDiscountAuthority,
+    GetExistingHolding,
     GetSubscriptionContinuation,
     RankCatalogMatches,
     type MJODimensionOption,
     type MJODiscountAuthority,
+    type MJOExistingHolding,
     type MJOProductOption,
 } from '../../data/orders-queries';
 import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
@@ -105,6 +109,9 @@ function round(value: number): number {
  * of is a list that stopped helping; the ranking is what puts the right row inside this window.
  */
 const PICKER_RESULT_LIMIT = 12;
+
+/** One line's answer from `Orders.CheckCoverageOverlap`. */
+type CoverageOverlapLine = CheckCoverageOverlapOutput['Lines'][number];
 
 /**
  * Inline catalog picker + line cards for an order header.
@@ -356,7 +363,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      */
     public ContinuationStartFor(line: mjBizAppsOrdersOrderLineEntity): Date | null {
         const subscriptionID = line.RenewsSubscriptionID;
-        if (!subscriptionID) return null;
+        // A line that chose to extend what the customer already holds is a continuation too.
+        if (!subscriptionID) {
+            return line.SubscriptionAction === 'ExtendExisting' ? ContinuationStartFrom(this.ExistingHoldingFor(line)) : null;
+        }
 
         if (this.continuationStarts.has(subscriptionID)) {
             return this.continuationStarts.get(subscriptionID) ?? null;
@@ -401,6 +411,146 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         } finally {
             this.loadingContinuations.delete(subscriptionID);
         }
+    }
+
+    /* ── Coverage overlap with another band of the family (golive #276) ──
+     *
+     * Confirm refuses a band whose term would overlap coverage the holder already has for another
+     * band, unless the subscription type allows it or the line acknowledges it. The editor asks the
+     * server the same question after each save, through the operation that runs confirm's own
+     * check, so the notice cannot disagree with the refusal. Only saved lines are checked; a new
+     * line is checked on the next save.
+     */
+
+    /** Server answers by line id (lower-cased — ids come back from the server in either case). */
+    private readonly coverageByLine = new Map<string, CoverageOverlapLine>();
+    /** Set when the check itself failed, so a missing notice is not read as "no overlap". */
+    public CoverageCheckError: string | null = null;
+
+    public CoverageOverlapFor(line: mjBizAppsOrdersOrderLineEntity): CoverageOverlapLine | null {
+        return this.coverageByLine.get((line.ID ?? '').toLowerCase()) ?? null;
+    }
+
+    /** True when ticking the acknowledgment changes what confirm does — `ExtendExisting` only. */
+    public CanAcknowledgeOverlap(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const found = this.CoverageOverlapFor(line);
+        return found?.Outcome === 'NeedsAck' || found?.Outcome === 'Acknowledged';
+    }
+
+    /**
+     * True while confirm would refuse this line. Read from the checkbox as it stands, not the
+     * server's last answer, so ticking it clears the warning before the next save.
+     */
+    public OverlapBlocksConfirm(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const found = this.CoverageOverlapFor(line);
+        if (!found) return false;
+        if (found.Outcome === 'Refused') return true;
+        return this.CanAcknowledgeOverlap(line) && !line.AcknowledgesCoverageOverlap;
+    }
+
+    public SetOverlapAcknowledged(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        line.AcknowledgesCoverageOverlap = target.checked;
+    }
+
+    private async refreshCoverage(): Promise<void> {
+        const order = this._order;
+        if (!order?.IsSaved || order.Status !== 'Draft') {
+            this.coverageByLine.clear();
+            this.CoverageCheckError = null;
+            return;
+        }
+        const result = await new OrdersCheckCoverageOverlapOperation().Execute({ OrderHeaderID: order.ID });
+        // The order may have been swapped while the call was in flight.
+        if (this._order !== order) return;
+        this.coverageByLine.clear();
+        if (!result.Success || !result.Output) {
+            this.CoverageCheckError =
+                result.ErrorMessage?.trim() ||
+                'Whether these subscriptions overlap coverage the customer already has could not be checked. Confirm still checks.';
+        } else {
+            this.CoverageCheckError = null;
+            for (const row of result.Output.Lines) this.coverageByLine.set(row.OrderLineID.toLowerCase(), row);
+        }
+        this.cdr.detectChanges();
+    }
+
+    /* ── The customer already holds this product (golive #299) ──
+     *
+     * At confirm, a subscription line whose subscriber already holds a live subscription to the
+     * product follows the type's ConcurrencyMode, and under ExtendExisting it becomes the next term
+     * and starts the day after current coverage ends, whatever start the line states. So when such a
+     * subscription exists, the card asks which is meant and stores the answer on the line
+     * (`SubscriptionAction`), which the server applies: add a term to the existing subscription, or
+     * start a separate one on this line's dates.
+     *
+     * Renewal lines are left out: they name the subscription they continue.
+     */
+
+    /** Holdings by `product|org|person`. A present key with `null` means "holds none". */
+    private readonly holdings = new Map<string, MJOExistingHolding | null>();
+    private readonly loadingHoldings = new Set<string>();
+
+    /** Who this line is for, resolved the way the server does: the line's ship-to, then the order's. */
+    private holdingKey(line: mjBizAppsOrdersOrderLineEntity): { key: string; org: string | null; person: string | null } | null {
+        if (!line.ProductID) return null;
+        const order = this._order;
+        const org = line.ShipToOrganizationID ?? order?.ShipToOrganizationID ?? order?.BillToOrganizationID ?? null;
+        const person = line.ShipToPersonID ?? order?.ShipToPersonID ?? order?.BillToPersonID ?? null;
+        if (!org && !person) return null;
+        return { key: `${line.ProductID}|${org ?? ''}|${person ?? ''}`.toLowerCase(), org, person };
+    }
+
+    /**
+     * The live subscription this line's subscriber already holds for its product, or null.
+     *
+     * Sync for the template, cached per subscriber and product like `ContinuationStartFor`: an
+     * unseen key starts one read, and a cached `null` is a real answer that is not retried.
+     */
+    public ExistingHoldingFor(line: mjBizAppsOrdersOrderLineEntity): MJOExistingHolding | null {
+        // Draft lines only. Once booked, the subscriber "holds" the subscription this very line created.
+        if (this._order?.MoneyLocked || line.RenewsSubscriptionID || !this.IsSubscriptionLine(line)) return null;
+        const who = this.holdingKey(line);
+        if (!who) return null;
+        if (this.holdings.has(who.key)) return this.holdings.get(who.key) ?? null;
+        void this.loadHolding(who.key, line.ProductID, who.org, who.person);
+        return null;
+    }
+
+    private async loadHolding(key: string, productID: string, org: string | null, person: string | null): Promise<void> {
+        if (this.loadingHoldings.has(key)) return;
+        this.loadingHoldings.add(key);
+        try {
+            let holding: MJOExistingHolding | null = null;
+            try {
+                holding = await GetExistingHolding(productID, org, person);
+            } finally {
+                // Cached even on failure, so a failing read does not restart on every change
+                // detection. The server still applies its rule, and the confirm reports a moved start.
+                this.holdings.set(key, holding);
+            }
+            this.cdr.detectChanges();
+        } finally {
+            this.loadingHoldings.delete(key);
+        }
+    }
+
+    /** Where the existing coverage ends, for the prompt. */
+    public HoldingCoverageEnd(holding: MJOExistingHolding): string {
+        return this.dateInputValue(holding.LatestTermEnd);
+    }
+
+    /** The start an extension would get: the day after the existing coverage ends. */
+    public HoldingContinuationStart(holding: MJOExistingHolding): string {
+        return this.dateInputValue(ContinuationStartFrom(holding));
+    }
+
+    /** Store the line's answer. Editable while the order's money is; a booked line's answer is history. */
+    public SetSubscriptionAction(line: mjBizAppsOrdersOrderLineEntity, action: 'ExtendExisting' | 'CreateNew'): void {
+        if (!this.EditMode || this._order?.MoneyLocked) return;
+        line.SubscriptionAction = action;
     }
 
     public SetTermStart(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -869,6 +1019,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * `Adjustments.Remove` — the rows this map points at are already gone by the time it runs.
      */
     private onOrderSaved(): void {
+        void this.refreshCoverage();
         if (!this.stagedDiscounts.size) return;
         this.stagedDiscounts.clear();
         this.discountDrafts.clear();
@@ -1038,6 +1189,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             }) ?? null;
         this.schedulePricing();
         void this.refreshAllApplicable();
+        void this.refreshCoverage();
         this.cdr.detectChanges();
     }
 
@@ -1059,6 +1211,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
         // a cached continuation date is only trustworthy for as long as one order is open.
         this.continuationStarts.clear();
+        this.coverageByLine.clear();
+        this.CoverageCheckError = null;
         this.applicableByLine.clear();
         this.overrideEditorLineIds.clear();
         this.defaultUnitByLine.clear();

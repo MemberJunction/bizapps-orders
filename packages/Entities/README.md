@@ -11,17 +11,10 @@ usually at the worst moment.
 To change what appears here, change the **schema**:
 
 ```bash
-# 1. edit the baseline migration (pre-1.0 practice: edit in place, never fix-up migrations)
-# 2. rebuild from zero and regenerate
-scripts/rebuild-db.sh          # trims the generated half, applies hand-authored DDL only
-npm run mj:codegen             # regenerates everything, since the DB is now bare
-scripts/append-codegen.sh      # puts the generated SQL back below the banner
-npm run mj -- sync push --dir metadata
+# 1. add a new V migration (docs/database-migrations.md)
+pnpm run mj:migrate            # 2. apply it
+pnpm run mj:codegen            # 3. regenerate
 ```
-
-That cycle is self-consistent by construction: the rebuild deliberately drops the generated half
-first, because otherwise it produces a database whose metadata is already current and CodeGen emits
-only a delta.
 
 ## What CodeGen gives you, and what it does not
 

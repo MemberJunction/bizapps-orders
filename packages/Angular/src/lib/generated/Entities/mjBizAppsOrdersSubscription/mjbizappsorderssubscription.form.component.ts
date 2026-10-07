@@ -21,6 +21,7 @@ export class mjBizAppsOrdersSubscriptionFormComponent extends BaseFormComponent 
             { sectionKey: 'lifecycleTimeline', sectionName: 'Lifecycle Timeline', isExpanded: true },
             { sectionKey: 'renewalSettings', sectionName: 'Renewal Settings', isExpanded: true },
             { sectionKey: 'billingAndMigration', sectionName: 'Billing and Migration', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'displayLabels', sectionName: 'Display Labels', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false },

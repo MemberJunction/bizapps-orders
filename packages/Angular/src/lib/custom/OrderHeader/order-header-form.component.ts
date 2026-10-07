@@ -6,7 +6,7 @@ import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
-import { LoadOrdersEngine, OrderHeaderEntity, type DateCell, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
+import { DescribeDisplacedTermStart, LoadOrdersEngine, OrderHeaderEntity, type DateCell, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
 import {
     BuildOrderJournalEntryRows,
@@ -120,6 +120,11 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public Confirming = false;
     public StatusError: string | null = null;
+    /**
+     * One sentence per subscription line whose stated start the confirm replaced (golive #299).
+     * Read from the confirm's own record, so it shows right after Confirm and on every later visit.
+     */
+    public DisplacedStartNotices: string[] = [];
     public PaymentTypes: mjBizAppsOrdersPaymentTypeEntity[] = [];
 
     public get ContextTabs(): TabConfig[] {
@@ -168,6 +173,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         await LoadOrdersEngine(Metadata.Provider, new Metadata().CurrentUser);
         await this.loadPaymentTypes();
         await this.refreshAccountingIfNeeded();
+        await this.loadDisplacedStartNotices();
 
         this.RegisterToolbarItem({
             Key: 'confirm-order',
@@ -315,7 +321,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
                     );
                 }
             }
-            await this.record.Confirm();
+            const outcome = await this.record.Confirm();
+            this.DisplacedStartNotices = outcome.DisplacedTermStarts.map(DescribeDisplacedTermStart);
             this.updateLineBadge();
             if (this.EditMode) {
                 this.EditMode = false;
@@ -350,7 +357,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public get HeaderSubtitle(): string {
         const bits = [
-            this.record?.BillToOrganization || this.record?.BillToPerson,
+            this.partyName('BillTo'),
             this.record?.Company,
         ].filter((value): value is string => !!value);
         if (bits.length) return bits.join(' · ');
@@ -384,21 +391,39 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public get BillToName(): string {
-        return this.record?.BillToOrganization || this.record?.BillToPerson || 'Choose who pays';
+        return this.partyName('BillTo') || 'Choose who pays';
     }
 
     public get BillToDetail(): string {
         const address = FormatSoldAddress(() => this.record?.BillToAddressAsSold ?? null)
             || this.FormatEmbeddedAddress(this.record?.BillToAddressID_Object)
             || this.record?.BillToAddress;
-        const bits = [this.record?.BillToPerson, this.record?.PaymentTermsType, address]
+        const person = this.record?.BillToPersonID ? this.record.BillToPerson : null;
+        const bits = [person, this.record?.PaymentTermsType, address]
             .filter((value): value is string => !!value);
         return bits.length ? bits.join(' · ') : 'Person or organization';
     }
 
     public get ShipToName(): string {
         if (!this.record) return 'Same as bill to';
-        return this.record.ShipToOrganization || this.record.ShipToPerson || 'Same as bill to';
+        return this.partyName('ShipTo') || 'Same as bill to';
+    }
+
+    /**
+     * The organization's name, else the person's, for one side of the order — counting only a
+     * name whose ID is still set. The name fields are read-only view columns that keep the name
+     * of a party the user has just cleared until the record reloads.
+     */
+    private partyName(side: 'BillTo' | 'ShipTo'): string | null {
+        const r = this.record;
+        if (!r) return null;
+        const organization = side === 'BillTo'
+            ? (r.BillToOrganizationID ? r.BillToOrganization : null)
+            : (r.ShipToOrganizationID ? r.ShipToOrganization : null);
+        const person = side === 'BillTo'
+            ? (r.BillToPersonID ? r.BillToPerson : null)
+            : (r.ShipToPersonID ? r.ShipToPerson : null);
+        return organization || person || null;
     }
 
     public get ShipToDetail(): string {
@@ -417,9 +442,12 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return !this.record.ShipToOrganizationID && !this.record.ShipToPersonID && !this.record.ShipToAddressID;
     }
 
-    public async OnPartyPersonChange(side: 'BillTo' | 'ShipTo'): Promise<void> {
+    public async OnPartyPersonChange(side: 'BillTo' | 'ShipTo', change: { OldValue: unknown; NewValue: unknown }): Promise<void> {
         if (!this.record || !this.EditMode) return;
-        await this.record.ApplyPersonPartyDefaults(side);
+        // The defaults the previous person brought with them go first, so a replacement person
+        // brings their own instead of inheriting the old copies.
+        this.record.ClearPersonParty(side, (change.OldValue as string | null) || null);
+        if (change.NewValue) await this.record.ApplyPersonPartyDefaults(side);
         this.cdr.detectChanges();
     }
 
@@ -605,6 +633,17 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     /** The one fetched snapshot every accounting view is derived from. Null until the tab is opened. */
     private journalData: OrderJournalData | null = null;
+
+    /** Booked orders only. A failed read shows no notice rather than blocking the form. */
+    private async loadDisplacedStartNotices(): Promise<void> {
+        if (!this.record?.IsBookedOrder) return;
+        try {
+            const moved = await this.record.LoadDisplacedTermStarts();
+            this.DisplacedStartNotices = moved.map(DescribeDisplacedTermStart);
+        } catch (error) {
+            console.warn('Could not read changed service dates for this order', error);
+        }
+    }
 
     private async loadPaymentTypes(): Promise<void> {
         try {

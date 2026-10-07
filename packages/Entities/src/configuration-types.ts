@@ -7,6 +7,9 @@
  * @module @mj-biz-apps/orders-entities/configuration-types
  */
 
+import type { CheckoutChoiceGroup } from './checkout-choices';
+import type { CheckoutQuestion } from './checkout-questions';
+
 export interface CustomUIThemeConfiguration {
     primaryColor?: string;
     accentColor?: string;
@@ -105,8 +108,40 @@ export interface CheckoutWidgetConfiguration {
     allowQuantity?: boolean;
     maxQuantity?: number;
     stripePublishableKey?: string;
+    /**
+     * Wording of the automatic-renewal agreement the buyer must accept before paying — for a widget
+     * selling an auto-renewing subscription. When set, the widget shows a required checkbox with this
+     * text, the server refuses to open a payment intent without the buyer's agreement, and the
+     * checkout session records this server-side text and the time of agreement. Unset means no
+     * checkbox.
+     */
+    autoRenewConsentText?: string;
+    /**
+     * When true, the widget shows a promotion-code field and the anonymous draft accepts one code
+     * (validated, priced and booked server-side by the promotion engine). Absent or false: codes are
+     * refused.
+     */
+    allowCoupons?: boolean;
     successMessage?: string;
+    /**
+     * What the success screen says about the buyer's access while it is provisioned after the
+     * confirm (#325). Shown only when a registered outbound consumer gates access; each has a default.
+     */
+    accessMessages?: {
+        pending?: string;
+        ready?: string;
+        failed?: string;
+    };
+    /**
+     * Where the public checkout sends the buyer once the order is confirmed. The order number is
+     * appended as `order=<number>`, so the landing page knows which order completed.
+     */
     redirectUrl?: string;
+    /**
+     * Ask the payment gateway to send its own receipt to the buyer's e-mail (Stripe:
+     * `receipt_email`). Off by default: a host that sends its own receipt would otherwise send two.
+     */
+    sendReceipt?: boolean;
     extensionEntityName?: string;
     /**
      * Metadata-driven form field specs — auto-discovered from the product type's extension
@@ -120,6 +155,20 @@ export interface CheckoutWidgetConfiguration {
         placeholder?: string;
         options?: Array<string | { label: string; value: string | number }>;
     }>;
+    /**
+     * Questions the buyer answers before paying, such as "How did you hear about us?". Not
+     * columns on any entity: the answers are recorded on the confirmed order as Order Checkout
+     * Answers. A required question blocks the payment intent and completion until answered.
+     */
+    questions?: CheckoutQuestion[];
+    /**
+     * Groups the buyer chooses from before paying: "choose N of these M options". Each pick is
+     * recorded on the order line as an Order Line Choice, and a Product Entitlement with a matching
+     * `ChoiceGroupKey` / `ChoiceOptionValue` grants only on a line that carries it. Picks outside
+     * `min`..`max`, or options not in the list, block the payment intent and completion. The widget
+     * must sell a single line.
+     */
+    choiceGroups?: CheckoutChoiceGroup[];
     /**
      * The PaymentProvider row id used to open payment intents for this widget's sessions.
      * Admin-authored, server-resolved — never accepted from the client. Required before a
@@ -144,6 +193,12 @@ export interface CheckoutWidgetConfiguration {
      * Turnstile secret for verification to run — fail-closed when it is not).
      */
     requireTurnstile?: boolean;
+    /**
+     * `@RegisterClass` key of the `BaseCheckoutMemberDiscountResolver` that verifies a host's
+     * member token and names the promotion code it earns. Server-side only. A draft that carries a
+     * member token is refused when this is unset or names an unregistered class.
+     */
+    memberDiscountResolver?: string;
     /**
      * Custom UI section containing JS hooks, scoped CSS, theme tokens, and component overrides.
      */

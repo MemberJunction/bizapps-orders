@@ -126,6 +126,14 @@ export interface CancellationContext {
     Term: CancellableTerm;
 }
 
+/** A term that starts after the cancelled term's coverage ends (#406). */
+export interface LaterTermCancellationContext {
+    Rules: SubscriptionTypeRules;
+    Term: CancellableTerm;
+    /** The cancelled term's `EffectiveDate` — when the subscription's coverage ends. */
+    CoverageEndsDate: Date;
+}
+
 /**
  * What cancelling actually does. Like {@link SubscriptionDecision} this is COMPUTED ONLY — the
  * caller performs the reversal, updates the rows, and logs the event.
@@ -153,6 +161,58 @@ export interface CancellationDecision {
 }
 
 /**
+ * Coverage a holder already has for ANOTHER band of the same subscription family, overlapping the
+ * term a line is about to create (golive #276).
+ *
+ * The dedupe lookup matches on `ProductID`, so a different band of one offering is invisible to
+ * `ConcurrencyMode`. `Product.SubscriptionFamilyID` names the bands that belong together, and this
+ * is what the caller found for them.
+ */
+export interface CoverageOverlap {
+    /** Null when the overlap is with another line of the same order, which has no row yet. */
+    SubscriptionID: string | null;
+    SubscriptionNumber: string | null;
+    ProductName: string;
+    /** The overlapping part of that subscription's coverage, as calendar days. */
+    CoverageStart: Date;
+    CoverageEnd: Date;
+    /** The last day that subscription covers, including terms past the new one: a start after it clears the overlap. */
+    CoveredThrough: Date;
+    /** The `ConcurrencyMode` and code of the other band's subscription type. */
+    ConcurrencyMode: SubscriptionTypeRules['ConcurrencyMode'];
+    SubscriptionTypeCode: string;
+}
+
+export interface CoverageOverlapContext {
+    /** The rules of the line being confirmed. */
+    Rules: SubscriptionTypeRules;
+    /** The family's name, for the message. */
+    Family: string;
+    /** The line's product, for the message. */
+    ProductName: string;
+    Overlaps: CoverageOverlap[];
+    /** `OrderLine.AcknowledgesCoverageOverlap`. */
+    Acknowledged: boolean;
+}
+
+/**
+ * What confirm does with a line whose term overlaps coverage in its family. The mode is the
+ * stricter of the line's type and each overlapping band's type (RejectDuplicate, then
+ * ExtendExisting, then AllowMultiple), so the answer does not depend on which band is ordered.
+ *
+ *   None          nothing overlaps
+ *   Allowed       `AllowMultiple` — concurrent coverage is the types' intent
+ *   Refused       `RejectDuplicate` — refused whether or not the line acknowledges it
+ *   NeedsAck      `ExtendExisting` and the line does not acknowledge it — refused
+ *   Acknowledged  `ExtendExisting` and the line acknowledges it — proceeds
+ */
+export interface CoverageOverlapDecision {
+    Outcome: 'None' | 'Allowed' | 'Refused' | 'NeedsAck' | 'Acknowledged';
+    /** Null only for `None`. Surfaced to the user, so it names the coverage and the way out. */
+    Message: string | null;
+}
+
+/**
  * The two roles a subscription has, which `SubscriberScope` alone could not express.
  *
  * A trade-association company membership has an organization and no person — every employee
@@ -162,6 +222,20 @@ export interface CancellationDecision {
 export interface SubscriberIdentity {
     OrganizationID?: string | null;
     PersonID?: string | null;
+    /**
+     * True when the organization was filled in from the person's affiliation rather than stated on
+     * the line or the order. A stated organization is a holder; an inferred one may be only the
+     * buyer's employer.
+     */
+    OrganizationInferred?: boolean;
+}
+
+/** How a stored subscription is matched on each side: a value, `null` for empty, or `'Any'`. */
+export interface SubscriberMatch {
+    OrganizationID: string | null;
+    PersonID: string | null | 'Any';
+    /** Also match a stored subscription with no person, when `PersonID` names one. */
+    OrNoPerson?: boolean;
 }
 
 export interface SubscriptionPurchaseContext {
@@ -208,6 +282,17 @@ export interface SubscriptionPurchaseContext {
      * An EXTENSION ignores it — see `Decide`.
      */
     RequestedStartDate?: Date | null;
+    /**
+     * What the line says to do when the subscriber already holds this product
+     * (`OrderLine.SubscriptionAction`, golive #299). Absent or null, `ConcurrencyMode` decides.
+     *
+     * `CreateNew` starts a separate subscription on the line's own dates: a second seat, a second
+     * site, a separate program. A `RejectDuplicate` type still refuses it — the line cannot
+     * override a type that forbids two. `ExtendExisting` adds a term to the existing subscription
+     * even under `AllowMultiple`. Neither applies to a renewal, which always continues the
+     * subscription it names.
+     */
+    RequestedAction?: 'ExtendExisting' | 'CreateNew' | null;
 }
 
 function money(v: number): number {
@@ -251,6 +336,25 @@ function isoDay(d: Date): string {
     return d.toISOString().slice(0, 10);
 }
 
+/** Strictest first: a refusal outranks an acknowledgment, which outranks allowing it. */
+const CONCURRENCY_STRICTNESS: Record<SubscriptionTypeRules['ConcurrencyMode'], number> = {
+    AllowMultiple: 0,
+    ExtendExisting: 1,
+    RejectDuplicate: 2,
+};
+
+/** The strictest of several types' modes. On a tie the first (the line's own type) names it. */
+function strictestMode(
+    modes: Array<{ Mode: SubscriptionTypeRules['ConcurrencyMode']; Code: string }>,
+): { Mode: SubscriptionTypeRules['ConcurrencyMode']; Code: string } {
+    return modes.reduce((best, m) => (CONCURRENCY_STRICTNESS[m.Mode] > CONCURRENCY_STRICTNESS[best.Mode] ? m : best));
+}
+
+function describeOverlap(o: CoverageOverlap): string {
+    const who = o.SubscriptionNumber ?? 'another line of this order';
+    return `${who} (${o.ProductName}, ${isoDay(o.CoverageStart)} to ${isoDay(o.CoverageEnd)})`;
+}
+
 @RegisterClass(SubscriptionBehavior, 'Default')
 export class SubscriptionBehavior {
     /**
@@ -284,7 +388,10 @@ export class SubscriptionBehavior {
                 Action: 'Reject',
                 RejectReason:
                     `This subscription type (${ctx.Rules.Code}) does not allow a second concurrent ` +
-                    `subscription for the same subscriber, and an active one already exists.`,
+                    `subscription for the same subscriber, and an active one already exists.` +
+                    (ctx.RequestedAction === 'CreateNew'
+                        ? ` The line asks for a new subscription, which this type cannot have; extend the existing one instead.`
+                        : ''),
             };
         }
 
@@ -316,7 +423,9 @@ export class SubscriptionBehavior {
             Term: {
                 StartDate: start,
                 EndDate: end,
-                TermNumber: (ctx.Existing?.LatestTermNumber ?? 0) + 1,
+                // A new subscription starts at term 1 even when the subscriber holds another one:
+                // the existing subscription's term count is not this one's.
+                TermNumber: action === 'CreateNew' ? 1 : (ctx.Existing?.LatestTermNumber ?? 0) + 1,
                 IsProrated: isProrated,
                 ProrationFactor: isProrated ? factor : null,
                 Amount: money(ctx.Amount * (isProrated ? factor : 1)),
@@ -379,11 +488,11 @@ export class SubscriptionBehavior {
     public DedupeIdentity(rules: SubscriptionTypeRules, subscriber: SubscriberIdentity): SubscriberIdentity {
         switch (rules.BenefitModel) {
             case 'Holder':
-                // Key on whichever side holds it, so a personal membership dedupes by person and an
-                // org-held one by org — without either leaking into the other's identity.
-                return subscriber.PersonID && !subscriber.OrganizationID
-                    ? { OrganizationID: null, PersonID: subscriber.PersonID }
-                    : { OrganizationID: subscriber.OrganizationID ?? null, PersonID: null };
+                // A resolved person keys on the PAIR, a bare org on the org. The organization is
+                // usually filled in from the buyer's employer, so "an org is present" does not mean
+                // the org holds it: keyed on the org alone, a coworker's purchase would extend this
+                // person's subscription and leave the coworker with nothing.
+                return { OrganizationID: subscriber.OrganizationID ?? null, PersonID: subscriber.PersonID ?? null };
             case 'Organization':
                 // The org holds ONE, however many of its people benefit — so a second purchase
                 // extends rather than duplicating.
@@ -396,6 +505,35 @@ export class SubscriptionBehavior {
         }
     }
 
+    /**
+     * What a stored subscription must carry to count as the same one as `DedupeIdentity` (#317).
+     *
+     * A subscription stores the subscriber as resolved, so an org-held one also carries whatever
+     * person the order named — a ship-to or bill-to contact. Where the identity drops the person,
+     * that stored person is not part of who holds it, and the lookup must not require it to be
+     * empty: doing so missed every org-held subscription bought with a contact, and a re-order
+     * booked a second subscription for the same dates without `ConcurrencyMode` ever running.
+     *
+     * A seat under `Individual`, and a `Holder` purchase that resolved a person, keep the person, so
+     * subscriptions for different people stay distinct. A personal subscription keeps
+     * `HolderOrganizationID IS NULL`, so it never matches an org's.
+     *
+     * A `Holder` purchase whose organization was stated on the order also matches that
+     * organization's subscription stored with no person. One bought with no contact cannot be a
+     * coworker's personal subscription, and missing it sold the organization a second one for the
+     * same dates. An organization inferred from the person's employer keeps the exact match.
+     */
+    public DedupeMatch(rules: SubscriptionTypeRules, subscriber: SubscriberIdentity): SubscriberMatch {
+        const identity = this.DedupeIdentity(rules, subscriber);
+        const organizationID = identity.OrganizationID ?? null;
+        const personID = identity.PersonID ?? null;
+        if (!organizationID || !personID) {
+            return { OrganizationID: organizationID, PersonID: organizationID ? 'Any' : personID };
+        }
+        const orNoPerson = rules.BenefitModel === 'Holder' && !subscriber.OrganizationInferred;
+        return { OrganizationID: organizationID, PersonID: personID, ...(orNoPerson ? { OrNoPerson: true } : {}) };
+    }
+
     protected ChooseAction(ctx: SubscriptionPurchaseContext): SubscriptionDecision['Action'] {
         const existing = ctx.Existing;
         if (!existing) return 'CreateNew';
@@ -405,6 +543,14 @@ export class SubscriptionBehavior {
         // after a lapse should revive it rather than silently extend a dead one.
         const isActive = existing.Status === 'Active' || existing.Status === 'Trialing';
         if (ctx.IsRenewal && isActive) return 'ExtendExisting';
+        // The line's own answer, when it gives one (golive #299). Before this the type's rule was
+        // the only answer, so every same-product purchase under `ExtendExisting` became the next
+        // term and started a year late.
+        if (!ctx.IsRenewal && ctx.RequestedAction === 'CreateNew') {
+            if (isActive && ctx.Rules.ConcurrencyMode === 'RejectDuplicate') return 'Reject';
+            return 'CreateNew';
+        }
+        if (!ctx.IsRenewal && ctx.RequestedAction === 'ExtendExisting' && isActive) return 'ExtendExisting';
         if (isActive) {
             switch (ctx.Rules.ConcurrencyMode) {
                 case 'AllowMultiple': return 'CreateNew';
@@ -516,6 +662,64 @@ export class SubscriptionBehavior {
         }
     }
 
+    /**
+     * Whether a line may create coverage that overlaps another band of its family (golive #276).
+     *
+     * The type's `ConcurrencyMode` already answers "may this holder have two concurrent
+     * subscriptions", so it answers this too — a second band IS a second concurrent subscription.
+     * Two bands can carry different types, so the stricter mode of the line's type and each
+     * overlapping band's type applies; otherwise holding A and ordering B could be allowed while
+     * holding B and ordering A is refused.
+     *
+     * The one difference from the same-product case is `ExtendExisting`: a different band cannot
+     * extend a subscription to another product, and silently creating a second one is what billed
+     * the holder twice. So it refuses unless the line says the overlap is intended.
+     *
+     * The way out the message offers is a start after the existing coverage, or (where the mode
+     * permits) marking the line to run alongside it. It does not offer cancelling the existing
+     * subscription: a cancelled subscription keeps its coverage through its end date, and that
+     * coverage still counts.
+     */
+    public DecideCoverageOverlap(ctx: CoverageOverlapContext): CoverageOverlapDecision {
+        if (ctx.Overlaps.length === 0) return { Outcome: 'None', Message: null };
+
+        const governing = strictestMode([
+            { Mode: ctx.Rules.ConcurrencyMode, Code: ctx.Rules.Code },
+            ...ctx.Overlaps.map((o) => ({ Mode: o.ConcurrencyMode, Code: o.SubscriptionTypeCode })),
+        ]);
+        const what =
+            `${ctx.ProductName} overlaps coverage this holder already has in subscription family ` +
+            `${ctx.Family}: ${ctx.Overlaps.map(describeOverlap).join('; ')}.`;
+        const startAfter = isoDay(new Date(Math.max(...ctx.Overlaps.map((o) => utcDay(o.CoveredThrough).getTime()))));
+
+        switch (governing.Mode) {
+            case 'AllowMultiple':
+                return {
+                    Outcome: 'Allowed',
+                    Message: `${what} Subscription type ${governing.Code} allows concurrent subscriptions, so both will be billed.`,
+                };
+            case 'RejectDuplicate':
+                return {
+                    Outcome: 'Refused',
+                    Message:
+                        `${what} Subscription type ${governing.Code} does not allow concurrent subscriptions. ` +
+                        `Start this band after ${startAfter}.`,
+                };
+            case 'ExtendExisting':
+                return ctx.Acknowledged
+                    ? {
+                          Outcome: 'Acknowledged',
+                          Message: `${what} The line is marked to run alongside it, so both will be billed.`,
+                      }
+                    : {
+                          Outcome: 'NeedsAck',
+                          Message:
+                              `${what} A different band does not extend the existing subscription, so both would be billed. ` +
+                              `Start this band after ${startAfter}, or mark the line to run alongside it.`,
+                      };
+        }
+    }
+
     /** Months per recognition slice — `MatchBilling` follows the billing cadence. */
     public RecognitionMonths(rules: SubscriptionTypeRules): number {
         const cadence = rules.RecognitionCadence === 'MatchBilling' ? rules.BillingCadence : rules.RecognitionCadence;
@@ -569,6 +773,30 @@ export class SubscriptionBehavior {
             // they paid for. Only a cut-short term is `Canceled`.
             TermStatus: effective.getTime() >= ctx.Term.EndDate.getTime() ? 'Completed' : 'Canceled',
             Explanation: explanation,
+        };
+    }
+
+    /**
+     * What cancelling does to a LATER term — one that starts after the cancelled term's effective
+     * date, such as a renewal already booked (#406). The subscription ends before it begins, so
+     * none of it is ever delivered: it is cancelled and reversed in full, whatever the type's
+     * refund mode. `CancellationRefundMode` governs coverage the customer has had; a term that
+     * never started has none. Override to change that.
+     */
+    public DecideLaterTermCancellation(rawContext: LaterTermCancellationContext): CancellationDecision {
+        const start = utcDay(rawContext.Term.StartDate);
+        const amount = money(Math.max(rawContext.Term.Amount, 0));
+        return {
+            EffectiveDate: start,
+            // Access is the subscription's, decided by the cancelled term; this term grants none.
+            AccessThroughDate: start,
+            RefundAmount: amount,
+            // A term that charged nothing has nothing to reverse, the same rule as DecideCancellation.
+            ReversalFraction: amount > 0 ? 1 : 0,
+            TermStatus: 'Canceled',
+            Explanation:
+                `Term ${rawContext.Term.TermNumber} starts ${isoDay(start)}, after coverage ends ` +
+                `${isoDay(utcDay(rawContext.CoverageEndsDate))}, so it is canceled and its full ${amount} reversed.`,
         };
     }
 
@@ -662,6 +890,70 @@ export class SubscriptionBehavior {
             }
         }
     }
+}
+
+/**
+ * A term that covers the holder under another band of the family, as the lookup reads it: a live
+ * term, or a cancelled subscription's term cut at the subscription's end date.
+ */
+export interface FamilyCoverageTerm {
+    SubscriptionID: string | null;
+    SubscriptionNumber: string | null;
+    ProductName: string;
+    StartDate: Date;
+    EndDate: Date;
+    /** The `ConcurrencyMode` and code of that band's subscription type. */
+    ConcurrencyMode: SubscriptionTypeRules['ConcurrencyMode'];
+    SubscriptionTypeCode: string;
+}
+
+/**
+ * The part of each subscription's coverage that falls inside `[start, end]`, one entry per
+ * subscription.
+ *
+ * Terms are inclusive calendar days, so a term ending the day before `start` does not overlap —
+ * that is a contiguous continuation, not double coverage. A subscription with several overlapping
+ * terms reports one window from the earliest overlapping day to the latest, which is what the
+ * holder is covered for twice. `CoveredThrough` is the last day of any of that subscription's
+ * terms, including ones after `end`, so a start after it clears the overlap.
+ */
+export function OverlappingCoverage(terms: FamilyCoverageTerm[], start: Date, end: Date): CoverageOverlap[] {
+    const from = utcDay(start).getTime();
+    const to = utcDay(end).getTime();
+    // A sibling line has no subscription yet; each sibling is its own entry.
+    const keyOf = (term: FamilyCoverageTerm, i: number) => term.SubscriptionID ?? `line:${i}`;
+
+    const coveredThrough = new Map<string, number>();
+    terms.forEach((term, i) => {
+        const key = keyOf(term, i);
+        coveredThrough.set(key, Math.max(coveredThrough.get(key) ?? -Infinity, utcDay(term.EndDate).getTime()));
+    });
+
+    const bySubscription = new Map<string, CoverageOverlap>();
+    terms.forEach((term, i) => {
+        const s = Math.max(utcDay(term.StartDate).getTime(), from);
+        const e = Math.min(utcDay(term.EndDate).getTime(), to);
+        if (s > e) return;
+
+        const key = keyOf(term, i);
+        const seen = bySubscription.get(key);
+        if (seen) {
+            seen.CoverageStart = new Date(Math.min(seen.CoverageStart.getTime(), s));
+            seen.CoverageEnd = new Date(Math.max(seen.CoverageEnd.getTime(), e));
+        } else {
+            bySubscription.set(key, {
+                SubscriptionID: term.SubscriptionID,
+                SubscriptionNumber: term.SubscriptionNumber,
+                ProductName: term.ProductName,
+                CoverageStart: new Date(s),
+                CoverageEnd: new Date(e),
+                CoveredThrough: new Date(coveredThrough.get(key)!),
+                ConcurrencyMode: term.ConcurrencyMode,
+                SubscriptionTypeCode: term.SubscriptionTypeCode,
+            });
+        }
+    });
+    return [...bySubscription.values()];
 }
 
 /** Map a subscription-type entity (or a cache row) onto the rules bag `Decide` reads. */

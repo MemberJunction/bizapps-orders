@@ -1,0 +1,125 @@
+[
+  {
+    "_comments": [
+      "THE OUTBOUND DISPATCH ACTION (#293). Its own dot-json so parallel work on other actions conflicts on nothing.",
+      "",
+      "WHY AN ACTION. Outbound events are recorded inside the transaction that caused them and sent after it. MJ's",
+      "scheduler dispatches Actions, and this row is how the minute job reaches DispatchOutboundDeliveries. The class",
+      "behind it holds no delivery logic.",
+      "",
+      "SAFE TO SHIP Active: with no consumer registered there are no delivery rows, and a pass claims nothing."
+    ],
+    "fields": {
+      "Name": "Dispatch Outbound Events",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Send the outbound events that are due (order confirmations and entitlement grant changes) to the consumers registered for them. Failed deliveries are retried with backoff and dead-lettered after their deadline.",
+      "Type": "Custom",
+      "DriverClass": "Orders.DispatchOutboundEvents",
+      "IconClass": "fa-solid fa-paper-plane",
+      "UserPrompt": "Send the outbound events that are due to their consumers.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "8633F2E7-5333-42E2-9CA0-E1A33DBD1908"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxCount",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Cap on deliveries claimed in one pass (default 50). Rows left over are sent on the next pass. A value that is not a whole number of at least 1 is refused."
+          },
+          "primaryKey": {
+            "ID": "6FB07B15-899A-4257-B6BE-29B369DE2E13"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:46.482Z",
+            "checksum": "456a8a8dabc2c84c1bd91d66ff4bd0e9e4780e7b4e8de19c4abe4e5e96b1a02e"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Claimed",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many due deliveries this pass took."
+          },
+          "primaryKey": {
+            "ID": "D598D33B-8C76-49F0-A5D6-DED74B246C57"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:46.519Z",
+            "checksum": "ff6bb07d0712a04f4162c6a8f6b280aa2c46904cf91a978d7b508f7ecba42284"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Delivered",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many were accepted by their consumer."
+          },
+          "primaryKey": {
+            "ID": "ECCE4725-A286-46C5-90FD-750579DE8652"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:46.550Z",
+            "checksum": "96791a8f2d8c9b778eeb44c5981113f92b5df1290eb3ea1ad128edeea73f1089"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Retrying",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many failed and were scheduled to be tried again."
+          },
+          "primaryKey": {
+            "ID": "61788AC8-001C-439D-A998-6FC2C3FD42E9"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:46.579Z",
+            "checksum": "9e00e93ee3f7e5fba99edc4d00afd7a7b302738fc12d18c1c549c1c0d46911b7"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "DeadLettered",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many failed past their deadline and were dead-lettered."
+          },
+          "primaryKey": {
+            "ID": "280B79E7-76F2-441D-80DA-4C259B44FA8F"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:46.611Z",
+            "checksum": "035cb5c4d648f8cbea323f7c007ade4f15d79bbe1b4c33f030395ed44869b69c"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-10-03T21:46:46.455Z",
+      "checksum": "5d5e5ff22c0d45840abe52e43720c792edca0031071f460678731047c0010e4c"
+    }
+  }
+]

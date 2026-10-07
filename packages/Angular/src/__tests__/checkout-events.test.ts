@@ -82,7 +82,7 @@ describe('CheckoutPublicHostComponent events', () => {
         const target = new EventTarget();
         host = Object.assign(target, { getAttribute: () => null });
         seen = [];
-        for (const type of ['checkout-state-change', 'checkout-complete', 'checkout-error']) {
+        for (const type of ['checkout-state-change', 'checkout-complete', 'checkout-error', 'checkout-cancel', 'checkout-close', 'checkout-reset-refused']) {
             host.addEventListener(type, (e) => seen.push({ type, detail: (e as CustomEvent).detail }));
         }
         responses = {
@@ -161,5 +161,259 @@ describe('CheckoutPublicHostComponent events', () => {
         await c.onSubmitted(submission());
         expect(seen[0]).toEqual({ type: 'checkout-state-change', detail: { state: 'PROCESSING' } });
         expect(seen.some((e) => e.type === 'checkout-complete')).toBe(true);
+    });
+
+    describe('account step password form (#396)', () => {
+        const SALE = [
+            { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },
+            { type: 'checkout-state-change', detail: { state: 'SUCCESS' } },
+            {
+                type: 'checkout-complete',
+                detail: { sessionId: 'sess-1', productName: 'Annual Plan', productId: 'prod-1', amount: 0, currency: 'USD', coupon: null },
+            },
+        ];
+
+        beforeEach(() => {
+            responses['/complete'] = { Success: true, OrderNumber: 'SO-1', TotalGross: 0, AccountStep: true };
+            responses['/account'] = { Success: true, Account: { Outcome: 'Created', CanSetPassword: true } };
+            vi.stubGlobal('sessionStorage', { getItem: () => null, setItem: () => undefined, removeItem: () => undefined });
+        });
+
+        const sold = async (): Promise<CheckoutPublicHostComponent> => {
+            const c = create();
+            await c.ngOnInit();
+            seen = [];
+            await c.onSubmitted(submission());
+            return c;
+        };
+
+        it('reports PASSWORD after the sale while the form shows, then SUCCESS once the password is set', async () => {
+            const c = await sold();
+            expect(seen).toEqual([...SALE, { type: 'checkout-state-change', detail: { state: 'PASSWORD' } }]);
+            responses['/account/password'] = { Success: true, Account: { Outcome: 'Created', CanSetPassword: false } };
+            c.password = 'pw-1';
+            c.passwordConfirmation = 'pw-1';
+            seen = [];
+            await c.submitPassword();
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'SUCCESS' } }]);
+        });
+
+        it('stays in PASSWORD when the password is refused', async () => {
+            const c = await sold();
+            responses['/account/password'] = { Success: false, ErrorMessage: 'Too short.', Account: { Outcome: 'Created', CanSetPassword: true } };
+            c.password = 'x';
+            c.passwordConfirmation = 'x';
+            seen = [];
+            await c.submitPassword();
+            expect(seen).toEqual([]);
+        });
+
+        it('reports SUCCESS when the buyer skips the password', async () => {
+            const c = await sold();
+            seen = [];
+            c.skipPassword();
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'SUCCESS' } }]);
+        });
+
+        it('sends no PASSWORD when the account step offers no password', async () => {
+            responses['/account'] = { Success: true, Account: { Outcome: 'Exists', CanSetPassword: false } };
+            await sold();
+            expect(seen).toEqual(SALE);
+        });
+
+        it('reports PASSWORD on a reload that returns to the form', async () => {
+            vi.stubGlobal('sessionStorage', {
+                getItem: (k: string) => (k === 'mj-checkout-completing:annual' ? 'sess-1' : null),
+                setItem: () => undefined,
+                removeItem: () => undefined,
+            });
+            const c = create();
+            await c.ngOnInit();
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'PASSWORD' } }]);
+            seen = [];
+            c.skipPassword();
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'SUCCESS' } }]);
+        });
+    });
+
+    describe('Cancel (#297)', () => {
+        it('resets the form, clears the error and tells the host page to close', async () => {
+            responses['/draft'] = { Success: false, ErrorMessage: 'Could not price this checkout.' };
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(c.errorMessage).toBe('Could not price this checkout.');
+            const before = c.formGeneration;
+            seen = [];
+
+            c.onCancelled();
+
+            expect(c.errorMessage).toBeNull();
+            expect(c.formGeneration).toBe(before + 1);
+            expect(seen).toEqual([
+                { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+                { type: 'checkout-cancel', detail: {} },
+                { type: 'checkout-close', detail: {} },
+            ]);
+        });
+
+        it('does nothing while a payment is in flight', async () => {
+            const c = create();
+            await c.ngOnInit();
+            c.processing = true;
+            seen = [];
+            c.onCancelled();
+            expect(seen).toEqual([]);
+        });
+
+        it('lets the buyer check out again after cancelling', async () => {
+            const c = create();
+            await c.ngOnInit();
+            c.onCancelled();
+            seen = [];
+            await c.onSubmitted(submission());
+            expect(seen.map((e) => e.type)).toEqual(['checkout-state-change', 'checkout-state-change', 'checkout-complete']);
+        });
+    });
+
+    describe('embedded in another widget', () => {
+        let attrs: Record<string, string>;
+        let removed: string[];
+        let drafts: Array<Record<string, unknown>>;
+        let inits: number;
+
+        beforeEach(() => {
+            attrs = {};
+            removed = [];
+            drafts = [];
+            inits = 0;
+            host.getAttribute = (name: string) => attrs[name] ?? null;
+            vi.stubGlobal('sessionStorage', { getItem: () => null, setItem: () => undefined, removeItem: (k: string) => removed.push(k) });
+            const base = vi.mocked(fetch).getMockImplementation()!;
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockImplementation((url: string, init?: { body?: string }) => {
+                    if (url.endsWith('/draft')) drafts.push(JSON.parse(init?.body ?? '{}'));
+                    if (url.endsWith('/initialize')) inits++;
+                    return base(url, init);
+                })
+            );
+        });
+
+        it('passes the known e-mail to the form and the attribution to the draft', async () => {
+            attrs = { email: 'caller@example.com', source: 'voice_agent', 'source-ref': 'conv-9' };
+            const c = create();
+            await c.ngOnInit();
+            expect(c.prefillEmail).toBe('caller@example.com');
+            await c.onSubmitted(submission());
+            expect(drafts[0].attribution).toEqual({ source: 'voice_agent', reference: 'conv-9' });
+        });
+
+        it('sends no attribution when the host names no source', async () => {
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(drafts[0]).not.toHaveProperty('attribution');
+        });
+
+        it('after a failed payment, resets without the Cancel events and starts a new session', async () => {
+            responses['/draft'] = { Success: false, ErrorMessage: 'Could not price this checkout.' };
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            const before = c.formGeneration;
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
+            expect(c.errorMessage).toBeNull();
+            expect(c.formGeneration).toBe(before + 1);
+            expect(seen).toEqual([
+                { type: 'checkout-state-change', detail: { state: 'LOADING' } },
+                { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+            ]);
+            expect(removed).toContain('mj-checkout-key:annual');
+            expect(inits).toBe(2);
+        });
+
+        it('clears the load error when a reset after a failed one loads (#397)', async () => {
+            const c = create();
+            await c.ngOnInit();
+            responses['/initialize'] = { Success: false, ErrorMessage: 'This checkout is not available.' };
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
+            expect(c.loadError).toBe('This checkout is not available.');
+
+            responses['/initialize'] = { Success: true, SessionID: 'sess-2', Configuration: CONFIG };
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
+            expect(c.loadError).toBeNull();
+            expect(c.config).not.toBeNull();
+            expect(seen).toEqual([
+                { type: 'checkout-state-change', detail: { state: 'LOADING' } },
+                { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+            ]);
+            expect(inits).toBe(3);
+        });
+
+        it('a reset takes the e-mail and attribution the host set for the next conversation', async () => {
+            attrs = { email: 'first@example.com', source: 'voice_agent', 'source-ref': 'conv-1' };
+            const c = create();
+            await c.ngOnInit();
+            attrs = { email: 'second@example.com', source: 'chat_agent', 'source-ref': 'conv-2' };
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
+            expect(c.prefillEmail).toBe('second@example.com');
+            await c.onSubmitted(submission());
+            expect(drafts[0].attribution).toEqual({ source: 'chat_agent', reference: 'conv-2' });
+        });
+
+        it('refuses a reset while a payment is in flight', async () => {
+            const c = create();
+            await c.ngOnInit();
+            c.processing = true;
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            expect(seen).toEqual([{ type: 'checkout-reset-refused', detail: { state: 'CHECKOUT' } }]);
+        });
+
+        it('refuses a reset while the account step after a sale is unsettled', async () => {
+            responses['/complete'] = { Success: true, OrderNumber: 'SO-1', TotalGross: 0, AccountStep: true };
+            responses['/account'] = { Success: true, Account: { Outcome: 'Created', CanSetPassword: true } };
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(c.account?.CanSetPassword).toBe(true);
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            expect(seen).toEqual([{ type: 'checkout-reset-refused', detail: { state: 'PASSWORD' } }]);
+            expect(inits).toBe(1);
+
+            c.skipPassword();
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
+            expect(inits).toBe(2);
+            expect(c.account).toBeNull();
+            expect(c.successMessage).toBeNull();
+        });
+
+        it('after a completed sale, starts over with a new session', async () => {
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(c.successMessage).toBeTruthy();
+            seen = [];
+            host.dispatchEvent(new CustomEvent('checkout-reset'));
+            await new Promise((r) => setTimeout(r, 0));
+            expect(seen).toEqual([
+                { type: 'checkout-state-change', detail: { state: 'LOADING' } },
+                { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+            ]);
+            expect(removed).toContain('mj-checkout-key:annual');
+            expect(inits).toBe(2);
+            expect(c.successMessage).toBeNull();
+            expect(c.config).not.toBeNull();
+        });
     });
 });

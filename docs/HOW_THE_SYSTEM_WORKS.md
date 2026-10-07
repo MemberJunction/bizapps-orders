@@ -255,9 +255,6 @@ Rebuild a database from zero:
 
 ```bash
 scripts/rebuild-db.sh
-pnpm run mj:codegen
-scripts/append-codegen.sh
-pnpm exec mj sync push --dir metadata
 ```
 
 ---

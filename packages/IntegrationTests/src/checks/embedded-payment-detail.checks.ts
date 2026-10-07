@@ -29,6 +29,7 @@ import type { mjBizAppsOrdersPaymentDetailEntity } from '@mj-biz-apps/orders-ent
 import { TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 import {
     CreateOrdersFixture,
+    CreateProductPrice,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
@@ -43,7 +44,8 @@ import {
     PAYMENT_DETAIL_ENTITY,
     PAYMENT_HEADER_ENTITY,
 } from '../entity-names.js';
-import { BuildOrder } from '../order-builder.js';
+import { BuildOrder, ConfirmOrder } from '../order-builder.js';
+import { CreatePayment } from '../payment-builder.js';
 
 function cashType(): string {
     const id = Fx().PaymentTypeIDs.get('Cash');
@@ -318,6 +320,8 @@ export const EmbeddedPaymentDetailChecks: NamedCheck[] = [
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
                 const f = Fx();
+                // WidgetA's engine price, so the stated 40 is not a concession the confirm gate holds.
+                await CreateProductPrice(ctx, f.Products['WidgetA'], 40);
                 const built = await BuildOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     InitialPaymentTypeID: cashType(),
@@ -357,6 +361,44 @@ export const EmbeddedPaymentDetailChecks: NamedCheck[] = [
                 const method = await newMethod(ctx);
                 const saved = await method.Save();
                 Assert(!saved, 'PD14: an empty required detail must fail validation');
+            }),
+    },
+    {
+        Id: 'embedded-payment-detail.PD15',
+        Name: 'PD15: a payment captured and booked in the save that creates its detail succeeds',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const order = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 45 }],
+                });
+                Assert(order.Saved, `PD15: confirm failed — ${order.Message}`);
+
+                // A wire entered on the payment form: reference number on a new embedded detail, saved
+                // straight to Captured with no draft save first.
+                const paid = await CreatePayment(ctx.User, {
+                    PaymentNumber: `PD-${Date.now().toString(36)}`,
+                    ReceivingCompanyID: f.CoA.ID,
+                    PaymentTypeID: cashType(),
+                    Amount: 45,
+                    NewPaymentDetail: { CompanyID: f.CoA.ID, PaymentTypeID: cashType(), ReferenceNumber: 'WIRE-PD15' },
+                    Allocations: [{ OrderHeaderID: order.Order.ID as string, Amount: 45 }],
+                });
+                Assert(paid.Saved, `PD15: capture with a new detail failed — ${paid.Message}`);
+                const booked = await TxOne<{ N: number }>(
+                    ctx,
+                    `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.PaymentLine
+                      WHERE PaymentHeaderID = '${paid.Payment.ID}' AND BookedAt IS NOT NULL`,
+                );
+                AssertEqual(Number(booked.N), 1, 'PD15: the allocation booked');
+                const row = await TxOne<{ ReferenceNumber: string | null }>(
+                    ctx,
+                    `SELECT ReferenceNumber FROM ${ORDERS_SCHEMA}.PaymentDetail WHERE ID = '${paid.Payment.PaymentDetailID}'`,
+                );
+                AssertEqual(row.ReferenceNumber?.trim(), 'WIRE-PD15', 'PD15: the detail was written');
             }),
     },
 ];
