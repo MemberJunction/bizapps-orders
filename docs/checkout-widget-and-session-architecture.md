@@ -678,7 +678,12 @@ GET {MJAPI}/checkout/:slug
 
 Example: `http://localhost:4103/checkout/summit-2027`
 
-That route returns a vanilla HTML page that talks only to the POST edge below (`initialize` → `draft` → `payment-intent` if required → `complete`). It is not an Explorer route and not a custom-element bundle.
+That route returns a small, first-party HTML page (nonce-based CSP, no Explorer shell, no login) that talks only to the POST edge below (`initialize` → `draft` → `payment-intent` if required → `complete`). What the page contains depends on whether the element bundle was built:
+
+- **Bundle built (the normal case):** the page loads the `<mj-orders-checkout>` Angular Element from `GET {MJAPI}/checkout/element/main.js` and renders `<mj-orders-checkout slug="…" api-root="/checkout">`. The buyer gets the full reusable widget — `customUI` theming and the introspected extension fields. MJAPI finds the bundle in `@mj-biz-apps/orders-ng`'s `dist/checkout-element` (`resolveCheckoutElementDir` in `CheckoutServerExtension.ts`).
+- **Bundle not found:** the page falls back to a minimal vanilla form driven by an inline boot script, against the same POST edge.
+
+Either way it is not an Explorer route. The element bundle itself is public static code, served to every origin, so a third-party site can load the same `main.js` and embed `<mj-orders-checkout>` directly (see *Embedding the checkout inside another widget* below).
 
 The Angular `<mj-checkout-widget>` remains the embeddable control for sites that already host Angular. A wrapper route inside Explorer would require login and is the wrong guest surface.
 
