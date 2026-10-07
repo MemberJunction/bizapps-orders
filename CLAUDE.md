@@ -64,6 +64,7 @@ runs migrations and nothing else. A `mj sync push` whose result lives only in yo
 **unshipped change** — the rows exist for you and for no host. At release the build engineer
 regenerates a `*__Metadata_Sync.sql` migration carrying those rows, and it installs alongside every
 other migration; that is how metadata reaches a customer.
+The model, and the Open App steps that differ from core (`--schema`, the `${mjSchema}` substitution): [Release Metadata Migrations Guide](https://github.com/MemberJunction/MJ/blob/next/guides/RELEASE_METADATA_MIGRATIONS_GUIDE.md).
 
 Two things about that step, because both fail quietly:
 - It must be generated from a **fresh** database. A push against a dev database emits `spUpdate*`,
