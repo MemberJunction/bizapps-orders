@@ -117,6 +117,7 @@ included, so rollback-based isolation is impossible for that check.
 | `payments-rollups` | PR1–PR9 |
 | `volume` | VL1–VL13 |
 | `entitlement-read` | ER1–ER7 (CheckEntitlement / ListEntitlements, in-process Execute) |
+| `orders-isa` | IS1–IS10 (IS-A / Table-Per-Type: Event Products and Event Order Lines against the database; IS7 commits and cleans up) |
 | `wire-crud` | W1–W3 (client only) |
 | `wire-volume` | WV1–WV7 (client only, committed) |
 | `wire-entitlements` | WE1–WE5 (client only, Check/List over GraphQL; WE1 confirms) |
@@ -130,6 +131,19 @@ to the exports that register them, so it cannot drift as far as a table over her
 for that reason. It is also the only bundle that creates a SECOND `SQLServerDataProvider`, which is
 how a real `ConfirmOrder` gets an independent session; its header explains what that does and does
 not make provable.
+
+`orders-isa` covers MemberJunction's IS-A machinery against a real database, which MJ cannot do itself — it
+has no IS-A entity of its own and tests the machinery with mocks. It drives both of Orders' disjoint pairs
+through save, view, load, promotion (`AttachToParent`), `EnsureISAChild` and delete. Three things differ
+from the other bundles:
+
+- **Its name carries the app.** Accounting and Sales have IS-A bundles too, and the check registry
+  silently replaces a check or lifecycle registered under a name it already holds, so a plain `isa`
+  could swap one app's checks for another's in a shared process.
+- **IS7 runs under `OutsideTransaction`**, because the rollback it proves has to be MJ's own rather
+  than the check's, and it deletes the draft order it commits.
+- **The deletes in IS8/IS9 race a 30-second deadline**, so a return of MJ#4850 (a parent `Delete()`
+  that never returned) fails one check instead of hanging the run.
 
 ## Drift guards
 

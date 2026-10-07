@@ -595,6 +595,17 @@
           "primaryKey": {
             "ID": "E261B03C-0C83-4297-B5B4-A6F0C69EFA2B"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-42 - IS-A Entities",
+            "Sequence": 42,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "4E98F0B3-5247-40E0-91B4-94AEB1EEC0CB"
+          }
         }
       ]
     },
