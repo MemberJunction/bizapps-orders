@@ -68,9 +68,12 @@ other migration; that is how metadata reaches a customer.
 Two things about that step, because both fail quietly:
 - It must be generated from a **fresh** database. A push against a dev database emits `spUpdate*`,
   which the generator refuses and which would overwrite host state.
-- **Nothing in CI detects a pending metadata change with no migration behind it.** The guard is the
-  release process, not a gate — so a `metadata/` edit that matters to a host is not "done" when it
-  merges, only when a release carries it.
+- **Nothing on a feature PR detects a pending metadata change with no migration behind it.** The
+  gate is at release: the Version Packages PR (`changeset-release/main` → `main`, opened by
+  `version.yml`) runs `rr: metadata shipped` (`ci/check-metadata-shipped.sh`), which fails when
+  `metadata/` changed substantively since the last `v*` tag without a `*__Metadata_Sync.sql` behind
+  it. So a `metadata/` edit that matters to a host is not "done" when it merges, only when a release
+  carries it.
 
 The review test: *if a colleague pulls this branch onto a database that already has last week's
 schema and runs `pnpm run mj:migrate`, do they get exactly the schema this branch describes?*

@@ -1,17 +1,21 @@
-# Maintains the "Version Packages" PR into `next`.
+# Maintains the "Version Packages" PR — the one that releases.
 #
-# This workflow NEVER publishes. Its only job is to turn the changesets sitting on `next`
-# into a reviewable pull request containing the version bumps, the generated CHANGELOGs,
-# the mj-app.json version sync, and a refreshed lockfile. Merging that PR is what makes
-# `next` genuinely hold the new version.
+# This workflow NEVER publishes. It turns the changesets sitting on `next` into a reviewable
+# pull request containing the version bumps, the generated CHANGELOGs, the mj-app.json sync
+# and a refreshed lockfile. That PR is based on `main`, so merging it IS the release: the
+# push to `main` is what publishes.
 #
-# Why it exists: the release used to compute the version at publish time and push the
-# result straight to `main` (and then to `next`). Both branches are covered by the
-# `main-next-protect` ruleset, which requires a pull request, and `github-actions[bot]`
-# cannot be granted a bypass — GitHub blocks that by design. Accounting's 0.2.0 published
-# to npm and then failed with `GH013`, leaving the registry at 0.2.0 and the repo at
-# 0.1.1 with no tag. Routing the bump through a PR removes the need to write to a
-# protected branch at all, which is also the pattern `changesets/action` is built for.
+# Why the base is `main` and not `next`. `changeset version` deletes the changesets inside
+# the PR's own diff, so merging that PR is what consumes them — which means a version number
+# is spent wherever that PR lands. Landing it on `next` spends the number before anything
+# publishes, and every later fix has to mint a second one; published numbers then skip.
+# Landing it on `main` mints and publishes the number in the same breath, so a skip becomes
+# structurally impossible and `next` never has to freeze for a release.
+#
+# Why it exists at all: the release used to compute the version at publish time and push the
+# result straight to `main` (and then to `next`). Accounting's 0.2.0 published to npm and
+# then failed with `GH013`, leaving the registry at 0.2.0 and the repo at 0.1.1 with no tag.
+# Routing the bump through a PR removes the need to write to a protected branch at all.
 name: Version Packages
 
 on:
@@ -20,8 +24,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # push the changeset-release/next branch
-  pull-requests: write # open and update the Version Packages PR
+  contents: read # writes go through the App token, not GITHUB_TOKEN
 
 concurrency:
   group: version-${{ github.ref }}
@@ -32,10 +35,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Mint a short-lived installation token. App-created PRs DO trigger other workflows,
+      # whereas a PR opened with the default GITHUB_TOKEN creates runs in `action_required`
+      # that sit until a maintainer clicks "Approve and run" — on every push. So the token is
+      # a convenience, not a prerequisite; without it the checks exist but need a click.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
-          fetch-tags: true # the bump-level check compares migrations/ against the last v* tag
+          fetch-tags: true # changeset version reads tags when generating CHANGELOG links
 
       # Must precede setup-node: `cache: 'pnpm'` needs pnpm already on PATH.
       - uses: pnpm/action-setup@v4
@@ -50,6 +64,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - uses: changesets/action@v1
+        id: changesets
         with:
           # Pinned to v1 because this repo runs Changesets CLI v2 (`@changesets/cli ^2.29.8`).
           # The action version-gates on the CLI major and v2.x refuses outright:
@@ -60,17 +75,54 @@ jobs:
           #
           # Input names are major-specific, and Actions IGNORES unknown inputs rather than
           # failing, so a mismatch silently runs the action's defaults. v1 takes
-          # `version`/`publish`/`title`/`commit`; v2 takes `version-script`/`publish-script`/
-          # `pr-title`/`commit-message`. Passing v2 names to v1 is what produced a Version
-          # Packages PR with no lockfile refresh and no mj-app.json sync — the tell was the
-          # PR title falling back to the default "Version Packages".
+          # `version`/`publish`/`title`/`commit`/`branch`; v2 renames them to
+          # `version-script`/`publish-script`/`pr-title`/`commit-message`/`pr-base-branch`.
+          # Passing v2 names to v1 is what produced a Version Packages PR with no lockfile
+          # refresh and no mj-app.json sync — the tell was the PR title falling back to the
+          # default "Version Packages".
           #
-          # No `publish` input: this workflow only ever versions.
-          version: pnpm run version:ci
+          # `branch: main` is what makes this the release PR. In v1 the input sets BOTH the
+          # PR base and the version branch's name, and `prepareBranch` resets that branch to
+          # `github.context.sha` — the commit this workflow ran on, i.e. `next`'s HEAD. So the
+          # PR carries next's tree plus the bump, based on `main`. The head is therefore
+          # `changeset-release/main`, named after the base rather than the source; that is the
+          # action's own convention and nothing depends on the name.
+          #
+          # No `publish` input: this workflow only ever versions. Publishing happens in
+          # publish.yml, on the push to `main` that this PR's merge produces.
+          version: pnpm run version:prepare
+          branch: main
           title: 'chore(release): version packages'
           commit: 'chore(release): version packages'
-          # NOTE: with the default GITHUB_TOKEN, PRs this action opens do NOT trigger other
-          # workflows (GitHub's anti-recursion rule), so build.yml will not run on the
-          # Version Packages PR and `--frozen-lockfile` goes unverified until merge. Swap in
-          # a GitHub App token to fix that — App-created PRs do trigger workflows.
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.app-token.outputs.token }}
+
+      # The action hard-codes the closing sentence of the PR body, and with no `publish` input it
+      # picks the wrong half of its own ternary for us:
+      #
+      #   "you can merge this and publish to npm yourself or [setup this action to publish
+      #    automatically]"
+      #
+      # Here publishing is neither manual nor this action's job — it happens when the release PR
+      # into `main` merges. v1 has no input to override the body, so it is corrected in place.
+      # The action rewrites the body on every update, so this re-applies each run.
+      - name: Say how THIS repo publishes, in the PR body
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ steps.changesets.outputs.pullRequestNumber }}
+        run: |
+          gh pr view "$PR_NUMBER" --json body --jq .body > /tmp/pr-body.md
+          python3 - <<'PYEOF'
+          import pathlib
+          p = pathlib.Path("/tmp/pr-body.md"); body = p.read_text()
+          wrong = ("publish to npm yourself or [setup this action to publish automatically]"
+                   "(https://github.com/changesets/action#with-publishing)")
+          right = ("merging THIS pull request publishes. It is based on `main`, so the merge is the release: the push to `main` runs publish.yml, which builds, runs `changeset publish`, and tags. A follow-up PR then carries the bump back to `next` "
+               "automatically")
+          if wrong in body:
+              p.write_text(body.replace(wrong, right))
+              print("corrected the publish sentence")
+          else:
+              print("sentence not found — upstream wording may have changed; leaving the body alone")
+          PYEOF
+          gh pr edit "$PR_NUMBER" --body-file /tmp/pr-body.md

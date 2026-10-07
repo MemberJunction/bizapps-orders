@@ -1,15 +1,45 @@
+# The checks a migration must pass to enter `next`.
+#
+# Scoped by TRIGGER, not by a job-level `if:`. Required status checks are configured per
+# branch, and these are required on `next` only, so the workflow simply does not run on PRs
+# into `main`. That is safe precisely because nothing requires these contexts there — a
+# workflow filtered out at the `on:` level creates NO check run, which would leave a required
+# context Pending forever. Scope and requirement have to agree; here they do.
+#
+# The release-side assertions (nothing pending, bump level, immutability) live in
+# release-readiness.yml, which is scoped to `main` for the same reason.
 name: Validate Changes
+
+permissions:
+  contents: read
 
 on:
   pull_request:
-    branches: [next, main]
+    # `ready_for_review` is NOT in the default type set (opened/synchronize/reopened), and the
+    # jobs below skip while the PR is a draft — without it, marking a PR ready would not
+    # re-trigger anything and the checks would never report.
+    # `labeled`/`unlabeled` matter because `migration immutability` honours a label: without
+    # them, adding `migration-immutability-exempt` to a red PR re-triggers nothing (you have to
+    # push a no-op commit), and REMOVING it leaves the stale green standing.
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    branches: [next]
 
 concurrency:
   group: changes-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  changes_and_migrations:
+  # Is the migration well-formed, and will Flyway actually run it in the right order?
+  migration-naming:
+    name: 'migration naming'
+    # Published so `parse-migrations` can skip its SQL Server container entirely when no
+    # migration changed. A `services:` block starts when the JOB starts, before any step, so
+    # a step-level `if:` would still pay the ~27s container. Only a job-level one avoids it.
+    outputs:
+      has_migrations: ${{ steps.migration_check.outputs.has_migrations }}
+    # Drafts DO fire opened/synchronize, so without this a draft burns a run on every push.
+    # A job skipped by `if:` still reports a conclusion, so this stays safe as a required check.
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -21,21 +51,35 @@ jobs:
         with:
           node-version: 24
 
-      - name: Check every metadata folder is in directoryOrder
-        run: ./.github/scripts/validate-metadata-directory-order.sh
-
-      - name: Resolve current base branch tip
-        id: base
+      # Two refs, and they are not interchangeable:
+      #
+      #   sha — the MERGE BASE of the freshly-fetched base and HEAD, for "what did THIS PR
+      #         change". Deliberately NOT `github.event.pull_request.base.sha`: that payload
+      #         value can disagree with the merge ref's own base parent, and when it does, a
+      #         two-dot diff between them spans commits this PR never touched — `--name-only`
+      #         cannot tell such a difference from an addition. Observed, not theoretical: run
+      #         33709181459 on #80 reported
+      #         `V202608241515__v5.36.x__Regen_Organization_People_SPs.sql` as changed by a PR
+      #         that adds no migrations. Recomputing the merge base here is immune to it.
+      #         (In the ordinary case the two agree — on a pull_request event HEAD is GitHub's
+      #         merge ref, whose base parent IS the base tip — so this is about the case where
+      #         they have drifted apart, not about two-dot being wrong in general.)
+      #   tip — the base branch TIP, for the timestamp watermark only. A migration merged while
+      #         this PR was open still has to be ordered behind ours, so the watermark is
+      #         deliberately the strictest available.
+      #
+      # No `--depth=1` on the fetch: merge-base needs history on both sides.
+      - name: Resolve the merge base
+        id: mb
         run: |
-          # Not --depth=1: that marks the fetched tip shallow, and if the base has moved since the
-          # merge ref was computed (or on a re-run of an old job) there is no merge base to diff against.
-          git fetch --no-tags origin ${{ github.event.pull_request.base.ref }}
-          echo "sha=$(git rev-parse FETCH_HEAD)" >> $GITHUB_OUTPUT
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          echo "tip=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git merge-base FETCH_HEAD HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Check for migration file changes
         id: migration_check
         run: |
-          MIGRATION_FILES=$(git diff --name-only ${{ steps.base.outputs.sha }} ${{ github.sha }} | grep -E '^migrations/.*\.sql$' || true)
+          MIGRATION_FILES=$(git diff --name-only ${{ steps.mb.outputs.sha }} HEAD | grep -E '^migrations/.*\.sql$' || true)
           if [ -n "$MIGRATION_FILES" ]; then
             echo "has_migrations=true" >> "$GITHUB_OUTPUT"
             echo "Migration files changed:"
@@ -49,30 +93,34 @@ jobs:
         if: steps.migration_check.outputs.has_migrations == 'true'
         run: ./.github/scripts/validate-migration-filenames.sh
 
+      # `--self-test` first, deliberately: the plain invocation exits 0 with "no changed
+      # migrations to check" when there is nothing to do, so the self-test is what makes a
+      # green run mean something. Keep the two lines together.
       - name: EntityField Sequence must not be a literal placeholder
         run: |
           node ./.github/scripts/check-migration-entityfield-sequence.mjs --self-test
-          node ./.github/scripts/check-migration-entityfield-sequence.mjs ${{ steps.base.outputs.sha }} ${{ github.sha }}
-
-      - name: Migrations already on the base branch are locked
-        run: |
-          node ./.github/scripts/check-migrations-locked.mjs --self-test
-          node ./.github/scripts/check-migrations-locked.mjs ${{ steps.base.outputs.sha }} ${{ github.sha }}
+          node ./.github/scripts/check-migration-entityfield-sequence.mjs ${{ steps.mb.outputs.sha }} HEAD
 
       - name: Versioned migrations must not contain spDeleteUnneededEntityFields
         run: |
           node ./.github/scripts/check-migration-no-prune.mjs --self-test
-          node ./.github/scripts/check-migration-no-prune.mjs ${{ steps.base.outputs.sha }} ${{ github.sha }}
+          node ./.github/scripts/check-migration-no-prune.mjs ${{ steps.mb.outputs.sha }} HEAD
+
+      # A pairing convention rather than a separate concern, so it lives with the other
+      # migration-file rules instead of adding a context every repo's ruleset must name.
+      - name: Every new migration needs a PostgreSQL counterpart
+        if: steps.migration_check.outputs.has_migrations == 'true'
+        run: ./.github/scripts/check-pg-counterpart.sh ${{ steps.mb.outputs.sha }} HEAD
 
       - name: Validate migration timestamps are newer than existing
         if: steps.migration_check.outputs.has_migrations == 'true'
         run: |
-          # Get max timestamp from existing migrations on base branch
-          MAX_EXISTING=$(git show ${{ steps.base.outputs.sha }}:migrations/ 2>/dev/null | \
+          # Watermark is the base TIP, not the merge base — see the note on the step above.
+          MAX_EXISTING=$(git show ${{ steps.mb.outputs.tip }}:migrations/ 2>/dev/null | \
             grep -oE 'V[0-9]{12}' | sed 's/^V//' | sort -n | tail -1 || echo "0")
 
-          # Check only newly added migration files (not modified existing ones, not renames)
-          NEW_FILES=$(git diff --diff-filter=A --name-only ${{ steps.base.outputs.sha }} ${{ github.sha }} -- migrations/ | grep -E '\.sql$' || true)
+          # Only newly ADDED files (not modified, not renamed).
+          NEW_FILES=$(git diff --diff-filter=A --name-only ${{ steps.mb.outputs.sha }} HEAD -- migrations/ | grep -E '\.sql$' || true)
           for file in $NEW_FILES; do
             basename=$(basename "$file")
             timestamp=$(echo "$basename" | grep -oE '^V[0-9]{12}' | sed 's/^V//' || true)
@@ -83,28 +131,127 @@ jobs:
           done
           echo "All new migration timestamps are valid"
 
-      - name: Check for changeset (PRs to next with migrations)
-        if: |
-          steps.migration_check.outputs.has_migrations == 'true' &&
-          github.base_ref == 'next'
+  # A PR that adds a migration must carry a minor-or-major changeset.
+  #
+  # Deliberately STRICTER than ci/check-bump-level.sh, which judges the aggregate release: one
+  # minor anywhere in the release window already makes the release a minor, so by that rule a
+  # follow-up migration arriving with a patch changeset is not an error. Requiring it per PR
+  # trades that precision for catching the problem at the door, where the author still has the
+  # context — rather than one stage downstream on a machine-generated version PR that names
+  # nobody. Both are wired up on purpose: this is the first net, rr: minor bump is the second.
+  #
+  # The cost is the case it over-fires on: a comment fix inside a migration, or a second
+  # migration in a window a minor already covers. Both now simply take the minor. There is no
+  # exemption label: under this pipeline a version number is minted and published in the same
+  # breath, so over-bumping is close to free and cheaper than a hatch people must reason about.
+  migration-changeset:
+    name: 'migration changeset'
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the merge base
+        id: mb
         run: |
-          CHANGESET_FILES=$(git diff --name-only ${{ steps.base.outputs.sha }} ${{ github.sha }} | grep -E '^\.changeset/.*\.md$' | grep -v 'README.md' || true)
-          if [ -z "$CHANGESET_FILES" ]; then
-            echo "::error::Migrations were added but no changeset found. Run 'pnpm exec changeset' to create one with at least a 'minor' bump."
-            exit 1
-          fi
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          echo "sha=$(git merge-base FETCH_HEAD HEAD)" >> "$GITHUB_OUTPUT"
 
-          # Check that at least one changeset has 'minor' or 'major' bump
-          HAS_SUFFICIENT_BUMP=false
-          for f in $CHANGESET_FILES; do
-            if grep -qE "minor|major" "$f"; then
-              HAS_SUFFICIENT_BUMP=true
-              break
+      # `--self-test` first: the plain invocation exits 0 when no migration changed, so the
+      # self-test is what makes a green run mean something. It also pins the quote-style cases
+      # that the previous inline regex got wrong.
+      - name: Migrations require a minor or major changeset
+        run: |
+          ./.github/scripts/check-migration-changeset.sh --self-test
+          ./.github/scripts/check-migration-changeset.sh ${{ steps.mb.outputs.sha }} HEAD
+
+  # 2.3 — the same rule release-readiness enforces, but at the door.
+  #
+  # Immutability used to be checked only on the release PR into `main`, which meant a PR editing
+  # an already-shipped migration sailed into `next` and was caught weeks later, on a
+  # machine-generated PR, with the author's context gone. That is the exact failure the
+  # per-PR changeset check exists to avoid, so it gets the same treatment: first net here,
+  # backstop on the release PR. Both run the one script.
+  migration-immutability:
+    name: 'migration immutability'
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: No already-released migration may be edited
+        env:
+          MIGRATION_IMMUTABILITY_EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'migration-immutability-exempt') }}
+        run: |
+          git fetch --no-tags origin main
+          ./ci/check-migration-immutability.sh origin/main
+
+  # Does the T-SQL actually parse? Stands up a real SQL Server rather than pattern-matching,
+  # which is why it is the most expensive job here — and why the draft guard matters most on it.
+  # Its own job, not a step inside another: it has nothing to do with migrations, needs no
+  # merge base and no fetch depth, and finishes in seconds. Folding it into a migration job
+  # would make a green migration check mean two unrelated things.
+  script-references:
+    name: 'script references'
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every script a workflow calls must exist
+        run: ./.github/scripts/check-script-references.sh
+
+  parse-migrations:
+    name: 'Parse migrations (T-SQL syntax check)'
+    needs: migration-naming
+    # Skipped, not filtered: a job skipped by `if:` still reports a conclusion and therefore
+    # SATISFIES a required check, whereas an `on:`-level filter would create no run at all and
+    # leave the context Pending forever.
+    if: github.event.pull_request.draft == false && needs.migration-naming.outputs.has_migrations == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          MSSQL_SA_PASSWORD: 'yourStrong(!)Password123'
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'yourStrong(!)Password123' -C -Q 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install sqlcmd (if available)
+        run: |
+          if ! command -v sqlcmd &> /dev/null && [ ! -x /opt/mssql-tools18/bin/sqlcmd ] && [ ! -x /opt/mssql-tools/bin/sqlcmd ]; then
+            curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg 2>/dev/null || true
+            curl -fsSL https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list 2>/dev/null || true
+            sudo apt-get update -qq 2>/dev/null || true
+            sudo ACCEPT_EULA=Y apt-get install -y -qq mssql-tools18 unixodbc-dev 2>/dev/null || true
+            if [ -d "/opt/mssql-tools18/bin" ]; then
+              echo "/opt/mssql-tools18/bin" >> $GITHUB_PATH
             fi
-          done
-
-          if [ "$HAS_SUFFICIENT_BUMP" = false ]; then
-            echo "::error::Migrations require at least a 'minor' version bump in the changeset."
-            exit 1
           fi
-          echo "Valid changeset with minor or major bump found"
+
+      - name: Parse migrations with SQL Server
+        env:
+          DB_HOST: localhost
+          DB_PORT: 1433
+          DB_USERNAME: sa
+          DB_PASSWORD: 'yourStrong(!)Password123'
+        run: |
+          node .github/scripts/parse-migrations.mjs --self-test
+          node .github/scripts/parse-migrations.mjs

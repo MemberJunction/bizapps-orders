@@ -1,0 +1,81 @@
+name: Build All Packages
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [next]
+    paths:
+      - 'pnpm-lock.yaml'
+      - 'packages/**'
+  pull_request:
+    # `ready_for_review` is NOT in the default type set (opened/synchronize/reopened),
+    # and the job below skips while the PR is a draft — without it, marking a PR ready
+    # would not re-trigger anything and the check would never report.
+    types: [opened, synchronize, reopened, ready_for_review]
+    # `main` included, and NO `paths` filter on the PR side. This context is required on
+    # `main`, and a workflow filtered out at the `on:` level creates no check run at all —
+    # a required context would then sit Pending forever. The release PR is also the one
+    # merge that most needs a build: it is what publishes to npm.
+    branches: [next, main]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # One condition, one exclusion, and the `push` arm has to come first: on a push
+    # `github.event.pull_request` is null, so a bare draft comparison would skip the job on
+    # every push to `next`.
+    #
+    #   * drafts — they DO fire opened/synchronize, so without this a draft burns a full run
+    #     on every push; the `ready_for_review` trigger above brings the check back.
+    #
+    # The Version Packages PR used to be excluded here too, on the reasoning that it only
+    # refreshed a lockfile nobody needed verified yet. It is now based on `main` and IS the
+    # release PR, so this is precisely the build that must not be skipped: the first place
+    # the refreshed lockfile meets --frozen-lockfile.
+    #
+    # A job skipped by `if:` still reports a conclusion, which satisfies a required check —
+    # unlike a workflow filtered out at the `on:` level, which creates no check run at all.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Must precede setup-node: `cache: 'pnpm'` needs pnpm already on PATH.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: 'pnpm-lock.yaml'
+
+      - name: Validate repository.url in packages
+        run: ./.github/scripts/validate-package-repository.sh
+
+      # Runs on every PR, not only at publish. validate-package-lock-case.sh is a release gate, so
+      # a bug in the GATE would otherwise be discovered during a release — the one-level-up form of
+      # the failure it exists to prevent, and exactly what happened: it could not detect a mis-cased
+      # path at all. These fixtures drive the real script against throwaway repos, including the
+      # mis-cased cases that fail without the fix.
+      - name: CI guard script tests
+        run: ./.github/scripts/__tests__/validate-package-lock-case.test.sh
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm run build:packages
+
+      # Runs in the same job so it reuses the tree that was just built rather than paying for
+      # another install and compile. Three packages carry real vitest suites (Core,
+      # CoreEntitiesServer, IntegrationTests); the rest still echo a stub, which turbo treats
+      # as a pass — so a green here means "nothing that has tests is failing", not "tested".
+      - name: Run tests
+        run: pnpm run test
