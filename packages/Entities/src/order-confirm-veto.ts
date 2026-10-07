@@ -70,14 +70,31 @@ export interface OrderConfirmVeto {
 
 const KEY = '__MJ_BizAppsOrders_OrderConfirmVeto__';
 
+/**
+ * The process-wide slot both halves of this seam read.
+ *
+ * `GetGlobalObjectStore()` is typed `GlobalObjectStore | null` and its own source says "callers
+ * already handle null" — it returns null in an environment that is neither browser nor Node. The
+ * fallback keeps that from turning a registration into a TypeError, and this package's tsconfig has
+ * `strictNullChecks` off, so nothing would have flagged the unguarded dereference.
+ *
+ * Keyed on the global store rather than a module-scoped variable for the reason the line-edit veto
+ * records: a host resolving two copies of this package would otherwise put the registration in one
+ * and the lookup in the other, and the veto would silently never run. That is what forced an exact
+ * pin on consumers, and an exact pin is what made npm nest the second copy to begin with.
+ */
+function store(): Record<string, unknown> {
+    return (GetGlobalObjectStore() ?? globalThis) as unknown as Record<string, unknown>;
+}
+
 /** Registers the one veto for this process. Passing null clears it, which is what tests want. */
 export function RegisterOrderConfirmVeto(veto: OrderConfirmVeto | null): void {
-    GetGlobalObjectStore()[KEY] = veto;
+    store()[KEY] = veto;
 }
 
 /** The registered veto, or null on a host where nothing registered. */
 export function HostOrderConfirmVeto(): OrderConfirmVeto | null {
-    return (GetGlobalObjectStore()[KEY] as OrderConfirmVeto | null) ?? null;
+    return (store()[KEY] as OrderConfirmVeto | null | undefined) ?? null;
 }
 
 /**
