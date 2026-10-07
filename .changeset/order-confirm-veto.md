@@ -1,6 +1,6 @@
 ---
-"@mj-biz-apps/orders-entities": patch
-"@mj-biz-apps/orders-core-entities-server": patch
+"@mj-biz-apps/orders-entities": minor
+"@mj-biz-apps/orders-core-entities-server": minor
 ---
 
 Another app can now refuse an order's confirm, through a seam beside the one that refuses a line edit.
