@@ -1,5 +1,16 @@
 # @mj-biz-apps/orders-entities
 
+## 5.29.0
+
+### Minor Changes
+
+- 9d0e76d: The 5.29 Metadata_Sync ships what metadata/ changed since 5.28: the API scopes orders:read, orders:write, orders:payments:refund, orders:payments:write and orders:subscriptions:write, an MJAPI application scope (`*`, Include) for each, and the `orders:`-prefixed RequiredScope on Refund Payment, Apply Account Credit, Cancel Subscription, Spawn Renewals, Amend Arrangement and Detect Overlapping Subscriptions. The seed is idempotent and safe on a host that already ran `mj sync push`. The ML bench output under metadata/ is not included.
+
+### Patch Changes
+
+- 41efacb: Thirteen Orders operation classes now extend their generated base and so carry its `RequiredScope`: Advance Order State, Amend Arrangement, Apply Account Credit, Cancel Subscription, Check Entitlement, Detect Overlapping Subscriptions, List Entitlements, Preview Price, Price Order, Record Access Override Decision, Refund Payment, Request Access Override and Spawn Renewals. Before this, MJAPI skipped the API-key scope check for them and any valid key could call them. The generated base for Amend Arrangement now carries `orders:subscriptions:write`, the scope its metadata declares. Cancel Subscription's `Decision` dates are typed as ISO strings, the form they already took on the wire.
+- 2cec5c3: Orders now ships an API scope for every remote operation that declares one. New scopes under `orders`: `orders:read`, `orders:write`, `orders:payments:refund`, `orders:payments:write` and `orders:subscriptions:write`, each allowed at the MJAPI application ceiling (`*`, Include). The payment and subscription operations' `RequiredScope` moves from `payments:refund`, `payments:write` and `subscriptions:write` to the `orders:` names; those old scopes were never created, so no API key could carry them. Before this, API-key calls to these operations were refused on every host. The rows are in `metadata/` and reach hosts through the release's metadata sync migration.
+
 ## 5.28.0
 
 ### Minor Changes
@@ -526,8 +537,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                "FK_EntityFieldValue_EntityField"
+                                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
