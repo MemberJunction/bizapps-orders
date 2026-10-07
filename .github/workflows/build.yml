@@ -75,56 +75,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Build and tests each REPORT, and the last step DECIDES. Failing at the build would skip the
-      # tests and collapse the job view onto the build error; this way tests still run against
-      # whatever compiled, and the summary table below shows both. (Pattern from bizapps-orders.)
       - name: Build all packages
-        id: build
-        run: |
-          if pnpm run build:packages; then
-            echo 'ok=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'ok=false' >> "$GITHUB_OUTPUT"
-            echo "::error title=Build failed::One or more packages did not compile. Tests below ran against whatever did build."
-          fi
+        run: pnpm run build:packages
 
-      # The repo's own `test` script: per-package turbo or a root `vitest run`, whichever really
-      # runs the suite. Packages that still echo a stub pass, so green means "nothing that has
-      # tests is failing", not "tested".
+      # Runs even when the build failed (but not when the run was cancelled), so one run reports
+      # both the build error and any test failures. A failed step still fails the job, so the
+      # required `build` check blocks exactly as before. The repo's own `test` script: per-package
+      # turbo or a root `vitest run`, whichever really runs the suite. Packages that still echo a
+      # stub pass, so green means "nothing that has tests is failing", not "tested".
       - name: Run tests
-        id: unit
-        if: always()
-        run: |
-          set -o pipefail
-          if pnpm run test 2>&1 | tee /tmp/test.log; then
-            echo 'ok=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'ok=false' >> "$GITHUB_OUTPUT"
-          fi
-
-      # The run's landing page: readable without expanding a log. Vitest colours its output on a
-      # runner and the escape codes sit before the leading whitespace, so they are stripped
-      # before matching. Totals are summed across packages (a turbo run prints one block each).
-      - name: Summary
-        if: always()
-        run: |
-          CLEAN=$( [ -f /tmp/test.log ] && perl -pe 's/\e\[[0-9;]*m//g' /tmp/test.log || true )
-          FILES=$(printf '%s\n' "$CLEAN" | grep -E 'Test Files[[:space:]]' | sed -E 's/.*\(([0-9]+)\).*/\1/' | awk '{s+=$1} END {if (NR) print s}')
-          TESTS=$(printf '%s\n' "$CLEAN" | grep -E '^[^|]*Tests[[:space:]]+[0-9]' | sed -E 's/.*\(([0-9]+)\).*/\1/' | awk '{s+=$1} END {if (NR) print s}')
-          FAILED=$(printf '%s\n' "$CLEAN" | grep -E 'Tests[[:space:]]+.*[0-9]+ failed' | sed -E 's/.*[^0-9]([0-9]+) failed.*/\1/' | awk '{s+=$1} END {if (NR) print s}')
-          {
-            echo '## Build and test'
-            echo
-            echo '| step | result |'
-            echo '| --- | --- |'
-            if [ "${{ steps.build.outputs.ok }}" = 'true' ]; then echo '| Build (`build:packages`) | ✅ passed |'
-            elif [ -z "${{ steps.build.outputs.ok }}" ]; then echo '| Build (`build:packages`) | ⚠️ did not run |'
-            else echo '| Build (`build:packages`) | ❌ failed, see the Build step |'; fi
-            if [ "${{ steps.unit.outputs.ok }}" = 'true' ]; then echo "| Tests | ✅ ${TESTS:-0} tests in ${FILES:-0} files |"
-            elif [ -z "${{ steps.unit.outputs.ok }}" ]; then echo '| Tests | ⚠️ did not run |'
-            else echo "| Tests | ❌ ${FAILED:-?} failed of ${TESTS:-?} (${FILES:-?} files), see the Run tests step |"; fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Fail if the build broke or tests failed
-        if: always() && (steps.build.outputs.ok != 'true' || steps.unit.outputs.ok != 'true')
-        run: exit 1
+        if: ${{ !cancelled() }}
+        run: pnpm run test

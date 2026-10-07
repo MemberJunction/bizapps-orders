@@ -1,8 +1,8 @@
 name: CI
 
-# What remains of orders' original CI after the release-pipeline port. The build, the unit tests
-# and the summary table now live in the shared build.yml (which adopted this file's summary
-# pattern), so only the two orders-specific reminders stay here. Neither fails a PR.
+# What remains of orders' original CI after the release-pipeline port. The build and the unit
+# tests now run in the shared build.yml (the same `vitest run` suite), so only the two
+# orders-specific reminders stay here. Neither fails a PR.
 on:
   pull_request:
 
