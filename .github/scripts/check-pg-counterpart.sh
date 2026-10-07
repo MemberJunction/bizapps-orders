@@ -18,14 +18,22 @@
 #
 # Only newly-added T-SQL migrations are held to the pairing rule, so one-sided files of any
 # spelling are simply never examined.
+#
+# Two levels, set by PG_COUNTERPART_LEVEL:
+#   warning  at the door (PRs into next): annotate the PR, never fail it. Authors may add the
+#            converted file in a later PR before the release.
+#   error    at the gate (the release PR into main, base = last v* tag): the default. A release
+#            must not ship a migration MJ Central cannot run.
 set -euo pipefail
+
+LEVEL="${PG_COUNTERPART_LEVEL:-error}"
 
 BASE="${1:?usage: check-pg-counterpart.sh <base-ref> <head-ref>}"
 HEAD_REF="${2:?usage: check-pg-counterpart.sh <base-ref> <head-ref>}"
 
 ADDED=$(git diff --name-only --diff-filter=A "$BASE" "$HEAD_REF" -- 'migrations/*.sql' || true)
 if [ -z "$ADDED" ]; then
-  echo "No new T-SQL migration in this PR — nothing to pair"
+  echo "No T-SQL migration added since $BASE — nothing to pair"
   exit 0
 fi
 
@@ -42,6 +50,11 @@ while IFS= read -r f; do
 done <<< "$ADDED"
 
 if [ -n "$MISSING" ]; then
+  if [ "$LEVEL" = "warning" ]; then
+    echo "::warning::A new T-SQL migration has no PostgreSQL counterpart yet. This does not block the PR, but the release will be blocked (rr: pg counterparts) until it exists. Add the converted file(s):"
+    printf '%s' "$MISSING" | sed 's/^/  /'
+    exit 0
+  fi
   echo "::error::A new T-SQL migration has no PostgreSQL counterpart. MJ Central runs on Postgres and installs this app, so a release carrying this migration would ship something it cannot run. Add the converted file(s):"
   printf '%s' "$MISSING" | sed 's/^/  /'
   exit 1

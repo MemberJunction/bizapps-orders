@@ -67,6 +67,11 @@ jobs:
       - name: CI guard script tests
         run: ./.github/scripts/__tests__/validate-package-lock-case.test.sh
 
+      # Specs for the migration guards (and any repo-specific *.spec.mjs placed next to them).
+      # Plain node:test, no dependencies, so it runs before the install.
+      - name: CI guard specs
+        run: node --test .github/scripts/__tests__/*.spec.mjs
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

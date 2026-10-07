@@ -106,10 +106,13 @@ jobs:
           node ./.github/scripts/check-migration-no-prune.mjs --self-test
           node ./.github/scripts/check-migration-no-prune.mjs ${{ steps.mb.outputs.sha }} HEAD
 
-      # A pairing convention rather than a separate concern, so it lives with the other
-      # migration-file rules instead of adding a context every repo's ruleset must name.
-      - name: Every new migration needs a PostgreSQL counterpart
+      # Advisory here: a missing Postgres counterpart annotates the PR but never fails it, so a
+      # migration can land and get its converted file in a later PR. The release gate
+      # (`rr: pg counterparts`) is where it becomes required.
+      - name: New migrations should have a PostgreSQL counterpart (warning only)
         if: steps.migration_check.outputs.has_migrations == 'true'
+        env:
+          PG_COUNTERPART_LEVEL: warning
         run: ./.github/scripts/check-pg-counterpart.sh ${{ steps.mb.outputs.sha }} HEAD
 
       - name: Validate migration timestamps are newer than existing

@@ -43,7 +43,9 @@ jobs:
     # The old workflow was accidentally protected here: it guarded publishing with
     # `pending != '0'`, which made a dispatch-with-nothing-pending a no-op. Splitting version
     # from publish removed that accident, so the guard has to be explicit.
-    if: github.ref == 'refs/heads/main'
+    #
+    # The template repo carries this pipeline for the apps made from it, but never publishes itself.
+    if: github.ref == 'refs/heads/main' && github.repository != 'MemberJunction/open-app-template'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
