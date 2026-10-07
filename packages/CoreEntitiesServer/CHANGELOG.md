@@ -1,5 +1,19 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.29.0
+
+### Minor Changes
+
+- edea1b5: A typed promotion code and a verified member code no longer stack at the public checkout unless the host says so. `CheckoutMemberDiscountDecision` gains `TypedCode`: `'Replace'` (the default) prices the member code and reports the typed code as not used; `'Yield'` prices the typed code and sets the member code aside with a `MemberDiscountMessage`; `'Stack'` prices both and leaves it to the promotions' own stacking settings. Under `'Replace'` and `'Yield'`, when the engine declines the winning code, the other is priced instead. The draft snapshots only the codes it priced. The element's member-discount notice no longer says "standard rate" when the buyer's own code was priced.
+
+### Patch Changes
+
+- 41efacb: Thirteen Orders operation classes now extend their generated base and so carry its `RequiredScope`: Advance Order State, Amend Arrangement, Apply Account Credit, Cancel Subscription, Check Entitlement, Detect Overlapping Subscriptions, List Entitlements, Preview Price, Price Order, Record Access Override Decision, Refund Payment, Request Access Override and Spawn Renewals. Before this, MJAPI skipped the API-key scope check for them and any valid key could call them. The generated base for Amend Arrangement now carries `orders:subscriptions:write`, the scope its metadata declares. Cancel Subscription's `Decision` dates are typed as ISO strings, the form they already took on the wire.
+- Updated dependencies [9d0e76d]
+- Updated dependencies [41efacb]
+- Updated dependencies [2cec5c3]
+  - @mj-biz-apps/orders-entities@5.29.0
+
 ## 5.28.0
 
 ### Minor Changes
@@ -660,8 +674,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                "FK_EntityFieldValue_EntityField"
+                                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

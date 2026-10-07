@@ -53,6 +53,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    OrdersDetectOverlappingSubscriptionsOperation as OrdersDetectOverlappingSubscriptionsOperationBase,
     ToISODate,
     type OrdersDetectOverlappingSubscriptionsInput,
     type OrdersDetectOverlappingSubscriptionsOutput,
@@ -168,12 +169,7 @@ function describeErrors(errors: Array<{ Code: string; Message: string }> | undef
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.DetectOverlappingSubscriptions')
-export class DetectOverlappingSubscriptionsOperation extends BaseRemotableOperation<
-    OrdersDetectOverlappingSubscriptionsInput,
-    OrdersDetectOverlappingSubscriptionsOutput
-> {
-    public OperationKey = 'Orders.DetectOverlappingSubscriptions';
-
+export class DetectOverlappingSubscriptionsOperation extends OrdersDetectOverlappingSubscriptionsOperationBase {
     protected async InternalExecute(
         input: OrdersDetectOverlappingSubscriptionsInput,
         provider: IMetadataProvider,
