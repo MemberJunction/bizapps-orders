@@ -75,5 +75,6 @@ EOF
 # Migrations are compared as paths — any add, edit or delete to a migration is observable.
 changed_migrations() {
   local base="$1" head="$2"
-  git --no-pager diff --name-only "$base" "$head" -- migrations/ migrations-pg/ || true
+  # .sql only: a README under migrations/ is documentation, not something consumers apply.
+  git --no-pager diff --name-only "$base" "$head" -- 'migrations/*.sql' 'migrations-pg/*.sql' || true
 }

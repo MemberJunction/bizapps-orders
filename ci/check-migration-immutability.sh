@@ -36,7 +36,8 @@ if ! git rev-parse --verify --quiet "$BASE" >/dev/null; then
 fi
 
 # M=modified, D=deleted, R=renamed. Additions (A) are the whole point and are never flagged.
-TOUCHED=$(git diff --name-only --diff-filter=MDR "$BASE"...HEAD -- migrations/ migrations-pg/ || true)
+# Only migration files: a README or other doc under migrations/ is not checksummed by Flyway.
+TOUCHED=$(git diff --name-only --diff-filter=MDR "$BASE"...HEAD -- 'migrations/*.sql' 'migrations-pg/*.sql' || true)
 
 if [ -z "$TOUCHED" ]; then
   echo "No already-released migration was modified, deleted or renamed — ok"
