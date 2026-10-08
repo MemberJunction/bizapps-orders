@@ -48,6 +48,15 @@
  *             against; its concession is Pending at no value whatever the requester's authority, the requester
  *             cannot decide it, and another holder's approval releases the order
  *
+ * A concession's signed contract amendment is recorded on it once signed (golive #268):
+ *
+ *   CS30      an Approved concession takes a signed-amendment reference after its decision; a Pending one does not
+ *
+ * A referral's earned time is added to the renewed term and approved by its program (golive #268):
+ *
+ *   CS31      naming a referral program on a term that is not a renewal is refused; on the renewed term, time within
+ *             the program's days is Approved by the program with no authority, and more than that is routed Pending
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -93,6 +102,7 @@ import {
   SALES_AUTHORITY_ENTITY,
   SALES_RULE_ENTITY,
   PERSON_ENTITY,
+  REFERRAL_PROGRAM_ENTITY,
   SUBSCRIPTION_TERM_ENTITY,
   TASK_DECISION_ENTITY,
 } from "../entity-names.js";
@@ -276,6 +286,7 @@ type ConcessionInput = Partial<
   Pick<
     mjBizAppsOrdersOrderConcessionEntity,
     "DeliveryForm" | "ReasonCategory" | "Reason" | "OrderLineID" | "SubscriptionTermID" | "AddedDays" | "AddedQuantity"
+    | "ReferralProgramID"
   >
 >;
 
@@ -293,6 +304,7 @@ async function recordConcession(
   if (input.SubscriptionTermID) entity.SubscriptionTermID = input.SubscriptionTermID;
   if (input.AddedDays != null) entity.AddedDays = input.AddedDays;
   if (input.AddedQuantity != null) entity.AddedQuantity = input.AddedQuantity;
+  if (input.ReferralProgramID) entity.ReferralProgramID = input.ReferralProgramID;
   const saved = await entity.Save();
   return { Saved: saved, Message: entity.LatestResult?.CompleteMessage ?? "", Entity: entity };
 }
@@ -1189,6 +1201,99 @@ export const ConcessionChecks: NamedCheck[] = [
 
         built.Order.Status = "Confirmed";
         Assert(await built.Order.Save(), `with the sale approved, confirm should pass: ${built.Order.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS30",
+    Name: "CS30: an Approved concession takes a signed-amendment reference after its decision; a Pending one does not",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxPct: 0.25, maxValue: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 2, DiscountPct: 0.1 },
+            { ProductID: f.Products.WidgetA, Quantity: 1, DiscountPct: 0.5 },
+          ],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const approved = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID });
+        AssertEqual(approved.Entity.Status, "Approved", `inside authority: ${approved.Message}`);
+        approved.Entity.SignedAmendmentReference = "AMD-0001";
+        Assert(await approved.Entity.Save(), `the reference should save: ${approved.Entity.LatestResult?.CompleteMessage}`);
+        const stored = await TxOne<{ SignedAmendmentReference: string | null }>(ctx,
+          `SELECT SignedAmendmentReference FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID = '${approved.Entity.ID}'`);
+        AssertEqual(stored.SignedAmendmentReference, "AMD-0001", "stored on the concession");
+
+        const pending = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[1].ID });
+        AssertEqual(pending.Entity.Status, "Pending", `50% is outside a 25% cap: ${pending.Message}`);
+        pending.Entity.SignedAmendmentReference = "AMD-0002";
+        Assert(!(await pending.Entity.Save()), "a Pending concession must refuse a signed-amendment reference");
+        Assert(/only against an Approved concession/.test(pending.Entity.LatestResult?.CompleteMessage ?? ""),
+          `expected the Approved-only refusal, got: ${pending.Entity.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS31",
+    Name: "CS31: a referral program approves in-program time on the renewed term, and refuses the current term",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await AcknowledgeAmendmentsWith(ctx);
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+        const programID = await createViaEntity(ctx, REFERRAL_PROGRAM_ENTITY, {
+          CompanyID: f.CoA.ID,
+          Name: "Refer a peer",
+          DaysPerReferral: 30,
+          IsActive: 1,
+        });
+
+        const first = await bookTerm(ctx, 1200);
+        const onCurrent = await recordConcession(ctx, {
+          DeliveryForm: "Duration", SubscriptionTermID: first.Term.ID, AddedDays: 30,
+          ReasonCategory: "Referral", Reason: "referred a peer", ReferralProgramID: programID,
+        });
+        Assert(!onCurrent.Saved, "a referral's time must not extend the current term");
+        Assert(/adds its time to the next term, on the renewal order/.test(onCurrent.Message),
+          `expected the renewal-only refusal, got: ${onCurrent.Message}`);
+
+        const sub = await TxOne<{ SubscriptionID: string; EndDate: Date | string }>(ctx,
+          `SELECT SubscriptionID, EndDate FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE ID = '${first.Term.ID}'`);
+        const renewalStart = new Date(sub.EndDate);
+        renewalStart.setUTCDate(renewalStart.getUTCDate() + 1);
+        const renewal = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: renewalStart,
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, RenewsSubscriptionID: sub.SubscriptionID }],
+        });
+        Assert(renewal.Saved, `the renewal did not confirm: ${renewal.Message}`);
+        const renewed = await TxOne<{ ID: string }>(ctx,
+          `SELECT st.ID FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+             JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+            WHERE ol.OrderHeaderID = '${renewal.Order.ID}'`);
+        Assert(renewed?.ID != null, "the renewal wrote no term");
+
+        const inProgram = await recordConcession(ctx, {
+          DeliveryForm: "Duration", SubscriptionTermID: renewed.ID, AddedDays: 30,
+          ReasonCategory: "Referral", Reason: "referred a peer", ReferralProgramID: programID,
+        });
+        Assert(inProgram.Saved, `recording failed: ${inProgram.Message}`);
+        AssertEqual(inProgram.Entity.Status, "Approved", "within the program's days, the program approves it");
+        Assert(inProgram.Entity.AuthorizedBySalesAuthorityID == null && inProgram.Entity.SalesRuleID == null,
+          "approved by the program, not by an authority or a rule");
+
+        const over = await recordConcession(ctx, {
+          DeliveryForm: "Duration", SubscriptionTermID: renewed.ID, AddedDays: 45,
+          ReasonCategory: "Referral", Reason: "referred two peers", ReferralProgramID: programID,
+        });
+        Assert(over.Saved, `recording failed: ${over.Message}`);
+        AssertEqual(over.Entity.Status, "Pending", "more than the program grants is routed for approval");
       }),
   },
 ];
