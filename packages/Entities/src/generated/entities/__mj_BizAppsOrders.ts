@@ -1400,6 +1400,10 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: VenueAddress
         * * Display Name: Venue Address Details
         * * SQL Data Type: nvarchar(255)`),
+    RequiresSaleApproval: z.boolean().nullable().describe(`
+        * * Field Name: RequiresSaleApproval
+        * * Display Name: Requires Sale Approval
+        * * SQL Data Type: bit`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -2270,6 +2274,17 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Terms Types (vwPaymentTermsTypes.ID)
         * * Description: For a Terms concession, the payment terms the order moves to when it is approved.`),
+    SignedAmendmentReference: z.string().nullable().describe(`
+        * * Field Name: SignedAmendmentReference
+        * * Display Name: Signed Amendment Reference
+        * * SQL Data Type: nvarchar(500)
+        * * Description: Where the signed contract amendment for this concession is kept: a document number or a link. Set once the customer has signed; may be set or corrected after the concession is decided. NULL while no signed amendment is on file.`),
+    ReferralProgramID: z.string().nullable().describe(`
+        * * Field Name: ReferralProgramID
+        * * Display Name: Referral Program ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Referral Programs (vwReferralPrograms.ID)
+        * * Description: For a Duration concession granted under a referral program, the program. Set by the requester when recording it; the program approves the concession when it is in program (see ReferralProgram.DaysPerReferral).`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -2293,6 +2308,10 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
     NewPaymentTermsType: z.string().nullable().describe(`
         * * Field Name: NewPaymentTermsType
         * * Display Name: New Payment Terms Type
+        * * SQL Data Type: nvarchar(200)`),
+    ReferralProgram: z.string().nullable().describe(`
+        * * Field Name: ReferralProgram
+        * * Display Name: Referral Program
         * * SQL Data Type: nvarchar(200)`),
 });
 
@@ -4699,6 +4718,11 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Display Name: Renewal Increase Percent
         * * SQL Data Type: decimal(7, 4)
         * * Description: Percent added to a subscription's price when it renews, for every product in this category and its child categories. NULL means inherit from the parent category, then the company's OrderCompanyPolicy. A subscription or product value overrides it.`),
+    RequiresSaleApproval: z.boolean().nullable().describe(`
+        * * Field Name: RequiresSaleApproval
+        * * Display Name: Requires Sale Approval
+        * * SQL Data Type: bit
+        * * Description: When true, every line for a product in this category holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it. NULL means inherit from the next level: the parent category, then the product type. A product's own value overrides this.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company
@@ -5124,6 +5148,11 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * Display Name: Configuration
         * * SQL Data Type: nvarchar(MAX)
         * * Description: Extensible JSON configuration for this product type including customUI (js, css, theme, componentOverrideKey), unitMode, allowQuantity, and fieldOverrides.`),
+    RequiresSaleApproval: z.boolean().nullable().describe(`
+        * * Field Name: RequiresSaleApproval
+        * * Display Name: Requires Sale Approval
+        * * SQL Data Type: bit
+        * * Description: When true, every line for a product of this type holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. For products priced per engagement, such as professional services or custom scope. NULL means not required. A product category or the product itself overrides this.`),
     DefaultRevenueRecognitionType: z.string().nullable().describe(`
         * * Field Name: DefaultRevenueRecognitionType
         * * Display Name: Default Revenue Recognition Type
@@ -5288,6 +5317,11 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Renewal Increase Percent
         * * SQL Data Type: decimal(7, 4)
         * * Description: Percent added to a subscription's price when it renews onto this product. Overrides the product's category and the company. NULL means inherit from the category and its ancestors, then the company's OrderCompanyPolicy. A subscription's own value overrides it.`),
+    RequiresSaleApproval: z.boolean().nullable().describe(`
+        * * Field Name: RequiresSaleApproval
+        * * Display Name: Requires Sale Approval
+        * * SQL Data Type: bit
+        * * Description: When true, every line for this product holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type.`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
         * * Display Name: Product Type Name
@@ -5642,6 +5676,60 @@ export const mjBizAppsOrdersPromotionSchema = z.object({
 });
 
 export type mjBizAppsOrdersPromotionEntityType = z.infer<typeof mjBizAppsOrdersPromotionSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Referral Programs
+ */
+export const mjBizAppsOrdersReferralProgramSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    CompanyID: z.string().describe(`
+        * * Field Name: CompanyID
+        * * Display Name: Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+        * * Description: The company that runs the program. A concession may name the program only on that company's orders.`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(200)
+        * * Description: The program's name, unique within its company.`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The program's terms as the customer was told them.`),
+    DaysPerReferral: z.number().describe(`
+        * * Field Name: DaysPerReferral
+        * * Display Name: Days Per Referral
+        * * SQL Data Type: int
+        * * Description: Days one referral earns. A Duration concession naming this program is approved by the program when it adds no more than this to a term bought by a renewal line; a larger one is routed for approval like any other concession. Must be a whole number above zero.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Only an active program approves a concession. Deactivate a program rather than deleting it: approved concessions keep naming it.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Company: z.string().describe(`
+        * * Field Name: Company
+        * * Display Name: Company
+        * * SQL Data Type: nvarchar(50)`),
+});
+
+export type mjBizAppsOrdersReferralProgramEntityType = z.infer<typeof mjBizAppsOrdersReferralProgramSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Revenue Recognition Types
@@ -10798,6 +10886,19 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     get VenueAddress(): string | null {
         return this.Get('VenueAddress');
     }
+
+    /**
+    * * Field Name: RequiresSaleApproval
+    * * Display Name: Requires Sale Approval
+    * * SQL Data Type: bit
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get RequiresSaleApproval(): boolean | null {
+        return this.Get('RequiresSaleApproval');
+    }
+    set RequiresSaleApproval(value: boolean | null) {
+        this.Set('RequiresSaleApproval', value);
+    }
 }
 
 
@@ -13457,6 +13558,33 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: SignedAmendmentReference
+    * * Display Name: Signed Amendment Reference
+    * * SQL Data Type: nvarchar(500)
+    * * Description: Where the signed contract amendment for this concession is kept: a document number or a link. Set once the customer has signed; may be set or corrected after the concession is decided. NULL while no signed amendment is on file.
+    */
+    get SignedAmendmentReference(): string | null {
+        return this.Get('SignedAmendmentReference');
+    }
+    set SignedAmendmentReference(value: string | null) {
+        this.Set('SignedAmendmentReference', value);
+    }
+
+    /**
+    * * Field Name: ReferralProgramID
+    * * Display Name: Referral Program ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Referral Programs (vwReferralPrograms.ID)
+    * * Description: For a Duration concession granted under a referral program, the program. Set by the requester when recording it; the program approves the concession when it is in program (see ReferralProgram.DaysPerReferral).
+    */
+    get ReferralProgramID(): string | null {
+        return this.Get('ReferralProgramID');
+    }
+    set ReferralProgramID(value: string | null) {
+        this.Set('ReferralProgramID', value);
+    }
+
+    /**
     * * Field Name: OrderHeader
     * * Display Name: Order Header
     * * SQL Data Type: nvarchar(40)
@@ -13508,6 +13636,15 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     */
     get NewPaymentTermsType(): string | null {
         return this.Get('NewPaymentTermsType');
+    }
+
+    /**
+    * * Field Name: ReferralProgram
+    * * Display Name: Referral Program
+    * * SQL Data Type: nvarchar(200)
+    */
+    get ReferralProgram(): string | null {
+        return this.Get('ReferralProgram');
     }
 }
 
@@ -20756,6 +20893,19 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: RequiresSaleApproval
+    * * Display Name: Requires Sale Approval
+    * * SQL Data Type: bit
+    * * Description: When true, every line for a product in this category holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it. NULL means inherit from the next level: the parent category, then the product type. A product's own value overrides this.
+    */
+    get RequiresSaleApproval(): boolean | null {
+        return this.Get('RequiresSaleApproval');
+    }
+    set RequiresSaleApproval(value: boolean | null) {
+        this.Set('RequiresSaleApproval', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company
     * * SQL Data Type: nvarchar(50)
@@ -22019,6 +22169,19 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: RequiresSaleApproval
+    * * Display Name: Requires Sale Approval
+    * * SQL Data Type: bit
+    * * Description: When true, every line for a product of this type holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. For products priced per engagement, such as professional services or custom scope. NULL means not required. A product category or the product itself overrides this.
+    */
+    get RequiresSaleApproval(): boolean | null {
+        return this.Get('RequiresSaleApproval');
+    }
+    set RequiresSaleApproval(value: boolean | null) {
+        this.Set('RequiresSaleApproval', value);
+    }
+
+    /**
     * * Field Name: DefaultRevenueRecognitionType
     * * Display Name: Default Revenue Recognition Type
     * * SQL Data Type: nvarchar(200)
@@ -22521,6 +22684,19 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
     set RenewalIncreasePercent(value: number | null) {
         this.Set('RenewalIncreasePercent', value);
+    }
+
+    /**
+    * * Field Name: RequiresSaleApproval
+    * * Display Name: Requires Sale Approval
+    * * SQL Data Type: bit
+    * * Description: When true, every line for this product holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type.
+    */
+    get RequiresSaleApproval(): boolean | null {
+        return this.Get('RequiresSaleApproval');
+    }
+    set RequiresSaleApproval(value: boolean | null) {
+        this.Set('RequiresSaleApproval', value);
     }
 
     /**
@@ -23513,6 +23689,147 @@ export class mjBizAppsOrdersPromotionEntity extends BaseEntity<mjBizAppsOrdersPr
     * * SQL Data Type: nvarchar(50)
     */
     get Company(): string | null {
+        return this.Get('Company');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Referral Programs - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ReferralProgram
+ * * Base View: vwReferralPrograms
+ * * @description A program that grants a customer extra subscription time for a referral. The time is applied on the renewal order, as a Duration concession on the renewed term, never to the current term, and lapses if the customer does not renew.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Referral Programs')
+export class mjBizAppsOrdersReferralProgramEntity extends BaseEntity<mjBizAppsOrdersReferralProgramEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Referral Programs record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Referral Programs record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersReferralProgramEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: CompanyID
+    * * Display Name: Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    * * Description: The company that runs the program. A concession may name the program only on that company's orders.
+    */
+    get CompanyID(): string {
+        return this.Get('CompanyID');
+    }
+    set CompanyID(value: string) {
+        this.Set('CompanyID', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(200)
+    * * Description: The program's name, unique within its company.
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The program's terms as the customer was told them.
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: DaysPerReferral
+    * * Display Name: Days Per Referral
+    * * SQL Data Type: int
+    * * Description: Days one referral earns. A Duration concession naming this program is approved by the program when it adds no more than this to a term bought by a renewal line; a larger one is routed for approval like any other concession. Must be a whole number above zero.
+    */
+    get DaysPerReferral(): number {
+        return this.Get('DaysPerReferral');
+    }
+    set DaysPerReferral(value: number) {
+        this.Set('DaysPerReferral', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Only an active program approves a concession. Deactivate a program rather than deleting it: approved concessions keep naming it.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Company
+    * * Display Name: Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get Company(): string {
         return this.Get('Company');
     }
 }
