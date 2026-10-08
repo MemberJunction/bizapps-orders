@@ -36,7 +36,13 @@ import {
     type CreateIntentResult,
     type EnsureCustomerRequest,
     type EnsureCustomerResult,
+    type GatewayCharge,
     type GatewayRefund,
+    type ListChargesRequest,
+    type ListChargesResult,
+    type ListWebhookEndpointsResult,
+    type RetrieveChargeRequest,
+    type RetrieveChargeResult,
     type ListRefundsRequest,
     type ListRefundsResult,
     type RefundRequest,
@@ -341,6 +347,43 @@ export class StripePaymentProvider extends BasePaymentProvider {
         return { Success: true, Refunds: listed.Items.map(StripeRefundFromObject) };
     }
 
+    // ─── Reconciliation reads (#477) ───────────────────────────────────────────
+
+    public override get ListsCharges(): boolean {
+        return true;
+    }
+
+    public override async ListCharges(request: ListChargesRequest): Promise<ListChargesResult> {
+        if (this.useStub) return { Success: true, Charges: [] };
+        const query: Record<string, string> = {};
+        AddCreatedRange(query, request.CreatedFrom, request.CreatedTo);
+        const listed = await this.listAll('/charges', query);
+        if (!listed.Ok) return { Success: false, Reason: listed.Reason };
+        return { Success: true, Charges: listed.Items.map(StripeChargeFromObject) };
+    }
+
+    public override async RetrieveCharge(request: RetrieveChargeRequest): Promise<RetrieveChargeResult> {
+        if (this.useStub) return { Success: false, NotFound: true, Reason: 'The stub has no charges.' };
+        const result = await this.call('GET', `/charges/${encodeURIComponent(request.ProviderChargeID)}`);
+        if (result.Ok) return { Success: true, Charge: StripeChargeFromObject(result.Body) };
+        const code = String(((result.Body.error ?? {}) as Record<string, unknown>).code ?? '');
+        return { Success: false, NotFound: code === 'resource_missing', Reason: result.Reason };
+    }
+
+    public override async ListWebhookEndpoints(): Promise<ListWebhookEndpointsResult> {
+        if (this.useStub) return { Success: false, Reason: 'The stub has no webhook endpoints.' };
+        const listed = await this.listAll('/webhook_endpoints', {});
+        if (!listed.Ok) return { Success: false, Reason: listed.Reason };
+        return {
+            Success: true,
+            Endpoints: listed.Items.map((e) => ({
+                Url: String(e.url ?? ''),
+                Status: String(e.status ?? ''),
+                EnabledEvents: ((e.enabled_events as unknown[]) ?? []).map(String),
+            })),
+        };
+    }
+
     // ─── Webhooks ──────────────────────────────────────────────────────────────
 
     public override async VerifyWebhook(
@@ -599,6 +642,23 @@ export function stripeCaptureAlreadyCollected(
 export function AddCreatedRange(query: Record<string, string>, from?: Date, to?: Date): void {
     if (from) query['created[gte]'] = String(Math.floor(from.getTime() / 1000));
     if (to) query['created[lte]'] = String(Math.floor(to.getTime() / 1000));
+}
+
+/** A Stripe charge object as a `GatewayCharge`. */
+export function StripeChargeFromObject(object: Record<string, unknown>): GatewayCharge {
+    const currency = ((object.currency as string) ?? 'usd').toUpperCase();
+    const created = Number(object.created);
+    const intent = object.payment_intent;
+    return {
+        ProviderChargeID: String(object.id),
+        ProviderIntentID:
+            typeof intent === 'string' ? intent : ((intent as Record<string, unknown> | null)?.id as string | undefined) ?? null,
+        Amount: FromMinorUnits(Number(object.amount ?? 0), currency),
+        AmountRefunded: FromMinorUnits(Number(object.amount_refunded ?? 0), currency),
+        CurrencyCode: currency,
+        Status: String(object.status ?? ''),
+        CreatedAt: Number.isFinite(created) && created > 0 ? new Date(created * 1000) : undefined,
+    };
 }
 
 /** A Stripe refund object as a `GatewayRefund`. */

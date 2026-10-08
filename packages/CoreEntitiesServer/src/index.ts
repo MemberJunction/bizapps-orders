@@ -471,6 +471,13 @@ export type {
     GatewayRefund,
     ListRefundsRequest,
     ListRefundsResult,
+    GatewayCharge,
+    ListChargesRequest,
+    ListChargesResult,
+    RetrieveChargeRequest,
+    RetrieveChargeResult,
+    GatewayWebhookEndpoint,
+    ListWebhookEndpointsResult,
 } from './BasePaymentProvider.js';
 
 export {
@@ -479,7 +486,26 @@ export {
     ToFormBody,
     AddCreatedRange,
     StripeRefundFromObject,
+    StripeChargeFromObject,
 } from './StripePaymentProvider.js';
+export {
+    CheckPaymentWebhookEndpoints,
+    CheckWebhookEndpointDrift,
+    EndpointServesProvider,
+} from './PaymentWebhookEndpointCheck.js';
+export type { WebhookEndpointCheckResult } from './PaymentWebhookEndpointCheck.js';
+export {
+    FindChargeMismatches,
+    ChargeMismatchDedupeKey,
+    GatewayWindow,
+    CreatedInWindow,
+} from './ChargeReconciliation.js';
+export type { ChargeMismatch, ChargeMismatchKind, ReconcilablePayment } from './ChargeReconciliation.js';
+export {
+    ReconcilePaymentProviderChargesOperation,
+    LoadReconcilePaymentProviderChargesOperation,
+    PROVIDER_CHARGE_MISMATCH_TYPE_CODE,
+} from './ReconcilePaymentProviderChargesOperation.js';
 export {
     BookProviderRefunds,
     PlanProviderRefundBooking,
