@@ -1,0 +1,24 @@
+[
+ {
+  "_comments": [
+   "Default list for Payment Webhook Deliveries (#474): deliveries Orders did not apply, so a payment taken",
+   "outside the checkout or an unreadable event is visible. Events of a kind Orders does not act on",
+   "(kind_not_handled) are left out: the gateway account sends many of those and none needs attention.",
+   "Applied and AlreadyApplied deliveries are normal and also left out; clear the filter to see every row."
+  ],
+  "fields": {
+   "Name": "Payment Webhook Deliveries: Not Applied",
+   "Description": "Verified gateway webhook deliveries Orders ignored, rejected or failed to apply, newest first. Event kinds Orders does not act on are left out.",
+   "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries",
+   "UserID": "ECAFCCEC-6A37-EF11-86D4-000D3A4E707E",
+   "IsShared": true,
+   "IsDefault": true,
+   "CustomWhereClause": true,
+   "WhereClause": "Outcome IN ('Ignored','Rejected','Failed') AND (ReasonCode IS NULL OR ReasonCode <> 'kind_not_handled')",
+   "GridState": "{\"sortSettings\":[{\"field\":\"LastReceivedAt\",\"dir\":\"desc\"}],\"columnSettings\":[{\"Name\":\"LastReceivedAt\",\"DisplayName\":\"Received\",\"orderIndex\":0,\"width\":170,\"format\":{\"type\":\"date\",\"dateFormat\":\"medium\"}},{\"Name\":\"Outcome\",\"DisplayName\":\"Outcome\",\"orderIndex\":1,\"width\":120},{\"Name\":\"ReasonCode\",\"DisplayName\":\"Reason\",\"orderIndex\":2,\"width\":150},{\"Name\":\"EventKind\",\"DisplayName\":\"Event\",\"orderIndex\":3,\"width\":220},{\"Name\":\"ProviderIntentID\",\"DisplayName\":\"Gateway intent\",\"orderIndex\":4,\"width\":200},{\"Name\":\"ProviderChargeID\",\"DisplayName\":\"Gateway charge\",\"orderIndex\":5,\"width\":200},{\"Name\":\"PaymentProvider\",\"DisplayName\":\"Provider\",\"orderIndex\":6,\"width\":160},{\"Name\":\"DeliveryCount\",\"DisplayName\":\"Deliveries\",\"orderIndex\":7,\"width\":100},{\"Name\":\"ProviderEventID\",\"DisplayName\":\"Event id\",\"orderIndex\":8,\"width\":220}]}"
+  },
+  "primaryKey": {
+   "ID": "38883067-C971-4F93-A330-6E4BB0A8FD60"
+  }
+ }
+]
