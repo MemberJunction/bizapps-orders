@@ -1067,21 +1067,6 @@ export const EntitlementsChecks: NamedCheck[] = [
           Assert(renewalGrants.length > 0, "the renewal grants the next term");
           Assert(renewalGrants.every((g) => g.Status === "Active"), "the nightly job has not run, so the rows still read Active");
 
-          // Before the cutoff (#269): one day past due, access holds and the check names its last day.
-          // Asked as of that day, inside the renewal's term, at midday so the business-zone day matches.
-          const dueDay = new Date(due.NextDueDate!).toISOString().slice(0, 10);
-          const renewalStart = await TxOne<{ ValidFrom: Date }>(ctx,
-            `SELECT MIN(g.ValidFrom) AS ValidFrom FROM ${ORDERS_SCHEMA}.EntitlementGrant g
-               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = g.OrderLineID
-              WHERE ol.OrderHeaderID = '${renewalID}'`);
-          const startDay = new Date(renewalStart.ValidFrom).toISOString().slice(0, 10);
-          const graceAsOf = [addDays(dueDay, 1), addDays(startDay, 1)].sort()[1];
-          Assert(graceAsOf < cutoffDay, `a day past due inside the term (${graceAsOf}) is before the cutoff (${cutoffDay})`);
-          const early = await readAccess<{ HasAccess: boolean; Decision: string; AccessCutoffDate?: string }>(
-            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS", AsOf: `${graceAsOf}T12:00:00Z` });
-          AssertEqual(early.Decision, "Granted", `past due but before the cutoff, access holds (${JSON.stringify(early)})`);
-          AssertEqual(early.AccessCutoffDate, addDays(dueDay, cutoff! - 1), "and the check names the day before the cutoff");
-
           const checked = await readAccess<{ HasAccess: boolean; Decision: string; GrantID?: string; SuspensionReason?: string | null; AccessCutoffDate?: string }>(
             ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
           AssertEqual(checked.HasAccess, false, "past the cutoff, the check denies access");
@@ -1113,6 +1098,70 @@ export const EntitlementsChecks: NamedCheck[] = [
             ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
           AssertEqual(deferred.Decision, "Granted", "an approved DeferCutoff keeps access at read time");
           AssertEqual(deferred.AccessCutoffDate, addDays(today, 2), "through the deferral's last day, which the check names (#269)");
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN25",
+    Name: "EN25: a renewal past due but before its cutoff keeps access, and the check names its last day (#269)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.SubRolling, "OnFirstPayment", async () => {
+          await OrdersSettings.Load(ctx.Provider, ctx.User);
+          const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+          Assert(cutoff != null && cutoff > 2, "the cutoff setting is on, with more than two days");
+
+          // The first annual term ended a few days ago and its renewal, placed five days before that,
+          // is in force now: due, unpaid, and not yet at the cutoff.
+          const today = new Date().toISOString().slice(0, 10);
+          const firstStart = new Date(`${addDays(today, -3)}T00:00:00Z`);
+          firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
+          const first = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            OrderDate: firstStart,
+            BillToOrganizationID: f.Customers.OrganizationID,
+            BillToPersonID: f.Customers.PersonID,
+            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1 }],
+          });
+          Assert(first.Saved, `confirm failed: ${first.Message}`);
+          const term = await TxOne<{ SubscriptionID: string; EndDate: Date; Gross: number }>(ctx,
+            `SELECT st.SubscriptionID, st.EndDate, oh.TotalGross AS Gross
+               FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+               JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+              WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+          await payOrder(ctx, first.Order.ID as string, Number(term.Gross));
+          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -5));
+
+          const due = await TxOne<{ NextDueDate: Date | null }>(ctx,
+            `SELECT NextDueDate FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${renewalID}'`);
+          Assert(due.NextDueDate != null, "the renewal carries a due date");
+          const dueDay = new Date(due.NextDueDate!).toISOString().slice(0, 10);
+          const lastDay = addDays(dueDay, cutoff! - 1);
+          Assert(dueDay < addDays(today, -1) && lastDay > addDays(today, 1),
+            `the renewal is past due (${dueDay}) and its last day (${lastDay}) is ahead, with a day's margin each way for the business zone`);
+          Assert((await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"), "before the cutoff the renewal's grants are Active");
+
+          const checked = await readAccess<{ HasAccess: boolean; Decision: string; SuspensionReason?: string | null; AccessCutoffDate?: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
+          AssertEqual(checked.Decision, "Granted", `past due but before the cutoff, access holds (${JSON.stringify(checked)})`);
+          AssertEqual(checked.AccessCutoffDate, lastDay, "and the check names the day before the cutoff");
+          AssertEqual(checked.SuspensionReason, undefined, "a granted answer carries no suspension reason");
+
+          const listed = await readAccess<{ Items: Array<{ Code: string; AccessCutoffDate?: string }> }>(
+            ctx, "Orders.ListEntitlements", { PersonID: f.Customers.PersonID });
+          AssertEqual(listed.Items.find((i) => i.Code === "SUB-SEATS")?.AccessCutoffDate, lastDay, "ListEntitlements names the same day");
+
+          // Paid, the renewal is no longer past due and there is no cutoff to warn about.
+          const gross = Number((await TxOne<{ TotalGross: number }>(ctx,
+            `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${renewalID}'`)).TotalGross);
+          await payOrder(ctx, renewalID, gross);
+          const paid = await readAccess<{ Decision: string; AccessCutoffDate?: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
+          AssertEqual(paid.Decision, "Granted", "paid, access holds");
+          AssertEqual(paid.AccessCutoffDate, undefined, "with no last day to name");
         });
       }),
   },
