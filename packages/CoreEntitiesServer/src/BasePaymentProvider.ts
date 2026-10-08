@@ -226,6 +226,31 @@ export interface RefundResult {
     ProviderRefundID?: string;
 }
 
+/** One refund as the gateway reports it. */
+export interface GatewayRefund {
+    ProviderRefundID: string;
+    ProviderChargeID?: string | null;
+    /** Major units, positive. */
+    Amount: number;
+    CurrencyCode: string;
+    /** The gateway's own status, unmapped (Stripe: pending, requires_action, succeeded, failed, canceled). */
+    Status: string;
+    CreatedAt?: Date;
+}
+
+/** Which refunds to list. Every condition given must hold. */
+export interface ListRefundsRequest {
+    ProviderChargeID?: string;
+    CreatedFrom?: Date;
+    CreatedTo?: Date;
+}
+
+export interface ListRefundsResult {
+    Success: boolean;
+    Reason?: string;
+    Refunds?: GatewayRefund[];
+}
+
 /** A gateway event, reduced to the facts this application acts on. */
 export interface WebhookEvent {
     /** The gateway's own event id. Our idempotency key — `PaymentIntent.ProviderEventID` is UNIQUE. */
@@ -343,6 +368,16 @@ export class BasePaymentProvider {
 
     public async Refund(_request: RefundRequest): Promise<RefundResult> {
         return { Success: false, Reason: this.notImplemented('refunding a payment') };
+    }
+
+    /**
+     * The refunds the gateway holds, for a charge or a time window.
+     *
+     * Read-only. Used to book a refund made at the gateway (#476): the refund event carries only the
+     * charge's cumulative refunded amount, and the individual refund ids come from here.
+     */
+    public async ListRefunds(_request: ListRefundsRequest): Promise<ListRefundsResult> {
+        return { Success: false, Reason: this.notImplemented('listing refunds') };
     }
 
     /**
