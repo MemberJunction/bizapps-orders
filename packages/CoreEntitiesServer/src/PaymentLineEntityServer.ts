@@ -58,7 +58,7 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
-import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
+import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import { DepositReleasedByCompany, PlanLineDeposits, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
@@ -211,6 +211,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             await BuildGLAccountResolver(provider, user),
             await BuildIntercompanyLookup(provider, user),
             EntityIDFor(PAYMENT_LINE_ENTITY),
+            await BuildLegalEntityLookup(provider, user),
         );
 
         const { Drafts } = await factory.BuildAllocationDrafts({

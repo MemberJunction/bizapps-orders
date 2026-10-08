@@ -63,7 +63,7 @@ import {
     ExtensionToggleLabel,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
-import { AsDateValue, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
+import { AsDateValue, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 
 /**
  * Just enough of an RxJS subscription to release one.
@@ -496,10 +496,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     /** Who this line is for, resolved the way the server does: the line's ship-to, then the order's. */
     private holdingKey(line: mjBizAppsOrdersOrderLineEntity): { key: string; org: string | null; person: string | null } | null {
         if (!line.ProductID) return null;
-        const order = this._order;
-        const org = line.ShipToOrganizationID ?? order?.ShipToOrganizationID ?? order?.BillToOrganizationID ?? null;
-        const person = line.ShipToPersonID ?? order?.ShipToPersonID ?? order?.BillToPersonID ?? null;
-        if (!org && !person) return null;
+        const who = HoldingSubscriberFor(line, this._order ?? null);
+        if (!who) return null;
+        const org = who.OrganizationID;
+        const person = who.PersonID;
         return { key: `${line.ProductID}|${org ?? ''}|${person ?? ''}`.toLowerCase(), org, person };
     }
 
@@ -819,13 +819,19 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * Silence would be the wrong answer: a rep who cannot find a discount box has no way to learn
      * that the reason is a missing authority row rather than a missing feature, which is how this
      * defect was reported in the first place.
+     *
+     * It shows beside the price editor, so it says what happens to a price typed there too. Nothing
+     * refuses that price at save: the confirm gate (`FindUnapprovedConcessions`) holds the order
+     * until a concession covering it is approved. Promising a refusal at save that never comes
+     * leaves the rep sure a saved order is clean when it cannot yet be confirmed.
      */
     public get DiscountUnavailableReason(): string | null {
         if (!this.EditMode || this.CanDiscount) return null;
         if (!this.DiscountAuthorityLoaded) return 'Checking what you may discount…';
         return (
-            'Recording a discount needs an active Sales Authority, and none is granted to you. ' +
-            'Ask for one before discounting — the order would be refused at save otherwise.'
+            'Discounting needs an active Sales Authority, and none is granted to you. ' +
+            'A price below list still saves, but the order cannot be confirmed until a concession ' +
+            'covering it is approved.'
         );
     }
 

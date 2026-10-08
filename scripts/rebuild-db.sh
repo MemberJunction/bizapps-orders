@@ -114,9 +114,7 @@ say "7/8  Seed metadata"
 # and https://github.com/MemberJunction/bizapps-common/issues/196 (Tag records without DisplayName).
 $MJ sync push --ci --dir "$COMMON_REPO/metadata" --include query-categories
 $MJ sync push --ci --dir "$ACCOUNTING_REPO/metadata" --include currencies,gl-account-roles
-# ML models and their scoring bindings are left out: the models reference trained artifact files that
-# no fresh database has (https://github.com/MemberJunction/bizapps-orders/issues/364).
-$MJ sync push --ci --dir "$ROOT/metadata" --exclude ml-models,ml-model-scoring-bindings
+$MJ sync push --ci --dir "$ROOT/metadata"
 
 say "8/8  Integration-suite users"
 # The suite runs as the Owner (System) and needs two things a fresh database does not have:

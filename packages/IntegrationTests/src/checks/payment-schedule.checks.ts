@@ -77,7 +77,7 @@ import {
     TxQuery,
 } from '../fixture.js';
 import { GL_ACCOUNT_LINK_ENTITY, ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from '../entity-names.js';
-import { BuildOrder, ConfirmOrder } from '../order-builder.js';
+import { ApproveLineDiscounts, BuildOrder, ConfirmOrder } from '../order-builder.js';
 import type { RequestedCharge } from '@mj-biz-apps/orders-core-entities-server';
 import { CreatePayment } from '../payment-builder.js';
 
@@ -194,6 +194,8 @@ export async function scheduledOrder(
     });
     Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
     const orderID = draft.Order.ID as string;
+    // A discounted line is a concession the confirm gate holds; this fixture is about schedules.
+    if (over.discountPct) await ApproveLineDiscounts(ctx.User, orderID);
     const ids = await addInstalments(ctx, orderID, rows);
     const confirmed = await confirm(ctx, orderID);
     return { orderID, ids, order: confirmed.order, saved: confirmed.saved, message: confirmed.message };

@@ -66,7 +66,7 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
-import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
+import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
@@ -521,6 +521,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             resolver,
             await BuildIntercompanyLookup(provider, user),
             EntityIDFor(PAYMENT_LINE_ENTITY),
+            await BuildLegalEntityLookup(provider, user),
         );
 
         const allDrafts: PaymentJEDraft[] = [];

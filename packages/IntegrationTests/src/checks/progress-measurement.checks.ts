@@ -650,8 +650,8 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 // carry its slice of it — otherwise the discount sits in Deferred Revenue after the
                 // project reaches 100%, and every entry still balances on the way there.
                 const f = Fx();
-                // Priced at the catalog price, so the confirm gate sees no concession; the discount
-                // is a line discount, which the gate does not count.
+                // Priced at the catalog price, so the price is no concession. The line discount is
+                // one, and ConfirmOrder records its Approved Price concession before confirming.
                 await CreateProductPrice(ctx, f.Products.PocA, 1000);
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
