@@ -38,6 +38,13 @@ export type GrantTiming = 'OnConfirm' | 'OnPaidInFull' | 'OnFirstPayment' | 'OnA
 /** Why a grant is suspended. The first two are payment facts, and lift themselves when cash arrives. */
 export type SuspensionReason = 'AwaitingPayment' | 'PastDue' | 'AwaitingActivation';
 
+const SUSPENSION_REASONS: ReadonlySet<string> = new Set<SuspensionReason>(['AwaitingPayment', 'PastDue', 'AwaitingActivation']);
+
+/** True for one of the {@link SuspensionReason} values `CK_EntitlementGrant_SuspensionReason` allows. */
+export function IsSuspensionReason(value: string | null | undefined): value is SuspensionReason {
+    return value != null && SUSPENSION_REASONS.has(value);
+}
+
 /** How the template quantity relates to the line quantity. */
 export type QuantityMode = 'PerUnit' | 'Flat';
 
@@ -502,6 +509,41 @@ export function ReadTimeCutoffSuspension(
 }
 
 /**
+ * The last day a past-due renewal keeps its access, as a read sees it (#269), or null.
+ *
+ * Applies to an Active `OnFirstPayment` renewal grant whose order is past due and not yet cut off:
+ * the day before `cutoffDaysPastDue` is reached, the same date the overdue worklist shows as
+ * `GraceThroughDate`. An approved `DeferCutoff` in force moves it to the override's last day when
+ * that is later. Null when the cutoff is off, the order is not past due, or access is already cut
+ * off (then {@link ReadTimeCutoffSuspension} answers instead).
+ *
+ * @param asOfDay - The business-time-zone day `order.DaysPastDue` was measured on, `YYYY-MM-DD`.
+ * @returns `YYYY-MM-DD`, on or after `asOfDay`.
+ */
+export function ReadTimeAccessCutoffDay(
+    grant: { Status: string; GrantTimingApplied: string | null },
+    isRenewal: boolean,
+    order: OrderPaymentFacts,
+    cutoffDaysPastDue: number | null,
+    overrides: readonly AccessOverrideFacts[],
+    asOfDay: string,
+): string | null {
+    if (grant.Status !== 'Active' || grant.GrantTimingApplied !== 'OnFirstPayment' || !isRenewal) return null;
+    if (cutoffDaysPastDue == null || order.DaysPastDue <= 0) return null;
+    if (ReadTimeCutoffSuspension(grant, true, order, cutoffDaysPastDue, overrides, asOfDay)) return null;
+
+    const graceDay = new Date(`${asOfDay}T00:00:00Z`);
+    graceDay.setUTCDate(graceDay.getUTCDate() + cutoffDaysPastDue - order.DaysPastDue - 1);
+    let through = graceDay.toISOString().slice(0, 10);
+    for (const o of overrides) {
+        if (o.OverrideType === 'DeferCutoff' && o.EffectiveThrough >= asOfDay && o.EffectiveThrough > through) {
+            through = o.EffectiveThrough;
+        }
+    }
+    return through >= asOfDay ? through : null;
+}
+
+/**
  * A lapsed payment-hold waiver as a read sees it, before the nightly job has written it (#404).
  *
  * An approved `WaivePaymentHold` keeps an unpaid grant Active through its `EffectiveThrough` day.
@@ -625,6 +667,8 @@ export type EntitlementDecision =
 /** The facts a grant row carries that the evaluator needs — no database. */
 export interface GrantAccessFacts {
     Status: string;
+    /** `EntitlementGrant.SuspensionReason`, reported with a `Suspended` decision (#269). */
+    SuspensionReason?: string | null;
     ValidFrom: Date | null;
     ValidTo: Date | null;
     /** True when `EntitlementGrant.SubscriptionID` is set. Missing subscription row → fail closed. */
@@ -660,6 +704,12 @@ export interface GrantAccessEvaluation {
     Decision: EntitlementDecision;
     ValidFrom: Date | null;
     ValidTo: Date | null;
+    /**
+     * Why access is held, set only with a `Suspended` decision (#269): waiting for a first payment,
+     * past due, or waiting for activation. Null for a suspension that records no reason, such as one
+     * a person made.
+     */
+    SuspensionReason?: SuspensionReason | null;
 }
 
 /** Subscription statuses that still confer access. Anything else is inactive. */
@@ -696,11 +746,16 @@ export function EvaluateGrantAccess(
         ValidTo: grant.ValidTo,
     });
 
+    const suspendedFor = (reason: string | null | undefined): GrantAccessEvaluation => ({
+        ...denied('Suspended'),
+        SuspensionReason: IsSuspensionReason(reason) ? reason : null,
+    });
+
     if (grant.Status === 'Revoked') return denied('Revoked');
-    if (grant.Status === 'Suspended') return denied('Suspended');
+    if (grant.Status === 'Suspended') return suspendedFor(grant.SuspensionReason);
     if (grant.Status === 'Expired') return denied('Expired');
     if (grant.Status !== 'Active') return denied('NoGrant');
-    if (grant.PendingSuspension?.Status === 'Suspended') return denied('Suspended');
+    if (grant.PendingSuspension?.Status === 'Suspended') return suspendedFor(grant.PendingSuspension.Reason);
 
     if (grant.ValidFrom && asOf.getTime() < grant.ValidFrom.getTime()) {
         return denied('NotYetValid');

@@ -1067,19 +1067,36 @@ export const EntitlementsChecks: NamedCheck[] = [
           Assert(renewalGrants.length > 0, "the renewal grants the next term");
           Assert(renewalGrants.every((g) => g.Status === "Active"), "the nightly job has not run, so the rows still read Active");
 
-          const checked = await readAccess<{ HasAccess: boolean; Decision: string; GrantID?: string }>(
+          // Before the cutoff (#269): one day past due, access holds and the check names its last day.
+          // Asked as of that day, inside the renewal's term, at midday so the business-zone day matches.
+          const dueDay = new Date(due.NextDueDate!).toISOString().slice(0, 10);
+          const renewalStart = await TxOne<{ ValidFrom: Date }>(ctx,
+            `SELECT MIN(g.ValidFrom) AS ValidFrom FROM ${ORDERS_SCHEMA}.EntitlementGrant g
+               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = g.OrderLineID
+              WHERE ol.OrderHeaderID = '${renewalID}'`);
+          const startDay = new Date(renewalStart.ValidFrom).toISOString().slice(0, 10);
+          const graceAsOf = [addDays(dueDay, 1), addDays(startDay, 1)].sort()[1];
+          Assert(graceAsOf < cutoffDay, `a day past due inside the term (${graceAsOf}) is before the cutoff (${cutoffDay})`);
+          const early = await readAccess<{ HasAccess: boolean; Decision: string; AccessCutoffDate?: string }>(
+            ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS", AsOf: `${graceAsOf}T12:00:00Z` });
+          AssertEqual(early.Decision, "Granted", `past due but before the cutoff, access holds (${JSON.stringify(early)})`);
+          AssertEqual(early.AccessCutoffDate, addDays(dueDay, cutoff! - 1), "and the check names the day before the cutoff");
+
+          const checked = await readAccess<{ HasAccess: boolean; Decision: string; GrantID?: string; SuspensionReason?: string | null; AccessCutoffDate?: string }>(
             ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
           AssertEqual(checked.HasAccess, false, "past the cutoff, the check denies access");
           AssertEqual(checked.Decision, "Suspended", "and says it is suspended, as the row will once the job runs");
+          AssertEqual(checked.SuspensionReason, "PastDue", "because the renewal is past due (#269)");
+          AssertEqual(checked.AccessCutoffDate, undefined, "with no last day: access has already ended");
           Assert(
             renewalGrants.some((g) => g.ID.toLowerCase() === (checked.GrantID ?? "").toLowerCase()),
             "the answer is the renewal's grant",
           );
 
-          const listed = await readAccess<{ Items: Array<{ Code: string; HasAccess: boolean; Decision: string }> }>(
+          const listed = await readAccess<{ Items: Array<{ Code: string; HasAccess: boolean; Decision: string; SuspensionReason?: string | null }> }>(
             ctx, "Orders.ListEntitlements", { PersonID: f.Customers.PersonID });
           const seats = listed.Items.find((i) => i.Code === "SUB-SEATS");
-          Assert(seats != null && !seats.HasAccess && seats.Decision === "Suspended", "ListEntitlements agrees");
+          Assert(seats != null && !seats.HasAccess && seats.Decision === "Suspended" && seats.SuspensionReason === "PastDue", "ListEntitlements agrees");
 
           Assert(
             (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
@@ -1092,9 +1109,10 @@ export const EntitlementsChecks: NamedCheck[] = [
                (ID, OrderHeaderID, OverrideType, Reason, EffectiveThrough, Status, RequestedByUserID, DecidedByUserID, DecidedAt)
              VALUES ('${randomUUID()}', '${renewalID}', 'DeferCutoff', 'EN22', '${addDays(today, 2)}', 'Approved',
                      '${ctx.User.ID}', '${ctx.User.ID}', SYSDATETIMEOFFSET())`);
-          const deferred = await readAccess<{ HasAccess: boolean; Decision: string }>(
+          const deferred = await readAccess<{ HasAccess: boolean; Decision: string; AccessCutoffDate?: string }>(
             ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
           AssertEqual(deferred.Decision, "Granted", "an approved DeferCutoff keeps access at read time");
+          AssertEqual(deferred.AccessCutoffDate, addDays(today, 2), "through the deferral's last day, which the check names (#269)");
         });
       }),
   },
@@ -1191,10 +1209,11 @@ export const EntitlementsChecks: NamedCheck[] = [
             "on the waiver's last day the grants are Active, and the nightly job has not run since",
           );
 
-          const checked = await readAccess<{ HasAccess: boolean; Decision: string }>(
+          const checked = await readAccess<{ HasAccess: boolean; Decision: string; SuspensionReason?: string | null }>(
             ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "WIDGET-SUPPORT" });
           AssertEqual(checked.HasAccess, false, "the waiver has run out unpaid, so the check denies access");
           AssertEqual(checked.Decision, "Suspended", "and says it is suspended, as the row will once the job runs");
+          AssertEqual(checked.SuspensionReason, "AwaitingPayment", "waiting for the first payment, not past due (#269)");
 
           const listed = await readAccess<{ Items: Array<{ Code: string; HasAccess: boolean; Decision: string }> }>(
             ctx, "Orders.ListEntitlements", { PersonID: f.Customers.PersonID });
