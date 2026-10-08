@@ -49,6 +49,7 @@ import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
     OrderHeaderEntity,
+    mjBizAppsOrdersOrderCheckoutAnswerEntity,
     mjBizAppsOrdersOrderLineEntity,
     type AddressLike,
     mjBizAppsOrdersOrderLinePriceComponentEntity,
@@ -148,6 +149,7 @@ const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 // bizapps-common names its entities with DOTS, not the underscores the other apps use.
 const COMMON_ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+const ORDER_CHECKOUT_ANSWER_ENTITY = 'MJ_BizApps_Orders: Order Checkout Answers';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 /** IsA Disjoint child of Product (BO-D37) — present only for products that ARE events. */
@@ -783,6 +785,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     );
                 }
             }
+
+            await this.saveCheckoutAnswers(options);
 
             if (booking) {
                 const lines = await this.loadLinesForBooking();
@@ -4395,6 +4399,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private async recordOrderConfirmedEvent(options?: EntitySaveOptions): Promise<void> {
         if (!HasOutboundConsumers('OrderConfirmed')) return;
         const lines = await this.loadLinesForBooking();
+        const answers = await this.loadCheckoutAnswers();
         const day = (d: Date | null | undefined): string | null => (d ? new Date(d).toISOString().slice(0, 10) : null);
         await RecordOutboundEvent(
             {
@@ -4422,6 +4427,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         ShipToPersonID: l.ShipToPersonID ?? null,
                         ShipToOrganizationID: l.ShipToOrganizationID ?? null,
                     })),
+                    CheckoutAnswers: answers.map((a) => ({
+                        QuestionKey: a.QuestionKey,
+                        QuestionLabel: a.QuestionLabel,
+                        Answer: a.Answer,
+                        OtherText: a.OtherText ?? null,
+                    })),
                 },
             },
             this.ProviderToUse as unknown as IMetadataProvider,
@@ -4442,6 +4453,44 @@ export class OrderEntityServer extends OrderHeaderEntity {
             this.ContextCurrentUser,
         );
         return result?.Results ?? [];
+    }
+
+    /**
+     * The checkout answers as written (#322), read inside the booking transaction like the lines, so
+     * the event carries what committed whether the answers came with this save or an earlier one.
+     */
+    private async loadCheckoutAnswers(): Promise<mjBizAppsOrdersOrderCheckoutAnswerEntity[]> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<mjBizAppsOrdersOrderCheckoutAnswerEntity>(
+            {
+                EntityName: ORDER_CHECKOUT_ANSWER_ENTITY,
+                ExtraFilter: `OrderHeaderID='${this.ID}'`,
+                OrderBy: 'QuestionKey',
+                ResultType: 'entity_object',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!result?.Success) {
+            throw new Error(`Could not read the checkout answers of order ${this.OrderNumber}: ${result?.ErrorMessage ?? 'unknown error'}`);
+        }
+        return result.Results ?? [];
+    }
+
+    /**
+     * Write the checkout's answers with the order (#322). The header save skips related collections so
+     * the lines can be priced first, and that skip covers this collection too: without this the
+     * answers a checkout attached were never written.
+     */
+    private async saveCheckoutAnswers(options?: EntitySaveOptions): Promise<void> {
+        for (const answer of this.CheckoutAnswers.Items) {
+            if (answer.IsSaved && !answer.Dirty) continue;
+            answer.OrderHeaderID = this.ID;
+            if (!(await answer.Save(options))) {
+                throw new Error(
+                    `Failed to save the answer to checkout question "${answer.QuestionKey}": ${ExtractEntityErrorMessage(answer)}`,
+                );
+            }
+        }
     }
 
     private async countPersistedLines(): Promise<number> {

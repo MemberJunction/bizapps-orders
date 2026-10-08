@@ -88,7 +88,10 @@ function dependentRow(label: string, log: string[], succeeds = true) {
 /** An order with the real prototype and only the removal seams supplied. */
 function orderWith(removed: FakeLine[], items: FakeLine[] = []) {
     const instance = Object.create(OrderEntityServer.prototype) as unknown as RemovalOrder;
-    Object.assign(instance, { Lines: { Removed: removed, Items: items, Dirty: true, IsLoaded: true } });
+    Object.assign(instance, {
+        Lines: { Removed: removed, Items: items, Dirty: true, IsLoaded: true },
+        CheckoutAnswers: { Items: [] },
+    });
     // `ProviderToUse` and `ContextCurrentUser` are getters on BaseEntity, so they are shadowed
     // rather than assigned.
     Object.defineProperty(instance, 'ProviderToUse', { value: {}, writable: true });
