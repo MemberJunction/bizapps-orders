@@ -28,6 +28,7 @@
  *
  * CONNECTS TO:
  *   PURE:   ./PaymentProviderBehavior.ts — signature, idempotency decision
+ *   RECORD: ./PaymentWebhookDeliveryLog.ts — one row per verified delivery (#474)
  *   LOOKUP: ./PaymentProviderResolver.ts
  *   DOC:    plans/archive/bizapps-orders-master.md D19
  */
@@ -44,11 +45,24 @@ import {
 import {
     mjBizAppsOrdersPaymentIntentEntity,
 } from '@mj-biz-apps/orders-entities';
-import { DecideWebhookAction, IsOutOfOrderIntentEvent, type WebhookAction } from './PaymentProviderBehavior.js';
+import {
+    DecideWebhookAction,
+    IsOutOfOrderIntentEvent,
+    type WebhookAction,
+    type WebhookDecision,
+} from './PaymentProviderBehavior.js';
+import {
+    DeliveryOutcomeFor,
+    FindPriorDelivery,
+    RecordWebhookDelivery,
+    type PriorDelivery,
+    type WebhookDeliveryOutcome,
+    type WebhookDeliveryReasonCode,
+} from './PaymentWebhookDeliveryLog.js';
 import { EscapeSQLString } from './sql-guards.js';
 import { SettlePaymentForEvent } from './PaymentSettlement.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
-import type { WebhookEvent } from './BasePaymentProvider.js';
+import type { BasePaymentProvider, WebhookEvent } from './BasePaymentProvider.js';
 import { CheckoutSessionService } from './CheckoutSessionService.js';
 import {
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
@@ -117,18 +131,35 @@ export async function HandlePaymentWebhook(
     }
 
     // ── 3. Now it can be read. ─────────────────────────────────────────────
+    // From here on every delivery is verified, so every one is recorded (#474) — including the ones
+    // that change nothing. A delivery whose signature failed never reaches this line.
+    const providerID = driver.Config.ID;
     const event = driver.ParseWebhookEvent(request.RawBody);
     if (!event) {
         LogError(`A verified webhook for provider ${request.PaymentProviderID} could not be parsed.`);
+        await RecordWebhookDelivery(
+            {
+                PaymentProviderID: providerID,
+                Outcome: 'Rejected',
+                ReasonCode: 'unreadable',
+                Reason: 'the verified body could not be read as an event',
+            },
+            null,
+            provider,
+            user,
+        );
         return { Status: 400, Body: { received: false } };
     }
 
     // ── 4. Have we seen it, and do we care? ────────────────────────────────
     const existing = await findIntent(event, provider, user);
+    const prior = await findPriorDeliverySafely(providerID, event.EventID, provider, user);
     const decision = DecideWebhookAction({
         EventID: event.EventID,
         EventKind: event.Kind,
-        AlreadySeen: existing?.ProviderEventID === event.EventID,
+        // EXACT, not "the latest": the delivery table remembers every event applied, where the intent
+        // remembers only the last one stamped on it.
+        AlreadySeen: existing?.ProviderEventID === event.EventID || prior?.Outcome === 'Applied',
         HandledKinds: driver.HandledEventKinds,
         IntentKnown: existing != null,
         OutOfOrder:
@@ -141,6 +172,44 @@ export async function HandlePaymentWebhook(
             }),
     });
 
+    const handled = await act(decision, event, existing, driver, provider, user);
+    await RecordWebhookDelivery(
+        {
+            PaymentProviderID: providerID,
+            ProviderEventID: event.EventID,
+            EventKind: event.Kind,
+            PaymentIntentID: existing?.ID ?? null,
+            ProviderIntentID: event.ProviderIntentID ?? null,
+            ProviderChargeID: event.ProviderChargeID ?? null,
+            OccurredAt: event.OccurredAt ?? null,
+            Outcome: handled.Outcome,
+            ReasonCode: handled.ReasonCode ?? null,
+            Reason: handled.Reason,
+        },
+        prior,
+        provider,
+        user,
+    );
+    return handled.Response;
+}
+
+/** What one verified, parsed delivery came to: the answer for the gateway and the row to record. */
+interface HandledDelivery {
+    Response: WebhookResponse;
+    Outcome: WebhookDeliveryOutcome;
+    ReasonCode?: WebhookDeliveryReasonCode;
+    Reason: string;
+}
+
+/** Steps 4 and 5 once the decision is made. */
+async function act(
+    decision: WebhookDecision,
+    event: WebhookEvent,
+    existing: IntentRow | null,
+    driver: BasePaymentProvider,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<HandledDelivery> {
     if (decision.Action !== 'Apply') {
         // Ignore / Reject stay 200 or 400 as before. AlreadyApplied is a settled *intent*
         // stamp, not a settled checkout capture: if CapturePayment failed after confirm,
@@ -149,10 +218,15 @@ export async function HandlePaymentWebhook(
         if (decision.Action === 'AlreadyApplied' && existing) {
             const booked = await bookCheckoutCaptureFromWebhook(event, existing.ID, user);
             if (!booked) {
-                return { Status: 500, Body: { received: false } };
+                return failed('the settled checkout payment did not book; the gateway will redeliver');
             }
         }
-        return { Status: 200, Body: { received: true, outcome: decision.Action } };
+        return {
+            Response: { Status: 200, Body: { received: true, outcome: decision.Action } },
+            Outcome: DeliveryOutcomeFor(decision.Action),
+            ReasonCode: decision.ReasonCode,
+            Reason: decision.Reason,
+        };
     }
 
     // ── 5. Apply it. ───────────────────────────────────────────────────────
@@ -172,14 +246,46 @@ export async function HandlePaymentWebhook(
         await applyEvent(event, existing!.ID, provider, user);
         const booked = await bookCheckoutCaptureFromWebhook(event, existing!.ID, user);
         if (!booked) {
-            return { Status: 500, Body: { received: false } };
+            return failed('the settled checkout payment did not book; the gateway will redeliver');
         }
-        return { Status: 200, Body: { received: true, outcome: 'Apply' } };
+        return {
+            Response: { Status: 200, Body: { received: true, outcome: 'Apply' } },
+            Outcome: 'Applied',
+            Reason: decision.Reason,
+        };
     } catch (err) {
         // OURS, not theirs. The event was valid and we failed to record it, so ask again — a 200 here
         // would lose a real payment notification silently.
         LogError(`Failed to apply webhook ${event.EventID}: ${(err as Error).message}`);
-        return { Status: 500, Body: { received: false } };
+        return failed((err as Error).message);
+    }
+}
+
+/** A valid event we could not finish with: 500, so the gateway redelivers. */
+function failed(reason: string): HandledDelivery {
+    return {
+        Response: { Status: 500, Body: { received: false } },
+        Outcome: 'Failed',
+        ReasonCode: 'apply_failed',
+        Reason: reason,
+    };
+}
+
+/**
+ * The earlier delivery of this event, or null when there is none or it could not be read. A failed
+ * read must not refuse the event: the intent's own stamp still guards against a duplicate.
+ */
+async function findPriorDeliverySafely(
+    paymentProviderID: string,
+    providerEventID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<PriorDelivery | null> {
+    try {
+        return await FindPriorDelivery(paymentProviderID, providerEventID, provider, user);
+    } catch (err) {
+        LogError(`Could not read earlier deliveries of webhook ${providerEventID}: ${(err as Error).message}`);
+        return null;
     }
 }
 

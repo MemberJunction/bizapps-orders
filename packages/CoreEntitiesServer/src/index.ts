@@ -448,6 +448,7 @@ export type {
     SignatureVerification,
     WebhookAction,
     WebhookDecision,
+    WebhookReasonCode,
     SettlementAction,
     SettlementDecision,
 } from './PaymentProviderBehavior.js';
@@ -570,6 +571,13 @@ export { ResolveDeliveryChannel, DeliveryChannelNotConfiguredError } from './Del
 export { LoadOrderDeliveryContacts, LoadOrderStatus, LoadExternallyInvoiced } from './DeliveryRecipientResolver.js';
 
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
+export { DeliveryOutcomeFor, FindPriorDelivery, RecordWebhookDelivery } from './PaymentWebhookDeliveryLog.js';
+export type {
+    PriorDelivery,
+    WebhookDeliveryOutcome,
+    WebhookDeliveryReasonCode,
+    WebhookDeliveryRecord,
+} from './PaymentWebhookDeliveryLog.js';
 export { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 export type { OpenIntentRequest, OpenIntentResult } from './PaymentIntentService.js';
 export { SettlePaymentForEvent } from './PaymentSettlement.js';
