@@ -2657,6 +2657,16 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
         * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ConfirmedByFrozenAfterBooking, 51017).`),
+    IPCountry: z.string().nullable().describe(`
+        * * Field Name: IPCountry
+        * * Display Name: IP Country
+        * * SQL Data Type: char(2)
+        * * Description: ISO 3166-1 alpha-2 country of the buyer's IP address at self-serve checkout, read from the country header the proxy or CDN in front of the server sets. VAT location evidence alongside the billing address. The IP address itself is never stored. NULL when the order did not come through self-serve checkout, when no country header is configured, or when the country could not be resolved.`),
+    CardIssuingCountry: z.string().nullable().describe(`
+        * * Field Name: CardIssuingCountry
+        * * Display Name: Card Issuing Country
+        * * SQL Data Type: char(2)
+        * * Description: ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -14778,6 +14788,32 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
     set ConfirmedByUserID(value: string | null) {
         this.Set('ConfirmedByUserID', value);
+    }
+
+    /**
+    * * Field Name: IPCountry
+    * * Display Name: IP Country
+    * * SQL Data Type: char(2)
+    * * Description: ISO 3166-1 alpha-2 country of the buyer's IP address at self-serve checkout, read from the country header the proxy or CDN in front of the server sets. VAT location evidence alongside the billing address. The IP address itself is never stored. NULL when the order did not come through self-serve checkout, when no country header is configured, or when the country could not be resolved.
+    */
+    get IPCountry(): string | null {
+        return this.Get('IPCountry');
+    }
+    set IPCountry(value: string | null) {
+        this.Set('IPCountry', value);
+    }
+
+    /**
+    * * Field Name: CardIssuingCountry
+    * * Display Name: Card Issuing Country
+    * * SQL Data Type: char(2)
+    * * Description: ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.
+    */
+    get CardIssuingCountry(): string | null {
+        return this.Get('CardIssuingCountry');
+    }
+    set CardIssuingCountry(value: string | null) {
+        this.Set('CardIssuingCountry', value);
     }
 
     /**
