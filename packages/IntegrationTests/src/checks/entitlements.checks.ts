@@ -1102,8 +1102,8 @@ export const EntitlementsChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "entitlements.EN25",
-    Name: "EN25: a renewal past due but before its cutoff keeps access, and the check names its last day (#269)",
+    Id: "entitlements.EN26",
+    Name: "EN26: a renewal past due but before its cutoff keeps access, and the check names its last day (#269)",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
