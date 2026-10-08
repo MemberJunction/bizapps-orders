@@ -60,5 +60,23 @@
       "lastModified": "2026-09-28T23:39:40.166Z",
       "checksum": "3f7a0f5c61c5bf3773fdfc198f2a2ca0af5a3c967d97b26f1febb3204de611e6"
     }
+  },
+  {
+    "_comments": [
+      "Approved concessions with no signed contract amendment on file (golive #268). Set SignedAmendmentReference on the concession once the customer has signed; it then leaves this view."
+    ],
+    "fields": {
+      "Name": "Concessions: Approved, No Signed Amendment",
+      "Description": "Approved concessions whose signed contract amendment is not yet on file, oldest approval first.",
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions",
+      "UserID": "ECAFCCEC-6A37-EF11-86D4-000D3A4E707E",
+      "IsShared": true,
+      "WhereClause": "[Status] = 'Approved' AND [SignedAmendmentReference] IS NULL",
+      "CustomWhereClause": true,
+      "GridState": "{\"sortSettings\":[{\"field\":\"DecidedAt\",\"dir\":\"asc\"}],\"columnSettings\":[{\"Name\":\"OrderHeader\",\"DisplayName\":\"Order\",\"orderIndex\":0,\"width\":140,\"pinned\":\"left\"},{\"Name\":\"DeliveryForm\",\"DisplayName\":\"Form\",\"orderIndex\":1,\"width\":100},{\"Name\":\"ReasonCategory\",\"DisplayName\":\"Reason\",\"orderIndex\":2,\"width\":110},{\"Name\":\"ComputedValue\",\"DisplayName\":\"Value\",\"orderIndex\":3,\"width\":120,\"format\":{\"type\":\"currency\",\"currencyCode\":\"USD\",\"decimals\":2,\"align\":\"right\"}},{\"Name\":\"RequestedByUser\",\"DisplayName\":\"Requested by\",\"orderIndex\":4,\"width\":180},{\"Name\":\"DecidedByUser\",\"DisplayName\":\"Approved by\",\"orderIndex\":5,\"width\":180},{\"Name\":\"DecidedAt\",\"DisplayName\":\"Approved\",\"orderIndex\":6,\"width\":140,\"format\":{\"type\":\"date\",\"dateFormat\":\"medium\"}},{\"Name\":\"Reason\",\"DisplayName\":\"Details\",\"orderIndex\":7,\"width\":320}]}"
+    },
+    "primaryKey": {
+      "ID": "C9D3144D-0394-4BF2-AE31-74D8858C3B13"
+    }
   }
 ]
