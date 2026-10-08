@@ -577,6 +577,102 @@ export function ResolveAccessOverrideOutcome(facts: AccessOverrideTaskFacts): 'A
     return 'Withdrawn';
 }
 
+/** What decides who approves an access override, for {@link AccessOverrideApprovers}. */
+export interface AccessOverrideApproverFacts {
+    RequesterUserID: string;
+    /** The order company's `ApprovalCFOUserID`, or null when it is unset or that user is inactive. */
+    CompanyApproverUserID: string | null;
+    /** The `AccessOverrideFallbackApproverRole` setting, or null when it is unset. */
+    FallbackRoleName: string | null;
+    /** The fallback role's active holders. Read only when the company approver is the requester. */
+    FallbackHolderIDs: readonly string[];
+}
+
+export type AccessOverrideApproverResult =
+    | { UserIDs: string[]; Basis: 'CompanyApprover' | 'FallbackRole' }
+    | { Refusal: string };
+
+const sameUser = (a: string | null | undefined, b: string | null | undefined): boolean =>
+    !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+/**
+ * Who an access override's approval task is assigned to (bizapps-orders#360).
+ *
+ *   the order company's ApprovalCFOUserID                    → that user
+ *   ...who is the requester                                  → the fallback role's holders, less the requester
+ *   no ApprovalCFOUserID, or no fallback holder when needed  → refused
+ *
+ * Refusing rather than raising an unassigned task: an approval nobody is asked for never happens.
+ */
+export function AccessOverrideApprovers(facts: AccessOverrideApproverFacts): AccessOverrideApproverResult {
+    const approver = facts.CompanyApproverUserID;
+    if (!approver) {
+        return {
+            Refusal:
+                "The order's company has no active approver (AccountingCompanyProfile.ApprovalCFOUserID), so no one " +
+                'could approve this override. Set the company approver first.',
+        };
+    }
+    if (!sameUser(approver, facts.RequesterUserID)) return { UserIDs: [approver], Basis: 'CompanyApprover' };
+
+    if (!facts.FallbackRoleName) {
+        return {
+            Refusal:
+                "You are the order company's approver and cannot approve your own override, and no fallback approver " +
+                'role is configured (Orders setting AccessOverrideFallbackApproverRole).',
+        };
+    }
+    const others: string[] = [];
+    for (const id of facts.FallbackHolderIDs) {
+        if (!sameUser(id, facts.RequesterUserID) && !others.some((o) => sameUser(o, id))) others.push(id);
+    }
+    if (others.length === 0) {
+        return {
+            Refusal:
+                `You are the order company's approver and cannot approve your own override, and no active holder of ` +
+                `the fallback approver role '${facts.FallbackRoleName}' other than you exists.`,
+        };
+    }
+    return { UserIDs: others, Basis: 'FallbackRole' };
+}
+
+/** A decision about to be recorded on an access override, for {@link AccessOverrideDecisionRefusal}. */
+export interface AccessOverrideDecisionFacts {
+    /** Whether the decision approves (Approved, ApprovedWithConditions) rather than rejects. */
+    Approving: boolean;
+    DeciderUserID: string;
+    RequesterUserID: string;
+    /** The users the approval task is assigned to. */
+    AssigneeUserIDs: readonly string[];
+    /** The override's last day, `YYYY-MM-DD`. */
+    EffectiveThrough: string;
+    /** The business day the decision is made on, `YYYY-MM-DD`. */
+    Today: string;
+}
+
+/**
+ * Why this decision may not be recorded, or null when it may (bizapps-orders#360).
+ *
+ *   the requester deciding their own request     → refused, either way
+ *   a user the approval task is not assigned to  → refused, either way
+ *   an approval after the override's last day    → refused; a rejection still closes it
+ */
+export function AccessOverrideDecisionRefusal(facts: AccessOverrideDecisionFacts): string | null {
+    if (sameUser(facts.DeciderUserID, facts.RequesterUserID)) {
+        return 'The user who requested an access override cannot decide it.';
+    }
+    if (!facts.AssigneeUserIDs.some((id) => sameUser(id, facts.DeciderUserID))) {
+        return 'Only an approver the approval task is assigned to may decide this access override.';
+    }
+    if (facts.Approving && facts.EffectiveThrough < facts.Today) {
+        return (
+            `The override's last day (${facts.EffectiveThrough}) has passed, so it can no longer be approved. ` +
+            'Reject it, and request a new one if the exception is still needed.'
+        );
+    }
+    return null;
+}
+
 /**
  * How much of a grant survives a partial return.
  *

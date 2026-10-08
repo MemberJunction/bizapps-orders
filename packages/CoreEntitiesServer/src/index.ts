@@ -307,6 +307,8 @@ export {
     CacheUntilFor,
     ShouldRevokeGrantsOnCancel,
     ENTITLEMENT_CHECK_TTL_MS,
+    AccessOverrideApprovers,
+    AccessOverrideDecisionRefusal,
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
@@ -330,6 +332,9 @@ export type {
     TermAccessFacts,
     GrantAccessEvaluation,
     RankableAccess,
+    AccessOverrideApproverFacts,
+    AccessOverrideApproverResult,
+    AccessOverrideDecisionFacts,
 } from './EntitlementBehavior.js';
 export {
     CreateEntitlementGrants,

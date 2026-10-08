@@ -31,9 +31,10 @@ const STATUS_CHIP: Record<string, string> = {
 /**
  * Access overrides on an order (bizapps-orders#268): the record of every exception to payment-gated
  * access, a request form offering the override types the viewer is authorized to request, and
- * approve / reject on open requests. Who may approve is not settled (bizapps-orders#360), so the
- * decision buttons are not gated here. All writes go through the Orders operations; the server
- * re-checks the request authorization.
+ * approve / reject on open requests. The decision buttons are not gated here: the server refuses a
+ * decision from anyone but the approval task's assignees, and from the requester (bizapps-orders#360),
+ * and the panel shows the refusal. All writes go through the Orders operations; the server re-checks
+ * the request authorization.
  */
 @RegisterClassEx(BaseFormPanel, {
     key: 'form-panel:OrderHeaders:accessOverrides',

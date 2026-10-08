@@ -5,7 +5,8 @@
  *   MJ.BizApps.Orders.Access.Override.WaivePaymentHold   request a WaivePaymentHold override
  *   MJ.BizApps.Orders.Access.Override.DeferCutoff        request a DeferCutoff override
  *
- * These govern who may REQUEST an override. Who may approve one is not settled (bizapps-orders#360).
+ * These govern who may REQUEST an override. Who approves one is resolved per request on the server
+ * (bizapps-orders#360): the order company's ApprovalCFOUserID, never the requester.
  *
  * Shared so the browser and the server read the same names and the same rule. The server refuses a
  * request outright when the rows are missing from metadata; this answer is false in that case.
