@@ -21,6 +21,14 @@ jobs:
         with:
           node-version: 24
 
+      # A host installs one copy of MemberJunction and of each Open App. @memberjunction/* (or another
+      # app's @mj-biz-apps/*) in `dependencies`, or a `~`/exact peer range, gives it a second copy and
+      # splits the class-factory registry. Needs only Node.
+      - name: Dependency model (MJ and sibling apps are caret peers)
+        run: |
+          node ./.github/scripts/check-dependency-model.mjs --self-test
+          node ./.github/scripts/check-dependency-model.mjs
+
       - name: Check every metadata folder is in directoryOrder
         run: ./.github/scripts/validate-metadata-directory-order.sh
 
