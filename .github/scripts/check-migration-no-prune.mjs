@@ -219,9 +219,16 @@ function main() {
         const baseRef = process.env.BASE_REF || 'origin/next';
         let mergeBase;
         try {
-            mergeBase = git(['merge-base', baseRef, 'HEAD'], { cwd: root }).trim();
-        } catch {
-            mergeBase = 'HEAD';
+            // stdio: capture git's stderr instead of inheriting it -- otherwise its "fatal:" line
+            // prints live to this process's stderr AND gets re-printed below via err.stderr, twice.
+            mergeBase = git(['merge-base', baseRef, 'HEAD'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+        } catch (err) {
+            // A silent fallback to 'HEAD' here would diff the working tree against itself, so any
+            // already-committed violation on the branch would never be scanned. Fail loudly instead.
+            console.error(`${RED}✗ could not resolve base ref '${baseRef}'${NC}`);
+            console.error(`  ${err.stderr?.toString().trim() || err.message}`);
+            console.error(`  Fetch it (e.g. \`git fetch origin next\`), or set BASE_REF to a ref that resolves.`);
+            process.exit(1);
         }
         const diffFiles = git(['diff', '--name-only', '--diff-filter=ACMR', mergeBase], { cwd: root })
             .split('\n')

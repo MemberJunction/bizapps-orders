@@ -1,15 +1,16 @@
-# Publishes whatever `main` holds that npm does not.
+# Publishes whatever `main` holds that npm does not, then carries the release back to `next`.
 #
-# This workflow no longer computes or commits a version. `changeset version` runs earlier,
-# in the Version Packages PR on `next` (see version.yml), so by the time a release PR
-# reaches `main` the package versions ARE the instruction: `changeset publish` publishes
-# every package whose version is not on the registry and skips the rest. It never reads
-# .changeset/*.md — only `changeset version` does.
+# This workflow does not compute or commit a version. `changeset version` runs earlier, in the
+# Version Packages PR (changeset-release/main -> main, see version.yml). Merging that PR is the
+# release: by the time it reaches `main` the package versions ARE the instruction, and
+# `changeset publish` publishes every package whose version is not on the registry and skips
+# the rest. It never reads .changeset/*.md -- only `changeset version` does.
 #
-# Removed on purpose: the version prediction and its mismatch guard (the bump is now a
-# reviewed diff, not a computed surprise), the mj-app.json write (moved into version:ci),
-# `commitpush`, and the main->next merge-back. The last two pushed directly to protected
-# branches, which is what broke bizapps-accounting's 0.2.0 release (`GH013`).
+# Removed on purpose: the version prediction and its mismatch guard (the bump is now a reviewed
+# diff, not a computed surprise), the mj-app.json write (moved into version:prepare), and
+# `commitpush`, which pushed straight to `main`. The main -> next back-merge is kept, but as a
+# PR opened and merged with the App token (see the last step) rather than a direct push, so it
+# goes through the same rulesets as every other change to `next`.
 name: Build and Publish
 
 on:
@@ -27,19 +28,46 @@ concurrency:
 
 jobs:
   build-and-publish:
+    # `main` ONLY, and this guard is the whole reason the workflow is safe to keep
+    # `workflow_dispatch` on.
+    #
+    # Before it existed there was a live hole. `workflow_dispatch` accepts any branch, and this
+    # workflow no longer refuses to run with zero pending changesets (it MUST run with zero —
+    # versions now arrive pre-bumped from the Version Packages PR). So the state `next` is in
+    # immediately after that PR merges — versions bumped, nothing pending — was exactly the state
+    # in which a dispatch on `next` would publish: `changeset publish` would ship next's versions
+    # and push a `v*` tag from a `next` commit, with `rr: changesets`, `rr: minor bump` and
+    # `rr: migration immutability` never having run. The next release PR would then compare
+    # against that tag and find nothing changed, so the gates would pass vacuously.
+    #
+    # The old workflow was accidentally protected here: it guarded publishing with
+    # `pending != '0'`, which made a dispatch-with-nothing-pending a no-op. Splitting version
+    # from publish removed that accident, so the guard has to be explicit.
+    #
+    # The template repo carries this pipeline for the apps made from it, but never publishes itself.
+    if: github.ref == 'refs/heads/main' && github.repository != 'MemberJunction/open-app-template'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      # The back-merge at the end has to open a PR, and a PR opened with GITHUB_TOKEN creates
+      # runs in `action_required` that wait for a click. The App is already registered and its
+      # credentials are already repository secrets, so this is a step, not new setup.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           fetch-tags: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # Must precede setup-node: `cache: 'pnpm'` needs pnpm already on PATH.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: 'pnpm'
@@ -55,19 +83,18 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Validate all packages exist on npm
-        if: github.ref == 'refs/heads/main'
         run: ./.github/scripts/validate-npm-packages.sh
 
       - name: Validate repository.url for npm provenance
         run: ./.github/scripts/validate-package-repository.sh
 
-      - name: Validate packages restrict what they ship
-        run: ./.github/scripts/validate-package-files.sh
-
       - name: Configure git credentials
         run: |
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
+
+      - name: Validate packages restrict what they ship
+        run: ./.github/scripts/validate-package-files.sh
 
       - name: Refuse to publish with changesets still pending
         run: |
@@ -81,19 +108,124 @@ jobs:
       - name: Build all packages
         run: pnpm run build:packages
 
+      # `changeset publish` compares each package's version to the registry and publishes only
+      # what is missing, so "published nothing" is a perfectly ordinary outcome — and that is the
+      # problem. A hotfix merged to `main` WITHOUT running the version step arrives with versions
+      # already on npm: publish ships zero packages, the tag step finds the tag already there, and
+      # the summary used to print "## Released vX.Y.Z" anyway. The fix would sit on `main`, never
+      # reach a consumer, and nothing would be red.
+      #
+      # So capture what actually happened. `changeset publish` prints a "New tag:" line per
+      # published package; zero of them means zero packages shipped.
       - name: Publish to npm
-        run: pnpm exec changeset publish
+        id: publish
+        run: |
+          set -o pipefail
+          pnpm exec changeset publish 2>&1 | tee /tmp/publish.log
+          PUBLISHED=$(grep -c '^ *🦋 *New tag:' /tmp/publish.log || true)
+          echo "count=$PUBLISHED" >> "$GITHUB_OUTPUT"
+          echo "Packages published: $PUBLISHED"
 
+      # Decide the outcome BEFORE writing the tag.
+      #
+      # Two defects Ian caught in the first version of this, both of which made a failed release
+      # look like a finished one:
+      #
+      #   * the tag was pushed before the outcome was known, so the failure path left the tag on
+      #     origin — and a re-run then took the "tag already exists" branch and reported success.
+      #   * the hotfix check only fired when the tag was MISSING, which is the rare case. A hotfix
+      #     merged to `main` with no version bump sits at a version that is already published AND
+      #     already tagged by the previous release, so it took the benign branch and exited 0.
+      #
+      # The tree is what separates the two: a genuine re-run of a completed release has the same
+      # `packages/` as the tag; a hotfix that skipped the bump does not.
       - name: Tag the release
+        id: tag
         run: |
           VERSION="v$(jq -r .version packages/Entities/package.json)"
+          PUBLISHED="${{ steps.publish.outputs.count }}"
+
+          TAG_EXISTED=false
           if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            TAG_EXISTED=true
+          fi
+
+          if [ "$PUBLISHED" -eq 0 ]; then
+            if [ "$TAG_EXISTED" != "true" ]; then
+              echo "::error::Published 0 packages, and $VERSION is not tagged. Every package version on main already exists on npm, so this commit reached main WITHOUT a version bump — most likely a hotfix merged straight to main without running 'pnpm exec changeset' + 'pnpm run version:prepare' first. The fix is on main but will never reach a consumer. Raise a changeset, run version:prepare, and merge the bump."
+              exit 1
+            fi
+
+            # Make sure the tag object is local before diffing against it.
+            git fetch --no-tags origin "refs/tags/$VERSION:refs/tags/$VERSION" 2>/dev/null || true
+            if ! git diff --quiet "$VERSION" HEAD -- packages/; then
+              echo "::error::$VERSION is already tagged and already on npm, but packages/ has changed since that tag. This commit reached main WITHOUT a version bump — a genuine re-run of a completed release would have an identical tree. Raise a changeset, run 'pnpm run version:prepare', and merge the bump."
+              git --no-pager diff --stat "$VERSION" HEAD -- packages/ | tail -20
+              exit 1
+            fi
+
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "## Nothing published — $VERSION is already on npm" >> "$GITHUB_STEP_SUMMARY"
+            echo "Every package version already exists on the registry, the tag is already pushed, and packages/ is identical to it — this is a re-run of a completed release." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Something shipped, so the tag is now safe to write.
+          if [ "$TAG_EXISTED" = "true" ]; then
             echo "Tag $VERSION already exists on origin — leaving it alone"
           else
             git tag "$VERSION"
-            # Tags are not branches: the ruleset targets branches only, so this push is
-            # unaffected by the rule that blocks writes to main itself.
             git push origin "refs/tags/$VERSION"
             echo "Tagged $VERSION"
           fi
+          echo "released=true" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "## Released $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "$PUBLISHED package(s) published." >> "$GITHUB_STEP_SUMMARY"
+
+      # Carry the bump home. `next` still holds the consumed changeset files and the
+      # pre-release version until this lands, so a push to `next` before it does would
+      # regenerate a Version Packages PR proposing the number just published. The window is
+      # seconds, but the back-merge is load-bearing, not bookkeeping.
+      #
+      # A PR rather than a ruleset bypass: a bypass is unconditional, so anyone who can make
+      # this workflow run could write anything to `next`. The App can only propose.
+      #
+      # Merged directly rather than with `gh pr merge --auto`: auto-merge is refused on a PR
+      # that is already mergeable. `protect-next` requires nothing today, and once the rulesets
+      # land the App is a `pull_request`-mode bypass actor on both, so a direct merge stays valid.
+      #
+      # If the back-merge cannot be opened or merged, this step FAILS. The packages are already
+      # on npm by then, so a red run here means "action needed", not "the release failed" -- but
+      # a warning on a green run is easy to miss, and until the back-merge lands the next release
+      # PR is blocked by `rr: release base current`. Red is what makes someone look.
+      - name: Carry the release back to next
+        if: steps.tag.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          BRANCH="release-back-merge/$VERSION"
+          git push origin "HEAD:refs/heads/$BRANCH"
+
+          BODY="Carries the $VERSION bump, CHANGELOGs, mj-app.json sync and refreshed lockfile back to next.
+
+          Opened automatically by publish.yml after $VERSION published. Until this lands, next still holds the consumed changesets and the previous version, so the next Version Packages PR would propose a number that is already on npm."
+
+          PR_URL=$(gh pr create --base next --head "$BRANCH" \
+                     --title "chore(release): carry $VERSION back to next" \
+                     --body "$BODY" || true)
+
+          if [ -z "${PR_URL:-}" ]; then
+            echo "::error::$VERSION is published, but the back-merge PR could not be opened. Open $BRANCH -> next by hand and merge it; the next release PR is blocked (rr: release base current) until it lands."
+            echo "Back-merge: NOT OPENED — open $BRANCH -> next by hand" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          if ! gh pr merge "$PR_URL" --merge --delete-branch; then
+            echo "::error::$VERSION is published, but back-merge $PR_URL could not be merged automatically. Merge it by hand; the next release PR is blocked (rr: release base current) until it lands."
+            echo "Back-merge: NOT MERGED — $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Back-merge: $PR_URL" >> "$GITHUB_STEP_SUMMARY"

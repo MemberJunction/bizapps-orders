@@ -1,0 +1,46 @@
+name: Repo checks
+
+# Guards specific to this repo. They live here, not in changes.yml, because changes.yml and the
+# other release workflows are copied byte-for-byte from the reference repo (bizapps-issues) and
+# must stay identical across the open apps. Before the release-pipeline port these steps ran
+# inside this repo's old changes.yml.
+on:
+  pull_request:
+    branches: [next, main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  repo-guards:
+    name: 'repo: guards'
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Check every metadata folder is in directoryOrder
+        run: ./.github/scripts/validate-metadata-directory-order.sh
+
+      - name: Resolve current base branch tip
+        id: base
+        run: |
+          # Not --depth=1: that marks the fetched tip shallow, and if the base has moved since the
+          # merge ref was computed (or on a re-run of an old job) there is no merge base to diff against.
+          git fetch --no-tags origin ${{ github.event.pull_request.base.ref }}
+          echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Stricter than the shared `migration immutability` check, on purpose: orders locks a
+      # migration as soon as it is on the PR's base branch (next), not only once it is released.
+      - name: Migrations already on the base branch are locked
+        run: |
+          node ./.github/scripts/check-migrations-locked.mjs --self-test
+          node ./.github/scripts/check-migrations-locked.mjs ${{ steps.base.outputs.sha }} ${{ github.sha }}
