@@ -158,10 +158,103 @@ export function SplitChargesByLine(result: ComputeChargesResult): Map<string, { 
 }
 
 /**
+ * Remove the tax rows an earlier save wrote for these lines, allocations first.
+ *
+ * Tax is the one charge the pricing walk RE-DERIVES on every save: it is resolved from the ship-to
+ * address each time, while a requested charge is stated once and never restated. So the walk that
+ * is about to call {@link WriteCharges} would add a second set of tax rows beside the draft's, the
+ * line's `LineTax` would show one set, and booking — which credits tax from these rows — would
+ * credit it twice and refuse an entry that does not balance. Clearing them first leaves exactly
+ * the set this walk decided.
+ *
+ * Scoped to the lines the walk priced, not the whole order, so a save that saw only some of the
+ * lines cannot strip tax from the rest. A tax charge with an allocation on one of them goes whole,
+ * all its allocations with it, because the walk re-decides it whole.
+ *
+ * Only for an order whose money is not yet frozen; the caller owns that rule.
+ */
+export async function DeleteTaxCharges(
+    orderHeaderID: string,
+    lineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<void> {
+    if (!lineIDs.length) return;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const types = await rv.RunView<{ ID: string }>(
+        { EntityName: CHARGE_TYPE_ENTITY, ExtraFilter: `Category = 'Tax'`, Fields: ['ID'], ResultType: 'simple', BypassCache: true },
+        user,
+    );
+    if (!types?.Success) {
+        throw new ChargeError(`Could not read charge types: ${types?.ErrorMessage ?? 'unknown error'}`);
+    }
+    if (!types.Results.length) return;
+
+    const touched = await rv.RunView<{ OrderChargeID: string }>(
+        {
+            EntityName: ORDER_CHARGE_ALLOCATION_ENTITY,
+            ExtraFilter: `OrderLineID IN (${quoted(lineIDs)})`,
+            Fields: ['OrderChargeID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!touched?.Success) {
+        throw new ChargeError(`Could not read the lines' charge allocations: ${touched?.ErrorMessage ?? 'unknown error'}`);
+    }
+    if (!touched.Results.length) return;
+
+    const charges = await rv.RunView<mjBizAppsOrdersOrderChargeEntity>(
+        {
+            EntityName: ORDER_CHARGE_ENTITY,
+            ExtraFilter:
+                `OrderHeaderID = '${orderHeaderID}'` +
+                ` AND ID IN (${quoted(touched.Results.map((a) => a.OrderChargeID))})` +
+                ` AND ChargeTypeID IN (${quoted(types.Results.map((t) => t.ID))})`,
+            ResultType: 'entity_object',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!charges?.Success) {
+        throw new ChargeError(`Could not read the order's tax charges: ${charges?.ErrorMessage ?? 'unknown error'}`);
+    }
+    if (!charges.Results.length) return;
+
+    const allocations = await rv.RunView<mjBizAppsOrdersOrderChargeAllocationEntity>(
+        {
+            EntityName: ORDER_CHARGE_ALLOCATION_ENTITY,
+            ExtraFilter: `OrderChargeID IN (${quoted(charges.Results.map((c) => c.ID))})`,
+            ResultType: 'entity_object',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!allocations?.Success) {
+        throw new ChargeError(`Could not read the order's tax allocations: ${allocations?.ErrorMessage ?? 'unknown error'}`);
+    }
+
+    for (const row of [...allocations.Results, ...charges.Results]) {
+        if (!(await row.Delete())) {
+            throw new ChargeError(
+                `Could not remove the previous tax on this order: ${row.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+    }
+}
+
+/** Database-issued IDs as a SQL `IN` list, each once. */
+function quoted(ids: string[]): string {
+    return [...new Set(ids)].map((id) => `'${id}'`).join(',');
+}
+
+/**
  * Write the charge rows and their allocations.
  *
  * Runs after the lines exist, and only ADDS rows — the frozen line is never touched again, which is
- * what keeps this clear of the immutability trigger.
+ * what keeps this clear of the immutability trigger. A re-priced order clears its earlier tax rows
+ * with {@link DeleteTaxCharges} first.
  */
 export async function WriteCharges(
     orderHeaderID: string,

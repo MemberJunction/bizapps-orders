@@ -100,7 +100,7 @@ import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { CheckOrderBillToName, LoadBillToName } from './RailCustomerNameLimit.js';
-import { Today, AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
+import { Today, AllocateProRata, AuthorizeManualDiscount, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
 const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
@@ -1500,6 +1500,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // The adjustment and charge rows need line IDs, so they follow the insert — but they only ADD
         // rows and never touch the frozen line again.
         if (pending) await this.writePromotionRecords(pending, persisted);
+        // EXCEPT TAX, which this walk re-resolved for every line. A saved draft already holds the tax
+        // rows its own save wrote; adding this walk's beside them credits the tax twice at booking
+        // while the line's `LineTax` shows it once, and the confirm is refused as unbalanced. So the
+        // earlier rows go first — even when this walk found no tax at all, since an order re-priced
+        // to an exempt address owes none. Never on an order whose money is already frozen.
+        if (!this.MoneyLocked) await this.deleteTaxRecords(persisted);
         if (charges) await this.writeChargeRecords(charges, persisted);
     }
 
@@ -1507,6 +1513,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
 
 
+
+    /** Remove the tax rows an earlier save wrote for these lines — see `DeleteTaxCharges`. */
+    private async deleteTaxRecords(persisted: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
+        await DeleteTaxCharges(
+            this.ID,
+            persisted.map((line) => line.ID),
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+    }
 
     /** Write the charge and allocation rows once the lines have real IDs. */
     private async writeChargeRecords(

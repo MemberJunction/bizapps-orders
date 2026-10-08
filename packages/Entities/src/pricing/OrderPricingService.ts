@@ -458,14 +458,20 @@ export class OrderPricingService {
         // taxable, and whether the buyer is exempt. A caller-supplied rate still wins — the same
         // rule as a stated UnitPrice.
         const resolvedTax = await this.resolveTaxCharges(chargeable, provider, user);
-        if (!this.ctx.Charges.length && !resolvedTax.length) return null;
-        const result = await RunCharges([...this.ctx.Charges, ...resolvedTax], chargeable, provider, user);
-        const split = SplitChargesByLine(result);
+        const result =
+            this.ctx.Charges.length || resolvedTax.length
+                ? await RunCharges([...this.ctx.Charges, ...resolvedTax], chargeable, provider, user)
+                : null;
+        const split = result ? SplitChargesByLine(result) : new Map<string, { Tax: number; Other: number }>();
         for (let i = 0; i < this.ctx.Lines.length; i++) {
             const share = split.get(String(i));
-            if (!share) continue;
-            if (share.Tax) this.ctx.Lines[i].LineTax = share.Tax;
-            if (share.Other) {
+            // TAX IS ASSIGNED, ZERO INCLUDED. It is re-resolved on every walk and the saver replaces
+            // the tax rows to match, so a saved draft re-priced to no tax (an exempt address, say)
+            // must lose its old figure too — or the line shows tax that no row backs and the booking
+            // entry debits it with no credit. Other charges are requested once and never restated,
+            // so a walk that did not see them leaves `ChargeAmount` alone.
+            this.ctx.Lines[i].LineTax = share?.Tax ?? 0;
+            if (share?.Other) {
                 this.ctx.Lines[i].ChargeAmount = share.Other;
             }
         }
