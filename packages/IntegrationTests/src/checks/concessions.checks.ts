@@ -1032,6 +1032,8 @@ export const ConcessionChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
+        // Not about accounting's acknowledgment: an earlier check's role would make its approval raise one, and the stand-in requester may be that role's only holder.
+        OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
         const orderID = await bookOnNet30(ctx);
         const net30 = await termsOf(ctx, "Net30");
         const net60 = await termsOf(ctx, "Net60");
