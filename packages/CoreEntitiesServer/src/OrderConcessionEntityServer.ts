@@ -26,6 +26,13 @@
  * app, assigned to the rule's role holders, in the same transaction as the row. Deciding it on this record,
  * or withdrawing it, closes that task.
  *
+ * A REFERRAL PROGRAM APPROVES ITS OWN (golive #268). A referral's earned time is added to the next term, on the
+ * renewal order, never to the current one: extending the current term re-cuts recognition already scheduled and can
+ * change a renewal invoice already sent. A Duration concession that names an active `ReferralProgram` of the order's
+ * company, extends a term bought by a renewal line, and adds no more than the program's `DaysPerReferral` is
+ * Approved by the program, with no Sales Authority and no approver. One that adds more, or names an inactive
+ * program, is routed like any other. Naming a program on a term that is not a renewal is refused.
+ *
  * WITHDRAWING ONE. A Pending concession can be withdrawn, and so can one approved on the requester's
  * own authority while its order is not confirmed. No approver decided the second kind, and the
  * customer is not yet committed to it; withdrawing and recording it again is how it is measured
@@ -87,6 +94,7 @@ import { ApplyTermExtension, CheckTermExtension, type ApprovedDurationConcession
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
+const REFERRAL_PROGRAM_ENTITY = 'MJ_BizApps_Orders: Referral Programs';
 
 /** The columns a requester authors. Once recorded, none of them change. */
 const AUTHORED_FIELDS = [
@@ -100,6 +108,7 @@ const AUTHORED_FIELDS = [
     'AddedQuantity',
     'PriorPaymentTermsTypeID',
     'NewPaymentTermsTypeID',
+    'ReferralProgramID',
     'ComputedValue',
     'OrderNetTotal',
     'CumulativeShare',
@@ -200,6 +209,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private approvingRole: string | null = null;
     /** How far this concession moves its term's dates, set when a Duration concession is valued. */
     private termDateChangeDays: number | null = null;
+    /** The line that bought the term a Duration concession extends, set when it is valued. */
+    private extendedLine: LineRow | null = null;
 
     /** What the approval task calls this concession ("25% discount, 3,000.00"), kept by `prepareNew`. */
     private approvalSummary = '';
@@ -284,6 +295,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!this.Reason?.trim()) return 'A concession must state its reason.';
 
         this.termDateChangeDays = null;
+        this.extendedLine = null;
         const valued = await this.valueByForm(user);
         if (typeof valued === 'string') return valued;
 
@@ -303,6 +315,15 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.approvingRole = null;
 
         if (ConcessionAlwaysEscalates(this.DeliveryForm)) return this.escalate(user);
+
+        if (this.ReferralProgramID) {
+            const inProgram = await this.inReferralProgram(user);
+            if (typeof inProgram === 'string') return inProgram;
+            if (inProgram) {
+                this.decide('Approved', user);
+                return null;
+            }
+        }
 
         const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
         const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.termDateChangeDays, share);
@@ -413,6 +434,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         this.OrderHeaderID = line.OrderHeaderID;
         this.OrderLineID = line.ID;
+        this.extendedLine = line;
         this.termDateChangeDays = TermDateChangeDays(
             { StartDate: applicable.TermStartDate, EndDate: applicable.CurrentEndDate },
             { StartDate: applicable.TermStartDate, EndDate: applicable.NewEndDate },
@@ -423,6 +445,35 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             TermDays: InclusiveDays(new Date(term.StartDate), new Date(term.EndDate)),
             AddedDays: days,
         });
+    }
+
+    /**
+     * Whether the referral program this concession names approves it: true when it is in program, false when it
+     * is routed like any other, or why naming the program is refused.
+     */
+    private async inReferralProgram(user: UserInfo): Promise<boolean | string> {
+        if (this.DeliveryForm !== 'Duration' || !this.extendedLine) {
+            return 'A referral program grants extra time on a renewed term, so only a Duration concession names one.';
+        }
+        if (this.ReasonCategory !== 'Referral') return "A concession under a referral program has the reason category 'Referral'.";
+        const program = await this.loadRow<{ CompanyID: string; Name: string; DaysPerReferral: number; IsActive: boolean }>(
+            REFERRAL_PROGRAM_ENTITY,
+            this.ReferralProgramID!,
+            ['CompanyID', 'Name', 'DaysPerReferral', 'IsActive'],
+            user,
+        );
+        if (!program) return `Referral program ${this.ReferralProgramID} was not found.`;
+        const order = await this.loadRow<{ CompanyID: string }>(ORDER_HEADER_ENTITY, this.OrderHeaderID, ['CompanyID'], user);
+        if (!order || !UUIDsEqual(order.CompanyID, program.CompanyID)) {
+            return `Referral program '${program.Name}' belongs to another company than this order.`;
+        }
+        if (!this.extendedLine.RenewsSubscriptionID) {
+            return (
+                `Referral program '${program.Name}' adds its time to the next term, on the renewal order. This term was not ` +
+                `bought by a renewal; record the concession against the renewed term once the renewal is confirmed.`
+            );
+        }
+        return !!program.IsActive && Number(this.AddedDays ?? 0) <= Number(program.DaysPerReferral);
     }
 
     private async valueLinePrice(user: UserInfo): Promise<ConcessionValuation | string> {
