@@ -468,9 +468,51 @@ export type {
     UpdateIntentRequest,
     UpdateIntentResult,
     WebhookEvent,
+    GatewayRefund,
+    ListRefundsRequest,
+    ListRefundsResult,
+    GatewayCharge,
+    ListChargesRequest,
+    ListChargesResult,
+    RetrieveChargeRequest,
+    RetrieveChargeResult,
+    GatewayWebhookEndpoint,
+    ListWebhookEndpointsResult,
 } from './BasePaymentProvider.js';
 
-export { StripePaymentProvider, LoadStripePaymentProvider, ToFormBody } from './StripePaymentProvider.js';
+export {
+    StripePaymentProvider,
+    LoadStripePaymentProvider,
+    ToFormBody,
+    AddCreatedRange,
+    StripeRefundFromObject,
+    StripeChargeFromObject,
+} from './StripePaymentProvider.js';
+export {
+    CheckPaymentWebhookEndpoints,
+    CheckWebhookEndpointDrift,
+    EndpointServesProvider,
+} from './PaymentWebhookEndpointCheck.js';
+export type { WebhookEndpointCheckResult } from './PaymentWebhookEndpointCheck.js';
+export {
+    FindChargeMismatches,
+    ChargeMismatchDedupeKey,
+    GatewayWindow,
+    CreatedInWindow,
+} from './ChargeReconciliation.js';
+export type { ChargeMismatch, ChargeMismatchKind, ReconcilablePayment } from './ChargeReconciliation.js';
+export {
+    ReconcilePaymentProviderChargesOperation,
+    LoadReconcilePaymentProviderChargesOperation,
+    PROVIDER_CHARGE_MISMATCH_TYPE_CODE,
+} from './ReconcilePaymentProviderChargesOperation.js';
+export {
+    BookProviderRefunds,
+    PlanProviderRefundBooking,
+    UnmatchedGatewayRefunds,
+    PROVIDER_REFUND_NOT_BOOKED_TYPE_CODE,
+} from './ProviderRefundBooking.js';
+export type { HeldRefund, RefundBookingPlan, ProviderRefundOutcome } from './ProviderRefundBooking.js';
 export { StripeACHPaymentProvider, LoadStripeACHPaymentProvider } from './StripeACHPaymentProvider.js';
 export { BillComPaymentProvider, LoadBillComPaymentProvider } from './BillComPaymentProvider.js';
 export { BaseInvoiceRail, LoadBaseInvoiceRail } from './BaseInvoiceRail.js';
