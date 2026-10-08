@@ -1097,6 +1097,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             Quantity: line.Quantity,
             UnitPrice: line.UnitPrice,
             ProductPriceID: line.ProductPriceID,
+            DiscountPct: line.DiscountPct,
+            RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
             // A renewal line's price is the renewal pass's own decision (golive #304), not a stated one.
             PriceStated:
                 !this.isUneditedRenewalPrice(line) &&
@@ -1150,6 +1152,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     Quantity: line.Quantity,
                     UnitPrice: line.UnitPrice,
                     ProductPriceID: line.ProductPriceID,
+                    DiscountPct: line.DiscountPct,
+                    RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
                     PriceStated: !this.isUneditedRenewalPrice(line),
                     CompanyID: line.CompanyID,
                 })),

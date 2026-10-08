@@ -118,6 +118,8 @@ interface LineRow {
     Quantity: number;
     UnitPrice: number;
     ProductPriceID: string | null;
+    DiscountPct: number | null;
+    RenewsSubscriptionID: string | null;
 }
 
 interface TermRow {
@@ -429,8 +431,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const concession = await LinePriceConcessionFor(line, this.provider(), user);
         if (!concession) {
             return (
-                `Line ${line.LineNumber} is charged its engine price or another named price that applies, so there ` +
-                `is no price concession on it to record.`
+                `Line ${line.LineNumber} is charged its engine price or another named price that applies, with no ` +
+                `discount, so there is no price concession on it to record.`
             );
         }
         this.DeliveryForm = concession.Form;
@@ -545,7 +547,17 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return this.loadRow<LineRow>(
             ORDER_LINE_ENTITY,
             id,
-            ['ID', 'OrderHeaderID', 'LineNumber', 'ProductID', 'Quantity', 'UnitPrice', 'ProductPriceID'],
+            [
+                'ID',
+                'OrderHeaderID',
+                'LineNumber',
+                'ProductID',
+                'Quantity',
+                'UnitPrice',
+                'ProductPriceID',
+                'DiscountPct',
+                'RenewsSubscriptionID',
+            ],
             user,
         );
     }
