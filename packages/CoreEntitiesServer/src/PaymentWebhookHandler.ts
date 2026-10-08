@@ -61,6 +61,7 @@ import {
 } from './PaymentWebhookDeliveryLog.js';
 import { EscapeSQLString } from './sql-guards.js';
 import { SettlePaymentForEvent } from './PaymentSettlement.js';
+import { BookProviderRefunds } from './ProviderRefundBooking.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import type { BasePaymentProvider, WebhookEvent } from './BasePaymentProvider.js';
 import { CheckoutSessionService } from './CheckoutSessionService.js';
@@ -70,6 +71,8 @@ import {
 } from './checkoutCaptureRetry.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
+/** The gateway event that reports a charge's cumulative refunded amount. */
+const REFUND_EVENT_KIND = 'charge.refunded';
 
 export interface WebhookRequest {
     /** The EXACT bytes received. See the header — a parsed-and-restringified body will not verify. */
@@ -242,6 +245,12 @@ async function act(
         // everywhere it held before. Checkout CapturePayment is a separate, explicit call below.
         if (driver.SettlesAsynchronously) {
             await SettlePaymentForEvent(event, existing!.ID, provider, user);
+        }
+        // A refund made at the gateway is booked before the event is stamped, for the same reason as
+        // settlement: a failure here answers 500 with nothing stamped, and the retry books only what is
+        // still missing (#476).
+        if (event.Kind === REFUND_EVENT_KIND) {
+            await BookProviderRefunds(event, existing!.ID, driver, provider, user);
         }
         await applyEvent(event, existing!.ID, provider, user);
         const booked = await bookCheckoutCaptureFromWebhook(event, existing!.ID, user);
