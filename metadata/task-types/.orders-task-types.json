@@ -3,7 +3,9 @@
     "_comments": [
       "Approval of an exception to payment-gated access (bizapps-orders#268). Its own type, rather",
       "than the generic Approval Request, so that closing the task in the Tasks inbox runs the Action that",
-      "applies the decision to the override."
+      "applies the decision to the override. IsApproval lists its tasks in the Tasks approvals inbox; its OnAssign",
+      "action posts each assignment to the Teams channel named by the 'Teams Channel Webhook' credential called",
+      "ORDERS_ACCESS_OVERRIDE (bizapps-orders#360)."
     ],
     "fields": {
       "Name": "Access Override Approval",
@@ -12,6 +14,8 @@
       "IconClass": "fa-solid fa-unlock-keyhole",
       "DefaultPriority": "High",
       "IsActive": true,
+      "IsApproval": true,
+      "OnAssignActionID": "@lookup:MJ: Actions.Name=Post Task Assignment to Teams",
       "OnCompleteActionID": "@lookup:MJ: Actions.Name=Apply Access Override Decision",
       "OnCancelActionID": "@lookup:MJ: Actions.Name=Apply Access Override Decision",
       "OnRejectActionID": "@lookup:MJ: Actions.Name=Apply Access Override Decision"
