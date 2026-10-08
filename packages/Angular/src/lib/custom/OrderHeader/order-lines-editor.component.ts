@@ -63,7 +63,7 @@ import {
     ExtensionToggleLabel,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
-import { AsDateValue, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
+import { AsDateValue, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 
 /**
  * Just enough of an RxJS subscription to release one.
@@ -496,10 +496,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     /** Who this line is for, resolved the way the server does: the line's ship-to, then the order's. */
     private holdingKey(line: mjBizAppsOrdersOrderLineEntity): { key: string; org: string | null; person: string | null } | null {
         if (!line.ProductID) return null;
-        const order = this._order;
-        const org = line.ShipToOrganizationID ?? order?.ShipToOrganizationID ?? order?.BillToOrganizationID ?? null;
-        const person = line.ShipToPersonID ?? order?.ShipToPersonID ?? order?.BillToPersonID ?? null;
-        if (!org && !person) return null;
+        const who = HoldingSubscriberFor(line, this._order ?? null);
+        if (!who) return null;
+        const org = who.OrganizationID;
+        const person = who.PersonID;
         return { key: `${line.ProductID}|${org ?? ''}|${person ?? ''}`.toLowerCase(), org, person };
     }
 
