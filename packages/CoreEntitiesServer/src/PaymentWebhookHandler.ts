@@ -44,7 +44,8 @@ import {
 import {
     mjBizAppsOrdersPaymentIntentEntity,
 } from '@mj-biz-apps/orders-entities';
-import { DecideWebhookAction, type WebhookAction } from './PaymentProviderBehavior.js';
+import { DecideWebhookAction, IsOutOfOrderIntentEvent, type WebhookAction } from './PaymentProviderBehavior.js';
+import { EscapeSQLString } from './sql-guards.js';
 import { SettlePaymentForEvent } from './PaymentSettlement.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import type { WebhookEvent } from './BasePaymentProvider.js';
@@ -130,6 +131,14 @@ export async function HandlePaymentWebhook(
         AlreadySeen: existing?.ProviderEventID === event.EventID,
         HandledKinds: driver.HandledEventKinds,
         IntentKnown: existing != null,
+        OutOfOrder:
+            existing != null &&
+            IsOutOfOrderIntentEvent({
+                EventStatus: event.Status,
+                EventOccurredAt: event.OccurredAt,
+                CurrentStatus: existing.Status,
+                LastEventAt: existing.LastEventAt,
+            }),
     });
 
     if (decision.Action !== 'Apply') {
@@ -222,23 +231,32 @@ async function bookCheckoutCaptureFromWebhook(
     }
 }
 
+/** The fields of a `PaymentIntent` the decision reads. */
+interface IntentRow {
+    ID: string;
+    Status: string;
+    ProviderEventID: string | null;
+    LastEventAt: Date | string | null;
+}
+
 /** The `PaymentIntent` row this event is about, if we opened it. */
 async function findIntent(
     event: WebhookEvent,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<{ ID: string; Status: string; ProviderEventID: string | null } | null> {
+): Promise<IntentRow | null> {
     if (!event.ProviderIntentID) return null;
     // Escaped rather than interpolated raw: this value came off the wire. It is inside a verified
     // payload, so it is not attacker-controlled in practice — but "verified" and "safe to concatenate
     // into SQL" are different claims, and only one of them is being made here.
-    const safe = event.ProviderIntentID.replace(/'/g, "''");
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const result = await rv.RunView<{ ID: string; Status: string; ProviderEventID: string | null }>(
+    const result = await rv.RunView<IntentRow>(
         {
             EntityName: PAYMENT_INTENT_ENTITY,
-            ExtraFilter: `ProviderIntentID = '${safe}'`,
+            ExtraFilter: `ProviderIntentID = '${EscapeSQLString(event.ProviderIntentID)}'`,
+            Fields: ['ID', 'Status', 'ProviderEventID', 'LastEventAt'],
             ResultType: 'simple',
+            BypassCache: true,
         },
         user,
     );
@@ -268,9 +286,15 @@ async function applyEvent(
         user,
     );
 
-    if (event.Status) intent.Status = event.Status;
+    if (event.Status) {
+        intent.Status = event.Status;
+        // The GATEWAY'S time of the event that set this status, which is what the next event is
+        // compared against (#475). It used to be our receipt time, which is later than the event's
+        // own time and so cannot order two events. An event that sets no status leaves it alone: it
+        // did not set the status, so it must not move the line older events are judged by.
+        if (event.OccurredAt) intent.LastEventAt = event.OccurredAt;
+    }
     intent.ProviderEventID = event.EventID;
-    intent.LastEventAt = new Date();
 
     if (!(await intent.Save())) {
         throw new Error(
