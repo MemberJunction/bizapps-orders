@@ -26,6 +26,11 @@
  * app, assigned to the rule's role holders, in the same transaction as the row. Deciding it on this record,
  * or withdrawing it, closes that task.
  *
+ * ITS SIGNED AMENDMENT IS RECORDED AFTERWARDS (golive #268). `SignedAmendmentReference` says where the customer's
+ * signed contract amendment is kept. It is the one column of a decided concession that may change, and only on an
+ * Approved one: the amendment is usually signed after the approval. The shared view "Concessions: Approved, No
+ * Signed Amendment" lists the approved concessions still without one.
+ *
  * WITHDRAWING ONE. A Pending concession can be withdrawn, and so can one approved on the requester's
  * own authority while its order is not confirmed. No approver decided the second kind, and the
  * customer is not yet committed to it; withdrawing and recording it again is how it is measured
@@ -487,9 +492,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         const statusField = this.GetFieldByName('Status');
         if (!statusField?.Dirty) {
-            return this.GetFieldByName('DecisionNotes')?.Dirty
-                ? 'A decision note is recorded with the decision itself, by setting Status to Approved or Rejected.'
-                : null;
+            if (this.GetFieldByName('DecisionNotes')?.Dirty) {
+                return 'A decision note is recorded with the decision itself, by setting Status to Approved or Rejected.';
+            }
+            if (this.GetFieldByName('SignedAmendmentReference')?.Dirty && this.Status !== 'Approved') {
+                return `This concession is ${this.Status}. A signed amendment is recorded only against an Approved concession.`;
+            }
+            return null;
         }
 
         const previous = String(statusField.OldValue ?? '');

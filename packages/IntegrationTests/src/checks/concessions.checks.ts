@@ -42,6 +42,10 @@
  *   CS26      a DiscountPct holds the confirm until a Price concession covers it; inside authority it is Approved
  *   CS27      with no SalesAuthority the same concession is Pending, and the confirm stays held
  *
+ * A concession's signed contract amendment is recorded on it once signed (golive #268):
+ *
+ *   CS30      an Approved concession takes a signed-amendment reference after its decision; a Pending one does not
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -1130,6 +1134,41 @@ export const ConcessionChecks: NamedCheck[] = [
 
         built.Order.Status = "Confirmed";
         Assert(!(await built.Order.Save()), "a Pending concession must hold the confirm");
+      }),
+  },
+  {
+    Id: "concessions.CS30",
+    Name: "CS30: an Approved concession takes a signed-amendment reference after its decision; a Pending one does not",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxPct: 0.25, maxValue: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 2, DiscountPct: 0.1 },
+            { ProductID: f.Products.WidgetA, Quantity: 1, DiscountPct: 0.5 },
+          ],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const approved = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID });
+        AssertEqual(approved.Entity.Status, "Approved", `inside authority: ${approved.Message}`);
+        approved.Entity.SignedAmendmentReference = "AMD-0001";
+        Assert(await approved.Entity.Save(), `the reference should save: ${approved.Entity.LatestResult?.CompleteMessage}`);
+        const stored = await TxOne<{ SignedAmendmentReference: string | null }>(ctx,
+          `SELECT SignedAmendmentReference FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID = '${approved.Entity.ID}'`);
+        AssertEqual(stored.SignedAmendmentReference, "AMD-0001", "stored on the concession");
+
+        const pending = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[1].ID });
+        AssertEqual(pending.Entity.Status, "Pending", `50% is outside a 25% cap: ${pending.Message}`);
+        pending.Entity.SignedAmendmentReference = "AMD-0002";
+        Assert(!(await pending.Entity.Save()), "a Pending concession must refuse a signed-amendment reference");
+        Assert(/only against an Approved concession/.test(pending.Entity.LatestResult?.CompleteMessage ?? ""),
+          `expected the Approved-only refusal, got: ${pending.Entity.LatestResult?.CompleteMessage}`);
       }),
   },
 ];
