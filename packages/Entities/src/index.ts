@@ -111,6 +111,8 @@ export * from './pricing/linePricePick';
  */
 export * from './date-cell';
 export * from './displaced-term-start';
+// Whether a subscription line's subscriber already holds its product — the extend-or-new question.
+export * from './existing-holding';
 
 /**
  * `IsOverdue` / `DaysOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.

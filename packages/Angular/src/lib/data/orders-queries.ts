@@ -45,7 +45,16 @@
 import { Metadata, RunView, type IMetadataProvider, type RunViewParams, type UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
-import { IsBefore, LoadOrdersEngine, OrdersEngine, OverdueFilter, Today, ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
+import {
+    FindExistingHolding,
+    IsBefore,
+    LoadOrdersEngine,
+    OrdersEngine,
+    OverdueFilter,
+    Today,
+    ToISODate,
+    type DateCell,
+} from '@mj-biz-apps/orders-entities';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersCustomerTaxExemptionEntity,
@@ -1708,13 +1717,12 @@ export interface MJOExistingHolding extends MJOSubscriptionContinuation {
 }
 
 /**
- * The live (`Active`/`Trialing`) subscription to `productID` held by this organization or naming
- * this person, newest first, or null.
+ * The live subscription to `productID` held by this organization or naming this person, or null.
+ * The rule is `FindExistingHolding` in orders-entities, shared with the server-side checks that
+ * refuse a close or confirm on an unanswered line.
  *
- * Broader than the server's duplicate test, which keys on the type's `BenefitModel`: matching on
- * either side means the screen may ask about a subscription the server would not extend, never the
- * reverse. Asking when it did not need to costs a click; not asking when it did is the silent date
- * change this exists to prevent. The line's answer is still applied by the server's own rules.
+ * A failed read is logged and returns null here: the screen then does not ask, and the server
+ * still applies its rule and the confirm reports a moved start.
  */
 export async function GetExistingHolding(
     productID: string,
@@ -1722,36 +1730,17 @@ export async function GetExistingHolding(
     personID: string | null,
     user?: UserInfo,
 ): Promise<MJOExistingHolding | null> {
-    if (!UUID_PATTERN.test(productID)) return null;
-    const holder = [
-        organizationID && UUID_PATTERN.test(organizationID) ? `HolderOrganizationID = '${organizationID}'` : '',
-        personID && UUID_PATTERN.test(personID) ? `BeneficiaryPersonID = '${personID}'` : '',
-    ].filter(Boolean);
-    if (holder.length === 0) return null;
-
-    const subs = await run<mjBizAppsOrdersSubscriptionEntity>(
-        MJO_ENTITIES.Subscription,
-        [`ProductID = '${productID}'`, `Status IN ('Active', 'Trialing')`, `(${holder.join(' OR ')})`],
-        '__mj_CreatedAt DESC',
-        1,
-        user,
-    );
-    const sub = subs[0];
-    if (!sub) return null;
-
-    const terms = await run<mjBizAppsOrdersSubscriptionTermEntity>(
-        MJO_ENTITIES.SubscriptionTerm,
-        [`SubscriptionID = '${sub.ID}'`],
-        'TermNumber DESC',
-        1,
-        user,
-    );
-    return {
-        SubscriptionID: sub.ID,
-        SubscriptionNumber: sub.SubscriptionNumber,
-        Status: sub.Status,
-        LatestTermEnd: terms[0]?.EndDate ?? null,
-    };
+    try {
+        return await FindExistingHolding(
+            productID,
+            { OrganizationID: organizationID, PersonID: personID },
+            undefined,
+            user ?? currentUser(),
+        );
+    } catch (err) {
+        console.error(`[orders-queries] ${err instanceof Error ? err.message : String(err)}`);
+        return null;
+    }
 }
 
 /** What happened to a subscription, newest first. */
