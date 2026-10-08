@@ -66,46 +66,56 @@ tomorrow for the whole American evening, so an order due today read as overdue f
 
 MJ's own guidance says to commit CodeGen's output and number your migration after it. That describes
 a repo where `migrations/codegen/` is committed. **Here it is gitignored** — it is a staging area, and
-`scripts/append-codegen.sh` folds the generated SQL into the baseline migration below its
-`CODEGEN OUTPUT` banner, replacing whatever generated tail was there.
+`scripts/append-codegen.sh <migration>` folds the generated SQL into the named migration below its
+`CODEGEN OUTPUT` banner, replacing whatever generated tail was there. It refuses a migration already
+on `origin/next`, because a merged migration is locked ([database-migrations.md](database-migrations.md)).
 
-That makes the ordering simpler than the generic path, not harder. The generated inner view lands in
-`V202607061432__v0.1.x__Tables_and_Objects.sql`, so **any `V` migration with a later timestamp applies
-after it** — on a fresh database as well as an existing one. No repeatable migration, no
-`IF OBJECT_ID` guard, no second migrate pass.
+So each step of the layering is its own new `V` migration that carries its own CodeGen output, and
+the outer view's migration takes a later timestamp than the inner view's. Migrations apply in
+timestamp order, so the inner view exists before the outer view selects from it — on a fresh
+database as well as an existing one. No repeatable migration, no `IF OBJECT_ID` guard, no second
+migrate pass. On `next` these are `V202608131541__v0.1.x__OrderHeaders_layered_inner_view.sql` and
+`V202608131542__v0.1.x__OrderHeaders_IsOverdue_outer_view.sql`.
 
 ### The loop, in order
 
 ```bash
-npm run mj -- sync push --dir metadata     # 1. the entity metadata
-npm run mj:codegen                         # 2. writes the INNER view   ⚠️ needs forceRegeneration
-scripts/append-codegen.sh                  # 3. fold generated SQL into the baseline
-#                                          # 4. add the V migration (below)
-npm run mj:codegen                         # 5. discovers IsOverdue as a virtual EntityField
-scripts/append-codegen.sh                  # 6. fold that in too
+# 1. migration A: the layering flags on Order Headers, then a CODEGEN OUTPUT banner
+pnpm run mj:migrate                            # 2. apply A
+pnpm run mj:codegen                            # 3. writes the INNER view   ⚠️ needs forceRegeneration
+scripts/append-codegen.sh migrations/<A>.sql   # 4. fold that output in below A's banner
+# 5. migration B, later timestamp: the outer view (below), then a CODEGEN OUTPUT banner
+pnpm run mj:migrate                            # 6. apply B
+pnpm run mj:codegen                            # 7. discovers IsOverdue as a virtual EntityField
+scripts/append-codegen.sh migrations/<B>.sql   # 8. fold that output in below B's banner
 ```
 
-Run CodeGen **twice** at steps 2 and 5 if it reports success with dependent entities half-generated —
-a known behaviour here, and `OrderLine` joins `OrderHeader`'s base view, so it is in the blast radius.
+Each append replaces only the tail of the migration it names, so B's output never overwrites A's.
 
-**Check after step 3:** the baseline should now contain `vwOrderHeadersGenerated`. If it does not,
-step 2 did not do what it appeared to.
+If CodeGen reports success with dependent entities half-generated — `OrderLine` joins
+`OrderHeader`'s base view, so it is in the blast radius — do not re-run it and append again: a
+second run emits only what is still missing, and the append replaces the first run's output with
+that fragment. `append-codegen.sh` refuses both cases it can detect and prints the steps to
+regenerate from a database that has not run the migration.
 
-Step 4's migration is `OverdueViewSQL()` from `packages/Entities/src/overdue.ts`, pasted verbatim;
+**Check after step 4:** migration A should now contain `vwOrderHeadersGenerated`. If it does not,
+step 3 did not do what it appeared to.
+
+Migration B's view is `OverdueViewSQL()` from `packages/Entities/src/overdue.ts`, pasted verbatim;
 `overdue.test.ts` fails if the newest migration that defines the view drifts from it. "Today" in the
 view is `bt.Today` from bizapps-common's `fnBusinessToday()`, the business calendar day.
 
 ### Verifying it, because none of these fail loudly
 
-1. `IsOverdue` exists as an **`EntityField`** after step 5, so `RunView` can filter on it and Explorer
-   shows it. Skip step 5 and the column exists in SQL while nothing above the database knows.
+1. `IsOverdue` exists as an **`EntityField`** after step 7, so `RunView` can filter on it and Explorer
+   shows it. Skip step 7 and the column exists in SQL while nothing above the database knows.
 2. It **agrees with `GetOverdueWorklist`** on the same data — that operation generates its filter from
    `OverdueFilter()`, so this is what proves the shared module reached both surfaces.
 3. A **voided** order with a past due date and a balance is **not** overdue. The regression this work
    exists to prevent.
 4. `RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs`.
 
-### ⚠️ The trap in step 2
+### ⚠️ The trap in step 3
 
 Setting `GeneratedBaseViewName` is a **metadata** change, not a schema change, so the entity never
 lands in CodeGen's modified/new list — and `logSQLForNewOrModifiedEntity` only writes migration output
@@ -113,7 +123,7 @@ for entities in that list.
 
 The failure is quiet: CodeGen **does** create the inner view in whatever database you ran it against,
 and emits **nothing**. Your box looks correct while every other environment never receives the view
-at all, and the outer view from step 4 then selects from an object that does not exist there.
+at all, and the outer view from migration B then selects from an object that does not exist there.
 
 ```javascript
 // mj.config.cjs — TEMPORARY, delete after capturing the output
