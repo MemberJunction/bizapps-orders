@@ -1035,10 +1035,11 @@ export const EntitlementsChecks: NamedCheck[] = [
           const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
           Assert(cutoff != null && cutoff > 0, "the cutoff setting is on, with a positive number of days");
 
-          // CheckEntitlement refuses a future AsOf, so the dates are placed behind today instead:
-          // the first annual term ended 90 days ago, so its renewal is in force now and long past due.
+          // CheckEntitlement refuses a future AsOf, so the dates are placed behind today instead: the
+          // first annual term ended a few days ago, so its renewal is in force now. The renewal is
+          // placed in time, so confirm grants it Active (EN25 covers one confirmed past its cutoff).
           const today = new Date().toISOString().slice(0, 10);
-          const firstStart = new Date(`${addDays(today, -90)}T00:00:00Z`);
+          const firstStart = new Date(`${addDays(today, -3)}T00:00:00Z`);
           firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
           const first = await ConfirmOrder(ctx.User, {
             CompanyID: f.CoA.ID,
@@ -1055,17 +1056,33 @@ export const EntitlementsChecks: NamedCheck[] = [
                JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
               WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
           await payOrder(ctx, first.Order.ID as string, Number(term.Gross));
-          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -3));
+
+          const renewalGrants = await gatesFor(ctx, renewalID);
+          Assert(renewalGrants.length > 0, "the renewal grants the next term");
+          Assert(renewalGrants.every((g) => g.Status === "Active"), "placed in time, the renewal's grants start Active");
+
+          // Time passes unpaid: the renewal's due date moves back past the cutoff. The instalment is
+          // Invoiced, and an Invoiced row's due date is frozen, so it is written with that trigger off.
+          const pastDue = addDays(today, -(cutoff! + 5));
+          await TxQuery(ctx, `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`);
+          try {
+            await TxQuery(ctx,
+              `UPDATE ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule SET DueDate = '${pastDue}' WHERE OrderHeaderID = '${renewalID}'`);
+          } finally {
+            await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`);
+          }
+          await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET DueDate = '${pastDue}' WHERE ID = '${renewalID}'`);
 
           const due = await TxOne<{ NextDueDate: Date | null }>(ctx,
             `SELECT NextDueDate FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${renewalID}'`);
           Assert(due.NextDueDate != null, "the renewal carries a due date");
           const cutoffDay = addDays(new Date(due.NextDueDate!).toISOString().slice(0, 10), cutoff!);
           Assert(cutoffDay < addDays(today, -1), `the renewal's cutoff (${cutoffDay}) is behind today, with a day's margin for the business zone`);
-
-          const renewalGrants = await gatesFor(ctx, renewalID);
-          Assert(renewalGrants.length > 0, "the renewal grants the next term");
-          Assert(renewalGrants.every((g) => g.Status === "Active"), "the nightly job has not run, so the rows still read Active");
+          Assert(
+            (await gatesFor(ctx, renewalID)).every((g) => g.Status === "Active"),
+            "the nightly job has not run, so the rows still read Active",
+          );
 
           const checked = await readAccess<{ HasAccess: boolean; Decision: string; GrantID?: string }>(
             ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS" });
@@ -1213,6 +1230,54 @@ export const EntitlementsChecks: NamedCheck[] = [
           const paid = await readAccess<{ HasAccess: boolean; Decision: string }>(
             ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "WIDGET-SUPPORT" });
           AssertEqual(paid.Decision, "Granted", "paid, the grant reads Granted though its waiver has run out");
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN25",
+    Name: "EN25: a renewal already past its cutoff when confirmed starts Suspended (PastDue) (#448)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.SubRolling, "OnFirstPayment", async () => {
+          await OrdersSettings.Load(ctx.Provider, ctx.User);
+          const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+          Assert(cutoff != null && cutoff > 0, "the cutoff setting is on, with a positive number of days");
+
+          // Confirm decides from today's payment facts, the same rule the nightly job applies: the
+          // first annual term ended 90 days ago, so its renewal is placed already long past due.
+          const today = new Date().toISOString().slice(0, 10);
+          const firstStart = new Date(`${addDays(today, -90)}T00:00:00Z`);
+          firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
+          const first = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            OrderDate: firstStart,
+            BillToOrganizationID: f.Customers.OrganizationID,
+            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1 }],
+          });
+          Assert(first.Saved, `confirm failed: ${first.Message}`);
+          const term = await TxOne<{ SubscriptionID: string; EndDate: Date; Gross: number }>(ctx,
+            `SELECT st.SubscriptionID, st.EndDate, oh.TotalGross AS Gross
+               FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+               JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+              WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+          await payOrder(ctx, first.Order.ID as string, Number(term.Gross));
+          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+
+          const due = await TxOne<{ NextDueDate: Date | null }>(ctx,
+            `SELECT NextDueDate FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${renewalID}'`);
+          Assert(due.NextDueDate != null, "the renewal carries a due date");
+          const cutoffDay = addDays(new Date(due.NextDueDate!).toISOString().slice(0, 10), cutoff!);
+          Assert(cutoffDay < addDays(today, -1), `the renewal's cutoff (${cutoffDay}) is behind today, with a day's margin for the business zone`);
+
+          const grants = await gatesFor(ctx, renewalID);
+          Assert(grants.length > 0, "the renewal grants the next term");
+          Assert(
+            grants.every((g) => g.Status === "Suspended" && g.SuspensionReason === "PastDue" && g.SuspendedAt != null),
+            "past its cutoff at confirm, the renewal's grants start Suspended for PastDue",
+          );
         });
       }),
   },
