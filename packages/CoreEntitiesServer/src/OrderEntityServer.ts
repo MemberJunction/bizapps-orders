@@ -503,6 +503,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private async refuseVetoedConfirm(result: ValidationResult): Promise<void> {
         if (!this.willBookOnThisSave()) return;
         const veto = HostOrderConfirmVeto();
+        // An unsaved order has no id for a vetoer to look anything up BY, and nothing can point at
+        // it yet: the only link is `Deal.OrderID`, which a deal cannot set before this row exists.
+        // So there is nothing to ask about, rather than a question being skipped.
         if (!veto || !this.ID) return;
 
         const refusal = await ResolveOrderConfirmRefusal(
