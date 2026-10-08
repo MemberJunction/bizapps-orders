@@ -708,6 +708,16 @@ describe('StripeInstrumentFromIntent', () => {
     it('is undefined before a payment method exists', () => {
         expect(StripeInstrumentFromIntent({ customer: 'cus_1', payment_method: null })).toBeUndefined();
     });
+
+    it("reads the card's issuing country as VAT location evidence (#480)", () => {
+        const instrument = StripeInstrumentFromIntent({ payment_method: { id: 'pm_1', card: { brand: 'visa', country: 'ie' } } });
+        expect(instrument?.IssuingCountry).toBe('IE');
+    });
+
+    it('leaves the issuing country out when the method is not a card or the country is not a code', () => {
+        expect(StripeInstrumentFromIntent({ payment_method: { id: 'pm_1', us_bank_account: { last4: '6789' } } })).not.toHaveProperty('IssuingCountry');
+        expect(StripeInstrumentFromIntent({ payment_method: { id: 'pm_1', card: { country: 'Ireland' } } })).not.toHaveProperty('IssuingCountry');
+    });
 });
 
 describe('MoveGiftCardBalance — the capture/refund write behind a gift-card payment (#302)', () => {

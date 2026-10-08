@@ -78,7 +78,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isValidCheckoutSlug, originAllowed as originIsAllowed, resolveClientIp } from './checkout-edge-policy.js';
+import { isValidCheckoutSlug, originAllowed as originIsAllowed, resolveClientIp, resolveIpCountryHeader } from './checkout-edge-policy.js';
 import { checkoutHostSecurityHeaders, renderCheckoutHostErrorPage, renderCheckoutHostPage } from './checkout-host-page.js';
 
 /** Checkout request bodies are small; anything larger is abuse, not commerce. */
@@ -158,6 +158,14 @@ interface CheckoutEdgeSettings {
      * client-supplied and must not key rate limits or Turnstile.
      */
     TrustedProxyHops?: number;
+    /**
+     * Name of the request header carrying the buyer's IP country as a two-letter code, set by the
+     * proxy or CDN in front of MJAPI (for example `CF-IPCountry`). A completed checkout records it
+     * on the order as VAT location evidence (#480); the IP address itself is never stored. Unset
+     * (the default) records no IP country. Name only a header the proxy sets and overwrites on
+     * every request: anything else is whatever the browser sent.
+     */
+    IPCountryHeader?: string;
     /**
      * When true, GET `{root}/element/main.js.map` is registered. Default off —
      * the map is original TypeScript on an unauthenticated payment route.
@@ -610,7 +618,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
-        const result = await CheckoutSessionService.CompleteCheckout(sessionId, clientSessionKey, user);
+        const result = await CheckoutSessionService.CompleteCheckout(sessionId, clientSessionKey, user, {
+            IPCountry: resolveIpCountryHeader(req, this.settings.IPCountryHeader),
+        });
         if (!result.Success) {
             res.status(409).json(result);
             return;

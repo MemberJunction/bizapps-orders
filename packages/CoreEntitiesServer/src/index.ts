@@ -810,6 +810,8 @@ export type {
     OpenSessionPaymentIntentResult,
     BookCheckoutPaymentResult,
 } from './CheckoutSessionService.js';
+export { ToIsoCountryCode } from './VatLocationEvidence.js';
+export type { CheckoutLocationEvidence } from './VatLocationEvidence.js';
 // The host seam for refusing a checkout (#323): subclass and register `CheckoutPrePurchaseCheck`.
 export { ALREADY_SUBSCRIBED_REASON, CheckoutPrePurchaseCheck, RunPrePurchaseChecks } from './CheckoutPrePurchaseCheck.js';
 export type {

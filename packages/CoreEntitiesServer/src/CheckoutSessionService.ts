@@ -70,6 +70,8 @@ import {
     type CheckoutTypedCodePrecedence,
 } from './CheckoutMemberDiscountResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
+import { ToIsoCountryCode, type CheckoutLocationEvidence } from './VatLocationEvidence.js';
+import type { RetrieveIntentResult } from './BasePaymentProvider.js';
 import { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
 import { CheckoutStepLog, type CheckoutStepAttempt, type CheckoutStepSource } from './CheckoutStepLog.js';
 import {
@@ -1850,11 +1852,16 @@ export class CheckoutSessionService {
      * Completes an existing CheckoutSession, constructing the final Order,
      * executing lifecycle confirmation (with accounting GL bookings and deferred revenue),
      * and generating a claim token if unauthenticated.
+     *
+     * `evidence` is what the edge observed about where the buyer is. Its IP country is recorded on
+     * the order as VAT location evidence when it is a country code, and null otherwise; it never
+     * refuses a sale (#480).
      */
     public static async CompleteCheckout(
         sessionID: string,
         clientSessionKey: string,
-        contextUser?: UserInfo
+        contextUser?: UserInfo,
+        evidence?: CheckoutLocationEvidence
     ): Promise<CompleteCheckoutResult> {
         const md = new Metadata();
         const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
@@ -2017,6 +2024,9 @@ export class CheckoutSessionService {
             order.Origin = 'Widget';
             order.OrderType = 'Sale';
             order.SourceCheckoutWidgetID = widget.ID;
+            // VAT location evidence beside the billing address (#480). Null when the edge has no
+            // country for the buyer's IP: the sale completes either way.
+            order.IPCountry = ToIsoCountryCode(evidence?.IPCountry);
             // Defence-in-depth: the server pre-warms this engine at startup (@RegisterForStartup),
             // but that pre-warm only reaches modules already evaluated when Startup() runs, which
             // this checkout cannot prove. Config() is a no-op once loaded.
@@ -2198,7 +2208,8 @@ export class CheckoutSessionService {
             // driven by the signature-verified payment webhook (PaymentWebhookHandler), never
             // by anything the client asserts.
             if (order.TotalGross > 0) {
-                const paymentFailure = await this.verifySessionPayment(session, order.TotalGross, md, contextUser);
+                const paymentCheck = await this.verifySessionPayment(session, order.TotalGross, md, contextUser);
+                const paymentFailure = paymentCheck.Refusal;
                 if (paymentFailure) {
                     await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
                     session.Status = 'Open';
@@ -2221,6 +2232,9 @@ export class CheckoutSessionService {
                         Status: 'Open'
                     };
                 }
+                // VAT location evidence beside the billing address (#480): the issuing country of the
+                // card that paid, null for any other instrument or when the gateway did not say.
+                order.CardIssuingCountry = paymentCheck.CardIssuingCountry;
                 // Payment has checked out, so from here a failure leaves a paid checkout without
                 // an order. Record the attempt; Confirm rolls back on failure, the record does not.
                 confirmStep = await CheckoutStepLog.Begin(sessionID, 'Confirm', 'Checkout', contextUser);
@@ -2417,18 +2431,25 @@ export class CheckoutSessionService {
     }
 
     /**
-     * Verifies the paid-order gate for a session against a server-computed total. Returns a
-     * refusal, or null when payment checks out. The intent must exist, belong to this session,
-     * be in a settled state, and cover the freshly re-priced total. `SettledButShort` marks the
-     * one refusal where money has already moved.
+     * Verifies the paid-order gate for a session against a server-computed total. `Refusal` is
+     * null when payment checks out. The intent must exist, belong to this session, be in a
+     * settled state, and cover the freshly re-priced total. `SettledButShort` marks the one
+     * refusal where money has already moved.
+     *
+     * When payment checks out, `CardIssuingCountry` is the issuing country of the card that paid,
+     * read from the gateway (#480). Fail-soft: null when the instrument is not a card, the gateway
+     * does not report a country, or the read fails.
      */
     private static async verifySessionPayment(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         totalGross: number,
         md: Metadata,
         contextUser?: UserInfo
-    ): Promise<{ Message: string; SettledButShort: boolean } | null> {
-        const refused = (Message: string, SettledButShort = false) => ({ Message, SettledButShort });
+    ): Promise<{ Refusal: { Message: string; SettledButShort: boolean } | null; CardIssuingCountry: string | null }> {
+        const refused = (Message: string, SettledButShort = false) => ({
+            Refusal: { Message, SettledButShort },
+            CardIssuingCountry: null,
+        });
         if (!session.PaymentIntentID) {
             return refused('Cannot confirm paid order (TotalGross > 0) without a payment intent for this session');
         }
@@ -2437,12 +2458,13 @@ export class CheckoutSessionService {
         if (!intentLoaded) {
             return refused('The payment intent attached to this session could not be found');
         }
+        let retrieved: RetrieveIntentResult | null = null;
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
             // The browser has already confirmCardPayment'd (4242 succeeds at Stripe immediately).
             // The signature-verified webhook is what normally stamps Succeeded, but it often
             // has not landed yet — especially on localhost, which Stripe cannot POST to.
             // Retrieve from the gateway with OUR key (never a client claim) and adopt that status.
-            await this.refreshIntentFromGateway(intent, contextUser);
+            retrieved = await this.refreshIntentFromGateway(intent, contextUser);
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
             return refused(`Payment has not settled (intent status: ${intent.Status}). Complete payment and try again.`);
@@ -2452,7 +2474,9 @@ export class CheckoutSessionService {
         if ((intent.Amount ?? 0) + 0.005 < totalGross) {
             return refused(`The settled payment amount (${intent.Amount}) does not cover the order total (${totalGross})`, true);
         }
-        return null;
+        // An intent the webhook already settled was not read above; read it once for the card.
+        retrieved ??= await this.retrieveIntentFromGateway(intent, contextUser);
+        return { Refusal: null, CardIssuingCountry: ToIsoCountryCode(retrieved?.Instrument?.IssuingCountry) };
     }
 
     /**
@@ -2688,40 +2712,61 @@ export class CheckoutSessionService {
     }
 
     /**
-     * Pull the gateway's current intent status onto our row. Fail-soft: a retrieve
-     * error leaves the local status unchanged and the paid gate still refuses.
+     * Pull the gateway's current intent status onto our row, and return what the gateway said.
+     * Fail-soft: a retrieve error leaves the local status unchanged and the paid gate still
+     * refuses.
      */
     private static async refreshIntentFromGateway(
         intent: mjBizAppsOrdersPaymentIntentEntity,
         contextUser?: UserInfo
-    ): Promise<void> {
-        if (!intent.PaymentProviderID || !intent.ProviderIntentID || !contextUser) {
-            return;
+    ): Promise<RetrieveIntentResult | null> {
+        const retrieved = await this.retrieveIntentFromGateway(intent, contextUser);
+        if (!retrieved || !retrieved.Status) {
+            return retrieved;
         }
-        const mdProvider = Metadata.Provider as IMetadataProvider | undefined;
-        if (!mdProvider) {
-            return;
+        if (retrieved.Status === intent.Status && retrieved.Amount == null) {
+            return retrieved;
+        }
+        intent.Status = retrieved.Status;
+        if (typeof retrieved.Amount === 'number' && retrieved.Amount > 0) {
+            intent.Amount = retrieved.Amount;
         }
         try {
-            const driver = await ResolvePaymentProvider(intent.PaymentProviderID, mdProvider, contextUser);
-            const retrieved = await driver.RetrieveIntent({ ProviderIntentID: intent.ProviderIntentID });
-            if (!retrieved.Success || !retrieved.Status) {
-                return;
-            }
-            if (retrieved.Status === intent.Status && retrieved.Amount == null) {
-                return;
-            }
-            intent.Status = retrieved.Status;
-            if (typeof retrieved.Amount === 'number' && retrieved.Amount > 0) {
-                intent.Amount = retrieved.Amount;
-            }
             if (!(await intent.Save())) {
                 LogError(`[CheckoutSessionService] Could not stamp retrieved intent status ${retrieved.Status} on ${intent.ID}`);
             }
         } catch (err) {
             LogError(
+                `[CheckoutSessionService] Stamping retrieved status on intent ${intent.ID} failed: ${err instanceof Error ? err.message : String(err)}`
+            );
+        }
+        return retrieved;
+    }
+
+    /**
+     * The gateway's view of an intent, read with our key. Null when the intent has no gateway
+     * reference, the read is refused, or it throws: callers treat that as "nothing learned".
+     */
+    private static async retrieveIntentFromGateway(
+        intent: mjBizAppsOrdersPaymentIntentEntity,
+        contextUser?: UserInfo
+    ): Promise<RetrieveIntentResult | null> {
+        if (!intent.PaymentProviderID || !intent.ProviderIntentID || !contextUser) {
+            return null;
+        }
+        const mdProvider = Metadata.Provider as IMetadataProvider | undefined;
+        if (!mdProvider) {
+            return null;
+        }
+        try {
+            const driver = await ResolvePaymentProvider(intent.PaymentProviderID, mdProvider, contextUser);
+            const retrieved = await driver.RetrieveIntent({ ProviderIntentID: intent.ProviderIntentID });
+            return retrieved.Success ? retrieved : null;
+        } catch (err) {
+            LogError(
                 `[CheckoutSessionService] Gateway retrieve for intent ${intent.ID} failed: ${err instanceof Error ? err.message : String(err)}`
             );
+            return null;
         }
     }
 
