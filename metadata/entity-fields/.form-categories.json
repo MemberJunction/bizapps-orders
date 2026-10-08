@@ -1,0 +1,3424 @@
+[
+  {
+    "_comments": [
+      "Field sections for fields added after their entity's form was first grouped (#276). CodeGen fills a blank Category only for a new entity or field, so these are set here; each joins an existing section of its form where one fits. GeneratedFormSection must say Category too, or CodeGen still puts the field in Details."
+    ],
+    "fields": {
+      "Category": "Customer Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Sessions&Name=AutoRenewConsentAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.588Z",
+      "checksum": "7c1061f846d39b5a3cf255c1f22547aa653107c749385dc69082428306d7bb96"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Customer Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Sessions&Name=AutoRenewConsentText"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.610Z",
+      "checksum": "7c1061f846d39b5a3cf255c1f22547aa653107c749385dc69082428306d7bb96"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Step Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=CheckoutSessionID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.639Z",
+      "checksum": "403664a85623e05123c657175d3d35af777bfffbd9a7a370dbe140372dcc88d1"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Step Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=StepName"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.661Z",
+      "checksum": "403664a85623e05123c657175d3d35af777bfffbd9a7a370dbe140372dcc88d1"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Step Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=Status"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.684Z",
+      "checksum": "403664a85623e05123c657175d3d35af777bfffbd9a7a370dbe140372dcc88d1"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Step Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=Retryable"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.705Z",
+      "checksum": "403664a85623e05123c657175d3d35af777bfffbd9a7a370dbe140372dcc88d1"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=Attempts"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.728Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=LastError"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.749Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=LastAttemptSource"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.771Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=LastReplayedByUserID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.792Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=FirstAttemptAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.813Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=LastAttemptAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.835Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=SucceededAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.857Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.880Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Checkout Session Steps&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.903Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Default Assignment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=EntityID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.940Z",
+      "checksum": "a475c3e0b6a65c67559a8df96f450c19a3d7fe4c8da11c9d1bff1c942b2afaaa"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Default Assignment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=RecordID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.963Z",
+      "checksum": "a475c3e0b6a65c67559a8df96f450c19a3d7fe4c8da11c9d1bff1c942b2afaaa"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Default Assignment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=DimensionID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.985Z",
+      "checksum": "a475c3e0b6a65c67559a8df96f450c19a3d7fe4c8da11c9d1bff1c942b2afaaa"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Default Assignment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=DimensionValueID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.008Z",
+      "checksum": "a475c3e0b6a65c67559a8df96f450c19a3d7fe4c8da11c9d1bff1c942b2afaaa"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Status and Period",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=Status"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.030Z",
+      "checksum": "92451fd3916623881ac32c77a67f117c4cc30f674a761566aa63f197e0720974"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Status and Period",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=StartedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.053Z",
+      "checksum": "92451fd3916623881ac32c77a67f117c4cc30f674a761566aa63f197e0720974"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Status and Period",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=EndedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.074Z",
+      "checksum": "92451fd3916623881ac32c77a67f117c4cc30f674a761566aa63f197e0720974"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Status and Period",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=Comments"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.097Z",
+      "checksum": "92451fd3916623881ac32c77a67f117c4cc30f674a761566aa63f197e0720974"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.118Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.141Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Override Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=OrderHeaderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.171Z",
+      "checksum": "c56b7599ff7e62e044f5b96c318ec7dfce19a58d951e73c7c7ca4f38017eaafa"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Override Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=OverrideType"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.194Z",
+      "checksum": "c56b7599ff7e62e044f5b96c318ec7dfce19a58d951e73c7c7ca4f38017eaafa"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Override Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=Reason"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.216Z",
+      "checksum": "c56b7599ff7e62e044f5b96c318ec7dfce19a58d951e73c7c7ca4f38017eaafa"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Override Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=EffectiveThrough"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.239Z",
+      "checksum": "c56b7599ff7e62e044f5b96c318ec7dfce19a58d951e73c7c7ca4f38017eaafa"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Override Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=Status"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.260Z",
+      "checksum": "c56b7599ff7e62e044f5b96c318ec7dfce19a58d951e73c7c7ca4f38017eaafa"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Request",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=RequestedByUserID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.282Z",
+      "checksum": "5ecd068a1ec33deae253abd816e84f9e3ad6edb11e16ccf25f1b9de152e9e51c"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Request",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=RequestedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.303Z",
+      "checksum": "5ecd068a1ec33deae253abd816e84f9e3ad6edb11e16ccf25f1b9de152e9e51c"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Request",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=ApprovalTaskID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.325Z",
+      "checksum": "5ecd068a1ec33deae253abd816e84f9e3ad6edb11e16ccf25f1b9de152e9e51c"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Request",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=ApprovalTaskRaisedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.346Z",
+      "checksum": "5ecd068a1ec33deae253abd816e84f9e3ad6edb11e16ccf25f1b9de152e9e51c"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Decision",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=DecidedByUserID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.368Z",
+      "checksum": "d900184693f1bfa6556041ced1b752446f54440cac0f3bdf2ed12dd42672cf91"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Decision",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=DecidedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.390Z",
+      "checksum": "d900184693f1bfa6556041ced1b752446f54440cac0f3bdf2ed12dd42672cf91"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Decision",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=DecisionNotes"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.412Z",
+      "checksum": "d900184693f1bfa6556041ced1b752446f54440cac0f3bdf2ed12dd42672cf91"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.432Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.454Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Grant Terms",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Grants&Name=GrantTimingApplied"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.482Z",
+      "checksum": "cb2adde02f416fea87e6137ad262eea088d8be384c715bdb3eea191964845e28"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Status and Lifecycle",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Grants&Name=SuspendedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.505Z",
+      "checksum": "a57a2740299afc23b2fbefb37ee0453ee7776b68aad8160a206e22734cf9f49b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Status and Lifecycle",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Grants&Name=SuspensionReason"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.527Z",
+      "checksum": "a57a2740299afc23b2fbefb37ee0453ee7776b68aad8160a206e22734cf9f49b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=PersonID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.557Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=DietaryPreferences"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.579Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=Allergies"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.601Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=Comments"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.622Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=AttendanceStatus"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.644Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=BadgePrintedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.666Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=BadgeName"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.689Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=BadgeCompany"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.710Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=BadgeTitle"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.732Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=TicketTier"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.754Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=TableAssignment"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.775Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=SpecialRequests"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.797Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attendee Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=CheckInNotes"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.818Z",
+      "checksum": "91713008e4717f385727dc96f6c803d06be5a959735d0ff0d5e09f9f0608e7ff"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=PriceOverridden"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.839Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=PriceOverrideReason"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.861Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=DimensionID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.882Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=DimensionValueID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.905Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=BilledToDate"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.926Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=RecognizedToDate"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.949Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=ShipToAddressSnapshot"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.970Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=SubscriptionAction"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:20.992Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=AcknowledgesCoverageOverlap"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.015Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Event Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=EventFormat"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.045Z",
+      "checksum": "dd18f3fb7b6c267d5d1f7027b370fd7bc60b3f35253b845d0e2a1b09c606fd0e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Event Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=VirtualMeetingUrl"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.065Z",
+      "checksum": "dd18f3fb7b6c267d5d1f7027b370fd7bc60b3f35253b845d0e2a1b09c606fd0e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Product Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=PricingDriverClass"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.087Z",
+      "checksum": "973bf067b193f4212a496b8b6645f6840ff5d4a4564b783cf399d63ca3fa015f"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Product Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=MaxQuantityPerLine"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.108Z",
+      "checksum": "973bf067b193f4212a496b8b6645f6840ff5d4a4564b783cf399d63ca3fa015f"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Product Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=SubscriptionFamilyID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.130Z",
+      "checksum": "973bf067b193f4212a496b8b6645f6840ff5d4a4564b783cf399d63ca3fa015f"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Customer Mapping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Customers&Name=PaymentProviderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.159Z",
+      "checksum": "f78301939d3daab2794840bbba0aea7eb6383b3e8ea3ac579d0368cec1ed8471"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Customer Mapping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Customers&Name=BillToOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.182Z",
+      "checksum": "f78301939d3daab2794840bbba0aea7eb6383b3e8ea3ac579d0368cec1ed8471"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Customer Mapping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Customers&Name=BillToPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.205Z",
+      "checksum": "f78301939d3daab2794840bbba0aea7eb6383b3e8ea3ac579d0368cec1ed8471"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Customer Mapping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Customers&Name=ExternalCustomerRef"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.228Z",
+      "checksum": "f78301939d3daab2794840bbba0aea7eb6383b3e8ea3ac579d0368cec1ed8471"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Customer Mapping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Customers&Name=LastSyncedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.249Z",
+      "checksum": "f78301939d3daab2794840bbba0aea7eb6383b3e8ea3ac579d0368cec1ed8471"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Customers&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.272Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Customers&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.293Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoice Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=PaymentProviderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.323Z",
+      "checksum": "16ebdaa400638cda8d1d23d9690becd4d408f9f9d90b783b853deec977b36aea"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoice Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=OrderHeaderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.344Z",
+      "checksum": "16ebdaa400638cda8d1d23d9690becd4d408f9f9d90b783b853deec977b36aea"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoice Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=CompanyID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.366Z",
+      "checksum": "16ebdaa400638cda8d1d23d9690becd4d408f9f9d90b783b853deec977b36aea"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoice Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=OrderHeaderPaymentScheduleID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.387Z",
+      "checksum": "16ebdaa400638cda8d1d23d9690becd4d408f9f9d90b783b853deec977b36aea"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoice Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=UnitScheduleKey"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.410Z",
+      "checksum": "16ebdaa400638cda8d1d23d9690becd4d408f9f9d90b783b853deec977b36aea"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoice Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=DocumentNumber"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.431Z",
+      "checksum": "16ebdaa400638cda8d1d23d9690becd4d408f9f9d90b783b853deec977b36aea"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoice Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=Amount"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.454Z",
+      "checksum": "16ebdaa400638cda8d1d23d9690becd4d408f9f9d90b783b853deec977b36aea"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoice Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=DueDate"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.475Z",
+      "checksum": "16ebdaa400638cda8d1d23d9690becd4d408f9f9d90b783b853deec977b36aea"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoice Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=Status"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.497Z",
+      "checksum": "16ebdaa400638cda8d1d23d9690becd4d408f9f9d90b783b853deec977b36aea"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoice Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=IssuedByUserID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.518Z",
+      "checksum": "16ebdaa400638cda8d1d23d9690becd4d408f9f9d90b783b853deec977b36aea"
+    }
+  },
+  {
+    "fields": {
+      "Category": "External System",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=ExternalCustomerRef"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.541Z",
+      "checksum": "d03b94e5092abf69cea4ee9b261577963869743f4566f1b3179aff6675e160c0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "External System",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=ExternalInvoiceRef"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.563Z",
+      "checksum": "d03b94e5092abf69cea4ee9b261577963869743f4566f1b3179aff6675e160c0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "External System",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=ExternalTotal"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.585Z",
+      "checksum": "d03b94e5092abf69cea4ee9b261577963869743f4566f1b3179aff6675e160c0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "External System",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=ExternalDueAmount"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.606Z",
+      "checksum": "d03b94e5092abf69cea4ee9b261577963869743f4566f1b3179aff6675e160c0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "External System",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=ExternalStatus"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.629Z",
+      "checksum": "d03b94e5092abf69cea4ee9b261577963869743f4566f1b3179aff6675e160c0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "External System",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=SentAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.649Z",
+      "checksum": "d03b94e5092abf69cea4ee9b261577963869743f4566f1b3179aff6675e160c0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "External System",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=LastSyncedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.672Z",
+      "checksum": "d03b94e5092abf69cea4ee9b261577963869743f4566f1b3179aff6675e160c0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "External System",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=LastError"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.693Z",
+      "checksum": "d03b94e5092abf69cea4ee9b261577963869743f4566f1b3179aff6675e160c0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Cancellation",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=CanceledAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.715Z",
+      "checksum": "654ce369a25b0e27036f575c238182c627800a39072ddb45e04320ff8221f974"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Cancellation",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=CancelReason"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.736Z",
+      "checksum": "654ce369a25b0e27036f575c238182c627800a39072ddb45e04320ff8221f974"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.758Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Invoices&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.779Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=PaymentProviderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.808Z",
+      "checksum": "17e6543ec4816cabeaa0cb886bca3a2636a826abfb271339f838bc7b62fac182"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=ExternalPaymentRef"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.830Z",
+      "checksum": "17e6543ec4816cabeaa0cb886bca3a2636a826abfb271339f838bc7b62fac182"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=ExternalCustomerRef"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.851Z",
+      "checksum": "17e6543ec4816cabeaa0cb886bca3a2636a826abfb271339f838bc7b62fac182"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=Amount"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.872Z",
+      "checksum": "17e6543ec4816cabeaa0cb886bca3a2636a826abfb271339f838bc7b62fac182"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=UnappliedAmount"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.894Z",
+      "checksum": "17e6543ec4816cabeaa0cb886bca3a2636a826abfb271339f838bc7b62fac182"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=PaymentDate"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.915Z",
+      "checksum": "17e6543ec4816cabeaa0cb886bca3a2636a826abfb271339f838bc7b62fac182"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=ExternalStatus"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.939Z",
+      "checksum": "17e6543ec4816cabeaa0cb886bca3a2636a826abfb271339f838bc7b62fac182"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=ExternalUpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.962Z",
+      "checksum": "17e6543ec4816cabeaa0cb886bca3a2636a826abfb271339f838bc7b62fac182"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Disposition",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=Disposition"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:21.985Z",
+      "checksum": "6ea701c895aa711601f4d7f2b859f5fdc7a4c10286e9eab3f82b85bc48f2c92a"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Disposition",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=DispositionReason"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.008Z",
+      "checksum": "6ea701c895aa711601f4d7f2b859f5fdc7a4c10286e9eab3f82b85bc48f2c92a"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Disposition",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=PaymentHeaderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.031Z",
+      "checksum": "6ea701c895aa711601f4d7f2b859f5fdc7a4c10286e9eab3f82b85bc48f2c92a"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Sync History",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=Payload"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.052Z",
+      "checksum": "fb49cd41b72e00ff352564e7f42cb5a57c565a6fbd4f2a531f7ab388ea7346b3"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Sync History",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=FirstSeenAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.073Z",
+      "checksum": "fb49cd41b72e00ff352564e7f42cb5a57c565a6fbd4f2a531f7ab388ea7346b3"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Sync History",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=LastSeenAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.094Z",
+      "checksum": "fb49cd41b72e00ff352564e7f42cb5a57c565a6fbd4f2a531f7ab388ea7346b3"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.116Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: External Payments&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.136Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Checkout Answer",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Checkout Answers&Name=OrderHeaderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.166Z",
+      "checksum": "afb0add7a72b4e019cf3f139652f5eb35537769844a67e0802b589f4b5123872"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Checkout Answer",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Checkout Answers&Name=QuestionKey"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.188Z",
+      "checksum": "afb0add7a72b4e019cf3f139652f5eb35537769844a67e0802b589f4b5123872"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Checkout Answer",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Checkout Answers&Name=QuestionLabel"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.210Z",
+      "checksum": "afb0add7a72b4e019cf3f139652f5eb35537769844a67e0802b589f4b5123872"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Checkout Answer",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Checkout Answers&Name=Answer"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.231Z",
+      "checksum": "afb0add7a72b4e019cf3f139652f5eb35537769844a67e0802b589f4b5123872"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Checkout Answer",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Checkout Answers&Name=OtherText"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.254Z",
+      "checksum": "afb0add7a72b4e019cf3f139652f5eb35537769844a67e0802b589f4b5123872"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Checkout Answers&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.275Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Checkout Answers&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.298Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing Policies",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Company Policies&Name=PricingDriverClass"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.326Z",
+      "checksum": "4adeddfa0f990cf7d4cf05eec7985bc3ed4cf36d07d8b9ba03717afd83114465"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=OrderHeaderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.355Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=OrderLineID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.378Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=SubscriptionTermID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.400Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=DeliveryForm"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.421Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=ReasonCategory"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.444Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=Reason"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.465Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=AddedDays"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.487Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=AddedQuantity"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.510Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=PriorPaymentTermsTypeID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.533Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=NewPaymentTermsTypeID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.555Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=ComputedValue"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.578Z",
+      "checksum": "f34d974ea0da6f3c65d2fafd813c17042aa9aa87afcc51b0acc03ab4e75f7e3b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=OrderNetTotal"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.598Z",
+      "checksum": "f34d974ea0da6f3c65d2fafd813c17042aa9aa87afcc51b0acc03ab4e75f7e3b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=CumulativeShare"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.621Z",
+      "checksum": "f34d974ea0da6f3c65d2fafd813c17042aa9aa87afcc51b0acc03ab4e75f7e3b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=AuthorizedBySalesAuthorityID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.642Z",
+      "checksum": "f34d974ea0da6f3c65d2fafd813c17042aa9aa87afcc51b0acc03ab4e75f7e3b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=SalesRuleID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.666Z",
+      "checksum": "f34d974ea0da6f3c65d2fafd813c17042aa9aa87afcc51b0acc03ab4e75f7e3b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Approval",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=Status"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.687Z",
+      "checksum": "d02dae4375485bc9c7b7ca3753ec15a883ae01c77816fe659668d9dea4280128"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Approval",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=RequestedByUserID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.709Z",
+      "checksum": "d02dae4375485bc9c7b7ca3753ec15a883ae01c77816fe659668d9dea4280128"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Approval",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=DecidedByUserID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.731Z",
+      "checksum": "d02dae4375485bc9c7b7ca3753ec15a883ae01c77816fe659668d9dea4280128"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Approval",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=DecidedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.753Z",
+      "checksum": "d02dae4375485bc9c7b7ca3753ec15a883ae01c77816fe659668d9dea4280128"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Approval",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=DecisionNotes"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.774Z",
+      "checksum": "d02dae4375485bc9c7b7ca3753ec15a883ae01c77816fe659668d9dea4280128"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.796Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.817Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Identification",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=Origin"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.839Z",
+      "checksum": "edbc0cf9078421800b23982c20e28dd55811f955fb83a69b69796bf965427fcb"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Identification",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=SourceCheckoutWidgetID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.860Z",
+      "checksum": "edbc0cf9078421800b23982c20e28dd55811f955fb83a69b69796bf965427fcb"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Identification",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=FulfillmentStatus"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.884Z",
+      "checksum": "edbc0cf9078421800b23982c20e28dd55811f955fb83a69b69796bf965427fcb"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Billing and Shipping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=BillToAddressSnapshot"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.905Z",
+      "checksum": "23aad8a820d87ff9684a8d9b0b6d12e0100406b746b719d982a2e88788428ab4"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Billing and Shipping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=ShipToAddressSnapshot"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.928Z",
+      "checksum": "23aad8a820d87ff9684a8d9b0b6d12e0100406b746b719d982a2e88788428ab4"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Financial Summary",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=NextDueDate"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.951Z",
+      "checksum": "3198f78b3e98aba0df2b707440de320221b76f943cda08f16811b8f8ec9417a5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Accounting and Audit",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=ConfirmedByUserID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:22.974Z",
+      "checksum": "805c369aa0ed78c7c8eb5d36b5ed4fbdc5f6e8b1ffe33079d435b96673e70e92"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Instalment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=OrderHeaderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.004Z",
+      "checksum": "779e0f4e5584378c83563611ba57ff0d1e82b5075246cfd69c127a4f89856b61"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Instalment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=CompanyID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.029Z",
+      "checksum": "779e0f4e5584378c83563611ba57ff0d1e82b5075246cfd69c127a4f89856b61"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Instalment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=InstallmentNumber"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.050Z",
+      "checksum": "779e0f4e5584378c83563611ba57ff0d1e82b5075246cfd69c127a4f89856b61"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Instalment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=DueDate"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.073Z",
+      "checksum": "779e0f4e5584378c83563611ba57ff0d1e82b5075246cfd69c127a4f89856b61"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Instalment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=Amount"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.095Z",
+      "checksum": "779e0f4e5584378c83563611ba57ff0d1e82b5075246cfd69c127a4f89856b61"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Instalment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=Status"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.117Z",
+      "checksum": "779e0f4e5584378c83563611ba57ff0d1e82b5075246cfd69c127a4f89856b61"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Instalment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=Description"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.139Z",
+      "checksum": "779e0f4e5584378c83563611ba57ff0d1e82b5075246cfd69c127a4f89856b61"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Instalment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=Notes"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.161Z",
+      "checksum": "779e0f4e5584378c83563611ba57ff0d1e82b5075246cfd69c127a4f89856b61"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoicing",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=DocumentNumber"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.183Z",
+      "checksum": "ad3d797f94767624af12c19b56226431c9e7f80f8dcc2427ca5b0f2508559a69"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoicing",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=InvoicedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.204Z",
+      "checksum": "ad3d797f94767624af12c19b56226431c9e7f80f8dcc2427ca5b0f2508559a69"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoicing",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=InvoicedByUserID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.226Z",
+      "checksum": "ad3d797f94767624af12c19b56226431c9e7f80f8dcc2427ca5b0f2508559a69"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoicing",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=JournalEntryID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.248Z",
+      "checksum": "ad3d797f94767624af12c19b56226431c9e7f80f8dcc2427ca5b0f2508559a69"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoicing",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=ExternalSystem"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.270Z",
+      "checksum": "ad3d797f94767624af12c19b56226431c9e7f80f8dcc2427ca5b0f2508559a69"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoicing",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=ExternalInvoiceRef"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.294Z",
+      "checksum": "ad3d797f94767624af12c19b56226431c9e7f80f8dcc2427ca5b0f2508559a69"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Invoicing",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=SentAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.315Z",
+      "checksum": "ad3d797f94767624af12c19b56226431c9e7f80f8dcc2427ca5b0f2508559a69"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Status",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=AmountPaid"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.338Z",
+      "checksum": "12237a3a99065b42f7192e9c2f419d84ca85fda3035bf5744b798a36f1ccbeb0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Status",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=Balance"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.359Z",
+      "checksum": "12237a3a99065b42f7192e9c2f419d84ca85fda3035bf5744b798a36f1ccbeb0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.381Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.403Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing and Financials",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=DimensionID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.433Z",
+      "checksum": "4eda51dbc86e63680e43b89bbd8dff729a11d1f522db605fbfde383980c00dc8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing and Financials",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=DimensionValueID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.456Z",
+      "checksum": "4eda51dbc86e63680e43b89bbd8dff729a11d1f522db605fbfde383980c00dc8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing and Financials",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=BilledToDate"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.479Z",
+      "checksum": "4eda51dbc86e63680e43b89bbd8dff729a11d1f522db605fbfde383980c00dc8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing and Financials",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=RecognizedToDate"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.500Z",
+      "checksum": "4eda51dbc86e63680e43b89bbd8dff729a11d1f522db605fbfde383980c00dc8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Shipping Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=ShipToAddressSnapshot"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.524Z",
+      "checksum": "cf3bf3c68c26b35f823ea02370d91e5da91591f6185284c275d10fda91217218"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Subscription Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=SubscriptionAction"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.545Z",
+      "checksum": "69be6db6144b44ecf8559fceb502addd8936ebf4a2e185f8cbb0115348ecc46b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Subscription Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=AcknowledgesCoverageOverlap"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.567Z",
+      "checksum": "69be6db6144b44ecf8559fceb502addd8936ebf4a2e185f8cbb0115348ecc46b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Relationships",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=RootParentOrderLineID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.588Z",
+      "checksum": "4bc2901bc79bdb483f0ed60104c25cd0952381b34319fc1b6ef1b27914101f43"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Relationships",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=ParentOrderLineIDDepth"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.610Z",
+      "checksum": "4bc2901bc79bdb483f0ed60104c25cd0952381b34319fc1b6ef1b27914101f43"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Relationships",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=ParentOrderLineIDPath"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.631Z",
+      "checksum": "4bc2901bc79bdb483f0ed60104c25cd0952381b34319fc1b6ef1b27914101f43"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Relationships",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=ParentOrderLineIDIsLeaf"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.653Z",
+      "checksum": "4bc2901bc79bdb483f0ed60104c25cd0952381b34319fc1b6ef1b27914101f43"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Relationships",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=ParentOrderLineIDChildCount"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.673Z",
+      "checksum": "4bc2901bc79bdb483f0ed60104c25cd0952381b34319fc1b6ef1b27914101f43"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Line Choice",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Choices&Name=OrderLineID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.704Z",
+      "checksum": "4ae75ac7252cb883074c9c91d4782a8991c93dd46bdb4a4d75a92049e6bbef5d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Line Choice",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Choices&Name=GroupKey"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.726Z",
+      "checksum": "4ae75ac7252cb883074c9c91d4782a8991c93dd46bdb4a4d75a92049e6bbef5d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Line Choice",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Choices&Name=GroupLabel"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.748Z",
+      "checksum": "4ae75ac7252cb883074c9c91d4782a8991c93dd46bdb4a4d75a92049e6bbef5d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Line Choice",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Choices&Name=OptionValue"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.770Z",
+      "checksum": "4ae75ac7252cb883074c9c91d4782a8991c93dd46bdb4a4d75a92049e6bbef5d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Line Choice",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Choices&Name=OptionLabel"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.792Z",
+      "checksum": "4ae75ac7252cb883074c9c91d4782a8991c93dd46bdb4a4d75a92049e6bbef5d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Choices&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.814Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Choices&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.836Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=OrderLineID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.865Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=MeasurementDate"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.888Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=PercentComplete"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.909Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=MethodCode"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.934Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=MeasureNumerator"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.957Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=MeasureDenominator"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:23.982Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=AttestedByUserID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.006Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=SourceEntityID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.032Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=SourceRecordID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.055Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=Notes"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.079Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=Status"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.102Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Measurement",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=SupersedesMeasurementID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.127Z",
+      "checksum": "d55942217377893e095379a7464c98e4a82a7660ce2d24e5cb5575b7bb2cca87"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Revenue Recognition",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=RecognizedToDateBefore"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.152Z",
+      "checksum": "e27f635a3a92f8d4b65d59d7f04122531c1bb62840b009783c51eb131b405ec7"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Revenue Recognition",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=RecognizedToDateAfter"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.177Z",
+      "checksum": "e27f635a3a92f8d4b65d59d7f04122531c1bb62840b009783c51eb131b405ec7"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Revenue Recognition",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=RecognitionAmount"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.200Z",
+      "checksum": "e27f635a3a92f8d4b65d59d7f04122531c1bb62840b009783c51eb131b405ec7"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Revenue Recognition",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=JournalEntryID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.225Z",
+      "checksum": "e27f635a3a92f8d4b65d59d7f04122531c1bb62840b009783c51eb131b405ec7"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Revenue Recognition",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=ReversalJournalEntryID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.248Z",
+      "checksum": "e27f635a3a92f8d4b65d59d7f04122531c1bb62840b009783c51eb131b405ec7"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.271Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.293Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Delivery",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=OutboundEventID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.325Z",
+      "checksum": "d0e46985042ba30bb0c00ac13e785d60383c9dd782cd56869144b360c1a37c88"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Delivery",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=ConsumerKey"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.347Z",
+      "checksum": "d0e46985042ba30bb0c00ac13e785d60383c9dd782cd56869144b360c1a37c88"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Delivery",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=GatesAccess"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.370Z",
+      "checksum": "d0e46985042ba30bb0c00ac13e785d60383c9dd782cd56869144b360c1a37c88"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Delivery",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=Status"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.391Z",
+      "checksum": "d0e46985042ba30bb0c00ac13e785d60383c9dd782cd56869144b360c1a37c88"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Delivery",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=DeliveredAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.416Z",
+      "checksum": "d0e46985042ba30bb0c00ac13e785d60383c9dd782cd56869144b360c1a37c88"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=Attempts"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.439Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=NextAttemptAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.462Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=DeadlineAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.484Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=LeaseUntil"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.506Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=LastAttemptAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.528Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Attempts",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=LastError"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.551Z",
+      "checksum": "0d78f6633b8838221800c1b4980d74155ae0a95a25c9bfda3af19b935b6ab96e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.573Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.600Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Event Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Events&Name=EventType"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.636Z",
+      "checksum": "dd18f3fb7b6c267d5d1f7027b370fd7bc60b3f35253b845d0e2a1b09c606fd0e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Event Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Events&Name=OrderHeaderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.663Z",
+      "checksum": "dd18f3fb7b6c267d5d1f7027b370fd7bc60b3f35253b845d0e2a1b09c606fd0e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Event Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Events&Name=EntitlementGrantID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.688Z",
+      "checksum": "dd18f3fb7b6c267d5d1f7027b370fd7bc60b3f35253b845d0e2a1b09c606fd0e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Event Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Events&Name=PayloadJSON"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.714Z",
+      "checksum": "dd18f3fb7b6c267d5d1f7027b370fd7bc60b3f35253b845d0e2a1b09c606fd0e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Event Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Events&Name=OccurredAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.738Z",
+      "checksum": "dd18f3fb7b6c267d5d1f7027b370fd7bc60b3f35253b845d0e2a1b09c606fd0e"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Events&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.764Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Events&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.788Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Reversal Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Headers&Name=ReversalSource"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.815Z",
+      "checksum": "9ed848e78980b8f9424330739322590ee83116a0a347b4b801ab6dde956f68d5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Relationships",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Lines&Name=OrderHeaderPaymentScheduleID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.846Z",
+      "checksum": "4bc2901bc79bdb483f0ed60104c25cd0952381b34319fc1b6ef1b27914101f43"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Security and Integration",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Providers&Name=CompanyIntegrationID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.880Z",
+      "checksum": "f678de31fe9a2203ed79bd8cc8783973621fdb07898079a8f2687a576ccc022c"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Sync State",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Provider Sync States&Name=PaymentProviderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.912Z",
+      "checksum": "6d8145a90166876df6c59fa295c33ee462a577cb33854f9ed389cfff4c09a6ee"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Sync State",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Provider Sync States&Name=ObjectName"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.938Z",
+      "checksum": "6d8145a90166876df6c59fa295c33ee462a577cb33854f9ed389cfff4c09a6ee"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Sync State",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Provider Sync States&Name=Watermark"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.962Z",
+      "checksum": "6d8145a90166876df6c59fa295c33ee462a577cb33854f9ed389cfff4c09a6ee"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Sync State",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Provider Sync States&Name=LastPolledAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:24.988Z",
+      "checksum": "6d8145a90166876df6c59fa295c33ee462a577cb33854f9ed389cfff4c09a6ee"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Sync State",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Provider Sync States&Name=LastSucceededAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.012Z",
+      "checksum": "6d8145a90166876df6c59fa295c33ee462a577cb33854f9ed389cfff4c09a6ee"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Sync State",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Provider Sync States&Name=LastError"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.037Z",
+      "checksum": "6d8145a90166876df6c59fa295c33ee462a577cb33854f9ed389cfff4c09a6ee"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Provider Sync States&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.059Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Provider Sync States&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.087Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing and Ordering",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products&Name=PricingDriverClass"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.153Z",
+      "checksum": "ffab2c1daf707cbc68f9b03d55b38bbb9420e523430be000c978762e941cc837"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing and Ordering",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products&Name=MaxQuantityPerLine"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.177Z",
+      "checksum": "ffab2c1daf707cbc68f9b03d55b38bbb9420e523430be000c978762e941cc837"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Subscription and Entitlements",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products&Name=SubscriptionFamilyID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.200Z",
+      "checksum": "f38e9d15e5fcead30a3160f111e67f796602a81b5d0ab5488d28d7a4f63be54d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Default Settings",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=PricingDriverClass"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.232Z",
+      "checksum": "8cd33abfc06fbb15d591b6783f6c68a40623247bc083c15682b309032ac7ccd0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Hierarchy and Organization",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=RootParentProductCategoryID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.255Z",
+      "checksum": "c739f56a04f45968edb92e19382336cd06b83cfa5c304adf62a4e03a45fae361"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Hierarchy and Organization",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=ParentProductCategoryIDDepth"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.279Z",
+      "checksum": "c739f56a04f45968edb92e19382336cd06b83cfa5c304adf62a4e03a45fae361"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Hierarchy and Organization",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=ParentProductCategoryIDPath"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.300Z",
+      "checksum": "c739f56a04f45968edb92e19382336cd06b83cfa5c304adf62a4e03a45fae361"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Hierarchy and Organization",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=ParentProductCategoryIDIsLeaf"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.324Z",
+      "checksum": "c739f56a04f45968edb92e19382336cd06b83cfa5c304adf62a4e03a45fae361"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Hierarchy and Organization",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=ParentProductCategoryIDChildCount"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.347Z",
+      "checksum": "c739f56a04f45968edb92e19382336cd06b83cfa5c304adf62a4e03a45fae361"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Entitlement Configuration",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Entitlements&Name=ChoiceGroupKey"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.379Z",
+      "checksum": "3fe71185d35edebd13c8daac1e40554d2639560e005f0786ae32b4de4aaaed15"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Entitlement Configuration",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Entitlements&Name=ChoiceOptionValue"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.401Z",
+      "checksum": "3fe71185d35edebd13c8daac1e40554d2639560e005f0786ae32b4de4aaaed15"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Product Identification",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Prices&Name=Name"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.432Z",
+      "checksum": "f6f852a8e04448df738277efc6590420862dbc6e610251c4f7fc4a51065b67f0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Product Identification",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Prices&Name=ProductCategoryID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.456Z",
+      "checksum": "f6f852a8e04448df738277efc6590420862dbc6e610251c4f7fc4a51065b67f0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Product Identification",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Prices&Name=Applicability"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.480Z",
+      "checksum": "f6f852a8e04448df738277efc6590420862dbc6e610251c4f7fc4a51065b67f0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Configuration and Extensions",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Types&Name=PricingDriverClass"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.510Z",
+      "checksum": "9fccf5cd5a2da9acbab65eb320f084e6ba91fefd69112093726d3d8466f3a4b8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Configuration",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Revenue Recognition Types&Name=ScheduleBasis"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.541Z",
+      "checksum": "f381b5e11f76ce458a7d3d66f15bb6a9e6bc324a475a3104c7b12af928d57883"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Billing and Migration",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscriptions&Name=DefaultCustomerPaymentMethodID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.570Z",
+      "checksum": "45fe21930e718e97f25c93005f2a1a0bcff30825420f517a974d6457bbafa396"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Family Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Families&Name=CompanyID"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.600Z",
+      "checksum": "16c9952f4ac31b67d92d10d8350f920e5f45439c598491d917baa1f99d2f9810"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Family Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Families&Name=Code"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.624Z",
+      "checksum": "16c9952f4ac31b67d92d10d8350f920e5f45439c598491d917baa1f99d2f9810"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Family Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Families&Name=Name"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.647Z",
+      "checksum": "16c9952f4ac31b67d92d10d8350f920e5f45439c598491d917baa1f99d2f9810"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Family Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Families&Name=Description"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.668Z",
+      "checksum": "16c9952f4ac31b67d92d10d8350f920e5f45439c598491d917baa1f99d2f9810"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Family Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Families&Name=IsActive"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.692Z",
+      "checksum": "16c9952f4ac31b67d92d10d8350f920e5f45439c598491d917baa1f99d2f9810"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Families&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.714Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Families&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:25.737Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  }
+]

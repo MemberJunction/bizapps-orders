@@ -42,6 +42,13 @@ npm run mj:codegen      # entity metadata, base views, CRUD procs, TypeScript
 scripts/append-codegen.sh migrations/V<new>.sql   # CodeGen's SQL, below the new migration's banner
 ```
 
+Then check where each new column landed on its generated form. CodeGen's AI layout pass gives a
+new field a section (`EntityField.Category`) only when it runs with an AI key and sees the field as
+new; otherwise the field goes in the generic **Details** panel and CodeGen still reports success.
+Give such a field a `Category` in `metadata/entity-fields` (one of its form's existing sections where
+one fits), `mj sync push` it, and run CodeGen again. CI fails a PR whose generated forms put fields in
+Details (`.github/scripts/check-form-details-panel.mjs`).
+
 ## A merged migration is locked
 
 No edits, no renames, no deletions once it is on `next`. Fix it forward in a new file.
