@@ -9,6 +9,7 @@ import {
     InclusiveDays,
     TermDateChangeDays,
     type ConcessionAuthority,
+    ResolveRequiresSaleApproval,
 } from '../pricing/ConcessionBehavior';
 
 /**
@@ -247,5 +248,23 @@ describe('share of the order', () => {
     it('sets no limit when MaxConcessionPctOfContract is unset, or when nothing was measured', () => {
         expect(AssessConcession('Seats', { Value: 900, Percent: null }, roomy(null), null, 0.9).WithinAuthority).toBe(true);
         expect(AssessConcession('Seats', { Value: 900, Percent: null }, roomy(0.05), null).WithinAuthority).toBe(true);
+    });
+});
+
+describe('products that always need approval (golive #281)', () => {
+    it('is not required when no level states it', () => {
+        expect(ResolveRequiresSaleApproval({ Product: null, Categories: [null, undefined], Type: null })).toBe(false);
+    });
+    it('inherits the product type when nothing more specific is stated', () => {
+        expect(ResolveRequiresSaleApproval({ Product: null, Categories: [null], Type: true })).toBe(true);
+    });
+    it('takes the nearest category over an ancestor and the type', () => {
+        expect(ResolveRequiresSaleApproval({ Product: null, Categories: [null, true, false], Type: false })).toBe(true);
+    });
+    it('lets a product opt out of what its category and type require', () => {
+        expect(ResolveRequiresSaleApproval({ Product: false, Categories: [true], Type: true })).toBe(false);
+    });
+    it('lets a product require it on its own', () => {
+        expect(ResolveRequiresSaleApproval({ Product: true, Categories: [], Type: null })).toBe(true);
     });
 });
