@@ -221,9 +221,14 @@ export function MapStripeIntentStatus(providerStatus: string | null | undefined)
 /** What a webhook should cause, decided before anything is written. */
 export type WebhookAction = 'Apply' | 'AlreadyApplied' | 'Ignore' | 'Reject';
 
+/** Why a delivery is not applied, short and stable so it can be stored and filtered on (#474). */
+export type WebhookReasonCode = 'no_event_id' | 'duplicate' | 'kind_not_handled' | 'unknown_intent' | 'out_of_order';
+
 export interface WebhookDecision {
     Action: WebhookAction;
     Reason: string;
+    /** Set for every action except `Apply`. */
+    ReasonCode?: WebhookReasonCode;
 }
 
 /**
@@ -253,19 +258,23 @@ export function DecideWebhookAction(input: {
     OutOfOrder?: boolean;
 }): WebhookDecision {
     if (!input.EventID) {
-        return { Action: 'Reject', Reason: 'the event carried no id, so it cannot be de-duplicated' };
+        return { Action: 'Reject', ReasonCode: 'no_event_id', Reason: 'the event carried no id, so it cannot be de-duplicated' };
     }
     if (input.AlreadySeen) {
-        return { Action: 'AlreadyApplied', Reason: `event ${input.EventID} has already been applied` };
+        return { Action: 'AlreadyApplied', ReasonCode: 'duplicate', Reason: `event ${input.EventID} has already been applied` };
     }
     if (!input.EventKind || !input.HandledKinds.includes(input.EventKind)) {
-        return { Action: 'Ignore', Reason: `'${input.EventKind ?? 'unknown'}' is not an event this integration acts on` };
+        return {
+            Action: 'Ignore',
+            ReasonCode: 'kind_not_handled',
+            Reason: `'${input.EventKind ?? 'unknown'}' is not an event this integration acts on`,
+        };
     }
     if (!input.IntentKnown) {
         // NOT an error. A gateway account may serve more than this application, and an intent we did
         // not create is simply not ours — rejecting it would mean retries forever for someone else's
         // traffic.
-        return { Action: 'Ignore', Reason: 'the event names a payment intent this application did not create' };
+        return { Action: 'Ignore', ReasonCode: 'unknown_intent', Reason: 'the event names a payment intent this application did not create' };
     }
     if (input.OutOfOrder) {
         // A SUCCESS, like a duplicate. The intent already reflects something the gateway said later, so
@@ -273,6 +282,7 @@ export function DecideWebhookAction(input: {
         // redeliver it for days.
         return {
             Action: 'AlreadyApplied',
+            ReasonCode: 'out_of_order',
             Reason: `event ${input.EventID} is older than the event that set the intent's current status`,
         };
     }
