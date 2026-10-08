@@ -28,6 +28,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    OrdersAmendArrangementOperation as OrdersAmendArrangementOperationBase,
     AsDateValue,
     ConcessionValue,
     InclusiveDays,
@@ -92,9 +93,7 @@ export interface AmendArrangementOutput {
 const REASON_CATEGORIES: readonly string[] = ['Retention', 'Referral', 'Other'];
 
 @RegisterClass(BaseRemotableOperation, 'Orders.AmendArrangement')
-export class AmendArrangementOperation extends BaseRemotableOperation<AmendArrangementInput, AmendArrangementOutput> {
-    public OperationKey = 'Orders.AmendArrangement';
-
+export class AmendArrangementOperation extends OrdersAmendArrangementOperationBase {
     protected async InternalExecute(
         input: AmendArrangementInput,
         provider: IMetadataProvider,

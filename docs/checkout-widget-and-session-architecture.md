@@ -443,6 +443,20 @@ promotion codes are not scoped to one. A resolver that throws counts as claiming
 claims **every** code, so a resolver that does not override it turns typed codes off at every checkout
 until it names its own.
 
+A member code and a typed code **do not stack** unless the host says so. When a buyer with a verified token
+also types a code, the resolver's decision says which one is priced through `TypedCode`:
+
+| `TypedCode` | Priced | The other code |
+|---|---|---|
+| `'Replace'` (default, and any value other than `'Yield'` or `'Stack'`) | the member code | the typed code comes back in `UnusablePromotionCodes`; the element shows why and stops, so the buyer can remove it |
+| `'Yield'` | the typed code | the member code is set aside and `MemberDiscountMessage` says so |
+| `'Stack'` | both, in one pricing pass | the promotions' own stacking settings decide whether both apply; a code the engine declines is reported as usual |
+
+Under `'Replace'` and `'Yield'`, when the engine declines the winning code (dates, limits, qualifier), the
+other one is priced instead, so a usable code is never dropped for a dead one. The snapshot keeps only the
+code that was priced — `MemberPromotionCode` or `PromotionCodes`, both only under `'Stack'` — so
+`/complete` charges what the draft quoted.
+
 - The resolver returns a **promotion code**, priced through the ordinary promotion engine — dates, qualifiers and redemption limits apply as they do to any code.
 - The session snapshot keeps only the resolved code (`MemberPromotionCode`); **the token is never stored**. `/complete` re-prices from the snapshot and carries the code on the order, so the booked total equals the charged total.
 - A rejected token, a resolver that throws, or a code the engine declines prices at the standard rate and returns `MemberDiscountMessage`. The element stops once on that message before payment; submitting again pays the standard rate.
@@ -664,7 +678,12 @@ GET {MJAPI}/checkout/:slug
 
 Example: `http://localhost:4103/checkout/summit-2027`
 
-That route returns a vanilla HTML page that talks only to the POST edge below (`initialize` → `draft` → `payment-intent` if required → `complete`). It is not an Explorer route and not a custom-element bundle.
+That route returns a small, first-party HTML page (nonce-based CSP, no Explorer shell, no login) that talks only to the POST edge below (`initialize` → `draft` → `payment-intent` if required → `complete`). What the page contains depends on whether the element bundle was built:
+
+- **Bundle built (the normal case):** the page loads the `<mj-orders-checkout>` Angular Element from `GET {MJAPI}/checkout/element/main.js` and renders `<mj-orders-checkout slug="…" api-root="/checkout">`. The buyer gets the full reusable widget — `customUI` theming and the introspected extension fields. MJAPI finds the bundle in `@mj-biz-apps/orders-ng`'s `dist/checkout-element` (`resolveCheckoutElementDir` in `CheckoutServerExtension.ts`).
+- **Bundle not found:** the page falls back to a minimal vanilla form driven by an inline boot script, against the same POST edge.
+
+Either way it is not an Explorer route. The element bundle itself is public static code, served to every origin, so a third-party site can load the same `main.js` and embed `<mj-orders-checkout>` directly (see *Embedding the checkout inside another widget* below).
 
 The Angular `<mj-checkout-widget>` remains the embeddable control for sites that already host Angular. A wrapper route inside Explorer would require login and is the wrong guest surface.
 

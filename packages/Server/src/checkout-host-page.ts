@@ -1,7 +1,8 @@
 /**
  * Public checkout host page — a self-contained HTML document that drives
- * `OrdersCheckoutEdge` POSTs from a browser with no Explorer shell and no
- * custom-element bundle.
+ * `OrdersCheckoutEdge` POSTs from a browser with no Explorer shell. When the
+ * `<mj-orders-checkout>` Angular Element bundle is available (`elementSrc`), the
+ * page hosts that element; otherwise it renders a vanilla fallback form.
  *
  * All per-request values reach the boot script via HTML-escaped `data-*`
  * attributes (Forms host-page XSS rule): nothing attacker-controlled is

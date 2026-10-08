@@ -8,7 +8,15 @@
  * ever drifts back to local-time construction.
  */
 import { describe, expect, it } from 'vitest';
-import { SubscriptionBehavior, ResolveSubscriptionTypeID, ResolveRevenueRecognitionTypeID, SubscriptionTypeRulesFrom, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
+import {
+    SubscriptionBehavior,
+    ResolveSubscriptionTypeID,
+    ResolveRevenueRecognitionTypeID,
+    SubscriptionTypeRulesFrom,
+    OverlappingCoverage,
+    type CoverageOverlap,
+    type SubscriptionTypeRules,
+} from '../SubscriptionBehavior.js';
 
 /** Baseline rules; each test overrides only what it is about. */
 function rules(overrides: Partial<SubscriptionTypeRules> = {}): SubscriptionTypeRules {
@@ -35,6 +43,7 @@ function rules(overrides: Partial<SubscriptionTypeRules> = {}): SubscriptionType
 
 const ORG = 'org-1';
 const PERSON = 'person-1';
+const OTHER_PERSON = 'person-2';
 
 const decide = (r: SubscriptionTypeRules, purchase: Date, amount = 1200, extra = {}) =>
     new SubscriptionBehavior().Decide({
@@ -415,6 +424,52 @@ describe('benefit model (D62)', () => {
             expect(behavior.DedupeIdentity(rules(), { OrganizationID: ORG }))
                 .toEqual({ OrganizationID: ORG, PersonID: null });
         });
+
+        it('Holder keeps a resolved person, so two people at one org are two subscriptions', () => {
+            // The org is usually inferred from the buyer's employer. Keyed on the org alone, a
+            // coworker's purchase would extend this person's subscription.
+            expect(behavior.DedupeIdentity(rules(), subscriber)).toEqual({ OrganizationID: ORG, PersonID: PERSON });
+            expect(behavior.DedupeIdentity(rules(), { OrganizationID: ORG, PersonID: OTHER_PERSON }))
+                .not.toEqual(behavior.DedupeIdentity(rules(), subscriber));
+        });
+    });
+
+    describe('dedupe match — how a stored subscription is found (#317)', () => {
+        const subscriber = { OrganizationID: ORG, PersonID: PERSON };
+
+        it('Organization matches the org whatever person the stored subscription carries', () => {
+            // A subscription stores the contact the order named. Requiring it to be empty missed
+            // every org-held subscription bought with one, so a re-order booked a second.
+            expect(behavior.DedupeMatch(rules({ BenefitModel: 'Organization' }), subscriber))
+                .toEqual({ OrganizationID: ORG, PersonID: 'Any' });
+        });
+
+        it('Holder held by an org with no person resolved matches the org whatever person is stored', () => {
+            expect(behavior.DedupeMatch(rules(), { OrganizationID: ORG })).toEqual({ OrganizationID: ORG, PersonID: 'Any' });
+        });
+
+        it('Holder with a stated org and a person matches that person, or the org with no person stored', () => {
+            // A coworker's personal subscription is not found, but the org's own one bought with no
+            // contact is: missing it sold the org a second subscription for the same dates.
+            expect(behavior.DedupeMatch(rules(), subscriber)).toEqual({ OrganizationID: ORG, PersonID: PERSON, OrNoPerson: true });
+        });
+
+        it('Holder with an org inferred from the person matches only that person at that org', () => {
+            // The org is only the buyer's employer, so its subscription is not the person's.
+            expect(behavior.DedupeMatch(rules(), { ...subscriber, OrganizationInferred: true }))
+                .toEqual({ OrganizationID: ORG, PersonID: PERSON });
+        });
+
+        it('Holder held by a person matches only a personal subscription, never an org-held one', () => {
+            expect(behavior.DedupeMatch(rules(), { PersonID: PERSON })).toEqual({ OrganizationID: null, PersonID: PERSON });
+        });
+
+        it('Individual matches the exact pair, so seats for different people stay distinct', () => {
+            expect(behavior.DedupeMatch(rules({ BenefitModel: 'Individual' }), subscriber))
+                .toEqual({ OrganizationID: ORG, PersonID: PERSON });
+            expect(behavior.DedupeMatch(rules({ BenefitModel: 'Individual' }), { PersonID: PERSON }))
+                .toEqual({ OrganizationID: null, PersonID: PERSON });
+        });
     });
 });
 
@@ -655,6 +710,164 @@ describe('SubscriptionTypeRulesFrom', () => {
         expect(mapped.TrialDays).toBe(0);
         expect(mapped.GracePeriodDays).toBe(0);
         expect(mapped.DefaultTermMonths).toBeNull();
+    });
+});
+
+describe('coverage overlap with another band of the family (golive #276)', () => {
+    const day = (s: string) => new Date(`${s}T00:00:00Z`);
+    const existing: CoverageOverlap = {
+        SubscriptionID: 'sub-1',
+        SubscriptionNumber: 'SUB-000001',
+        ProductName: 'Tier Two',
+        CoverageStart: day('2026-09-26'),
+        CoverageEnd: day('2027-09-25'),
+        CoveredThrough: day('2028-09-25'),
+        ConcurrencyMode: 'AllowMultiple',
+        SubscriptionTypeCode: 'OTHER',
+    };
+    const overlapFor = (mode: SubscriptionTypeRules['ConcurrencyMode'], acknowledged: boolean, overlaps = [existing]) =>
+        new SubscriptionBehavior().DecideCoverageOverlap({
+            Rules: rules({ ConcurrencyMode: mode }),
+            Family: 'Tiered (TIERED)',
+            ProductName: 'Tier One',
+            Overlaps: overlaps,
+            Acknowledged: acknowledged,
+        });
+
+    it('does nothing when nothing overlaps, whatever the mode', () => {
+        for (const mode of ['AllowMultiple', 'ExtendExisting', 'RejectDuplicate'] as const) {
+            expect(overlapFor(mode, false, [])).toEqual({ Outcome: 'None', Message: null });
+        }
+    });
+
+    it('refuses an unacknowledged overlap under ExtendExisting, naming the coverage and the way out', () => {
+        const d = overlapFor('ExtendExisting', false);
+        expect(d.Outcome).toBe('NeedsAck');
+        expect(d.Message).toContain('SUB-000001 (Tier Two, 2026-09-26 to 2027-09-25)');
+        expect(d.Message).toContain('family Tiered (TIERED)');
+        expect(d.Message).toContain('Start this band after 2028-09-25, or mark the line to run alongside it.');
+        expect(d.Message).not.toContain('Cancel');
+    });
+
+    it('tells a refused line to start after the latest coverage end', () => {
+        const later = { ...existing, SubscriptionID: 'sub-2', SubscriptionNumber: 'SUB-000002', CoveredThrough: day('2029-01-31') };
+        const d = overlapFor('RejectDuplicate', false, [existing, later]);
+        expect(d.Message).toContain('Start this band after 2029-01-31.');
+        expect(d.Message).not.toContain('Cancel');
+    });
+
+    describe('the stricter of the two bands\' types applies', () => {
+        const withMode = (mode: SubscriptionTypeRules['ConcurrencyMode']) => ({ ...existing, ConcurrencyMode: mode, SubscriptionTypeCode: `T-${mode}` });
+
+        it('refuses when the held band is RejectDuplicate and the ordered band allows it', () => {
+            const d = overlapFor('AllowMultiple', true, [withMode('RejectDuplicate')]);
+            expect(d.Outcome).toBe('Refused');
+            expect(d.Message).toContain('Subscription type T-RejectDuplicate does not allow');
+        });
+
+        it('needs an acknowledgment when the held band is ExtendExisting and the ordered band allows it', () => {
+            expect(overlapFor('AllowMultiple', false, [withMode('ExtendExisting')]).Outcome).toBe('NeedsAck');
+            expect(overlapFor('AllowMultiple', true, [withMode('ExtendExisting')]).Outcome).toBe('Acknowledged');
+        });
+
+        it('gives the same answer whichever band is ordered', () => {
+            const aThenB = overlapFor('ExtendExisting', false, [withMode('AllowMultiple')]).Outcome;
+            const bThenA = overlapFor('AllowMultiple', false, [withMode('ExtendExisting')]).Outcome;
+            expect(aThenB).toBe('NeedsAck');
+            expect(bThenA).toBe(aThenB);
+        });
+
+        it('names the line\'s own type when both are equally strict', () => {
+            const d = overlapFor('RejectDuplicate', false, [withMode('RejectDuplicate')]);
+            expect(d.Message).toContain('Subscription type Test does not allow');
+        });
+
+        it('allows it only when every band allows it', () => {
+            expect(overlapFor('AllowMultiple', false, [withMode('AllowMultiple')]).Outcome).toBe('Allowed');
+        });
+    });
+
+    it('lets an acknowledged overlap through under ExtendExisting', () => {
+        expect(overlapFor('ExtendExisting', true).Outcome).toBe('Acknowledged');
+    });
+
+    it('refuses under RejectDuplicate even when the line acknowledges it', () => {
+        expect(overlapFor('RejectDuplicate', true).Outcome).toBe('Refused');
+        expect(overlapFor('RejectDuplicate', false).Outcome).toBe('Refused');
+    });
+
+    it('allows it under AllowMultiple and says both will be billed', () => {
+        const d = overlapFor('AllowMultiple', false);
+        expect(d.Outcome).toBe('Allowed');
+        expect(d.Message).toContain('both will be billed');
+    });
+
+    it('names a sibling line of the same order when there is no subscription yet', () => {
+        const d = overlapFor('ExtendExisting', false, [{ ...existing, SubscriptionID: null, SubscriptionNumber: null }]);
+        expect(d.Message).toContain('another line of this order (Tier Two');
+    });
+
+    describe('OverlappingCoverage', () => {
+        const term = (id: string | null, start: string, end: string) => ({
+            SubscriptionID: id,
+            SubscriptionNumber: id ? `N-${id}` : null,
+            ProductName: 'Tier Two',
+            StartDate: day(start),
+            EndDate: day(end),
+            ConcurrencyMode: 'ExtendExisting' as const,
+            SubscriptionTypeCode: 'STD',
+        });
+
+        it('clips each overlap to the new term', () => {
+            const out = OverlappingCoverage([term('a', '2026-01-01', '2026-12-31')], day('2026-07-01'), day('2027-06-30'));
+            expect(out).toHaveLength(1);
+            expect(iso(out[0].CoverageStart)).toBe('2026-07-01');
+            expect(iso(out[0].CoverageEnd)).toBe('2026-12-31');
+            expect(out[0].ConcurrencyMode).toBe('ExtendExisting');
+        });
+
+        it('reports coverage through the last term, including terms after the new one', () => {
+            const out = OverlappingCoverage(
+                [term('a', '2026-09-26', '2027-09-25'), term('a', '2027-09-26', '2028-09-25')],
+                day('2026-10-01'),
+                day('2027-03-31'),
+            );
+            expect(out).toHaveLength(1);
+            expect(iso(out[0].CoverageEnd)).toBe('2027-03-31');
+            expect(iso(out[0].CoveredThrough)).toBe('2028-09-25');
+        });
+
+        it('does not report a subscription whose only terms fall after the new one', () => {
+            expect(OverlappingCoverage([term('a', '2028-01-01', '2028-12-31')], day('2026-07-01'), day('2027-06-30'))).toEqual([]);
+        });
+
+        it('treats a term ending the day before as contiguous, not overlapping', () => {
+            expect(OverlappingCoverage([term('a', '2025-07-01', '2026-06-30')], day('2026-07-01'), day('2027-06-30'))).toEqual([]);
+        });
+
+        it('counts a single shared day as an overlap', () => {
+            expect(OverlappingCoverage([term('a', '2025-07-01', '2026-07-01')], day('2026-07-01'), day('2027-06-30'))).toHaveLength(1);
+        });
+
+        it('merges several terms of one subscription into one window', () => {
+            const out = OverlappingCoverage(
+                [term('a', '2026-09-26', '2027-09-25'), term('a', '2027-09-26', '2028-09-25')],
+                day('2026-09-26'),
+                day('2029-09-25'),
+            );
+            expect(out).toHaveLength(1);
+            expect(iso(out[0].CoverageStart)).toBe('2026-09-26');
+            expect(iso(out[0].CoverageEnd)).toBe('2028-09-25');
+        });
+
+        it('keeps separate subscriptions and separate sibling lines apart', () => {
+            const out = OverlappingCoverage(
+                [term('a', '2026-01-01', '2026-12-31'), term('b', '2026-01-01', '2026-12-31'), term(null, '2026-01-01', '2026-12-31'), term(null, '2026-01-01', '2026-12-31')],
+                day('2026-06-01'),
+                day('2026-06-30'),
+            );
+            expect(out).toHaveLength(4);
+        });
     });
 });
 

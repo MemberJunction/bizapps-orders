@@ -108,6 +108,11 @@ describe('memberDiscountNotice (#324)', () => {
         expect(memberDiscountNotice(draft, true)).toBeNull();
     });
 
+    it('does not promise the standard rate when the buyer\'s own code was priced instead (#358)', () => {
+        const draft = { Success: true, MemberDiscountApplied: false, MemberDiscountMessage: 'Your member discount cannot be combined.', AppliedPromotionCodes: ['SAVE10'] };
+        expect(memberDiscountNotice(draft, false)).toBe('Your member discount cannot be combined. Submit again to continue.');
+    });
+
     it('carries on when the discount applied or no token was sent', () => {
         expect(memberDiscountNotice({ Success: true, MemberDiscountApplied: true }, false)).toBeNull();
         expect(memberDiscountNotice({ Success: true }, false)).toBeNull();

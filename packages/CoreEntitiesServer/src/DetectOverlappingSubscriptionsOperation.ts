@@ -18,6 +18,12 @@
  *                   as unresolved: a booked order's confirmer can never be filled in afterwards, so
  *                   an unresolved row could never be cleared and its month never close.
  *
+ * AN ACKNOWLEDGED BAND OVERLAP IS NOT RAISED. A SameFamily pair whose later line set
+ * `AcknowledgesCoverageOverlap` was confirmed by someone told that both would be billed; raising it
+ * would put a decision already made back on finance's list. The query still lists it, flagged.
+ * SameProduct and SameCategory pairs are raised whatever the flag says: the acknowledgment is offered
+ * only for another band of the same family, so on those pairs it acknowledges nothing.
+ *
  * SETTINGS COME FROM THE EXCEPTION TYPE and nowhere else. A missing or inactive
  * OVERLAPPING_SUBSCRIPTION type means the check does not run; a configuration without a boolean
  * `IncludeSameCategory` is refused rather than defaulted, because a default here would decide on
@@ -47,6 +53,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    OrdersDetectOverlappingSubscriptionsOperation as OrdersDetectOverlappingSubscriptionsOperationBase,
     ToISODate,
     type OrdersDetectOverlappingSubscriptionsInput,
     type OrdersDetectOverlappingSubscriptionsOutput,
@@ -75,7 +82,7 @@ const ORDER_READ_BATCH_SIZE = 500;
 /** One row of the "Overlapping Subscriptions" query — the columns this check reads. */
 export interface OverlappingSubscriptionRow {
     CompanyID: string;
-    MatchBasis: 'SameProduct' | 'SameCategory';
+    MatchBasis: 'SameProduct' | 'SameFamily' | 'SameCategory';
     OverlapStart: Date | string | null;
     OverlapEnd: Date | string | null;
     EarlierSubscriptionID: string;
@@ -84,6 +91,8 @@ export interface OverlappingSubscriptionRow {
     LaterSubscriptionNumber: string | null;
     LaterOrderHeaderID: string | null;
     LaterOverlappingTermsAmount: number | null;
+    /** The later subscription's `OrderLine.AcknowledgesCoverageOverlap`. */
+    LaterOverlapAcknowledged?: boolean | null;
 }
 
 // ─── The decisions, as pure functions ─────────────────────────────────────────────────────────────
@@ -101,9 +110,16 @@ export function ReadIncludeSameCategory(configuration: Record<string, unknown> |
     );
 }
 
-/** The pairs to raise: every row, less the SameCategory ones when the type excludes them. */
+/**
+ * The pairs to raise: every row, less acknowledged SameFamily pairs, and less the SameCategory ones
+ * when the type excludes them.
+ */
 export function PairsToRaise(rows: OverlappingSubscriptionRow[], includeSameCategory: boolean): OverlappingSubscriptionRow[] {
-    return includeSameCategory ? rows : rows.filter((row) => row.MatchBasis !== 'SameCategory');
+    return rows.filter(
+        (row) =>
+            !(row.MatchBasis === 'SameFamily' && row.LaterOverlapAcknowledged) &&
+            (includeSameCategory || row.MatchBasis !== 'SameCategory'),
+    );
 }
 
 export function OverlapDedupeKey(row: Pick<OverlappingSubscriptionRow, 'EarlierSubscriptionID' | 'LaterSubscriptionID'>): string {
@@ -125,7 +141,12 @@ export function BuildOverlapException(
     const creator = row.LaterOrderHeaderID ? confirmedBy.get(row.LaterOrderHeaderID.toUpperCase()) ?? null : null;
     const later = row.LaterSubscriptionNumber ?? row.LaterSubscriptionID;
     const earlier = row.EarlierSubscriptionNumber ?? row.EarlierSubscriptionID;
-    const basis = row.MatchBasis === 'SameProduct' ? 'the same product' : 'a product in the same category with the same subscription type';
+    const basis =
+        row.MatchBasis === 'SameProduct'
+            ? 'the same product'
+            : row.MatchBasis === 'SameFamily'
+              ? 'another band of the same subscription family'
+              : 'a product in the same category with the same subscription type';
     const window = `${ToISODate(row.OverlapStart) ?? '?'} to ${ToISODate(row.OverlapEnd) ?? '?'}`;
     return {
         TypeCode: OVERLAPPING_SUBSCRIPTION_TYPE_CODE,
@@ -148,12 +169,7 @@ function describeErrors(errors: Array<{ Code: string; Message: string }> | undef
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.DetectOverlappingSubscriptions')
-export class DetectOverlappingSubscriptionsOperation extends BaseRemotableOperation<
-    OrdersDetectOverlappingSubscriptionsInput,
-    OrdersDetectOverlappingSubscriptionsOutput
-> {
-    public OperationKey = 'Orders.DetectOverlappingSubscriptions';
-
+export class DetectOverlappingSubscriptionsOperation extends OrdersDetectOverlappingSubscriptionsOperationBase {
     protected async InternalExecute(
         input: OrdersDetectOverlappingSubscriptionsInput,
         provider: IMetadataProvider,

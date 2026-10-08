@@ -29,6 +29,7 @@ export * from './order-address-snapshot';
 export * from './field-dirty';
 export * from './line-quantity';
 export * from './order-line-edit-veto';
+export * from './order-confirm-veto';
 
 /**
  * `OrderHeaderEntity` — the shared (client + server) order subclass carrying every rule decidable
@@ -111,6 +112,8 @@ export * from './pricing/linePricePick';
  */
 export * from './date-cell';
 export * from './displaced-term-start';
+// Whether a subscription line's subscriber already holds its product — the extend-or-new question.
+export * from './existing-holding';
 
 /**
  * `IsOverdue` / `DaysOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.
@@ -136,3 +139,5 @@ export * from './base-entity-augmentation';
 export * from './billing-location';
 // Pure decisions for money arriving on an external rail (Bill.com) — read by Orders.PollExternalPayments.
 export * from './ExternalPaymentBehavior.js';
+// What a subscription renews at: the lapsed discount, the annual increase and the successor move (golive #304).
+export * from './renewal-price.js';

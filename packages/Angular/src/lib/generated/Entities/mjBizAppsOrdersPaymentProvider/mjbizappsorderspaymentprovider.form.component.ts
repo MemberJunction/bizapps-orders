@@ -19,6 +19,7 @@ export class mjBizAppsOrdersPaymentProviderFormComponent extends BaseFormCompone
             { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
             { sectionKey: 'providerConfiguration', sectionName: 'Provider Configuration', isExpanded: true },
             { sectionKey: 'securityAndIntegration', sectionName: 'Security and Integration', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentIntents', sectionName: 'Payment Intents', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false },

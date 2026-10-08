@@ -29,12 +29,23 @@
  *      count, and a subscription keeps renewing cycle after cycle.
  * Running the operation twice in a row is a no-op, and that is asserted by the check suite.
  *
+ * WHAT IT RENEWS AT (golive #304)
+ * Not what the customer last paid. A first-term discount lapses, a product with a successor renews
+ * as the successor at its own list price, and an annual increase applies when the new term crosses
+ * an anniversary of the subscription's start: `PriceRenewal` in orders-entities decides, and this
+ * operation gathers its inputs. The increase is the subscription's `RenewalIncreasePercent`, else the
+ * product's, else the nearest category's, else the company's `OrderCompanyPolicy`. The price and how
+ * it was reached are reported on every candidate, preview included, written into the order's notes
+ * and logged on the renewal event, so the figure can be checked before a live pass books it.
+ *
  * CONNECTS TO:
  *   BOOKING: OrderEntityServer.Save — the renewal order goes through the ordinary confirm path,
  *            so extension, term creation, GL resolution and recognition are all the SAME code
  *   POLICY:  SubscriptionBehavior (IsRenewal bypasses ConcurrencyMode — a renewal is not a second
  *            concurrent subscription, it is this one continuing)
- *   TABLES:  __mj_BizAppsOrders.{Subscription,SubscriptionTerm,SubscriptionType,OrderHeader,OrderLine,OrderHeaderPaymentSchedule}
+ *   PRICING: orders-entities PriceRenewal / ResolveRenewalIncrease / RenewalCrossesAnniversary
+ *   TABLES:  __mj_BizAppsOrders.{Subscription,SubscriptionTerm,SubscriptionType,OrderHeader,OrderLine,OrderHeaderPaymentSchedule,
+ *            Product,ProductCategory,OrderCompanyPolicy}
  */
 import {
     BaseEntity,
@@ -48,6 +59,15 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    OrdersSpawnRenewalsOperation as OrdersSpawnRenewalsOperationBase,
+    AsDateValue,
+    BuildLinePriceContext,
+    PriceRenewal,
+    RenewalCrossesAnniversary,
+    ResolvePrice,
+    ResolveRenewalIncrease,
+    type PricedLineFacts,
+    type RenewalPrice,
     mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersSubscriptionEventEntity,
@@ -66,6 +86,7 @@ const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_LINE_CHOICE_ENTITY = 'MJ_BizApps_Orders: Order Line Choices';
+const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
 
 export interface SpawnRenewalsInput {
     /** Treat this as "today". Defaults to now. */
@@ -94,6 +115,20 @@ export interface RenewalCandidate {
     OrderNumber?: string;
     /** Set when this candidate was skipped, with the reason. */
     SkippedReason?: string;
+    /** The product the renewal is placed on: the subscription's own, or its successor. */
+    RenewalProductID?: string;
+    /** The renewal's unit price before the increase. */
+    BasePrice?: number;
+    /** Where the base price came from: the prior term's price, its list price, or the successor's list. */
+    BasePriceSource?: 'PriorPrice' | 'PriorList' | 'SuccessorList';
+    /** The increase applied, in percent: 0 when none is set or the new term crosses no anniversary. */
+    IncreasePercent?: number;
+    /** The level the increase was set at. */
+    IncreaseSource?: 'Subscription' | 'Product' | 'Category' | 'Company' | 'None';
+    /** The renewal line's unit price: the base plus the increase. */
+    UnitPrice?: number;
+    /** The renewal line's discount, as a fraction: 0 unless the subscription carries its discount into renewals. */
+    DiscountPct?: number;
 }
 
 export interface SpawnRenewalsOutput {
@@ -116,21 +151,46 @@ interface DueRow {
     TypeRenewalLeadDays: number | null;
     TermID: string;
     TermNumber: number;
+    TermStartDate: string;
     TermEndDate: string;
     OrderLineID: string;
+    SubscriptionStartDate: string;
+    SubscriptionIncreasePercent: number | null;
+    CarryDiscountOnRenewal: boolean;
 }
 
 interface SourceLineRow {
     ID: string;
+    OrderHeaderID: string;
+    ProductID: string;
     Quantity: number;
     UnitPrice: number;
     DiscountPct: number | null;
+    PriceOverridden: boolean;
+    ProductPriceID: string | null;
+}
+
+/** A product on the subscription's successor chain, the subscription's own product first. */
+interface ChainProductRow {
+    ID: string;
+    Name: string;
+    Status: string;
+    ProductCategoryID: string;
+    RenewalIncreasePercent: number | null;
+    SuccessorProductID: string | null;
+}
+
+/** What `priceRenewal` decided: the product, quantity and price the renewal line is written with. */
+interface PricedRenewal {
+    ProductID: string;
+    ProductName: string;
+    MovesToSuccessor: boolean;
+    Quantity: number;
+    Price: RenewalPrice;
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.SpawnRenewals')
-export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewalsInput, SpawnRenewalsOutput> {
-    public OperationKey = 'Orders.SpawnRenewals';
-
+export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
     protected async InternalExecute(
         input: SpawnRenewalsInput,
         provider: IMetadataProvider,
@@ -186,6 +246,27 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
                 continue;
             }
 
+            // Priced on a preview too: the preview is where a person checks the figure before a live
+            // pass books it. A candidate that cannot be priced is skipped with the reason, and does
+            // not consume the cap.
+            let priced: PricedRenewal;
+            try {
+                priced = await this.priceRenewal(provider, user, due);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                LogError(`Orders.SpawnRenewals: ${due.SubscriptionNumber} could not be priced: ${message}`);
+                candidate.SkippedReason = message;
+                out.Skipped++;
+                continue;
+            }
+            candidate.RenewalProductID = priced.ProductID;
+            candidate.BasePrice = priced.Price.BasePrice;
+            candidate.BasePriceSource = priced.Price.BaseSource;
+            candidate.IncreasePercent = priced.Price.IncreasePercent;
+            candidate.IncreaseSource = priced.Price.IncreaseSource;
+            candidate.UnitPrice = priced.Price.UnitPrice;
+            candidate.DiscountPct = priced.Price.DiscountPct;
+
             if (input.Preview) {
                 out.Skipped++;
                 committed++;
@@ -193,7 +274,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             }
 
             try {
-                const order = await this.placeRenewal(provider, user, due, asOf.toISOString().slice(0, 10));
+                const order = await this.placeRenewal(provider, user, due, priced, asOf.toISOString().slice(0, 10));
                 candidate.OrderID = order.ID;
                 candidate.OrderNumber = order.Number;
                 out.Placed++;
@@ -246,8 +327,12 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
                 s.BeneficiaryPersonID,
                 s.RenewalLeadDays     AS SubscriptionRenewalLeadDays,
                 t.RenewalLeadDays     AS TypeRenewalLeadDays,
+                s.StartDate           AS SubscriptionStartDate,
+                s.RenewalIncreasePercent AS SubscriptionIncreasePercent,
+                s.CarryDiscountOnRenewal,
                 l.ID                  AS TermID,
                 l.TermNumber,
+                l.StartDate           AS TermStartDate,
                 l.EndDate             AS TermEndDate,
                 l.OrderLineID
             FROM __mj_BizAppsOrders.Subscription s
@@ -305,16 +390,9 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
         provider: IMetadataProvider,
         user: UserInfo,
         due: DueRow,
+        priced: PricedRenewal,
         invoiceDay: string,
     ): Promise<{ ID: string; Number: string }> {
-        const source = await this.loadSourceLine(provider, user, due.OrderLineID);
-        if (!source) {
-            throw new Error(
-                `The order line that bought term ${due.TermNumber} (${due.OrderLineID}) no longer exists, ` +
-                    `so there is no price to renew at.`,
-            );
-        }
-
         const dbProvider = provider as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
@@ -328,14 +406,16 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             order.CompanyID = due.CompanyID;
             order.BillToOrganizationID = due.HolderOrganizationID;
             order.BillToPersonID = due.BeneficiaryPersonID;
-            order.Notes = `Automatic renewal of ${due.SubscriptionNumber} (term ${due.TermNumber + 1})`;
+            order.Notes = this.renewalNotes(due, priced);
 
             const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
             // Orders writing its own line. An app that froze this line freezes what a PERSON
             // may change, not Orders closing its own books (#206 item 1).
             MarkAsOrdersOwnWrite(line);
             line.NewRecord();
-            line.ProductID = due.ProductID;
+            // The successor when the subscription moves to one; booking then moves the subscription
+            // onto it (OrderEntityServer.touchExistingSubscription).
+            line.ProductID = priced.ProductID;
             line.LineNumber = 1;
             // Per-LINE (D61): renewal is a line-level act, so one order could renew several
             // subscriptions. Naming the target also removes the guesswork from resolution — the
@@ -345,12 +425,14 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             // lands on the same holder even when the order's customer differs.
             line.ShipToOrganizationID = due.HolderOrganizationID;
             line.ShipToPersonID = due.BeneficiaryPersonID;
-            // Renew at what they last paid. Re-pricing from the current ProductPrice is a policy
-            // decision (grandfathering, notice periods) that nobody has made yet — carrying the
-            // price forward is the choice that cannot surprise a customer.
-            line.Quantity = this.renewalQuantity(source);
-            line.UnitPrice = source.UnitPrice;
-            line.DiscountPct = source.DiscountPct ?? 0;
+            // What `priceRenewal` decided (golive #304). Stated on the line, so pricing keeps it rather
+            // than resolving today's list price. It is the pass's own deliberate price, not a typed
+            // concession, so the order is told which lines it priced: the concession gate and the
+            // below-engine review leave them alone while their price is unchanged.
+            line.Quantity = priced.Quantity;
+            line.UnitPrice = priced.Price.UnitPrice;
+            line.DiscountPct = priced.Price.DiscountPct;
+            order.MarkRenewalPriced(line);
 
             // Attached rather than assigned — see the note in CancelSubscriptionOperation.
             order.Lines.Add(line);
@@ -392,7 +474,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
                 );
             }
 
-            await this.logEvent(provider, user, due, order.ID);
+            await this.logEvent(provider, user, due, priced, order.ID);
             await dbProvider.CommitTransaction();
             return { ID: order.ID, Number: order.OrderNumber };
         } catch (err) {
@@ -440,6 +522,171 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
     }
 
     /**
+     * What the renewal line is written with: product, quantity and price (golive #304).
+     *
+     * Read-only, so a preview runs it too. Throws with a reason a person can act on when the
+     * renewal cannot be priced; the caller skips that candidate.
+     */
+    private async priceRenewal(provider: IMetadataProvider, user: UserInfo, due: DueRow): Promise<PricedRenewal> {
+        const source = await this.loadSourceLine(provider, user, due.OrderLineID);
+        if (!source) {
+            throw new Error(
+                `The order line that bought term ${due.TermNumber} (${due.OrderLineID}) no longer exists, ` +
+                    `so there is no price to renew at.`,
+            );
+        }
+
+        const chain = await this.loadSuccessorChain(provider, due.ProductID);
+        const product = chain[chain.length - 1];
+        const movesToSuccessor = chain.length > 1;
+        const quantity = this.renewalQuantity(source);
+        const renewalDay = this.dayAfter(due.TermEndDate);
+        const carry = !!due.CarryDiscountOnRenewal;
+
+        // A list price is resolved only where the rule needs one: the successor's as of the renewal
+        // day, or the prior product's as of the prior order when a price typed below it may lapse.
+        const successorList = movesToSuccessor
+            ? await this.listPrice(provider, user, { ...source, ProductID: product.ID, Quantity: quantity, UnitPrice: null, ProductPriceID: null }, renewalDay)
+            : undefined;
+        const priorList =
+            !movesToSuccessor && source.PriceOverridden && !carry
+                ? await this.listPrice(provider, user, { ...source, Quantity: quantity }, null)
+                : null;
+
+        const increase = ResolveRenewalIncrease({
+            Subscription: due.SubscriptionIncreasePercent,
+            Product: product.RenewalIncreasePercent,
+            Categories: await this.loadCategoryIncreases(provider, product.ProductCategoryID),
+            Company: await this.loadCompanyIncrease(provider, user, due.CompanyID),
+        });
+
+        let price: RenewalPrice;
+        try {
+            price = PriceRenewal({
+                PriorUnitPrice: Number(source.UnitPrice),
+                PriorDiscountPct: source.DiscountPct,
+                PriorPriceOverridden: !!source.PriceOverridden,
+                PriorListPrice: priorList,
+                SuccessorListPrice: successorList,
+                CarryDiscount: carry,
+                Increase: increase,
+                ApplyIncrease: RenewalCrossesAnniversary(due.SubscriptionStartDate, due.TermStartDate, renewalDay),
+            });
+        } catch (err) {
+            throw new Error(
+                `${due.SubscriptionNumber} moves to ${product.Name} at renewal, but ` +
+                    `${err instanceof Error ? err.message : String(err)}. Add a price for ${product.Name}.`,
+            );
+        }
+
+        return { ProductID: product.ID, ProductName: product.Name, MovesToSuccessor: movesToSuccessor, Quantity: quantity, Price: price };
+    }
+
+    /**
+     * The subscription's product followed along `SuccessorProductID` while the next product is
+     * Active: a successor that is still a draft, or already retired, is not one to renew onto.
+     * The subscription's own product comes first; the last entry is what the renewal is placed on.
+     */
+    private async loadSuccessorChain(provider: IMetadataProvider, productID: string): Promise<ChainProductRow[]> {
+        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
+        const rows = (await db.ExecuteSQL(`
+            WITH chain AS (
+                SELECT p.ID, p.Name, p.Status, p.ProductCategoryID, p.RenewalIncreasePercent, p.SuccessorProductID, 0 AS Depth
+                FROM __mj_BizAppsOrders.Product p
+                WHERE p.ID = '${productID}'
+                UNION ALL
+                SELECT n.ID, n.Name, n.Status, n.ProductCategoryID, n.RenewalIncreasePercent, n.SuccessorProductID, c.Depth + 1
+                FROM chain c
+                JOIN __mj_BizAppsOrders.Product n ON n.ID = c.SuccessorProductID
+                WHERE c.Depth < 20 AND n.Status = 'Active'
+            )
+            SELECT ID, Name, Status, ProductCategoryID, RenewalIncreasePercent, SuccessorProductID
+            FROM chain
+            ORDER BY Depth
+        `)) as ChainProductRow[];
+        if (!Array.isArray(rows) || rows.length === 0) {
+            throw new Error(`The subscription's product (${productID}) no longer exists, so there is nothing to renew.`);
+        }
+
+        // Successors that loop back would otherwise walk to the depth cap; stop at the first repeat.
+        const seen = new Set<string>();
+        const chain: ChainProductRow[] = [];
+        for (const row of rows) {
+            const key = String(row.ID).toLowerCase();
+            if (seen.has(key)) break;
+            seen.add(key);
+            chain.push(row);
+        }
+        return chain;
+    }
+
+    /** `RenewalIncreasePercent` of a category and each ancestor, the category itself first. */
+    private async loadCategoryIncreases(provider: IMetadataProvider, categoryID: string | null): Promise<Array<number | null>> {
+        if (!categoryID) return [];
+        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
+        const rows = (await db.ExecuteSQL(`
+            WITH chain AS (
+                SELECT c.ID, c.ParentProductCategoryID, c.RenewalIncreasePercent, 0 AS Depth
+                FROM __mj_BizAppsOrders.ProductCategory c
+                WHERE c.ID = '${categoryID}'
+                UNION ALL
+                SELECT p.ID, p.ParentProductCategoryID, p.RenewalIncreasePercent, ch.Depth + 1
+                FROM chain ch
+                JOIN __mj_BizAppsOrders.ProductCategory p ON p.ID = ch.ParentProductCategoryID
+                WHERE ch.Depth < 20
+            )
+            SELECT RenewalIncreasePercent FROM chain ORDER BY Depth
+        `)) as Array<{ RenewalIncreasePercent: number | null }>;
+        return Array.isArray(rows) ? rows.map((r) => (r.RenewalIncreasePercent == null ? null : Number(r.RenewalIncreasePercent))) : [];
+    }
+
+    /** The selling company's `OrderCompanyPolicy.RenewalIncreasePercent`; null when it has no policy row. */
+    private async loadCompanyIncrease(provider: IMetadataProvider, user: UserInfo, companyID: string): Promise<number | null> {
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const result = await rv.RunView<{ RenewalIncreasePercent: number | null }>(
+            {
+                EntityName: ORDER_COMPANY_POLICY_ENTITY,
+                ExtraFilter: `ID='${companyID}'`,
+                Fields: ['RenewalIncreasePercent'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        );
+        const value = result?.Results?.[0]?.RenewalIncreasePercent;
+        return value == null ? null : Number(value);
+    }
+
+    /**
+     * What the pricing engine charges for `line`'s product, for the customer on `line`'s order. As of
+     * that order's date, or as of `asOf` when given. Null when no rule prices the product.
+     */
+    private async listPrice(
+        provider: IMetadataProvider,
+        user: UserInfo,
+        line: PricedLineFacts,
+        asOf: Date | null,
+    ): Promise<number | null> {
+        const ctx = await BuildLinePriceContext(line, provider, user);
+        if (!ctx) return null;
+        if (asOf) ctx.AsOf = AsDateValue(asOf) ?? ctx.AsOf;
+        const resolved = await ResolvePrice(ctx, provider, user);
+        return resolved ? Number(resolved.UnitPrice) : null;
+    }
+
+    /** The renewal order's notes: what it renews, and how its price was reached. */
+    private renewalNotes(due: DueRow, priced: PricedRenewal): string {
+        const p = priced.Price;
+        const money = (n: number) => n.toFixed(2);
+        const base = { PriorPrice: 'prior price', PriorList: 'prior list price', SuccessorList: 'list price' }[p.BaseSource];
+        const parts = [`Automatic renewal of ${due.SubscriptionNumber} (term ${due.TermNumber + 1})`];
+        if (priced.MovesToSuccessor) parts.push(`onto successor product ${priced.ProductName}`);
+        const increase = p.IncreasePercent > 0 ? ` + ${p.IncreasePercent}% annual increase (${p.IncreaseSource.toLowerCase()})` : '';
+        const discount = p.DiscountPct > 0 ? `, discount ${Math.round(p.DiscountPct * 10000) / 100}% continued` : '';
+        return `${parts.join(' ')}. Unit price ${money(p.UnitPrice)}: ${base} ${money(p.BasePrice)}${increase}${discount}.`;
+    }
+
+    /**
      * Quantity for the renewal.
      *
      * A PRORATED source line carries a fractional quantity — the short first period into a calendar
@@ -466,7 +713,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             {
                 EntityName: ORDER_LINE_ENTITY,
                 ExtraFilter: `ID='${orderLineID}'`,
-                Fields: ['ID', 'Quantity', 'UnitPrice', 'DiscountPct'],
+                Fields: ['ID', 'OrderHeaderID', 'ProductID', 'Quantity', 'UnitPrice', 'DiscountPct', 'PriceOverridden', 'ProductPriceID'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -500,6 +747,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
         provider: IMetadataProvider,
         user: UserInfo,
         due: DueRow,
+        priced: PricedRenewal,
         orderID: string,
     ): Promise<void> {
         const event = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEventEntity>(SUBSCRIPTION_EVENT_ENTITY, user);
@@ -514,6 +762,14 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
                 RenewedTermNumber: due.TermNumber,
                 ExpiringTermEnd: due.TermEndDate,
                 LeadDays: due.SubscriptionRenewalLeadDays ?? due.TypeRenewalLeadDays ?? 0,
+                FromProductID: due.ProductID,
+                RenewalProductID: priced.ProductID,
+                BasePrice: priced.Price.BasePrice,
+                BasePriceSource: priced.Price.BaseSource,
+                IncreasePercent: priced.Price.IncreasePercent,
+                IncreaseSource: priced.Price.IncreaseSource,
+                UnitPrice: priced.Price.UnitPrice,
+                DiscountPct: priced.Price.DiscountPct,
             }),
         );
         if (!(await event.Save())) {

@@ -64,14 +64,14 @@ over a set of rows, talks to a third party, or must be atomic with a write.
 | `Orders.PriceOrder` | `orders:read` | Sync | Answers "what does this come to" without writing. Runs the real `OrderPricingService`, so the screen and the ledger cannot disagree. |
 | `Orders.PreviewPrice` | `orders:read` | Sync | One product's price and how it resolved. Explicitly advisory — promotions stack against order totals, so a per-line answer cannot be final. |
 | `Orders.AdvanceOrderState` | `orders:write` | Sync | Climbs the ladder above Confirmed. Marks a SET of lines fulfilled and decides whether the header may move with some still Pending. |
-| `Orders.CapturePayment` | `payments:write` | Sync | Settles with the provider before the money is recorded, recognises a re-submitted capture as the same payment, turns over-payment into credit. |
-| `Orders.RefundPayment` | `payments:refund` | Sync | A reversal payment, un-applied proportionally across what it paid. |
-| `Orders.ApplyAccountCredit` | `payments:write` | Sync | Spend a credit — a zero-amount payment with two offsetting lines. |
+| `Orders.CapturePayment` | `orders:write` | Sync | Settles with the provider before the money is recorded, recognises a re-submitted capture as the same payment, turns over-payment into credit. |
+| `Orders.RefundPayment` | `orders:payments:refund` | Sync | A reversal payment, un-applied proportionally across what it paid. |
+| `Orders.ApplyAccountCredit` | `orders:payments:write` | Sync | Spend a credit — a zero-amount payment with two offsetting lines. |
 | `Orders.FulfillOrderLines` | `orders:write` | Sync | Flip lines AND close the order, one act. |
 | `Orders.GetFulfillmentQueue` | `orders:read` | Sync | The shipping backlog is computed, not stored. |
 | `Orders.GetOverdueWorklist` | `orders:read` | Sync | So is overdue. |
-| `Orders.CancelSubscription` | `subscriptions:write` | Sync | Policy in, reversal out. Revokes standing grants when access-through has already passed. |
-| `Orders.SpawnRenewals` | `subscriptions:write` | LongRunning | Places renewal orders at lead time. |
+| `Orders.CancelSubscription` | `orders:subscriptions:write` | Sync | Policy in, reversal out. Revokes standing grants when access-through has already passed. |
+| `Orders.SpawnRenewals` | `orders:subscriptions:write` | LongRunning | Places renewal orders at lead time. |
 | `Orders.CheckEntitlement` | `orders:entitlement-check` | Sync | Does this person currently have this capability? Asked by Code, evaluated, fail closed. |
 | `Orders.ListEntitlements` | `orders:entitlement-read` | Sync | The person's library, one row per Code, same evaluator. Not a second source of truth. |
 
