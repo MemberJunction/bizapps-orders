@@ -29,6 +29,7 @@ export * from './order-address-snapshot';
 export * from './field-dirty';
 export * from './line-quantity';
 export * from './order-line-edit-veto';
+export * from './order-confirm-veto';
 
 /**
  * `OrderHeaderEntity` — the shared (client + server) order subclass carrying every rule decidable
