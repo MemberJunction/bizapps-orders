@@ -153,6 +153,23 @@ export function ConcessionAlwaysEscalates(form: ConcessionDeliveryForm): boolean
     return form === 'Terms';
 }
 
+/** Each level's stated `RequiresSaleApproval` for one product; null or undefined means "not set here". */
+export interface SaleApprovalFacts {
+    Product: boolean | null | undefined;
+    /** The product's own category first, then each ancestor, nearest first. */
+    Categories: (boolean | null | undefined)[];
+    Type: boolean | null | undefined;
+}
+
+/**
+ * Whether a line for this product always needs an approver's sign-off (golive #281): the most specific
+ * value stated, Product -> its category -> each ancestor category -> Product Type, else false. False is a
+ * stated value, so a product or category can opt out of what it would inherit.
+ */
+export function ResolveRequiresSaleApproval(facts: SaleApprovalFacts): boolean {
+    return [facts.Product, ...facts.Categories, facts.Type].find((v) => v != null) ?? false;
+}
+
 /** One figure for a concession, whatever form it was delivered in. */
 export function ConcessionValue(facts: ConcessionFacts): ConcessionValuation {
     switch (facts.Form) {

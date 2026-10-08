@@ -22,6 +22,11 @@
  * approval, whatever the requester's authority, and the requester cannot decide it even when they hold the
  * approving role. ./PaymentTermsChange.ts applies it in the approval's own transaction.
  *
+ * A LINE WHOSE PRODUCT ALWAYS NEEDS APPROVAL (golive #281) is valued like any other Price or Scope concession, at
+ * zero when it gives nothing away against an engine price, and always goes to the ConcessionLimit rule's role: the
+ * requester's own authority never approves it, and the requester cannot decide it. The confirm gate holds the order
+ * until one is Approved (./ConcessionGate.ts).
+ *
  * ITS APPROVERS ARE TOLD (golive #274). A Pending concession raises its own approval task in the tasks
  * app, assigned to the rule's role holders, in the same transaction as the row. Deciding it on this record,
  * or withdrawing it, closes that task.
@@ -78,6 +83,7 @@ import {
     LoadConcessionAuthority,
     OrderConcessionTotal,
     OrderNetTotal,
+    ProductsRequiringSaleApproval,
 } from './ConcessionGate.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { ApplyTermsChange, CheckTermsChange } from './PaymentTermsChange.js';
@@ -200,6 +206,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private approvingRole: string | null = null;
     /** How far this concession moves its term's dates, set when a Duration concession is valued. */
     private termDateChangeDays: number | null = null;
+    /** Set when a Price or Scope concession is valued on a line whose product always needs approval (golive #281). */
+    private saleApprovalRequired = false;
 
     /** What the approval task calls this concession ("25% discount, 3,000.00"), kept by `prepareNew`. */
     private approvalSummary = '';
@@ -284,6 +292,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!this.Reason?.trim()) return 'A concession must state its reason.';
 
         this.termDateChangeDays = null;
+        this.saleApprovalRequired = false;
         const valued = await this.valueByForm(user);
         if (typeof valued === 'string') return valued;
 
@@ -302,7 +311,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.DecidedAt = null;
         this.approvingRole = null;
 
-        if (ConcessionAlwaysEscalates(this.DeliveryForm)) return this.escalate(user);
+        if (ConcessionAlwaysEscalates(this.DeliveryForm) || this.saleApprovalRequired) return this.escalate(user);
 
         const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
         const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.termDateChangeDays, share);
@@ -342,10 +351,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
      * authority. The requester cannot decide it, so someone else must hold the role.
      */
     private async escalate(user: UserInfo): Promise<string | null> {
+        const what = this.saleApprovalRequired
+            ? 'A concession on a line whose product always needs approval'
+            : `A ${this.DeliveryForm} concession`;
         const rule = await FindConcessionLimitRule(this.provider(), user);
         if (!rule?.ApprovalRequiredRoleID) {
             return (
-                `A ${this.DeliveryForm} concession always needs approval, and no active SalesRule of type ` +
+                `${what} always needs approval, and no active SalesRule of type ` +
                 `'ConcessionLimit' names an approving role, so no one could approve it. Configure a ConcessionLimit ` +
                 `rule with an ApprovalRequiredRoleID.`
             );
@@ -353,7 +365,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const holders = await ActiveRoleHolderIDs(rule.ApprovalRequiredRoleID, { Provider: this.provider(), User: user });
         if (!holders.some((id) => !UUIDsEqual(id, user.ID))) {
             return (
-                `A ${this.DeliveryForm} concession cannot be decided by the person who asked for it, and no other active ` +
+                `${what} cannot be decided by the person who asked for it, and no other active ` +
                 `user holds the role the ConcessionLimit rule names. Assign that role to another approver.`
             );
         }
@@ -429,6 +441,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const line = await this.requireLine(user);
         if (typeof line === 'string') return line;
         const concession = await LinePriceConcessionFor(line, this.provider(), user);
+        this.saleApprovalRequired = await this.lineRequiresSaleApproval(line, user);
+        if (!concession && this.saleApprovalRequired) {
+            // Nothing given away against an engine price, often because the product has none: the approval is
+            // of the sale itself, so it is recorded at no value.
+            this.OrderHeaderID = line.OrderHeaderID;
+            return { Value: 0, Percent: null };
+        }
         if (!concession) {
             return (
                 `Line ${line.LineNumber} is charged its engine price or another named price that applies, with no ` +
@@ -467,6 +486,20 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return { Value: 0, Percent: null };
     }
 
+    /** Whether the line's product always needs approval. A renewal line's sale was approved when it was first sold. */
+    private async lineRequiresSaleApproval(line: LineRow, user: UserInfo): Promise<boolean> {
+        if (line.RenewsSubscriptionID || !line.ProductID) return false;
+        const required = await ProductsRequiringSaleApproval([line.ProductID], this.provider(), user);
+        return required.has(line.ProductID.toLowerCase());
+    }
+
+    /** A Price or Scope concession on a line whose product always needs approval. */
+    private async onSaleApprovalLine(user: UserInfo): Promise<boolean> {
+        if ((this.DeliveryForm !== 'Price' && this.DeliveryForm !== 'Scope') || !this.OrderLineID) return false;
+        const line = await this.loadLine(this.OrderLineID, user);
+        return !!line && (await this.lineRequiresSaleApproval(line, user));
+    }
+
     private async requireLine(user: UserInfo): Promise<LineRow | string> {
         if (!this.OrderLineID) return `A ${this.DeliveryForm} concession must name the order line it applies to.`;
         const line = await this.loadLine(this.OrderLineID, user);
@@ -500,6 +533,9 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!user?.ID) return 'A decision must be attributable to a user, and no user was supplied.';
         if (ConcessionAlwaysEscalates(this.DeliveryForm) && UUIDsEqual(user.ID, this.RequestedByUserID)) {
             return `A ${this.DeliveryForm} concession cannot be decided by the person who asked for it.`;
+        }
+        if (UUIDsEqual(user.ID, this.RequestedByUserID) && (await this.onSaleApprovalLine(user))) {
+            return 'A concession on a line whose product always needs approval cannot be decided by the person who asked for it.';
         }
 
         const roleID = await this.ApprovingRoleID(user);

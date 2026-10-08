@@ -42,6 +42,12 @@
  *   CS26      a DiscountPct holds the confirm until a Price concession covers it; inside authority it is Approved
  *   CS27      with no SalesAuthority the same concession is Pending, and the confirm stays held
  *
+ * A product priced per engagement always needs an approver's sign-off (golive #281):
+ *
+ *   CS28      a line for a product that requires sale approval holds the confirm with no engine price to compare
+ *             against; its concession is Pending at no value whatever the requester's authority, the requester
+ *             cannot decide it, and another holder's approval releases the order
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -1130,6 +1136,57 @@ export const ConcessionChecks: NamedCheck[] = [
 
         built.Order.Status = "Confirmed";
         Assert(!(await built.Order.Save()), "a Pending concession must hold the confirm");
+      }),
+  },
+  {
+    Id: "concessions.CS28",
+    Name: "CS28: a product that requires sale approval holds the confirm until another approver decides it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        // Wide authority: within it, any other concession on this order would be Approved on save.
+        await grantAuthority(ctx, { maxPct: 1, maxValue: 1_000_000, maxShare: 1 });
+        await addRule(ctx, "ConcessionLimit", await roleSharedWithAnother(ctx));
+        await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Product SET RequiresSaleApproval = 1 WHERE ID = '${f.Products.WidgetA}'`);
+
+        // No ProductPrice: nothing resolves an engine price, so no price concession exists to hold the line.
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 500 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "a line whose product requires sale approval must hold the confirm");
+        Assert(/line 1 is for a product that always needs approval/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should name the line, got: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID, Reason: "custom scope" });
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        AssertEqual(c.Entity.Status, "Pending", "the requester's authority never approves it");
+        AssertEqual(Number(c.Entity.ComputedValue), 0, "nothing is given away against an engine price");
+
+        const own = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
+        Assert(await own.Load(c.Entity.ID), "the concession did not load");
+        own.Status = "Approved";
+        Assert(!(await own.Save()), "the requester must not decide their own");
+        Assert(/cannot be decided by the person who asked for it/.test(own.LatestResult?.CompleteMessage ?? ""),
+          `expected the self-decision refusal, got: ${own.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "a Pending concession must hold the confirm");
+
+        // Stand another user in as the requester, as the harness runs as one user: this user is the approver.
+        await TxQuery(ctx,
+          `UPDATE ${ORDERS_SCHEMA}.OrderConcession SET RequestedByUserID = '${await anotherUser(ctx)}' WHERE ID = '${c.Entity.ID}'`);
+        const decided = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
+        Assert(await decided.Load(c.Entity.ID), "the concession did not reload");
+        decided.Status = "Approved";
+        Assert(await decided.Save(), `another holder's approval failed: ${decided.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `with the sale approved, confirm should pass: ${built.Order.LatestResult?.CompleteMessage}`);
       }),
   },
 ];
