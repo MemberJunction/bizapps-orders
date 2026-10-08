@@ -1144,6 +1144,8 @@ export const ConcessionChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
+        // Not about accounting's acknowledgment: an earlier check's role would make the approval raise one, and the stand-in requester may be that role's only holder.
+        OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
         const f = Fx();
         // Wide authority: within it, any other concession on this order would be Approved on save.
         await grantAuthority(ctx, { maxPct: 1, maxValue: 1_000_000, maxShare: 1 });
