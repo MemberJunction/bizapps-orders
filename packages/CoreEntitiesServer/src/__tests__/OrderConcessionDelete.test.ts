@@ -16,6 +16,8 @@ const approval = vi.hoisted(() => ({
     UnlinkConcession: vi.fn(),
 }));
 vi.mock('../ConcessionApprovalTask.js', () => approval);
+const acknowledgment = vi.hoisted(() => ({ RaiseConcessionAcknowledgment: vi.fn() }));
+vi.mock('../ConcessionAcknowledgment.js', () => acknowledgment);
 
 const { OrderConcessionEntityServer } = await import('../OrderConcessionEntityServer.js');
 
@@ -79,7 +81,7 @@ describe('OrderConcessionEntityServer.Delete', () => {
         expect(scope.Commit).toHaveBeenCalledTimes(1);
     });
 
-    it('lets a decided concession go with its removed draft line, without closing its task again', async () => {
+    it('lets a decided concession go with its removed draft line, cancelling its acknowledgment (golive #268)', async () => {
         const base = vi.spyOn(BaseEntity.prototype, 'Delete').mockResolvedValue(true);
         const { row } = concession('Approved');
         row.WithdrawWithDraftLine = true;
@@ -87,7 +89,8 @@ describe('OrderConcessionEntityServer.Delete', () => {
         expect(await row.Delete()).toBe(true);
         expect(base).toHaveBeenCalledTimes(1);
         expect(approval.UnlinkConcession).toHaveBeenCalledTimes(1);
-        expect(approval.CloseConcessionTasks).not.toHaveBeenCalled();
+        // Its approval task is already closed and is skipped; an open acknowledgment task is cancelled.
+        expect(approval.CloseConcessionTasks).toHaveBeenCalledWith('concession-1', ORDER_ID, 'Withdrawn', expect.anything(), false);
     });
 
     it('cancels a Pending concession\'s task with its draft line, leaving the order header to the order\'s own save', async () => {

@@ -26,6 +26,10 @@
  * app, assigned to the rule's role holders, in the same transaction as the row. Deciding it on this record,
  * or withdrawing it, closes that task.
  *
+ * ACCOUNTING IS TOLD OF EVERY APPROVAL (golive #268). Any concession reaching Approved, on the requester's authority
+ * or by a decision, raises accounting's acknowledgment task in the same transaction (./ConcessionAcknowledgment.ts).
+ * A term extension raises its own, with the re-cut schedule. Withdrawing the concession closes its task.
+ *
  * WITHDRAWING ONE. A Pending concession can be withdrawn, and so can one approved on the requester's
  * own authority while its order is not confirmed. No approver decided the second kind, and the
  * customer is not yet committed to it; withdrawing and recording it again is how it is measured
@@ -80,6 +84,7 @@ import {
     OrderNetTotal,
 } from './ConcessionGate.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { RaiseConcessionAcknowledgment } from './ConcessionAcknowledgment.js';
 import { ApplyTermsChange, CheckTermsChange } from './PaymentTermsChange.js';
 import { RequireUUID } from './sql-guards.js';
 import { ApplyTermExtension, CheckTermExtension, type ApprovedDurationConcession } from './TermExtension.js';
@@ -162,10 +167,15 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         // A decision made through the task leaves the task to the tasks app, which closes it itself.
         const closing =
             deciding && !this.DecidedThroughTask && (this.Status === 'Approved' || this.Status === 'Rejected') ? this.Status : null;
-        if (extending || changingTerms || closing) {
+        // Every other approval is acknowledged by accounting too (golive #268); an extension's own task carries its schedule.
+        const acknowledging = this.Status === 'Approved' && (recording || deciding) && this.DeliveryForm !== 'Duration';
+        if (extending || changingTerms || closing || acknowledging) {
             return this.withApprovalTask(recording ? 'create' : 'update', () => super.Save(options), async (ctx) => {
+                // Closed first: closing completes every open task linked to the concession, and the acknowledgment
+                // raised below must stay open.
                 if (closing) await CloseConcessionTasks(this.ID, this.OrderHeaderID, closing, ctx);
                 if (extending) await ApplyTermExtension(this.asApprovedExtension(), ctx);
+                if (acknowledging) await RaiseConcessionAcknowledgment(this.asApprovedFacts(), ctx);
                 if (changingTerms) {
                     await ApplyTermsChange(
                         {
@@ -179,6 +189,22 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             });
         }
         return super.Save(options);
+    }
+
+    private asApprovedFacts() {
+        return {
+            ID: this.ID,
+            OrderHeaderID: this.OrderHeaderID,
+            DeliveryForm: this.DeliveryForm,
+            ReasonCategory: this.ReasonCategory,
+            Reason: this.Reason,
+            ComputedValue: Number(this.ComputedValue ?? 0),
+            CumulativeShare: this.CumulativeShare == null ? null : Number(this.CumulativeShare),
+            AddedDays: this.AddedDays,
+            AddedQuantity: this.AddedQuantity,
+            RequestedByUserID: this.RequestedByUserID,
+            ApprovedOnAuthority: !this.SalesRuleID && !!this.AuthorizedBySalesAuthorityID,
+        };
     }
 
     private asApprovedExtension(): ApprovedDurationConcession {
@@ -224,11 +250,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
         const id = this.ID;
         const orderHeaderID = this.OrderHeaderID;
-        const pending = this.Status === 'Pending';
         // A draft-line removal runs inside the order's own save, so the order header is not saved again here.
         const releaseOrder = !this.WithdrawWithDraftLine;
         return this.withApprovalTask('delete', () => super.Delete(options), async (ctx) => {
-            if (pending) await CloseConcessionTasks(id, orderHeaderID, 'Withdrawn', ctx, releaseOrder);
+            // A Pending concession's approval task, or an approved one's acknowledgment task (golive #268).
+            await CloseConcessionTasks(id, orderHeaderID, 'Withdrawn', ctx, releaseOrder);
             await UnlinkConcession(id, ctx);
         });
     }

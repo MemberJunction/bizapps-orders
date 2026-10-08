@@ -42,6 +42,11 @@
  *   CS26      a DiscountPct holds the confirm until a Price concession covers it; inside authority it is Approved
  *   CS27      with no SalesAuthority the same concession is Pending, and the confirm stays held
  *
+ * Accounting hears of every approved concession, not only term extensions (golive #268):
+ *
+ *   CS29      a Price concession approved on the requester's authority raises the acknowledgment task, assigned to
+ *             the acknowledgment role's other holders; withdrawing the concession cancels it
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -169,6 +174,7 @@ async function approvalTasksOf(ctx: IntegrationCheckContext, concessionID: strin
        FROM __mj_BizAppsTasks.Task t
        JOIN __mj_BizAppsTasks.TaskType tt ON tt.ID = t.TypeID
       WHERE t.ID IN (SELECT TaskID FROM __mj_BizAppsTasks.TaskLink WHERE RecordID = '${concessionID}')
+        AND tt.Code <> 'ACTION_ITEM'
       ORDER BY t.__mj_CreatedAt DESC`);
   return Promise.all(tasks.map(async (task) => {
     const links = await TxQuery<{ RecordID: string }>(ctx,
@@ -179,6 +185,17 @@ async function approvalTasksOf(ctx: IntegrationCheckContext, concessionID: strin
         WHERE ta.TaskID = '${task.ID}'`);
     return { Task: task, Links: links, Assignees: assignees, IsLinked: (id: string) => links.some((l) => sameID(l.RecordID, id)) };
   }));
+}
+
+/** Accounting's acknowledgment tasks linked to a concession (golive #268), newest first. */
+async function acknowledgmentTasksOf(ctx: IntegrationCheckContext, concessionID: string) {
+  return TxQuery<{ ID: string; Status: string; Name: string }>(ctx,
+    `SELECT t.ID, t.Status, t.Name
+       FROM __mj_BizAppsTasks.Task t
+       JOIN __mj_BizAppsTasks.TaskType tt ON tt.ID = t.TypeID
+      WHERE tt.Code = 'ACTION_ITEM'
+        AND t.ID IN (SELECT TaskID FROM __mj_BizAppsTasks.TaskLink WHERE RecordID = '${concessionID}')
+      ORDER BY t.__mj_CreatedAt DESC`);
 }
 
 async function orderApprovalTaskID(ctx: IntegrationCheckContext, orderID: string): Promise<string | null> {
@@ -1130,6 +1147,45 @@ export const ConcessionChecks: NamedCheck[] = [
 
         built.Order.Status = "Confirmed";
         Assert(!(await built.Order.Save()), "a Pending concession must hold the confirm");
+      }),
+  },
+  {
+    Id: "concessions.CS29",
+    Name: "CS29: an approved Price concession raises accounting's acknowledgment task; withdrawing it cancels the task",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const acknowledger = await AcknowledgeAmendmentsWith(ctx);
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxPct: 0.25, maxValue: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2, DiscountPct: 0.1 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID });
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        AssertEqual(c.Entity.Status, "Approved", "inside the requester's authority");
+
+        const tasks = await acknowledgmentTasksOf(ctx, c.Entity.ID);
+        AssertEqual(tasks.length, 1, "one acknowledgment task for the approval");
+        AssertEqual(tasks[0].Status, "Open", "open until accounting confirms it");
+        const assignees = await TxQuery<{ AssigneeRecordID: string }>(ctx,
+          `SELECT AssigneeRecordID FROM __mj_BizAppsTasks.TaskAssignment WHERE TaskID = '${tasks[0].ID}'`);
+        Assert(assignees.some((a) => sameID(a.AssigneeRecordID, acknowledger.HolderID)), "assigned to the role's other holder");
+        Assert(!assignees.some((a) => sameID(a.AssigneeRecordID, ctx.User.ID)), "never to the requester");
+        const orderLink = await TxQuery<{ RecordID: string }>(ctx,
+          `SELECT RecordID FROM __mj_BizAppsTasks.TaskLink WHERE TaskID = '${tasks[0].ID}' AND RecordID = '${built.Order.ID}'`);
+        AssertEqual(orderLink.length, 1, "linked to the order as well as the concession");
+
+        Assert(await c.Entity.Delete(), `withdrawing failed: ${c.Entity.LatestResult?.CompleteMessage}`);
+        const after = await TxOne<{ Status: string }>(ctx,
+          `SELECT Status FROM __mj_BizAppsTasks.Task WHERE ID = '${tasks[0].ID}'`);
+        AssertEqual(after.Status, "Cancelled", "withdrawing the concession cancels its acknowledgment");
       }),
   },
 ];
