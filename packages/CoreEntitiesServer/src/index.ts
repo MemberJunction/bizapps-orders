@@ -437,6 +437,8 @@ export {
     SignaturesMatch,
     MapStripeIntentStatus,
     DecideWebhookAction,
+    IsOutOfOrderIntentEvent,
+    SETTLED_INTENT_STATUSES,
     SplitCapturedAmount,
     AchFeeEstimate,
     DecideSettlement,

@@ -22,6 +22,7 @@ import {
     DecideWebhookAction,
     FromMinorUnits,
     HmacSha256Hex,
+    IsOutOfOrderIntentEvent,
     MapStripeIntentStatus,
     SignaturesMatch,
     SplitCapturedAmount,
@@ -253,6 +254,133 @@ describe('DecideWebhookAction', () => {
         // narrowing the list would make old events re-processable.
         expect(DecideWebhookAction({ ...base, AlreadySeen: true, EventKind: 'invoice.created' }).Action)
             .toBe('AlreadyApplied');
+    });
+});
+
+describe('DecideWebhookAction — out of order (#475)', () => {
+    const base = {
+        EventID: 'evt_1',
+        EventKind: 'payment_intent.processing',
+        AlreadySeen: false,
+        HandledKinds: ['payment_intent.processing'] as const,
+        IntentKnown: true,
+    };
+
+    it('answers an out-of-order event as ALREADY APPLIED, so nothing is written and the gateway stops', () => {
+        expect(DecideWebhookAction({ ...base, OutOfOrder: true }).Action).toBe('AlreadyApplied');
+    });
+
+    it('still ignores an out-of-order event for an intent we did not open', () => {
+        expect(DecideWebhookAction({ ...base, OutOfOrder: true, IntentKnown: false }).Action).toBe('Ignore');
+    });
+});
+
+describe('IsOutOfOrderIntentEvent (#475)', () => {
+    const at = (iso: string) => new Date(iso);
+
+    it('a redelivered processing after succeeded is stale, so the bank debit stays Succeeded', () => {
+        // E1 processing at 10:00, E2 succeeded at 10:05 applied; E1 redelivered.
+        expect(
+            IsOutOfOrderIntentEvent({
+                EventStatus: 'Processing',
+                EventOccurredAt: at('2026-10-08T10:00:00Z'),
+                CurrentStatus: 'Succeeded',
+                LastEventAt: at('2026-10-08T10:05:00Z'),
+            }),
+        ).toBe(true);
+    });
+
+    it('a later event is in order', () => {
+        expect(
+            IsOutOfOrderIntentEvent({
+                EventStatus: 'Succeeded',
+                EventOccurredAt: at('2026-10-08T10:05:00Z'),
+                CurrentStatus: 'Processing',
+                LastEventAt: at('2026-10-08T10:00:00Z'),
+            }),
+        ).toBe(false);
+    });
+
+    it('a later bank return after success is in order (status ranking would wrongly refuse it)', () => {
+        expect(
+            IsOutOfOrderIntentEvent({
+                EventStatus: 'Failed',
+                EventOccurredAt: at('2026-10-12T09:00:00Z'),
+                CurrentStatus: 'Succeeded',
+                LastEventAt: at('2026-10-08T10:05:00Z'),
+            }),
+        ).toBe(false);
+    });
+
+    it('a later card success after a decline is in order', () => {
+        expect(
+            IsOutOfOrderIntentEvent({
+                EventStatus: 'Succeeded',
+                EventOccurredAt: at('2026-10-08T10:01:00Z'),
+                CurrentStatus: 'Failed',
+                LastEventAt: at('2026-10-08T10:00:00Z'),
+            }),
+        ).toBe(false);
+    });
+
+    it('on a same-second tie a settled status is kept', () => {
+        expect(
+            IsOutOfOrderIntentEvent({
+                EventStatus: 'Processing',
+                EventOccurredAt: at('2026-10-08T10:00:00.000Z'),
+                CurrentStatus: 'Succeeded',
+                LastEventAt: at('2026-10-08T10:00:00.900Z'),
+            }),
+        ).toBe(true);
+        expect(
+            IsOutOfOrderIntentEvent({
+                EventStatus: 'Succeeded',
+                EventOccurredAt: at('2026-10-08T10:00:00Z'),
+                CurrentStatus: 'Processing',
+                LastEventAt: at('2026-10-08T10:00:00Z'),
+            }),
+        ).toBe(false);
+    });
+
+    it('an event that sets no status (a refund) is never stale', () => {
+        expect(
+            IsOutOfOrderIntentEvent({
+                EventStatus: undefined,
+                EventOccurredAt: at('2026-10-01T00:00:00Z'),
+                CurrentStatus: 'Succeeded',
+                LastEventAt: at('2026-10-08T10:00:00Z'),
+            }),
+        ).toBe(false);
+    });
+
+    it('cannot judge without both times, so it applies', () => {
+        expect(
+            IsOutOfOrderIntentEvent({
+                EventStatus: 'Processing',
+                EventOccurredAt: undefined,
+                CurrentStatus: 'Succeeded',
+                LastEventAt: at('2026-10-08T10:00:00Z'),
+            }),
+        ).toBe(false);
+        expect(
+            IsOutOfOrderIntentEvent({
+                EventStatus: 'Processing',
+                EventOccurredAt: at('2026-10-08T10:00:00Z'),
+                CurrentStatus: 'Succeeded',
+                LastEventAt: null,
+            }),
+        ).toBe(false);
+    });
+
+    it('reads a LastEventAt that arrives as a string from a simple-result view', () => {
+        expect(
+            IsOutOfOrderIntentEvent({
+                EventStatus: 'Processing',
+                EventOccurredAt: at('2026-10-08T10:00:00Z'),
+                CurrentStatus: 'Succeeded',
+                LastEventAt: '2026-10-08T10:05:00.0000000+00:00',
+            }),
+        ).toBe(true);
     });
 });
 
