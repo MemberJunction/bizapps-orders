@@ -165,6 +165,8 @@ export interface RetrievedInstrument {
     ExpiryMonth?: number;
     ExpiryYear?: number;
     HolderName?: string;
+    /** ISO 3166-1 alpha-2 country of the card's issuer, when the gateway reports one. */
+    IssuingCountry?: string;
 }
 
 /** A gateway customer to reuse or create — the owner of any instrument saved for later charges. */

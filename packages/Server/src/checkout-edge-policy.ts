@@ -83,6 +83,28 @@ export function resolveClientIp(
     return hops[idx];
 }
 
+/**
+ * The buyer's IP country as the proxy or CDN in front of MJAPI reports it in `headerName` (for
+ * example Cloudflare's `CF-IPCountry`), for VAT location evidence (#480). Undefined when no header
+ * is configured or the request does not carry it. Returned as sent: the checkout service decides
+ * whether it is a country code, so that rule lives in one place.
+ *
+ * Only configure a header the proxy itself sets and overwrites on every request. A header nothing
+ * in front of MJAPI controls is whatever the browser sent.
+ */
+export function resolveIpCountryHeader(
+    req: { headers: { [key: string]: unknown } },
+    headerName: string | undefined
+): string | undefined {
+    const name = headerName?.trim().toLowerCase();
+    if (!name) {
+        return undefined;
+    }
+    const value = req.headers[name];
+    const first = Array.isArray(value) ? value[0] : value;
+    return typeof first === 'string' ? first : undefined;
+}
+
 export function originAllowed(
     origin: string,
     policy: CheckoutOriginPolicy,

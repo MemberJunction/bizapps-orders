@@ -5,6 +5,7 @@ import {
     isValidCheckoutSlug,
     originAllowed,
     resolveClientIp,
+    resolveIpCountryHeader,
 } from '../checkout-edge-policy.js';
 
 describe('isValidCheckoutSlug', () => {
@@ -87,5 +88,24 @@ describe('resolveClientIp', () => {
     it('falls back to the socket when XFF is missing or too short for the declared hop count', () => {
         expect(resolveClientIp(req(undefined), 1)).toBe('10.0.0.9');
         expect(resolveClientIp(req('only-one'), 2)).toBe('10.0.0.9');
+    });
+});
+
+describe('resolveIpCountryHeader (#480)', () => {
+    it('reads the configured header, whatever case the setting names it in', () => {
+        expect(resolveIpCountryHeader({ headers: { 'cf-ipcountry': 'DE' } }, 'CF-IPCountry')).toBe('DE');
+    });
+
+    it('takes the first value of a repeated header', () => {
+        expect(resolveIpCountryHeader({ headers: { 'x-country': ['NL', 'US'] } }, 'X-Country')).toBe('NL');
+    });
+
+    it('reads nothing when no header is configured, even if the request carries one', () => {
+        expect(resolveIpCountryHeader({ headers: { 'cf-ipcountry': 'DE' } }, undefined)).toBeUndefined();
+        expect(resolveIpCountryHeader({ headers: { 'cf-ipcountry': 'DE' } }, '  ')).toBeUndefined();
+    });
+
+    it('is undefined when the request lacks the header', () => {
+        expect(resolveIpCountryHeader({ headers: {} }, 'CF-IPCountry')).toBeUndefined();
     });
 });
