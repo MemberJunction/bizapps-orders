@@ -251,6 +251,58 @@ export interface ListRefundsResult {
     Refunds?: GatewayRefund[];
 }
 
+/** One charge as the gateway reports it. */
+export interface GatewayCharge {
+    ProviderChargeID: string;
+    ProviderIntentID?: string | null;
+    /** Major units. */
+    Amount: number;
+    /** Major units refunded so far, cumulative. */
+    AmountRefunded: number;
+    CurrencyCode: string;
+    /** The gateway's own status, unmapped (Stripe: succeeded, pending, failed). */
+    Status: string;
+    CreatedAt?: Date;
+}
+
+export interface ListChargesRequest {
+    CreatedFrom?: Date;
+    CreatedTo?: Date;
+}
+
+export interface ListChargesResult {
+    Success: boolean;
+    Reason?: string;
+    Charges?: GatewayCharge[];
+}
+
+export interface RetrieveChargeRequest {
+    ProviderChargeID: string;
+}
+
+export interface RetrieveChargeResult {
+    Success: boolean;
+    Reason?: string;
+    /** True when the gateway answered that no such charge exists, as opposed to failing to answer. */
+    NotFound?: boolean;
+    Charge?: GatewayCharge;
+}
+
+/** One webhook endpoint configured at the gateway. */
+export interface GatewayWebhookEndpoint {
+    Url: string;
+    /** The gateway's own status (Stripe: enabled, disabled). */
+    Status: string;
+    /** The event kinds it sends; `*` means every kind. */
+    EnabledEvents: string[];
+}
+
+export interface ListWebhookEndpointsResult {
+    Success: boolean;
+    Reason?: string;
+    Endpoints?: GatewayWebhookEndpoint[];
+}
+
 /** A gateway event, reduced to the facts this application acts on. */
 export interface WebhookEvent {
     /** The gateway's own event id. Our idempotency key — `PaymentIntent.ProviderEventID` is UNIQUE. */
@@ -378,6 +430,29 @@ export class BasePaymentProvider {
      */
     public async ListRefunds(_request: ListRefundsRequest): Promise<ListRefundsResult> {
         return { Success: false, Reason: this.notImplemented('listing refunds') };
+    }
+
+    /**
+     * Whether this driver can list the gateway's charges, which is what the charge reconciliation
+     * reads (#477). False for a rail with no charges of its own to list.
+     */
+    public get ListsCharges(): boolean {
+        return false;
+    }
+
+    /** The gateway's charges in a time window. Read-only. */
+    public async ListCharges(_request: ListChargesRequest): Promise<ListChargesResult> {
+        return { Success: false, Reason: this.notImplemented('listing charges') };
+    }
+
+    /** One charge by id. Read-only. */
+    public async RetrieveCharge(_request: RetrieveChargeRequest): Promise<RetrieveChargeResult> {
+        return { Success: false, Reason: this.notImplemented('reading a charge') };
+    }
+
+    /** The webhook endpoints configured at the gateway, for the drift check (#477). Read-only. */
+    public async ListWebhookEndpoints(): Promise<ListWebhookEndpointsResult> {
+        return { Success: false, Reason: this.notImplemented('listing webhook endpoints') };
     }
 
     /**
