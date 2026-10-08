@@ -1,0 +1,34 @@
+[
+  {
+    "_comments": [
+      "CHARGE-TO-PAYMENT RECONCILIATION (#477). Its own dot-json so it conflicts with no other change to",
+      "`.orders-remote-operations.json`. The nightly caller is the `Orders.ReconcilePaymentProviderCharges`",
+      "Action; this operation carries the whole check so the Action stays an adapter."
+    ],
+    "fields": {
+      "Name": "Reconcile Payment Provider Charges",
+      "OperationKey": "Orders.ReconcilePaymentProviderCharges",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Match a payment gateway's charges and refunds to Orders' payment intents and captured payments for a window of business days (default: the seven days ending today), and report three kinds of mismatch: a charge with no captured payment, a captured payment whose charge the gateway does not have, and a refunded charge whose payment carries fewer refunds. Corrects nothing. With Preview (the default) it only reports; otherwise each mismatch is raised as a PROVIDER_CHARGE_MISMATCH finance exception, once per mismatch and amount. Only live providers are read; a provider in test mode runs the stub driver and is skipped.",
+      "InputTypeName": "OrdersReconcilePaymentProviderChargesInput",
+      "InputTypeDefinition": "@file:types/orders-reconcile-payment-provider-charges.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersReconcilePaymentProviderChargesOutput",
+      "OutputTypeDefinition": "@file:types/orders-reconcile-payment-provider-charges.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "LongRunning",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "61AAB578-6E38-4AEC-B599-E1534AC9935D"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T18:16:49.412Z",
+      "checksum": "ff107831a247821d9a9068b9ee82ae9f9f6a2e3a6cc5288f5c6fa9c5016a9931"
+    }
+  }
+]
