@@ -270,6 +270,15 @@ describe('DecideWebhookAction — out of order (#475)', () => {
         expect(DecideWebhookAction({ ...base, OutOfOrder: true }).Action).toBe('AlreadyApplied');
     });
 
+    it('gives every skip a stable reason code to record (#474)', () => {
+        expect(DecideWebhookAction({ ...base, OutOfOrder: true }).ReasonCode).toBe('out_of_order');
+        expect(DecideWebhookAction({ ...base, AlreadySeen: true }).ReasonCode).toBe('duplicate');
+        expect(DecideWebhookAction({ ...base, EventKind: 'invoice.created' }).ReasonCode).toBe('kind_not_handled');
+        expect(DecideWebhookAction({ ...base, IntentKnown: false }).ReasonCode).toBe('unknown_intent');
+        expect(DecideWebhookAction({ ...base, EventID: null }).ReasonCode).toBe('no_event_id');
+        expect(DecideWebhookAction(base).ReasonCode).toBeUndefined();
+    });
+
     it('still ignores an out-of-order event for an intent we did not open', () => {
         expect(DecideWebhookAction({ ...base, OutOfOrder: true, IntentKnown: false }).Action).toBe('Ignore');
     });
