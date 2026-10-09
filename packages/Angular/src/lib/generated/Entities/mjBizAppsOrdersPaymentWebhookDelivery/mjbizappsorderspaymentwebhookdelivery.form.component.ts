@@ -15,7 +15,12 @@ export class mjBizAppsOrdersPaymentWebhookDeliveryFormComponent extends BaseForm
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true }
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'deliveryDetails', sectionName: 'Delivery Details', isExpanded: true },
+            { sectionKey: 'paymentReferences', sectionName: 'Payment References', isExpanded: true },
+            { sectionKey: 'outcome', sectionName: 'Outcome', isExpanded: true },
+            { sectionKey: 'receiptHistory', sectionName: 'Receipt History', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }
 }
