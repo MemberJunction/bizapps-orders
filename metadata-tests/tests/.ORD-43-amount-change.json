@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-43 - Amount Change Preview",
+    "Description": "Previewing a lower amount on a booked term (AC1-AC4). Orders.AmendArrangement with NewAmount and Preview plans the change against the term's staged recognition entries and the order's schedule: the share of the reduction already earned is the catch-up, every staged entry from today on is offset and what is left at the new price is re-spread, and the reduction and its tax come off the instalments not yet invoiced before any document is credited. An order billed as a whole is credited itself. AppliesToInvoiceID credits that invoice first. Nothing is written, and recording a change of amount is refused until its application exists.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A 1,200 term billed as a whole previews a cut to 900 with a value of 300, a credit memo equal to the reduction and its tax applied to the order, a catch-up equal to the earned share of the reduction, one offset per staged entry from today on, and a new schedule that sums to what is left; nothing is written. Billed in four instalments of 300 with the first invoiced, the 300 reduction leaves instalments 2 to 4 at 200 each and needs no credit memo. Naming the invoiced instalment credits it with the whole reduction and changes no instalment; naming an uninvoiced one is refused. An increase, recording without Preview, a missing acknowledgment role and a placed renewal are each refused."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "amount-change"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "BBBE388D-B2D6-4725-A5B2-62DEC7F2F4D1"
+  }
+}

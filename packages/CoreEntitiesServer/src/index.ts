@@ -20,6 +20,10 @@ export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from '
 export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
 export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
 export { NetRelease, PlanTermExtension } from './TermExtensionPlan.js';
+export { CheckAmountChange } from './AmountChange.js';
+export type { AmountChangeRequest, CheckedAmountChange } from './AmountChange.js';
+export { PlanAmountChange, PlanReduction } from './AmountChangePlan.js';
+export type { AmountChangeInput, AmountChangePlan, CreditApplication, InstalmentChange, ReductionInput, ReductionInstalment, ReductionPlan } from './AmountChangePlan.js';
 export type { StagedEntry, StagedLine, TermExtensionInput, TermExtensionPlan } from './TermExtensionPlan.js';
 // Each Pending concession is routed to its approvers as its own tasks-app approval task (golive #274).
 export {

@@ -617,7 +617,7 @@
       "Name": "Amend Arrangement",
       "OperationKey": "Orders.AmendArrangement",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
-      "Description": "Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount is refused until its credit-memo path exists.",
+      "Description": "Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount (NewAmount, optionally AppliesToInvoiceID) can be previewed: the catch-up on revenue already earned, the staged entries it offsets and the new schedule, the uninvoiced instalments it reduces and the credit memo; recording one is refused until its application exists.",
       "InputTypeName": "AmendArrangementInput",
       "InputTypeDefinition": "@file:types/orders-amend-arrangement.input.ts",
       "InputTypeIsArray": false,
