@@ -18,6 +18,18 @@
  * THE OTHER RECURRING TRAP: a grant is easy to create twice. It hangs off an order line, and lines get
  * re-saved. EN13 exists for that.
  *
+ * ACCESS OVERRIDES, REQUESTED AND DECIDED (#360, #518). EN21, EN22 and EN24 write approved override
+ * rows directly, because they test enforcement. EN27–EN31 drive `Orders.RequestAccessOverride` and
+ * `Orders.RecordAccessOverrideDecision` themselves, on an unpaid order whose grants are held for
+ * payment, so a WaivePaymentHold is the override that applies:
+ *
+ *   EN27  a request assigns its approval task to the person record of the company's ApprovalCFOUserID
+ *   EN28  with no active company approver, the request is refused
+ *   EN29  a request by the company approver is refused without a fallback role, and with one goes to
+ *         its other holders
+ *   EN30  the requester's decision is refused and the request stays open; the assignee's approval lands
+ *   EN31  past the last day an approval is refused and a rejection is accepted
+ *
  * CONNECTS TO:
  *   PURE:   packages/CoreEntitiesServer/src/EntitlementBehavior.ts (38 unit tests on the rules)
  *   SERVER: EntitlementEngine, OrderEntityServer.grantEntitlements
@@ -32,8 +44,11 @@ import {
   type NamedCheck,
 } from "@memberjunction/testing-integration";
 import {
+  ACCT_SCHEMA,
+  COMMON_SCHEMA,
   CreateProductPrice,
   CreateOrdersFixture,
+  createViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -46,10 +61,12 @@ import {
   upsertViaEntity,
 } from "../fixture.js";
 import { ConfirmOrder } from "../order-builder.js";
-import { BaseRemotableOperation } from "@memberjunction/core";
+import { PERSON_ENTITY } from "../entity-names.js";
+import { BaseRemotableOperation, UserInfo, UserRoleInfo } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
+import { BusinessTimeZoneEngine } from "@mj-biz-apps/common-entities";
 import { OrdersEngine } from "@mj-biz-apps/orders-entities";
-import { EnforcePaymentGatedAccess, OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
+import { EnforcePaymentGatedAccess, ORDERS_SETTING, OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
 
 /**
  * Price a product ONCE, however many times a check asks.
@@ -218,6 +235,126 @@ async function readAccess<TOut>(ctx: IntegrationCheckContext, key: string, input
   const result = await op!.Execute(input, { provider: ctx.Provider, user: ctx.User });
   Assert(result.Success && result.Output != null, `${key} did not execute: ${result.ResultCode ?? result.ErrorMessage ?? "unknown"}`);
   return result.Output!;
+}
+
+
+// ─── Access override requests and decisions (#360, #518) ───────────────────────────────────────
+
+interface OverrideOpOutput {
+  Success: boolean;
+  Message?: string;
+  AccessOverrideID?: string;
+  ApprovalTaskID?: string;
+  Status?: string;
+  GrantsChanged?: number;
+}
+
+/** Run an Orders access override operation as `user`; the operation's own refusal comes back in Output. */
+async function overrideOp(
+  ctx: IntegrationCheckContext,
+  key: "Orders.RequestAccessOverride" | "Orders.RecordAccessOverrideDecision",
+  input: Record<string, unknown>,
+  user: UserInfo,
+): Promise<OverrideOpOutput> {
+  const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<Record<string, unknown>, OverrideOpOutput>>(
+    BaseRemotableOperation,
+    key,
+  );
+  Assert(op != null, `'${key}' is not registered`);
+  const result = await op!.Execute(input, { provider: ctx.Provider, user });
+  Assert(result.Success && result.Output != null, `${key} did not execute: ${result.ErrorMessage ?? result.ResultCode ?? "unknown"}`);
+  return result.Output!;
+}
+
+/**
+ * The context user, also holding Account Director: the role #360 grants the request authorizations.
+ * The role is added in memory, the way the request authorization is read; the user row is untouched.
+ */
+function requester(ctx: IntegrationCheckContext): UserInfo {
+  const role = ctx.Provider.Roles.find((r) => r.Name === "Account Director");
+  Assert(role != null, "role 'Account Director' is not in metadata — run mj sync push for this app");
+  const roles = [...(ctx.User.UserRoles ?? []), new UserRoleInfo({ UserID: ctx.User.ID, RoleID: role!.ID, Role: role!.Name })];
+  return new UserInfo(ctx.Provider, { ...ctx.User, UserRoles: roles });
+}
+
+/** Another active user, with an active person record linked to them, as a UserInfo that can decide. */
+async function otherApprover(ctx: IntegrationCheckContext): Promise<{ User: UserInfo; PersonID: string }> {
+  // A human user: the one the world loader names as the company approver when that is not the
+  // context user, otherwise any active human user. System and Anonymous never decide anything.
+  const row = await TxOne<{ ID: string; Name: string; Email: string; FirstName: string | null; LastName: string | null; Type: string }>(ctx,
+    `SELECT TOP 1 u.ID, u.Name, u.Email, u.FirstName, u.LastName, u.Type FROM __mj.[User] u
+      WHERE u.IsActive = 1 AND u.Type = 'User' AND u.ID <> '${ctx.User.ID}'
+      ORDER BY CASE WHEN u.ID IN (SELECT ApprovalCFOUserID FROM ${ACCT_SCHEMA}.AccountingCompanyProfile WHERE ID = '${Fx().CoA.ID}') THEN 0 ELSE 1 END, u.Name`);
+  Assert(row?.ID != null, "the database has no second active user to approve");
+  const personID = await activePersonFor(ctx, row.ID);
+  return { User: new UserInfo(ctx.Provider, { ...row, IsActive: true, UserRoles: [] }), PersonID: personID };
+}
+
+/** The active person record linked to a user, created when there is none. */
+async function activePersonFor(ctx: IntegrationCheckContext, userID: string): Promise<string> {
+  const existing = await TxQuery<{ ID: string }>(ctx,
+    `SELECT TOP 1 ID FROM ${COMMON_SCHEMA}.Person WHERE LinkedUserID = '${userID}' AND Status = 'Active'`);
+  if (existing[0]?.ID) return existing[0].ID;
+  return createViaEntity(ctx, PERSON_ENTITY, { FirstName: "Override", LastName: "Approver", LinkedUserID: userID, Status: "Active" });
+}
+
+/** Name the order company's approver, or clear it. Rolled back with the check. */
+async function setCompanyApprover(ctx: IntegrationCheckContext, userID: string | null): Promise<void> {
+  const f = Fx();
+  const rows = await TxQuery<{ ID: string }>(ctx, `SELECT ID FROM ${ACCT_SCHEMA}.AccountingCompanyProfile WHERE ID = '${f.CoA.ID}'`);
+  AssertEqual(rows.length, 1, "the fixture company has an accounting profile");
+  await TxQuery(ctx,
+    `UPDATE ${ACCT_SCHEMA}.AccountingCompanyProfile SET ApprovalCFOUserID = ${userID ? `'${userID}'` : "NULL"} WHERE ID = '${f.CoA.ID}'`);
+}
+
+/** The person records an approval task is assigned to. */
+const assignedPersons = (ctx: IntegrationCheckContext, taskID: string) =>
+  TxQuery<{ PersonID: string }>(ctx,
+    `SELECT ta.AssigneeRecordID AS PersonID
+       FROM __mj_BizAppsTasks.TaskAssignment ta JOIN __mj.Entity e ON e.ID = ta.AssigneeEntityID
+      WHERE ta.TaskID = '${taskID}' AND e.Name = '${PERSON_ENTITY}'`);
+
+const overrideRow = (ctx: IntegrationCheckContext, id: string) =>
+  TxOne<{ Status: string; ApprovalTaskID: string | null; RequestedByUserID: string; DecidedByUserID: string | null }>(ctx,
+    `SELECT Status, ApprovalTaskID, RequestedByUserID, DecidedByUserID FROM ${ORDERS_SCHEMA}.EntitlementAccessOverride WHERE ID = '${id}'`);
+
+const sameID = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+/** Run `body` on an unpaid WidgetA order whose grants are held for payment, so a WaivePaymentHold applies. */
+async function withHeldOrder(ctx: IntegrationCheckContext, body: (orderID: string) => Promise<void>): Promise<void> {
+  const f = Fx();
+  await withGrantTiming(ctx, f.Products.WidgetA, "OnFirstPayment", async () => {
+    const order = await buyWidget(ctx);
+    const orderID = order.Order.ID as string;
+    Assert(
+      (await gatesFor(ctx, orderID)).every((g) => g.Status === "Suspended" && g.SuspensionReason === "AwaitingPayment"),
+      "unpaid, the purchase is held for payment",
+    );
+    await body(orderID);
+  });
+}
+
+/** Request a WaivePaymentHold on the order as `user`, through `last` (default: today). */
+async function requestWaiver(ctx: IntegrationCheckContext, orderID: string, user: UserInfo, last?: string): Promise<OverrideOpOutput> {
+  await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+  return overrideOp(ctx, "Orders.RequestAccessOverride", {
+    OrderHeaderID: orderID,
+    OverrideType: "WaivePaymentHold",
+    Reason: "Integration check: purchase order in progress",
+    EffectiveThrough: last ?? addDays(BusinessTimeZoneEngine.Instance.Today(), 1),
+  }, user);
+}
+
+/** Run `body` with the business day read as `day`, then put the engine's clock back. */
+async function onBusinessDay(day: string, body: () => Promise<void>): Promise<void> {
+  const engine = BusinessTimeZoneEngine.Instance;
+  const today = engine.Today;
+  engine.Today = () => day;
+  try {
+    await body();
+  } finally {
+    engine.Today = today;
+  }
 }
 
 export const EntitlementsChecks: NamedCheck[] = [
@@ -1213,6 +1350,179 @@ export const EntitlementsChecks: NamedCheck[] = [
           const paid = await readAccess<{ HasAccess: boolean; Decision: string }>(
             ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "WIDGET-SUPPORT" });
           AssertEqual(paid.Decision, "Granted", "paid, the grant reads Granted though its waiver has run out");
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN27",
+    Name: "EN27: an access override request assigns its approval task to the person record of the company's ApprovalCFOUserID",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const approver = await otherApprover(ctx);
+        await setCompanyApprover(ctx, approver.User.ID);
+        await withHeldOrder(ctx, async (orderID) => {
+          const out = await requestWaiver(ctx, orderID, requester(ctx));
+          Assert(out.Success, `the request was refused: ${out.Message}`);
+          Assert(out.AccessOverrideID != null && out.ApprovalTaskID != null, "the request returns the override and its approval task");
+
+          const row = await overrideRow(ctx, out.AccessOverrideID!);
+          AssertEqual(row.Status, "Requested", "the override waits for its approval");
+          Assert(sameID(row.ApprovalTaskID, out.ApprovalTaskID), "and points at its approval task");
+          Assert(sameID(row.RequestedByUserID, ctx.User.ID), "in the requester's name");
+
+          const assigned = await assignedPersons(ctx, out.ApprovalTaskID!);
+          AssertEqual(assigned.length, 1, "the task has one assignee");
+          Assert(sameID(assigned[0].PersonID, approver.PersonID), "the person record linked to the company's approver");
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Suspended"),
+            "a request changes nothing about access until it is approved",
+          );
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN28",
+    Name: "EN28: an access override request is refused when the order's company has no active approver",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const approver = await otherApprover(ctx);
+        await withHeldOrder(ctx, async (orderID) => {
+          await setCompanyApprover(ctx, null);
+          const unset = await requestWaiver(ctx, orderID, requester(ctx));
+          AssertEqual(unset.Success, false, "with no company approver the request is refused");
+          Assert(/no active approver/.test(unset.Message ?? ""), `and says why: ${unset.Message}`);
+
+          await setCompanyApprover(ctx, approver.User.ID);
+          await TxQuery(ctx, `UPDATE __mj.[User] SET IsActive = 0 WHERE ID = '${approver.User.ID}'`);
+          const inactive = await requestWaiver(ctx, orderID, requester(ctx));
+          AssertEqual(inactive.Success, false, "an inactive company approver counts as none");
+          Assert(/no active approver/.test(inactive.Message ?? ""), `and says why: ${inactive.Message}`);
+
+          const rows = await TxQuery<{ ID: string }>(ctx,
+            `SELECT ID FROM ${ORDERS_SCHEMA}.EntitlementAccessOverride WHERE OrderHeaderID = '${orderID}'`);
+          AssertEqual(rows.length, 0, "a refused request writes no override");
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN29",
+    Name: "EN29: a request by the company approver is refused without a fallback role, and with one goes to its other holders",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const other = await otherApprover(ctx);
+        await setCompanyApprover(ctx, ctx.User.ID);
+        // The fallback role: one the other user holds (given here when they hold none), and that the
+        // requester may hold too, so leaving the requester out is part of what is checked.
+        let role = (await TxQuery<{ ID: string; Name: string }>(ctx,
+          `SELECT TOP 1 r.ID, r.Name FROM __mj.UserRole ur JOIN __mj.Role r ON r.ID = ur.RoleID
+            WHERE ur.UserID = '${other.User.ID}' ORDER BY r.Name`))[0];
+        if (!role) {
+          role = await TxOne<{ ID: string; Name: string }>(ctx, `SELECT TOP 1 ID, Name FROM __mj.Role ORDER BY Name`);
+          await createViaEntity(ctx, "MJ: User Roles", { UserID: other.User.ID, RoleID: role.ID });
+        }
+
+        await withHeldOrder(ctx, async (orderID) => {
+          OrdersSettings.SetOverride(ORDERS_SETTING.AccessOverrideFallbackApproverRole, "");
+          try {
+            const refused = await requestWaiver(ctx, orderID, requester(ctx));
+            AssertEqual(refused.Success, false, "the company approver may not approve their own request, and no fallback is set");
+            Assert(/AccessOverrideFallbackApproverRole/.test(refused.Message ?? ""), `and the refusal names the setting: ${refused.Message}`);
+
+            OrdersSettings.SetOverride(ORDERS_SETTING.AccessOverrideFallbackApproverRole, role.Name);
+            const routed = await requestWaiver(ctx, orderID, requester(ctx));
+            Assert(routed.Success, `with the fallback role set, the request goes through: ${routed.Message}`);
+
+            const expected = await TxQuery<{ PersonID: string }>(ctx,
+              `SELECT p.ID AS PersonID FROM __mj.UserRole ur
+                 JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1
+                 JOIN ${COMMON_SCHEMA}.Person p ON p.LinkedUserID = ur.UserID AND p.Status = 'Active'
+                WHERE ur.RoleID = '${role.ID}' AND ur.UserID <> '${ctx.User.ID}'`);
+            const assigned = await assignedPersons(ctx, routed.ApprovalTaskID!);
+            Assert(assigned.length > 0, "the task is assigned");
+            Assert(assigned.some((a) => sameID(a.PersonID, other.PersonID)), "to the fallback role's other holder");
+            AssertEqual(
+              assigned.map((a) => a.PersonID.toLowerCase()).sort().join(","),
+              [...new Set(expected.map((e) => e.PersonID.toLowerCase()))].sort().join(","),
+              "and to exactly the role's active holders other than the requester",
+            );
+            const mine = await TxQuery<{ ID: string }>(ctx,
+              `SELECT ID FROM ${COMMON_SCHEMA}.Person WHERE LinkedUserID = '${ctx.User.ID}'`);
+            Assert(!assigned.some((a) => mine.some((m) => sameID(m.ID, a.PersonID))), "never to the requester");
+          } finally {
+            OrdersSettings.SetOverride(ORDERS_SETTING.AccessOverrideFallbackApproverRole, undefined);
+          }
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN30",
+    Name: "EN30: the requester's decision on an access override is refused and it stays Requested; the assignee's approval lands",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const approver = await otherApprover(ctx);
+        await setCompanyApprover(ctx, approver.User.ID);
+        await withHeldOrder(ctx, async (orderID) => {
+          const asked = await requestWaiver(ctx, orderID, requester(ctx));
+          Assert(asked.Success, `the request was refused: ${asked.Message}`);
+          const id = asked.AccessOverrideID!;
+
+          for (const outcome of ["Approved", "Rejected"]) {
+            const own = await overrideOp(ctx, "Orders.RecordAccessOverrideDecision", { AccessOverrideID: id, Outcome: outcome }, requester(ctx));
+            AssertEqual(own.Success, false, `the requester's ${outcome} is refused`);
+            Assert(/requested an access override cannot decide it/.test(own.Message ?? ""), `and says why: ${own.Message}`);
+          }
+          AssertEqual((await overrideRow(ctx, id)).Status, "Requested", "the request stays open");
+          const task = await TxOne<{ Status: string }>(ctx, `SELECT Status FROM __mj_BizAppsTasks.Task WHERE ID = '${asked.ApprovalTaskID}'`);
+          AssertEqual(task.Status, "Open", "and its approval task was not closed by the refused decisions");
+
+          const approved = await overrideOp(ctx, "Orders.RecordAccessOverrideDecision",
+            { AccessOverrideID: id, Outcome: "Approved", Notes: "approved by the assignee" }, approver.User);
+          Assert(approved.Success, `the assignee's approval failed: ${approved.Message}`);
+          const row = await overrideRow(ctx, id);
+          AssertEqual(row.Status, "Approved", "the override is Approved");
+          Assert(sameID(row.DecidedByUserID, approver.User.ID), "in the assignee's name");
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Active"),
+            "and the held grants are released at once",
+          );
+        });
+      }),
+  },
+  {
+    Id: "entitlements.EN31",
+    Name: "EN31: past an access override's last day its approval is refused, and its rejection is accepted",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const approver = await otherApprover(ctx);
+        await setCompanyApprover(ctx, approver.User.ID);
+        await withHeldOrder(ctx, async (orderID) => {
+          await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+          const lastDay = BusinessTimeZoneEngine.Instance.Today();
+          const asked = await requestWaiver(ctx, orderID, requester(ctx), lastDay);
+          Assert(asked.Success, `the request was refused: ${asked.Message}`);
+          const id = asked.AccessOverrideID!;
+
+          // The decision is made the day after the last day; only the business clock is moved.
+          await onBusinessDay(addDays(lastDay, 1), async () => {
+            const late = await overrideOp(ctx, "Orders.RecordAccessOverrideDecision", { AccessOverrideID: id, Outcome: "Approved" }, approver.User);
+            AssertEqual(late.Success, false, "an approval after the last day is refused");
+            Assert(/has passed, so it can no longer be approved/.test(late.Message ?? ""), `and says why: ${late.Message}`);
+            AssertEqual((await overrideRow(ctx, id)).Status, "Requested", "the request stays open for a rejection");
+
+            const rejected = await overrideOp(ctx, "Orders.RecordAccessOverrideDecision",
+              { AccessOverrideID: id, Outcome: "Rejected", Notes: "too late" }, approver.User);
+            Assert(rejected.Success, `the rejection failed: ${rejected.Message}`);
+          });
+          AssertEqual((await overrideRow(ctx, id)).Status, "Rejected", "the override is Rejected");
+          Assert(
+            (await gatesFor(ctx, orderID)).every((g) => g.Status === "Suspended"),
+            "and the grants stay held for payment",
+          );
         });
       }),
   },
