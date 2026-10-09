@@ -99,13 +99,13 @@ import {
 } from './ConcessionGate.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { ApplyTermsChange, CheckTermsChange } from './PaymentTermsChange.js';
+import { CheckReferralProgram } from './ReferralProgram.js';
 import { RequireUUID } from './sql-guards.js';
 import { ApplyTermExtension, CheckTermExtension, type ApprovedDurationConcession } from './TermExtension.js';
 
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
-const REFERRAL_PROGRAM_ENTITY = 'MJ_BizApps_Orders: Referral Programs';
 
 /** The columns a requester authors. Once recorded, none of them change. */
 const AUTHORED_FIELDS = [
@@ -472,25 +472,18 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (this.DeliveryForm !== 'Duration' || !this.extendedLine) {
             return 'A referral program grants extra time on a renewed term, so only a Duration concession names one.';
         }
-        if (this.ReasonCategory !== 'Referral') return "A concession under a referral program has the reason category 'Referral'.";
-        const program = await this.loadRow<{ CompanyID: string; Name: string; DaysPerReferral: number; IsActive: boolean }>(
-            REFERRAL_PROGRAM_ENTITY,
-            this.ReferralProgramID!,
-            ['CompanyID', 'Name', 'DaysPerReferral', 'IsActive'],
-            user,
+        const verdict = await CheckReferralProgram(
+            {
+                ReferralProgramID: this.ReferralProgramID!,
+                DeliveryForm: this.DeliveryForm,
+                ReasonCategory: this.ReasonCategory,
+                AddedDays: Number(this.AddedDays ?? 0),
+                OrderHeaderID: this.OrderHeaderID,
+                RenewsSubscriptionID: this.extendedLine.RenewsSubscriptionID,
+            },
+            { Provider: this.provider(), User: user },
         );
-        if (!program) return `Referral program ${this.ReferralProgramID} was not found.`;
-        const order = await this.loadRow<{ CompanyID: string }>(ORDER_HEADER_ENTITY, this.OrderHeaderID, ['CompanyID'], user);
-        if (!order || !UUIDsEqual(order.CompanyID, program.CompanyID)) {
-            return `Referral program '${program.Name}' belongs to another company than this order.`;
-        }
-        if (!this.extendedLine.RenewsSubscriptionID) {
-            return (
-                `Referral program '${program.Name}' adds its time to the next term, on the renewal order. This term was not ` +
-                `bought by a renewal; record the concession against the renewed term once the renewal is confirmed.`
-            );
-        }
-        return !!program.IsActive && Number(this.AddedDays ?? 0) <= Number(program.DaysPerReferral);
+        return typeof verdict === 'string' ? verdict : verdict.InProgram;
     }
 
     private async valueLinePrice(user: UserInfo): Promise<ConcessionValuation | string> {
