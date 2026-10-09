@@ -100,7 +100,7 @@ import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { CheckOrderBillToName, LoadBillToName } from './RailCustomerNameLimit.js';
-import { Today, AllocateProRata, AuthorizeManualDiscount, DeletePromotionAdjustments, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ReadStandingDiscounts, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
+import { Today, AllocateProRata, AuthorizeManualDiscount, DeletePromotionAdjustments, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ReadStandingDiscounts, ReadStatedTaxCharges, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
 const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
@@ -871,6 +871,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // second save of this object (the confirm after a draft) granted it again. Cleared only once
             // committed, so a save that rolls back can be retried with the same requests.
             this._manualDiscounts = [];
+            // A REQUESTED CHARGE IS CONSUMED BY THE SAVE THAT APPLIED IT. Its rows now carry it: a
+            // stated tax is read back from them by `statedTaxForRePricing`, and any other charge keeps
+            // its rows and its line's `ChargeAmount`, which a walk that does not see it leaves alone.
+            // Left in place, a second save of this object (the confirm after a draft) wrote the
+            // charge again and booking credited it twice. Cleared only once committed, so a save
+            // that rolls back can be retried with the same requests.
+            this._charges = [];
             return true;
         } catch (err) {
             LogError(`OrderEntityServer.Save failed for order ${this.OrderNumber ?? this.ID}: ${err}`);
@@ -1279,6 +1286,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // consumed rather than saved as they arrive.
         await this.drainStagedPricingRequests();
         const standingDiscounts = await this.standingDiscountsForRePricing();
+        const restatedTax = await this.statedTaxForRePricing();
 
         // PRICING, PROMOTIONS, CHARGES AND TAX — one call to the service that also answers
         // `Orders.PriceOrder`, so the number the screen shows and the number the ledger books come
@@ -1297,7 +1305,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Lines: [...this.Lines.Items],
                 PromotionCodes: this.PromotionCodes.Codes,
                 ManualDiscounts: this._manualDiscounts,
-                Charges: this._charges,
+                Charges: restatedTax.length ? [...this._charges, ...restatedTax] : this._charges,
                 SettledTax: this._settledTax,
                 StandingDiscounts: standingDiscounts,
             },
@@ -1340,6 +1348,28 @@ export class OrderEntityServer extends OrderHeaderEntity {
             this._promotionsReDecidedFor.push(line.ID);
         }
         return out.size ? out : undefined;
+    }
+
+    /**
+     * The tax a caller stated on this saved order, as requests for this walk — see `ReadStatedTaxCharges`.
+     *
+     * The walk re-resolves tax on every save and the saver replaces the tax rows to match, so a stated
+     * or overridden tax that is not restated is lost at the next save. A request in memory does not
+     * survive a reload, so it is read back from the rows. Nothing on a new order, or on one whose
+     * money is frozen, whose tax rows are never replaced.
+     */
+    private async statedTaxForRePricing(): Promise<RequestedCharge[]> {
+        if (!this.IsSaved || this.MoneyLocked) return [];
+        const lines = this.Lines.Items;
+        if (!lines.some((line) => line.IsSaved)) return [];
+        return ReadStatedTaxCharges(
+            this.ID,
+            lines.map((line) => (line.IsSaved ? line.ID : null)),
+            [...this._settledTax.keys()].filter((line) => line.IsSaved).map((line) => line.ID),
+            this._charges.map((c) => c.Code),
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
     }
 
     /**
