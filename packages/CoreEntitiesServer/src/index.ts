@@ -511,6 +511,20 @@ export {
     PROVIDER_CHARGE_MISMATCH_TYPE_CODE,
 } from './ReconcilePaymentProviderChargesOperation.js';
 export {
+    CheckChargeForOrder,
+    CheckProviderPaymentInput,
+    ProviderPaymentIdempotencyKey,
+    ProviderPaymentLineReason,
+    PROVIDER_PAYMENT_ORDER_ORIGIN,
+    MAX_PROVIDER_CHARGE_ID_LENGTH,
+} from './ProviderPaymentOrder.js';
+export type { ProviderPaymentRefusal, ProviderPaymentRefusalCode, ProviderPaymentOrderRequest, CheckedProviderPaymentRequest } from './ProviderPaymentOrder.js';
+export {
+    CreateOrderFromProviderPaymentOperation,
+    CreateOrderFromGatewayCharge,
+    LoadCreateOrderFromProviderPaymentOperation,
+} from './CreateOrderFromProviderPaymentOperation.js';
+export {
     BookProviderRefunds,
     PlanProviderRefundBooking,
     UnmatchedGatewayRefunds,

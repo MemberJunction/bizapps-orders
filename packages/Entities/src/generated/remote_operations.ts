@@ -773,6 +773,53 @@ export interface CheckEntitlementOutput {
 }
 
 /**
+ * Input for `Orders.CreateOrderFromProviderPayment`.
+ *
+ * Creates a paid order from a gateway charge that matched no order or invoice: the order in the
+ * payment provider's company, one line at the charge's amount, and the charge captured against it.
+ * The product and the buyer are named by the caller.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersCreateOrderFromProviderPaymentInput {
+    /** The payment provider the charge was taken through. Its company receives the order and the cash. */
+    PaymentProviderID: string;
+    /** The gateway's charge id (Stripe: ch_...), as the reconciliation reports it. */
+    ProviderChargeID: string;
+    /** The product the order's one line carries, priced at the charge's amount. */
+    ProductID: string;
+    /** The buyer. */
+    BillToPersonID: string;
+    /** The buyer's organization, when the order is billed to one. */
+    BillToOrganizationID?: string | null;
+}
+
+/**
+ * Output for `Orders.CreateOrderFromProviderPayment`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersCreateOrderFromProviderPaymentOutput {
+    Success: boolean;
+    Message: string;
+    /**
+     * Why nothing was created, when Success is false: BadInput, ProviderNotFound, ChargeNotFound,
+     * ChargeNotSucceeded, ChargeRefunded, ChargeHasNoAmount, ChargeHasNoIntent, CurrencyMismatch,
+     * IntentOpenedByOrders, ConfirmRefused or CaptureRefused.
+     */
+    Code?: string;
+    /** True when an earlier call already created the order for this charge; nothing new was written. */
+    WasExisting?: boolean;
+    OrderHeaderID?: string | null;
+    OrderNumber?: string | null;
+    PaymentIntentID?: string | null;
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    /** The charge's gross amount, which the order totals and the payment records. */
+    Amount?: number | null;
+}
+
+/**
  * Input for `Orders.DetectOverlappingSubscriptions`.
  *
  * The nightly check behind finance exception type OVERLAPPING_SUBSCRIPTION: one exception per
@@ -2405,6 +2452,22 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
     public readonly OperationKey = "Orders.CheckEntitlement";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.CreateOrderFromProviderPayment — Create Order From Provider Payment
+// ============================================================
+/**
+ * Create Order From Provider Payment
+ * Create a paid order from a payment gateway charge that matched no order or invoice. Reads the charge from the gateway, creates and confirms an order in the payment provider's company with one line of the named product at the charge's gross amount, records the gateway intent, and captures the charge against the order, so the gateway's fee is booked and the bank deposit that follows matches. Refuses a charge that has not succeeded, has any refund, has no gateway intent, is in another currency, or belongs to an intent Orders opened. One order per charge: a repeat call returns the order already created and finishes its capture if that had failed.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.CreateOrderFromProviderPayment'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersCreateOrderFromProviderPaymentOperation extends BaseRemotableOperation<OrdersCreateOrderFromProviderPaymentInput, OrdersCreateOrderFromProviderPaymentOutput> {
+    public readonly OperationKey = "Orders.CreateOrderFromProviderPayment";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 
