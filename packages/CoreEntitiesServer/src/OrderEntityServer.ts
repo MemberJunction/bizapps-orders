@@ -3142,8 +3142,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * The subscription lines of this draft whose terms overlap coverage in their family, and what
      * confirm will do with each (golive #276). Writes nothing.
      *
-     * Runs the same decision pass confirm runs, over the SAVED lines. Lines a bundle would add at
-     * confirm are not expanded here, so a band sold inside a bundle is caught at confirm only.
+     * Runs the same decision pass confirm runs, over the SAVED lines. A saved draft already carries
+     * its bundle children (every draft save expands bundles), so a band sold inside a bundle is
+     * reported on its own child line, and acknowledged there.
      */
     public async PreviewCoverageOverlaps(): Promise<LineCoverageOverlap[]> {
         if (this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();

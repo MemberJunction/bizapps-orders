@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB23).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB25).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -31,6 +31,8 @@
  *   SB21  a product cannot join a subscription family of another company
  *   SB22  a band bought with no contact still blocks another band ordered naming one
  *   SB23  a product created on the server takes its product type's defaults (golive #277)
+ *   SB24  a band inside a bundle is previewed on its own line; acknowledging it there confirms
+ *   SB25  acknowledging the bundle line covers the band inside it, in a one-step confirm
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -44,6 +46,7 @@ import {
 import {
     ACCT_SCHEMA,
     COMMON_SCHEMA,
+    CreateBundleItem,
     CreateOrdersFixture,
     CreateProductPrice,
     Fx,
@@ -167,6 +170,13 @@ async function runOperation<TOut>(ctx: IntegrationCheckContext, key: string, inp
     Assert(result.Success, `${key} did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown'}`);
     Assert(result.Output != null, `${key} returned no payload`);
     return result.Output as TOut;
+}
+
+/** Put the premium band into the world's bundle, priced so selling the bundle at 500 needs no concession. */
+async function bundleWithBand(ctx: IntegrationCheckContext): Promise<void> {
+    const f = Fx();
+    await CreateProductPrice(ctx, f.Products.BundleA, 500);
+    await CreateBundleItem(ctx, f.Products.BundleA, f.Products.SubTierPremium, { SortOrder: 30 });
 }
 
 interface OverlapPreview {
@@ -941,6 +951,82 @@ export const SubscriptionChecks: NamedCheck[] = [
                 Assert(SameID(product.RevenueRecognitionTypeID, evenOverTime!.ID), 'the type\'s revenue recognition type was filled in');
                 Assert(SameID(product.SubscriptionTypeID, annualRolling!.ID), 'the type\'s subscription type was filled in');
                 AssertEqual(product.IsTaxable, true, 'the type\'s taxability was filled in');
+            }),
+    },
+    {
+        Id: 'subscriptions.SB24',
+        Name: 'SB24: a band sold inside a bundle is previewed on its own line, and acknowledging it there confirms',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const first = await buySubscription(ctx, 'SubTierStandard', 300);
+                Assert(first.Saved, `first confirm failed: ${first.Message}`);
+                await bundleWithBand(ctx);
+
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.BundleA, Quantity: 1, UnitPrice: 500 }],
+                });
+                Assert(await draft.Order.Save(), `draft save failed: ${draft.Order.LatestResult?.CompleteMessage}`);
+
+                const band = draft.Order.Lines.Items.find((l) => SameID(l.ProductID, f.Products.SubTierPremium));
+                Assert(!!band && !!band.ParentOrderLineID, 'the draft save expanded the bundle, band included');
+
+                const preview = await runOperation<OverlapPreview>(ctx, 'Orders.CheckCoverageOverlap', {
+                    OrderHeaderID: draft.Order.ID,
+                });
+                AssertEqual(preview.Lines.length, 1, 'one overlapping line');
+                Assert(SameID(preview.Lines[0].OrderLineID, band!.ID), 'the overlap is reported on the band\'s own line');
+                AssertEqual(preview.Lines[0].Outcome, 'NeedsAck', 'ExtendExisting refuses unless acknowledged');
+
+                // What the editor does when the box is ticked: set the flag on that line and save.
+                band!.AcknowledgesCoverageOverlap = true;
+                Assert(await draft.Order.Save(), `re-save failed: ${draft.Order.LatestResult?.CompleteMessage}`);
+                const bands = await TxQuery<{ AcknowledgesCoverageOverlap: boolean }>(
+                    ctx,
+                    `SELECT AcknowledgesCoverageOverlap FROM ${ORDERS_SCHEMA}.OrderLine
+                     WHERE OrderHeaderID = '${draft.Order.ID}' AND ProductID = '${f.Products.SubTierPremium}'`,
+                );
+                AssertEqual(bands.length, 1, 'the re-save did not expand the bundle a second time');
+                AssertEqual(bands[0].AcknowledgesCoverageOverlap, true, 'the acknowledgment survived the re-save');
+
+                draft.Order.Status = 'Confirmed';
+                Assert(await draft.Order.Save(), `an acknowledged band inside a bundle must confirm: ${draft.Order.LatestResult?.CompleteMessage}`);
+                AssertEqual((await subscriptionsFor(ctx, 'SubTierPremium')).length, 1, 'the band booked its own subscription');
+                AssertEqual((await subscriptionsFor(ctx, 'SubTierStandard')).length, 1, 'the first band stays live');
+            }),
+    },
+    {
+        Id: 'subscriptions.SB25',
+        Name: 'SB25: acknowledging the bundle line covers the band inside it, confirmed in one step',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const first = await buySubscription(ctx, 'SubTierStandard', 300);
+                Assert(first.Saved, `first confirm failed: ${first.Message}`);
+                await bundleWithBand(ctx);
+
+                const refused = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.BundleA, Quantity: 1, UnitPrice: 500 }],
+                });
+                Assert(!refused.Saved, 'an unacknowledged band inside a bundle is refused');
+                Assert(/Tiered Membership — Premium overlaps coverage/.test(refused.Message), `the refusal names the band, got: ${refused.Message}`);
+
+                const booked = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.BundleA, Quantity: 1, UnitPrice: 500, AcknowledgesCoverageOverlap: true }],
+                });
+                Assert(booked.Saved, `the bundle line's acknowledgment must reach the band: ${booked.Message}`);
+                AssertEqual((await subscriptionsFor(ctx, 'SubTierPremium')).length, 1, 'the band booked its own subscription');
             }),
     },
 ];
