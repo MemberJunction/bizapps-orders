@@ -52,9 +52,13 @@ import {
     ConcessionShare,
     ConcessionValue,
     Money,
+    PickConcessionTier,
     ResolveLinePriceStanding,
     ShareBreach,
     type ConcessionAuthority,
+    type ConcessionTierChoice,
+    type ConcessionTierMeasure,
+    type ConcessionTierRule,
     type ConcessionValuation,
     type PricedLineFacts,
 } from '@mj-biz-apps/orders-entities';
@@ -87,23 +91,42 @@ export async function LoadConcessionAuthority(
     return res?.Results?.[0] ?? null;
 }
 
-/** The active ConcessionLimit rule — the role that decides a concession outside a rep's authority. */
-export async function FindConcessionLimitRule(
-    provider: IMetadataProvider,
-    user: UserInfo,
-): Promise<{ ID: string; Name: string; ApprovalRequiredRoleID: string | null } | null> {
+/**
+ * The active ConcessionLimit rules, each an approval tier (#308). A single rule with no tier or
+ * thresholds is what every installation had before tiers, and it still takes every concession.
+ */
+export async function LoadConcessionTiers(provider: IMetadataProvider, user: UserInfo): Promise<ConcessionTierRule[]> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const res = await rv.RunView<{ ID: string; Name: string; ApprovalRequiredRoleID: string | null }>(
+    const res = await rv.RunView<ConcessionTierRule>(
         {
             EntityName: SALES_RULE_ENTITY,
             ExtraFilter: `RuleType = 'ConcessionLimit' AND IsActive = 1`,
-            Fields: ['ID', 'Name', 'ApprovalRequiredRoleID'],
+            Fields: [
+                'ID',
+                'Name',
+                'ApprovalRequiredRoleID',
+                'ConcessionTier',
+                'MinConcessionValue',
+                'MinConcessionPctOfContract',
+                'MinTermExtensionDays',
+                'RequiresDecisionWithinAuthority',
+            ],
             ResultType: 'simple',
             BypassCache: true,
         },
         user,
     );
-    return res?.Results?.[0] ?? null;
+    if (!res?.Success) throw new Error(`Could not read the ConcessionLimit rules: ${res?.ErrorMessage}`);
+    return res.Results.map((r) => ({ ...r, RequiresDecisionWithinAuthority: !!r.RequiresDecisionWithinAuthority }));
+}
+
+/** The tier that decides a concession: the highest-ranked active ConcessionLimit rule whose thresholds it meets. */
+export async function FindConcessionTier(
+    measure: ConcessionTierMeasure,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<ConcessionTierChoice> {
+    return PickConcessionTier(await LoadConcessionTiers(provider, user), measure);
 }
 
 /** A line as the gate reads it. */

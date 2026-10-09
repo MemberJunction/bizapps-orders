@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const gate = vi.hoisted(() => ({
-    FindConcessionLimitRule: vi.fn(),
+    FindConcessionTier: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
     LoadConcessionAuthority: vi.fn(),
     OrderConcessionTotal: vi.fn(),
@@ -48,7 +48,7 @@ function pendingConcession(decision: 'Approved' | 'Rejected') {
     Object.defineProperty(row, 'ContextCurrentUser', { value: APPROVER });
     Object.defineProperty(row, 'ProviderToUse', { value: {} });
     row.GetFieldByName = (name: string) => (name === 'Status' ? { Dirty: true, OldValue: 'Pending' } : { Dirty: false });
-    row.ApprovingRoleID = async () => 'role-1';
+    row.approvingRule = async () => ({ Name: 'Concession approval', ApprovalRequiredRoleID: 'role-1', RequiresDecisionWithinAuthority: false });
     return { row, values };
 }
 

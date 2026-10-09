@@ -48,7 +48,8 @@ export {
     type ConcessionDecisionResult,
 } from './ConcessionApprovalListener.js';
 export {
-    FindConcessionLimitRule,
+    FindConcessionTier,
+    LoadConcessionTiers,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
     LineConcessionTerms,

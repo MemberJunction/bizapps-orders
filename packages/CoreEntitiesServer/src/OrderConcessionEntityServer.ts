@@ -9,6 +9,11 @@
  * active ConcessionLimit rule whose role decides it. A requester who holds that role approves their
  * own, and the record shows that it went through the rule rather than through their authority.
  *
+ * TIERS (#308). Several active ConcessionLimit rules are approval tiers: the concession goes to the
+ * highest-ranked one whose thresholds it meets (value, share of the order, term-date change), and only
+ * that tier's role decides it. A tier with `RequiresDecisionWithinAuthority` decides every concession
+ * routed to it, inside the requester's authority too, and never lets the requester decide their own.
+ *
  * DECIDING ONE. The only change a recorded concession accepts is Pending → Approved or Rejected, by a
  * holder of the rule's role, with an optional note. A different concession is a new record: withdraw
  * a Pending one (delete it) and record again.
@@ -62,6 +67,8 @@ import {
     IsEditable,
     UserHoldsRole,
     mjBizAppsOrdersOrderConcessionEntity,
+    type ConcessionTierMeasure,
+    type ConcessionTierRule,
     type ConcessionValuation,
 } from '@mj-biz-apps/orders-entities';
 import {
@@ -73,7 +80,7 @@ import {
     type ApprovalTaskContext,
 } from './ConcessionApprovalTask.js';
 import {
-    FindConcessionLimitRule,
+    FindConcessionTier,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
     OrderConcessionTotal,
@@ -203,6 +210,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
     /** What the approval task calls this concession ("25% discount, 3,000.00"), kept by `prepareNew`. */
     private approvalSummary = '';
+    /** The concession's value as a share of what the line would have cost, kept by `prepareNew` for the summary. */
+    private valuedPercent: number | null = null;
 
     /**
      * Set only by `OrderEntityServer` when it deletes a removed DRAFT line's dependents. A booked order
@@ -302,69 +311,102 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.DecidedAt = null;
         this.approvingRole = null;
 
-        if (ConcessionAlwaysEscalates(this.DeliveryForm)) return this.escalate(user);
+        const measure: ConcessionTierMeasure = {
+            Value: valued.Value,
+            CumulativeShare: share,
+            TermDateChangeDays: this.termDateChangeDays,
+        };
+        this.valuedPercent = valued.Percent ?? null;
+
+        if (ConcessionAlwaysEscalates(this.DeliveryForm)) return this.escalate(user, measure);
 
         const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
         const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.termDateChangeDays, share);
+        const tier = await FindConcessionTier(measure, this.provider(), user);
+        if (tier.Conflict) return tier.Conflict;
+
         if (assessment.WithinAuthority && authority) {
             this.AuthorizedBySalesAuthorityID = authority.ID;
+            // A tier that requires sign-off decides it anyway; the authority is recorded as covering it.
+            if (tier.Rule?.RequiresDecisionWithinAuthority) {
+                return this.pendForAnotherHolder(
+                    tier.Rule,
+                    user,
+                    `Tier '${tier.Rule.Name}' requires a decision even within the requester's authority`,
+                );
+            }
             this.decide('Approved', user);
             return null;
         }
 
-        const rule = await FindConcessionLimitRule(this.provider(), user);
+        const rule = tier.Rule;
         if (!rule?.ApprovalRequiredRoleID) {
             return (
                 `This concession is outside the requester's authority (${assessment.Breaches.join('; ')}), and no ` +
-                `active SalesRule of type 'ConcessionLimit' names an approving role, so no one could approve it. ` +
-                `Configure a ConcessionLimit rule with an ApprovalRequiredRoleID.`
+                `active SalesRule of type 'ConcessionLimit' whose thresholds it meets names an approving role, so no ` +
+                `one could approve it. Configure a ConcessionLimit rule with an ApprovalRequiredRoleID and no ` +
+                `thresholds, as the lowest tier.`
             );
+        }
+        if (rule.RequiresDecisionWithinAuthority) {
+            return this.pendForAnotherHolder(rule, user, `Tier '${rule.Name}' requires a decision by someone other than the requester`);
         }
         this.SalesRuleID = rule.ID;
         if (await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID)) {
             this.decide('Approved', user);
         } else {
-            this.Status = 'Pending';
-            this.approvingRole = rule.ApprovalRequiredRoleID;
-            this.approvalSummary = ConcessionSummary({
-                DeliveryForm: this.DeliveryForm,
-                ComputedValue: valued.Value,
-                Percent: valued.Percent,
-                AddedDays: this.AddedDays,
-                AddedQuantity: this.AddedQuantity,
-            });
+            this.pend(rule.ID, rule.ApprovalRequiredRoleID);
         }
         return null;
     }
 
+    /** Pending under a tier: stamped with its rule, routed to its role, and summarised for the approval task. */
+    private pend(ruleID: string, roleID: string): void {
+        this.SalesRuleID = ruleID;
+        this.Status = 'Pending';
+        this.approvingRole = roleID;
+        this.approvalSummary = ConcessionSummary({
+            DeliveryForm: this.DeliveryForm,
+            ComputedValue: Number(this.ComputedValue ?? 0),
+            Percent: this.valuedPercent,
+            AddedDays: this.AddedDays,
+            AddedQuantity: this.AddedQuantity,
+        });
+    }
+
     /**
-     * Route a form that always needs approval to the ConcessionLimit rule's role, whatever the requester's
-     * authority. The requester cannot decide it, so someone else must hold the role.
+     * Route a form that always needs approval to the tier it meets, whatever the requester's authority.
+     * The requester cannot decide it, so someone else must hold the role.
      */
-    private async escalate(user: UserInfo): Promise<string | null> {
-        const rule = await FindConcessionLimitRule(this.provider(), user);
-        if (!rule?.ApprovalRequiredRoleID) {
+    private async escalate(user: UserInfo, measure: ConcessionTierMeasure): Promise<string | null> {
+        const tier = await FindConcessionTier(measure, this.provider(), user);
+        if (tier.Conflict) return tier.Conflict;
+        if (!tier.Rule?.ApprovalRequiredRoleID) {
             return (
                 `A ${this.DeliveryForm} concession always needs approval, and no active SalesRule of type ` +
-                `'ConcessionLimit' names an approving role, so no one could approve it. Configure a ConcessionLimit ` +
-                `rule with an ApprovalRequiredRoleID.`
+                `'ConcessionLimit' whose thresholds it meets names an approving role, so no one could approve it. ` +
+                `Configure a ConcessionLimit rule with an ApprovalRequiredRoleID and no thresholds, as the lowest tier.`
             );
+        }
+        return this.pendForAnotherHolder(tier.Rule, user, `A ${this.DeliveryForm} concession cannot be decided by the person who asked for it`);
+    }
+
+    /**
+     * Pending under `rule`, for a holder of its role other than the requester. Refused up front, with
+     * `why` leading the message, when the requester is the only active holder.
+     */
+    private async pendForAnotherHolder(rule: ConcessionTierRule, user: UserInfo, why: string): Promise<string | null> {
+        if (!rule.ApprovalRequiredRoleID) {
+            return `${why}, and ConcessionLimit rule '${rule.Name}' names no approving role, so no one could decide it.`;
         }
         const holders = await ActiveRoleHolderIDs(rule.ApprovalRequiredRoleID, { Provider: this.provider(), User: user });
         if (!holders.some((id) => !UUIDsEqual(id, user.ID))) {
             return (
-                `A ${this.DeliveryForm} concession cannot be decided by the person who asked for it, and no other active ` +
-                `user holds the role the ConcessionLimit rule names. Assign that role to another approver.`
+                `${why}, and no active user other than the requester holds the role ConcessionLimit rule ` +
+                `'${rule.Name}' names. Assign that role to another approver.`
             );
         }
-        this.SalesRuleID = rule.ID;
-        this.Status = 'Pending';
-        this.approvingRole = rule.ApprovalRequiredRoleID;
-        this.approvalSummary = ConcessionSummary({
-            DeliveryForm: this.DeliveryForm,
-            ComputedValue: Number(this.ComputedValue ?? 0),
-            AddedDays: this.AddedDays,
-        });
+        this.pend(rule.ID, rule.ApprovalRequiredRoleID);
         return null;
     }
 
@@ -502,12 +544,15 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             return `A ${this.DeliveryForm} concession cannot be decided by the person who asked for it.`;
         }
 
-        const roleID = await this.ApprovingRoleID(user);
-        if (!roleID) {
+        const rule = await this.approvingRule(user);
+        if (!rule?.ApprovalRequiredRoleID) {
             return 'This concession names no ConcessionLimit rule with an approving role, so no one can decide it.';
         }
-        if (!(await UserHoldsRole(roleID, this.provider(), user, user.ID))) {
+        if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID))) {
             return 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
+        }
+        if (rule.RequiresDecisionWithinAuthority && UUIDsEqual(user.ID, this.RequestedByUserID)) {
+            return `ConcessionLimit rule '${rule.Name}' requires a decision by someone other than the person who asked for it.`;
         }
         // Measured again at the decision: the draft may have changed while this sat Pending, and the
         // record should show the share the decision was made at.
@@ -521,14 +566,21 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
     /** The role that decides this concession: its ConcessionLimit rule's, or null when it names none. */
     public async ApprovingRoleID(user: UserInfo): Promise<string | null> {
+        return (await this.approvingRule(user))?.ApprovalRequiredRoleID ?? null;
+    }
+
+    /** The ConcessionLimit rule (tier) stamped on this concession, or null when it names none. */
+    private async approvingRule(
+        user: UserInfo,
+    ): Promise<{ Name: string; ApprovalRequiredRoleID: string | null; RequiresDecisionWithinAuthority: boolean } | null> {
         if (!this.SalesRuleID) return null;
-        const rule = await this.loadRow<{ ApprovalRequiredRoleID: string | null }>(
+        const rule = await this.loadRow<{ Name: string; ApprovalRequiredRoleID: string | null; RequiresDecisionWithinAuthority: boolean }>(
             SALES_RULE_ENTITY,
             this.SalesRuleID,
-            ['ApprovalRequiredRoleID'],
+            ['Name', 'ApprovalRequiredRoleID', 'RequiresDecisionWithinAuthority'],
             user,
         );
-        return rule?.ApprovalRequiredRoleID ?? null;
+        return rule ? { ...rule, RequiresDecisionWithinAuthority: !!rule.RequiresDecisionWithinAuthority } : null;
     }
 
     private decide(status: 'Approved' | 'Rejected', user: UserInfo): void {

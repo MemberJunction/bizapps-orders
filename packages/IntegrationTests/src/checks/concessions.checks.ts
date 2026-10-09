@@ -42,6 +42,13 @@
  *   CS26      a DiscountPct holds the confirm until a Price concession covers it; inside authority it is Approved
  *   CS27      with no SalesAuthority the same concession is Pending, and the confirm stays held
  *
+ * Several ConcessionLimit rules are approval tiers (#308):
+ *
+ *   CS32      below a higher tier's threshold the lower tier's role decides; at or above it only the higher tier's,
+ *             and a holder of the lower tier's role cannot decide it
+ *   CS33      a tier that requires sign-off holds a concession within the requester's authority Pending, for
+ *             someone other than the requester
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -119,6 +126,36 @@ async function addRule(ctx: IntegrationCheckContext, ruleType: string, roleID: s
     ApprovalRequiredRoleID: roleID,
     IsActive: 1,
   });
+}
+
+interface TierSpec {
+  roleID: string;
+  tier?: number | null;
+  minValue?: number | null;
+  requiresDecision?: boolean;
+}
+
+/** A ConcessionLimit rule as an approval tier (#308). */
+async function addTier(ctx: IntegrationCheckContext, spec: TierSpec): Promise<string> {
+  return createViaEntity(ctx, SALES_RULE_ENTITY, {
+    Name: `ConcessionLimit tier ${spec.tier ?? 0}`,
+    RuleType: "ConcessionLimit",
+    Scope: "Global",
+    ApprovalRequiredRoleID: spec.roleID,
+    ConcessionTier: spec.tier ?? null,
+    MinConcessionValue: spec.minValue ?? null,
+    RequiresDecisionWithinAuthority: spec.requiresDecision ? 1 : 0,
+    IsActive: 1,
+  });
+}
+
+/** A saved draft of five WidgetA at 100. A Seats concession on its line is worth 100 a seat. */
+async function draftOfFiveWidgets(ctx: IntegrationCheckContext): Promise<string> {
+  const f = Fx();
+  await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+  const built = await BuildOrder(ctx.User, { CompanyID: f.CoA.ID, Lines: [{ ProductID: f.Products.WidgetA, Quantity: 5 }] });
+  Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+  return built.Lines[0].ID;
 }
 
 /**
@@ -1130,6 +1167,68 @@ export const ConcessionChecks: NamedCheck[] = [
 
         built.Order.Status = "Confirmed";
         Assert(!(await built.Order.Save()), "a Pending concession must hold the confirm");
+      }),
+  },
+  {
+    Id: "concessions.CS32",
+    Name: "CS32: below a higher tier's threshold the lower tier decides; at or above it only the higher tier's role can",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        await grantAuthority(ctx, { maxValue: 50 });
+        // This user holds the lower tier's role, not the higher tier's.
+        const lowerID = await addTier(ctx, { roleID: await roleTheUserHolds(ctx), tier: 0 });
+        const higherID = await addTier(ctx, { roleID: await roleTheUserLacks(ctx), tier: 1, minValue: 150 });
+        const lineID = await draftOfFiveWidgets(ctx);
+
+        const below = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: lineID, AddedQuantity: 1 });
+        Assert(below.Saved, `the concession below the threshold did not save: ${below.Message}`);
+        Assert(sameID(below.Entity.SalesRuleID, lowerID), "a 100 concession goes to the lower tier");
+        AssertEqual(below.Entity.Status, "Approved", "which this user, holding its role, decides");
+
+        const above = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: lineID, AddedQuantity: 2 });
+        Assert(above.Saved, `the concession above the threshold did not save: ${above.Message}`);
+        Assert(sameID(above.Entity.SalesRuleID, higherID), "a 200 concession goes to the higher tier");
+        AssertEqual(above.Entity.Status, "Pending", "and waits for its role");
+
+        above.Entity.Status = "Approved";
+        Assert(!(await above.Entity.Save()), "a holder of the lower tier's role must not decide a higher tier's concession");
+        Assert(/Only a holder of the role/.test(above.Entity.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should say why, got: ${above.Entity.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS33",
+    Name: "CS33: a tier that requires sign-off holds a concession within authority Pending, for someone other than the requester",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const authorityID = await grantAuthority(ctx, { maxValue: 5000 });
+        // This user holds the role, and so does someone else.
+        const ruleID = await addTier(ctx, { roleID: await roleSharedWithAnother(ctx), requiresDecision: true });
+        const lineID = await draftOfFiveWidgets(ctx);
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: lineID, AddedQuantity: 1 });
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        AssertEqual(c.Entity.Status, "Pending", "within authority, the sign-off tier still decides it");
+        Assert(sameID(c.Entity.SalesRuleID, ruleID), "stamped with the tier that decides it");
+        Assert(sameID(c.Entity.AuthorizedBySalesAuthorityID, authorityID), "and with the authority that covered it");
+        Assert((await approvalTasksOf(ctx, c.Entity.ID)).length === 1, "it raised its approval task");
+
+        c.Entity.Status = "Approved";
+        Assert(!(await c.Entity.Save()), "the requester must not sign off their own concession, even holding the role");
+        Assert(/someone other than the person who asked for it/.test(c.Entity.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should say why, got: ${c.Entity.LatestResult?.CompleteMessage}`);
+
+        // With the option off, the same rule leaves a concession within authority to the requester's authority.
+        const rule = await new Metadata().GetEntityObject<mjBizAppsOrdersSalesRuleEntity>(SALES_RULE_ENTITY, ctx.User);
+        Assert(await rule.Load(ruleID), "rule did not load");
+        rule.RequiresDecisionWithinAuthority = false;
+        Assert(await rule.Save(), `rule update failed: ${rule.LatestResult?.CompleteMessage}`);
+        const onAuthority = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: lineID, AddedQuantity: 1 });
+        Assert(onAuthority.Saved, `recording failed: ${onAuthority.Message}`);
+        AssertEqual(onAuthority.Entity.Status, "Approved", "without sign-off it is Approved on the requester's authority");
+        AssertEqual(onAuthority.Entity.SalesRuleID ?? null, null, "and no tier decided it");
       }),
   },
 ];
