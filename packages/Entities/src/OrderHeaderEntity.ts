@@ -37,6 +37,7 @@ import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from
 import { ResolveActiveEmployerOrganization } from './PartyAffiliationBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
+import { KeptPartyOrganizationsCompanion } from './KeptPartyOrganizationsCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
 import { ParseDisplacedTermStart, type DisplacedTermStart } from './displaced-term-start';
 
@@ -66,6 +67,8 @@ import {
 export interface PartyOrganizationClear {
     Field: 'BillToOrganizationID' | 'ShipToOrganizationID';
     OrganizationID: string;
+    /** The cleared person whose employer it is. */
+    FromPersonID: string;
 }
 
 /**
@@ -116,6 +119,12 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * and `OrderEntityServer.createInitialPayment` turns it into a `PaymentDetail`.
      */
     public readonly InitialPaymentIntent = this.RegisterCompanion(new InitialPaymentIntentCompanion(this));
+
+    /**
+     * Party organizations to keep through this save's replacement of that side's person. See
+     * {@link KeepPartyOrganization}.
+     */
+    public readonly KeptPartyOrganizations = this.RegisterCompanion(new KeptPartyOrganizationsCompanion(this));
 
     public ClearInitialPaymentDetail(): void {
         this.InitialPaymentIntent.Reference = null;
@@ -803,7 +812,11 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * 1. Copy the bill-to person into an empty ship-to when the bill-to person changed in this
      *    save. Never the other way: an empty ship-to already means "same as bill to", while
      *    filling an empty bill-to would change who pays.
-     * 2. Stamp the employer organization only on a side whose person changed in this save.
+     * 2. On a side whose person this save replaces with another, clear the organization when it
+     *    is the previous person's employer, by the rule {@link ClearPersonParty} applies on the
+     *    form (#542). Not when this save also sets that organization, and not when the writer
+     *    kept it ({@link KeepPartyOrganization}).
+     * 3. Stamp the employer organization only on a side whose person changed in this save.
      *
      * Skips booked/voided orders.
      */
@@ -812,9 +825,44 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
         if (this.isChangedThisSave('BillToPersonID')) this.copyPersonAcross('BillTo', 'ShipTo');
 
+        for (const side of ['BillTo', 'ShipTo'] as const) await this.clearReplacedPersonsEmployer(side);
+
         for (const side of ['BillTo', 'ShipTo'] as const) {
             if (this.isChangedThisSave(`${side}PersonID`)) await this.AutoPopulateEmployerOrganization(side);
         }
+    }
+
+    /**
+     * Keep `field`'s organization through this save's replacement of that side's person, so the
+     * server save does not clear it as the previous person's employer. For writers that replace a
+     * person and mean the organization to stay; an organization set in the same save needs no call.
+     */
+    public KeepPartyOrganization(field: PartyOrganizationClear['Field']): void {
+        const previous = this.GetFieldByName(field === 'BillToOrganizationID' ? 'BillToPersonID' : 'ShipToPersonID')?.OldValue as string | null;
+        if (previous) this.KeptPartyOrganizations.Keep(field, previous);
+    }
+
+    /**
+     * When this save replaces `side`'s person with another, clear that side's organization if it is
+     * the previous person's employer, so the stamp that follows brings the new person's. Leaves an
+     * organization this save sets, one the writer kept, and a side whose person is only cleared:
+     * an order may bill an organization with no person.
+     */
+    private async clearReplacedPersonsEmployer(side: 'BillTo' | 'ShipTo'): Promise<void> {
+        const person = this.GetFieldByName(`${side}PersonID`);
+        const previous = person?.OldValue as string | null | undefined;
+        if (!person?.Dirty || !person.Value || !previous || UUIDsEqual(person.Value as string, previous)) return;
+
+        const orgField = `${side}OrganizationID` as PartyOrganizationClear['Field'];
+        const org = this.GetFieldByName(orgField);
+        if (!org || org.Dirty || !org.Value) return;
+        if (this.KeptPartyOrganizations.IsKept(orgField, previous)) return;
+
+        const employer = await this.employerOf(previous);
+        if (!employer || !UUIDsEqual(org.Value as string, employer)) return;
+        this.clearPartyField(orgField);
+        // A copy taken away, not the writer's empty: the new person's employer may fill it.
+        this.partyCopiesCleared.add(orgField);
     }
 
     /** Copy `from`'s person into `to` when `to` has none and the user did not empty it in this save. */
@@ -882,7 +930,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             if (employer && UUIDsEqual(org, employer)) {
                 this.clearPartyField(orgField);
                 this.partyCopiesCleared.add(orgField);
-                cleared.push({ Field: orgField, OrganizationID: org });
+                cleared.push({ Field: orgField, OrganizationID: org, FromPersonID: clearedPersonID });
             }
         }
         return cleared;
@@ -890,13 +938,15 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
     /**
      * Put back organizations {@link ClearPersonParty} cleared by the employer rule, replacing any
-     * employer a new person brought since. They then count as the user's.
+     * employer a new person brought since. They then count as the user's, and the server save
+     * keeps them through the replacement ({@link KeptPartyOrganizations}).
      */
     public RestorePartyOrganizations(cleared: readonly PartyOrganizationClear[]): void {
         for (const c of cleared) {
             this.Set(c.Field, c.OrganizationID);
             this.partyFills.delete(c.Field);
             this.partyCopiesCleared.delete(c.Field);
+            this.KeptPartyOrganizations.Keep(c.Field, c.FromPersonID);
         }
     }
 
