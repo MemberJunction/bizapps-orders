@@ -277,7 +277,7 @@ function requester(ctx: IntegrationCheckContext): UserInfo {
   return new UserInfo(ctx.Provider, { ...ctx.User, UserRoles: roles });
 }
 
-/** Another active user, with an active person record linked to them, as a UserInfo that can decide. */
+/** Another active human user, with an active person record linked to them, as a UserInfo that can decide. */
 async function otherApprover(ctx: IntegrationCheckContext): Promise<{ User: UserInfo; PersonID: string }> {
   // A human user: the one the world loader names as the company approver when that is not the
   // context user, otherwise any active human user. System and Anonymous never decide anything.
@@ -287,7 +287,10 @@ async function otherApprover(ctx: IntegrationCheckContext): Promise<{ User: User
       ORDER BY CASE WHEN u.ID IN (SELECT ApprovalCFOUserID FROM ${ACCT_SCHEMA}.AccountingCompanyProfile WHERE ID = '${Fx().CoA.ID}') THEN 0 ELSE 1 END, u.Name`);
   Assert(row?.ID != null, "the database has no second active user to approve");
   const personID = await activePersonFor(ctx, row.ID);
-  return { User: new UserInfo(ctx.Provider, { ...row, IsActive: true, UserRoles: [] }), PersonID: personID };
+  // The approver holds the context user's roles, in memory: deciding writes a Task Decision and the
+  // override, which the generated permissions grant to Developer and Integration only, not to UI.
+  const roles = (ctx.User.UserRoles ?? []).map((r) => new UserRoleInfo({ UserID: row.ID, RoleID: r.RoleID, Role: r.Role }));
+  return { User: new UserInfo(ctx.Provider, { ...row, IsActive: true, UserRoles: roles }), PersonID: personID };
 }
 
 /** The active person record linked to a user, created when there is none. */
