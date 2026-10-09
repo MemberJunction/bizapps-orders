@@ -221,9 +221,14 @@ export function MapStripeIntentStatus(providerStatus: string | null | undefined)
 /** What a webhook should cause, decided before anything is written. */
 export type WebhookAction = 'Apply' | 'AlreadyApplied' | 'Ignore' | 'Reject';
 
+/** Why a delivery is not applied, short and stable so it can be stored and filtered on (#474). */
+export type WebhookReasonCode = 'no_event_id' | 'duplicate' | 'kind_not_handled' | 'unknown_intent' | 'out_of_order';
+
 export interface WebhookDecision {
     Action: WebhookAction;
     Reason: string;
+    /** Set for every action except `Apply`. */
+    ReasonCode?: WebhookReasonCode;
 }
 
 /**
@@ -246,23 +251,86 @@ export function DecideWebhookAction(input: {
     HandledKinds: readonly string[];
     /** False when the event names an intent we have no record of. */
     IntentKnown: boolean;
+    /**
+     * True when the event is older than the one that set the intent's current status — see
+     * `IsOutOfOrderIntentEvent`. Omitted means in order.
+     */
+    OutOfOrder?: boolean;
 }): WebhookDecision {
     if (!input.EventID) {
-        return { Action: 'Reject', Reason: 'the event carried no id, so it cannot be de-duplicated' };
+        return { Action: 'Reject', ReasonCode: 'no_event_id', Reason: 'the event carried no id, so it cannot be de-duplicated' };
     }
     if (input.AlreadySeen) {
-        return { Action: 'AlreadyApplied', Reason: `event ${input.EventID} has already been applied` };
+        return { Action: 'AlreadyApplied', ReasonCode: 'duplicate', Reason: `event ${input.EventID} has already been applied` };
     }
     if (!input.EventKind || !input.HandledKinds.includes(input.EventKind)) {
-        return { Action: 'Ignore', Reason: `'${input.EventKind ?? 'unknown'}' is not an event this integration acts on` };
+        return {
+            Action: 'Ignore',
+            ReasonCode: 'kind_not_handled',
+            Reason: `'${input.EventKind ?? 'unknown'}' is not an event this integration acts on`,
+        };
     }
     if (!input.IntentKnown) {
         // NOT an error. A gateway account may serve more than this application, and an intent we did
         // not create is simply not ours — rejecting it would mean retries forever for someone else's
         // traffic.
-        return { Action: 'Ignore', Reason: 'the event names a payment intent this application did not create' };
+        return { Action: 'Ignore', ReasonCode: 'unknown_intent', Reason: 'the event names a payment intent this application did not create' };
+    }
+    if (input.OutOfOrder) {
+        // A SUCCESS, like a duplicate. The intent already reflects something the gateway said later, so
+        // applying this would move it backwards; answering anything but 2xx would make the gateway
+        // redeliver it for days.
+        return {
+            Action: 'AlreadyApplied',
+            ReasonCode: 'out_of_order',
+            Reason: `event ${input.EventID} is older than the event that set the intent's current status`,
+        };
     }
     return { Action: 'Apply', Reason: `event ${input.EventID} is new and actionable` };
+}
+
+/** Intent statuses that end a lifecycle. On a same-second tie, one of these is kept (see below). */
+export const SETTLED_INTENT_STATUSES: readonly IntentStatus[] = ['Succeeded', 'Canceled'];
+
+/**
+ * Whether an event would move an intent's status backwards (#475).
+ *
+ * Gateways do not promise delivery order, and they redeliver any event whose 2xx was lost. Comparing
+ * only the last stored event id treats an earlier event as new, so a redelivered `processing` after
+ * `succeeded` put a bank debit back to `Processing` and checkout capture then refused it.
+ *
+ * THE GATEWAY'S CLOCK DECIDES, not ours. `LastEventAt` holds the gateway time of the event (or the
+ * gateway read) that set the current status; an event created before it is stale.
+ *
+ * ONLY STATUS-BEARING EVENTS ARE JUDGED. An event that sets no status (a refund) cannot move the
+ * status backwards, so it is never stale.
+ *
+ * A SAME-SECOND TIE keeps a settled status (Succeeded/Canceled) against an unsettled one. Ranking the
+ * statuses outright was the alternative and it is wrong in both directions: a declined card is
+ * followed by a later success on retry, and a bank debit that succeeded can later fail when the bank
+ * returns it — both are real later events that a ranking would refuse.
+ */
+export function IsOutOfOrderIntentEvent(input: {
+    /** The status the event would set; null or undefined when it sets none. */
+    EventStatus: IntentStatus | null | undefined;
+    /** When the gateway says the event happened. */
+    EventOccurredAt: Date | null | undefined;
+    /** `PaymentIntent.Status` now. */
+    CurrentStatus: string | null | undefined;
+    /** `PaymentIntent.LastEventAt` now. */
+    LastEventAt: Date | string | null | undefined;
+}): boolean {
+    if (!input.EventStatus || !input.EventOccurredAt || input.LastEventAt == null) return false;
+    const eventAt = input.EventOccurredAt.getTime();
+    const lastAt = new Date(input.LastEventAt).getTime();
+    if (!Number.isFinite(eventAt) || !Number.isFinite(lastAt)) return false;
+    // Stripe's `created` is whole seconds, so compare at that grain.
+    const eventSecond = Math.floor(eventAt / 1000);
+    const lastSecond = Math.floor(lastAt / 1000);
+    if (eventSecond < lastSecond) return true;
+    if (eventSecond > lastSecond) return false;
+    const current = (input.CurrentStatus ?? '') as IntentStatus;
+    return SETTLED_INTENT_STATUSES.includes(current) && !SETTLED_INTENT_STATUSES.includes(input.EventStatus);
 }
 
 /**
