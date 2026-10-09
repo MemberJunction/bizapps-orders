@@ -192,7 +192,7 @@ export type {
 
 export { CancelSubscriptionOperation, LoadCancelSubscriptionOperation } from './CancelSubscriptionOperation.js';
 export { AmendArrangementOperation, LoadAmendArrangementOperation } from './AmendArrangementOperation.js';
-export type { AmendArrangementInput, AmendArrangementOutput } from './AmendArrangementOperation.js';
+export type { AmendArrangementInput, AmendArrangementOutput } from '@mj-biz-apps/orders-entities';
 export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './CancelSubscriptionOperation.js';
 
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';

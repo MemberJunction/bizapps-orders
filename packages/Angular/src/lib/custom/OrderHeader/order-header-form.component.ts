@@ -6,7 +6,15 @@ import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
-import { DescribeDisplacedTermStart, LoadOrdersEngine, OrderHeaderEntity, type DateCell, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
+import {
+    DescribeClearedEmployers,
+    DescribeDisplacedTermStart,
+    LoadOrdersEngine,
+    OrderHeaderEntity,
+    type DateCell,
+    type mjBizAppsOrdersPaymentTypeEntity,
+    type PartyOrganizationClear,
+} from '@mj-biz-apps/orders-entities';
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
 import {
     BuildOrderJournalEntryRows,
@@ -442,13 +450,39 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return !this.record.ShipToOrganizationID && !this.record.ShipToPersonID && !this.record.ShipToAddressID;
     }
 
+    /**
+     * Organizations cleared with the person they employed, which the user can put back (#356).
+     * Nothing records that a default stamped them, so the form says what it did.
+     */
+    public ClearedEmployerNotice: { Message: string; Cleared: PartyOrganizationClear[] } | null = null;
+
     public async OnPartyPersonChange(side: 'BillTo' | 'ShipTo', change: { OldValue: unknown; NewValue: unknown }): Promise<void> {
         if (!this.record || !this.EditMode) return;
+        const record = this.record;
+        // Read before the clear: the name columns still describe the previous party until reload.
+        const names: Record<PartyOrganizationClear['Field'], string | null> = {
+            BillToOrganizationID: record.BillToOrganization,
+            ShipToOrganizationID: record.ShipToOrganization,
+        };
         // The defaults the previous person brought with them go first, so a replacement person
         // brings their own instead of inheriting the old copies.
-        this.record.ClearPersonParty(side, (change.OldValue as string | null) || null);
-        if (change.NewValue) await this.record.ApplyPersonPartyDefaults(side);
+        const cleared = await record.ClearPersonParty(side, (change.OldValue as string | null) || null);
+        if (change.NewValue) await record.ApplyPersonPartyDefaults(side);
+        // A replacement at the same employer brought the same organization back: nothing to undo.
+        const lost = cleared.filter((c) => !UUIDsEqual(record.Get(c.Field) as string | null, c.OrganizationID));
+        this.ClearedEmployerNotice = lost.length ? { Message: DescribeClearedEmployers(lost, names), Cleared: lost } : null;
         this.cdr.detectChanges();
+    }
+
+    public UndoClearedEmployers(): void {
+        if (!this.record || !this.ClearedEmployerNotice) return;
+        this.record.RestorePartyOrganizations(this.ClearedEmployerNotice.Cleared);
+        this.ClearedEmployerNotice = null;
+        this.cdr.detectChanges();
+    }
+
+    public DismissClearedEmployers(): void {
+        this.ClearedEmployerNotice = null;
     }
 
     public get hasBillTo(): boolean {

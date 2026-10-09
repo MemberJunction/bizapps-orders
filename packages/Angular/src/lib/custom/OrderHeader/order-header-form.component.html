@@ -161,6 +161,15 @@
             </div>
         }
 
+        @if (ClearedEmployerNotice) {
+            <div class="mjo-oh-todo" role="status">
+                <i class="fa-solid fa-building-circle-xmark"></i>
+                <span>{{ ClearedEmployerNotice.Message }}</span>
+                <button type="button" (click)="UndoClearedEmployers()">Undo</button>
+                <button type="button" aria-label="Dismiss" (click)="DismissClearedEmployers()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        }
+
         @if (DisplacedStartNotices.length > 0) {
             <div class="mjo-oh-todo mjo-oh-moved" role="status">
                 <i class="fa-solid fa-calendar-xmark"></i>
