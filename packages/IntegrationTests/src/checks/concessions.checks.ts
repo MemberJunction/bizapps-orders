@@ -56,7 +56,7 @@
  *
  *   CS31      naming a referral program on a term that is not a renewal is refused; on the renewed term, time within
  *             the program's days is Approved by the program with no authority, and more than that is routed Pending
- *   CS32      Orders.AmendArrangement takes the program: its preview says whether the program approves and writes
+ *   CS34      Orders.AmendArrangement takes the program: its preview says whether the program approves and writes
  *             nothing; in-program days are Approved and applied in the call, more days are recorded Pending
  *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
@@ -1326,8 +1326,8 @@ export const ConcessionChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "concessions.CS32",
-    Name: "CS32: Orders.AmendArrangement takes a referral program: preview, in-program applied, more days Pending",
+    Id: "concessions.CS34",
+    Name: "CS34: Orders.AmendArrangement takes a referral program: preview, in-program applied, more days Pending",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
