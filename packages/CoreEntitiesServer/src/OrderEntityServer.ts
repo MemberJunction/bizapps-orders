@@ -3304,6 +3304,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         EndDate: decision.Term.EndDate,
                         ConcurrencyMode: rules.ConcurrencyMode,
                         SubscriptionTypeCode: rules.Code,
+                        CancellationMode: rules.CancellationMode,
+                        GracePeriodDays: rules.GracePeriodDays,
+                        // Another line of this order has no subscription yet, so there is nothing to cancel.
+                        Cancelable: false,
                     },
                 ]);
             }
@@ -3756,6 +3760,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 EndDate: endDate,
                 ConcurrencyMode: rules.ConcurrencyMode,
                 SubscriptionTypeCode: rules.Code,
+                CancellationMode: rules.CancellationMode,
+                GracePeriodDays: rules.GracePeriodDays,
+                Cancelable: sub.Status !== 'Canceled',
             });
         }
         return out;
