@@ -100,7 +100,7 @@ import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { CheckOrderBillToName, LoadBillToName } from './RailCustomerNameLimit.js';
-import { Today, AllocateProRata, AuthorizeManualDiscount, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
+import { Today, AllocateProRata, AuthorizeManualDiscount, DeletePromotionAdjustments, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ReadStandingDiscounts, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
 const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
@@ -322,6 +322,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private _pendingPromotions: PromotionRunResult | null = null;
     private _pendingCharges: ComputeChargesResult | null = null;
+    /**
+     * The saved lines whose promotions this save re-decides, so the saver replaces their earlier
+     * promotion rows. Empty unless `prepareLines` handed the walk their standing discounts.
+     */
+    private _promotionsReDecidedFor: string[] = [];
 
     /** Codes that resolved to nothing usable, so the caller can tell the customer WHY. */
     private _unusableCodes: Array<{ Code: string; Reason: string }> = [];
@@ -861,6 +866,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             if (booking && this.OrderType === 'Sale') await this.recordOrderConfirmedEvent(options);
 
             await dbProvider.CommitTransaction();
+            // A REQUESTED DISCOUNT IS CONSUMED BY THE SAVE THAT APPLIED IT. Its adjustment row and the
+            // line's stored discount now carry it, and the next walk starts from those. Left in place, a
+            // second save of this object (the confirm after a draft) granted it again. Cleared only once
+            // committed, so a save that rolls back can be retried with the same requests.
+            this._manualDiscounts = [];
             return true;
         } catch (err) {
             LogError(`OrderEntityServer.Save failed for order ${this.OrderNumber ?? this.ID}: ${err}`);
@@ -1268,6 +1278,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // request arrays before pricing runs. See `drainStagedPricingRequests` for why the rows are
         // consumed rather than saved as they arrive.
         await this.drainStagedPricingRequests();
+        const standingDiscounts = await this.standingDiscountsForRePricing();
 
         // PRICING, PROMOTIONS, CHARGES AND TAX — one call to the service that also answers
         // `Orders.PriceOrder`, so the number the screen shows and the number the ledger books come
@@ -1288,6 +1299,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 ManualDiscounts: this._manualDiscounts,
                 Charges: this._charges,
                 SettledTax: this._settledTax,
+                StandingDiscounts: standingDiscounts,
             },
             settledFromOrigin,
         );
@@ -1300,13 +1312,45 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * The non-promotion discount on each saved line, when this save re-decides the order's promotions.
+     *
+     * The codes ride the order object, so a draft saved with a code and then confirmed runs the
+     * promotion engine twice. The confirm must REPLACE the draft's promotion rows rather than add a
+     * second set, and keep what is not a promotion's: manual discounts are requests consumed once and
+     * are not re-decided. Undefined, and nothing is replaced, when no code is presented, when the
+     * order is new, or when its money is frozen.
+     */
+    private async standingDiscountsForRePricing(): Promise<Map<mjBizAppsOrdersOrderLineEntity, number> | undefined> {
+        this._promotionsReDecidedFor = [];
+        if (!this.PromotionCodes.Codes.length || !this.IsSaved || this.MoneyLocked) return undefined;
+        const saved = this.Lines.Items.filter((line) => line.IsSaved);
+        if (!saved.length) return undefined;
+
+        const byID = await ReadStandingDiscounts(
+            this.ID,
+            saved.map((line) => line.ID),
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+        const out = new Map<mjBizAppsOrdersOrderLineEntity, number>();
+        for (const line of saved) {
+            const kept = byID.get(String(line.ID).toLowerCase());
+            if (kept === undefined) continue;
+            out.set(line, kept);
+            this._promotionsReDecidedFor.push(line.ID);
+        }
+        return out.size ? out : undefined;
+    }
+
+    /**
      * Write the lines that `prepareLines` settled, plus the adjustment rows that need their keys.
      */
     /**
      * Write the adjustment and allocation rows once the lines have real IDs.
      *
      * These only ADD rows — the frozen line is never touched again, which is what keeps this clear
-     * of the immutability trigger.
+     * of the immutability trigger. A re-decided saved line has its earlier promotion rows removed
+     * first, in `savePendingLines`.
      */
     private async writePromotionRecords(
         run: PromotionRunResult,
@@ -1499,6 +1543,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         // The adjustment and charge rows need line IDs, so they follow the insert — but they only ADD
         // rows and never touch the frozen line again.
+        // A PROMOTION RE-DECIDED ON A SAVED LINE REPLACES ITS EARLIER ROWS, for the reason tax does
+        // below: the draft's own save wrote them, and this walk's would sit beside them. Only the
+        // lines `standingDiscountsForRePricing` named, whose discount the walk restated without the
+        // old promotion; manual discount rows stay.
+        await this.deletePromotionRecords();
         if (pending) await this.writePromotionRecords(pending, persisted);
         // EXCEPT TAX, which this walk re-resolved for every line. A saved draft already holds the tax
         // rows its own save wrote; adding this walk's beside them credits the tax twice at booking
@@ -1513,6 +1562,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
 
 
+
+    /** Remove the promotion rows an earlier save wrote for the re-decided lines — see `DeletePromotionAdjustments`. */
+    private async deletePromotionRecords(): Promise<void> {
+        const lineIDs = this._promotionsReDecidedFor ?? [];
+        if (!lineIDs.length) return;
+        await DeletePromotionAdjustments(
+            this.ID,
+            lineIDs,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+        this._promotionsReDecidedFor = [];
+    }
 
     /** Remove the tax rows an earlier save wrote for these lines — see `DeleteTaxCharges`. */
     private async deleteTaxRecords(persisted: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {

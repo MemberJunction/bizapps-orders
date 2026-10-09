@@ -119,6 +119,15 @@ export interface OrderPricingContext {
      */
     SettledTax?: ReadonlyMap<mjBizAppsOrdersOrderLineEntity, ReadonlyArray<Omit<RequestedCharge, 'TargetLineID'>>>;
     /**
+     * For a saved order whose promotions this walk RE-DECIDES: each saved line's discount that is not
+     * a promotion's (manual discounts, a stated amount), read from the database.
+     *
+     * A line named here takes this walk's promotion figure plus this, replacing what it stored, and
+     * the saver replaces the earlier promotion rows to match. A line not named keeps its stored
+     * discount as before. Absent on every path that does not re-decide a saved order's promotions.
+     */
+    StandingDiscounts?: ReadonlyMap<mjBizAppsOrdersOrderLineEntity, number>;
+    /**
      * Force this list, ignoring customer assignment — PreviewPrice "what if" and tests.
      * `undefined` means resolve from the bill-to; explicit `null` means base price only.
      */
@@ -306,7 +315,18 @@ export class OrderPricingService {
         // Keyed off the VALUE rather than off `IsSaved`, so the preview walks agree with the booking
         // walk: they price copies that were never saved, and hand them the stored discount to start
         // from. A genuinely new line carries zero and is unaffected either way.
+        //
+        // A SAVED LINE WHOSE PROMOTIONS ARE RE-DECIDED starts from what it holds that is not a
+        // promotion's, so the promotion is replaced rather than added and a manual discount granted on
+        // the draft is not dropped. Its total is assigned even when it comes to zero: a code that no
+        // longer applies takes its discount with it, and the saver removes its rows.
+        const standing = this.ctx.StandingDiscounts;
         for (const l of lines) {
+            const kept = standing?.get(l.Entity);
+            if (kept !== undefined) {
+                run.PerLine.set(l.ID, Money((run.PerLine.get(l.ID) ?? 0) + kept));
+                continue;
+            }
             if (run.PerLine.has(l.ID)) continue;
             const stored = Money(Number(l.Entity.DiscountAmount ?? 0));
             if (stored > 0) run.PerLine.set(l.ID, stored);
@@ -366,7 +386,7 @@ export class OrderPricingService {
         // Stamp the lines while they are still unsaved.
         for (const l of lines) {
             const total = run.PerLine.get(l.ID);
-            if (total) l.Entity.DiscountAmount = total;
+            if (total || standing?.has(l.Entity)) l.Entity.DiscountAmount = total ?? 0;
         }
         return run;
     }
