@@ -1,5 +1,24 @@
 # @mj-biz-apps/orders-entities
 
+## 5.30.0
+
+### Minor Changes
+
+- de9be4d: `orders-entities` exports the "customer already holds this product" lookup behind a subscription line's extend-or-new question: `FindExistingHolding`, `HoldingSubscriberFor` and `FindUnansweredHeldLines`. It uses `RunView` only, so another app's server can refuse a confirm or a close while a line for a held product has no `SubscriptionAction`, using the same rule the order screen asks with. A failed read throws instead of reporting no holding. `orders-ng`'s `GetExistingHolding` and the order line editor now call it.
+- d8efa9f: Another app can now refuse an order's confirm, through a seam beside the one that refuses a line edit.
+
+  Confirming is where an order stops being a proposal: journal entries are written, a subscription may be created, recognition follows. Orders enforces its own rules — a legal status, a bill-to party, at least one line, a service period where one is needed — but it cannot know that an app upstream has a reason to say "not yet".
+
+  The case this exists for (bc-aidp-next-golive#323): Sales closes a deal Won, which mints the order; the deal is then reopened to Open; the order is confirmed from the order screen and books anyway, leaving an Open deal sitting on a booked order. Sales already refuses the reverse.
+
+  Nothing registers into this on the day it ships, and it cannot: Sales resolves this package from the registry and cannot call a function that has not been published. `HostOrderConfirmVeto()` returns null until something registers, the check returns early, and no host behaves differently.
+
+### Patch Changes
+
+- 5d531bf: Confirming a saved draft with taxed lines books balanced entries. Each pricing save re-resolves tax, and the confirm used to add its tax charge rows beside the draft's, so booking credited the tax twice and refused the entry as unbalanced. A save of an unbooked order now removes the earlier tax rows for the lines it re-priced before writing the new ones, and a line re-priced to no tax has its `LineTax` cleared.
+- a1810fd: Changing the Receiving Company or the tender on a saved draft payment that already has instrument details (a reference number, card or bank fields) no longer fails with "Cannot use the ROLLBACK statement within an INSERT-EXEC statement". A saved payment detail is a snapshot the database refuses to edit; the payment now gets a new detail carrying the same instrument fields with the corrected company and tender, and the saved detail is left unchanged.
+- f22d329: The three ML models shipped in `metadata/ml-models` and their scoring bindings are retired with `deleteRecord`. They were trained on sample data and had no artifact file on any install. The training pipelines still ship; an install trains its own model from one. `scripts/rebuild-db.sh` now pushes the whole `metadata/` folder.
+
 ## 5.29.0
 
 ### Minor Changes
@@ -537,8 +556,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                  The INSERT statement conflicted with the FOREIGN KEY constraint
-                                  "FK_EntityFieldValue_EntityField"
+                                    The INSERT statement conflicted with the FOREIGN KEY constraint
+                                    "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
