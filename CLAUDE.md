@@ -53,10 +53,14 @@ landed, and `V202609061900` twice, with the check red. If a change to a merged m
 unavoidable, it needs saying explicitly in the PR description and a second reviewer — never a quiet
 merge over a failing gate.
 
-Write migrations idempotently (`IF NOT EXISTS`, `IF COL_LENGTH(...) IS NULL`) and assume the database
-already has data. A migration that reads `__mj.Entity` must skip cleanly when the row is absent —
-CodeGen runs *after* migrations — and if the change is really about metadata (field categories,
-form layout), its home is `metadata/` and `mj sync push` **during development**.
+Migrations run once, in timestamp order, so write plain DDL: no `IF NOT EXISTS` /
+`IF COL_LENGTH(...) IS NULL` / `IF OBJECT_ID` existence guards, and add each column with its
+constraints inline in one `ALTER TABLE`. A guard turns a mismatch into silence: where the object already
+exists, the migration records itself as applied while the object keeps whatever shape it had. Assume the database already has data: give a new `NOT NULL` column a default, or
+backfill it before adding the constraint. A migration that reads `__mj.Entity` must skip cleanly
+when the row is absent — CodeGen runs *after* migrations — and if the change is really about
+metadata (field categories, form layout), its home is `metadata/` and `mj sync push` **during
+development**.
 
 **But `metadata/` ships to nobody.** MJ's manifest schema calls `mj-app.json`'s `metadata.directory`
 a dev-time pointer (`packages/OpenApp/Engine/src/manifest/manifest-schema.ts`), and `mj app install`
