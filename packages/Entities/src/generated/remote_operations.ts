@@ -190,10 +190,14 @@ export interface BlockerResult {
 export type AmendmentReasonCategory = 'Retention' | 'Referral' | 'Other';
 
 export interface AmendArrangementInput {
-    /** The booked term to amend. */
-    SubscriptionTermID: string;
+    /** The booked term to amend. Not given with `NewPaymentTermsTypeID`. */
+    SubscriptionTermID?: string;
     /** The term's new end date. Must be later than its current end. */
-    NewEndDate: string;
+    NewEndDate?: string;
+    /** The confirmed order whose payment terms change. Given with `NewPaymentTermsTypeID`. */
+    OrderHeaderID?: string;
+    /** The order's new payment terms. */
+    NewPaymentTermsTypeID?: string;
     /** A change of amount. Not supported yet; refused. */
     NewAmount?: number;
     ReasonCategory: AmendmentReasonCategory;
@@ -227,6 +231,13 @@ export interface AmendArrangementOutput {
     Respread?: number;
     Offsets?: AmendArrangementEntry[];
     NewSchedule?: AmendArrangementEntry[];
+    /** A change of payment terms: the terms before and after, by name. */
+    CurrentPaymentTerms?: string | null;
+    NewPaymentTerms?: string;
+    /** Days to payment the new terms move by: positive when the customer pays later. */
+    DaysChange?: number;
+    CurrentDueDate?: string | null;
+    NewDueDate?: string | null;
     /** Set when recorded: the concession, and whether it is Approved (applied) or Pending (awaiting approval). */
     OrderConcessionID?: string;
     Status?: string;
@@ -1755,6 +1766,88 @@ export interface PriceOrderOutput {
 }
 
 /**
+ * Input for `Orders.ReconcilePaymentProviderCharges`.
+ *
+ * Matches a payment gateway's charges and refunds to Orders' payment intents and captured payments for
+ * a window of business days, and reports what does not match. It corrects nothing.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersReconcilePaymentProviderChargesInput {
+    /** One provider to reconcile. Omit for every active, live provider whose gateway lists charges. */
+    PaymentProviderID?: string;
+    /** First business day of the window (YYYY-MM-DD). Omit for seven days ending on ToDate. */
+    FromDate?: string;
+    /** Last business day of the window (YYYY-MM-DD). Omit for today in the business time zone. */
+    ToDate?: string;
+    /**
+     * True (the default) reports the mismatches and writes nothing. False also raises each as a
+     * PROVIDER_CHARGE_MISMATCH finance exception; a mismatch already raised is not raised again.
+     */
+    Preview?: boolean;
+}
+
+/**
+ * Output for `Orders.ReconcilePaymentProviderCharges`.
+ *
+ * Every mismatch found, per-provider counts, and every error, so a run that raised nothing can be
+ * told apart from one that found nothing.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface PaymentProviderChargeMismatch {
+    /**
+     * ChargeWithoutPayment: a charge that succeeded at the gateway with no captured Orders payment.
+     * PaymentWithoutCharge: a captured payment whose charge the gateway does not have or did not
+     * collect. RefundNotBooked: a charge refunded at the gateway beyond the refunds its payment carries.
+     */
+    Kind: 'ChargeWithoutPayment' | 'PaymentWithoutCharge' | 'RefundNotBooked';
+    PaymentProviderID: string;
+    ProviderChargeID?: string | null;
+    ProviderIntentID?: string | null;
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    PaymentIntentID?: string | null;
+    CompanyID?: string | null;
+    /** The amount in question, major units. */
+    Amount: number;
+    Detail: string;
+}
+
+export interface PaymentProviderReconciliationResult {
+    PaymentProviderID: string;
+    PaymentProviderName: string;
+    /** Checked, Skipped (test mode) or Error (see Message). */
+    Status: 'Checked' | 'Skipped' | 'Error';
+    ChargesRead: number;
+    RefundsRead: number;
+    Mismatches: number;
+    Message?: string;
+}
+
+export interface PaymentProviderReconciliationError {
+    PaymentProviderID?: string;
+    Code: string;
+    Message: string;
+}
+
+export interface OrdersReconcilePaymentProviderChargesOutput {
+    /** False when any provider could not be read or any mismatch could not be raised. */
+    Success: boolean;
+    Message?: string;
+    Preview: boolean;
+    FromDate: string;
+    ToDate: string;
+    Providers: PaymentProviderReconciliationResult[];
+    Mismatches: PaymentProviderChargeMismatch[];
+    /** Finance exceptions this run created. Zero in preview. */
+    Raised: number;
+    /** Mismatches that already had an exception from an earlier run. */
+    AlreadyRaised: number;
+    Errors: PaymentProviderReconciliationError[];
+}
+
+/**
  * Input for `Orders.RecordAccessOverrideDecision`.
  *
  * NO import statements — definitions are emitted verbatim.
@@ -2508,6 +2601,22 @@ export class OrdersPriceOrderOperation extends BaseRemotableOperation<PriceOrder
     public readonly OperationKey = "Orders.PriceOrder";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:read";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ReconcilePaymentProviderCharges — Reconcile Payment Provider Charges
+// ============================================================
+/**
+ * Reconcile Payment Provider Charges
+ * Match a payment gateway's charges and refunds to Orders' payment intents and captured payments for a window of business days (default: the seven days ending today), and report three kinds of mismatch: a charge with no captured payment, a captured payment whose charge the gateway does not have, and a refunded charge whose payment carries fewer refunds. Corrects nothing. With Preview (the default) it only reports; otherwise each mismatch is raised as a PROVIDER_CHARGE_MISMATCH finance exception, once per mismatch and amount. Only live providers are read; a provider in test mode runs the stub driver and is skipped.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ReconcilePaymentProviderCharges'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersReconcilePaymentProviderChargesOperation extends BaseRemotableOperation<OrdersReconcilePaymentProviderChargesInput, OrdersReconcilePaymentProviderChargesOutput> {
+    public readonly OperationKey = "Orders.ReconcilePaymentProviderCharges";
+    public readonly ExecutionMode = 'LongRunning' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 
