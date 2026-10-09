@@ -10,9 +10,10 @@
  * at the order's most recent open approval task.
  *
  * ASSIGNED TO THE ROLE'S HOLDERS, BY PERSON. The tasks app has no group assignee, and it notifies and lists
- * an assignee through a `MJ_BizApps_Common: People` record (its `LinkedUserID` is the user told). So the
+ * an assignee through a `MJ_BizApps_Common: People` record (the user bound to it is the user told). So the
  * ConcessionLimit rule's role is expanded here: each active holder other than the requester is assigned
- * through the active person record linked to their user. A holder with no such record is skipped and
+ * through the active person record linked to their user (./person-user-link.ts: the user's People link,
+ * else the deprecated `People.LinkedUserID`). A holder with no such record is skipped and
  * logged; when no holder is left, recording is refused, for the reason a missing rule is — nobody would be
  * told the concession is waiting.
  *
@@ -48,6 +49,7 @@ import type {
 } from '@mj-biz-apps/tasks-entities';
 import type { mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY } from './entity-names.js';
+import { ResolvePersonIDsForUsers } from './person-user-link.js';
 import { EscapeText, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 export const TASK_ENTITY = 'MJ_BizApps_Tasks: Tasks';
@@ -370,17 +372,10 @@ async function approverPersons(roleID: string, requesterUserID: string, ctx: App
         );
     }
 
-    const persons = await view<{ ID: string; LinkedUserID: string }>(ctx, {
-        EntityName: PERSON_ENTITY,
-        ExtraFilter:
-            `Status = 'Active' AND LinkedUserID IN (${RequireUUIDs(others, 'UserID').map((id) => `'${id}'`).join(', ')})`,
-        Fields: ['ID', 'LinkedUserID'],
-        OrderBy: '__mj_CreatedAt',
-        ResultType: 'simple',
-    });
+    const persons = await ResolvePersonIDsForUsers(RequireUUIDs(others, 'UserID'), ctx.Provider, ctx.User, { ActiveOnly: true });
     const holders: RoleHolder[] = others.map((userID) => ({
         UserID: userID,
-        PersonID: persons.find((p) => UUIDsEqual(p.LinkedUserID, userID))?.ID ?? null,
+        PersonID: persons.get(userID.toLowerCase()) ?? null,
     }));
     const { PersonIDs, WithoutPerson } = ApproverAssignees(holders, requesterUserID);
     if (PersonIDs.length === 0) {
