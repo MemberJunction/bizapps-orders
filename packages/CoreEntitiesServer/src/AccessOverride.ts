@@ -60,6 +60,8 @@ import {
 } from '@mj-biz-apps/tasks-entities';
 import {
     ACCESS_OVERRIDE_AUTH,
+    AccessOverrideDecisionRefusal,
+    LoadAccessOverrideAssignees,
     ToISODate,
     mjBizAppsOrdersEntitlementAccessOverrideEntity,
     mjBizAppsOrdersOrderHeaderEntity,
@@ -69,13 +71,12 @@ import {
     ACCESS_OVERRIDE_LIFTS,
     AccessOverrideApprovers,
     AccessOverrideCanApply,
-    AccessOverrideDecisionRefusal,
     PAYMENT_GATED_TIMINGS,
     ResolveAccessOverrideOutcome,
     type AccessOverrideType,
     type GrantTiming,
 } from './EntitlementBehavior.js';
-import { ActiveRoleHolderIDs, PERSON_ENTITY, TASK_ASSIGNMENT_ENTITY } from './ConcessionApprovalTask.js';
+import { ActiveRoleHolderIDs, PERSON_ENTITY } from './ConcessionApprovalTask.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { ACCESS_OVERRIDE_ENTITY, BusinessDay, ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
@@ -391,42 +392,12 @@ export async function DecisionRefusalFor(
 }
 
 /**
- * The users an approval task is assigned to. The tasks app assigns through a person record, whose
- * linked user is the one who decides; an assignment made directly to a user counts as that user.
+ * The users an approval task is assigned to, read the same way the order form reads them
+ * ({@link LoadAccessOverrideAssignees}): a person record's linked user, or a user assigned directly.
  */
 export async function AssigneeUserIDs(taskID: string, provider: IMetadataProvider, user: UserInfo): Promise<string[]> {
-    const rv = new RunView(provider as unknown as IRunViewProvider);
-    const res = await rv.RunView<{ AssigneeEntityID: string; AssigneeRecordID: string }>(
-        {
-            EntityName: TASK_ASSIGNMENT_ENTITY,
-            ExtraFilter: `TaskID = '${RequireUUID(taskID, 'TaskID')}'`,
-            Fields: ['AssigneeEntityID', 'AssigneeRecordID'],
-            ResultType: 'simple',
-            BypassCache: true,
-        },
-        user,
-    );
-    if (!res.Success) throw new Error(`Could not read the assignments of task ${taskID}: ${res.ErrorMessage}`);
-    const personEntityID = provider.EntityByName(PERSON_ENTITY)?.ID;
-    const userEntityID = provider.EntityByName(USER_ENTITY)?.ID;
-    const rows = res.Results ?? [];
-    const userIDs = rows.filter((r) => UUIDsEqual(r.AssigneeEntityID, userEntityID)).map((r) => r.AssigneeRecordID);
-    const personIDs = rows.filter((r) => UUIDsEqual(r.AssigneeEntityID, personEntityID)).map((r) => r.AssigneeRecordID);
-    if (personIDs.length) {
-        const persons = await rv.RunView<{ LinkedUserID: string | null }>(
-            {
-                EntityName: PERSON_ENTITY,
-                ExtraFilter: `ID IN (${RequireUUIDs(personIDs, 'PersonID').map((id) => `'${id}'`).join(',')}) AND LinkedUserID IS NOT NULL`,
-                Fields: ['LinkedUserID'],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            user,
-        );
-        if (!persons.Success) throw new Error(`Could not read the assignees of task ${taskID}: ${persons.ErrorMessage}`);
-        for (const p of persons.Results ?? []) if (p.LinkedUserID) userIDs.push(p.LinkedUserID);
-    }
-    return userIDs;
+    const assignees = await LoadAccessOverrideAssignees([RequireUUID(taskID, 'TaskID')], provider, user);
+    return (assignees.get(taskID.toLowerCase()) ?? []).flatMap((a) => (a.UserID ? [a.UserID] : []));
 }
 
 /**

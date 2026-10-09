@@ -2,11 +2,15 @@ import { Component, OnInit } from '@angular/core';
 import { RunView } from '@memberjunction/core';
 import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
+    AccessOverrideDecisionRefusal,
+    LoadAccessOverrideAssignees,
     OrdersRecordAccessOverrideDecisionOperation,
     OrdersRequestAccessOverrideOperation,
     ToISODate,
     userRequestableAccessOverrides,
+    type AccessOverrideAssignee,
     type AccessOverrideKind,
     type mjBizAppsOrdersEntitlementAccessOverrideEntity,
     type mjBizAppsOrdersOrderHeaderEntity,
@@ -28,13 +32,19 @@ const STATUS_CHIP: Record<string, string> = {
     Expired: 'mjo-doc-chip mjo-doc-chip--muted',
 };
 
+/** "A", "A and B", "A, B and C". */
+const listNames = (names: string[]): string =>
+    names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
 /**
  * Access overrides on an order (bizapps-orders#268): the record of every exception to payment-gated
  * access, a request form offering the override types the viewer is authorized to request, and
- * approve / reject on open requests. The decision buttons are not gated here: the server refuses a
- * decision from anyone but the approval task's assignees, and from the requester (bizapps-orders#360),
- * and the panel shows the refusal. All writes go through the Orders operations; the server re-checks
- * the request authorization.
+ * approve / reject on open requests.
+ *
+ * Approve and Reject are offered only to a viewer the server would let decide: an assignee of the
+ * approval task who is not the requester, and Approve only on or before the override's last day
+ * (`AccessOverrideDecisionRefusal`, bizapps-orders#360/#517). Everyone else sees whom the request is
+ * waiting on. All writes go through the Orders operations, and the server re-checks every rule.
  */
 @RegisterClassEx(BaseFormPanel, {
     key: 'form-panel:OrderHeaders:accessOverrides',
@@ -67,6 +77,12 @@ export class OrderAccessOverridesPanel extends BaseFormPanel<mjBizAppsOrdersOrde
     public NewThrough = '';
     public NewReason = '';
     public DecisionNotes: Record<string, string> = {};
+    /** The approval task assignees of each open request, keyed by task ID in lower case. */
+    public Assignees = new Map<string, AccessOverrideAssignee[]>();
+    /** Set when the assignees could not be read; no decision is offered then. */
+    public AssigneesError: string | null = null;
+    /** The business day, `YYYY-MM-DD`, as the server reads it for the last-day rule. */
+    public Today = '';
 
     public async ngOnInit(): Promise<void> {
         const provider = this.FormComponent.ProviderToUse;
@@ -87,9 +103,48 @@ export class OrderAccessOverridesPanel extends BaseFormPanel<mjBizAppsOrdersOrde
         return OVERRIDE_TYPE_LABELS[type as AccessOverrideKind] ?? type;
     }
 
-    /** Approve and Reject are offered on an open request with an approval task. */
-    public CanDecide(o: mjBizAppsOrdersEntitlementAccessOverrideEntity): boolean {
-        return o.Status === 'Requested' && !!o.ApprovalTaskID;
+    /** The approval task's assignees, or none when the request has no task or they could not be read. */
+    public AssigneesOf(o: mjBizAppsOrdersEntitlementAccessOverrideEntity): AccessOverrideAssignee[] {
+        return o.ApprovalTaskID ? (this.Assignees.get(o.ApprovalTaskID.toLowerCase()) ?? []) : [];
+    }
+
+    /** Why the viewer may not record this decision, or null when they may; the server's own rule. */
+    public Refusal(o: mjBizAppsOrdersEntitlementAccessOverrideEntity, approving: boolean): string | null {
+        if (o.Status !== 'Requested' || !o.ApprovalTaskID) return 'The request is not open.';
+        if (this.AssigneesError) return this.AssigneesError;
+        return AccessOverrideDecisionRefusal({
+            Approving: approving,
+            DeciderUserID: this.FormComponent.ProviderToUse.CurrentUser?.ID ?? '',
+            RequesterUserID: o.RequestedByUserID,
+            AssigneeUserIDs: this.AssigneesOf(o).flatMap((a) => (a.UserID ? [a.UserID] : [])),
+            EffectiveThrough: ToISODate(o.EffectiveThrough) ?? '',
+            Today: this.Today,
+        });
+    }
+
+    /** Reject is offered to an assignee who is not the requester. */
+    public CanReject(o: mjBizAppsOrdersEntitlementAccessOverrideEntity): boolean {
+        return this.Refusal(o, false) === null;
+    }
+
+    /** Approve is offered to the same viewer, on or before the override's last day. */
+    public CanApprove(o: mjBizAppsOrdersEntitlementAccessOverrideEntity): boolean {
+        return this.Refusal(o, true) === null;
+    }
+
+    /** Why a viewer who may reject may not approve (the last day has passed), or null. */
+    public ApproveNote(o: mjBizAppsOrdersEntitlementAccessOverrideEntity): string | null {
+        return this.CanReject(o) ? this.Refusal(o, true) : null;
+    }
+
+    /** For a viewer who may not decide an open request: whom it is waiting on. */
+    public WaitingOn(o: mjBizAppsOrdersEntitlementAccessOverrideEntity): string {
+        if (this.AssigneesError) return this.AssigneesError;
+        const names = this.AssigneesOf(o).map((a) => a.Name);
+        if (!names.length) return 'Waiting on approval, but its approval task has no assignee, so no one can decide it here.';
+        const me = this.FormComponent.ProviderToUse.CurrentUser?.ID;
+        const mine = !!me && o.RequestedByUserID?.toLowerCase() === me.toLowerCase();
+        return `Waiting on ${listNames(names)}.${mine ? ' You requested it, so you cannot decide it.' : ''}`;
     }
 
     public get CanSubmit(): boolean {
@@ -154,11 +209,28 @@ export class OrderAccessOverridesPanel extends BaseFormPanel<mjBizAppsOrdersOrde
             if (!res.Success) throw new Error(res.ErrorMessage ?? 'Could not load access overrides.');
             this.Overrides = res.Results ?? [];
             this.FormComponent.SetSectionRowCount(SECTION_KEY, this.Overrides.length);
+            await this.loadDeciders();
         } catch (err) {
             this.Error = err instanceof Error ? err.message : String(err);
         } finally {
             this.Loading = false;
             this.FormComponent.cdr.detectChanges();
+        }
+    }
+
+    /** The assignees of every open request, and the business day, for the decision rule. */
+    private async loadDeciders(): Promise<void> {
+        const taskIDs = this.Overrides.filter((o) => o.Status === 'Requested' && o.ApprovalTaskID).map((o) => o.ApprovalTaskID as string);
+        this.Assignees = new Map();
+        this.AssigneesError = null;
+        if (!taskIDs.length) return;
+        const provider = this.FormComponent.ProviderToUse;
+        try {
+            await BusinessTimeZoneEngine.Instance.Config(false, provider.CurrentUser, provider);
+            this.Today = BusinessTimeZoneEngine.Instance.Today();
+            this.Assignees = await LoadAccessOverrideAssignees(taskIDs, provider, provider.CurrentUser);
+        } catch (err) {
+            this.AssigneesError = `Could not read who these requests are waiting on: ${err instanceof Error ? err.message : String(err)}`;
         }
     }
 }

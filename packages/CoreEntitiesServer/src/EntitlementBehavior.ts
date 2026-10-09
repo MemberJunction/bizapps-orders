@@ -636,43 +636,6 @@ export function AccessOverrideApprovers(facts: AccessOverrideApproverFacts): Acc
     return { UserIDs: others, Basis: 'FallbackRole' };
 }
 
-/** A decision about to be recorded on an access override, for {@link AccessOverrideDecisionRefusal}. */
-export interface AccessOverrideDecisionFacts {
-    /** Whether the decision approves (Approved, ApprovedWithConditions) rather than rejects. */
-    Approving: boolean;
-    DeciderUserID: string;
-    RequesterUserID: string;
-    /** The users the approval task is assigned to. */
-    AssigneeUserIDs: readonly string[];
-    /** The override's last day, `YYYY-MM-DD`. */
-    EffectiveThrough: string;
-    /** The business day the decision is made on, `YYYY-MM-DD`. */
-    Today: string;
-}
-
-/**
- * Why this decision may not be recorded, or null when it may (bizapps-orders#360).
- *
- *   the requester deciding their own request     → refused, either way
- *   a user the approval task is not assigned to  → refused, either way
- *   an approval after the override's last day    → refused; a rejection still closes it
- */
-export function AccessOverrideDecisionRefusal(facts: AccessOverrideDecisionFacts): string | null {
-    if (sameUser(facts.DeciderUserID, facts.RequesterUserID)) {
-        return 'The user who requested an access override cannot decide it.';
-    }
-    if (!facts.AssigneeUserIDs.some((id) => sameUser(id, facts.DeciderUserID))) {
-        return 'Only an approver the approval task is assigned to may decide this access override.';
-    }
-    if (facts.Approving && facts.EffectiveThrough < facts.Today) {
-        return (
-            `The override's last day (${facts.EffectiveThrough}) has passed, so it can no longer be approved. ` +
-            'Reject it, and request a new one if the exception is still needed.'
-        );
-    }
-    return null;
-}
-
 /**
  * How much of a grant survives a partial return.
  *
