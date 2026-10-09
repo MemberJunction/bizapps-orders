@@ -19,16 +19,16 @@
  * re-saved. EN13 exists for that.
  *
  * ACCESS OVERRIDES, REQUESTED AND DECIDED (#360, #518). EN21, EN22 and EN24 write approved override
- * rows directly, because they test enforcement. EN27–EN31 drive `Orders.RequestAccessOverride` and
+ * rows directly, because they test enforcement. EN28–EN32 drive `Orders.RequestAccessOverride` and
  * `Orders.RecordAccessOverrideDecision` themselves, on an unpaid order whose grants are held for
  * payment, so a WaivePaymentHold is the override that applies:
  *
- *   EN27  a request assigns its approval task to the person record of the company's ApprovalCFOUserID
- *   EN28  with no active company approver, the request is refused
- *   EN29  a request by the company approver is refused without a fallback role, and with one goes to
+ *   EN28  a request assigns its approval task to the person record of the company's ApprovalCFOUserID
+ *   EN29  with no active company approver, the request is refused
+ *   EN30  a request by the company approver is refused without a fallback role, and with one goes to
  *         its other holders
- *   EN30  the requester's decision is refused and the request stays open; the assignee's approval lands
- *   EN31  past the last day an approval is refused and a rejection is accepted
+ *   EN31  the requester's decision is refused and the request stays open; the assignee's approval lands
+ *   EN32  past the last day an approval is refused and a rejection is accepted
  *
  * CONNECTS TO:
  *   PURE:   packages/CoreEntitiesServer/src/EntitlementBehavior.ts (38 unit tests on the rules)
@@ -1354,8 +1354,8 @@ export const EntitlementsChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "entitlements.EN27",
-    Name: "EN27: an access override request assigns its approval task to the person record of the company's ApprovalCFOUserID",
+    Id: "entitlements.EN28",
+    Name: "EN28: an access override request assigns its approval task to the person record of the company's ApprovalCFOUserID",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -1382,8 +1382,8 @@ export const EntitlementsChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "entitlements.EN28",
-    Name: "EN28: an access override request is refused when the order's company has no active approver",
+    Id: "entitlements.EN29",
+    Name: "EN29: an access override request is refused when the order's company has no active approver",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -1407,8 +1407,8 @@ export const EntitlementsChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "entitlements.EN29",
-    Name: "EN29: a request by the company approver is refused without a fallback role, and with one goes to its other holders",
+    Id: "entitlements.EN30",
+    Name: "EN30: a request by the company approver is refused without a fallback role, and with one goes to its other holders",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -1458,8 +1458,8 @@ export const EntitlementsChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "entitlements.EN30",
-    Name: "EN30: the requester's decision on an access override is refused and it stays Requested; the assignee's approval lands",
+    Id: "entitlements.EN31",
+    Name: "EN31: the requester's decision on an access override is refused and it stays Requested; the assignee's approval lands",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -1493,8 +1493,8 @@ export const EntitlementsChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "entitlements.EN31",
-    Name: "EN31: past an access override's last day its approval is refused, and its rejection is accepted",
+    Id: "entitlements.EN32",
+    Name: "EN32: past an access override's last day its approval is refused, and its rejection is accepted",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
