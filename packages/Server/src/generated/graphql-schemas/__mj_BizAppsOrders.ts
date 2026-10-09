@@ -15112,6 +15112,21 @@ export class mjBizAppsOrdersSalesRule_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field(() => Int, {nullable: true, description: `ConcessionLimit rules only: this tier's rank. A concession goes to the highest-ranked active ConcessionLimit rule whose thresholds it meets; two active rules may not share a rank. NULL ranks as 0.`}) 
+    ConcessionTier?: number;
+        
+    @Field(() => Float, {nullable: true, description: `ConcessionLimit rules only: a concession valued at or above this, in currency, meets this tier. NULL sets no value threshold.`}) 
+    MinConcessionValue?: number;
+        
+    @Field(() => Float, {nullable: true, description: `ConcessionLimit rules only: a concession whose order's concessions, as a share of its net total (0.05 = 5%), are at or above this meets this tier. NULL sets no share threshold.`}) 
+    MinConcessionPctOfContract?: number;
+        
+    @Field(() => Int, {nullable: true, description: `ConcessionLimit rules only: a concession that changes a term's dates by this many days or more meets this tier. NULL sets no term-date threshold.`}) 
+    MinTermExtensionDays?: number;
+        
+    @Field(() => Boolean, {nullable: true, description: `ConcessionLimit rules only: when 1, a concession routed to this tier is Pending even when the requester's SalesAuthority covers it, and the requester cannot decide it. When 0, a concession within authority is Approved on save.`}) 
+    RequiresDecisionWithinAuthority?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     ApprovalRequiredRole?: string;
@@ -15150,6 +15165,21 @@ export class CreatemjBizAppsOrdersSalesRuleInput {
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
 
+    @Field(() => Int, { nullable: true })
+    ConcessionTier: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionValue: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionPctOfContract: number | null;
+
+    @Field(() => Int, { nullable: true })
+    MinTermExtensionDays: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresDecisionWithinAuthority?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -15183,6 +15213,21 @@ export class UpdatemjBizAppsOrdersSalesRuleInput {
 
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
+
+    @Field(() => Int, { nullable: true })
+    ConcessionTier?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionValue?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionPctOfContract?: number | null;
+
+    @Field(() => Int, { nullable: true })
+    MinTermExtensionDays?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresDecisionWithinAuthority?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

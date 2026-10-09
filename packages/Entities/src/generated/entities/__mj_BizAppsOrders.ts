@@ -5855,6 +5855,32 @@ export const mjBizAppsOrdersSalesRuleSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    ConcessionTier: z.number().nullable().describe(`
+        * * Field Name: ConcessionTier
+        * * Display Name: Concession Tier
+        * * SQL Data Type: int
+        * * Description: ConcessionLimit rules only: this tier's rank. A concession goes to the highest-ranked active ConcessionLimit rule whose thresholds it meets; two active rules may not share a rank. NULL ranks as 0.`),
+    MinConcessionValue: z.number().nullable().describe(`
+        * * Field Name: MinConcessionValue
+        * * Display Name: Minimum Concession Value
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: ConcessionLimit rules only: a concession valued at or above this, in currency, meets this tier. NULL sets no value threshold.`),
+    MinConcessionPctOfContract: z.number().nullable().describe(`
+        * * Field Name: MinConcessionPctOfContract
+        * * Display Name: Minimum Concession % of Contract
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: ConcessionLimit rules only: a concession whose order's concessions, as a share of its net total (0.05 = 5%), are at or above this meets this tier. NULL sets no share threshold.`),
+    MinTermExtensionDays: z.number().nullable().describe(`
+        * * Field Name: MinTermExtensionDays
+        * * Display Name: Minimum Term Extension (Days)
+        * * SQL Data Type: int
+        * * Description: ConcessionLimit rules only: a concession that changes a term's dates by this many days or more meets this tier. NULL sets no term-date threshold.`),
+    RequiresDecisionWithinAuthority: z.boolean().describe(`
+        * * Field Name: RequiresDecisionWithinAuthority
+        * * Display Name: Requires Decision Within Authority
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: ConcessionLimit rules only: when 1, a concession routed to this tier is Pending even when the requester's SalesAuthority covers it, and the requester cannot decide it. When 0, a concession within authority is Approved on save.`),
     ApprovalRequiredRole: z.string().nullable().describe(`
         * * Field Name: ApprovalRequiredRole
         * * Display Name: Approval Required Role
@@ -24031,6 +24057,121 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
     }
 
     /**
+    * Validate() method override for MJ_BizApps_Orders: Sales Rules entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * ConcessionTier: Concession tier must be greater than or equal to 0 to ensure that negative tier values are not entered.
+    * * MinConcessionPctOfContract: The minimum concession percentage of the contract must be a value between 0 and 1 (inclusive), representing a valid percentage from 0% to 100%.
+    * * MinConcessionValue: The minimum concession value must be greater than or equal to zero to prevent negative concession amounts from being entered.
+    * * MinTermExtensionDays: The minimum term extension days must be a non-negative number (0 or greater) to ensure valid extension periods.
+    * * Table-Level: Ensures that concession-specific parameters (such as Concession Tier, Min Concession Value, Min Concession % of Contract, Min Term Extension Days, and Requires Decision Within Authority) are only specified when the Rule Type is 'ConcessionLimit'.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateConcessionTierGreaterThanOrEqualToZero(result);
+        this.ValidateMinConcessionPctOfContractRange(result);
+        this.ValidateMinConcessionValueGreaterThanOrEqualToZero(result);
+        this.ValidateMinTermExtensionDaysGreaterThanOrEqualToZero(result);
+        this.ValidateConcessionFieldsByRuleType(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * Concession tier must be greater than or equal to 0 to ensure that negative tier values are not entered.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateConcessionTierGreaterThanOrEqualToZero(result: ValidationResult) {
+    	if (this.ConcessionTier != null && this.ConcessionTier < 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"ConcessionTier",
+    			"Concession tier must be greater than or equal to 0.",
+    			this.ConcessionTier,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * The minimum concession percentage of the contract must be a value between 0 and 1 (inclusive), representing a valid percentage from 0% to 100%.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateMinConcessionPctOfContractRange(result: ValidationResult) {
+    	if (this.MinConcessionPctOfContract != null && (this.MinConcessionPctOfContract < 0 || this.MinConcessionPctOfContract > 1)) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"MinConcessionPctOfContract",
+    			"The minimum concession percentage of the contract must be between 0 and 1 (inclusive).",
+    			this.MinConcessionPctOfContract,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * The minimum concession value must be greater than or equal to zero to prevent negative concession amounts from being entered.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateMinConcessionValueGreaterThanOrEqualToZero(result: ValidationResult) {
+        if (this.MinConcessionValue != null && this.MinConcessionValue < 0) {
+            result.Errors.push(new ValidationErrorInfo(
+                "MinConcessionValue",
+                "Minimum concession value must be greater than or equal to 0.",
+                this.MinConcessionValue,
+                ValidationErrorType.Failure
+            ));
+        }
+    }
+
+    /**
+    * The minimum term extension days must be a non-negative number (0 or greater) to ensure valid extension periods.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateMinTermExtensionDaysGreaterThanOrEqualToZero(result: ValidationResult) {
+    	if (this.MinTermExtensionDays != null && this.MinTermExtensionDays < 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"MinTermExtensionDays",
+    			"Minimum term extension days must be greater than or equal to 0.",
+    			this.MinTermExtensionDays,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * Ensures that concession-specific parameters (such as Concession Tier, Min Concession Value, Min Concession % of Contract, Min Term Extension Days, and Requires Decision Within Authority) are only specified when the Rule Type is 'ConcessionLimit'.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateConcessionFieldsByRuleType(result: ValidationResult) {
+    	if (this.RuleType !== "ConcessionLimit") {
+    		if (this.ConcessionTier != null ||
+    			this.MinConcessionValue != null ||
+    			this.MinConcessionPctOfContract != null ||
+    			this.MinTermExtensionDays != null ||
+    			this.RequiresDecisionWithinAuthority === true) {
+    			
+    			result.Errors.push(new ValidationErrorInfo(
+    				"RuleType",
+    				"Concession-specific fields and 'Requires Decision Within Authority' can only be defined when Rule Type is 'ConcessionLimit'.",
+    				this.RuleType,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
+    }
+
+    /**
     * * Field Name: ID
     * * Display Name: ID
     * * SQL Data Type: uniqueidentifier
@@ -24168,6 +24309,72 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ConcessionTier
+    * * Display Name: Concession Tier
+    * * SQL Data Type: int
+    * * Description: ConcessionLimit rules only: this tier's rank. A concession goes to the highest-ranked active ConcessionLimit rule whose thresholds it meets; two active rules may not share a rank. NULL ranks as 0.
+    */
+    get ConcessionTier(): number | null {
+        return this.Get('ConcessionTier');
+    }
+    set ConcessionTier(value: number | null) {
+        this.Set('ConcessionTier', value);
+    }
+
+    /**
+    * * Field Name: MinConcessionValue
+    * * Display Name: Minimum Concession Value
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: ConcessionLimit rules only: a concession valued at or above this, in currency, meets this tier. NULL sets no value threshold.
+    */
+    get MinConcessionValue(): number | null {
+        return this.Get('MinConcessionValue');
+    }
+    set MinConcessionValue(value: number | null) {
+        this.Set('MinConcessionValue', value);
+    }
+
+    /**
+    * * Field Name: MinConcessionPctOfContract
+    * * Display Name: Minimum Concession % of Contract
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: ConcessionLimit rules only: a concession whose order's concessions, as a share of its net total (0.05 = 5%), are at or above this meets this tier. NULL sets no share threshold.
+    */
+    get MinConcessionPctOfContract(): number | null {
+        return this.Get('MinConcessionPctOfContract');
+    }
+    set MinConcessionPctOfContract(value: number | null) {
+        this.Set('MinConcessionPctOfContract', value);
+    }
+
+    /**
+    * * Field Name: MinTermExtensionDays
+    * * Display Name: Minimum Term Extension (Days)
+    * * SQL Data Type: int
+    * * Description: ConcessionLimit rules only: a concession that changes a term's dates by this many days or more meets this tier. NULL sets no term-date threshold.
+    */
+    get MinTermExtensionDays(): number | null {
+        return this.Get('MinTermExtensionDays');
+    }
+    set MinTermExtensionDays(value: number | null) {
+        this.Set('MinTermExtensionDays', value);
+    }
+
+    /**
+    * * Field Name: RequiresDecisionWithinAuthority
+    * * Display Name: Requires Decision Within Authority
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: ConcessionLimit rules only: when 1, a concession routed to this tier is Pending even when the requester's SalesAuthority covers it, and the requester cannot decide it. When 0, a concession within authority is Approved on save.
+    */
+    get RequiresDecisionWithinAuthority(): boolean {
+        return this.Get('RequiresDecisionWithinAuthority');
+    }
+    set RequiresDecisionWithinAuthority(value: boolean) {
+        this.Set('RequiresDecisionWithinAuthority', value);
     }
 
     /**
