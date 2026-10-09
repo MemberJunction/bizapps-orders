@@ -1161,8 +1161,8 @@ export const EntitlementsChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "entitlements.EN24",
-    Name: "EN24: a new purchase whose payment-hold waiver has run out reads Suspended before the nightly job has run (#404)",
+    Id: "entitlements.EN27",
+    Name: "EN27: a new purchase whose payment-hold waiver has run out reads Suspended before the nightly job has run (#404)",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -1182,7 +1182,7 @@ export const EntitlementsChecks: NamedCheck[] = [
           await TxQuery(ctx,
             `INSERT INTO ${ORDERS_SCHEMA}.EntitlementAccessOverride
                (ID, OrderHeaderID, OverrideType, Reason, EffectiveThrough, Status, RequestedByUserID, DecidedByUserID, DecidedAt)
-             VALUES ('${randomUUID()}', '${orderID}', 'WaivePaymentHold', 'EN24', '${lastDay}', 'Approved',
+             VALUES ('${randomUUID()}', '${orderID}', 'WaivePaymentHold', 'EN27', '${lastDay}', 'Approved',
                      '${ctx.User.ID}', '${ctx.User.ID}', SYSDATETIMEOFFSET())`);
           const waived = await EnforcePaymentGatedAccess({ AsOfDate: lastDay }, ctx.Provider, ctx.User);
           Assert(waived.Success, `the pass ran: ${waived.Message}`);
