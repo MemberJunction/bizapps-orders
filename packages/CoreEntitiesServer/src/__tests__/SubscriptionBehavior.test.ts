@@ -724,6 +724,9 @@ describe('coverage overlap with another band of the family (golive #276)', () =>
         CoveredThrough: day('2028-09-25'),
         ConcurrencyMode: 'AllowMultiple',
         SubscriptionTypeCode: 'OTHER',
+        CancellationMode: 'EndOfTerm',
+        GracePeriodDays: 0,
+        Cancelable: true,
     };
     const overlapFor = (mode: SubscriptionTypeRules['ConcurrencyMode'], acknowledged: boolean, overlaps = [existing]) =>
         new SubscriptionBehavior().DecideCoverageOverlap({
@@ -746,14 +749,14 @@ describe('coverage overlap with another band of the family (golive #276)', () =>
         expect(d.Message).toContain('SUB-000001 (Tier Two, 2026-09-26 to 2027-09-25)');
         expect(d.Message).toContain('family Tiered (TIERED)');
         expect(d.Message).toContain('Start this band after 2028-09-25, or mark the line to run alongside it.');
-        expect(d.Message).not.toContain('Cancel');
+        expect(d.Message).not.toContain('cancel');
     });
 
     it('tells a refused line to start after the latest coverage end', () => {
         const later = { ...existing, SubscriptionID: 'sub-2', SubscriptionNumber: 'SUB-000002', CoveredThrough: day('2029-01-31') };
         const d = overlapFor('RejectDuplicate', false, [existing, later]);
         expect(d.Message).toContain('Start this band after 2029-01-31.');
-        expect(d.Message).not.toContain('Cancel');
+        expect(d.Message).not.toContain('cancel');
     });
 
     describe('the stricter of the two bands\' types applies', () => {
@@ -807,6 +810,63 @@ describe('coverage overlap with another band of the family (golive #276)', () =>
         expect(d.Message).toContain('another line of this order (Tier Two');
     });
 
+    describe('cancelling the held band first (#470)', () => {
+        const held = (overrides: Partial<CoverageOverlap> = {}): CoverageOverlap => ({
+            ...existing,
+            ConcurrencyMode: 'ExtendExisting',
+            CancellationMode: 'Immediate',
+            ...overrides,
+        });
+
+        it('offers it under Immediate, where cancelling ends coverage on the cancellation date', () => {
+            const d = overlapFor('ExtendExisting', false, [held()]);
+            expect(d.Outcome).toBe('NeedsAck');
+            expect(d.Message).toContain(
+                'Start this band after 2028-09-25, cancel SUB-000001 first and start it the day after the cancellation date, ' +
+                    'or mark the line to run alongside it.',
+            );
+        });
+
+        it('offers it on a RejectDuplicate refusal too', () => {
+            const d = overlapFor('RejectDuplicate', false, [held()]);
+            expect(d.Outcome).toBe('Refused');
+            expect(d.Message).toContain(
+                'Start this band after 2028-09-25, or cancel SUB-000001 first and start it the day after the cancellation date.',
+            );
+        });
+
+        it('starts the new band after the grace period, since grace keeps access and access counts', () => {
+            const d = overlapFor('ExtendExisting', false, [held({ GracePeriodDays: 30 })]);
+            expect(d.Message).toContain(
+                'cancel SUB-000001 first and start it 31 days after the cancellation date, once its 30-day grace period ends',
+            );
+        });
+
+        it('does not offer it under EndOfTerm, where coverage runs to the term end', () => {
+            expect(overlapFor('ExtendExisting', false, [held({ CancellationMode: 'EndOfTerm' })]).Message).not.toContain('cancel');
+        });
+
+        it('does not offer it under EndOfBillingPeriod, where coverage runs to the period end', () => {
+            expect(overlapFor('ExtendExisting', false, [held({ CancellationMode: 'EndOfBillingPeriod' })]).Message).not.toContain('cancel');
+        });
+
+        it('does not offer it when the held subscription is already cancelled', () => {
+            expect(overlapFor('ExtendExisting', false, [held({ Cancelable: false })]).Message).not.toContain('cancel');
+        });
+
+        it('does not offer it when the overlap is another line of this order', () => {
+            const sibling = held({ SubscriptionID: null, SubscriptionNumber: null, Cancelable: false });
+            expect(overlapFor('ExtendExisting', false, [sibling]).Message).not.toContain('cancel');
+        });
+
+        it('offers it only when every overlapping band qualifies, and names each one', () => {
+            const second = held({ SubscriptionID: 'sub-2', SubscriptionNumber: 'SUB-000002' });
+            expect(overlapFor('ExtendExisting', false, [held(), second]).Message).toContain('cancel SUB-000001, SUB-000002 first');
+            const endOfTerm = { ...second, CancellationMode: 'EndOfTerm' as const };
+            expect(overlapFor('ExtendExisting', false, [held(), endOfTerm]).Message).not.toContain('cancel');
+        });
+    });
+
     describe('OverlappingCoverage', () => {
         const term = (id: string | null, start: string, end: string) => ({
             SubscriptionID: id,
@@ -816,6 +876,9 @@ describe('coverage overlap with another band of the family (golive #276)', () =>
             EndDate: day(end),
             ConcurrencyMode: 'ExtendExisting' as const,
             SubscriptionTypeCode: 'STD',
+            CancellationMode: 'Immediate' as const,
+            GracePeriodDays: 0,
+            Cancelable: id !== null,
         });
 
         it('clips each overlap to the new term', () => {
@@ -824,6 +887,8 @@ describe('coverage overlap with another band of the family (golive #276)', () =>
             expect(iso(out[0].CoverageStart)).toBe('2026-07-01');
             expect(iso(out[0].CoverageEnd)).toBe('2026-12-31');
             expect(out[0].ConcurrencyMode).toBe('ExtendExisting');
+            expect(out[0].CancellationMode).toBe('Immediate');
+            expect(out[0].Cancelable).toBe(true);
         });
 
         it('reports coverage through the last term, including terms after the new one', () => {

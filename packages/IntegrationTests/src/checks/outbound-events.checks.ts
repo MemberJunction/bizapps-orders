@@ -39,7 +39,7 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 import { ENTITLEMENT_GRANT_ENTITY, ORDER_HEADER_ENTITY } from "../entity-names.js";
 
 const CONSUMER_KEY = "integration-test-consumer";
@@ -136,6 +136,7 @@ export const OutboundEventsChecks: NamedCheck[] = [
         AssertEqual(confirmed.OrderID?.toLowerCase(), orderID.toLowerCase(), "the payload names the order");
         AssertEqual(confirmed.Lines?.length, 1, "and carries its line");
         AssertEqual(confirmed.IsRenewal, false, "a first purchase is not a renewal");
+        AssertEqual(JSON.stringify(confirmed.CheckoutAnswers), "[]", "an order with no checkout answers carries an empty list");
         const grant = JSON.parse(events.find((e) => e.EventType === "GrantStatusChanged")!.PayloadJSON);
         AssertEqual(grant.FromStatus, null, "a new grant has no previous status");
         Assert(typeof grant.Code === "string" && grant.Code.length > 0, "the grant payload carries the entitlement code");
@@ -303,6 +304,60 @@ export const OutboundEventsChecks: NamedCheck[] = [
           .map((e) => JSON.parse(e.PayloadJSON));
         AssertEqual(revoked.length, 2, `each of the sale's two grants records its revocation (${JSON.stringify(revoked)})`);
         Assert(revoked.every((p) => p.ToStatus === "Revoked"), "as a move to Revoked");
+      }),
+  },
+  {
+    Id: "outbound-events.OB7",
+    Name: "OB7: a confirm writes the order's checkout answers and OrderConfirmed carries them (#322)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        resetProbe();
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }],
+        });
+        const order = built.Order;
+        const heard = await order.CheckoutAnswers.Create();
+        heard.QuestionKey = "heardFrom";
+        heard.QuestionLabel = "How did you hear about us?";
+        heard.Answer = "other";
+        heard.OtherText = "A colleague";
+        const role = await order.CheckoutAnswers.Create();
+        role.QuestionKey = "jobRole";
+        role.QuestionLabel = "Your role";
+        role.Answer = "Engineer";
+        order.Status = "Confirmed";
+        Assert(await order.Save(), `confirm failed: ${order.LatestResult?.CompleteMessage}`);
+        const orderID = order.ID as string;
+
+        const rows = await TxQuery<{ QuestionKey: string; Answer: string; OtherText: string | null }>(
+          ctx,
+          `SELECT QuestionKey, Answer, OtherText FROM ${ORDERS_SCHEMA}.OrderCheckoutAnswer
+            WHERE OrderHeaderID = '${orderID}' ORDER BY QuestionKey`,
+        );
+        AssertEqual(
+          JSON.stringify(rows),
+          JSON.stringify([
+            { QuestionKey: "heardFrom", Answer: "other", OtherText: "A colleague" },
+            { QuestionKey: "jobRole", Answer: "Engineer", OtherText: null },
+          ]),
+          "both answers are written with the confirm",
+        );
+
+        const event = (await eventsFor(ctx, orderID)).find((e) => e.EventType === "OrderConfirmed");
+        Assert(event !== undefined, "the confirm records OrderConfirmed");
+        AssertEqual(
+          JSON.stringify(JSON.parse(event!.PayloadJSON).CheckoutAnswers),
+          JSON.stringify([
+            { QuestionKey: "heardFrom", QuestionLabel: "How did you hear about us?", Answer: "other", OtherText: "A colleague" },
+            { QuestionKey: "jobRole", QuestionLabel: "Your role", Answer: "Engineer", OtherText: null },
+          ]),
+          "and the event carries them, ordered by question key",
+        );
       }),
   },
 ];

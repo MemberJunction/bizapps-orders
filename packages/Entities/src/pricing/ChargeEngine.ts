@@ -57,6 +57,9 @@ export interface RequestedCharge {
     /** Replaces the computed amount. Requires a reason — the DB CHECK enforces that too. */
     OverrideAmount?: number | null;
     OverrideReason?: string | null;
+    /** Provenance of an override restated from a saved row — see {@link ReadStatedTaxCharges}. */
+    OverriddenByUserID?: string | null;
+    OverriddenAt?: Date | null;
 }
 
 interface ChargeTypeRow {
@@ -137,6 +140,8 @@ export async function RunCharges(
             TaxRateID: r.TaxRateID ?? null,
             OverrideAmount: r.OverrideAmount ?? null,
             OverrideReason: r.OverrideReason ?? null,
+            OverriddenByUserID: r.OverriddenByUserID ?? null,
+            OverriddenAt: r.OverriddenAt ?? null,
         };
     });
 
@@ -203,14 +208,19 @@ export async function DeleteTaxCharges(
     if (!touched?.Success) {
         throw new ChargeError(`Could not read the lines' charge allocations: ${touched?.ErrorMessage ?? 'unknown error'}`);
     }
-    if (!touched.Results.length) return;
+    // A tax charge that came to nothing has no allocation at all — a waiver, or a jurisdiction that
+    // rates the product at zero — so no line leads to it. The walk re-decides it like any other, so
+    // it goes too, or each re-price leaves another zero row behind.
+    const unallocated = await zeroTaxChargesWithoutAllocations(orderHeaderID, types.Results.map((t) => t.ID), rv, user);
+    const chargeIDs = [...touched.Results.map((a) => a.OrderChargeID), ...unallocated];
+    if (!chargeIDs.length) return;
 
     const charges = await rv.RunView<mjBizAppsOrdersOrderChargeEntity>(
         {
             EntityName: ORDER_CHARGE_ENTITY,
             ExtraFilter:
                 `OrderHeaderID = '${orderHeaderID}'` +
-                ` AND ID IN (${quoted(touched.Results.map((a) => a.OrderChargeID))})` +
+                ` AND ID IN (${quoted(chargeIDs)})` +
                 ` AND ChargeTypeID IN (${quoted(types.Results.map((t) => t.ID))})`,
             ResultType: 'entity_object',
             BypassCache: true,
@@ -242,6 +252,163 @@ export async function DeleteTaxCharges(
             );
         }
     }
+}
+
+/** The order's zero-amount tax charges that have no allocation rows. */
+async function zeroTaxChargesWithoutAllocations(
+    orderHeaderID: string,
+    taxTypeIDs: string[],
+    rv: RunView,
+    user: UserInfo,
+): Promise<string[]> {
+    const zero = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: ORDER_CHARGE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND ChargeTypeID IN (${quoted(taxTypeIDs)}) AND Amount = 0`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!zero?.Success) {
+        throw new ChargeError(`Could not read the order's zero tax charges: ${zero?.ErrorMessage ?? 'unknown error'}`);
+    }
+    if (!zero.Results.length) return [];
+    const allocated = await rv.RunView<{ OrderChargeID: string }>(
+        {
+            EntityName: ORDER_CHARGE_ALLOCATION_ENTITY,
+            ExtraFilter: `OrderChargeID IN (${quoted(zero.Results.map((c) => c.ID))})`,
+            Fields: ['OrderChargeID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!allocated?.Success) {
+        throw new ChargeError(`Could not read the zero tax allocations: ${allocated?.ErrorMessage ?? 'unknown error'}`);
+    }
+    const has = new Set(allocated.Results.map((a) => a.OrderChargeID.toLowerCase()));
+    return zero.Results.map((c) => c.ID).filter((id) => !has.has(id.toLowerCase()));
+}
+
+/**
+ * The tax charges a caller STATED on this saved order, read back as requests for the next walk.
+ *
+ * A stated tax (a rate or amount, or an override with its reason) wins over the tax resolved from
+ * the ship-to address, but it reaches the walk only as a request in memory. A later save of the
+ * same draft — the confirm, typically from a reloaded order — does not restate it, so the walk
+ * resolved tax from the address and {@link DeleteTaxCharges} replaced the stated rows with it. A
+ * waived tax came back at confirm.
+ *
+ * Which rows were stated is read off the row: an overridden charge, or one with no `TaxRateID`.
+ * Resolution writes every layer with the rate row it chose and never overrides, so neither can be a
+ * resolved row. Rows on a reversal line are skipped: those mirror the origin's tax and the walk
+ * re-derives them itself.
+ *
+ * A charge whose allocations sit on one line of a several-line order is restated against that line;
+ * otherwise it is spread across the order again. Nothing is restated when the caller states a tax of
+ * its own on this walk, which replaces the earlier one.
+ *
+ * @param lineIDs the walk's lines in walk order, `null` for a line not yet saved; a restated
+ * charge's target is the position here.
+ */
+export async function ReadStatedTaxCharges(
+    orderHeaderID: string,
+    lineIDs: Array<string | null>,
+    skipLineIDs: string[],
+    requestedCodes: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<RequestedCharge[]> {
+    const position = new Map<string, number>();
+    lineIDs.forEach((id, i) => {
+        if (id) position.set(id.toLowerCase(), i);
+    });
+    if (!position.size) return [];
+    const skip = new Set(skipLineIDs.map((id) => id.toLowerCase()));
+
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const types = await rv.RunView<{ ID: string; Code: string }>(
+        { EntityName: CHARGE_TYPE_ENTITY, ExtraFilter: `Category = 'Tax'`, Fields: ['ID', 'Code'], ResultType: 'simple', BypassCache: true },
+        user,
+    );
+    if (!types?.Success) {
+        throw new ChargeError(`Could not read charge types: ${types?.ErrorMessage ?? 'unknown error'}`);
+    }
+    if (!types.Results.length) return [];
+    const codeOf = new Map(types.Results.map((t) => [t.ID.toLowerCase(), t.Code]));
+    const taxCodes = new Set(types.Results.map((t) => t.Code.toLowerCase()));
+    if (requestedCodes.some((c) => taxCodes.has(c.toLowerCase()))) return [];
+
+    const charges = await rv.RunView<mjBizAppsOrdersOrderChargeEntity>(
+        {
+            EntityName: ORDER_CHARGE_ENTITY,
+            ExtraFilter:
+                `OrderHeaderID = '${orderHeaderID}'` +
+                ` AND ChargeTypeID IN (${quoted(types.Results.map((t) => t.ID))})` +
+                ` AND (IsOverridden = 1 OR TaxRateID IS NULL)`,
+            OrderBy: 'Sequence',
+            ResultType: 'entity_object',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!charges?.Success) {
+        throw new ChargeError(`Could not read the order's stated tax: ${charges?.ErrorMessage ?? 'unknown error'}`);
+    }
+    if (!charges.Results.length) return [];
+
+    const allocations = await rv.RunView<{ OrderChargeID: string; OrderLineID: string }>(
+        {
+            EntityName: ORDER_CHARGE_ALLOCATION_ENTITY,
+            ExtraFilter: `OrderChargeID IN (${quoted(charges.Results.map((c) => c.ID))})`,
+            Fields: ['OrderChargeID', 'OrderLineID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!allocations?.Success) {
+        throw new ChargeError(`Could not read the stated tax allocations: ${allocations?.ErrorMessage ?? 'unknown error'}`);
+    }
+    const linesOf = new Map<string, string[]>();
+    for (const a of allocations.Results) {
+        const key = a.OrderChargeID.toLowerCase();
+        linesOf.set(key, [...(linesOf.get(key) ?? []), a.OrderLineID.toLowerCase()]);
+    }
+
+    const out: RequestedCharge[] = [];
+    for (const row of charges.Results) {
+        const allocated = linesOf.get(row.ID.toLowerCase()) ?? [];
+        const onLines = allocated.filter((id) => position.has(id));
+        // A charge that came to nothing (a full waiver, a zero rate) has no allocation to say where it
+        // pointed, so it is restated across the order. One whose allocations were all on lines since
+        // removed is not a request any more; nor is a reversal line's mirrored tax.
+        const zero = !allocated.length && Number(row.Amount) === 0;
+        if ((!onLines.length && !zero) || onLines.some((id) => skip.has(id))) continue;
+        const code = codeOf.get(row.ChargeTypeID.toLowerCase());
+        if (!code) continue;
+        const rate = row.Rate == null ? null : Number(row.Rate);
+        const overridden = !!row.IsOverridden;
+        out.push({
+            Code: code,
+            TargetLineID: onLines.length === 1 && lineIDs.length > 1 ? String(position.get(onLines[0])) : null,
+            Rate: rate,
+            Amount: rate != null ? null : Number(overridden ? (row.ComputedAmount ?? 0) : row.Amount),
+            TaxJurisdictionID: row.TaxJurisdictionID ?? null,
+            TaxRateID: row.TaxRateID ?? null,
+            ...(overridden
+                ? {
+                      OverrideAmount: Number(row.Amount),
+                      OverrideReason: row.OverrideReason ?? null,
+                      OverriddenByUserID: row.OverriddenByUserID ?? null,
+                      OverriddenAt: row.OverriddenAt ?? null,
+                  }
+                : {}),
+        });
+    }
+    return out;
 }
 
 /** Database-issued IDs as a SQL `IN` list, each once. */
@@ -283,6 +450,9 @@ export async function WriteCharges(
             row.OverrideReason = charge.Request.OverrideReason;
             row.OverriddenByUserID = userID;
             row.OverriddenAt = new Date();
+            // A restated override keeps who made it and when; a re-price is not a new decision.
+            if (charge.Request.OverriddenByUserID) row.OverriddenByUserID = charge.Request.OverriddenByUserID;
+            if (charge.Request.OverriddenAt) row.OverriddenAt = charge.Request.OverriddenAt;
         }
         if (!(await row.Save())) {
             throw new ChargeError(

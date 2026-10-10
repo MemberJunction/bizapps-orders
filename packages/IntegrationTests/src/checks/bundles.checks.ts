@@ -28,6 +28,7 @@
  *   BN11  an ordinary product is untouched by any of this
  *   BN12  a bundle inside a bundle is refused rather than expanded
  *   BN13  only expansion gives a line a parent; one set through the API is refused
+ *   BN14  re-saving a draft does not expand its bundle again; the children follow the parent
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -481,6 +482,41 @@ export const BundleChecks: NamedCheck[] = [
         const stored = await TxOne<{ ParentOrderLineID: string | null }>(ctx,
           `SELECT ParentOrderLineID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${second.ID}'`);
         AssertEqual(stored.ParentOrderLineID, null, "and the line keeps no parent");
+      }),
+  },
+  {
+    Id: "bundles.BN14",
+    Name: "BN14: re-saving a draft does not expand its bundle again; the children follow the parent",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await defineBundle(ctx);
+        await CreateProductPrice(ctx, f.Products.BundleA, 100);
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.BundleA, Quantity: 1, UnitPrice: 100 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const before = await linesOf(ctx, built.Order.ID as string);
+        AssertEqual(before.filter((l) => l.ParentOrderLineID).length, 2, "the draft save expanded the bundle");
+
+        // Any edit to the lines sends the save down the full walk, which is where expansion runs.
+        const parent = built.Order.Lines.Items.find((l) => same(l.ProductID, f.Products.BundleA))!;
+        parent.Quantity = 2;
+        Assert(await built.Order.Save(), `the re-save failed: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const after = await linesOf(ctx, built.Order.ID as string);
+        const children = after.filter((l) => l.ParentOrderLineID);
+        AssertEqual(children.length, 2, "the same two children, not a second set");
+        Assert(children.every((c) => before.some((b) => same(b.ID, c.ID))), "the children are the rows the first save wrote");
+        Assert(children.every((c) => Number(c.Quantity) === 2), "each child follows the parent's new quantity");
+        AssertEqual(
+          Math.round(children.reduce((s, c) => s + Number(c.LineTotalNet), 0) * 100) / 100,
+          200,
+          "the children total two bundles, once",
+        );
       }),
   },
 ];
