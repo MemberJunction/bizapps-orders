@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - MJ peer range in this repo is `^6.1.0-edge.5`; the connector's is `>=5.43.0 <7.0.0`. Do not pin anything else.
-- Schema changes are **new `V` migrations only**, idempotent (`IF OBJECT_ID(...) IS NULL`, `IF COL_LENGTH(...) IS NULL`). Never edit the baseline. Use `[${flyway:defaultSchema}]` for app tables, literal `[__mj]` for core tables. No `__mj_CreatedAt/__mj_UpdatedAt`, no FK indexes (CodeGen adds them). Every table and column gets an `MS_Description` extended property.
+- Schema changes are **new `V` migrations only**, plain DDL that runs once in order: no existence guards (`IF OBJECT_ID(...) IS NULL`, `IF COL_LENGTH(...) IS NULL`), each column with its constraints inline in one `ALTER TABLE` (`docs/database-migrations.md`). Never edit the baseline. Use `[${flyway:defaultSchema}]` for app tables, literal `[__mj]` for core tables. No `__mj_CreatedAt/__mj_UpdatedAt`, no FK indexes (CodeGen adds them). Every table and column gets an `MS_Description` extended property.
 - Every migration PR carries a changeset (`npx changeset`, at least `minor`).
 - SQL literals in `ExtraFilter` go through `RequireUUID` / `RequireUUIDs` / `RequireDate` / `EscapeSQLString` from `packages/CoreEntitiesServer/src/sql-guards.ts`. No inline `.replace(/'/g, "''")`.
 - No Angular data-access services. Components call `RunView`, entity objects and the generated remote-operation classes directly (`docs/ui-architecture.md`).
@@ -25,7 +25,7 @@
 - **PR #208 (`feat/168-business-today`) and PR #220 (`aidp-24`) are merged INTO this branch** (2026-09-20) in that order, with the two reconciled: `OverdueSQL(alias, dueDateExpression, todayExpression)`, `OverdueViewSQL()` emitting `vwOrderHeaders` with both the `nd` CROSS APPLY (next unpaid instalment) and the `bt` CROSS JOIN (business day), and PR #220's `V202609211200` carrying that exact view text. When #208 and #220 land on `next` with the same resolution this branch merges cleanly; if Craig resolves differently, re-merge here.
 - **Migration order is fixed:** `V202609211200`/`V202609211300` (#220) → `V202609221000`, `V202609241000`, `V202609261000` (this branch). `ExternalInvoice`'s FK to `OrderHeaderPaymentSchedule` is therefore plain, not conditional.
 - **Deploy order (from #208):** the bizapps-common migration that creates `[__mj_BizAppsCommon].[fnBusinessToday]()` must be applied before any migration that creates `vwOrderHeaders` (#208's `V202609161000` and #220's `V202609211200`), and the `BizApps.BusinessTimeZone` configuration row must be set or everything silently falls back to UTC.
-- **DDL style (Amith, via Andrew's review of #220):** plain `CREATE TABLE` / `ALTER TABLE` / `CREATE INDEX` / `sp_addextendedproperty`, GO-separated, no existence checks, no cursor or table variable — a cursor breaks the PostgreSQL conversion. This branch's three migrations follow it. **Robert:** this departs from `CLAUDE.md`'s "write migrations idempotently"; say which rule wins and the guards go back in if it is the CLAUDE.md one.
+- **DDL style (Amith, via Andrew's review of #220):** plain `CREATE TABLE` / `ALTER TABLE` / `CREATE INDEX` / `sp_addextendedproperty`, GO-separated, no existence checks, no cursor or table variable — a cursor breaks the PostgreSQL conversion. This branch's three migrations follow it. **Ruled:** this is the repo rule; `CLAUDE.md` and `docs/database-migrations.md` no longer ask for idempotent migrations (#514).
 
 ---
 
@@ -242,21 +242,13 @@ git commit -m "chore(orders): Bill.com sandbox harness and spike results (golive
 -- Added for the Bill.com rail (golive #146/#148): the connector resolves its own credentials from
 -- the MJ: Company Integrations row, so Orders stores a POINTER to that row, never a secret.
 -- Nullable; existing Stripe/Manual/StoredValue rows are untouched.
--- Idempotent.
 -- =============================================================================
-IF COL_LENGTH('${flyway:defaultSchema}.PaymentProvider', 'CompanyIntegrationID') IS NULL
-BEGIN
-    ALTER TABLE [${flyway:defaultSchema}].[PaymentProvider]
-        ADD [CompanyIntegrationID] UNIQUEIDENTIFIER NULL
-            CONSTRAINT [FK_PaymentProvider_CompanyIntegration]
-            REFERENCES [__mj].[CompanyIntegration]([ID]);
-END;
+ALTER TABLE [${flyway:defaultSchema}].[PaymentProvider]
+    ADD [CompanyIntegrationID] UNIQUEIDENTIFIER NULL
+        CONSTRAINT [FK_PaymentProvider_CompanyIntegration]
+        REFERENCES [__mj].[CompanyIntegration]([ID]);
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sys.extended_properties ep
-               JOIN sys.columns c ON c.object_id = ep.major_id AND c.column_id = ep.minor_id
-               WHERE ep.name = 'MS_Description' AND c.name = 'CompanyIntegrationID'
-                 AND ep.major_id = OBJECT_ID('${flyway:defaultSchema}.PaymentProvider'))
 EXEC sp_addextendedproperty @name = N'MS_Description',
     @value = N'The MJ Company Integration whose connector and credential this provider uses (Bill.com). NULL for providers that resolve credentials through CredentialsRef. A pointer, never a secret.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
@@ -760,7 +752,7 @@ Adjust the `billingAddress` sub-field names to what spike S4 showed BILL accepts
 - Modify: `packages/CoreEntitiesServer/src/entity-names.ts`, `packages/IntegrationTests/src/entity-names.ts`, `packages/Angular/src/lib/data/entity-names.ts` (add `EXTERNAL_INVOICE_ENTITY = 'MJ_BizApps_Orders: External Invoices'`, `EXTERNAL_CUSTOMER_ENTITY = 'MJ_BizApps_Orders: External Customers'`)
 - Create: `.changeset/external-invoice.md`
 
-- [ ] **Step 1: Write the migration** — the DDL from spec §4.3 for `ExternalInvoice` (with the persisted `UnitScheduleKey` computed column and both filtered unique indexes) and `ExternalCustomer`, each wrapped in `IF OBJECT_ID('${flyway:defaultSchema}.ExternalInvoice') IS NULL BEGIN … END`, with FKs: `ExternalInvoice.PaymentProviderID → PaymentProvider`, `OrderHeaderID → OrderHeader`, `CompanyID → __mj.Company`, `OrderHeaderPaymentScheduleID → OrderHeaderPaymentSchedule`, `IssuedByUserID → __mj.User`; `ExternalCustomer.PaymentProviderID → PaymentProvider`, `BillToOrganizationID → __mj_BizAppsCommon.Organization`, `BillToPersonID → __mj_BizAppsCommon.Person`. One `MS_Description` per table and column (copy the intent from the spec's inline comments). Add the header comment explaining: authoritative mapping (#146), why the schedule columns are also written (D-B2), what `Sending` means (§7).
+- [ ] **Step 1: Write the migration** — the DDL from spec §4.3 for `ExternalInvoice` (with the persisted `UnitScheduleKey` computed column and both filtered unique indexes) and `ExternalCustomer`, as plain `CREATE TABLE` statements with no existence guard, with FKs: `ExternalInvoice.PaymentProviderID → PaymentProvider`, `OrderHeaderID → OrderHeader`, `CompanyID → __mj.Company`, `OrderHeaderPaymentScheduleID → OrderHeaderPaymentSchedule`, `IssuedByUserID → __mj.User`; `ExternalCustomer.PaymentProviderID → PaymentProvider`, `BillToOrganizationID → __mj_BizAppsCommon.Organization`, `BillToPersonID → __mj_BizAppsCommon.Person`. One `MS_Description` per table and column (copy the intent from the spec's inline comments). Add the header comment explaining: authoritative mapping (#146), why the schedule columns are also written (D-B2), what `Sending` means (§7).
 
 - [ ] **Step 2: Apply, CodeGen, fold** exactly as Task 2 step 3. Confirm the generated entity names match the constants (`grep "External Invoices" packages/Entities/src/generated/entities/__mj_BizAppsOrders.ts`).
 
@@ -1089,7 +1081,7 @@ export class IssueExternalInvoiceOperation extends OrdersIssueExternalInvoiceOpe
 
 **Files:** `migrations/V202609261000__v5.15.0__ExternalPayment.sql`; entity-name constants (`EXTERNAL_PAYMENT_ENTITY = 'MJ_BizApps_Orders: External Payments'`, `PAYMENT_PROVIDER_SYNC_STATE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Sync States'`); changeset.
 
-- [ ] Write the DDL from spec §4.3 (idempotent guards, FKs `PaymentProviderID → PaymentProvider`, `PaymentHeaderID → PaymentHeader`, descriptions), apply, CodeGen, fold, build, changeset, commit `feat(orders): ExternalPayment and PaymentProviderSyncState — the poller's ledger and watermark`.
+- [ ] Write the DDL from spec §4.3 (plain DDL, no existence guards; FKs `PaymentProviderID → PaymentProvider`, `PaymentHeaderID → PaymentHeader`, descriptions), apply, CodeGen, fold, build, changeset, commit `feat(orders): ExternalPayment and PaymentProviderSyncState — the poller's ledger and watermark`.
 
 ---
 

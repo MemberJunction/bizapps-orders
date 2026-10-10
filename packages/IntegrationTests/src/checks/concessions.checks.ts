@@ -835,7 +835,7 @@ export const ConcessionChecks: NamedCheck[] = [
         const [one, two] = [firstTasks[0], secondTasks[0]];
         Assert(!sameID(one.Task.ID, two.Task.ID), "the two concessions do not share a task");
         for (const t of [one, two]) {
-          AssertEqual(t.Task.TypeCode, "APPROVAL_REQUEST", "the task is the tasks app's approval type");
+          AssertEqual(t.Task.TypeCode, "ORDERS_CONCESSION_APPROVAL", "the task is the concession approval type");
           AssertEqual(t.Task.Status, "Open", "the task is waiting on a decision");
           AssertEqual(t.Links.length, 2, "a task links the order and its one concession");
           Assert(t.IsLinked(Built.Order.ID), "the task links the order");

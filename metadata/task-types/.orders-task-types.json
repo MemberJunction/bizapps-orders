@@ -3,7 +3,9 @@
     "_comments": [
       "Approval of an exception to payment-gated access (bizapps-orders#268). Its own type, rather",
       "than the generic Approval Request, so that closing the task in the Tasks inbox runs the Action that",
-      "applies the decision to the override."
+      "applies the decision to the override. IsApproval lists its tasks in the Tasks approvals inbox; its OnAssign",
+      "action posts each assignment to the Teams channel named by the 'Teams Channel Webhook' credential called",
+      "ORDERS_ACCESS_OVERRIDE (bizapps-orders#360)."
     ],
     "fields": {
       "Name": "Access Override Approval",
@@ -12,6 +14,8 @@
       "IconClass": "fa-solid fa-unlock-keyhole",
       "DefaultPriority": "High",
       "IsActive": true,
+      "IsApproval": true,
+      "OnAssignActionID": "@lookup:MJ: Actions.Name=Post Task Assignment to Teams",
       "OnCompleteActionID": "@lookup:MJ: Actions.Name=Apply Access Override Decision",
       "OnCancelActionID": "@lookup:MJ: Actions.Name=Apply Access Override Decision",
       "OnRejectActionID": "@lookup:MJ: Actions.Name=Apply Access Override Decision"
@@ -22,6 +26,24 @@
     "sync": {
       "lastModified": "2026-09-29T14:02:15.143Z",
       "checksum": "017d82b83dbed4b23ac121c95d3c4fa498613a4f0937848cf6566bf311d68f16"
+    }
+  },
+  {
+    "_comments": [
+      "Approval of a Pending concession (golive #274, #312). Its own type, rather than the generic Approval",
+      "Request, so that its OnAssign action posts concession approvals, and only those, to the Teams channel",
+      "named by the 'Teams Channel Webhook' credential called ORDERS_CONCESSION_APPROVAL. IsApproval lists its",
+      "tasks in the Tasks approvals inbox."
+    ],
+    "fields": {
+      "Name": "Concession Approval",
+      "Code": "ORDERS_CONCESSION_APPROVAL",
+      "Description": "Approve or reject a Pending concession on an order. The order cannot be confirmed, and its documents cannot be sent, until the concession is decided.",
+      "IconClass": "fa-solid fa-hand-holding-dollar",
+      "DefaultPriority": "High",
+      "IsActive": true,
+      "IsApproval": true,
+      "OnAssignActionID": "@lookup:MJ: Actions.Name=Post Task Assignment to Teams"
     }
   }
 ]
