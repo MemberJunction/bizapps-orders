@@ -49,6 +49,7 @@ import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
     OrderHeaderEntity,
+    mjBizAppsOrdersOrderCheckoutAnswerEntity,
     mjBizAppsOrdersOrderLineEntity,
     type AddressLike,
     mjBizAppsOrdersOrderLinePriceComponentEntity,
@@ -100,7 +101,7 @@ import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { CheckOrderBillToName, LoadBillToName } from './RailCustomerNameLimit.js';
-import { Today, AllocateProRata, AuthorizeManualDiscount, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
+import { Today, AllocateProRata, AuthorizeManualDiscount, DeletePromotionAdjustments, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ReadStandingDiscounts, ReadStatedTaxCharges, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
 const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
@@ -148,6 +149,7 @@ const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 // bizapps-common names its entities with DOTS, not the underscores the other apps use.
 const COMMON_ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+const ORDER_CHECKOUT_ANSWER_ENTITY = 'MJ_BizApps_Orders: Order Checkout Answers';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 /** IsA Disjoint child of Product (BO-D37) — present only for products that ARE events. */
@@ -322,6 +324,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private _pendingPromotions: PromotionRunResult | null = null;
     private _pendingCharges: ComputeChargesResult | null = null;
+    /**
+     * The saved lines whose promotions this save re-decides, so the saver replaces their earlier
+     * promotion rows. Empty unless `prepareLines` handed the walk their standing discounts.
+     */
+    private _promotionsReDecidedFor: string[] = [];
 
     /** Codes that resolved to nothing usable, so the caller can tell the customer WHY. */
     private _unusableCodes: Array<{ Code: string; Reason: string }> = [];
@@ -779,6 +786,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 }
             }
 
+            await this.saveCheckoutAnswers(options);
+
             if (booking) {
                 const lines = await this.loadLinesForBooking();
 
@@ -861,6 +870,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
             if (booking && this.OrderType === 'Sale') await this.recordOrderConfirmedEvent(options);
 
             await dbProvider.CommitTransaction();
+            // A REQUESTED DISCOUNT IS CONSUMED BY THE SAVE THAT APPLIED IT. Its adjustment row and the
+            // line's stored discount now carry it, and the next walk starts from those. Left in place, a
+            // second save of this object (the confirm after a draft) granted it again. Cleared only once
+            // committed, so a save that rolls back can be retried with the same requests.
+            this._manualDiscounts = [];
+            // A REQUESTED CHARGE IS CONSUMED BY THE SAVE THAT APPLIED IT. Its rows now carry it: a
+            // stated tax is read back from them by `statedTaxForRePricing`, and any other charge keeps
+            // its rows and its line's `ChargeAmount`, which a walk that does not see it leaves alone.
+            // Left in place, a second save of this object (the confirm after a draft) wrote the
+            // charge again and booking credited it twice. Cleared only once committed, so a save
+            // that rolls back can be retried with the same requests.
+            this._charges = [];
             return true;
         } catch (err) {
             LogError(`OrderEntityServer.Save failed for order ${this.OrderNumber ?? this.ID}: ${err}`);
@@ -1268,6 +1289,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // request arrays before pricing runs. See `drainStagedPricingRequests` for why the rows are
         // consumed rather than saved as they arrive.
         await this.drainStagedPricingRequests();
+        const standingDiscounts = await this.standingDiscountsForRePricing();
+        const restatedTax = await this.statedTaxForRePricing();
 
         // PRICING, PROMOTIONS, CHARGES AND TAX — one call to the service that also answers
         // `Orders.PriceOrder`, so the number the screen shows and the number the ledger books come
@@ -1286,8 +1309,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Lines: [...this.Lines.Items],
                 PromotionCodes: this.PromotionCodes.Codes,
                 ManualDiscounts: this._manualDiscounts,
-                Charges: this._charges,
+                Charges: restatedTax.length ? [...this._charges, ...restatedTax] : this._charges,
                 SettledTax: this._settledTax,
+                StandingDiscounts: standingDiscounts,
             },
             settledFromOrigin,
         );
@@ -1300,13 +1324,67 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * The non-promotion discount on each saved line, when this save re-decides the order's promotions.
+     *
+     * The codes ride the order object, so a draft saved with a code and then confirmed runs the
+     * promotion engine twice. The confirm must REPLACE the draft's promotion rows rather than add a
+     * second set, and keep what is not a promotion's: manual discounts are requests consumed once and
+     * are not re-decided. Undefined, and nothing is replaced, when no code is presented, when the
+     * order is new, or when its money is frozen.
+     */
+    private async standingDiscountsForRePricing(): Promise<Map<mjBizAppsOrdersOrderLineEntity, number> | undefined> {
+        this._promotionsReDecidedFor = [];
+        if (!this.PromotionCodes.Codes.length || !this.IsSaved || this.MoneyLocked) return undefined;
+        const saved = this.Lines.Items.filter((line) => line.IsSaved);
+        if (!saved.length) return undefined;
+
+        const byID = await ReadStandingDiscounts(
+            this.ID,
+            saved.map((line) => line.ID),
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+        const out = new Map<mjBizAppsOrdersOrderLineEntity, number>();
+        for (const line of saved) {
+            const kept = byID.get(String(line.ID).toLowerCase());
+            if (kept === undefined) continue;
+            out.set(line, kept);
+            this._promotionsReDecidedFor.push(line.ID);
+        }
+        return out.size ? out : undefined;
+    }
+
+    /**
+     * The tax a caller stated on this saved order, as requests for this walk — see `ReadStatedTaxCharges`.
+     *
+     * The walk re-resolves tax on every save and the saver replaces the tax rows to match, so a stated
+     * or overridden tax that is not restated is lost at the next save. A request in memory does not
+     * survive a reload, so it is read back from the rows. Nothing on a new order, or on one whose
+     * money is frozen, whose tax rows are never replaced.
+     */
+    private async statedTaxForRePricing(): Promise<RequestedCharge[]> {
+        if (!this.IsSaved || this.MoneyLocked) return [];
+        const lines = this.Lines.Items;
+        if (!lines.some((line) => line.IsSaved)) return [];
+        return ReadStatedTaxCharges(
+            this.ID,
+            lines.map((line) => (line.IsSaved ? line.ID : null)),
+            [...this._settledTax.keys()].filter((line) => line.IsSaved).map((line) => line.ID),
+            this._charges.map((c) => c.Code),
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+    }
+
+    /**
      * Write the lines that `prepareLines` settled, plus the adjustment rows that need their keys.
      */
     /**
      * Write the adjustment and allocation rows once the lines have real IDs.
      *
      * These only ADD rows — the frozen line is never touched again, which is what keeps this clear
-     * of the immutability trigger.
+     * of the immutability trigger. A re-decided saved line has its earlier promotion rows removed
+     * first, in `savePendingLines`.
      */
     private async writePromotionRecords(
         run: PromotionRunResult,
@@ -1499,6 +1577,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         // The adjustment and charge rows need line IDs, so they follow the insert — but they only ADD
         // rows and never touch the frozen line again.
+        // A PROMOTION RE-DECIDED ON A SAVED LINE REPLACES ITS EARLIER ROWS, for the reason tax does
+        // below: the draft's own save wrote them, and this walk's would sit beside them. Only the
+        // lines `standingDiscountsForRePricing` named, whose discount the walk restated without the
+        // old promotion; manual discount rows stay.
+        await this.deletePromotionRecords();
         if (pending) await this.writePromotionRecords(pending, persisted);
         // EXCEPT TAX, which this walk re-resolved for every line. A saved draft already holds the tax
         // rows its own save wrote; adding this walk's beside them credits the tax twice at booking
@@ -1513,6 +1596,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
 
 
+
+    /** Remove the promotion rows an earlier save wrote for the re-decided lines — see `DeletePromotionAdjustments`. */
+    private async deletePromotionRecords(): Promise<void> {
+        const lineIDs = this._promotionsReDecidedFor ?? [];
+        if (!lineIDs.length) return;
+        await DeletePromotionAdjustments(
+            this.ID,
+            lineIDs,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+        this._promotionsReDecidedFor = [];
+    }
 
     /** Remove the tax rows an earlier save wrote for these lines — see `DeleteTaxCharges`. */
     private async deleteTaxRecords(persisted: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
@@ -3304,6 +3400,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         EndDate: decision.Term.EndDate,
                         ConcurrencyMode: rules.ConcurrencyMode,
                         SubscriptionTypeCode: rules.Code,
+                        CancellationMode: rules.CancellationMode,
+                        GracePeriodDays: rules.GracePeriodDays,
+                        // Another line of this order has no subscription yet, so there is nothing to cancel.
+                        Cancelable: false,
                     },
                 ]);
             }
@@ -3756,6 +3856,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 EndDate: endDate,
                 ConcurrencyMode: rules.ConcurrencyMode,
                 SubscriptionTypeCode: rules.Code,
+                CancellationMode: rules.CancellationMode,
+                GracePeriodDays: rules.GracePeriodDays,
+                Cancelable: sub.Status !== 'Canceled',
             });
         }
         return out;
@@ -4296,6 +4399,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private async recordOrderConfirmedEvent(options?: EntitySaveOptions): Promise<void> {
         if (!HasOutboundConsumers('OrderConfirmed')) return;
         const lines = await this.loadLinesForBooking();
+        const answers = await this.loadCheckoutAnswers();
         const day = (d: Date | null | undefined): string | null => (d ? new Date(d).toISOString().slice(0, 10) : null);
         await RecordOutboundEvent(
             {
@@ -4323,6 +4427,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         ShipToPersonID: l.ShipToPersonID ?? null,
                         ShipToOrganizationID: l.ShipToOrganizationID ?? null,
                     })),
+                    CheckoutAnswers: answers.map((a) => ({
+                        QuestionKey: a.QuestionKey,
+                        QuestionLabel: a.QuestionLabel,
+                        Answer: a.Answer,
+                        OtherText: a.OtherText ?? null,
+                    })),
                 },
             },
             this.ProviderToUse as unknown as IMetadataProvider,
@@ -4343,6 +4453,44 @@ export class OrderEntityServer extends OrderHeaderEntity {
             this.ContextCurrentUser,
         );
         return result?.Results ?? [];
+    }
+
+    /**
+     * The checkout answers as written (#322), read inside the booking transaction like the lines, so
+     * the event carries what committed whether the answers came with this save or an earlier one.
+     */
+    private async loadCheckoutAnswers(): Promise<mjBizAppsOrdersOrderCheckoutAnswerEntity[]> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<mjBizAppsOrdersOrderCheckoutAnswerEntity>(
+            {
+                EntityName: ORDER_CHECKOUT_ANSWER_ENTITY,
+                ExtraFilter: `OrderHeaderID='${this.ID}'`,
+                OrderBy: 'QuestionKey',
+                ResultType: 'entity_object',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!result?.Success) {
+            throw new Error(`Could not read the checkout answers of order ${this.OrderNumber}: ${result?.ErrorMessage ?? 'unknown error'}`);
+        }
+        return result.Results ?? [];
+    }
+
+    /**
+     * Write the checkout's answers with the order (#322). The header save skips related collections so
+     * the lines can be priced first, and that skip covers this collection too: without this the
+     * answers a checkout attached were never written.
+     */
+    private async saveCheckoutAnswers(options?: EntitySaveOptions): Promise<void> {
+        for (const answer of this.CheckoutAnswers.Items) {
+            if (answer.IsSaved && !answer.Dirty) continue;
+            answer.OrderHeaderID = this.ID;
+            if (!(await answer.Save(options))) {
+                throw new Error(
+                    `Failed to save the answer to checkout question "${answer.QuestionKey}": ${ExtractEntityErrorMessage(answer)}`,
+                );
+            }
+        }
     }
 
     private async countPersistedLines(): Promise<number> {

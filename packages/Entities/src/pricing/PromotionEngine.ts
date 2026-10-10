@@ -47,11 +47,15 @@ const PROMOTION_TARGET_ENTITY = 'MJ_BizApps_Orders: Promotion Targets';
 const PROMOTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Promotion Types';
 const ORDER_ADJUSTMENT_ENTITY = 'MJ_BizApps_Orders: Order Adjustments';
 const ORDER_ADJUSTMENT_ALLOCATION_ENTITY = 'MJ_BizApps_Orders: Order Adjustment Allocations';
+const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
+
+/** A database-issued key, so it can go into a filter as it is. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class PromotionError extends Error {
     constructor(message: string) {
@@ -265,21 +269,29 @@ async function targetsFor(
     return out;
 }
 
-/** Redemption counts, read from what actually happened rather than a stored counter. */
+/**
+ * Redemption counts, read from what actually happened rather than a stored counter.
+ *
+ * The order being priced is left out. A saved draft already holds the rows its own walk wrote, and
+ * the confirm re-decides the same promotion and replaces them, so counting them would find a
+ * single-use code used up by the order that is using it.
+ */
 async function redemptionCounts(
     promotionIDs: string[],
     organizationID: string | null,
     personID: string | null,
+    orderHeaderID: string | null,
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<Map<string, { total: number; customer: number }>> {
     const out = new Map<string, { total: number; customer: number }>();
     if (!promotionIDs.length) return out;
     const rv = new RunView(provider as unknown as IRunViewProvider);
+    const notThisOrder = UUID_PATTERN.test(orderHeaderID ?? '') ? ` AND OrderHeaderID <> '${orderHeaderID}'` : '';
     const res = await rv.RunView<{ PromotionID: string; OrderHeaderID: string }>(
         {
             EntityName: ORDER_ADJUSTMENT_ENTITY,
-            ExtraFilter: `PromotionID IN (${promotionIDs.map((i) => `'${i}'`).join(',')})`,
+            ExtraFilter: `PromotionID IN (${promotionIDs.map((i) => `'${i}'`).join(',')})${notThisOrder}`,
             Fields: ['PromotionID', 'OrderHeaderID'],
             ResultType: 'simple',
             BypassCache: true,
@@ -429,6 +441,7 @@ export async function RunPromotions(
         qualified.map((p) => p.ID),
         input.OrganizationID,
         input.PersonID,
+        input.OrderHeaderID,
         provider,
         user,
     );
@@ -797,6 +810,155 @@ export async function WriteAdjustments(
             );
         }
     }
+}
+
+/**
+ * Per saved line, the discount it carries that is NOT a promotion's: its stored `DiscountAmount`
+ * less what the order's promotion allocations give it. Keyed by lowercased line ID.
+ *
+ * A walk that re-decides promotions on a saved order replaces the promotion's share and has to keep
+ * the rest, which is manual discounts and any amount stated on the line. Both figures are read from
+ * the database rather than from the line in memory, which may already carry a stamp from a save
+ * that did not complete.
+ */
+export async function ReadStandingDiscounts(
+    orderHeaderID: string,
+    lineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (!lineIDs.length) return out;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+
+    const stored = await rv.RunView<{ ID: string; DiscountAmount: number | null }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND ID IN (${quoted(lineIDs)})`,
+            Fields: ['ID', 'DiscountAmount'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!stored?.Success) {
+        throw new PromotionError(`Could not read the order's line discounts: ${stored?.ErrorMessage ?? 'unknown error'}`);
+    }
+    for (const row of stored.Results) out.set(uuidKey(row.ID), Money(Number(row.DiscountAmount ?? 0)));
+
+    const promotional = await promotionAllocations(orderHeaderID, lineIDs, provider, user);
+    for (const a of promotional.Allocations) {
+        const key = uuidKey(a.OrderLineID);
+        if (!out.has(key)) continue;
+        out.set(key, Money((out.get(key) ?? 0) - Number(a.Amount ?? 0)));
+    }
+    for (const [key, amount] of out) if (amount < 0) out.set(key, 0);
+    return out;
+}
+
+/**
+ * Remove the promotion adjustment rows an earlier walk wrote for these lines, allocations first.
+ *
+ * The companion of {@link ReadStandingDiscounts}: the walk that re-decides promotions writes its own
+ * rows with {@link WriteAdjustments}, so the earlier ones go first or the trail records the
+ * discount twice while the line shows it once. Manual discount rows (no `PromotionID`) are left
+ * alone, as they are not re-decided.
+ *
+ * Scoped to the lines the walk priced. An adjustment with an allocation on one of them goes whole.
+ * Only for an order whose money is not yet frozen; the caller owns that rule.
+ */
+export async function DeletePromotionAdjustments(
+    orderHeaderID: string,
+    lineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<void> {
+    if (!lineIDs.length) return;
+    const promotional = await promotionAllocations(orderHeaderID, lineIDs, provider, user);
+    if (!promotional.AdjustmentIDs.length) return;
+
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const allocations = await rv.RunView<mjBizAppsOrdersOrderAdjustmentAllocationEntity>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ALLOCATION_ENTITY,
+            ExtraFilter: `OrderAdjustmentID IN (${quoted(promotional.AdjustmentIDs)})`,
+            ResultType: 'entity_object',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!allocations?.Success) {
+        throw new PromotionError(`Could not read the promotion allocations: ${allocations?.ErrorMessage ?? 'unknown error'}`);
+    }
+    const adjustments = await rv.RunView<mjBizAppsOrdersOrderAdjustmentEntity>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ENTITY,
+            ExtraFilter: `ID IN (${quoted(promotional.AdjustmentIDs)})`,
+            ResultType: 'entity_object',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!adjustments?.Success) {
+        throw new PromotionError(`Could not read the promotion adjustments: ${adjustments?.ErrorMessage ?? 'unknown error'}`);
+    }
+
+    for (const row of [...allocations.Results, ...adjustments.Results]) {
+        if (!(await row.Delete())) {
+            throw new PromotionError(
+                `Could not remove the previous promotion on this order: ${row.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+    }
+}
+
+/** The order's promotion adjustments touching these lines, and their allocations on them. */
+async function promotionAllocations(
+    orderHeaderID: string,
+    lineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<{ AdjustmentIDs: string[]; Allocations: Array<{ OrderLineID: string; Amount: number | null }> }> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const promotions = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND PromotionID IS NOT NULL`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!promotions?.Success) {
+        throw new PromotionError(`Could not read the order's promotion adjustments: ${promotions?.ErrorMessage ?? 'unknown error'}`);
+    }
+    if (!promotions.Results.length) return { AdjustmentIDs: [], Allocations: [] };
+
+    const allocations = await rv.RunView<{ OrderAdjustmentID: string; OrderLineID: string; Amount: number | null }>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ALLOCATION_ENTITY,
+            ExtraFilter:
+                `OrderAdjustmentID IN (${quoted(promotions.Results.map((p) => p.ID))})` +
+                ` AND OrderLineID IN (${quoted(lineIDs)})`,
+            Fields: ['OrderAdjustmentID', 'OrderLineID', 'Amount'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!allocations?.Success) {
+        throw new PromotionError(`Could not read the promotion allocations: ${allocations?.ErrorMessage ?? 'unknown error'}`);
+    }
+    return {
+        AdjustmentIDs: [...new Set(allocations.Results.map((a) => uuidKey(a.OrderAdjustmentID)))],
+        Allocations: allocations.Results,
+    };
+}
+
+/** Database-issued IDs as a SQL `IN` list, each once. */
+function quoted(ids: string[]): string {
+    return [...new Set(ids.map(uuidKey))].map((id) => `'${id}'`).join(',');
 }
 
 /** Tree-shaking anchor for the qualifier base registration. */
