@@ -41,7 +41,7 @@ import {
 
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
-import { RequireDate, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { EscapeSQLString, RequireDate, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 
@@ -188,7 +188,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             const existing = await rv.RunView<{ ID: string }>(
                 {
                     EntityName: PAYMENT_HEADER_ENTITY,
-                    ExtraFilter: `IdempotencyKey = '${idempotencyKey.replace(/'/g, "''")}'`,
+                    ExtraFilter: `IdempotencyKey = '${EscapeSQLString(idempotencyKey)}'`,
                     ResultType: 'simple',
                 },
                 user,
@@ -285,7 +285,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
                 const again = await rv.RunView<{ ID: string }>(
                     {
                         EntityName: PAYMENT_HEADER_ENTITY,
-                        ExtraFilter: `IdempotencyKey = '${idempotencyKey.replace(/'/g, "''")}'`,
+                        ExtraFilter: `IdempotencyKey = '${EscapeSQLString(idempotencyKey)}'`,
                         ResultType: 'simple',
                     },
                     user,

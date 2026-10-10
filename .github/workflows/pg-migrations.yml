@@ -12,6 +12,9 @@ name: PostgreSQL migration parity
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: pg-migrations-${{ github.ref }}
   cancel-in-progress: true
