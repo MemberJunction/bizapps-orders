@@ -112,7 +112,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,
-    entitlements: 25,
+    entitlements: 32,
     'entitlement-read': 7,
     'payment-providers': 12,
     'ach-settlement': 17,
