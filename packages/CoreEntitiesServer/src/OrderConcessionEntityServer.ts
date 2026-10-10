@@ -27,9 +27,30 @@
  * approval, whatever the requester's authority, and the requester cannot decide it even when they hold the
  * approving role. ./PaymentTermsChange.ts applies it in the approval's own transaction.
  *
+ * A LINE WHOSE PRODUCT ALWAYS NEEDS APPROVAL (golive #281) is valued like any other Price or Scope concession, at
+ * zero when it gives nothing away against an engine price, and always goes to the ConcessionLimit rule's role: the
+ * requester's own authority never approves it, and the requester cannot decide it. The confirm gate holds the order
+ * until one is Approved (./ConcessionGate.ts).
+ *
  * ITS APPROVERS ARE TOLD (golive #274). A Pending concession raises its own approval task in the tasks
  * app, assigned to the rule's role holders, in the same transaction as the row. Deciding it on this record,
  * or withdrawing it, closes that task.
+ *
+ * ITS SIGNED AMENDMENT IS RECORDED AFTERWARDS (golive #268). `SignedAmendmentReference` says where the customer's
+ * signed contract amendment is kept. It is the one column of a decided concession that may change, and only on an
+ * Approved one: the amendment is usually signed after the approval. The shared view "Concessions: Approved, No
+ * Signed Amendment" lists the approved concessions still without one.
+ *
+ * A REFERRAL PROGRAM APPROVES ITS OWN (golive #268). A referral's earned time is added to the next term, on the
+ * renewal order, never to the current one: extending the current term re-cuts recognition already scheduled and can
+ * change a renewal invoice already sent. A Duration concession that names an active `ReferralProgram` of the order's
+ * company, extends a term bought by a renewal line, and adds no more than the program's `DaysPerReferral` is
+ * Approved by the program, with no Sales Authority and no approver. One that adds more, or names an inactive
+ * program, is routed like any other. Naming a program on a term that is not a renewal is refused.
+ *
+ * ACCOUNTING IS TOLD OF EVERY APPROVAL (golive #268). Any concession reaching Approved, on the requester's authority
+ * or by a decision, raises accounting's acknowledgment task in the same transaction (./ConcessionAcknowledgment.ts).
+ * A term extension raises its own, with the re-cut schedule. Withdrawing the concession closes its task.
  *
  * WITHDRAWING ONE. A Pending concession can be withdrawn, and so can one approved on the requester's
  * own authority while its order is not confirmed. No approver decided the second kind, and the
@@ -85,9 +106,12 @@ import {
     LoadConcessionAuthority,
     OrderConcessionTotal,
     OrderNetTotal,
+    ProductsRequiringSaleApproval,
 } from './ConcessionGate.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { RaiseConcessionAcknowledgment } from './ConcessionAcknowledgment.js';
 import { ApplyTermsChange, CheckTermsChange } from './PaymentTermsChange.js';
+import { CheckReferralProgram } from './ReferralProgram.js';
 import { RequireUUID } from './sql-guards.js';
 import { ApplyTermExtension, CheckTermExtension, type ApprovedDurationConcession } from './TermExtension.js';
 
@@ -107,6 +131,7 @@ const AUTHORED_FIELDS = [
     'AddedQuantity',
     'PriorPaymentTermsTypeID',
     'NewPaymentTermsTypeID',
+    'ReferralProgramID',
     'ComputedValue',
     'OrderNetTotal',
     'CumulativeShare',
@@ -169,10 +194,15 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         // A decision made through the task leaves the task to the tasks app, which closes it itself.
         const closing =
             deciding && !this.DecidedThroughTask && (this.Status === 'Approved' || this.Status === 'Rejected') ? this.Status : null;
-        if (extending || changingTerms || closing) {
+        // Every other approval is acknowledged by accounting too (golive #268); an extension's own task carries its schedule.
+        const acknowledging = this.Status === 'Approved' && (recording || deciding) && this.DeliveryForm !== 'Duration';
+        if (extending || changingTerms || closing || acknowledging) {
             return this.withApprovalTask(recording ? 'create' : 'update', () => super.Save(options), async (ctx) => {
+                // Closed first: closing completes every open task linked to the concession, and the acknowledgment
+                // raised below must stay open.
                 if (closing) await CloseConcessionTasks(this.ID, this.OrderHeaderID, closing, ctx);
                 if (extending) await ApplyTermExtension(this.asApprovedExtension(), ctx);
+                if (acknowledging) await RaiseConcessionAcknowledgment(this.asApprovedFacts(), ctx);
                 if (changingTerms) {
                     await ApplyTermsChange(
                         {
@@ -186,6 +216,22 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             });
         }
         return super.Save(options);
+    }
+
+    private asApprovedFacts() {
+        return {
+            ID: this.ID,
+            OrderHeaderID: this.OrderHeaderID,
+            DeliveryForm: this.DeliveryForm,
+            ReasonCategory: this.ReasonCategory,
+            Reason: this.Reason,
+            ComputedValue: Number(this.ComputedValue ?? 0),
+            CumulativeShare: this.CumulativeShare == null ? null : Number(this.CumulativeShare),
+            AddedDays: this.AddedDays,
+            AddedQuantity: this.AddedQuantity,
+            RequestedByUserID: this.RequestedByUserID,
+            ApprovedOnAuthority: !this.SalesRuleID && !!this.AuthorizedBySalesAuthorityID,
+        };
     }
 
     private asApprovedExtension(): ApprovedDurationConcession {
@@ -207,6 +253,10 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private approvingRole: string | null = null;
     /** How far this concession moves its term's dates, set when a Duration concession is valued. */
     private termDateChangeDays: number | null = null;
+    /** Set when a Price or Scope concession is valued on a line whose product always needs approval (golive #281). */
+    private saleApprovalRequired = false;
+    /** The line that bought the term a Duration concession extends, set when it is valued. */
+    private extendedLine: LineRow | null = null;
 
     /** What the approval task calls this concession ("25% discount, 3,000.00"), kept by `prepareNew`. */
     private approvalSummary = '';
@@ -233,11 +283,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
         const id = this.ID;
         const orderHeaderID = this.OrderHeaderID;
-        const pending = this.Status === 'Pending';
         // A draft-line removal runs inside the order's own save, so the order header is not saved again here.
         const releaseOrder = !this.WithdrawWithDraftLine;
         return this.withApprovalTask('delete', () => super.Delete(options), async (ctx) => {
-            if (pending) await CloseConcessionTasks(id, orderHeaderID, 'Withdrawn', ctx, releaseOrder);
+            // A Pending concession's approval task, or an approved one's acknowledgment task (golive #268).
+            await CloseConcessionTasks(id, orderHeaderID, 'Withdrawn', ctx, releaseOrder);
             await UnlinkConcession(id, ctx);
         });
     }
@@ -293,6 +343,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!this.Reason?.trim()) return 'A concession must state its reason.';
 
         this.termDateChangeDays = null;
+        this.saleApprovalRequired = false;
+        this.extendedLine = null;
         const valued = await this.valueByForm(user);
         if (typeof valued === 'string') return valued;
 
@@ -318,7 +370,16 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         };
         this.valuedPercent = valued.Percent ?? null;
 
-        if (ConcessionAlwaysEscalates(this.DeliveryForm)) return this.escalate(user, measure);
+        if (ConcessionAlwaysEscalates(this.DeliveryForm) || this.saleApprovalRequired) return this.escalate(user, measure);
+
+        if (this.ReferralProgramID) {
+            const inProgram = await this.inReferralProgram(user);
+            if (typeof inProgram === 'string') return inProgram;
+            if (inProgram) {
+                this.decide('Approved', user);
+                return null;
+            }
+        }
 
         const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
         const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.termDateChangeDays, share);
@@ -379,16 +440,19 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
      * The requester cannot decide it, so someone else must hold the role.
      */
     private async escalate(user: UserInfo, measure: ConcessionTierMeasure): Promise<string | null> {
+        const what = this.saleApprovalRequired
+            ? 'A concession on a line whose product always needs approval'
+            : `A ${this.DeliveryForm} concession`;
         const tier = await FindConcessionTier(measure, this.provider(), user);
         if (tier.Conflict) return tier.Conflict;
         if (!tier.Rule?.ApprovalRequiredRoleID) {
             return (
-                `A ${this.DeliveryForm} concession always needs approval, and no active SalesRule of type ` +
+                `${what} always needs approval, and no active SalesRule of type ` +
                 `'ConcessionLimit' whose thresholds it meets names an approving role, so no one could approve it. ` +
                 `Configure a ConcessionLimit rule with an ApprovalRequiredRoleID and no thresholds, as the lowest tier.`
             );
         }
-        return this.pendForAnotherHolder(tier.Rule, user, `A ${this.DeliveryForm} concession cannot be decided by the person who asked for it`);
+        return this.pendForAnotherHolder(tier.Rule, user, `${what} cannot be decided by the person who asked for it`);
     }
 
     /**
@@ -455,6 +519,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         this.OrderHeaderID = line.OrderHeaderID;
         this.OrderLineID = line.ID;
+        this.extendedLine = line;
         this.termDateChangeDays = TermDateChangeDays(
             { StartDate: applicable.TermStartDate, EndDate: applicable.CurrentEndDate },
             { StartDate: applicable.TermStartDate, EndDate: applicable.NewEndDate },
@@ -467,10 +532,39 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         });
     }
 
+    /**
+     * Whether the referral program this concession names approves it: true when it is in program, false when it
+     * is routed like any other, or why naming the program is refused.
+     */
+    private async inReferralProgram(user: UserInfo): Promise<boolean | string> {
+        if (this.DeliveryForm !== 'Duration' || !this.extendedLine) {
+            return 'A referral program grants extra time on a renewed term, so only a Duration concession names one.';
+        }
+        const verdict = await CheckReferralProgram(
+            {
+                ReferralProgramID: this.ReferralProgramID!,
+                DeliveryForm: this.DeliveryForm,
+                ReasonCategory: this.ReasonCategory,
+                AddedDays: Number(this.AddedDays ?? 0),
+                OrderHeaderID: this.OrderHeaderID,
+                RenewsSubscriptionID: this.extendedLine.RenewsSubscriptionID,
+            },
+            { Provider: this.provider(), User: user },
+        );
+        return typeof verdict === 'string' ? verdict : verdict.InProgram;
+    }
+
     private async valueLinePrice(user: UserInfo): Promise<ConcessionValuation | string> {
         const line = await this.requireLine(user);
         if (typeof line === 'string') return line;
         const concession = await LinePriceConcessionFor(line, this.provider(), user);
+        this.saleApprovalRequired = await this.lineRequiresSaleApproval(line, user);
+        if (!concession && this.saleApprovalRequired) {
+            // Nothing given away against an engine price, often because the product has none: the approval is
+            // of the sale itself, so it is recorded at no value.
+            this.OrderHeaderID = line.OrderHeaderID;
+            return { Value: 0, Percent: null };
+        }
         if (!concession) {
             return (
                 `Line ${line.LineNumber} is charged its engine price or another named price that applies, with no ` +
@@ -509,6 +603,20 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return { Value: 0, Percent: null };
     }
 
+    /** Whether the line's product always needs approval. A renewal line's sale was approved when it was first sold. */
+    private async lineRequiresSaleApproval(line: LineRow, user: UserInfo): Promise<boolean> {
+        if (line.RenewsSubscriptionID || !line.ProductID) return false;
+        const required = await ProductsRequiringSaleApproval([line.ProductID], this.provider(), user);
+        return required.has(line.ProductID.toLowerCase());
+    }
+
+    /** A Price or Scope concession on a line whose product always needs approval. */
+    private async onSaleApprovalLine(user: UserInfo): Promise<boolean> {
+        if ((this.DeliveryForm !== 'Price' && this.DeliveryForm !== 'Scope') || !this.OrderLineID) return false;
+        const line = await this.loadLine(this.OrderLineID, user);
+        return !!line && (await this.lineRequiresSaleApproval(line, user));
+    }
+
     private async requireLine(user: UserInfo): Promise<LineRow | string> {
         if (!this.OrderLineID) return `A ${this.DeliveryForm} concession must name the order line it applies to.`;
         const line = await this.loadLine(this.OrderLineID, user);
@@ -529,9 +637,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         const statusField = this.GetFieldByName('Status');
         if (!statusField?.Dirty) {
-            return this.GetFieldByName('DecisionNotes')?.Dirty
-                ? 'A decision note is recorded with the decision itself, by setting Status to Approved or Rejected.'
-                : null;
+            if (this.GetFieldByName('DecisionNotes')?.Dirty) {
+                return 'A decision note is recorded with the decision itself, by setting Status to Approved or Rejected.';
+            }
+            if (this.GetFieldByName('SignedAmendmentReference')?.Dirty && this.Status !== 'Approved') {
+                return `This concession is ${this.Status}. A signed amendment is recorded only against an Approved concession.`;
+            }
+            return null;
         }
 
         const previous = String(statusField.OldValue ?? '');
@@ -542,6 +654,9 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!user?.ID) return 'A decision must be attributable to a user, and no user was supplied.';
         if (ConcessionAlwaysEscalates(this.DeliveryForm) && UUIDsEqual(user.ID, this.RequestedByUserID)) {
             return `A ${this.DeliveryForm} concession cannot be decided by the person who asked for it.`;
+        }
+        if (UUIDsEqual(user.ID, this.RequestedByUserID) && (await this.onSaleApprovalLine(user))) {
+            return 'A concession on a line whose product always needs approval cannot be decided by the person who asked for it.';
         }
 
         const rule = await this.approvingRule(user);

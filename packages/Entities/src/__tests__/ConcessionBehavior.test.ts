@@ -12,6 +12,7 @@ import {
     PickConcessionTier,
     type ConcessionAuthority,
     type ConcessionTierRule,
+    ResolveRequiresSaleApproval,
 } from '../pricing/ConcessionBehavior';
 
 /**
@@ -313,5 +314,23 @@ describe('approval tiers (#308)', () => {
     it('ignores a rank tie between tiers the concession does not meet', () => {
         const otherSenior = tier({ ID: 'rule-other', Name: 'Finance', ConcessionTier: 1, MinConcessionValue: 50_000 });
         expect(PickConcessionTier([manager, director, otherSenior], { Value: 2000 }).Rule?.ID).toBe('rule-senior');
+    });
+});
+
+describe('products that always need approval (golive #281)', () => {
+    it('is not required when no level states it', () => {
+        expect(ResolveRequiresSaleApproval({ Product: null, Categories: [null, undefined], Type: null })).toBe(false);
+    });
+    it('inherits the product type when nothing more specific is stated', () => {
+        expect(ResolveRequiresSaleApproval({ Product: null, Categories: [null], Type: true })).toBe(true);
+    });
+    it('takes the nearest category over an ancestor and the type', () => {
+        expect(ResolveRequiresSaleApproval({ Product: null, Categories: [null, true, false], Type: false })).toBe(true);
+    });
+    it('lets a product opt out of what its category and type require', () => {
+        expect(ResolveRequiresSaleApproval({ Product: false, Categories: [true], Type: true })).toBe(false);
+    });
+    it('lets a product require it on its own', () => {
+        expect(ResolveRequiresSaleApproval({ Product: true, Categories: [], Type: null })).toBe(true);
     });
 });

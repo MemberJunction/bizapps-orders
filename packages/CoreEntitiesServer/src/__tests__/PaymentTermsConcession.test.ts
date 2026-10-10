@@ -13,6 +13,8 @@ const approval = vi.hoisted(() => ({
     UnlinkConcession: vi.fn(),
 }));
 vi.mock('../ConcessionApprovalTask.js', () => approval);
+const acknowledgment = vi.hoisted(() => ({ RaiseConcessionAcknowledgment: vi.fn() }));
+vi.mock('../ConcessionAcknowledgment.js', () => acknowledgment);
 
 const terms = vi.hoisted(() => ({ ApplyTermsChange: vi.fn(), CheckTermsChange: vi.fn() }));
 vi.mock('../PaymentTermsChange.js', () => terms);
@@ -72,6 +74,11 @@ function termsConcession(opts: {
         SalesRuleID: null,
         DecidedByUserID: null,
         DecidedAt: null,
+        ReasonCategory: 'Retention',
+        Reason: 'cash-flow relief',
+        CumulativeShare: null,
+        AddedQuantity: null,
+        AuthorizedBySalesAuthorityID: null,
     };
     for (const name of Object.keys(values)) {
         Object.defineProperty(row, name, { get: () => values[name], set: (v) => (values[name] = v) });
