@@ -16,8 +16,14 @@
  *     alone. The in-app decision and the task type's hook Action (a decision made in the Tasks inbox)
  *     both call it, so either path lands the same result, once.
  *
- * WHO MAY APPROVE is not settled (bizapps-orders#360). The approval task is raised unassigned, and a
- * decision takes effect only through that task; who may record one is left to #360.
+ * WHO APPROVES (bizapps-orders#360). The approval task is assigned, through their person records, to the
+ * order company's `AccountingCompanyProfile.ApprovalCFOUserID` — the approver journal entry batches
+ * use. When that user is the requester, it goes instead to every other active holder of the role the
+ * `AccessOverrideFallbackApproverRole` setting names. A request nobody could approve is refused.
+ * Only an assignee may decide, never the requester, and an approval after the override's last day is
+ * refused ({@link AccessOverrideDecisionRefusal}). The in-app decision refuses before it records
+ * anything; a decision made in the Tasks inbox has already closed the task, so the hook closes the
+ * override Withdrawn with the reason, and the requester may ask again.
  *
  * FAILS CLOSED. Without the authorization rows in metadata nobody may request — an exception to a
  * payment rule is not something to hand out because a sync has not run.
@@ -54,20 +60,27 @@ import {
 } from '@mj-biz-apps/tasks-entities';
 import {
     ACCESS_OVERRIDE_AUTH,
+    AccessOverrideDecisionRefusal,
+    LoadAccessOverrideAssignees,
+    ToISODate,
     mjBizAppsOrdersEntitlementAccessOverrideEntity,
     mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
+import { UUIDsEqual } from '@memberjunction/global';
 import {
     ACCESS_OVERRIDE_LIFTS,
+    AccessOverrideApprovers,
     AccessOverrideCanApply,
     PAYMENT_GATED_TIMINGS,
     ResolveAccessOverrideOutcome,
     type AccessOverrideType,
     type GrantTiming,
 } from './EntitlementBehavior.js';
+import { ActiveRoleHolderIDs, PERSON_ENTITY } from './ConcessionApprovalTask.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { OrdersSettings } from './OrdersSettings.js';
 import { ACCESS_OVERRIDE_ENTITY, BusinessDay, ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
-import { RequireDate, RequireUUID } from './sql-guards.js';
+import { EscapeText, RequireDate, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 export { ACCESS_OVERRIDE_AUTH };
 
@@ -86,6 +99,9 @@ const TASK_TYPES_ENTITY = 'MJ_BizApps_Tasks: Task Types';
 const TASK_LINKS_ENTITY = 'MJ_BizApps_Tasks: Task Links';
 const TASK_DECISIONS_ENTITY = 'MJ_BizApps_Tasks: Task Decisions';
 const TASK_DECISION_OUTCOMES_ENTITY = 'MJ_BizApps_Tasks: Task Decision Outcomes';
+const COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Company Profiles';
+const USER_ENTITY = 'MJ: Users';
+const ROLE_ENTITY = 'MJ: Roles';
 const REASON_MAX = 1000;
 
 const OVERRIDE_TYPES = Object.keys(ACCESS_OVERRIDE_LIFTS) as AccessOverrideType[];
@@ -171,6 +187,8 @@ export async function RequestAccessOverride(
             Message: `This order already has a ${open.Status} ${input.OverrideType} override; it must close before another is requested.`,
         };
     }
+    const approvers = await resolveApprovers(order, user, provider);
+    if ('Refusal' in approvers) return { Success: false, Message: approvers.Refusal };
     const taskTypeID = await resolveTaskTypeID(provider, user);
 
     const db = provider as unknown as DatabaseProviderBase;
@@ -191,7 +209,6 @@ export async function RequestAccessOverride(
         const overrideEntity = provider.EntityByName(ACCESS_OVERRIDE_ENTITY);
         if (!overrideEntity) throw new Error(`Entity metadata for '${ACCESS_OVERRIDE_ENTITY}' is missing.`);
         const label = input.OverrideType === 'WaivePaymentHold' ? 'waive the payment hold' : 'defer the renewal cutoff';
-        // Unassigned: who approves is bizapps-orders#360.
         await new TaskOrchestrationService().CreateApprovalRequest(
             {
                 Name: `Approve access override on order ${order.OrderNumber}: ${label} through ${through}`,
@@ -200,13 +217,19 @@ export async function RequestAccessOverride(
                 Priority: 'High',
                 LinkEntityID: overrideEntity.ID,
                 LinkRecordID: override.ID,
+                ApproverPersonEntityID: approvers.PersonEntityID,
+                ApproverPersonRecordIDs: approvers.PersonIDs,
             },
             user,
         );
-        // CreateApprovalRequest logs rather than throws on a failed link; without the link the
-        // decision could never be traced back here, so its absence is a fault.
+        // CreateApprovalRequest logs rather than throws on a failed link or assignment; without the
+        // link the decision could never be traced back here, and without an assignee nobody may
+        // decide it, so the absence of either is a fault.
         const taskID = await findLinkedTaskID(overrideEntity.ID, override.ID, provider, user);
         if (!taskID) throw new Error('The approval task was created but its link to the access override did not persist.');
+        if ((await AssigneeUserIDs(taskID, provider, user)).length === 0) {
+            throw new Error('The approval task was created but its assignment to the approver did not persist.');
+        }
 
         override.ApprovalTaskID = taskID;
         override.ApprovalTaskRaisedAt = new Date();
@@ -265,6 +288,8 @@ export async function RecordAccessOverrideDecision(
     if (!override.ApprovalTaskID) {
         return { Success: false, Status: override.Status, Message: 'The access override has no approval task to decide.' };
     }
+    const refusal = await DecisionRefusalFor(override, user.ID, IsApprovalOutcome(outcome), provider, user);
+    if (refusal) return { Success: false, Status: override.Status, Message: refusal };
 
     await new TaskOrchestrationService().RecordDecision(
         { TaskID: override.ApprovalTaskID, OutcomeCode: outcome, Notes: input.Notes },
@@ -304,22 +329,32 @@ export async function ApplyAccessOverrideDecision(
     const decision = await latestTerminalDecision(taskID, provider, user);
     const outcome = ResolveAccessOverrideOutcome({ TaskStatus: task.Status, Decision: decision });
     if (!outcome) return { Success: true, Status: override.Status, Message: `The approval task is ${task.Status}; nothing to apply yet.` };
-    const applied = outcome === 'Approved' || outcome === 'Rejected';
+    // A decision made in the Tasks inbox has already closed the task, so one this override refuses
+    // cannot be sent back to it: the request closes Withdrawn with the reason, and may be made again.
+    const refusal =
+        outcome === 'Approved' || outcome === 'Rejected'
+            ? await DecisionRefusalFor(override, user.ID, outcome === 'Approved', provider, user)
+            : null;
+    const status = refusal ? 'Withdrawn' : outcome;
+    const applied = status === 'Approved' || status === 'Rejected';
 
     const db = provider as unknown as DatabaseProviderBase;
     await db.BeginTransaction();
     try {
-        override.Status = outcome;
+        override.Status = status;
         override.DecidedAt = new Date();
         override.DecisionNotes = applied
             ? (decision?.Notes ?? null)
-            : `The approval task was ${task.Status} without a matching decision.`;
+            : refusal
+              ? `The ${outcome === 'Approved' ? 'approval' : 'rejection'} recorded on the approval task was not applied: ${refusal}`
+              : `The approval task was ${task.Status} without a matching decision.`;
         if (applied) override.DecidedByUserID = user.ID;
         if (!(await override.Save())) {
             throw new Error(`Failed to record the decision on access override ${override.ID}: ${override.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
-        const changes = outcome === 'Approved' ? await ReconcilePaymentGatedGrants([override.OrderHeaderID], provider, user) : [];
+        const changes = status === 'Approved' ? await ReconcilePaymentGatedGrants([override.OrderHeaderID], provider, user) : [];
         await db.CommitTransaction();
+        if (refusal) return { Success: false, Status: override.Status, Message: override.DecisionNotes ?? refusal };
         return {
             Success: true,
             Status: override.Status,
@@ -330,6 +365,112 @@ export async function ApplyAccessOverrideDecision(
         await rollback(db, `access override decision on task ${taskID}`);
         throw err;
     }
+}
+
+// ─── approvers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Why `deciderID` may not record this decision on the override, or null when they may. Shared by the
+ * in-app decision, the Tasks hook and the entity's own save, so every path holds the same rule.
+ */
+export async function DecisionRefusalFor(
+    override: Pick<mjBizAppsOrdersEntitlementAccessOverrideEntity, 'ApprovalTaskID' | 'RequestedByUserID' | 'EffectiveThrough'>,
+    deciderID: string,
+    approving: boolean,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string | null> {
+    if (!override.ApprovalTaskID) return 'The access override has no approval task to decide.';
+    return AccessOverrideDecisionRefusal({
+        Approving: approving,
+        DeciderUserID: deciderID,
+        RequesterUserID: override.RequestedByUserID,
+        AssigneeUserIDs: await AssigneeUserIDs(override.ApprovalTaskID, provider, user),
+        EffectiveThrough: ToISODate(override.EffectiveThrough) ?? '',
+        Today: await BusinessDay(provider, user),
+    });
+}
+
+/**
+ * The users an approval task is assigned to, read the same way the order form reads them
+ * ({@link LoadAccessOverrideAssignees}): a person record's linked user, or a user assigned directly.
+ */
+export async function AssigneeUserIDs(taskID: string, provider: IMetadataProvider, user: UserInfo): Promise<string[]> {
+    const assignees = await LoadAccessOverrideAssignees([RequireUUID(taskID, 'TaskID')], provider, user);
+    return (assignees.get(taskID.toLowerCase()) ?? []).flatMap((a) => (a.UserID ? [a.UserID] : []));
+}
+
+/**
+ * The person records to assign the approval task to, or why there are none. The approver is the
+ * order company's ApprovalCFOUserID, or the fallback role's holders when that user is the requester;
+ * see {@link AccessOverrideApprovers}. An approver with no active person record cannot be told of the
+ * task, so is left out; with none left, the request is refused.
+ */
+async function resolveApprovers(
+    order: mjBizAppsOrdersOrderHeaderEntity,
+    user: UserInfo,
+    provider: IMetadataProvider,
+): Promise<{ PersonEntityID: string; PersonIDs: string[] } | { Refusal: string }> {
+    const personEntityID = provider.EntityByName(PERSON_ENTITY)?.ID;
+    if (!personEntityID || !provider.EntityByName(COMPANY_PROFILE_ENTITY)) {
+        throw new Error('Access override approvers are resolved through the common and accounting apps, and one of them is not installed.');
+    }
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const read = async <T>(entityName: string, filter: string, fields: string[]): Promise<T[]> => {
+        const res = await rv.RunView<T>({ EntityName: entityName, ExtraFilter: filter, Fields: fields, ResultType: 'simple', BypassCache: true }, user);
+        if (!res.Success) throw new Error(`Could not read ${entityName}: ${res.ErrorMessage}`);
+        return res.Results ?? [];
+    };
+
+    // IS-A: the accounting profile shares its company's ID.
+    const profile = order.CompanyID
+        ? (await read<{ ApprovalCFOUserID: string | null }>(COMPANY_PROFILE_ENTITY, `ID = '${RequireUUID(order.CompanyID, 'CompanyID')}'`, ['ApprovalCFOUserID']))[0]
+        : undefined;
+    const named = profile?.ApprovalCFOUserID ?? null;
+    const active = named
+        ? (await read<{ ID: string }>(USER_ENTITY, `ID = '${RequireUUID(named, 'ApprovalCFOUserID')}' AND IsActive = 1`, ['ID'])).length > 0
+        : false;
+    const companyApprover = active ? named : null;
+
+    let fallbackRole: string | null = null;
+    let fallbackHolders: string[] = [];
+    if (companyApprover && UUIDsEqual(companyApprover, user.ID)) {
+        await OrdersSettings.Load(provider, user);
+        fallbackRole = OrdersSettings.AccessOverrideFallbackApproverRole;
+        if (fallbackRole) {
+            const role = (await read<{ ID: string }>(ROLE_ENTITY, `Name = '${EscapeText(fallbackRole)}'`, ['ID']))[0];
+            if (!role) return { Refusal: `The fallback approver role '${fallbackRole}' (Orders setting AccessOverrideFallbackApproverRole) does not exist.` };
+            fallbackHolders = await ActiveRoleHolderIDs(role.ID, { Provider: provider, User: user });
+        }
+    }
+
+    const decided = AccessOverrideApprovers({
+        RequesterUserID: user.ID,
+        CompanyApproverUserID: companyApprover,
+        FallbackRoleName: fallbackRole,
+        FallbackHolderIDs: fallbackHolders,
+    });
+    if ('Refusal' in decided) return decided;
+
+    const persons = await read<{ ID: string; LinkedUserID: string }>(
+        PERSON_ENTITY,
+        `Status = 'Active' AND LinkedUserID IN (${RequireUUIDs(decided.UserIDs, 'UserID').map((id) => `'${id}'`).join(',')})`,
+        ['ID', 'LinkedUserID'],
+    );
+    const personIDs: string[] = [];
+    for (const userID of decided.UserIDs) {
+        const person = persons.find((p) => UUIDsEqual(p.LinkedUserID, userID));
+        if (person) personIDs.push(person.ID);
+        else LogError(`Access override approver ${userID} has no active person record linked to their user and was not assigned.`);
+    }
+    if (personIDs.length === 0) {
+        return {
+            Refusal:
+                'The approver for this override has no active person record linked to their user. The tasks app tells ' +
+                "and lists an approver through that record, so no one would see the request. Link a person record to the approver's user.",
+        };
+    }
+    return { PersonEntityID: personEntityID, PersonIDs: personIDs };
 }
 
 // ─── helpers ───────────────────────────────────────────────────────────────────
