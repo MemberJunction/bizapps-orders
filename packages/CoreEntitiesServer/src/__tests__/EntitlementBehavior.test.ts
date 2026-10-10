@@ -405,6 +405,23 @@ describe('EvaluateGrantAccess — Status is not the answer', () => {
         expect(EvaluateGrantAccess(grant({ Status: 'Suspended' }), asOf).Decision).toBe('Suspended');
     });
 
+    it('a Suspended decision carries the row\'s reason, or null when it records none (#269)', () => {
+        for (const reason of ['AwaitingPayment', 'PastDue', 'AwaitingActivation'] as const) {
+            expect(EvaluateGrantAccess(grant({ Status: 'Suspended', SuspensionReason: reason }), asOf)).toMatchObject({
+                Decision: 'Suspended',
+                SuspensionReason: reason,
+            });
+        }
+        expect(EvaluateGrantAccess(grant({ Status: 'Suspended' }), asOf).SuspensionReason).toBeNull();
+    });
+
+    it('a pending suspension reports its own reason; other decisions carry none (#269)', () => {
+        const pending = grant({ PendingSuspension: { Status: 'Suspended', Reason: 'PastDue' } });
+        expect(EvaluateGrantAccess(pending, asOf)).toMatchObject({ Decision: 'Suspended', SuspensionReason: 'PastDue' });
+        expect(EvaluateGrantAccess(grant(), asOf).SuspensionReason).toBeUndefined();
+        expect(EvaluateGrantAccess(grant({ Status: 'Revoked' }), asOf).SuspensionReason).toBeUndefined();
+    });
+
     it('stored Status=Expired is Expired even if ValidTo is still in the future', () => {
         expect(EvaluateGrantAccess(grant({ Status: 'Expired' }), asOf).Decision).toBe('Expired');
     });

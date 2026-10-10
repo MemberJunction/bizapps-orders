@@ -350,13 +350,21 @@ describe('CheckPersonEntitlement — renewal cutoff applied at read time (#287)'
     it('denies an Active renewal on its cutoff day, before the nightly job writes it', async () => {
         byEntity(renewalOrder('2026-06-17'));
         const r = await check();
-        expect(r).toMatchObject({ HasAccess: false, Decision: 'Suspended', GrantID: GRANT });
+        expect(r).toMatchObject({ HasAccess: false, Decision: 'Suspended', SuspensionReason: 'PastDue', GrantID: GRANT });
+        expect(r.AccessCutoffDate).toBeUndefined();
         expect(new Date(r.CacheUntil).getTime() - Date.now()).toBeLessThanOrEqual(ENTITLEMENT_CHECK_TTL_MS);
     });
 
-    it('grants the day before the cutoff', async () => {
+    it('grants the day before the cutoff, naming it as the last day of access (#269)', async () => {
         byEntity(renewalOrder('2026-06-18'));
-        expect(await check()).toMatchObject({ HasAccess: true, Decision: 'Granted' });
+        const r = await check();
+        expect(r).toMatchObject({ HasAccess: true, Decision: 'Granted', AccessCutoffDate: '2026-07-01' });
+        expect(r.SuspensionReason).toBeUndefined();
+    });
+
+    it('a renewal a week past due names the day before its cutoff (#269)', async () => {
+        byEntity(renewalOrder('2026-06-24'));
+        expect(await check()).toMatchObject({ HasAccess: true, Decision: 'Granted', AccessCutoffDate: '2026-07-07' });
     });
 
     it('grants when the cutoff is switched off, and asks only for lapsed-waiver lines', async () => {
@@ -379,7 +387,7 @@ describe('CheckPersonEntitlement — renewal cutoff applied at read time (#287)'
                 { OrderHeaderID: ORDER, OverrideType: 'DeferCutoff', EffectiveThrough: '2026-07-01' },
             ],
         });
-        expect(await check()).toMatchObject({ HasAccess: true, Decision: 'Granted' });
+        expect(await check()).toMatchObject({ HasAccess: true, Decision: 'Granted', AccessCutoffDate: '2026-07-01' });
     });
 
     it('ignores a DeferCutoff whose last day has passed', async () => {
@@ -422,7 +430,9 @@ describe('CheckPersonEntitlement — renewal cutoff applied at read time (#287)'
     it('ListPersonEntitlements applies the same cutoff', async () => {
         byEntity(renewalOrder('2026-06-17'));
         const r = await ListPersonEntitlements({ PersonID: PERSON, AsOf: ASOF }, provider, user);
-        expect(r.Items).toEqual([expect.objectContaining({ Code: 'LEARNING_HUB_PREMIUM', HasAccess: false, Decision: 'Suspended' })]);
+        expect(r.Items).toEqual([
+            expect.objectContaining({ Code: 'LEARNING_HUB_PREMIUM', HasAccess: false, Decision: 'Suspended', SuspensionReason: 'PastDue' }),
+        ]);
     });
 });
 
