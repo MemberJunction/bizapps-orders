@@ -62,7 +62,13 @@ export interface RenderInvoiceOptions {
 }
 
 /** A refusal carries a code so the caller can map it to an action result without parsing prose. */
-export type RenderFailureCode = 'ORDER_NOT_FOUND' | 'NOT_INVOICEABLE' | 'TEMPLATE_NOT_FOUND' | 'RENDER_FAILED' | 'INVALID_AS_OF_DATE';
+export type RenderFailureCode =
+    | 'ORDER_NOT_FOUND'
+    | 'NOT_INVOICEABLE'
+    | 'NOT_ORDER_COMPANY'
+    | 'TEMPLATE_NOT_FOUND'
+    | 'RENDER_FAILED'
+    | 'INVALID_AS_OF_DATE';
 
 /**
  * A flat result rather than a discriminated union, matching `RefundPaymentOutput` and the driver
@@ -80,11 +86,11 @@ export interface RenderInvoiceResult {
 }
 
 /**
- * Build and render every document an order produces.
+ * Build and render the document an order produces.
  *
- * An order sold by more than one company produces one document PER COMPANY — they are different
- * receivables owed to different legal entities — so this always returns an array and the caller must
- * not treat the first element as the whole bill.
+ * An order has ONE document, from the order's company, whatever company owns each product (golive
+ * golive #311). The result is still an array: an instalment of a schedule written per product company before
+ * golive #311 renders per company, and the array keeps that case and this one on the same contract.
  */
 export async function RenderInvoiceDocuments(
     orderID: string,
@@ -120,7 +126,7 @@ export async function RenderInvoiceDocuments(
         return {
             Success: false,
             Documents: [],
-            Code: built.Message?.includes('voided') ? 'NOT_INVOICEABLE' : 'ORDER_NOT_FOUND',
+            Code: built.Code ?? (built.Message?.includes('voided') ? 'NOT_INVOICEABLE' : 'ORDER_NOT_FOUND'),
             Message: built.Message ?? `Order '${orderID}' produced no documents.`,
         };
     }

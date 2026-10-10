@@ -38,6 +38,20 @@
  *         reversal points at the renewal order, and its credit memo takes the invoiced amount
  *         back off AR (#406)
  *
+ *   What a renewal is priced at (golive #304):
+ *   SR22  a first-term discount lapses: the renewal is at the undiscounted price with no discount
+ *   SR23  CarryDiscountOnRenewal keeps the discount
+ *   SR24  the increase comes from the subscription, else the product, else the nearest category up
+ *         the chain, else the company, and a preview reports it without placing anything
+ *   SR25  a live renewal applies the increase and shows base, increase and price on the order notes
+ *         and the renewal event
+ *   SR26  a price typed below list lapses back to the prior list price
+ *   SR27  a product with an Active successor renews as the successor at its list price, and the
+ *         subscription moves onto the successor
+ *   SR28  a successor that is not Active is not renewed onto
+ *   SR29  a renewal priced below today's list books without a concession hold
+ *   SR30  a monthly term that crosses no anniversary renews with no increase
+ *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
 import { BaseAction } from '@memberjunction/actions';
@@ -67,7 +81,13 @@ import {
     TxQuery,
     upsertViaEntity,
 } from '../fixture.js';
-import { GL_ACCOUNT_LINK_ENTITY, PRODUCT_ENTITY } from '../entity-names.js';
+import {
+    GL_ACCOUNT_LINK_ENTITY,
+    ORDER_COMPANY_POLICY_ENTITY,
+    PRODUCT_CATEGORY_ENTITY,
+    PRODUCT_ENTITY,
+    SUBSCRIPTION_ENTITY,
+} from '../entity-names.js';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
 
 /** Chart of accounts the fixture books against (same codes as payment-schedule.checks.ts). */
@@ -90,6 +110,13 @@ interface RenewalOutput {
         OrderID?: string;
         OrderNumber?: string;
         SkippedReason?: string;
+        RenewalProductID?: string;
+        BasePrice?: number;
+        BasePriceSource?: string;
+        IncreasePercent?: number;
+        IncreaseSource?: string;
+        UnitPrice?: number;
+        DiscountPct?: number;
     }>;
     Placed: number;
     Skipped: number;
@@ -114,13 +141,13 @@ async function spawnRenewals(
 }
 
 /** Buy a subscription on Jan 1 and return its ID and first term. */
-async function buySubscription(ctx: IntegrationCheckContext, productKey: string, price: number) {
+async function buySubscription(ctx: IntegrationCheckContext, productKey: string, price: number, discountPct?: number) {
     const f = Fx();
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         OrderDate: JAN_1,
         BillToOrganizationID: f.Customers.OrganizationID,
-        Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price }],
+        Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price, DiscountPct: discountPct }],
     });
     Assert(result.Saved, `confirm failed: ${result.Message}`);
 
@@ -143,6 +170,13 @@ const termsOf = (ctx: IntegrationCheckContext, subscriptionID: string) =>
     );
 
 const isoDate = (v: string | Date) => new Date(v).toISOString().slice(0, 10);
+
+/** The one line of a renewal order. */
+const renewalLine = (ctx: IntegrationCheckContext, orderID: string) =>
+    TxOne<{ ProductID: string; UnitPrice: number; DiscountPct: number }>(
+        ctx,
+        `SELECT ProductID, UnitPrice, DiscountPct FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`,
+    );
 
 /** A date `days` before the given one — used to sit just inside or outside a lead window. */
 function daysBefore(date: string, days: number): string {
@@ -885,6 +919,236 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${renewalLine.ID}'`,
                 );
                 AssertEqual(Number(billed.BilledToDate), 0, 'the renewal line is no longer billed');
+            }),
+    },
+    // ─── What a renewal is priced at (golive #304) ──────────────────────────────────────────────
+    {
+        Id: 'subscription-renewal.SR22',
+        Name: 'SR22: a first-term discount lapses at renewal',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200, 0.2);
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Message}`);
+                const c = out.Candidates[0];
+                AssertEqual(c.BasePriceSource, 'PriorPrice', 'the base is the prior unit price');
+
+                const line = await renewalLine(ctx, c.OrderID!);
+                AssertEqual(Number(line.UnitPrice), 1200, 'the undiscounted price');
+                AssertEqual(Number(line.DiscountPct), 0, 'the discount lapsed');
+                AssertEqual(Number((await termsOf(ctx, SubscriptionID))[1].Amount), 1200, 'term 2 at full price');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR23',
+        Name: 'SR23: CarryDiscountOnRenewal keeps the discount',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200, 0.2);
+                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, SubscriptionID, { CarryDiscountOnRenewal: true });
+
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Message}`);
+                const line = await renewalLine(ctx, out.Candidates[0].OrderID!);
+                AssertEqual(Number(line.DiscountPct), 0.2, 'the discount continues');
+                AssertEqual(Number((await termsOf(ctx, SubscriptionID))[1].Amount), 960, '1200 less 20%');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR24',
+        Name: 'SR24: the increase is the most specific level set, and a preview reports it',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                const asOf = daysBefore(Term.EndDate, 10);
+                const preview = async () => (await spawnRenewals(ctx, { SubscriptionID, AsOfDate: asOf, Preview: true })).Candidates[0];
+
+                let c = await preview();
+                AssertEqual(c.IncreaseSource, 'None', 'nothing set: no increase');
+                AssertEqual(Number(c.UnitPrice), 1200, 'no increase: the prior price');
+
+                await upsertViaEntity(ctx, ORDER_COMPANY_POLICY_ENTITY, f.CoA.ID, { RenewalIncreasePercent: 3 });
+                c = await preview();
+                AssertEqual(c.IncreaseSource, 'Company', 'the company default');
+                AssertEqual(Number(c.UnitPrice), 1236, '1200 + 3%');
+
+                // The product's category is Individual, under Memberships: set only the parent.
+                const categories = await TxOne<{ CategoryID: string; ParentID: string }>(
+                    ctx,
+                    `SELECT c.ID AS CategoryID, c.ParentProductCategoryID AS ParentID
+                     FROM ${ORDERS_SCHEMA}.Product p JOIN ${ORDERS_SCHEMA}.ProductCategory c ON c.ID = p.ProductCategoryID
+                     WHERE p.ID = '${f.Products.SubRolling}'`,
+                );
+                Assert(categories.ParentID != null, 'precondition: the product category has a parent');
+                await upsertViaEntity(ctx, PRODUCT_CATEGORY_ENTITY, categories.ParentID, { RenewalIncreasePercent: 4 });
+                c = await preview();
+                AssertEqual(c.IncreaseSource, 'Category', 'the nearest category that sets one, up the chain');
+                AssertEqual(Number(c.IncreasePercent), 4, 'the parent category');
+
+                await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubRolling, { RenewalIncreasePercent: 5 });
+                c = await preview();
+                AssertEqual(c.IncreaseSource, 'Product', 'the product over its category');
+                AssertEqual(Number(c.UnitPrice), 1260, '1200 + 5%');
+
+                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, SubscriptionID, { RenewalIncreasePercent: 0 });
+                c = await preview();
+                AssertEqual(c.IncreaseSource, 'Subscription', 'the subscription over everything, 0 included');
+                AssertEqual(Number(c.UnitPrice), 1200, 'a 0 on the subscription opts out of the defaults');
+
+                const placed = await TxQuery(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${SubscriptionID}'`);
+                AssertEqual(placed.length, 0, 'a preview places nothing');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR25',
+        Name: 'SR25: a live renewal applies the increase and shows how the price was reached',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubRolling, { RenewalIncreasePercent: 5 });
+
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Message}`);
+                const orderID = out.Candidates[0].OrderID!;
+
+                AssertEqual(Number((await renewalLine(ctx, orderID)).UnitPrice), 1260, '1200 + 5%');
+                AssertEqual(Number((await termsOf(ctx, SubscriptionID))[1].Amount), 1260, 'term 2 at the increased price');
+
+                const notes = (await TxOne<{ Notes: string }>(ctx, `SELECT Notes FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).Notes;
+                Assert(/Unit price 1260\.00: prior price 1200\.00 \+ 5% annual increase \(product\)/.test(notes), `the notes show the price, got: ${notes}`);
+
+                const event = await TxOne<{ EventData: string }>(
+                    ctx,
+                    `SELECT EventData FROM ${ORDERS_SCHEMA}.SubscriptionEvent
+                     WHERE SubscriptionID = '${SubscriptionID}' AND EventType = 'RenewalOrderSpawned'`,
+                );
+                const data = JSON.parse(event.EventData);
+                AssertEqual(Number(data.BasePrice), 1200, 'event: base');
+                AssertEqual(Number(data.IncreasePercent), 5, 'event: increase');
+                AssertEqual(data.IncreaseSource, 'Product', 'event: where the increase came from');
+                AssertEqual(Number(data.UnitPrice), 1260, 'event: price');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR26',
+        Name: 'SR26: a price typed below list lapses back to the prior list price',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.SubRolling, 1000);
+                const { OrderID, SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1000);
+
+                // The line as a conversion from the previous system writes it: confirmed, typed below
+                // list, with no concession on record. A booked line cannot be edited through the
+                // application, so the row is written directly with the immutability trigger off.
+                await TxQuery(ctx, `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`);
+                await TxQuery(
+                    ctx,
+                    `UPDATE ${ORDERS_SCHEMA}.OrderLine SET UnitPrice = 800, PriceOverridden = 1, PriceOverrideReason = 'converted'
+                     WHERE OrderHeaderID = '${OrderID}'`,
+                );
+                await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`);
+
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Message}`);
+                AssertEqual(out.Candidates[0].BasePriceSource, 'PriorList', 'the typed price lapsed');
+                AssertEqual(Number((await renewalLine(ctx, out.Candidates[0].OrderID!)).UnitPrice), 1000, 'back to list');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR27',
+        Name: 'SR27: a product with an Active successor renews as the successor',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.SubCalendar, 1500);
+                await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubCalendar, { RenewalIncreasePercent: 5 });
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubRolling, { SuccessorProductID: f.Products.SubCalendar });
+
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Message}`);
+                const c = out.Candidates[0];
+                Assert(SameID(c.RenewalProductID, f.Products.SubCalendar), 'the candidate names the successor');
+                AssertEqual(c.BasePriceSource, 'SuccessorList', "the successor's list price");
+
+                const line = await renewalLine(ctx, c.OrderID!);
+                Assert(SameID(line.ProductID, f.Products.SubCalendar), 'the renewal line is the successor');
+                AssertEqual(Number(line.UnitPrice), 1575, "the successor's 1500 list + its 5%");
+
+                const sub = await TxOne<{ ProductID: string; SubscriptionTypeID: string; ProductTypeID: string }>(
+                    ctx,
+                    `SELECT s.ProductID, s.SubscriptionTypeID, p.SubscriptionTypeID AS ProductTypeID
+                     FROM ${ORDERS_SCHEMA}.Subscription s JOIN ${ORDERS_SCHEMA}.Product p ON p.ID = '${f.Products.SubCalendar}'
+                     WHERE s.ID = '${SubscriptionID}'`,
+                );
+                Assert(SameID(sub.ProductID, f.Products.SubCalendar), 'the subscription moved onto the successor');
+                Assert(SameID(sub.SubscriptionTypeID, sub.ProductTypeID), "and onto the successor's subscription type");
+
+                const terms = await termsOf(ctx, SubscriptionID);
+                AssertEqual(terms.length, 2, 'the same subscription continues');
+                AssertEqual(isoDate(terms[1].StartDate), '2027-01-01', 'contiguous with term 1');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR28',
+        Name: 'SR28: a successor that is not Active is not renewed onto',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubCalendar, { Status: 'Draft' });
+                await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubRolling, { SuccessorProductID: f.Products.SubCalendar });
+
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10), Preview: true });
+                const c = out.Candidates[0];
+                Assert(SameID(c.RenewalProductID, f.Products.SubRolling), 'renews on its own product');
+                AssertEqual(c.BasePriceSource, 'PriorPrice', 'at the prior price');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR29',
+        Name: "SR29: a renewal priced below today's list books without a concession hold",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                // The list rises past what the customer pays. The renewal keeps their price, which is
+                // finance's rule, not a concession anyone typed.
+                await CreateProductPrice(ctx, f.Products.SubRolling, 2000);
+
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
+                AssertEqual(out.Placed, 1, `the renewal books: ${out.Candidates[0]?.SkippedReason ?? out.Message}`);
+                const order = await TxOne<{ Status: string }>(ctx, `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${out.Candidates[0].OrderID}'`);
+                AssertEqual(order.Status, 'Confirmed', 'confirmed, not held');
+                AssertEqual(Number((await renewalLine(ctx, out.Candidates[0].OrderID!)).UnitPrice), 1200, 'at the prior price');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR30',
+        Name: 'SR30: a monthly term that crosses no anniversary renews with no increase',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubMonthly', 24);
+                await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubMonthly, { RenewalIncreasePercent: 5 });
+
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: isoDate(Term.EndDate), Preview: true });
+                AssertEqual(out.Candidates.length, 1, `the monthly term is due: ${out.Message}`);
+                const c = out.Candidates[0];
+                AssertEqual(Number(c.IncreasePercent), 0, 'February is not an anniversary');
+                AssertEqual(Number(c.UnitPrice), 24, 'the prior price');
             }),
     },
 ];

@@ -507,7 +507,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     };
 });
 
-import { CheckoutSessionService, NormalizeCheckoutPromotionCodes } from '../CheckoutSessionService.js';
+import { CheckoutSessionService, NormalizeCheckoutPromotionCodes, PlanCheckoutPromotionCodes } from '../CheckoutSessionService.js';
 import { CheckoutMemberDiscountNotConfiguredError } from '../CheckoutMemberDiscountResolver.js';
 import { Metadata } from '@memberjunction/core';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
@@ -2155,6 +2155,165 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('Typed code and verified member token together (#358)', () => {
+        const TOKEN = 'signed.member.token';
+        const draft = () =>
+            CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING, testUser, {
+                MemberToken: TOKEN,
+                PromotionCodes: ['SAVE10'],
+            });
+
+        // Prices every line at 100. MEMBER20 takes 20 and SAVE10 takes 10 unless named in `declined`;
+        // any other code is unusable. Like the engine, it writes a discount only when a code applies.
+        const priceCodes = (declined: Record<string, string> = {}) =>
+            (ctx: { PromotionCodes: string[]; Lines: Array<{ UnitPrice: number; Quantity: number; DiscountAmount: number; LineTotalGross: number }> }) => {
+                const unusable: Array<{ Code: string; Reason: string }> = [];
+                let discount = 0;
+                for (const code of ctx.PromotionCodes) {
+                    const off = ({ MEMBER20: 20, SAVE10: 10 } as Record<string, number>)[code];
+                    if (off && !declined[code]) discount += off;
+                    else unusable.push({ Code: code, Reason: declined[code] ?? 'no such code' });
+                }
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = 100;
+                    line.LineTotalGross = 100 * line.Quantity;
+                    if (discount) line.DiscountAmount = discount;
+                }
+                return Promise.resolve({ UnusableCodes: unusable });
+            };
+
+        beforeEach(() => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', allowCoupons: true, memberDiscountResolver: 'TEST-MEMBER' });
+        });
+
+        afterEach(() => {
+            mocks.mockPricingPrice.mockImplementation((ctx: { Lines: Array<{ UnitPrice: number; Quantity: number; LineTotalGross: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.LineTotalGross = (line.UnitPrice ?? 0) * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+        });
+
+        it('by default the member code replaces the typed code, and the typed code is reported as not used', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20' });
+            mocks.mockPricingPrice.mockImplementation(priceCodes());
+
+            const res = await draft();
+
+            expect(res.Success).toBe(true);
+            expect(mocks.mockPricingPrice).toHaveBeenCalledTimes(1);
+            expect(mocks.mockPricingPrice.mock.calls[0][0].PromotionCodes).toEqual(['MEMBER20']);
+            expect(res.TotalGross).toBe(80);
+            expect(res.MemberDiscountApplied).toBe(true);
+            expect(res.AppliedPromotionCodes).toEqual([]);
+            expect(res.UnusablePromotionCodes).toEqual([{ Code: 'SAVE10', Reason: expect.stringMatching(/member discount applies instead/) }]);
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON!);
+            expect(snapshot.MemberPromotionCode).toBe('MEMBER20');
+            expect(snapshot.PromotionCodes).toEqual([]);
+        });
+
+        it("a resolver that yields lets the typed code price, and says the member discount was set aside", async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20', TypedCode: 'Yield' });
+            mocks.mockPricingPrice.mockImplementation(priceCodes());
+
+            const res = await draft();
+
+            expect(mocks.mockPricingPrice).toHaveBeenCalledTimes(1);
+            expect(mocks.mockPricingPrice.mock.calls[0][0].PromotionCodes).toEqual(['SAVE10']);
+            expect(res.TotalGross).toBe(90);
+            expect(res.MemberDiscountApplied).toBe(false);
+            expect(res.MemberDiscountMessage).toMatch(/code you entered is used instead/);
+            expect(res.AppliedPromotionCodes).toEqual(['SAVE10']);
+            expect(res.UnusablePromotionCodes).toEqual([]);
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON!);
+            expect(snapshot.MemberPromotionCode).toBeNull();
+            expect(snapshot.PromotionCodes).toEqual(['SAVE10']);
+        });
+
+        it('a resolver that stacks prices both codes together, and keeps both for completion', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20', TypedCode: 'Stack' });
+            mocks.mockPricingPrice.mockImplementation(priceCodes());
+
+            const res = await draft();
+
+            expect(mocks.mockPricingPrice).toHaveBeenCalledTimes(1);
+            expect(mocks.mockPricingPrice.mock.calls[0][0].PromotionCodes).toEqual(['SAVE10', 'MEMBER20']);
+            expect(res.TotalGross).toBe(70);
+            expect(res.MemberDiscountApplied).toBe(true);
+            expect(res.AppliedPromotionCodes).toEqual(['SAVE10']);
+            expect(res.UnusablePromotionCodes).toEqual([]);
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON!);
+            expect(snapshot.MemberPromotionCode).toBe('MEMBER20');
+            expect(snapshot.PromotionCodes).toEqual(['SAVE10']);
+        });
+
+        it('a misspelt precedence takes the default rather than stacking', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20', TypedCode: 'stack' });
+            mocks.mockPricingPrice.mockImplementation(priceCodes());
+
+            const res = await draft();
+
+            expect(mocks.mockPricingPrice.mock.calls[0][0].PromotionCodes).toEqual(['MEMBER20']);
+            expect(res.TotalGross).toBe(80);
+        });
+
+        it('when the member code wins but the engine declines it, the typed code is priced instead', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20' });
+            mocks.mockPricingPrice.mockImplementation(priceCodes({ MEMBER20: 'the code is outside its valid dates' }));
+
+            const res = await draft();
+
+            expect(mocks.mockPricingPrice.mock.calls.map((c) => c[0].PromotionCodes)).toEqual([['MEMBER20'], ['SAVE10']]);
+            expect(res.TotalGross).toBe(90);
+            expect(res.MemberDiscountApplied).toBe(false);
+            expect(res.MemberDiscountMessage).toContain('the code is outside its valid dates');
+            expect(res.AppliedPromotionCodes).toEqual(['SAVE10']);
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON!);
+            expect(snapshot.MemberPromotionCode).toBeNull();
+            expect(snapshot.PromotionCodes).toEqual(['SAVE10']);
+        });
+
+        it('when the typed code wins but the engine declines it, the member code is priced instead', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20', TypedCode: 'Yield' });
+            mocks.mockPricingPrice.mockImplementation(priceCodes({ SAVE10: 'the redemption limit has been reached' }));
+
+            const res = await draft();
+
+            expect(mocks.mockPricingPrice.mock.calls.map((c) => c[0].PromotionCodes)).toEqual([['SAVE10'], ['MEMBER20']]);
+            expect(res.TotalGross).toBe(80);
+            expect(res.MemberDiscountApplied).toBe(true);
+            expect(res.UnusablePromotionCodes).toEqual([{ Code: 'SAVE10', Reason: 'the redemption limit has been reached' }]);
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON!);
+            expect(snapshot.MemberPromotionCode).toBe('MEMBER20');
+            expect(snapshot.PromotionCodes).toEqual([]);
+        });
+
+        it('when the engine declines both, the draft prices at full rate and explains each', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20' });
+            mocks.mockPricingPrice.mockImplementation(priceCodes({ MEMBER20: 'ended', SAVE10: 'used up' }));
+
+            const res = await draft();
+
+            expect(res.TotalGross).toBe(100);
+            expect(res.MemberDiscountMessage).toContain('ended');
+            expect(res.UnusablePromotionCodes).toEqual([{ Code: 'SAVE10', Reason: 'used up' }]);
+            const snapshot = JSON.parse(mocks.mockSessionInstance.MetadataJSON!);
+            expect(snapshot.MemberPromotionCode).toBeNull();
+            expect(snapshot.PromotionCodes).toEqual([]);
+        });
+
+        it('an unrecognised precedence value takes the default, so the member code replaces the typed one', async () => {
+            mocks.mockMemberResolve.mockResolvedValue({ PromotionCode: 'MEMBER20', TypedCode: 'yield' });
+            mocks.mockPricingPrice.mockImplementation(priceCodes());
+
+            const res = await draft();
+
+            expect(mocks.mockPricingPrice.mock.calls[0][0].PromotionCodes).toEqual(['MEMBER20']);
+            expect(res.TotalGross).toBe(80);
+        });
+    });
+
     describe('Billing location (bc-aidp-next-golive#264)', () => {
         const draft = (billing: unknown) =>
             CheckoutSessionService.UpdateDraft(
@@ -2859,5 +3018,28 @@ describe('NormalizeCheckoutPromotionCodes', () => {
         expect(NormalizeCheckoutPromotionCodes([42])).toHaveProperty('Error');
         expect(NormalizeCheckoutPromotionCodes(['X'.repeat(61)])).toHaveProperty('Error');
         expect(NormalizeCheckoutPromotionCodes(['A', 'B'])).toHaveProperty('Error');
+    });
+});
+
+describe('PlanCheckoutPromotionCodes', () => {
+    it('makes one attempt when only one side has a code, or both name the same code', () => {
+        expect(PlanCheckoutPromotionCodes(['SAVE10'], null, undefined)).toEqual([{ Buyer: ['SAVE10'], Member: null }]);
+        expect(PlanCheckoutPromotionCodes([], 'MEMBER20', 'Yield')).toEqual([{ Buyer: [], Member: 'MEMBER20' }]);
+        expect(PlanCheckoutPromotionCodes(['member20'], 'MEMBER20', undefined)).toEqual([{ Buyer: ['member20'], Member: 'MEMBER20' }]);
+    });
+
+    it('prices a contested pair in one attempt when the resolver stacks', () => {
+        expect(PlanCheckoutPromotionCodes(['SAVE10'], 'MEMBER20', 'Stack')).toEqual([{ Buyer: ['SAVE10'], Member: 'MEMBER20' }]);
+    });
+
+    it('never stacks a contested pair: member first by default, typed first when the resolver yields', () => {
+        expect(PlanCheckoutPromotionCodes(['SAVE10'], 'MEMBER20', undefined)).toEqual([
+            { Buyer: [], Member: 'MEMBER20' },
+            { Buyer: ['SAVE10'], Member: null },
+        ]);
+        expect(PlanCheckoutPromotionCodes(['SAVE10'], 'MEMBER20', 'Yield')).toEqual([
+            { Buyer: ['SAVE10'], Member: null },
+            { Buyer: [], Member: 'MEMBER20' },
+        ]);
     });
 });

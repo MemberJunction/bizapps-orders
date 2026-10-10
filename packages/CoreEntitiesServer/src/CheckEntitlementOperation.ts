@@ -18,6 +18,7 @@
  */
 import { BaseRemotableOperation, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { OrdersCheckEntitlementOperation as OrdersCheckEntitlementOperationBase } from '@mj-biz-apps/orders-entities';
 import {
     CheckPersonEntitlement,
     type CheckEntitlementInput,
@@ -25,12 +26,7 @@ import {
 } from './EntitlementRead.js';
 
 @RegisterClass(BaseRemotableOperation, 'Orders.CheckEntitlement')
-export class CheckEntitlementOperation extends BaseRemotableOperation<
-    CheckEntitlementInput,
-    CheckEntitlementOutput
-> {
-    public OperationKey = 'Orders.CheckEntitlement';
-
+export class CheckEntitlementOperation extends OrdersCheckEntitlementOperationBase {
     protected async InternalExecute(
         input: CheckEntitlementInput,
         provider: IMetadataProvider,

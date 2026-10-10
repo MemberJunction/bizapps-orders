@@ -37,30 +37,27 @@ would make this the second place in the repo that interprets a date.
 **`metadata/entities/.entities.json`** sets `BaseViewGenerated = 0` and
 `GeneratedBaseViewName = 'vwOrderHeadersGenerated'` on Order Headers.
 
-## What is NOT built here, and why
+## The view and the `IsOverdue` field
 
-**The view itself, and the `IsOverdue` `EntityField` it produces.** Both need a live CodeGen loop
-against a database — see the loop below. The predicate work
-above stands on its own and removes the disagreement today; the column is what lets `RunView` filter
-on it and Explorer show it.
+Both shipped, in two migrations, through the CodeGen loop below:
 
-```sql
-CREATE OR ALTER VIEW [${flyway:defaultSchema}].[vwOrderHeaders]
-AS
-SELECT
-    g.*,
-    CASE WHEN g.Balance > 0 AND g.DueDate IS NOT NULL AND g.DueDate < bt.Today AND g.Status NOT IN ('Draft','Quoted','Voided')
-         THEN 1 ELSE 0 END AS IsOverdue
-FROM [${flyway:defaultSchema}].[vwOrderHeadersGenerated] g
-CROSS JOIN [__mj_BizAppsCommon].[fnBusinessToday]() AS bt;
-```
+- `V202608131541__v0.1.x__OrderHeaders_layered_inner_view.sql` applies the flags above and carries
+  CodeGen's `vwOrderHeadersGenerated`, the inner view.
+- `V202608131542__v0.1.x__OrderHeaders_IsOverdue_outer_view.sql` creates `vwOrderHeaders` over it
+  with the `IsOverdue` column, and carries the `IsOverdue` `EntityField` CodeGen discovered, so
+  `RunView` can filter on it and Explorer shows it.
 
-`${flyway:defaultSchema}` rather than a literal schema, per `migrations/_README.md`. The `Status`
-clause is the one every hand-rolled copy of this rule forgot: without it a voided order with a stale
-balance reports as overdue, and a customer lands on a collections list for money they do not owe.
-`bt.Today` — not `CAST(GETUTCDATE() AS date)` — is the calendar day in the zone the business books
-in, from bizapps-common's `fnBusinessToday()`, CROSS JOINed once per query: `GETUTCDATE()` is already
-tomorrow for the whole American evening, so an order due today read as overdue from 7 PM Central.
+Later migrations redefine `vwOrderHeaders` with the same layering. `V202609211100` reads "today" as
+`bt.Today` from bizapps-common's `fnBusinessToday()`, the calendar day in the zone the business books
+in, instead of `CAST(GETUTCDATE() AS date)`: `GETUTCDATE()` is already tomorrow for the whole
+American evening, so an order due today read as overdue from 7 PM Central. `V202609211200` adds
+`NextDueDate`, the earliest unpaid instalment's due date or the order's own `DueDate`, and judges
+overdue against it. The current statement is `OverdueViewSQL()` in `packages/Entities/src/overdue.ts`;
+copy it from there rather than from an older migration.
+
+The `Status` clause is the one every hand-rolled copy of this rule forgot: without it a voided order
+with a stale balance reports as overdue, and a customer lands on a collections list for money they
+do not owe. Nothing in this design is still unbuilt.
 
 ### Where the generated SQL actually goes in THIS repo
 

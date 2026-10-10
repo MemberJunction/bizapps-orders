@@ -48,6 +48,14 @@
  * A MISSING PAIR IS FATAL. There is no fallback account, because a guessed intercompany account
  * still balances — the misposting would be invisible until two entities' books disagree.
  *
+ * INTERCOMPANY IS BETWEEN LEGAL ENTITIES, NOT COMPANIES (golive #313). A Division, Department or
+ * Branch uses the books of its legal entity (`AccountingEngineBase.LegalEntityFor`). When the
+ * collector and a line's company share a legal entity, that share is the collector's own: its
+ * receivable is credited in the collector's entry, on the legal entity's AR account, tagged with the
+ * line's dimensions so its revenue stays separable. No Due To / Due From is raised, because both
+ * would land in one ERP company. Between different legal entities the pair is looked up by the
+ * LEGAL ENTITY pair, so the match rows for the legal entities cover every company under them.
+ *
  * CONNECTS TO:
  *   LOOKUP:   AccountingEngineBase.ResolveIntercompanyAccounts (BA-D26, bizapps-accounting)
  *   RESOLVER: GLAccountResolver (./GLAccountResolver.ts)
@@ -116,6 +124,12 @@ export type IntercompanyLookup = (
     targetCompanyID: string,
     asOf: Date,
 ) => IntercompanyPair | null;
+
+/**
+ * The company whose books a company uses (`AccountingEngineBase.LegalEntityFor`). Throws, naming
+ * the company, when a Division's setup is incomplete. Injected for the same reason as the lookup.
+ */
+export type LegalEntityLookup = (companyID: string) => string;
 
 export interface PaymentLineAllocationContext {
     PaymentLineID: string;
@@ -403,6 +417,8 @@ export class PaymentAllocationFactory {
         private readonly _resolver: GLAccountResolver,
         private readonly _intercompany: IntercompanyLookup,
         private readonly _paymentLineEntityID: string,
+        /** Defaults to every company being its own legal entity, the state before profiles are set. */
+        private readonly _legalEntityFor: LegalEntityLookup = (companyID) => companyID,
     ) {}
 
     /**
@@ -428,8 +444,12 @@ export class PaymentAllocationFactory {
         const receiving = ctx.GiftCardSale?.CompanyID || ctx.ReceivingCompanyID;
         const label = ctx.IsReversal ? 'Refund' : 'Payment';
 
-        const ownShare = shares.find((s) => key(s.CompanyID) === key(receiving));
-        const otherShares = shares.filter((s) => key(s.CompanyID) !== key(receiving));
+        // Shares on the collector's own books (its own, and those of Divisions under the same legal
+        // entity) are settled in the collector's entry. Only other legal entities get intercompany.
+        const receivingEntity = this._legalEntityFor(receiving);
+        const sameBooks = (s: CompanyShare) => key(this._legalEntityFor(s.CompanyID)) === key(receivingEntity);
+        const ownShares = shares.filter(sameBooks);
+        const otherShares = shares.filter((s) => !sameBooks(s));
 
         // ── The receiving company's entry ────────────────────────────────────
         // Payments are company-level: there is no product to walk from, so the company default is
@@ -521,29 +541,30 @@ export class PaymentAllocationFactory {
             ...dims(slice.Dimensions),
         }));
 
-        if (ownShare) {
-            receivingLines.push(...(await customerCreditLines(ownShare, slicesFor(ownShare))));
+        for (const share of ownShares) {
+            receivingLines.push(...(await customerCreditLines(share, slicesFor(share))));
         }
-        // No `else` and no error: a shared-services entity collecting purely on others' behalf owns
-        // no line, so it has no receivable to clear. Its entry is Dr Cash / Cr Due To …, which is
+        // No error when there are none: a shared-services entity collecting purely on others' behalf
+        // owns no line, so it has no receivable to clear. Its entry is Dr Cash / Cr Due To …, which is
         // correct and must be supported rather than treated as a malformed allocation.
 
         const drafts: PaymentJEDraft[] = [];
         const otherDrafts: PaymentJEDraft[] = [];
 
         for (const share of otherShares) {
-            const pair = this._intercompany(receiving, share.CompanyID, asOf);
+            const ownerEntity = this._legalEntityFor(share.CompanyID);
+            const pair = this._intercompany(receivingEntity, ownerEntity, asOf);
             if (!pair) {
                 throw new IntercompanyPairMissingError(
-                    receiving,
-                    share.CompanyID,
+                    receivingEntity,
+                    ownerEntity,
                     `Payment ${ctx.PaymentNumber} applies ${share.Amount} of company ${share.CompanyID}'s ` +
                         `revenue to cash collected by company ${receiving}, but no active ` +
-                        `IntercompanyAccountMatch is configured for that direction as of ` +
-                        `${isoDate(asOf)}. Booking is refused rather than defaulted: a guessed ` +
+                        `IntercompanyAccountMatch is configured for that direction between their legal ` +
+                        `entities as of ${isoDate(asOf)}. Booking is refused rather than defaulted: a guessed ` +
                         `intercompany account would still balance, so the misposting would not surface ` +
                         `until the two companies' books disagreed. Configure the pair ` +
-                        `(Source=${receiving}, Target=${share.CompanyID}) and retry.`,
+                        `(Source=${receivingEntity}, Target=${ownerEntity}) and retry.`,
                 );
             }
 

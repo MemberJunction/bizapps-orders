@@ -85,13 +85,16 @@ export function alreadySubscribedDetail(response: Record<string, unknown> | null
 
 /**
  * The notice to stop on before payment when a member token earned no discount (#324), or null to
- * carry on. Shown once: the buyer sees why the price is the standard rate, and submitting again
- * pays it. A buyer with no token, or whose discount applied, never stops here.
+ * carry on. Shown once: the buyer sees why the member price is not used, and submitting again pays
+ * the price shown — the standard rate, or the buyer's own code when it was priced instead (#358).
+ * A buyer with no token, or whose discount applied, never stops here.
  */
 export function memberDiscountNotice(draft: Record<string, unknown> | null | undefined, alreadyShown: boolean): string | null {
     const message = draft?.['MemberDiscountMessage'];
     if (alreadyShown || typeof message !== 'string' || !message) {
         return null;
     }
-    return `${message} Submit again to continue at the standard rate.`;
+    const applied = draft?.['AppliedPromotionCodes'];
+    const typedCodePriced = Array.isArray(applied) && applied.length > 0;
+    return typedCodePriced ? `${message} Submit again to continue.` : `${message} Submit again to continue at the standard rate.`;
 }

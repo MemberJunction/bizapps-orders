@@ -57,6 +57,8 @@ import {
     InitConcessionApprovalListener,
     LoadGetFulfillmentQueueOperation,
     LoadGetPriorReturnsOperation,
+    LoadCheckCoverageOverlapOperation,
+    LoadSubscriptionFamilyRules,
     LoadFulfillOrderLinesOperation,
     LoadCapturePaymentOperation,
     LoadAdvanceOrderStateOperation,
@@ -153,6 +155,8 @@ export function LoadBizAppsOrdersServer(): void {
     InitConcessionApprovalListener();      // a decision on a concession's approval task decides that concession (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
+    LoadCheckCoverageOverlapOperation(); // 'Orders.CheckCoverageOverlap' — the band-overlap notice, from the rule confirm refuses with
+    LoadSubscriptionFamilyRules();       // a product's subscription family must be in the product's company
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
     LoadCapturePaymentOperation(); // 'Orders.CapturePayment' — header + allocations in ONE transaction
     LoadAdvanceOrderStateOperation(); // 'Orders.AdvanceOrderState' — climbs the ladder above Confirmed (D17)

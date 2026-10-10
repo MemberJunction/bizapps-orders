@@ -65,6 +65,7 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import {
+    OrdersApplyAccountCreditOperation as OrdersApplyAccountCreditOperationBase,
     mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersPaymentLineEntity,
     TodayAsDateValue,
@@ -122,9 +123,7 @@ interface OrderShape {
 const money = (v: number): number => Math.round((v + Number.EPSILON) * 100) / 100;
 
 @RegisterClass(BaseRemotableOperation, 'Orders.ApplyAccountCredit')
-export class ApplyAccountCreditOperation extends BaseRemotableOperation<ApplyAccountCreditInput, ApplyAccountCreditOutput> {
-    public OperationKey = 'Orders.ApplyAccountCredit';
-
+export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperationBase {
     protected async InternalExecute(
         input: ApplyAccountCreditInput,
         provider: IMetadataProvider,

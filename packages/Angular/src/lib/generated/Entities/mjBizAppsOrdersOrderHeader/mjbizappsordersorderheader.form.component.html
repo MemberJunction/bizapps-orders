@@ -99,6 +99,14 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="FulfillmentStatus"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -187,6 +195,22 @@
             [ShowLabel]="true"
             FieldName="RequestedDeliveryDate"
             Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="BillToAddressSnapshot"
+            Type="textarea"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ShipToAddressSnapshot"
+            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -346,10 +370,11 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="FulfillmentStatus"
-            Type="select"
+            FieldName="ConfirmedByUserID"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
+            LinkType="Record"
         ></mj-form-field>
 
     </mj-collapsible-panel>
@@ -693,25 +718,25 @@
         }
     </mj-collapsible-panel>
 
-    <!-- External Invoices Section -->
+    <!-- Entitlement Access Overrides Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersExternalInvoices"
-        SectionName="External Invoices"
+        SectionKey="mJBizAppsOrdersEntitlementAccessOverrides"
+        SectionName="Entitlement Access Overrides"
         Icon="fa fa-table"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersExternalInvoices')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersEntitlementAccessOverrides')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: External Invoices','OrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: External Invoices','OrderHeaderID')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersExternalInvoices')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Access Overrides','OrderHeaderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Access Overrides','OrderHeaderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEntitlementAccessOverrides')"
                 [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalInvoices', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEntitlementAccessOverrides', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
@@ -743,25 +768,50 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Entitlement Access Overrides Section -->
+    <!-- Order Concessions Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersEntitlementAccessOverrides"
-        SectionName="Entitlement Access Overrides"
+        SectionKey="mJBizAppsOrdersOrderConcessions"
+        SectionName="Order Concessions"
         Icon="fa fa-table"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersEntitlementAccessOverrides')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderConcessions')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Access Overrides','OrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Access Overrides','OrderHeaderID')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEntitlementAccessOverrides')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Concessions','OrderHeaderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Concessions','OrderHeaderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderConcessions')"
                 [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEntitlementAccessOverrides', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderConcessions', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- External Invoices Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersExternalInvoices"
+        SectionName="External Invoices"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersExternalInvoices')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: External Invoices','OrderHeaderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: External Invoices','OrderHeaderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersExternalInvoices')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalInvoices', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
@@ -787,31 +837,6 @@
                 [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOutboundEvents', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Order Concessions Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersOrderConcessions"
-        SectionName="Order Concessions"
-        Icon="fa fa-table"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderConcessions')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Concessions','OrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Concessions','OrderHeaderID')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderConcessions')"
-                [ShowToolbar]="true"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderConcessions', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

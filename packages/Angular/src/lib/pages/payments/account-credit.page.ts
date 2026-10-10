@@ -7,6 +7,8 @@ import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
+import { CrossesLegalEntities } from '../../panels/allocation-math';
+import { LegalEntityForHint } from '../../panels/legal-entity-hint';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
 
@@ -285,8 +287,9 @@ export class MJOAccountCreditPageComponent implements OnInit {
         return Math.round(((this.Target?.Balance ?? 0) - (this.Amount ?? 0)) * 100) / 100;
     }
 
+    /** Intercompany entries are raised only between legal entities, not between a company and its Division. */
     public get IsCrossCompany(): boolean {
-        return !!this.Source && !!this.Target && this.Source.CompanyID !== this.Target.CompanyID;
+        return !!this.Source && !!this.Target && CrossesLegalEntities([this.Source.CompanyID, this.Target.CompanyID], LegalEntityForHint);
     }
 
     public get CanApply(): boolean {

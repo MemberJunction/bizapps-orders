@@ -25,6 +25,7 @@ import {
     type UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { OrdersPriceOrderOperation as OrdersPriceOrderOperationBase } from '@mj-biz-apps/orders-entities';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { OrderPricingService, ReadPricedLineAmounts, type ResolvedPrice } from '@mj-biz-apps/orders-entities';
@@ -77,9 +78,7 @@ interface PriceOrderOutput {
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.PriceOrder')
-export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput, PriceOrderOutput> {
-    public OperationKey = 'Orders.PriceOrder';
-
+export class PriceOrderOperation extends OrdersPriceOrderOperationBase {
     protected async InternalExecute(
         input: PriceOrderInput,
         provider: IMetadataProvider,

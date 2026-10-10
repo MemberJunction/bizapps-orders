@@ -51,11 +51,13 @@ export {
     FindConcessionLimitRule,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
+    LineConcessionTerms,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
     OrderConcessionTotal,
     OrderNetTotal,
     type ConcessionLineFacts,
+    type LineConcessionFacts,
     type LinePriceConcession,
     type UncoveredLinePrice,
 } from './ConcessionGate.js';
@@ -111,9 +113,11 @@ export {
 export {
     AddMonths,
     BuildPaymentSchedule,
+    CompanySlices,
     DefaultScheduleWeights,
     ExplainShortfalls,
     SCHEDULE_DEFAULTS,
+    ScheduleCoverage,
     ScheduleShortfalls,
     ScheduledCompanyIDs,
 } from './PaymentScheduleBehavior.js';
@@ -124,6 +128,7 @@ export type {
     ScheduleRowFacts,
     ScheduleShortfall,
     ScheduleTimingFacts,
+    SliceableScheduleRow,
 } from './PaymentScheduleBehavior.js';
 
 // Fulfilment (D15) — a logistics fact, deliberately disconnected from revenue.
@@ -140,6 +145,7 @@ export {
 export type { FulfillableLine, FulfillmentStatus, FlipRefusal, QueueGrouping } from './FulfillmentBehavior.js';
 export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from './GetFulfillmentQueueOperation.js';
 export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
+export { CheckCoverageOverlapOperation, LoadCheckCoverageOverlapOperation } from './CheckCoverageOverlapOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
 export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
@@ -232,6 +238,7 @@ export type {
     DimensionSlice,
     IntercompanyPair,
     IntercompanyLookup,
+    LegalEntityLookup,
     PaymentLineAllocationContext,
     PaymentAllocationResult,
 } from './PaymentAllocationFactory.js';
@@ -251,6 +258,11 @@ export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPrice
 export { PriceOrderOperation, LoadPriceOrderOperation } from './PriceOrderOperation.js';
 export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
 export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
+export {
+    ProductEntityServer,
+    SubscriptionFamilyEntityServer,
+    LoadSubscriptionFamilyRules,
+} from './SubscriptionFamilyRules.js';
 export {
     BasePriceResolver,
     DefaultPriceResolver,
@@ -765,10 +777,12 @@ export {
     CheckoutMemberDiscountNotConfiguredError,
     ResolveCheckoutMemberDiscountResolver,
     IsRegisteredMemberPromotionCode,
+    DEFAULT_TYPED_CODE_PRECEDENCE,
 } from './CheckoutMemberDiscountResolver.js';
 export type {
     CheckoutMemberDiscountContext,
     CheckoutMemberDiscountDecision,
+    CheckoutTypedCodePrecedence,
     CheckoutTypedPromotionCodeContext,
 } from './CheckoutMemberDiscountResolver.js';
 export {

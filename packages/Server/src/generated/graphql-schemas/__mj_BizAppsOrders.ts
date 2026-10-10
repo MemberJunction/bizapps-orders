@@ -17,7 +17,7 @@ import { MaxLength } from 'class-validator';
 import * as mj_core_schema_server_object_types from '@memberjunction/server'
 
 
-import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersExternalCustomerEntity, mjBizAppsOrdersExternalInvoiceEntity, mjBizAppsOrdersExternalPaymentEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderSyncStateEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionFamilyEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
     
 
 //****************************************************************************
@@ -239,20 +239,20 @@ export class mjBizAppsOrdersCheckoutSessionStep_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The checkout session this step belongs to.`}) 
+    @Field({nullable: true, description: `The checkout session this step belongs to.`}) 
     @MaxLength(36)
-    CheckoutSessionID: string;
+    CheckoutSessionID?: string;
         
-    @Field({description: `Which post-payment step. Confirm: the order confirms, booking and creating entitlement grants in one transaction. Capture: the payment is booked against the order.`}) 
+    @Field({nullable: true, description: `Which post-payment step. Confirm: the order confirms, booking and creating entitlement grants in one transaction. Capture: the payment is booked against the order.`}) 
     @MaxLength(50)
-    StepName: string;
+    StepName?: string;
         
-    @Field({description: `Running: an attempt started and has not reported back; one left Running long after LastAttemptAt was interrupted. Succeeded: the step is done, and replaying it does nothing. Failed: the last attempt failed; LastError says why.`}) 
+    @Field({nullable: true, description: `Running: an attempt started and has not reported back; one left Running long after LastAttemptAt was interrupted. Succeeded: the step is done, and replaying it does nothing. Failed: the last attempt failed; LastError says why.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
-    @Field(() => Int, {description: `How many times the step has been attempted, from any source.`}) 
-    Attempts: number;
+    @Field(() => Int, {nullable: true, description: `How many times the step has been attempted, from any source.`}) 
+    Attempts?: number;
         
     @Field({nullable: true, description: `The error from the last failed attempt. Cleared when the step succeeds.`}) 
     LastError?: string;
@@ -260,19 +260,19 @@ export class mjBizAppsOrdersCheckoutSessionStep_ {
     @Field(() => Boolean, {nullable: true, description: `Whether the last failure can succeed on a later attempt without anything changing (1), or needs a fix to the data first (0). NULL when the step has not failed or the step does not classify its failures.`}) 
     Retryable?: boolean;
         
-    @Field({description: `What started the last attempt. Checkout: the buyer's complete call. Webhook: a payment-provider event. Replay: an operator, through Orders.ReplayCheckoutStep.`}) 
+    @Field({nullable: true, description: `What started the last attempt. Checkout: the buyer's complete call. Webhook: a payment-provider event. Replay: an operator, through Orders.ReplayCheckoutStep.`}) 
     @MaxLength(20)
-    LastAttemptSource: string;
+    LastAttemptSource?: string;
         
     @Field({nullable: true, description: `The operator who last replayed this step. NULL if it was never replayed.`}) 
     @MaxLength(36)
     LastReplayedByUserID?: string;
         
-    @Field({description: `When the step was first attempted.`}) 
-    FirstAttemptAt: Date;
+    @Field({nullable: true, description: `When the step was first attempted.`}) 
+    FirstAttemptAt?: Date;
         
-    @Field({description: `When the most recent attempt started.`}) 
-    LastAttemptAt: Date;
+    @Field({nullable: true, description: `When the most recent attempt started.`}) 
+    LastAttemptAt?: Date;
         
     @Field({nullable: true, description: `When the step succeeded. NULL until it does.`}) 
     SucceededAt?: Date;
@@ -283,13 +283,16 @@ export class mjBizAppsOrdersCheckoutSessionStep_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    CheckoutSession: string;
+    CheckoutSession?: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
     LastReplayedByUser?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -525,6 +528,12 @@ export class mjBizAppsOrdersCheckoutSession_ {
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true, description: `When the buyer agreed to be charged automatically at renewal. NULL when the widget asked for no such agreement.`}) 
+    AutoRenewConsentAt?: Date;
+        
+    @Field({nullable: true, description: `The automatic-renewal wording the buyer agreed to, copied from the widget's server-side configuration (autoRenewConsentText) at the moment of agreement.`}) 
+    AutoRenewConsentText?: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
@@ -2055,31 +2064,31 @@ export class mjBizAppsOrdersEntitlementAccessOverride_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The order the override applies to. It does not carry to a later renewal or a revised order, which are different orders.`}) 
+    @Field({nullable: true, description: `The order the override applies to. It does not carry to a later renewal or a revised order, which are different orders.`}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
-    @Field({description: `WaivePaymentHold (lifts AwaitingPayment) or DeferCutoff (lifts PastDue).`}) 
+    @Field({nullable: true, description: `WaivePaymentHold (lifts AwaitingPayment) or DeferCutoff (lifts PastDue).`}) 
     @MaxLength(20)
-    OverrideType: string;
+    OverrideType?: string;
         
-    @Field({description: `Why the exception is needed. Required.`}) 
+    @Field({nullable: true, description: `Why the exception is needed. Required.`}) 
     @MaxLength(1000)
-    Reason: string;
+    Reason?: string;
         
-    @Field({description: `The last day the override holds, inclusive. Required. After it the payment rule decides the grants again.`}) 
-    EffectiveThrough: Date;
+    @Field({nullable: true, description: `The last day the override holds, inclusive. Required. After it the payment rule decides the grants again.`}) 
+    EffectiveThrough?: Date;
         
-    @Field({description: `Requested (awaiting approval), Approved (in force through EffectiveThrough), Rejected, Withdrawn (the approval task closed without a decision that could be applied), or Expired (EffectiveThrough has passed and the grants have been re-decided).`}) 
+    @Field({nullable: true, description: `Requested (awaiting approval), Approved (in force through EffectiveThrough), Rejected, Withdrawn (the approval task closed without a decision that could be applied), or Expired (EffectiveThrough has passed and the grants have been re-decided).`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
-    @Field({description: `The user who requested the override.`}) 
+    @Field({nullable: true, description: `The user who requested the override.`}) 
     @MaxLength(36)
-    RequestedByUserID: string;
+    RequestedByUserID?: string;
         
-    @Field({description: `When the override was requested.`}) 
-    RequestedAt: Date;
+    @Field({nullable: true, description: `When the override was requested.`}) 
+    RequestedAt?: Date;
         
     @Field({nullable: true, description: `The Tasks approval request for this override.`}) 
     @MaxLength(36)
@@ -2105,13 +2114,13 @@ export class mjBizAppsOrdersEntitlementAccessOverride_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    RequestedByUser: string;
+    RequestedByUser?: string;
         
     @Field({nullable: true}) 
     @MaxLength(255)
@@ -2120,6 +2129,9 @@ export class mjBizAppsOrdersEntitlementAccessOverride_ {
     @Field({nullable: true}) 
     @MaxLength(100)
     DecidedByUser?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -2805,6 +2817,12 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(36)
     DimensionValueID?: string;
         
+    @Field(() => Float, {nullable: true}) 
+    BilledToDate?: number;
+        
+    @Field(() => Float, {nullable: true}) 
+    RecognizedToDate?: number;
+        
     @Field({nullable: true}) 
     ShipToAddressSnapshot?: string;
         
@@ -2812,16 +2830,15 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(20)
     SubscriptionAction?: string;
         
+    @Field(() => Boolean, {nullable: true}) 
+    AcknowledgesCoverageOverlap?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
-    @Field(() => Float) 
-    BilledToDate: number;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
-    @Field(() => Float) 
-    RecognizedToDate: number;
         
 }
 
@@ -2982,6 +2999,9 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     SubscriptionAction: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    AcknowledgesCoverageOverlap?: boolean;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -3145,6 +3165,9 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     SubscriptionAction?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    AcknowledgesCoverageOverlap?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -3357,6 +3380,13 @@ export class mjBizAppsOrdersEventProduct_ {
     MaxQuantityPerLine?: number;
         
     @Field({nullable: true}) 
+    @MaxLength(36)
+    SubscriptionFamilyID?: string;
+        
+    @Field(() => Float, {nullable: true}) 
+    RenewalIncreasePercent?: number;
+        
+    @Field({nullable: true}) 
     @MaxLength(255)
     VenueAddress?: string;
         
@@ -3457,6 +3487,12 @@ export class CreatemjBizAppsOrdersEventProductInput {
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine: number | null;
 
+    @Field({ nullable: true })
+    SubscriptionFamilyID: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3553,6 +3589,12 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine?: number | null;
+
+    @Field({ nullable: true })
+    SubscriptionFamilyID?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -3656,9 +3698,9 @@ export class mjBizAppsOrdersExternalCustomer_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The provider row (rail + company) this customer record belongs to.`}) 
+    @Field({nullable: true, description: `The provider row (rail + company) this customer record belongs to.`}) 
     @MaxLength(36)
-    PaymentProviderID: string;
+    PaymentProviderID?: string;
         
     @Field({nullable: true, description: `The organisation this rail customer represents, when the bill-to is an organisation.`}) 
     @MaxLength(36)
@@ -3668,9 +3710,9 @@ export class mjBizAppsOrdersExternalCustomer_ {
     @MaxLength(36)
     BillToPersonID?: string;
         
-    @Field({description: `The rail's customer id (Bill.com 0cu…). Our party id is also sent as the rail's account number so the link is recoverable from that side.`}) 
+    @Field({nullable: true, description: `The rail's customer id (Bill.com 0cu…). Our party id is also sent as the rail's account number so the link is recoverable from that side.`}) 
     @MaxLength(100)
-    ExternalCustomerRef: string;
+    ExternalCustomerRef?: string;
         
     @Field({nullable: true, description: `When the rail customer was last created or refreshed from here.`}) 
     LastSyncedAt?: Date;
@@ -3681,9 +3723,9 @@ export class mjBizAppsOrdersExternalCustomer_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentProvider: string;
+    PaymentProvider?: string;
         
     @Field({nullable: true}) 
     @MaxLength(255)
@@ -3692,6 +3734,9 @@ export class mjBizAppsOrdersExternalCustomer_ {
     @Field({nullable: true}) 
     @MaxLength(201)
     BillToPerson?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -3848,35 +3893,35 @@ export class mjBizAppsOrdersExternalInvoice_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The provider row that names the rail and the company whose Bill.com organisation this invoice lives in.`}) 
+    @Field({nullable: true, description: `The provider row that names the rail and the company whose Bill.com organisation this invoice lives in.`}) 
     @MaxLength(36)
-    PaymentProviderID: string;
+    PaymentProviderID?: string;
         
-    @Field({description: `The order this unit bills.`}) 
+    @Field({nullable: true, description: `The order this unit bills.`}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
-    @Field({description: `The selling company of the DOCUMENT (one per company on a split order), not necessarily the order header's company.`}) 
+    @Field({nullable: true, description: `The selling company of the DOCUMENT (one per company on a split order), not necessarily the order header's company.`}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
     @Field({nullable: true, description: `The instalment this unit is, when the order is billed on a schedule. NULL for an order billed as a whole.`}) 
     @MaxLength(36)
     OrderHeaderPaymentScheduleID?: string;
         
-    @Field({description: `Our frozen document number, sent as the rail's invoice number: ORD-1234, ORD-1234-2, ORD-1234-B2.`}) 
+    @Field({nullable: true, description: `Our frozen document number, sent as the rail's invoice number: ORD-1234, ORD-1234-2, ORD-1234-B2.`}) 
     @MaxLength(40)
-    DocumentNumber: string;
+    DocumentNumber?: string;
         
-    @Field(() => Float, {description: `What the unit bills, which the rail's lines must total to the cent.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `What the unit bills, which the rail's lines must total to the cent.`}) 
+    Amount?: number;
         
     @Field({nullable: true, description: `Due date sent to the rail; NULL means on receipt.`}) 
     DueDate?: Date;
         
-    @Field({description: `Sending (claim written, rail not yet confirmed), Sent (rail holds it), Canceled (archived on the rail), Failed (rail refused or the total did not tie).`}) 
+    @Field({nullable: true, description: `Sending (claim written, rail not yet confirmed), Sent (rail holds it), Canceled (archived on the rail), Failed (rail refused or the total did not tie).`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true, description: `The rail's customer id the invoice was issued to (Bill.com 0cu…).`}) 
     @MaxLength(100)
@@ -3916,9 +3961,9 @@ export class mjBizAppsOrdersExternalInvoice_ {
     @MaxLength(36)
     IssuedByUserID?: string;
         
-    @Field({description: `Persisted computed: OrderHeaderPaymentScheduleID or the zero GUID, so the live-unit unique index can include a nullable key.`}) 
+    @Field({nullable: true, description: `Persisted computed: OrderHeaderPaymentScheduleID or the zero GUID, so the live-unit unique index can include a nullable key.`}) 
     @MaxLength(36)
-    UnitScheduleKey: string;
+    UnitScheduleKey?: string;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -3926,21 +3971,24 @@ export class mjBizAppsOrdersExternalInvoice_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentProvider: string;
+    PaymentProvider?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
     IssuedByUser?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -4181,23 +4229,23 @@ export class mjBizAppsOrdersExternalPayment_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The provider row (rail + company) the payment was read from.`}) 
+    @Field({nullable: true, description: `The provider row (rail + company) the payment was read from.`}) 
     @MaxLength(36)
-    PaymentProviderID: string;
+    PaymentProviderID?: string;
         
-    @Field({description: `The rail's payment id (Bill.com 0rp…). Unique per provider.`}) 
+    @Field({nullable: true, description: `The rail's payment id (Bill.com 0rp…). Unique per provider.`}) 
     @MaxLength(100)
-    ExternalPaymentRef: string;
+    ExternalPaymentRef?: string;
         
     @Field({nullable: true, description: `The rail's customer id the payment came from.`}) 
     @MaxLength(100)
     ExternalCustomerRef?: string;
         
-    @Field(() => Float, {description: `The payment's gross amount as the rail reports it.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `The payment's gross amount as the rail reports it.`}) 
+    Amount?: number;
         
-    @Field(() => Float, {description: `The part the rail has not applied to any invoice (over-payment or unlinked). Stays on the rail as the customer's credit.`}) 
-    UnappliedAmount: number;
+    @Field(() => Float, {nullable: true, description: `The part the rail has not applied to any invoice (over-payment or unlinked). Stays on the rail as the customer's credit.`}) 
+    UnappliedAmount?: number;
         
     @Field({nullable: true, description: `When the rail says funds moved.`}) 
     PaymentDate?: Date;
@@ -4209,9 +4257,9 @@ export class mjBizAppsOrdersExternalPayment_ {
     @Field({nullable: true, description: `The rail's updatedTime as last seen — the watermark candidate.`}) 
     ExternalUpdatedAt?: Date;
         
-    @Field({description: `Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), Reapplied (captured, and the rail has since applied it to different invoices), ReversalNeeded (captured, and the rail now reports it reversed).`}) 
+    @Field({nullable: true, description: `Captured, Held (pending or unknown status), Unmatched (an invoice we did not issue), Refused (Orders.CapturePayment refused it — a split-company order, an ambiguous payer, a configuration fault), Ignored (nothing to do, or set aside by a person), Reapplied (captured, and the rail has since applied it to different invoices), ReversalNeeded (captured, and the rail now reports it reversed).`}) 
     @MaxLength(20)
-    Disposition: string;
+    Disposition?: string;
         
     @Field({nullable: true, description: `Why, in words a person can act on.`}) 
     @MaxLength(500)
@@ -4224,11 +4272,11 @@ export class mjBizAppsOrdersExternalPayment_ {
     @Field({nullable: true, description: `The rail's record as received, JSON, for the audit trail.`}) 
     Payload?: string;
         
-    @Field({description: `First poll that saw this payment.`}) 
-    FirstSeenAt: Date;
+    @Field({nullable: true, description: `First poll that saw this payment.`}) 
+    FirstSeenAt?: Date;
         
-    @Field({description: `Most recent poll that saw this payment.`}) 
-    LastSeenAt: Date;
+    @Field({nullable: true, description: `Most recent poll that saw this payment.`}) 
+    LastSeenAt?: Date;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -4236,13 +4284,16 @@ export class mjBizAppsOrdersExternalPayment_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentProvider: string;
+    PaymentProvider?: string;
         
     @Field({nullable: true}) 
     @MaxLength(40)
     PaymentHeader?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -5314,21 +5365,21 @@ export class mjBizAppsOrdersOrderCheckoutAnswer_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The order the checkout confirmed.`}) 
+    @Field({nullable: true, description: `The order the checkout confirmed.`}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
-    @Field({description: `The question's key in the widget's Configuration. Stable across label edits, so answers to the same question can be reported together.`}) 
+    @Field({nullable: true, description: `The question's key in the widget's Configuration. Stable across label edits, so answers to the same question can be reported together.`}) 
     @MaxLength(100)
-    QuestionKey: string;
+    QuestionKey?: string;
         
-    @Field({description: `The question as the buyer saw it, copied at order time.`}) 
+    @Field({nullable: true, description: `The question as the buyer saw it, copied at order time.`}) 
     @MaxLength(500)
-    QuestionLabel: string;
+    QuestionLabel?: string;
         
-    @Field({description: `The answer. For a select question, the value of the option the buyer chose; for a text question, the text entered.`}) 
+    @Field({nullable: true, description: `The answer. For a select question, the value of the option the buyer chose; for a text question, the text entered.`}) 
     @MaxLength(1000)
-    Answer: string;
+    Answer?: string;
         
     @Field({nullable: true, description: `The free-text answer the buyer gave after choosing the question's "Other" option. NULL for any other answer.`}) 
     @MaxLength(1000)
@@ -5340,9 +5391,12 @@ export class mjBizAppsOrdersOrderCheckoutAnswer_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -5527,6 +5581,9 @@ export class mjBizAppsOrdersOrderCompanyPolicy_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
+    @Field(() => Float, {nullable: true, description: `Percent added to a subscription's price when it renews, for every product this company sells. The last step of the inheritance walk: a subscription, its product or its product category overrides it. NULL means no increase. The increase applies from the first day of the renewal term, so every invoice in that term carries the same price.`}) 
+    RenewalIncreasePercent?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultPriceList?: string;
@@ -5562,6 +5619,9 @@ export class CreatemjBizAppsOrdersOrderCompanyPolicyInput {
     @Field({ nullable: true })
     PricingDriverClass: string | null;
 
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -5592,6 +5652,9 @@ export class UpdatemjBizAppsOrdersOrderCompanyPolicyInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -5695,9 +5758,9 @@ export class mjBizAppsOrdersOrderConcession_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The order the concession is granted on. For a term extension, the order whose line bought the term.`}) 
+    @Field({nullable: true, description: `The order the concession is granted on. For a term extension, the order whose line bought the term.`}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
     @Field({nullable: true, description: `The line a Price, Scope or Seats concession applies to.`}) 
     @MaxLength(36)
@@ -5707,16 +5770,16 @@ export class mjBizAppsOrdersOrderConcession_ {
     @MaxLength(36)
     SubscriptionTermID?: string;
         
-    @Field({description: `How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).`}) 
+    @Field({nullable: true, description: `How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).`}) 
     @MaxLength(20)
-    DeliveryForm: string;
+    DeliveryForm?: string;
         
-    @Field({description: `Why it was granted: Retention, Referral or Other. Retention concessions and referral credits have different economics and are reported separately.`}) 
+    @Field({nullable: true, description: `Why it was granted: Retention, Referral or Other. Retention concessions and referral credits have different economics and are reported separately.`}) 
     @MaxLength(20)
-    ReasonCategory: string;
+    ReasonCategory?: string;
         
-    @Field({description: `The requester's explanation of the concession.`}) 
-    Reason: string;
+    @Field({nullable: true, description: `The requester's explanation of the concession.`}) 
+    Reason?: string;
         
     @Field(() => Int, {nullable: true, description: `Days added to the term at no charge. Required for Duration.`}) 
     AddedDays?: number;
@@ -5724,8 +5787,8 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field(() => Float, {nullable: true, description: `Quantity added to the line at no charge. Required for Seats.`}) 
     AddedQuantity?: number;
         
-    @Field(() => Float, {description: `What the concession is worth, in currency, at the arrangement's own rate. Computed on save from the line or term; never authored.`}) 
-    ComputedValue: number;
+    @Field(() => Float, {nullable: true, description: `What the concession is worth, in currency, at the arrangement's own rate. Computed on save from the line or term; never authored.`}) 
+    ComputedValue?: number;
         
     @Field(() => Float, {nullable: true, description: `The order's net total when the concession was recorded, measured again when it is decided: its lines after discounts, before tax and charges, with reversal lines left out. Computed on save; never authored.`}) 
     OrderNetTotal?: number;
@@ -5733,13 +5796,13 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field(() => Float, {nullable: true, description: `Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal: measured when it was recorded and again when it is decided. This is what SalesAuthority.MaxConcessionPctOfContract is checked against, and on a decided concession it is the share its approver decided at. NULL when OrderNetTotal is zero. Computed on save; never authored.`}) 
     CumulativeShare?: number;
         
-    @Field({description: `Pending | Approved | Rejected. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role.`}) 
+    @Field({nullable: true, description: `Pending | Approved | Rejected. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
-    @Field({description: `The user who recorded the concession. Their SalesAuthority is what it is checked against.`}) 
+    @Field({nullable: true, description: `The user who recorded the concession. Their SalesAuthority is what it is checked against.`}) 
     @MaxLength(36)
-    RequestedByUserID: string;
+    RequestedByUserID?: string;
         
     @Field({nullable: true, description: `The SalesAuthority that covered the concession when it was approved without escalation. Stamped so a later change to the limit does not change how past concessions read.`}) 
     @MaxLength(36)
@@ -5773,13 +5836,13 @@ export class mjBizAppsOrdersOrderConcession_ {
     @MaxLength(36)
     NewPaymentTermsTypeID?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(100)
-    RequestedByUser: string;
+    RequestedByUser?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
@@ -5796,6 +5859,9 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     NewPaymentTermsType?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -6042,26 +6108,26 @@ export class mjBizAppsOrdersOrderHeaderPaymentSchedule_ {
     @MaxLength(36)
     ID: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(36)
-    OrderHeaderID: string;
+    OrderHeaderID?: string;
         
-    @Field({description: `The selling company this instalment bills for. Stamped server-side from the order's lines (D86), never authored; a multi-company order carries one schedule per company.`}) 
+    @Field({nullable: true, description: `The selling company this instalment bills for. Stamped server-side from the order's lines (D86), never authored; a multi-company order carries one schedule per company.`}) 
     @MaxLength(36)
-    CompanyID: string;
+    CompanyID?: string;
         
-    @Field(() => Int, {description: `1-based position within the order and company. Unique per (order, company). Part of the frozen document number, so it must not be renumbered after invoicing.`}) 
-    InstallmentNumber: number;
+    @Field(() => Int, {nullable: true, description: `1-based position within the order and company. Unique per (order, company). Part of the frozen document number, so it must not be renumbered after invoicing.`}) 
+    InstallmentNumber?: number;
         
-    @Field({description: `When this instalment is due. Re-datable while Scheduled; frozen once Invoiced. The earliest unpaid row's DueDate is the order's NextDueDate, which ageing reads.`}) 
-    DueDate: Date;
+    @Field({nullable: true, description: `When this instalment is due. Re-datable while Scheduled; frozen once Invoiced. The earliest unpaid row's DueDate is the order's NextDueDate, which ageing reads.`}) 
+    DueDate?: Date;
         
-    @Field(() => Float, {description: `The instalment amount. Per (order, company) the non-Canceled rows must sum to that company's LineTotalGross once the order is Confirmed; enforced at confirm and again at invoicing.`}) 
-    Amount: number;
+    @Field(() => Float, {nullable: true, description: `The instalment amount. Per (order, company) the non-Canceled rows must sum to that company's LineTotalGross once the order is Confirmed; enforced at confirm and again at invoicing.`}) 
+    Amount?: number;
         
-    @Field({description: `Scheduled | Invoiced | Paid | Canceled | WrittenOff. Scheduled -> Invoiced is Orders.IssueInstalmentInvoice; Invoiced <-> Paid follows the rollup; WrittenOff and Canceled are explicit and never overwritten.`}) 
+    @Field({nullable: true, description: `Scheduled | Invoiced | Paid | Canceled | WrittenOff. Scheduled -> Invoiced is Orders.IssueInstalmentInvoice; Invoiced <-> Paid follows the rollup; WrittenOff and Canceled are explicit and never overwritten.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field({nullable: true, description: `The invoice number the customer holds, frozen by Orders.IssueInstalmentInvoice and never recomputed (D87). NULL while Scheduled. Format: ORD-1234-2, or ORD-1234-B2 on a company-split order.`}) 
     @MaxLength(40)
@@ -6089,8 +6155,8 @@ export class mjBizAppsOrdersOrderHeaderPaymentSchedule_ {
     @Field({nullable: true, description: `When the invoice was delivered to the customer. NULL means unsent — the audit fact behind reversing an unsent invoice.`}) 
     SentAt?: Date;
         
-    @Field(() => Float, {description: `Trigger-maintained: payments named to this row plus the oldest-due-first share of payments applied to the order as a whole. Never authored.`}) 
-    AmountPaid: number;
+    @Field(() => Float, {nullable: true, description: `Trigger-maintained: payments named to this row plus the oldest-due-first share of payments applied to the order as a whole. Never authored.`}) 
+    AmountPaid?: number;
         
     @Field(() => Float, {nullable: true, description: `Trigger-maintained: Amount - AmountPaid, computed in the same statement as AmountPaid. Never authored.`}) 
     Balance?: number;
@@ -6108,17 +6174,20 @@ export class mjBizAppsOrdersOrderHeaderPaymentSchedule_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(40)
-    OrderHeader: string;
+    OrderHeader?: string;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(50)
-    Company: string;
+    Company?: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
     InvoicedByUser?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -6905,31 +6974,34 @@ export class mjBizAppsOrdersOrderLineChoice_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The order line the option was chosen for.`}) 
+    @Field({nullable: true, description: `The order line the option was chosen for.`}) 
     @MaxLength(36)
-    OrderLineID: string;
+    OrderLineID?: string;
         
-    @Field({description: `The choice group's key in the widget's Configuration. Matched by ProductEntitlement.ChoiceGroupKey.`}) 
+    @Field({nullable: true, description: `The choice group's key in the widget's Configuration. Matched by ProductEntitlement.ChoiceGroupKey.`}) 
     @MaxLength(100)
-    GroupKey: string;
+    GroupKey?: string;
         
-    @Field({description: `The choice group as the buyer saw it, copied at order time.`}) 
+    @Field({nullable: true, description: `The choice group as the buyer saw it, copied at order time.`}) 
     @MaxLength(500)
-    GroupLabel: string;
+    GroupLabel?: string;
         
-    @Field({description: `The value of the option chosen. Matched by ProductEntitlement.ChoiceOptionValue.`}) 
+    @Field({nullable: true, description: `The value of the option chosen. Matched by ProductEntitlement.ChoiceOptionValue.`}) 
     @MaxLength(100)
-    OptionValue: string;
+    OptionValue?: string;
         
-    @Field({description: `The option as the buyer saw it, copied at order time.`}) 
+    @Field({nullable: true, description: `The option as the buyer saw it, copied at order time.`}) 
     @MaxLength(500)
-    OptionLabel: string;
+    OptionLabel?: string;
         
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -7473,19 +7545,19 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The percentage-of-completion order line this observation is about.`}) 
+    @Field({nullable: true, description: `The percentage-of-completion order line this observation is about.`}) 
     @MaxLength(36)
-    OrderLineID: string;
+    OrderLineID?: string;
         
-    @Field({description: `The date this observation governs — the period it belongs to on the close calendar. One observation per line per date among observations that replace nothing (UQ_OLPM_Period, filtered); a superseding observation may carry the date of the one it replaces. It is also the recognition entry's EffectiveDate.`}) 
-    MeasurementDate: Date;
+    @Field({nullable: true, description: `The date this observation governs — the period it belongs to on the close calendar. One observation per line per date among observations that replace nothing (UQ_OLPM_Period, filtered); a superseding observation may carry the date of the one it replaces. It is also the recognition entry's EffectiveDate.`}) 
+    MeasurementDate?: Date;
         
-    @Field(() => Float, {description: `CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.`}) 
-    PercentComplete: number;
+    @Field(() => Float, {nullable: true, description: `CUMULATIVE fraction earned to date, 0..1. Not the increment: the entry is target (LineTotalNet × PercentComplete) minus what is already recognised.`}) 
+    PercentComplete?: number;
         
-    @Field({description: `The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.`}) 
+    @Field({nullable: true, description: `The ProgressRecognitionDriver that produced the percent — ManualAttestation is the one that ships. Whatever the method, a named person signs the observation and the attestation is what posts.`}) 
     @MaxLength(40)
-    MethodCode: string;
+    MethodCode?: string;
         
     @Field(() => Float, {nullable: true, description: `Optional quantitative input behind the percent (cost incurred, units delivered), kept for audit. PercentComplete drives the entry regardless.`}) 
     MeasureNumerator?: number;
@@ -7521,9 +7593,9 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @MaxLength(36)
     JournalEntryID?: string;
         
-    @Field({description: `Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.`}) 
+    @Field({nullable: true, description: `Draft | Posted. Orders.RecordProgress writes Posted rows; a Posted row is immutable (trigger). Draft is reserved for an observation saved before it is posted.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -7546,6 +7618,9 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @Field({nullable: true}) 
     @MaxLength(255)
     SourceEntity?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -7882,7 +7957,7 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field(() => Boolean, {nullable: true, description: `1 when UnitPrice was set by a staff override (named list pick or typed amount) rather than the pricing engine. 0 is the engine price.`}) 
     PriceOverridden?: boolean;
         
-    @Field({nullable: true, description: `Optional staff note for why the engine price was overridden. NULL when PriceOverridden = 0 or when no reason was given.`}) 
+    @Field({nullable: true, description: `Why this line's price was moved off the default. Required when PriceOverridden is set: a save that flags the price as overridden and gives no reason is refused. NULL when the price is the default.`}) 
     PriceOverrideReason?: string;
         
     @Field({nullable: true, description: `The GL dimension this line is tagged on — the analysis axis, from __mj_BizAppsAccounting.Dimension. NULL leaves the line untagged, which books a valid entry that simply cannot be reported on by dimension. Set together with DimensionValueID (CK_OrderLine_DimensionPair).`}) 
@@ -7893,6 +7968,12 @@ export class mjBizAppsOrdersOrderLine_ {
     @MaxLength(36)
     DimensionValueID?: string;
         
+    @Field(() => Float, {nullable: true, description: `Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
+    BilledToDate?: number;
+        
+    @Field(() => Float, {nullable: true, description: `Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. ADVANCED FOR UP-FRONT AND ATTESTED LINES ONLY. A deferred driver stages its monthly releases as forward-dated entries at confirm; those credit Sales on their own dates without passing through rule 2, so they leave this total untouched. A subscription line therefore depends on its instalments being invoiced on time for the gap between the two totals to mean anything. Routing the staged releases through rule 2 is orders #241, parked. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
+    RecognizedToDate?: number;
+        
     @Field({nullable: true, description: `The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`}) 
     ShipToAddressSnapshot?: string;
         
@@ -7900,12 +7981,10 @@ export class mjBizAppsOrdersOrderLine_ {
     @MaxLength(20)
     SubscriptionAction?: string;
         
-    @Field({nullable: true}) 
-    @Field(() => Float, {description: `Cumulative REVENUE of this line invoiced to the customer — its net, what Deferred Revenue or Sales was credited, NOT net plus tax and charges, which credit their own accounts and never touch Deferred. Advanced by each instalment invoice, and by confirm itself for a line with no payment schedule, inside the same transaction that books the entry (D92). Same basis as RecognizedToDate, or the gap between them overstates Deferred by the tax. With RecognizedToDate it gives the line's balance-sheet position: the excess over RecognizedToDate sits in Deferred Revenue. Never derived at read time — the contra account a recognition entry debits depends on what has been billed by then, which is not knowable at confirm. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
-    BilledToDate: number;
+    @Field(() => Boolean, {nullable: true, description: `True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`}) 
+    AcknowledgesCoverageOverlap?: boolean;
         
-    @Field(() => Float, {description: `Cumulative revenue recognised on this line, advanced by each recognition entry inside the same transaction that books it (D92). Where it exceeds BilledToDate the difference is a contract asset and sits in Unbilled Receivable — service delivered that the contract does not yet allow us to bill. That is what the standard means by a contract asset, and it is distinct from the future instalments the superseded D89 design parked in the same account. ADVANCED FOR UP-FRONT AND ATTESTED LINES ONLY. A deferred driver stages its monthly releases as forward-dated entries at confirm; those credit Sales on their own dates without passing through rule 2, so they leave this total untouched. A subscription line therefore depends on its instalments being invoiced on time for the gap between the two totals to mean anything. Routing the staged releases through rule 2 is orders #241, parked. Signed: negative on a reversal line (Quantity < 0), so an origin and its reversals net to zero.`}) 
-    RecognizedToDate: number;
+    @Field({nullable: true}) 
     @MaxLength(40)
     OrderHeader?: string;
         
@@ -8086,6 +8165,9 @@ export class CreatemjBizAppsOrdersOrderLineInput {
     @Field({ nullable: true })
     SubscriptionAction: string | null;
 
+    @Field(() => Boolean, { nullable: true })
+    AcknowledgesCoverageOverlap?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -8206,6 +8288,9 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field({ nullable: true })
     SubscriptionAction?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    AcknowledgesCoverageOverlap?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -8451,29 +8536,29 @@ export class mjBizAppsOrdersOutboundDelivery_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The event being delivered.`}) 
+    @Field({nullable: true, description: `The event being delivered.`}) 
     @MaxLength(36)
-    OutboundEventID: string;
+    OutboundEventID?: string;
         
-    @Field({description: `The registration key of the consumer (an OrdersOutboundConsumer subclass).`}) 
+    @Field({nullable: true, description: `The registration key of the consumer (an OrdersOutboundConsumer subclass).`}) 
     @MaxLength(100)
-    ConsumerKey: string;
+    ConsumerKey?: string;
         
-    @Field(() => Boolean, {description: `True when this consumer's delivery decides whether the buyer's access is ready, as declared by the consumer when the event was recorded.`}) 
-    GatesAccess: boolean;
+    @Field(() => Boolean, {nullable: true, description: `True when this consumer's delivery decides whether the buyer's access is ready, as declared by the consumer when the event was recorded.`}) 
+    GatesAccess?: boolean;
         
-    @Field({description: `Pending until the consumer accepts it (Delivered), or until DeadlineAt passes without success (DeadLettered). Setting a DeadLettered row back to Pending sends it again.`}) 
+    @Field({nullable: true, description: `Pending until the consumer accepts it (Delivered), or until DeadlineAt passes without success (DeadLettered). Setting a DeadLettered row back to Pending sends it again.`}) 
     @MaxLength(20)
-    Status: string;
+    Status?: string;
         
-    @Field(() => Int, {description: `How many times delivery has been tried.`}) 
-    Attempts: number;
+    @Field(() => Int, {nullable: true, description: `How many times delivery has been tried.`}) 
+    Attempts?: number;
         
-    @Field({description: `The earliest time the dispatcher tries this row again.`}) 
-    NextAttemptAt: Date;
+    @Field({nullable: true, description: `The earliest time the dispatcher tries this row again.`}) 
+    NextAttemptAt?: Date;
         
-    @Field({description: `After this time a failed attempt dead-letters the row instead of scheduling another.`}) 
-    DeadlineAt: Date;
+    @Field({nullable: true, description: `After this time a failed attempt dead-letters the row instead of scheduling another.`}) 
+    DeadlineAt?: Date;
         
     @Field({nullable: true, description: `Set while a dispatcher pass holds the row, so another pass does not send it at the same time. A lease that runs out frees the row.`}) 
     LeaseUntil?: Date;
@@ -8493,6 +8578,9 @@ export class mjBizAppsOrdersOutboundDelivery_ {
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -8685,9 +8773,9 @@ export class mjBizAppsOrdersOutboundEvent_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `OrderConfirmed (first confirmation of an order, renewals included) or GrantStatusChanged (a grant created, or its Status changed).`}) 
+    @Field({nullable: true, description: `OrderConfirmed (first confirmation of an order, renewals included) or GrantStatusChanged (a grant created, or its Status changed).`}) 
     @MaxLength(40)
-    EventType: string;
+    EventType?: string;
         
     @Field({nullable: true, description: `The order the event is about. Set on both event types, so deliveries can be read by order.`}) 
     @MaxLength(36)
@@ -8697,11 +8785,11 @@ export class mjBizAppsOrdersOutboundEvent_ {
     @MaxLength(36)
     EntitlementGrantID?: string;
         
-    @Field({description: `The event as consumers receive it, fixed when the event was recorded.`}) 
-    PayloadJSON: string;
+    @Field({nullable: true, description: `The event as consumers receive it, fixed when the event was recorded.`}) 
+    PayloadJSON?: string;
         
-    @Field({description: `When the change that caused the event was saved.`}) 
-    OccurredAt: Date;
+    @Field({nullable: true, description: `When the change that caused the event was saved.`}) 
+    OccurredAt?: Date;
         
     @Field() 
     _mj__CreatedAt: Date;
@@ -8712,6 +8800,9 @@ export class mjBizAppsOrdersOutboundEvent_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     OrderHeader?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -10066,13 +10157,13 @@ export class mjBizAppsOrdersPaymentProviderSyncState_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({description: `The provider row (rail + company) this watermark belongs to.`}) 
+    @Field({nullable: true, description: `The provider row (rail + company) this watermark belongs to.`}) 
     @MaxLength(36)
-    PaymentProviderID: string;
+    PaymentProviderID?: string;
         
-    @Field({description: `The rail object polled, e.g. receivable-payments.`}) 
+    @Field({nullable: true, description: `The rail object polled, e.g. receivable-payments.`}) 
     @MaxLength(100)
-    ObjectName: string;
+    ObjectName?: string;
         
     @Field({nullable: true, description: `The rail's max updatedTime seen on the last clean pass (ISO). The next pass reads from one day before it; dedupe is by payment id.`}) 
     @MaxLength(100)
@@ -10093,9 +10184,12 @@ export class mjBizAppsOrdersPaymentProviderSyncState_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
-    @Field() 
+    @Field({nullable: true}) 
     @MaxLength(200)
-    PaymentProvider: string;
+    PaymentProvider?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
         
 }
 
@@ -10498,15 +10592,15 @@ export class mjBizAppsOrdersPaymentProvider_ {
     @Field(() => Boolean, {nullable: true, description: `Whether this provider account is active.`}) 
     IsActive?: boolean;
         
-    @Field({nullable: true, description: `The MJ Company Integration whose connector and credential this provider uses (Bill.com). NULL for providers that resolve credentials through CredentialsRef. A pointer, never a secret.`}) 
-    @MaxLength(36)
-    CompanyIntegrationID?: string;
-        
     @Field() 
     _mj__CreatedAt: Date;
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true, description: `The MJ Company Integration whose connector and credential this provider uses (Bill.com). NULL for providers that resolve credentials through CredentialsRef. A pointer, never a secret.`}) 
+    @MaxLength(36)
+    CompanyIntegrationID?: string;
         
     @Field({nullable: true}) 
     @MaxLength(200)
@@ -10552,7 +10646,7 @@ export class CreatemjBizAppsOrdersPaymentProviderInput {
     IsActive?: boolean;
 
     @Field({ nullable: true })
-    CompanyIntegrationID?: string | null;
+    CompanyIntegrationID: string | null;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -12087,6 +12181,9 @@ export class mjBizAppsOrdersProductCategory_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
+    @Field(() => Float, {nullable: true, description: `Percent added to a subscription's price when it renews, for every product in this category and its child categories. NULL means inherit from the parent category, then the company's OrderCompanyPolicy. A subscription or product value overrides it.`}) 
+    RenewalIncreasePercent?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -12160,6 +12257,9 @@ export class CreatemjBizAppsOrdersProductCategoryInput {
     @Field({ nullable: true })
     PricingDriverClass: string | null;
 
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -12208,6 +12308,9 @@ export class UpdatemjBizAppsOrdersProductCategoryInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -13272,7 +13375,7 @@ export class mjBizAppsOrdersProduct_ {
     @MaxLength(36)
     RevenueRecognitionTypeID?: string;
         
-    @Field(() => Float, {nullable: true, description: `Standalone selling price for ASC 606 bundle revenue allocation (BO-D35; fields now, allocation engine later).`}) 
+    @Field(() => Float, {nullable: true, description: `DEPRECATED — do not use as a list price or quote. What someone pays is MJ_BizApps_Orders: Product Prices (Name, Amount, Applicability). Bundle SSP allocation already reads those rows. Column retained so historical SPs and existing data still validate; do not populate it for new products.`}) 
     StandaloneSellingPrice?: number;
         
     @Field({nullable: true}) 
@@ -13314,6 +13417,13 @@ export class mjBizAppsOrdersProduct_ {
     @Field(() => Float, {nullable: true, description: `Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`}) 
     MaxQuantityPerLine?: number;
         
+    @Field({nullable: true, description: `The subscription family this product is a band of. At confirm, a line for this product is checked against the holder's subscriptions to the family's other products. NULL means the product has no other bands. Must belong to the product's company.`}) 
+    @MaxLength(36)
+    SubscriptionFamilyID?: string;
+        
+    @Field(() => Float, {nullable: true, description: `Percent added to a subscription's price when it renews onto this product. Overrides the product's category and the company. NULL means inherit from the category and its ancestors, then the company's OrderCompanyPolicy. A subscription's own value overrides it.`}) 
+    RenewalIncreasePercent?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     ProductType?: string;
@@ -13337,6 +13447,10 @@ export class mjBizAppsOrdersProduct_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     SubscriptionType?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    SubscriptionFamily?: string;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
@@ -13411,6 +13525,12 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine: number | null;
 
+    @Field({ nullable: true })
+    SubscriptionFamilyID: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -13483,6 +13603,12 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field(() => Float, { nullable: true })
     MaxQuantityPerLine?: number | null;
+
+    @Field({ nullable: true })
+    SubscriptionFamilyID?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -14548,11 +14674,12 @@ export class mjBizAppsOrdersRevenueRecognitionType_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.`}) 
+    @MaxLength(20)
+    ScheduleBasis?: string;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
-    @Field({description: `AtBooking: the driver computes the whole schedule at booking and every release entry is written forward-dated then. OnMeasurement: nothing is staged at booking; revenue is recognised by cumulative catch-up as progress observations are recorded (Orders.RecordProgress). A POC type is IsDeferred = 1 with OnMeasurement.`}) 
-    @MaxLength(20)
-    ScheduleBasis: string;
         
 }
 
@@ -15811,6 +15938,192 @@ export class mjBizAppsOrdersSubscriptionEventResolver extends ResolverBase {
 }
 
 //****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Subscription Families
+//****************************************************************************
+@ObjectType({ description: `The products that are bands of one subscription offering (for example a standard and a premium tier), within one selling company. At confirm, a line for one band is checked against the holder\'s subscriptions to the family\'s other bands, and overlapping coverage is refused or allowed according to the subscription types\' ConcurrencyMode.` })
+export class mjBizAppsOrdersSubscriptionFamily_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true, description: `The selling company that owns the family. Only that company's products can belong to it.`}) 
+    @MaxLength(36)
+    CompanyID?: string;
+        
+    @Field({nullable: true, description: `Short code for the family, unique within its company.`}) 
+    @MaxLength(40)
+    Code?: string;
+        
+    @Field({nullable: true, description: `Display name of the offering the family's bands belong to.`}) 
+    @MaxLength(200)
+    Name?: string;
+        
+    @Field({nullable: true, description: `Optional notes on the offering and its bands.`}) 
+    Description?: string;
+        
+    @Field(() => Boolean, {nullable: true, description: `False retires the family from new product assignments. Products already in it keep it, and the overlap check still applies to them.`}) 
+    IsActive?: boolean;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(50)
+    Company?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Subscription Families
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersSubscriptionFamilyInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string;
+
+    @Field({ nullable: true })
+    Code?: string;
+
+    @Field({ nullable: true })
+    Name?: string;
+
+    @Field({ nullable: true })
+    Description: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Subscription Families
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersSubscriptionFamilyInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string;
+
+    @Field({ nullable: true })
+    Code?: string;
+
+    @Field({ nullable: true })
+    Name?: string;
+
+    @Field({ nullable: true })
+    Description?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Subscription Families
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersSubscriptionFamilyViewResult {
+    @Field(() => [mjBizAppsOrdersSubscriptionFamily_])
+    Results: mjBizAppsOrdersSubscriptionFamily_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersSubscriptionFamily_)
+export class mjBizAppsOrdersSubscriptionFamilyResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersSubscriptionFamilyViewResult)
+    async RunmjBizAppsOrdersSubscriptionFamilyViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersSubscriptionFamilyViewResult)
+    async RunmjBizAppsOrdersSubscriptionFamilyViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersSubscriptionFamilyViewResult)
+    async RunmjBizAppsOrdersSubscriptionFamilyDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Subscription Families';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersSubscriptionFamily_, { nullable: true })
+    async mjBizAppsOrdersSubscriptionFamily(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersSubscriptionFamily_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Subscription Families', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwSubscriptionFamilies')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Subscription Families', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Subscription Families', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersSubscriptionFamily_)
+    async CreatemjBizAppsOrdersSubscriptionFamily(
+        @Arg('input', () => CreatemjBizAppsOrdersSubscriptionFamilyInput) input: CreatemjBizAppsOrdersSubscriptionFamilyInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Subscription Families', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersSubscriptionFamily_)
+    async UpdatemjBizAppsOrdersSubscriptionFamily(
+        @Arg('input', () => UpdatemjBizAppsOrdersSubscriptionFamilyInput) input: UpdatemjBizAppsOrdersSubscriptionFamilyInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Subscription Families', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersSubscriptionFamily_)
+    async DeletemjBizAppsOrdersSubscriptionFamily(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Subscription Families', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
 // ENTITY CLASS for MJ_BizApps_Orders: Subscription Sequences
 //****************************************************************************
 @ObjectType({ description: `Global singleton counter (ID=1) minting gap-conscious SUB-{seq} subscription numbers. Consumed only by the entity server.` })
@@ -16677,6 +16990,16 @@ export class mjBizAppsOrdersSubscription_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `The saved card (wallet entry) this subscription is charged with at renewal. Set when the checkout that created the subscription kept the buyer's card. NULL means there is no renewal card and an automatic renewal cannot be charged.`}) 
+    @MaxLength(36)
+    DefaultCustomerPaymentMethodID?: string;
+        
+    @Field(() => Float, {nullable: true, description: `Percent added to this subscription's price when it renews: the contract's negotiated annual increase. Overrides the product, its category and the company. NULL means inherit from the product, then its category and ancestors, then the company's OrderCompanyPolicy; NULL everywhere means no increase. Set 0 to renew with no increase where a default would apply.`}) 
+    RenewalIncreasePercent?: number;
+        
+    @Field(() => Boolean, {nullable: true, description: `Whether the discount on the term being renewed carries into the renewal. Off by default: a first-term discount lapses and the renewal starts from the undiscounted price. Set it for a discount agreed to continue, such as a multi-year concession.`}) 
+    CarryDiscountOnRenewal?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -16708,6 +17031,10 @@ export class mjBizAppsOrdersSubscription_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     MigratesToSubscription?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    DefaultCustomerPaymentMethod?: string;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
@@ -16779,6 +17106,12 @@ export class CreatemjBizAppsOrdersSubscriptionInput {
     @Field({ nullable: true })
     DefaultCustomerPaymentMethodID: string | null;
 
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    CarryDiscountOnRenewal?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -16848,6 +17181,12 @@ export class UpdatemjBizAppsOrdersSubscriptionInput {
 
     @Field({ nullable: true })
     DefaultCustomerPaymentMethodID?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    RenewalIncreasePercent?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    CarryDiscountOnRenewal?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
