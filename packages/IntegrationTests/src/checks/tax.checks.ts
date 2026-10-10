@@ -53,9 +53,11 @@ import {
 } from "../fixture.js";
 import {
   CUSTOMER_TAX_EXEMPTION_ENTITY,
+  ORDER_HEADER_ENTITY,
   PRODUCT_CATEGORY_ENTITY,
 } from "../entity-names.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
+import { Metadata } from "@memberjunction/core";
 import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
@@ -501,7 +503,93 @@ export const TaxChecks: NamedCheck[] = [
         AssertEqual(Number((await taxOf(ctx, order.Order.ID as string)).Tax), 0, "the ROOT category exempted it");
       }),
   },
+  {
+    Id: "tax.TX16",
+    Name: "TX16: a tax RATE stated on a draft is kept when the reloaded draft is confirmed",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        const orderID = await saveDraftWithTax(ctx, [{ Code: "SalesTax", Rate: 0.02 }]);
+        AssertEqual(Number((await taxOf(ctx, orderID)).Tax), 20, "the draft carries the stated 2%");
+
+        // A request in memory does not survive a reload, which is how a form confirms a saved draft.
+        const confirmed = await confirmReloaded(ctx, orderID);
+        Assert(confirmed.saved, `the confirm failed: ${confirmed.message}`);
+        AssertEqual(Number((await taxOf(ctx, orderID)).Tax), 20, "the stated 2%, not Maryland's resolved 6%");
+        AssertEqual(Number((await layerCount(ctx, orderID)).N), 1, "one tax charge, not the stated one beside a resolved one");
+      }),
+  },
+  {
+    Id: "tax.TX17",
+    Name: "TX17: a tax WAIVED on a draft stays waived, with its reason, when the reloaded draft is confirmed",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        // The seeded tax types refuse overrides; a host that allows them turns this on.
+        await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.ChargeType SET AllowsOverride = 1 WHERE Code = 'SalesTax'`);
+        const reason = "resale certificate on file";
+        const orderID = await saveDraftWithTax(ctx, [
+          { Code: "SalesTax", Rate: 0.06, OverrideAmount: 0, OverrideReason: reason },
+        ]);
+        const before = await taxRow(ctx, orderID);
+        AssertEqual(Number(before.Amount), 0, "the draft carries the waiver");
+
+        const confirmed = await confirmReloaded(ctx, orderID);
+        Assert(confirmed.saved, `the confirm failed: ${confirmed.message}`);
+        AssertEqual(Number((await taxOf(ctx, orderID)).Tax), 0, "the waived tax is not charged at confirm");
+        AssertEqual(Number((await layerCount(ctx, orderID)).N), 1, "one tax charge");
+        const after = await taxRow(ctx, orderID);
+        Assert(after.IsOverridden, "the charge is still an override");
+        AssertEqual(after.OverrideReason, reason, "and keeps its reason");
+        AssertEqual(Number(after.ComputedAmount), 60, "and what the rules said, so waived and free stay apart");
+        AssertEqual(
+          String(after.OverriddenByUserID ?? "").toLowerCase(),
+          String(before.OverriddenByUserID ?? "").toLowerCase(),
+          "the waiver is still attributed to whoever made it",
+        );
+      }),
+  },
 ];
+
+/** A draft shipping to Maryland (6%) with the tax charges the caller states, saved. Returns its ID. */
+async function saveDraftWithTax(
+  ctx: IntegrationCheckContext,
+  charges: Array<{ Code: string; Rate?: number; Amount?: number; OverrideAmount?: number; OverrideReason?: string }>,
+): Promise<string> {
+  const f = Fx();
+  const built = await BuildOrder(ctx.User, {
+    CompanyID: f.CoA.ID,
+    BillToOrganizationID: f.Customers.OrganizationID,
+    ShipToAddressID: f.Tax.AddressIDs.get("Maryland"),
+    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+    Charges: charges,
+  });
+  Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+  return built.Order.ID as string;
+}
+
+/** Load the saved draft into a fresh object, as a form does, and confirm it. */
+async function confirmReloaded(ctx: IntegrationCheckContext, orderID: string): Promise<{ saved: boolean; message: string }> {
+  const order = await new Metadata().GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, ctx.User);
+  Assert(await order.Load(orderID), "the draft did not reload");
+  order.Status = "Confirmed";
+  const saved = await order.Save();
+  return { saved, message: String(order.LatestResult?.CompleteMessage ?? "") };
+}
+
+/** The order's one tax charge row. */
+const taxRow = (ctx: IntegrationCheckContext, orderID: string) =>
+  TxOne<{ Amount: number; IsOverridden: boolean; OverrideReason: string | null; ComputedAmount: number | null; OverriddenByUserID: string | null }>(
+    ctx,
+    `SELECT TOP 1 c.Amount, c.IsOverridden, c.OverrideReason, c.ComputedAmount, c.OverriddenByUserID
+       FROM ${ORDERS_SCHEMA}.OrderCharge c
+       JOIN ${ORDERS_SCHEMA}.ChargeType t ON t.ID = c.ChargeTypeID
+      WHERE c.OrderHeaderID='${orderID}' AND t.Category='Tax'`,
+  );
 
 for (const check of TaxChecks) {
   IntegrationCheckRegistry.Instance.Register(check);

@@ -860,7 +860,126 @@ export const PromotionChecks: NamedCheck[] = [
         );
       }),
   },
+  {
+    Id: "promotions.PR27",
+    Name: "PR27: a code on a saved draft discounts once when the draft is confirmed",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        const { Code } = await addPromotion(ctx, { value: 0.1 });
+
+        // Both saves run the pricing walk with the code, because the code rides the order object.
+        // The confirm re-decides the promotion, so it must replace the draft's adjustment rows
+        // rather than add a second set beside them.
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          PromotionCodes: [Code],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `the confirm failed: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        const t = await totals(ctx, built.Order.ID as string);
+        AssertEqual(Number(t.Discount), 100, "the line carries the discount once");
+        const trail = await adjustmentTrail(ctx, built.Order.ID as string);
+        AssertEqual(trail.PromotionRows, 1, "one adjustment row for the promotion");
+        AssertEqual(trail.PromotionAmount, 100, "the adjustment trail records the discount once");
+        AssertEqual(trail.AllocatedAmount, 100, "and allocates it once");
+      }),
+  },
+  {
+    Id: "promotions.PR28",
+    Name: "PR28: a manual discount on a saved draft survives the confirm beside a re-decided code",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, 0.5);
+        const { Code } = await addPromotion(ctx, { value: 0.1 });
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          PromotionCodes: [Code],
+          ManualDiscountsByLineIndex: [{ LineIndex: 0, Amount: 50, Reason: "retention concession" }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        const draft = await totals(ctx, built.Order.ID as string);
+        AssertEqual(Number(draft.Discount), 150, "the draft carries the promotion and the manual discount");
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `the confirm failed: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        const t = await totals(ctx, built.Order.ID as string);
+        AssertEqual(Number(t.Discount), 150, "the confirm keeps both discounts, once each");
+        const trail = await adjustmentTrail(ctx, built.Order.ID as string);
+        AssertEqual(trail.PromotionAmount, 100, "the promotion is recorded once");
+        AssertEqual(trail.ManualRows, 1, "the manual discount keeps its one row");
+        AssertEqual(trail.ManualAmount, 50, "at the amount it was granted");
+        AssertEqual(trail.AllocatedAmount, 150, "and the allocations add up to the line's discount");
+      }),
+  },
+  {
+    Id: "promotions.PR29",
+    Name: "PR29: a single-use code a saved draft took still applies when that draft is confirmed",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        const { Code } = await addPromotion(ctx, { value: 0.1, maxRedemptions: 1 });
+
+        // The draft's own adjustment row is not another order's redemption. Counting it would make
+        // the confirm find the code used up by the order that is using it.
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          PromotionCodes: [Code],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `the confirm failed: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        AssertEqual(built.Order.UnusablePromotionCodes.length, 0, "the code is not reported as used up");
+        const t = await totals(ctx, built.Order.ID as string);
+        AssertEqual(Number(t.Discount), 100, "the confirmed line keeps the discount");
+        const trail = await adjustmentTrail(ctx, built.Order.ID as string);
+        AssertEqual(trail.PromotionAmount, 100, "recorded once");
+      }),
+  },
 ];
+
+/** The order's adjustment rows, split into promotion and manual, plus what their allocations total. */
+async function adjustmentTrail(
+  ctx: IntegrationCheckContext,
+  orderID: string,
+): Promise<{ PromotionRows: number; PromotionAmount: number; ManualRows: number; ManualAmount: number; AllocatedAmount: number }> {
+  const row = await TxOne<{ PR: number; PA: number; MR: number; MA: number; AA: number }>(
+    ctx,
+    `SELECT
+        (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${orderID}' AND PromotionID IS NOT NULL) AS PR,
+        (SELECT ISNULL(SUM(Amount),0) FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${orderID}' AND PromotionID IS NOT NULL) AS PA,
+        (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${orderID}' AND PromotionID IS NULL) AS MR,
+        (SELECT ISNULL(SUM(Amount),0) FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${orderID}' AND PromotionID IS NULL) AS MA,
+        (SELECT ISNULL(SUM(a.Amount),0) FROM ${ORDERS_SCHEMA}.OrderAdjustmentAllocation a
+           JOIN ${ORDERS_SCHEMA}.OrderAdjustment j ON j.ID = a.OrderAdjustmentID
+          WHERE j.OrderHeaderID='${orderID}') AS AA`,
+  );
+  return {
+    PromotionRows: Number(row.PR),
+    PromotionAmount: Number(row.PA),
+    ManualRows: Number(row.MR),
+    ManualAmount: Number(row.MA),
+    AllocatedAmount: Number(row.AA),
+  };
+}
 
 for (const check of PromotionChecks) {
   IntegrationCheckRegistry.Instance.Register(check);
