@@ -95,6 +95,14 @@ describe('CheckAnswersAgainstQuestions', () => {
         expect(CheckAnswersAgainstQuestions([SOURCE], { source: { Value: 'Other', OtherText: other } }).Error).toContain('too long');
     });
 
+    it("caps the Other text at the question's own maxLength", () => {
+        const capped: CheckoutQuestion = { ...SOURCE, maxLength: 10 };
+        expect(CheckAnswersAgainstQuestions([capped], { source: { Value: 'Other', OtherText: 'x'.repeat(11) } }).Error).toBe(
+            'The answer to "How did you hear about us?" is too long (at most 10 characters).',
+        );
+        expect(CheckAnswersAgainstQuestions([capped], { source: { Value: 'Other', OtherText: 'x'.repeat(10) } }).Error).toBeUndefined();
+    });
+
     it('refuses answers that are not an object', () => {
         expect(CheckAnswersAgainstQuestions([NOTE], ['x']).Error).toBe('The checkout answers could not be read.');
         expect(CheckAnswersAgainstQuestions([NOTE], { note: 'hi' }).Error).toBe('The answer to "Anything else?" could not be read.');
