@@ -1426,6 +1426,8 @@ export const ConcessionChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
+        // Not about accounting's acknowledgment: an earlier check's role would make its approval raise one, and the stand-in requester may be that role's only holder.
+        OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
         await grantAuthority(ctx, { maxValue: 50 });
         // This user holds the lower tier's role, not the higher tier's.
         const lowerID = await addTier(ctx, { roleID: await roleTheUserHolds(ctx), tier: 0 });
@@ -1454,6 +1456,8 @@ export const ConcessionChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
+        // Not about accounting's acknowledgment: an earlier check's role would make its approval raise one, and the stand-in requester may be that role's only holder.
+        OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
         const authorityID = await grantAuthority(ctx, { maxValue: 5000 });
         // This user holds the role, and so does someone else.
         const ruleID = await addTier(ctx, { roleID: await roleSharedWithAnother(ctx), requiresDecision: true });
