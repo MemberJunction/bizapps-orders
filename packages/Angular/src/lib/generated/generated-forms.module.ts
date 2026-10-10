@@ -71,6 +71,7 @@ import { mjBizAppsOrdersPromotionCodeFormComponent } from "./Entities/mjBizAppsO
 import { mjBizAppsOrdersPromotionFormComponent } from "./Entities/mjBizAppsOrdersPromotion/mjbizappsorderspromotion.form.component";
 import { mjBizAppsOrdersPromotionTargetFormComponent } from "./Entities/mjBizAppsOrdersPromotionTarget/mjbizappsorderspromotiontarget.form.component";
 import { mjBizAppsOrdersPromotionTypeFormComponent } from "./Entities/mjBizAppsOrdersPromotionType/mjbizappsorderspromotiontype.form.component";
+import { mjBizAppsOrdersReferralProgramFormComponent } from "./Entities/mjBizAppsOrdersReferralProgram/mjbizappsordersreferralprogram.form.component";
 import { mjBizAppsOrdersRevenueRecognitionTypeFormComponent } from "./Entities/mjBizAppsOrdersRevenueRecognitionType/mjbizappsordersrevenuerecognitiontype.form.component";
 import { mjBizAppsOrdersSalesAuthorityFormComponent } from "./Entities/mjBizAppsOrdersSalesAuthority/mjbizappsorderssalesauthority.form.component";
 import { mjBizAppsOrdersSalesRuleFormComponent } from "./Entities/mjBizAppsOrdersSalesRule/mjbizappsorderssalesrule.form.component";
@@ -257,6 +258,7 @@ export class GeneratedForms_SubModule_8 { }
 @NgModule({
 declarations: [
     mjBizAppsOrdersEventProductFormComponent,
+    mjBizAppsOrdersReferralProgramFormComponent,
     mjBizAppsOrdersSubscriptionEventFormComponent
 ],
 imports: [

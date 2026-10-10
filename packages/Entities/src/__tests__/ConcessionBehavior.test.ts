@@ -8,7 +8,11 @@ import {
     PaymentTermsDaysChange,
     InclusiveDays,
     TermDateChangeDays,
+    ConcessionTierMet,
+    PickConcessionTier,
     type ConcessionAuthority,
+    type ConcessionTierRule,
+    ResolveRequiresSaleApproval,
 } from '../pricing/ConcessionBehavior';
 
 /**
@@ -247,5 +251,86 @@ describe('share of the order', () => {
     it('sets no limit when MaxConcessionPctOfContract is unset, or when nothing was measured', () => {
         expect(AssessConcession('Seats', { Value: 900, Percent: null }, roomy(null), null, 0.9).WithinAuthority).toBe(true);
         expect(AssessConcession('Seats', { Value: 900, Percent: null }, roomy(0.05), null).WithinAuthority).toBe(true);
+    });
+});
+
+describe('approval tiers (#308)', () => {
+    const tier = (overrides: Partial<ConcessionTierRule> = {}): ConcessionTierRule => ({
+        ID: 'rule-base',
+        Name: 'Manager',
+        ApprovalRequiredRoleID: 'role-manager',
+        ConcessionTier: null,
+        MinConcessionValue: null,
+        MinConcessionPctOfContract: null,
+        MinTermExtensionDays: null,
+        RequiresDecisionWithinAuthority: false,
+        ...overrides,
+    });
+    const manager = tier();
+    const director = tier({ ID: 'rule-senior', Name: 'Director', ApprovalRequiredRoleID: 'role-director', ConcessionTier: 1, MinConcessionValue: 1000 });
+
+    it('keeps a single rule with no tier or thresholds taking every concession', () => {
+        expect(PickConcessionTier([manager], { Value: 5 }).Rule?.ID).toBe('rule-base');
+        expect(PickConcessionTier([manager], { Value: 1_000_000, CumulativeShare: 0.9, TermDateChangeDays: 400 }).Rule?.ID).toBe('rule-base');
+    });
+
+    it('routes below the thresholds to the lower tier, and at or above them to the higher tier', () => {
+        expect(PickConcessionTier([director, manager], { Value: 999.99 }).Rule?.ID).toBe('rule-base');
+        expect(PickConcessionTier([director, manager], { Value: 1000 }).Rule?.ID).toBe('rule-senior');
+        expect(PickConcessionTier([manager, director], { Value: 5000 }).Rule?.ID).toBe('rule-senior');
+    });
+
+    it('meets a tier on any one threshold it sets', () => {
+        const senior = tier({ ConcessionTier: 1, MinConcessionValue: 1000, MinConcessionPctOfContract: 0.1, MinTermExtensionDays: 60 });
+        expect(ConcessionTierMet(senior, { Value: 10, CumulativeShare: 0.1 })).toBe(true);
+        expect(ConcessionTierMet(senior, { Value: 10, TermDateChangeDays: 60 })).toBe(true);
+        expect(ConcessionTierMet(senior, { Value: 10, TermDateChangeDays: -60 })).toBe(true);
+        expect(ConcessionTierMet(senior, { Value: 10, CumulativeShare: 0.0999, TermDateChangeDays: 59 })).toBe(false);
+    });
+
+    it('meets a share threshold when the order has no net total, as a share limit is breached', () => {
+        const senior = tier({ ConcessionTier: 1, MinConcessionPctOfContract: 0.1 });
+        expect(ConcessionTierMet(senior, { Value: 10, CumulativeShare: null })).toBe(true);
+        expect(ConcessionTierMet(senior, { Value: 10 })).toBe(false);
+    });
+
+    it('does not meet a term-date threshold when the dates do not move, even one of 0 days', () => {
+        expect(ConcessionTierMet(tier({ MinTermExtensionDays: 0 }), { Value: 10, TermDateChangeDays: 0 })).toBe(false);
+        expect(ConcessionTierMet(tier({ MinTermExtensionDays: 0 }), { Value: 10, TermDateChangeDays: 1 })).toBe(true);
+    });
+
+    it('chooses no tier when the concession meets none', () => {
+        expect(PickConcessionTier([director], { Value: 10 })).toEqual({ Rule: null, Conflict: null });
+        expect(PickConcessionTier([], { Value: 10 })).toEqual({ Rule: null, Conflict: null });
+    });
+
+    it('reports two met tiers of one rank instead of picking one', () => {
+        const other = tier({ ID: 'rule-other', Name: 'Finance' });
+        const choice = PickConcessionTier([manager, other], { Value: 10 });
+        expect(choice.Rule).toBeNull();
+        expect(choice.Conflict).toContain("'Manager', 'Finance' share tier 0");
+    });
+
+    it('ignores a rank tie between tiers the concession does not meet', () => {
+        const otherSenior = tier({ ID: 'rule-other', Name: 'Finance', ConcessionTier: 1, MinConcessionValue: 50_000 });
+        expect(PickConcessionTier([manager, director, otherSenior], { Value: 2000 }).Rule?.ID).toBe('rule-senior');
+    });
+});
+
+describe('products that always need approval (golive #281)', () => {
+    it('is not required when no level states it', () => {
+        expect(ResolveRequiresSaleApproval({ Product: null, Categories: [null, undefined], Type: null })).toBe(false);
+    });
+    it('inherits the product type when nothing more specific is stated', () => {
+        expect(ResolveRequiresSaleApproval({ Product: null, Categories: [null], Type: true })).toBe(true);
+    });
+    it('takes the nearest category over an ancestor and the type', () => {
+        expect(ResolveRequiresSaleApproval({ Product: null, Categories: [null, true, false], Type: false })).toBe(true);
+    });
+    it('lets a product opt out of what its category and type require', () => {
+        expect(ResolveRequiresSaleApproval({ Product: false, Categories: [true], Type: true })).toBe(false);
+    });
+    it('lets a product require it on its own', () => {
+        expect(ResolveRequiresSaleApproval({ Product: true, Categories: [], Type: null })).toBe(true);
     });
 });
