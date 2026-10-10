@@ -53,10 +53,14 @@ landed, and `V202609061900` twice, with the check red. If a change to a merged m
 unavoidable, it needs saying explicitly in the PR description and a second reviewer — never a quiet
 merge over a failing gate.
 
-Write migrations idempotently (`IF NOT EXISTS`, `IF COL_LENGTH(...) IS NULL`) and assume the database
-already has data. A migration that reads `__mj.Entity` must skip cleanly when the row is absent —
-CodeGen runs *after* migrations — and if the change is really about metadata (field categories,
-form layout), its home is `metadata/` and `mj sync push` **during development**.
+Migrations run once, in timestamp order, so write plain DDL: no `IF NOT EXISTS` /
+`IF COL_LENGTH(...) IS NULL` / `IF OBJECT_ID` existence guards, and add each column with its
+constraints inline in one `ALTER TABLE`. A guard turns a mismatch into silence: where the object already
+exists, the migration records itself as applied while the object keeps whatever shape it had. Assume the database already has data: give a new `NOT NULL` column a default, or
+backfill it before adding the constraint. A migration that reads `__mj.Entity` must skip cleanly
+when the row is absent — CodeGen runs *after* migrations — and if the change is really about
+metadata (field categories, form layout), its home is `metadata/` and `mj sync push` **during
+development**.
 
 **But `metadata/` ships to nobody.** MJ's manifest schema calls `mj-app.json`'s `metadata.directory`
 a dev-time pointer (`packages/OpenApp/Engine/src/manifest/manifest-schema.ts`), and `mj app install`
@@ -104,3 +108,19 @@ Generated files are committed, and AIDP Next ships them as they are: it excludes
 - Never hand-edit generated files, and never paste in generated output from another toolchain or another database. That is how OrderLine lost `OrderHeader`'s `@Field` (bc-aidp-next-golive#295).
 - Review what AI wrote. Validators, names and descriptions are not deterministic between runs.
 - If CodeGen has to create metadata in the database that the generated code depends on (fields, value lists, relationships, validator code), ship it in a migration in the same PR. Otherwise every host installed from migrations drifts from the code.
+
+## Filing issues (pilot of the BizApps issue system)
+- **Never work around a bug in this repo or in MJ silently.** File it with the `/report-issue` skill
+  (`.claude/skills/report-issue/`), which picks the repo where the fix lives, captures the
+  environment, searches for duplicates, and writes the same headings as the web form
+  (`.github/ISSUE_TEMPLATE/bug.yml`). If the bug already exists, it posts an occurrence comment on
+  the original instead of a new issue.
+- Filing from the web: **New issue → Bug report**. Every bug lands as `needs-triage`; a second
+  person reproduces it before it is `confirmed`. Confidence is a field, not a gate — say what you
+  actually did.
+- Not filed during the pilot: nits (cosmetic, no user impact) go in a local `BUGS.md`, not GitHub.
+  An agent files only with a minimal repro or after seeing the same failure twice, at most five
+  per session, and never closes, relabels, transfers or assigns anything.
+- MJ-core bugs go to `MemberJunction/MJ` (always pass `--repo`); mjdev-tool bugs to
+  `MemberJunction/MJDev`. Say which repo you chose and why under "Duplicate search".
+

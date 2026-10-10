@@ -29,10 +29,14 @@ Add a new migration:
 migrations/V<yyyyMMddHHmm>__v<app-version>__<Short_Description>.sql
 ```
 
-It runs after the baseline on every deploy — clean install or existing database — so both converge
-on the same schema. Write it to be **idempotent** and to work on a database that already has data:
-guard with `IF NOT EXISTS` / `IF COL_LENGTH(...) IS NULL`, and give new `NOT NULL` columns a default
-or backfill them before adding the constraint.
+It runs once, after the baseline and every earlier migration, on every deploy — clean install or
+existing database — so both converge on the same schema. Write plain DDL: **no existence guards**
+(`IF NOT EXISTS`, `IF COL_LENGTH(...) IS NULL`, `IF OBJECT_ID(...) IS NULL`), and add each column
+with its constraints inline in one `ALTER TABLE`. The runner's history already guarantees the
+migration runs once, in order; a guard only hides the case where it should fail, recording the
+migration as applied while an existing object keeps a different shape. Make it work on a database
+that already has data: give new `NOT NULL` columns a default or backfill them before adding the
+constraint.
 
 Then regenerate the code CodeGen owns:
 
