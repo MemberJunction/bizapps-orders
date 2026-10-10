@@ -2,7 +2,8 @@
  * Unit tests for who approves an access override and who may decide one (bizapps-orders#360). No database.
  */
 import { describe, it, expect } from 'vitest';
-import { AccessOverrideApprovers, AccessOverrideDecisionRefusal, type AccessOverrideDecisionFacts } from '../EntitlementBehavior.js';
+import { AccessOverrideDecisionRefusal, type AccessOverrideDecisionFacts } from '@mj-biz-apps/orders-entities';
+import { AccessOverrideApprovers } from '../EntitlementBehavior.js';
 
 const REQUESTER = 'AAAAAAAA-0000-0000-0000-000000000001';
 const CFO = 'AAAAAAAA-0000-0000-0000-000000000002';
