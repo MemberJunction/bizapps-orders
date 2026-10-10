@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
-import { Metadata } from '@memberjunction/core';
+import { CompositeKey, Metadata } from '@memberjunction/core';
 import { UserInfoEngine } from '@memberjunction/core-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { DispatchFormNavigation } from '../form-navigation-helper';
@@ -12,6 +12,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersProductFormComponent } from '../../generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
 import { LoadProductListPriceLabel } from '../../panels/catalog-list-price';
+import { WrittenKeyToReload } from './written-key';
 
 export type ProductFormPane = 'overview' | 'pricing' | 'promos' | 'accounting' | 'fulfillment' | 'subscriptions' | 'bundles' | 'systemMetadata';
 
@@ -236,12 +237,57 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
     }
 
     /**
+     * Saves, then moves a NEW product onto the key its rows were written under.
+     *
+     * On MJ 6.1.x a new Product with an Event Products extension is written under a server-minted key
+     * while this form's record keeps the browser's key (see {@link WrittenKeyToReload}). Without the
+     * reload, prices and GL links added before the form is closed carry a ProductID that matches no
+     * Product, and {@link OnWidgetDataChanged} reloads a record that does not exist.
+     */
+    protected override async InternalSaveRecord(): Promise<boolean> {
+        const wasNew = !this.record?.IsSaved;
+        const saved = await super.InternalSaveRecord();
+        if (saved && wasNew) {
+            await this.reloadUnderWrittenKey();
+        }
+        return saved;
+    }
+
+    private async reloadUnderWrittenKey(): Promise<void> {
+        const written = WrittenKeyToReload(this.record);
+        if (!written) {
+            return;
+        }
+        if (await this.reloadRecord(written)) {
+            this.ListPriceLabel = await LoadProductListPriceLabel(this.record.ID);
+        } else {
+            console.error(`Product saved under ${written.ToString()} but could not be reloaded; reopen it before adding prices or GL links.`);
+        }
+    }
+
+    /**
+     * Reloads the product and rebinds the Event & Venue section to the child it now holds.
+     *
+     * A reload can replace the product's Event Products child: a child attached by `EnsureISAChild`
+     * does not mark child discovery as done, so `InnerLoad` rediscovers it from the database and
+     * attaches a new object. The section would otherwise keep editing the old one, which is no longer
+     * in the product's save chain, and later edits to it would never be written.
+     */
+    private async reloadRecord(key: CompositeKey): Promise<boolean> {
+        if (!(await this.record.InnerLoad(key))) {
+            return false;
+        }
+        this.EventProductChild = null;
+        await this.syncSubtypeExtension();
+        return true;
+    }
+
+    /**
      * Called when a child record or related widget mutates data.
      */
     public async OnWidgetDataChanged(): Promise<void> {
         if (!this.record.Dirty) {
-            await this.record.InnerLoad(this.record.PrimaryKey);
-            await this.syncSubtypeExtension();
+            await this.reloadRecord(this.record.PrimaryKey);
             this.cdr.detectChanges();
         }
     }
