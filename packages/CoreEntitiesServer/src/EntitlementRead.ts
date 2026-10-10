@@ -11,7 +11,8 @@
  *
  * CONNECTS TO:
  *   PURE:   ./EntitlementBehavior.ts
- *   GATED:  ./PaymentGatedAccess.ts (LoadReadTimePaymentSuspensions — cutoffs and lapsed waivers not yet written)
+ *   GATED:  ./PaymentGatedAccess.ts (LoadReadTimePaymentAccess — cutoffs and lapsed waivers not yet written,
+ *           and the last day a past-due renewal keeps access)
  *   OPS:    ./CheckEntitlementOperation.ts, ./ListEntitlementsOperation.ts
  *   DOC:    plans/entitlement-read-contract.md
  */
@@ -29,9 +30,9 @@ import {
     PickWinningAccess,
     type EntitlementDecision,
     type GrantAccessEvaluation,
-    type GrantStatusDecision,
+    type SuspensionReason,
 } from './EntitlementBehavior.js';
-import { LoadReadTimePaymentSuspensions } from './PaymentGatedAccess.js';
+import { LoadReadTimePaymentAccess, type ReadTimePaymentAccess } from './PaymentGatedAccess.js';
 import { EscapeText, InvalidOperationInputError, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { ResolvePersonByEmail } from './PersonByEmail.js';
 
@@ -65,6 +66,10 @@ export interface CheckEntitlementOutput {
     ValidTo?: string;
     Quantity?: number;
     GrantID?: string;
+    /** Why access is held; only with `Decision: 'Suspended'` (#269). Null when no reason is recorded. */
+    SuspensionReason?: SuspensionReason | null;
+    /** Last day, `YYYY-MM-DD`, a past-due renewal keeps access before its cutoff; only while access holds (#269). */
+    AccessCutoffDate?: string;
     EvaluatedAt: string;
     CacheUntil: string;
 }
@@ -86,6 +91,10 @@ export interface ListedEntitlement {
     ValidTo?: string;
     Quantity?: number;
     GrantID?: string;
+    /** As {@link CheckEntitlementOutput.SuspensionReason}. */
+    SuspensionReason?: SuspensionReason | null;
+    /** As {@link CheckEntitlementOutput.AccessCutoffDate}. */
+    AccessCutoffDate?: string;
     CacheUntil: string;
 }
 
@@ -111,6 +120,7 @@ interface GrantRow {
     SubscriptionTermID: string | null;
     OrderLineID: string | null;
     GrantTimingApplied: string | null;
+    SuspensionReason: string | null;
 }
 
 const GRANT_FIELDS = [
@@ -124,6 +134,7 @@ const GRANT_FIELDS = [
     'SubscriptionTermID',
     'OrderLineID',
     'GrantTimingApplied',
+    'SuspensionReason',
 ];
 
 interface SubRow {
@@ -143,6 +154,15 @@ interface EvaluatedNamedGrant extends GrantAccessEvaluation {
     Code: string;
     GrantID: string;
     Quantity: number | null;
+    AccessCutoffDate: string | null;
+}
+
+/** The two #269 fields, present only when they say something, so other answers keep their shape. */
+function holdDetail(picked: EvaluatedNamedGrant): Pick<CheckEntitlementOutput, 'SuspensionReason' | 'AccessCutoffDate'> {
+    return {
+        ...(picked.Decision === 'Suspended' ? { SuspensionReason: picked.SuspensionReason ?? null } : {}),
+        ...(picked.HasAccess && picked.AccessCutoffDate ? { AccessCutoffDate: picked.AccessCutoffDate } : {}),
+    };
 }
 
 function quoteIds(ids: string[], field: string): string {
@@ -222,6 +242,7 @@ function toCheckOutput(
         ValidTo: toISO(picked.ValidTo),
         Quantity: picked.Quantity ?? undefined,
         GrantID: picked.GrantID,
+        ...holdDetail(picked),
         EvaluatedAt: evaluatedAt.toISOString(),
         CacheUntil: CacheUntilFor(issuedAt, picked.ValidTo, picked.HasAccess).toISOString(),
     };
@@ -339,15 +360,18 @@ async function loadContext(
     return { ok: true, subs, terms };
 }
 
-/** Payment suspensions the rows do not show yet (#287, #404). Null on a fault, so the caller fails closed. */
-async function loadPendingSuspensions(
+/**
+ * Payment suspensions the rows do not show yet (#287, #404), and past-due renewals' last days of
+ * access (#269). Null on a fault, so the caller fails closed.
+ */
+async function loadPaymentAccess(
     grants: GrantRow[],
     asOf: Date,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<Map<string, GrantStatusDecision> | null> {
+): Promise<ReadTimePaymentAccess | null> {
     try {
-        return await LoadReadTimePaymentSuspensions(grants, asOf, provider, user);
+        return await LoadReadTimePaymentAccess(grants, asOf, provider, user);
     } catch (err) {
         LogError(`[ENTITLEMENT-READ] payment facts lookup failed: ${err instanceof Error ? err.message : String(err)}`);
         return null;
@@ -360,18 +384,19 @@ function evaluateGrant(
     code: string,
     subs: Map<string, SubRow>,
     terms: Map<string, TermRow>,
-    pendingSuspensions: Map<string, GrantStatusDecision>,
+    payment: ReadTimePaymentAccess,
 ): EvaluatedNamedGrant {
     const sub = grant.SubscriptionID ? subs.get(grant.SubscriptionID.toLowerCase()) : undefined;
     const term = grant.SubscriptionTermID ? terms.get(grant.SubscriptionTermID.toLowerCase()) : undefined;
     const evaluation = EvaluateGrantAccess(
         {
             Status: grant.Status,
+            SuspensionReason: grant.SuspensionReason ?? null,
             ValidFrom: toDate(grant.ValidFrom),
             ValidTo: toDate(grant.ValidTo),
             LinkedToSubscription: !!grant.SubscriptionID,
             LinkedToTerm: !!grant.SubscriptionTermID,
-            PendingSuspension: pendingSuspensions.get(grant.ID.toLowerCase()) ?? null,
+            PendingSuspension: payment.Suspensions.get(grant.ID.toLowerCase()) ?? null,
         },
         asOf,
         sub
@@ -394,6 +419,7 @@ function evaluateGrant(
         Code: code,
         GrantID: grant.ID,
         Quantity: grant.Quantity,
+        AccessCutoffDate: payment.CutoffDays.get(grant.ID.toLowerCase()) ?? null,
     };
 }
 
@@ -459,8 +485,8 @@ export async function CheckPersonEntitlement(
 
         const ctx = await loadContext(rv, user, grants.rows);
         if (!ctx.ok) return closed('context-lookup-failed');
-        const pendingSuspensions = await loadPendingSuspensions(grants.rows, evaluatedAt, provider, user);
-        if (!pendingSuspensions) return closed('payment-lookup-failed');
+        const paymentAccess = await loadPaymentAccess(grants.rows, evaluatedAt, provider, user);
+        if (!paymentAccess) return closed('payment-lookup-failed');
 
         const codeByTemplate = new Map(matching.map((t) => [t.ID.toLowerCase(), t.Code]));
         const evaluated = grants.rows.map((g) =>
@@ -470,7 +496,7 @@ export async function CheckPersonEntitlement(
                 codeByTemplate.get(g.ProductEntitlementID.toLowerCase()) ?? code,
                 ctx.subs,
                 ctx.terms,
-                pendingSuspensions,
+                paymentAccess,
             ),
         );
         const picked = PickWinningAccess(evaluated);
@@ -554,12 +580,12 @@ export async function ListPersonEntitlements(
 
         const ctx = await loadContext(rv, user, inScope);
         if (!ctx.ok) return empty();
-        const pendingSuspensions = await loadPendingSuspensions(inScope, evaluatedAt, provider, user);
-        if (!pendingSuspensions) return empty();
+        const paymentAccess = await loadPaymentAccess(inScope, evaluatedAt, provider, user);
+        if (!paymentAccess) return empty();
 
         const evaluated = inScope.map((g) => {
             const template = templateByID.get(g.ProductEntitlementID.toLowerCase())!;
-            return evaluateGrant(g, evaluatedAt, template.Code, ctx.subs, ctx.terms, pendingSuspensions);
+            return evaluateGrant(g, evaluatedAt, template.Code, ctx.subs, ctx.terms, paymentAccess);
         });
 
         const byCode = new Map<string, EvaluatedNamedGrant[]>();
@@ -581,6 +607,7 @@ export async function ListPersonEntitlements(
                     ValidTo: toISO(picked.ValidTo),
                     Quantity: picked.Quantity ?? undefined,
                     GrantID: picked.GrantID,
+                    ...holdDetail(picked),
                     CacheUntil: CacheUntilFor(issuedAt, picked.ValidTo, picked.HasAccess).toISOString(),
                 };
             })
