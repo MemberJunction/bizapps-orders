@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
-import { Metadata } from '@memberjunction/core';
+import { CompositeKey, Metadata } from '@memberjunction/core';
 import { UserInfoEngine } from '@memberjunction/core-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { DispatchFormNavigation } from '../form-navigation-helper';
@@ -258,7 +258,7 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         if (!written) {
             return;
         }
-        if (await this.record.InnerLoad(written)) {
+        if (await this.reloadRecord(written)) {
             this.ListPriceLabel = await LoadProductListPriceLabel(this.record.ID);
         } else {
             console.error(`Product saved under ${written.ToString()} but could not be reloaded; reopen it before adding prices or GL links.`);
@@ -266,12 +266,28 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
     }
 
     /**
+     * Reloads the product and rebinds the Event & Venue section to the child it now holds.
+     *
+     * A reload can replace the product's Event Products child: a child attached by `EnsureISAChild`
+     * does not mark child discovery as done, so `InnerLoad` rediscovers it from the database and
+     * attaches a new object. The section would otherwise keep editing the old one, which is no longer
+     * in the product's save chain, and later edits to it would never be written.
+     */
+    private async reloadRecord(key: CompositeKey): Promise<boolean> {
+        if (!(await this.record.InnerLoad(key))) {
+            return false;
+        }
+        this.EventProductChild = null;
+        await this.syncSubtypeExtension();
+        return true;
+    }
+
+    /**
      * Called when a child record or related widget mutates data.
      */
     public async OnWidgetDataChanged(): Promise<void> {
         if (!this.record.Dirty) {
-            await this.record.InnerLoad(this.record.PrimaryKey);
-            await this.syncSubtypeExtension();
+            await this.reloadRecord(this.record.PrimaryKey);
             this.cdr.detectChanges();
         }
     }

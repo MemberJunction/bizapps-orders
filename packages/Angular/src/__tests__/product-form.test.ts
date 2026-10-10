@@ -416,3 +416,57 @@ describe('Product header follows lookup edits (bc-aidp-next-golive#277)', () => 
         }
     });
 });
+
+describe('BizAppsProductFormComponent reload rebinds the Event Products child', () => {
+    // A reload can attach a new Event Products object to the product. The section must follow it,
+    // or edits made after the first save go to an object the product no longer saves.
+    function eventProductForm() {
+        const oldChild = { name: 'old' };
+        const newChild = { name: 'new' };
+        const record = {
+            ProductTypeID: 'type-1',
+            RevenueRecognitionTypeID: null,
+            child: oldChild as object,
+            InnerLoad: vi.fn(async function (this: { child: object }) {
+                this.child = newChild;
+                return true;
+            }),
+            EnsureISAChild: vi.fn(async function (this: { child: object }) {
+                return this.child;
+            }),
+        };
+        const form = Object.create(BizAppsProductFormComponent.prototype) as BizAppsProductFormComponent;
+        form.record = record as unknown as mjBizAppsOrdersProductEntity;
+        form.ProductTypeRecord = {
+            ID: 'type-1',
+            ProductExtensionEntity: 'MJ_BizApps_Orders: Event Products',
+        } as unknown as import('@mj-biz-apps/orders-entities').mjBizAppsOrdersProductTypeEntity;
+        form.EventProductChild = oldChild as unknown as BizAppsProductFormComponent['EventProductChild'];
+        (form as unknown as { cdr: { detectChanges: () => void } }).cdr = { detectChanges: vi.fn() };
+        return { form, record, newChild };
+    }
+
+    it('binds the section to the child the product holds after a widget-triggered reload', async () => {
+        const { form, record, newChild } = eventProductForm();
+        (record as unknown as { Dirty: boolean }).Dirty = false;
+        (record as unknown as { PrimaryKey: unknown }).PrimaryKey = {};
+
+        await form.OnWidgetDataChanged();
+
+        expect(record.InnerLoad).toHaveBeenCalledOnce();
+        expect(form.EventProductChild).toBe(newChild);
+    });
+
+    it('keeps the current child when the reload fails', async () => {
+        const { form, record } = eventProductForm();
+        (record as unknown as { Dirty: boolean }).Dirty = false;
+        (record as unknown as { PrimaryKey: unknown }).PrimaryKey = {};
+        const current = form.EventProductChild;
+        record.InnerLoad.mockResolvedValueOnce(false);
+
+        await form.OnWidgetDataChanged();
+
+        expect(form.EventProductChild).toBe(current);
+        expect(record.EnsureISAChild).not.toHaveBeenCalled();
+    });
+});
