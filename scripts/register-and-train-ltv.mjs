@@ -3,12 +3,18 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+// Same env convention as test-harnesses/*.mjs — credentials are never committed.
+const { DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD } = process.env;
+if (!DB_PASSWORD) {
+  console.error('DB_PASSWORD is not set. Export DB_HOST/DB_PORT/DB_DATABASE/DB_USERNAME/DB_PASSWORD (see test-harnesses/) before running this script.');
+  process.exit(1);
+}
 const DB_CONFIG = {
-  user: 'sa',
-  password: 'KRiUffvIjuP5GoLtxYvVkWIQ1BxHQEEMO7j4T684oPR7',
-  server: 'localhost',
-  port: 1433,
-  database: 'MJ_6_1_0',
+  user: DB_USERNAME || 'sa',
+  password: DB_PASSWORD,
+  server: DB_HOST || 'localhost',
+  port: Number(DB_PORT ?? 1433),
+  database: DB_DATABASE || 'MJ_6_1_0',
   options: { trustServerCertificate: true },
 };
 

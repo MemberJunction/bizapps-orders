@@ -126,10 +126,15 @@ export function RequireOptionalDay(value: Date | string | null | undefined, fiel
  * Escape a free-text value for a SQL string literal.
  *
  * For the values that are legitimately text rather than ids — a provider's refund
- * reference, a search term. Doubling the quote is the SQL Server escape.
+ * reference, a search term. Doubling the quote is the SQL Server escape. Embedded
+ * null bytes are stripped for the same reason {@link EscapeSQLString} strips them:
+ * SQL Server truncates at `\0`, so a value carrying one can end a quoted literal
+ * early and leave the remainder of the input parsed as SQL — and several of this
+ * function's callers (checkout slug, client session key, email) take their value
+ * straight from an anonymous remote caller.
  */
 export function EscapeText(value: string): string {
-    return String(value).replace(/'/g, "''");
+    return String(value).replace(/\0/g, '').replace(/'/g, "''");
 }
 
 /**

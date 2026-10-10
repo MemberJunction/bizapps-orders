@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [next, main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: changes-${{ github.ref }}
   cancel-in-progress: true
