@@ -198,8 +198,18 @@ export interface AmendArrangementInput {
     OrderHeaderID?: string;
     /** The order's new payment terms. */
     NewPaymentTermsTypeID?: string;
-    /** A change of amount. Not supported yet; refused. */
+    /**
+     * The term's new amount, net of discount and before tax. Lower than the current amount and more than zero.
+     * Given with `SubscriptionTermID` and without `NewEndDate`. Only `Preview` is supported so far.
+     */
     NewAmount?: number;
+    /**
+     * With `NewAmount`: the invoiced instalment the reduction is about. That invoice is credited up to its open
+     * amount, and the rest comes off the instalments not yet invoiced. Blank: it all comes off those.
+     */
+    AppliesToInvoiceID?: string;
+    /** With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment. */
+    RefundRequested?: boolean;
     ReasonCategory: AmendmentReasonCategory;
     Reason: string;
     /** Return what the amendment would do without writing anything. */
@@ -218,6 +228,23 @@ export interface AmendArrangementEntry {
     Offsets?: string;
 }
 
+/** An instalment not yet invoiced that a change of amount reduces. A `NewAmount` of zero cancels it. */
+export interface AmendArrangementInstalment {
+    InstalmentID: string;
+    InstallmentNumber: number;
+    DueDate: string;
+    CurrentAmount: number;
+    NewAmount: number;
+}
+
+/** Where a change of amount's credit memo is applied: an invoiced instalment, or the order billed as a whole. */
+export interface AmendArrangementCredit {
+    /** Null when the order itself is credited. */
+    InstalmentID: string | null;
+    DocumentNumber: string | null;
+    Amount: number;
+}
+
 export interface AmendArrangementOutput {
     Success: boolean;
     Message?: string;
@@ -225,12 +252,29 @@ export interface AmendArrangementOutput {
     NewEndDate?: string;
     /** The day the extension takes effect: staged entries from here on are replaced. */
     EffectiveDate?: string;
-    /** What the added days are worth at the term's own rate. */
+    /** What the added days are worth at the term's own rate; for a change of amount, the reduction. */
     Value?: number;
     /** What the replaced entries were going to recognise, and the new schedule now does. */
     Respread?: number;
     Offsets?: AmendArrangementEntry[];
     NewSchedule?: AmendArrangementEntry[];
+    /** A change of amount: the term's amount before and after, net of discount and before tax. */
+    CurrentAmount?: number;
+    NewAmount?: number;
+    /** The tax charged on the reduction, and the reduction with it: what the customer is billed less. */
+    TaxReduction?: number;
+    GrossReduction?: number;
+    /** The reduction's share that belongs to periods already earned, taken back on the effective date. */
+    CatchUp?: number;
+    /** Instalments not yet invoiced that the reduction comes off. */
+    Instalments?: AmendArrangementInstalment[];
+    /** The credit memo: the part of the reduction not taken off an uninvoiced instalment. Zero when no document is needed. */
+    CreditMemo?: number;
+    /** Where the credit memo is applied. */
+    CreditApplied?: AmendArrangementCredit[];
+    /** The credit memo's part refunded, and the part left as the customer's credit. */
+    Refund?: number;
+    OpenCredit?: number;
     /** A change of payment terms: the terms before and after, by name. */
     CurrentPaymentTerms?: string | null;
     NewPaymentTerms?: string;
@@ -726,6 +770,53 @@ export interface CheckEntitlementOutput {
     EvaluatedAt: string;
     /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. Fail closed when stale. */
     CacheUntil: string;
+}
+
+/**
+ * Input for `Orders.CreateOrderFromProviderPayment`.
+ *
+ * Creates a paid order from a gateway charge that matched no order or invoice: the order in the
+ * payment provider's company, one line at the charge's amount, and the charge captured against it.
+ * The product and the buyer are named by the caller.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersCreateOrderFromProviderPaymentInput {
+    /** The payment provider the charge was taken through. Its company receives the order and the cash. */
+    PaymentProviderID: string;
+    /** The gateway's charge id (Stripe: ch_...), as the reconciliation reports it. */
+    ProviderChargeID: string;
+    /** The product the order's one line carries, priced at the charge's amount. */
+    ProductID: string;
+    /** The buyer. */
+    BillToPersonID: string;
+    /** The buyer's organization, when the order is billed to one. */
+    BillToOrganizationID?: string | null;
+}
+
+/**
+ * Output for `Orders.CreateOrderFromProviderPayment`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersCreateOrderFromProviderPaymentOutput {
+    Success: boolean;
+    Message: string;
+    /**
+     * Why nothing was created, when Success is false: BadInput, ProviderNotFound, ChargeNotFound,
+     * ChargeNotSucceeded, ChargeRefunded, ChargeHasNoAmount, ChargeHasNoIntent, CurrencyMismatch,
+     * IntentOpenedByOrders, ConfirmRefused or CaptureRefused.
+     */
+    Code?: string;
+    /** True when an earlier call already created the order for this charge; nothing new was written. */
+    WasExisting?: boolean;
+    OrderHeaderID?: string | null;
+    OrderNumber?: string | null;
+    PaymentIntentID?: string | null;
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    /** The charge's gross amount, which the order totals and the payment records. */
+    Amount?: number | null;
 }
 
 /**
@@ -2257,7 +2348,7 @@ export class OrdersAdvanceOrderStateOperation extends BaseRemotableOperation<Ord
 // ============================================================
 /**
  * Amend Arrangement
- * Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount is refused until its credit-memo path exists.
+ * Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount (NewAmount, optionally AppliesToInvoiceID) can be previewed: the catch-up on revenue already earned, the staged entries it offsets and the new schedule, the uninvoiced instalments it reduces and the credit memo; recording one is refused until its application exists.
  * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
  * under 'Orders.AmendArrangement'. This generated base provides the typed contract only (client-safe).
  */
@@ -2361,6 +2452,22 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
     public readonly OperationKey = "Orders.CheckEntitlement";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.CreateOrderFromProviderPayment — Create Order From Provider Payment
+// ============================================================
+/**
+ * Create Order From Provider Payment
+ * Create a paid order from a payment gateway charge that matched no order or invoice. Reads the charge from the gateway, creates and confirms an order in the payment provider's company with one line of the named product at the charge's gross amount, records the gateway intent, and captures the charge against the order, so the gateway's fee is booked and the bank deposit that follows matches. Refuses a charge that has not succeeded, has any refund, has no gateway intent, is in another currency, or belongs to an intent Orders opened. One order per charge: a repeat call returns the order already created and finishes its capture if that had failed.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.CreateOrderFromProviderPayment'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersCreateOrderFromProviderPaymentOperation extends BaseRemotableOperation<OrdersCreateOrderFromProviderPaymentInput, OrdersCreateOrderFromProviderPaymentOutput> {
+    public readonly OperationKey = "Orders.CreateOrderFromProviderPayment";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 

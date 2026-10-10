@@ -1588,6 +1588,85 @@ describe('CheckoutSessionService', () => {
             expect(describeMocks.mockSendOrderDescription).not.toHaveBeenCalled();
         });
 
+        describe('VAT location evidence (#480)', () => {
+            const paidSession = () => {
+                mocks.mockSessionInstance.Email = 'payer@example.com';
+                mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+                mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                    BillingAddress: BILLING,
+                    Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+                });
+                mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+                mocks.mockPaymentIntentInstance.Amount = 100;
+                mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                    for (const line of ctx.Lines) {
+                        line.UnitPrice = 100;
+                        line.LineTotalGross = 100 * line.Quantity;
+                    }
+                    return Promise.resolve({});
+                });
+            };
+            const order = () => mocks.mockOrderInstance as unknown as { IPCountry: string | null; CardIssuingCountry: string | null };
+            let retrieve: ReturnType<typeof vi.fn>;
+
+            beforeEach(() => {
+                retrieve = vi.fn().mockResolvedValue({
+                    Success: true,
+                    Status: 'Succeeded',
+                    Instrument: { ProviderCustomerRef: null, ProviderInstrumentRef: 'pm_1', IssuingCountry: 'DE' },
+                });
+                renewalMocks.resolveProvider = async () => ({ RetrieveIntent: retrieve });
+            });
+            afterEach(() => {
+                renewalMocks.resolveProvider = null;
+            });
+
+            it('records the IP country the edge passed and the issuing country of the card that paid', async () => {
+                paidSession();
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser, { IPCountry: 'fr' });
+                expect(res.Success).toBe(true);
+                expect(order().IPCountry).toBe('FR');
+                expect(order().CardIssuingCountry).toBe('DE');
+                // The webhook had already settled the intent, so the gateway is read once, for the card.
+                expect(retrieve).toHaveBeenCalledTimes(1);
+                expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalled();
+            });
+
+            it('completes with both null when the IP country is unknown and the gateway reports no card country', async () => {
+                paidSession();
+                retrieve.mockResolvedValue({ Success: true, Status: 'Succeeded', Instrument: { ProviderCustomerRef: null, ProviderInstrumentRef: 'pm_1' } });
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser, { IPCountry: 'XX' });
+                expect(res.Success).toBe(true);
+                expect(order().IPCountry).toBeNull();
+                expect(order().CardIssuingCountry).toBeNull();
+            });
+
+            it('completes with no card country when the gateway read fails', async () => {
+                paidSession();
+                retrieve.mockRejectedValue(new Error('gateway down'));
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(order().IPCountry).toBeNull();
+                expect(order().CardIssuingCountry).toBeNull();
+            });
+
+            it('reuses the read that settled the intent rather than reading the gateway twice', async () => {
+                paidSession();
+                mocks.mockPaymentIntentInstance.Status = 'RequiresPayment';
+                retrieve.mockResolvedValue({
+                    Success: true,
+                    Status: 'Succeeded',
+                    Amount: 100,
+                    Instrument: { ProviderCustomerRef: null, ProviderInstrumentRef: 'pm_1', IssuingCountry: 'GB' },
+                });
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(order().CardIssuingCountry).toBe('GB');
+                // Once in the paid gate; the capture path finds the intent settled and does not read again.
+                expect(retrieve).toHaveBeenCalledTimes(1);
+            });
+        });
+
         it('still confirms the order when CapturePayment fails after commit', async () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';

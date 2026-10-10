@@ -454,6 +454,25 @@ describe('CheckoutServerExtension', () => {
             expect(DispatchOutboundDeliveries).toHaveBeenCalledWith({ OrderHeaderID: 'order-1' }, expect.anything(), expect.anything());
         });
 
+        it('passes the configured IP country header to the checkout as VAT location evidence (#480)', async () => {
+            mockGetSystemUser.mockReturnValue({ ID: 'svc-1', Email: 'svc@example.com' });
+            const completeMock = vi.mocked(CheckoutSessionService.CompleteCheckout);
+            completeMock.mockClear();
+            completeMock.mockResolvedValue({ Success: true, SessionID: 'sess-1', Status: 'Confirmed' } as never);
+            const ext = new CheckoutServerExtension() as unknown as {
+                settings: Record<string, unknown>;
+                handleComplete(req: Request, res: Response): Promise<void>;
+            };
+            const req = { body: { sessionId: 'sess-1', clientSessionKey: 'k' }, headers: { 'cf-ipcountry': 'SE' } } as unknown as Request;
+
+            await ext.handleComplete(req, mockRes() as unknown as Response);
+            expect(completeMock.mock.calls[0][3]).toEqual({ IPCountry: undefined });
+
+            ext.settings = { IPCountryHeader: 'CF-IPCountry' };
+            await ext.handleComplete(req, mockRes() as unknown as Response);
+            expect(completeMock.mock.calls[1][3]).toEqual({ IPCountry: 'SE' });
+        });
+
         it('sends nothing for a checkout that did not complete', async () => {
             await complete({ Success: false, SessionID: 'sess-1', Status: 'Open', ErrorMessage: 'no' });
             expect(DispatchOutboundDeliveries).not.toHaveBeenCalled();

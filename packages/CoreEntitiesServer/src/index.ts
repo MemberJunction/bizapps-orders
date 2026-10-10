@@ -20,6 +20,10 @@ export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from '
 export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
 export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
 export { NetRelease, PlanTermExtension } from './TermExtensionPlan.js';
+export { CheckAmountChange } from './AmountChange.js';
+export type { AmountChangeRequest, CheckedAmountChange } from './AmountChange.js';
+export { PlanAmountChange, PlanReduction } from './AmountChangePlan.js';
+export type { AmountChangeInput, AmountChangePlan, CreditApplication, InstalmentChange, ReductionInput, ReductionInstalment, ReductionPlan } from './AmountChangePlan.js';
 export type { StagedEntry, StagedLine, TermExtensionInput, TermExtensionPlan } from './TermExtensionPlan.js';
 // Each Pending concession is routed to its approvers as its own tasks-app approval task (golive #274).
 export {
@@ -507,6 +511,20 @@ export {
     PROVIDER_CHARGE_MISMATCH_TYPE_CODE,
 } from './ReconcilePaymentProviderChargesOperation.js';
 export {
+    CheckChargeForOrder,
+    CheckProviderPaymentInput,
+    ProviderPaymentIdempotencyKey,
+    ProviderPaymentLineReason,
+    PROVIDER_PAYMENT_ORDER_ORIGIN,
+    MAX_PROVIDER_CHARGE_ID_LENGTH,
+} from './ProviderPaymentOrder.js';
+export type { ProviderPaymentRefusal, ProviderPaymentRefusalCode, ProviderPaymentOrderRequest, CheckedProviderPaymentRequest } from './ProviderPaymentOrder.js';
+export {
+    CreateOrderFromProviderPaymentOperation,
+    CreateOrderFromGatewayCharge,
+    LoadCreateOrderFromProviderPaymentOperation,
+} from './CreateOrderFromProviderPaymentOperation.js';
+export {
     BookProviderRefunds,
     PlanProviderRefundBooking,
     UnmatchedGatewayRefunds,
@@ -862,6 +880,8 @@ export type {
     OpenSessionPaymentIntentResult,
     BookCheckoutPaymentResult,
 } from './CheckoutSessionService.js';
+export { ToIsoCountryCode } from './VatLocationEvidence.js';
+export type { CheckoutLocationEvidence } from './VatLocationEvidence.js';
 // The host seam for refusing a checkout (#323): subclass and register `CheckoutPrePurchaseCheck`.
 export { ALREADY_SUBSCRIBED_REASON, CheckoutPrePurchaseCheck, RunPrePurchaseChecks } from './CheckoutPrePurchaseCheck.js';
 export type {

@@ -6552,6 +6552,14 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(36)
     ConfirmedByUserID?: string;
         
+    @Field({nullable: true, description: `ISO 3166-1 alpha-2 country of the buyer's IP address at self-serve checkout, read from the country header the proxy or CDN in front of the server sets. VAT location evidence alongside the billing address. The IP address itself is never stored. NULL when the order did not come through self-serve checkout, when no country header is configured, or when the country could not be resolved.`}) 
+    @MaxLength(2)
+    IPCountry?: string;
+        
+    @Field({nullable: true, description: `ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.`}) 
+    @MaxLength(2)
+    CardIssuingCountry?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -6751,6 +6759,12 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     @Field({ nullable: true })
     ConfirmedByUserID: string | null;
 
+    @Field({ nullable: true })
+    IPCountry: string | null;
+
+    @Field({ nullable: true })
+    CardIssuingCountry: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6871,6 +6885,12 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     ConfirmedByUserID?: string | null;
+
+    @Field({ nullable: true })
+    IPCountry?: string | null;
+
+    @Field({ nullable: true })
+    CardIssuingCountry?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

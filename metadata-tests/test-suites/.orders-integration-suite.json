@@ -595,6 +595,17 @@
           "primaryKey": {
             "ID": "E261B03C-0C83-4297-B5B4-A6F0C69EFA2B"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-43 - Amount Change Preview",
+            "Sequence": 43,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "28808448-F93E-4C40-8727-EE66C20A0A3C"
+          }
         }
       ]
     },

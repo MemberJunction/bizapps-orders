@@ -8,7 +8,10 @@
  * approved, in the approval's own transaction (see ./TermExtension.ts). A requester within their own authority
  * is approved on save, so the extension applies in this call.
  *
- * A change of amount (case A) is refused until its credit-memo path exists.
+ * A change of amount (case A, #506): the caller names a term and its new, lower amount, optionally the invoice the
+ * reduction is about. `Preview` returns the plan from ./AmountChange.ts: the catch-up, the staged entries offset and
+ * the new schedule, the instalments reduced and the credit memo. Recording one is refused until its application
+ * (the credit-memo document, the entries, the instalment rewrite and accounting's task) exists.
  *
  * A confirmed order's payment terms (#309): the caller names the order and its new terms instead of a term. It
  * records a Terms `OrderConcession`, which always waits for someone other than the requester to approve it; the
@@ -17,6 +20,7 @@
  *
  * CONNECTS TO:
  *   PLAN:    ./TermExtension.ts (CheckTermExtension) · ./PaymentTermsChange.ts (CheckTermsChange)
+ *            ./AmountChange.ts (CheckAmountChange)
  *   RECORDS: OrderConcessionEntityServer (value, approval, application)
  */
 import {
@@ -38,6 +42,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY } from './entity-names.js';
 import { RequireOptionalDay, RequireUUID } from './sql-guards.js';
+import { CheckAmountChange } from './AmountChange.js';
 import { CheckTermsChange } from './PaymentTermsChange.js';
 import { CheckTermExtension } from './TermExtension.js';
 
@@ -55,10 +60,19 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         }
         if (!input.Reason?.trim()) return { Success: false, Message: 'An amendment must state its reason.' };
         if (input.NewPaymentTermsTypeID != null || input.OrderHeaderID != null) {
-            if (input.SubscriptionTermID != null || input.NewEndDate != null || input.NewAmount != null) {
+            if (input.SubscriptionTermID != null || input.NewEndDate != null || input.NewAmount != null || input.AppliesToInvoiceID != null) {
                 return { Success: false, Message: 'A change of payment terms is amended on its own, without a term, end date or amount.' };
             }
             return this.amendPaymentTerms(input, provider, user);
+        }
+        if (input.NewAmount != null) {
+            if (input.NewEndDate != null) {
+                return { Success: false, Message: 'A change of amount and a change of end date are amended separately.' };
+            }
+            return this.amendAmount(input, provider, user);
+        }
+        if (input.AppliesToInvoiceID != null || input.RefundRequested) {
+            return { Success: false, Message: 'AppliesToInvoiceID and RefundRequested go with a change of amount (NewAmount).' };
         }
 
         let newEnd: Date | null;
@@ -67,9 +81,6 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
             newEnd = AsDateValue(RequireOptionalDay(input.NewEndDate, 'NewEndDate'));
         } catch (e) {
             return { Success: false, Message: String((e as Error).message) };
-        }
-        if (input.NewAmount != null) {
-            return { Success: false, Message: 'Changing the amount of a booked arrangement is not supported yet.' };
         }
         if (!newEnd) return { Success: false, Message: 'NewEndDate is required.' };
         const termID = input.SubscriptionTermID as string;
@@ -126,6 +137,75 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
                 concession.Status === 'Approved'
                     ? `Term extended to ${summary.NewEndDate}. Accounting has been asked to confirm the re-cut.`
                     : `The extension to ${summary.NewEndDate} is awaiting approval; it takes effect when approved.`,
+        };
+    }
+
+    private async amendAmount(
+        input: AmendArrangementInput,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<AmendArrangementOutput> {
+        let checked: Awaited<ReturnType<typeof CheckAmountChange>>;
+        try {
+            checked = await CheckAmountChange(
+                {
+                    SubscriptionTermID: RequireUUID(input.SubscriptionTermID as string, 'SubscriptionTermID'),
+                    NewAmount: Number(input.NewAmount),
+                    AppliesToInvoiceID: input.AppliesToInvoiceID ? RequireUUID(input.AppliesToInvoiceID, 'AppliesToInvoiceID') : null,
+                    RefundRequested: input.RefundRequested === true,
+                    RequestedByUserID: user.ID,
+                },
+                { Provider: provider, User: user },
+            );
+        } catch (e) {
+            return { Success: false, Message: String((e as Error).message) };
+        }
+        if (typeof checked === 'string') return { Success: false, Message: checked };
+
+        const plan = checked.Recognition;
+        const billing = checked.Billing;
+        const summary: AmendArrangementOutput = {
+            Success: true,
+            EffectiveDate: day(checked.EffectiveDate),
+            CurrentAmount: checked.CurrentAmount,
+            NewAmount: checked.NewAmount,
+            Value: plan.Reduction,
+            TaxReduction: checked.TaxReduction,
+            GrossReduction: checked.GrossReduction,
+            CatchUp: plan.CatchUp,
+            Respread: plan.Remaining,
+            Offsets: plan.Offsets.map((d, i) => ({
+                EffectiveDate: d.EffectiveDate,
+                Amount: d.Lines.reduce((sum, l) => sum + Number(l.DebitAmount ?? 0), 0),
+                Offsets: plan.Targets[i].EntryNumber,
+            })),
+            NewSchedule: plan.Respread.map((d) => ({ EffectiveDate: d.EffectiveDate, Amount: d.Lines[0].DebitAmount ?? 0 })),
+            Instalments: billing.Instalments.map((c) => ({
+                InstalmentID: c.ID,
+                InstallmentNumber: c.InstallmentNumber,
+                DueDate: c.DueDate,
+                CurrentAmount: c.CurrentAmount,
+                NewAmount: c.NewAmount,
+            })),
+            CreditMemo: billing.CreditMemo,
+            CreditApplied: billing.Applied.map((a) => ({ InstalmentID: a.InstalmentID, DocumentNumber: a.DocumentNumber, Amount: a.Amount })),
+            Refund: billing.Refund,
+            OpenCredit: billing.OpenCredit,
+        };
+        if (!input.Preview) {
+            return {
+                Success: false,
+                Message:
+                    'Recording a change of amount is not available yet: only its preview is. Run it again with Preview set ' +
+                    'to see what it would do, and correct the order with a correcting order meanwhile.',
+            };
+        }
+        return {
+            ...summary,
+            Message:
+                `Term ${checked.TermNumber} of ${checked.SubscriptionNumber} would go from ${checked.CurrentAmount.toFixed(2)} to ` +
+                `${checked.NewAmount.toFixed(2)}: ${plan.CatchUp.toFixed(2)} taken back from revenue already earned, ` +
+                `${billing.CreditMemo.toFixed(2)} credited on a credit memo.`,
         };
     }
 

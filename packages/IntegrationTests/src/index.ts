@@ -34,7 +34,7 @@
  *   volume               VL1–VL13  populations, repeated purchases, and a SECOND MJ session
  *   entitlements         EN1–EN24  what a purchase confers, for how long, and when payment gates it (D27/D76, #223)
  *   entitlement-read     ER1–ER7   Orders.CheckEntitlement / ListEntitlements in-process Execute
- *   payment-providers    PV1–PV12  the gateway seam against a real database (D19/D37)
+ *   payment-providers    PV1–PV16  the gateway seam against a real database (D19/D37); PV13–PV16 an order from an unmatched charge (#481)
  *   ach-settlement       AS1–AS17  money that arrives days late, and can leave again (D77/D78/D80)
  *   embedded-payment-detail PD1–PD14  PaymentDetail as an owner-held 1:1 embed (D38/D39)
  *   payment-schedule     PS1–PS13  instalments on the order: tie, issue, per-instalment rollup and ageing (D85–D88)
@@ -42,6 +42,7 @@
  *   contract-reversal    RV1–RV10  reversing a scheduled order: withdraw, credit back, or refuse (D92 §6)
  *   concessions          CS1–CS25  concessions valued in any form, approved before the customer sees them
  *   term-extension       TX1–TX9   a booked term extended at no charge, with recognition, access and renewal following
+ *   amount-change        AC1–AC4   previewing a lower amount on a booked term: catch-up, re-spread, instalments, credit (#506)
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
  *   progress-measurement PM1–PM14   percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
  *
@@ -118,6 +119,7 @@ export * from './checks/progress-measurement.checks.js';
 export * from './checks/outbound-events.checks.js';
 export * from './checks/concessions.checks.js';
 export * from './checks/term-extension.checks.js';
+export * from './checks/amount-change.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

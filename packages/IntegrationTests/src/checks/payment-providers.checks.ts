@@ -25,6 +25,9 @@
  *   CODE: PaymentProviderResolver · BasePaymentProvider · PaymentHeaderEntityServer.settleWithProvider
  *   PURE: packages/CoreEntitiesServer/src/__tests__/PaymentProviderBehavior.test.ts (98 tests)
  *   DOC:  plans/archive/bizapps-orders-master.md D18, D19, D37
+ *
+ * PV13–PV16 cover an order created from a charge that matched nothing (#481): the stub has no charges
+ * to read, so each check hands `CreateOrderFromGatewayCharge` the charge the gateway would report.
  */
 import { randomUUID } from "crypto";
 import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
@@ -55,7 +58,12 @@ import {
 } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 // STATIC, per the repo rule — no dynamic import()/require() anywhere.
-import { ResolvePaymentProvider } from "@mj-biz-apps/orders-core-entities-server";
+import {
+  CreateOrderFromGatewayCharge,
+  LoadPaymentProviderConfig,
+  ResolvePaymentProvider,
+  type GatewayCharge,
+} from "@mj-biz-apps/orders-core-entities-server";
 import { CreatePayment, CapturePayment } from "../payment-builder.js";
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
@@ -190,6 +198,56 @@ const headerRow = (ctx: IntegrationCheckContext, paymentID: string) =>
     `SELECT Status, Amount, ProcessingFeeAmount AS Fee, NetAmount AS Net,
             ProviderChargeID AS ChargeID, JournalEntryID
        FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE ID='${paymentID}'`,
+  );
+
+/** A charge the gateway took with no Orders intent behind it, as `RetrieveCharge` reports one. */
+function unmatchedCharge(amount: number, over: Partial<GatewayCharge> = {}): GatewayCharge {
+  const tag = randomUUID().replace(/-/g, "").slice(0, 20);
+  return {
+    ProviderChargeID: `ch_it_${tag}`,
+    ProviderIntentID: `pi_it_${tag}`,
+    Amount: amount,
+    AmountRefunded: 0,
+    CurrencyCode: "USD",
+    Status: "succeeded",
+    CreatedAt: new Date(),
+    ...over,
+  };
+}
+
+/**
+ * Create the order from the charge, for the fixture's person and WidgetA. The charge is in the
+ * currency the provider's company books in (the fixture's companies take the profile default),
+ * unless the check set one.
+ */
+async function orderFromCharge(ctx: IntegrationCheckContext, providerID: string, charge: GatewayCharge, currency?: string) {
+  const f = Fx();
+  const config = await LoadPaymentProviderConfig(providerID, ctx.Provider, ctx.User);
+  const booksIn = await TxOne<{ Code: string }>(ctx,
+    `SELECT FunctionalCurrencyCode AS Code FROM ${ACCT_SCHEMA}.AccountingCompanyProfile WHERE ID='${config.CompanyID}'`);
+  return CreateOrderFromGatewayCharge(
+    {
+      PaymentProviderID: providerID,
+      ProviderChargeID: charge.ProviderChargeID,
+      ProductID: f.Products.WidgetA,
+      BillToPersonID: f.Customers.PersonID,
+      BillToOrganizationID: null,
+      Charge: { ...charge, CurrencyCode: currency ?? booksIn.Code },
+      Config: config,
+    },
+    ctx.Provider,
+    ctx.User,
+  );
+}
+
+/** Rows a charge's order left behind, by the gateway intent it carried. */
+const rowsForIntent = (ctx: IntegrationCheckContext, providerIntentID: string) =>
+  TxOne<{ Intents: number; Orders: number }>(
+    ctx,
+    `SELECT (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.PaymentIntent WHERE ProviderIntentID='${providerIntentID}') AS Intents,
+            (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderHeader oh
+               JOIN ${ORDERS_SCHEMA}.PaymentIntent pi ON pi.OrderHeaderID = oh.ID
+              WHERE pi.ProviderIntentID='${providerIntentID}') AS Orders`,
   );
 
 export const PaymentProvidersChecks: NamedCheck[] = [
@@ -527,6 +585,119 @@ export const PaymentProvidersChecks: NamedCheck[] = [
             "even on a database with no Processing Fee account linked",
         );
         AssertEqual(Number(l.Unbalanced), 0, "and every one of them balances");
+      }),
+  },
+  {
+    Id: "payment-providers.PV13",
+    Name: "PV13: a charge with no order becomes a paid order in the provider's company, fee booked",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 300);
+        const providerID = await makeProvider(ctx, "Stripe");
+        const charge = unmatchedCharge(300);
+        const out = await orderFromCharge(ctx, providerID, charge);
+        Assert(out.Success, `the order is created and paid: ${out.Code} ${out.Message}`);
+        AssertEqual(out.WasExisting, false, "a first call creates");
+
+        const order = await TxOne<{ CompanyID: string; Status: string; Origin: string; TotalGross: number; AmountPaid: number; Balance: number; BillToPersonID: string }>(ctx,
+          `SELECT CompanyID, Status, Origin, TotalGross, AmountPaid, Balance, BillToPersonID
+             FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${out.OrderHeaderID}'`);
+        Assert(order.CompanyID.toLowerCase() === f.CoA.ID.toLowerCase(), "the order is in the provider's company");
+        Assert(order.BillToPersonID.toLowerCase() === f.Customers.PersonID.toLowerCase(), "billed to the named buyer");
+        AssertEqual(order.Origin, "ProviderPayment", "and says where it came from");
+        Assert(order.Status !== "Draft", `the order is booked, not a draft (status ${order.Status})`);
+        AssertEqual(Number(order.TotalGross), 300, "the order totals the charge");
+        AssertEqual(Number(order.AmountPaid), 300, "the charge is applied to it");
+        AssertEqual(Number(order.Balance), 0, "leaving nothing due");
+
+        const pay = await TxOne<{ Status: string; Amount: number; Fee: number; Net: number; IntentID: string | null; Key: string; ChargeID: string | null }>(ctx,
+          `SELECT Status, Amount, ProcessingFeeAmount AS Fee, NetAmount AS Net, PaymentIntentID AS IntentID,
+                  IdempotencyKey AS [Key], ProviderChargeID AS ChargeID
+             FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE ID='${out.PaymentHeaderID}'`);
+        AssertEqual(pay.Status, "Captured", "the payment is captured");
+        AssertEqual(Number(pay.Amount), 300, "for the gross");
+        Assert(Number(pay.Fee) > 0, "with the gateway's fee recorded, so the net deposit is not a variance");
+        AssertEqual(Math.round((Number(pay.Net) + Number(pay.Fee)) * 100) / 100, 300, "net + fee is the gross");
+        Assert(pay.ChargeID != null, "the gateway charge is stamped");
+        Assert(pay.Key.endsWith(`:${charge.ProviderChargeID}`), "keyed to the charge");
+
+        const intent = await TxOne<{ ID: string; Status: string; OrderHeaderID: string }>(ctx,
+          `SELECT ID, Status, OrderHeaderID FROM ${ORDERS_SCHEMA}.PaymentIntent WHERE ProviderIntentID='${charge.ProviderIntentID}'`);
+        AssertEqual(intent.Status, "Succeeded", "the gateway intent is recorded as settled");
+        Assert(intent.OrderHeaderID.toLowerCase() === String(out.OrderHeaderID).toLowerCase(), "and points at the order");
+        Assert(String(pay.IntentID).toLowerCase() === intent.ID.toLowerCase(), "the payment reads the gateway through it");
+      }),
+  },
+  {
+    Id: "payment-providers.PV14",
+    Name: "PV14: the same charge again returns the first order and books nothing new",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 300);
+        const providerID = await makeProvider(ctx, "Stripe");
+        const charge = unmatchedCharge(300);
+        const first = await orderFromCharge(ctx, providerID, charge);
+        Assert(first.Success, `the first call creates: ${first.Message}`);
+        const again = await orderFromCharge(ctx, providerID, charge);
+        Assert(again.Success, `the repeat succeeds: ${again.Message}`);
+        AssertEqual(again.WasExisting, true, "and says it found the earlier order");
+        Assert(String(again.OrderHeaderID).toLowerCase() === String(first.OrderHeaderID).toLowerCase(), "the same order");
+        Assert(String(again.PaymentHeaderID).toLowerCase() === String(first.PaymentHeaderID).toLowerCase(), "the same payment");
+        const rows = await rowsForIntent(ctx, charge.ProviderIntentID!);
+        AssertEqual(Number(rows.Intents), 1, "one intent");
+        AssertEqual(Number(rows.Orders), 1, "one order");
+        const pays = await TxOne<{ N: number }>(ctx,
+          `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE IdempotencyKey LIKE '%:${charge.ProviderChargeID}'`);
+        AssertEqual(Number(pays.N), 1, "one payment");
+      }),
+  },
+  {
+    Id: "payment-providers.PV15",
+    Name: "PV15: a charge below the product's price is a concession: refused, and nothing is left behind",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 300);
+        const providerID = await makeProvider(ctx, "Stripe");
+        const charge = unmatchedCharge(250);
+        const out = await orderFromCharge(ctx, providerID, charge);
+        Assert(!out.Success, "an order priced below the product's price does not confirm unapproved");
+        AssertEqual(out.Code, "ConfirmRefused", `refused at the confirm (${out.Message})`);
+        Assert(/concession|approv/i.test(out.Message), `by the concession gate, which it names: ${out.Message}`);
+        const rows = await rowsForIntent(ctx, charge.ProviderIntentID!);
+        AssertEqual(Number(rows.Intents), 0, "the intent is rolled back with the order");
+      }),
+  },
+  {
+    Id: "payment-providers.PV16",
+    Name: "PV16: a refunded charge, one in another currency, or one on an intent Orders opened, is refused with its reason",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 300);
+        const providerID = await makeProvider(ctx, "Stripe");
+
+        const refunded = unmatchedCharge(300, { AmountRefunded: 50 });
+        const r1 = await orderFromCharge(ctx, providerID, refunded);
+        AssertEqual(r1.Code, "ChargeRefunded", `a partly refunded charge is refused: ${r1.Message}`);
+        AssertEqual(Number((await rowsForIntent(ctx, refunded.ProviderIntentID!)).Intents), 0, "and writes nothing");
+
+        const foreign = unmatchedCharge(300);
+        const r0 = await orderFromCharge(ctx, providerID, foreign, "XTS");
+        AssertEqual(r0.Code, "CurrencyMismatch", `a charge in another currency is refused: ${r0.Message}`);
+
+        // A checkout's intent: Orders opened it, so its charge is not an unmatched payment.
+        const opened = await makeIntent(ctx, providerID, 300);
+        const ours = unmatchedCharge(300, { ProviderIntentID: opened.ProviderIntentID });
+        const r2 = await orderFromCharge(ctx, providerID, ours);
+        AssertEqual(r2.Code, "IntentOpenedByOrders", `a charge on an Orders intent is refused: ${r2.Message}`);
+        AssertEqual(Number((await rowsForIntent(ctx, opened.ProviderIntentID)).Orders), 0, "and no order is created for it");
       }),
   },
 ];
