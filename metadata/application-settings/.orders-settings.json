@@ -58,5 +58,16 @@
       "lastModified": "2026-10-03T21:46:46.032Z",
       "checksum": "d0f72038c563324563c232d66780903b0b7d0d45d97906c57a1a9984228ab322"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "AccessOverrideFallbackApproverRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose active holders approve an access override (WaivePaymentHold or DeferCutoff) when the requester is the order company's ApprovalCFOUserID, who approves every other request (bizapps-orders#360). Every active holder except the requester is assigned the approval task. Empty refuses such a request, since nobody may approve their own override."
+    },
+    "primaryKey": {
+      "ID": "9DF2DE35-392B-47E2-AA91-9C948AF72DD3"
+    }
   }
 ]

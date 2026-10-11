@@ -298,6 +298,8 @@ export {
     FirstPaymentAmount,
     ReconcileGrantStatus,
     IsPaymentSuspension,
+    IsSuspensionReason,
+    ReadTimeAccessCutoffDay,
     ReadTimeCutoffSuspension,
     ReadTimeWaiverExpirySuspension,
     PAYMENT_GATED_TIMINGS,
@@ -307,6 +309,7 @@ export {
     CacheUntilFor,
     ShouldRevokeGrantsOnCancel,
     ENTITLEMENT_CHECK_TTL_MS,
+    AccessOverrideApprovers,
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
@@ -330,6 +333,8 @@ export type {
     TermAccessFacts,
     GrantAccessEvaluation,
     RankableAccess,
+    AccessOverrideApproverFacts,
+    AccessOverrideApproverResult,
 } from './EntitlementBehavior.js';
 export {
     CreateEntitlementGrants,
