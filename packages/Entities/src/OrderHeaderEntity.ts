@@ -59,6 +59,34 @@ import {
 } from './booked-money';
 
 /** The order editor's sections, in the order the screen shows them. */
+/**
+ * An organization {@link OrderHeaderEntity.ClearPersonParty} cleared because it was the cleared
+ * person's employer, with no record that a default put it there (#356). The form offers to undo it.
+ */
+export interface PartyOrganizationClear {
+    Field: 'BillToOrganizationID' | 'ShipToOrganizationID';
+    OrganizationID: string;
+}
+
+/**
+ * The sentence the order form shows after {@link OrderHeaderEntity.ClearPersonParty} clears
+ * organizations by the employer rule, e.g. "Removed Example Co as the bill-to and ship-to
+ * organization: it is the previous person's employer."
+ *
+ * @param names - Each field's organization name as it read before the clear; null when unknown.
+ */
+export function DescribeClearedEmployers(
+    cleared: readonly PartyOrganizationClear[],
+    names: Readonly<Record<PartyOrganizationClear['Field'], string | null | undefined>>,
+): string {
+    const roles = cleared.map((c) => (c.Field === 'BillToOrganizationID' ? 'bill-to' : 'ship-to'));
+    const name = cleared.map((c) => names[c.Field]).find((n) => !!n) ?? 'the organization';
+    const sameOrg = cleared.every((c) => c.OrganizationID.toLowerCase() === cleared[0].OrganizationID.toLowerCase());
+    const subject = sameOrg ? name : 'the organizations';
+    return `Removed ${subject} as the ${roles.join(' and ')} organization${sameOrg ? '' : 's'}: ` +
+        `${sameOrg ? 'it is' : 'they are'} the previous person's employer.`;
+}
+
 export type OrderEditorSection = 'header' | 'parties' | 'lines' | 'charges' | 'payment';
 
 /** Statuses that mean the order has been booked to the ledger (plan D8). */
@@ -738,9 +766,10 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     private readonly partyFills = new Map<string, { Value: string; FromPersonID: string }>();
 
     /**
-     * Party person fields {@link ClearPersonParty} emptied because they were copies of the person
-     * being cleared. They count as filled-in, not as emptied by the user, so a replacement person
-     * can bring their own copy. A field leaves the set when the user changes it directly.
+     * Party fields {@link ClearPersonParty} emptied because they were copies of the person being
+     * cleared, or that person's employer. They count as filled-in, not as emptied by the user, so
+     * a replacement person can bring their own copy and employer. A person field leaves the set
+     * when the user changes it directly.
      */
     private readonly partyCopiesCleared = new Set<string>();
 
@@ -807,13 +836,20 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      *   ship-to follows the bill-to even on an order loaded later.
      * - An organization clears when it was stamped from `clearedPersonID`'s employer in this
      *   edit and that side no longer holds the person.
+     * - On an order loaded later nothing records which organization was stamped, so an
+     *   organization also clears when it is `clearedPersonID`'s employer, by the same rule that
+     *   stamps it (#356), on the cleared side and on a side whose person was cleared with it.
+     *   That rule cannot tell a stamped employer from one the user chose to keep, so these
+     *   clears are returned for the form to offer an undo.
      *
-     * Values the user set are never touched. Skips booked/voided orders.
+     * Other values the user set are not touched. Skips booked/voided orders.
+     *
+     * @returns The organizations cleared by the employer rule alone, for {@link RestorePartyOrganizations}.
      */
-    public ClearPersonParty(side: 'BillTo' | 'ShipTo', clearedPersonID: string | null): void {
+    public async ClearPersonParty(side: 'BillTo' | 'ShipTo', clearedPersonID: string | null): Promise<PartyOrganizationClear[]> {
         // The user changed this side directly, so an empty value here is now theirs.
         this.partyCopiesCleared.delete(`${side}PersonID`);
-        if (!clearedPersonID || this.Status === 'Voided' || this.IsBookedOrder) return;
+        if (!clearedPersonID || this.Status === 'Voided' || this.IsBookedOrder) return [];
 
         const other = side === 'BillTo' ? 'ShipTo' : 'BillTo';
         const otherPersonField = `${other}PersonID`;
@@ -828,13 +864,48 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             this.partyCopiesCleared.add(otherPersonField);
         }
 
+        const cleared: PartyOrganizationClear[] = [];
+        let employer: string | null | undefined;
         for (const s of ['BillTo', 'ShipTo'] as const) {
-            const orgField = `${s}OrganizationID`;
-            const stillHoldsPerson = UUIDsEqual(this.Get(`${s}PersonID`) as string | null, clearedPersonID);
-            if (!stillHoldsPerson && this.wasFilledFrom(orgField, clearedPersonID)) {
+            const orgField = `${s}OrganizationID` as PartyOrganizationClear['Field'];
+            const personNow = this.Get(`${s}PersonID`) as string | null;
+            if (UUIDsEqual(personNow, clearedPersonID)) continue;
+            if (this.wasFilledFrom(orgField, clearedPersonID)) {
                 this.clearPartyField(orgField);
+                this.partyCopiesCleared.add(orgField);
+                continue;
+            }
+            // A side now held by someone else keeps its organization: it may be theirs.
+            const org = this.Get(orgField) as string | null;
+            if (!org || (s !== side && personNow)) continue;
+            if (employer === undefined) employer = await this.employerOf(clearedPersonID);
+            if (employer && UUIDsEqual(org, employer)) {
+                this.clearPartyField(orgField);
+                this.partyCopiesCleared.add(orgField);
+                cleared.push({ Field: orgField, OrganizationID: org });
             }
         }
+        return cleared;
+    }
+
+    /**
+     * Put back organizations {@link ClearPersonParty} cleared by the employer rule, replacing any
+     * employer a new person brought since. They then count as the user's.
+     */
+    public RestorePartyOrganizations(cleared: readonly PartyOrganizationClear[]): void {
+        for (const c of cleared) {
+            this.Set(c.Field, c.OrganizationID);
+            this.partyFills.delete(c.Field);
+            this.partyCopiesCleared.delete(c.Field);
+        }
+    }
+
+    /** `personID`'s employer by the rule {@link AutoPopulateEmployerOrganization} stamps with, or null. */
+    private async employerOf(personID: string): Promise<string | null> {
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        if (!provider) return null;
+        const asOf = AsDateValue(this.OrderDate) ?? TodayAsDateValue();
+        return ResolveActiveEmployerOrganization(provider, personID, asOf, this.ContextCurrentUser);
     }
 
     /** True when `field` still holds the value {@link ApplyPersonPartyDefaults} filled in from `personID`. */

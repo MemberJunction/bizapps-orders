@@ -15,7 +15,10 @@ export class mjBizAppsOrdersCheckoutSessionStepFormComponent extends BaseFormCom
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true }
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'stepDetails', sectionName: 'Step Details', isExpanded: true },
+            { sectionKey: 'attempts', sectionName: 'Attempts', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }
 }

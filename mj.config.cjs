@@ -148,8 +148,11 @@ module.exports = {
    */
   advancedGeneration: {
     features: [
-      // Every run: categorises fields with AutoUpdateCategory=1 and an empty Category, which is
-      // what turns a flat field list into a real form layout.
+      // Change events only: categorises fields with AutoUpdateCategory=1 and an empty Category,
+      // which is what turns a flat field list into a real form layout. It runs for a new entity,
+      // a new field, or a field whose description or type changed — not on every run — so a field
+      // that arrives uncategorized another way stays in the Details panel. Those get a Category in
+      // metadata/entity-fields (#276); .github/scripts/check-form-details-panel.mjs catches them.
       { name: 'FormLayoutGeneration', enabled: true },
       // Existing objects: CHECK-constraint descriptions + Validate() bodies in the subclasses.
       { name: 'ParseCheckConstraints', enabled: true },

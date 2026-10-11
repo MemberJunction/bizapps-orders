@@ -47,6 +47,7 @@ describe('BasePaymentProvider — the default is refusal', () => {
         expect((await base.Capture({ ProviderIntentID: 'x', CurrencyCode: 'USD' })).Success).toBe(false);
         expect((await base.RetrieveIntent({ ProviderIntentID: 'x' })).Success).toBe(false);
         expect((await base.Refund({ CurrencyCode: 'USD', Amount: 1 })).Success).toBe(false);
+        expect((await base.ListRefunds({ ProviderChargeID: 'ch_x' })).Success).toBe(false);
     });
 
     it('names the provider type in the refusal, so the fix is findable', async () => {

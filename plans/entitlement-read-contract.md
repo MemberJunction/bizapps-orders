@@ -112,6 +112,8 @@ out: {
   ValidTo?:            datetimeoffset,
   Quantity?:           decimal,          // ResourceQuantity — seats
   GrantID?:            uuid,             // audit handle
+  SuspensionReason?:   'AwaitingPayment' | 'PastDue' | 'AwaitingActivation' | null,  // only with Decision 'Suspended' (#269)
+  AccessCutoffDate?:   date,             // only while access holds on a past-due renewal: last day before the cutoff (#269)
   ViaOrganizationID?:  uuid,             // if granted through a team/site licence
   EvaluatedAt:         datetimeoffset,
   CacheUntil:          datetimeoffset    // min(effective ValidTo, wall-clock now + 60s); never from AsOf
@@ -119,6 +121,8 @@ out: {
 ```
 
 `Decision` earns its place: “expired on the 30th”, “your subscription lapsed”, and “you never bought this” are three screens and three support conversations. Orders already stores `ValidityModeApplied` and `RevocationReason` so this is answerable — surface them rather than collapsing everything to `false`.
+
+`Suspended` covers three holds, and `SuspensionReason` says which: a new purchase waiting for its first payment (`AwaitingPayment`), a renewal cut off past due (`PastDue`), or a grant waiting for activation (`AwaitingActivation`). `Decision` stays `Suspended` for all three, so a caller matching on it is unaffected. `AccessCutoffDate` lets a product warn before a past-due renewal loses access; it is the date the overdue worklist shows as `GraceThroughDate`, or an approved cutoff deferral's last day when that is later. `ListEntitlements` items carry the same two fields.
 
 ### 4.4 Companions
 

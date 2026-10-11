@@ -29,17 +29,29 @@ Add a new migration:
 migrations/V<yyyyMMddHHmm>__v<app-version>__<Short_Description>.sql
 ```
 
-It runs after the baseline on every deploy — clean install or existing database — so both converge
-on the same schema. Write it to be **idempotent** and to work on a database that already has data:
-guard with `IF NOT EXISTS` / `IF COL_LENGTH(...) IS NULL`, and give new `NOT NULL` columns a default
-or backfill them before adding the constraint.
+It runs once, after the baseline and every earlier migration, on every deploy — clean install or
+existing database — so both converge on the same schema. Write plain DDL: **no existence guards**
+(`IF NOT EXISTS`, `IF COL_LENGTH(...) IS NULL`, `IF OBJECT_ID(...) IS NULL`), and add each column
+with its constraints inline in one `ALTER TABLE`. The runner's history already guarantees the
+migration runs once, in order; a guard only hides the case where it should fail, recording the
+migration as applied while an existing object keeps a different shape. Make it work on a database
+that already has data: give new `NOT NULL` columns a default or backfill them before adding the
+constraint.
 
 Then regenerate the code CodeGen owns:
 
 ```bash
 npm run mj:migrate      # apply the new migration to your database
 npm run mj:codegen      # entity metadata, base views, CRUD procs, TypeScript
+scripts/append-codegen.sh migrations/V<new>.sql   # CodeGen's SQL, below the new migration's banner
 ```
+
+Then check where each new column landed on its generated form. CodeGen's AI layout pass gives a
+new field a section (`EntityField.Category`) only when it runs with an AI key and sees the field as
+new; otherwise the field goes in the generic **Details** panel and CodeGen still reports success.
+Give such a field a `Category` in `metadata/entity-fields` (one of its form's existing sections where
+one fits), `mj sync push` it, and run CodeGen again. CI fails a PR whose generated forms put fields in
+Details (`.github/scripts/check-form-details-panel.mjs`).
 
 ## A merged migration is locked
 
@@ -65,10 +77,10 @@ self-test. Reviewers: a red result here is blocking. It has been merged past twi
 ## What must NOT happen any more
 
 **Do not edit the baseline** (`migrations/V202607061432__v0.1.x__Tables_and_Objects.sql`), above or
-below the CodeGen banner. Its generated half is still replaced wholesale by `append-codegen.sh` when
-CodeGen runs against a bare database — that is why a hand edit below the banner disappears — but the
-hand-authored half above it is now equally off limits, because it has already been applied
-everywhere.
+below the CodeGen banner. Both halves have already been applied everywhere, and like every merged
+migration it is locked. `scripts/append-codegen.sh` takes the migration to append to as a required
+argument and refuses any file already on `origin/next`, the baseline included: CodeGen output for a
+change goes below the banner of the new migration that made the change.
 
 **Do not run `scripts/rebuild-db.sh` as part of feature work.** It stays in the repo for the one case
 it is still correct for — standing up a brand-new empty database from nothing — and its own header

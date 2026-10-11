@@ -15,7 +15,11 @@ export class mjBizAppsOrdersExternalInvoiceFormComponent extends BaseFormCompone
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true }
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'invoiceDetails', sectionName: 'Invoice Details', isExpanded: true },
+            { sectionKey: 'externalSystem', sectionName: 'External System', isExpanded: true },
+            { sectionKey: 'cancellation', sectionName: 'Cancellation', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }
 }

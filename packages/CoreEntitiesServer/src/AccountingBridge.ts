@@ -21,7 +21,7 @@ import { BaseRemotableOperation, IMetadataProvider, LogStatus, Metadata, UserInf
 import { MJGlobal } from '@memberjunction/global';
 import { AccountingEngineBase, pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
 import { GLAccountResolver, type LinkedAccountHit, type ResolverEntityIDs } from './GLAccountResolver.js';
-import type { IntercompanyLookup } from './PaymentAllocationFactory.js';
+import type { IntercompanyLookup, LegalEntityLookup } from './PaymentAllocationFactory.js';
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
@@ -90,6 +90,12 @@ export interface AccountingEngineSurface {
      * The Due To / Due From pair for an ORDERED company pair (BA-D26), each leg carrying the
      * dimensions pinned on the match. `DimensionValueID` is nullable there by design.
      */
+    /**
+     * The company whose books `companyId` uses: a Division, Department or Branch walks up to the
+     * first company above it of any other type (golive #313). Throws, naming the company, when the
+     * walk finds no parent, a parent with no profile, or a loop.
+     */
+    LegalEntityFor(companyId: string): string;
     ResolveIntercompanyAccounts(
         sourceCompanyId: string,
         targetCompanyId: string,
@@ -199,7 +205,19 @@ export async function BuildGLAccountResolver(
         const glAccountID = hit?.Link?.GLAccountID;
         if (!glAccountID) return null;
         return hitFor(glAccountID, (hit?.Dimensions ?? []).map((d) => d.DimensionID));
-    });
+    }, (companyID) => engine.LegalEntityFor(companyID));
+}
+
+/**
+ * The legal-entity lookup `PaymentAllocationFactory` compares companies through (golive #313): two
+ * companies on the same books settle each other's receivables directly, with no Due To / Due From.
+ */
+export async function BuildLegalEntityLookup(
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<LegalEntityLookup> {
+    const engine = await LoadAccountingEngine(provider, user);
+    return (companyID) => engine.LegalEntityFor(companyID);
 }
 
 /**

@@ -36,6 +36,15 @@ import {
     type CreateIntentResult,
     type EnsureCustomerRequest,
     type EnsureCustomerResult,
+    type GatewayCharge,
+    type GatewayRefund,
+    type ListChargesRequest,
+    type ListChargesResult,
+    type ListWebhookEndpointsResult,
+    type RetrieveChargeRequest,
+    type RetrieveChargeResult,
+    type ListRefundsRequest,
+    type ListRefundsResult,
     type RefundRequest,
     type RefundResult,
     type RetrieveIntentRequest,
@@ -54,6 +63,9 @@ import {
 } from './PaymentProviderBehavior.js';
 
 const STRIPE_API = 'https://api.stripe.com/v1';
+
+/** Pages of 100 a list read follows before refusing. */
+const MAX_LIST_PAGES = 50;
 
 /** Stripe's own event names, kept as strings because they are Stripe's vocabulary and not ours. */
 const HANDLED = [
@@ -323,6 +335,55 @@ export class StripePaymentProvider extends BasePaymentProvider {
         };
     }
 
+    public override async ListRefunds(request: ListRefundsRequest): Promise<ListRefundsResult> {
+        // The stub has no gateway behind it, so it has no refunds Orders did not make itself.
+        if (this.useStub) return { Success: true, Refunds: [] };
+
+        const query: Record<string, string> = {};
+        if (request.ProviderChargeID) query.charge = request.ProviderChargeID;
+        AddCreatedRange(query, request.CreatedFrom, request.CreatedTo);
+        const listed = await this.listAll('/refunds', query);
+        if (!listed.Ok) return { Success: false, Reason: listed.Reason };
+        return { Success: true, Refunds: listed.Items.map(StripeRefundFromObject) };
+    }
+
+    // ─── Reconciliation reads (#477) ───────────────────────────────────────────
+
+    public override get ListsCharges(): boolean {
+        return true;
+    }
+
+    public override async ListCharges(request: ListChargesRequest): Promise<ListChargesResult> {
+        if (this.useStub) return { Success: true, Charges: [] };
+        const query: Record<string, string> = {};
+        AddCreatedRange(query, request.CreatedFrom, request.CreatedTo);
+        const listed = await this.listAll('/charges', query);
+        if (!listed.Ok) return { Success: false, Reason: listed.Reason };
+        return { Success: true, Charges: listed.Items.map(StripeChargeFromObject) };
+    }
+
+    public override async RetrieveCharge(request: RetrieveChargeRequest): Promise<RetrieveChargeResult> {
+        if (this.useStub) return { Success: false, NotFound: true, Reason: 'The stub has no charges.' };
+        const result = await this.call('GET', `/charges/${encodeURIComponent(request.ProviderChargeID)}`);
+        if (result.Ok) return { Success: true, Charge: StripeChargeFromObject(result.Body) };
+        const code = String(((result.Body.error ?? {}) as Record<string, unknown>).code ?? '');
+        return { Success: false, NotFound: code === 'resource_missing', Reason: result.Reason };
+    }
+
+    public override async ListWebhookEndpoints(): Promise<ListWebhookEndpointsResult> {
+        if (this.useStub) return { Success: false, Reason: 'The stub has no webhook endpoints.' };
+        const listed = await this.listAll('/webhook_endpoints', {});
+        if (!listed.Ok) return { Success: false, Reason: listed.Reason };
+        return {
+            Success: true,
+            Endpoints: listed.Items.map((e) => ({
+                Url: String(e.url ?? ''),
+                Status: String(e.status ?? ''),
+                EnabledEvents: ((e.enabled_events as unknown[]) ?? []).map(String),
+            })),
+        };
+    }
+
     // ─── Webhooks ──────────────────────────────────────────────────────────────
 
     public override async VerifyWebhook(
@@ -457,6 +518,35 @@ export class StripePaymentProvider extends BasePaymentProvider {
     }
 
     /**
+     * Every object of a Stripe list endpoint, following `has_more` pages of 100.
+     *
+     * Stops with a refusal past `MAX_LIST_PAGES` rather than reading without bound: a caller asking
+     * for more than that wants a narrower window, not a slower answer.
+     */
+    protected async listAll(
+        path: string,
+        query: Record<string, string>,
+    ): Promise<{ Ok: boolean; Reason?: string; Items: Array<Record<string, unknown>> }> {
+        const items: Array<Record<string, unknown>> = [];
+        let startingAfter: string | undefined;
+        for (let page = 0; page < MAX_LIST_PAGES; page++) {
+            const params = new URLSearchParams({ ...query, limit: '100' });
+            if (startingAfter) params.set('starting_after', startingAfter);
+            const result = await this.call('GET', `${path}?${params.toString()}`);
+            if (!result.Ok) return { Ok: false, Reason: result.Reason, Items: items };
+            const data = (result.Body.data as Array<Record<string, unknown>> | undefined) ?? [];
+            items.push(...data);
+            if (!result.Body.has_more || data.length === 0) return { Ok: true, Items: items };
+            startingAfter = String(data[data.length - 1].id);
+        }
+        return {
+            Ok: false,
+            Reason: `Stripe ${path} returned more than ${MAX_LIST_PAGES * 100} objects; ask for a narrower window.`,
+            Items: items,
+        };
+    }
+
+    /**
      * Map a Succeeded Stripe PaymentIntent body onto our CaptureResult. Shared by a real
      * POST /capture and by the already-captured retrieve fallback so both paths stamp the
      * same charge id and fee.
@@ -546,6 +636,45 @@ export function stripeCaptureAlreadyCollected(
         msg.includes('already been captured') ||
         msg.includes('already succeeded')
     );
+}
+
+/** Stripe's `created[gte]` / `created[lte]` filter, in unix seconds. */
+export function AddCreatedRange(query: Record<string, string>, from?: Date, to?: Date): void {
+    if (from) query['created[gte]'] = String(Math.floor(from.getTime() / 1000));
+    if (to) query['created[lte]'] = String(Math.floor(to.getTime() / 1000));
+}
+
+/** A Stripe charge object as a `GatewayCharge`. */
+export function StripeChargeFromObject(object: Record<string, unknown>): GatewayCharge {
+    const currency = ((object.currency as string) ?? 'usd').toUpperCase();
+    const created = Number(object.created);
+    const intent = object.payment_intent;
+    return {
+        ProviderChargeID: String(object.id),
+        ProviderIntentID:
+            typeof intent === 'string' ? intent : ((intent as Record<string, unknown> | null)?.id as string | undefined) ?? null,
+        Amount: FromMinorUnits(Number(object.amount ?? 0), currency),
+        AmountRefunded: FromMinorUnits(Number(object.amount_refunded ?? 0), currency),
+        CurrencyCode: currency,
+        Status: String(object.status ?? ''),
+        CreatedAt: Number.isFinite(created) && created > 0 ? new Date(created * 1000) : undefined,
+    };
+}
+
+/** A Stripe refund object as a `GatewayRefund`. */
+export function StripeRefundFromObject(object: Record<string, unknown>): GatewayRefund {
+    const currency = ((object.currency as string) ?? 'usd').toUpperCase();
+    const created = Number(object.created);
+    const charge = object.charge;
+    return {
+        ProviderRefundID: String(object.id),
+        ProviderChargeID:
+            typeof charge === 'string' ? charge : ((charge as Record<string, unknown> | null)?.id as string | undefined) ?? null,
+        Amount: FromMinorUnits(Number(object.amount ?? 0), currency),
+        CurrencyCode: currency,
+        Status: String(object.status ?? ''),
+        CreatedAt: Number.isFinite(created) && created > 0 ? new Date(created * 1000) : undefined,
+    };
 }
 
 /**

@@ -608,8 +608,8 @@ the spikes S1–S5 (they need sandbox credentials; the harness is ready).
 - Schedule (PR #220) support is still checked at runtime (`provider.EntityByName`) so a database that
   has not run #220's migration reads every order as billed as a whole; the `ExternalInvoice →
   OrderHeaderPaymentSchedule` FK is plain, because this branch's migrations sort after #220's.
-- Migrations are plain DDL (Amith's direction on #220), not the idempotent guards `CLAUDE.md` asks for —
-  flagged for Robert in the plan's Global Constraints.
+- Migrations are plain DDL (the direction on #220). That is now the repo rule: migrations run once,
+  in order, with no existence guards, and `CLAUDE.md` no longer asks for idempotent ones (#514).
 - The generated remote-operation base classes were added to `remote_operations.ts` by hand in exactly
   CodeGen's emitted shape; the next CodeGen run reproduces them.
 - TypeScript here compiles without `strictNullChecks`, so union narrowing uses `=== false` / `=== true`
@@ -815,8 +815,9 @@ were fixed; the rest are recorded here or in the plan.
    **This is the second time these files have been renumbered, and the reason it is dangerous both
    times is that they carry no `IF NOT EXISTS` guards** — a renumber makes them new versions, so they
    re-execute, and plain `CREATE TABLE` then fails and rolls the whole run back. CLAUDE.md asks for
-   idempotent migrations; #220 asked for plain DDL. That conflict is still unruled and is now the
-   thing standing between this branch and a safe renumber. **Robert: this needs a decision.**
+   idempotent migrations; #220 asked for plain DDL. **Since ruled:** plain DDL, no guards, and
+   `CLAUDE.md` now says so (#514). Renumbering stays safe only for a migration no shared database
+   has run; a merged one is locked (`docs/database-migrations.md`).
 2. **The tie check refused correctly priced orders.** `rowLines` derives a unit price from an
    already-rounded line amount, and the check summed the raw products. Three lines of 2.5 × 13.33 gave
    99.98 against a unit amount of 99.99, and with both sides cent-quantised the half-cent tolerance is

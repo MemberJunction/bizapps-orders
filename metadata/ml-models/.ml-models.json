@@ -21,6 +21,9 @@
     "primaryKey": {
       "ID": "514219E6-98DE-4D74-8141-DBBD1029AC0D"
     },
+    "deleteRecord": {
+      "delete": true
+    },
     "sync": {
       "lastModified": "2026-09-20T23:03:35.601Z",
       "checksum": "cc8dbe8ba9b20cf67aad43dd2147411797f96e3291e5da45e0b72b8158853919"
@@ -48,6 +51,9 @@
     "primaryKey": {
       "ID": "DAB40DD7-AD2A-4DAC-A117-96D56CB6CE6B"
     },
+    "deleteRecord": {
+      "delete": true
+    },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.082Z",
       "checksum": "f644bce9c0b9c239c5550658c734d25550a35a4fefd0fc189148c41254171824"
@@ -74,6 +80,9 @@
     },
     "primaryKey": {
       "ID": "FFA04AA8-1D29-425D-AAFF-2E9FF4DCCC8B"
+    },
+    "deleteRecord": {
+      "delete": true
     },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.095Z",
