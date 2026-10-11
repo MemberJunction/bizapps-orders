@@ -1,6 +1,6 @@
 # The Entitlement Read Contract
 
-**Status:** implemented on `an-dev-13` (`Orders.CheckEntitlement`, `Orders.ListEntitlements`, cancel-path grant honesty). LXP consumption still later.  
+**Status:** Shipped 2026-08-27. `Orders.CheckEntitlement` and `Orders.ListEntitlements` implement §4.3 and the first call in §4.4 (`packages/CoreEntitiesServer/src/CheckEntitlementOperation.ts`, `ListEntitlementsOperation.ts`, `EntitlementRead.ts`; checks in `packages/IntegrationTests/src/checks/entitlement-read.checks.ts`), with the later changes for #287, #404 and #269. Not built: `ViaOrganizationID` (§4.3), `Orders.ListBeneficiaries` (§4.4) and team inheritance (§4.5); v1 is person grants only (§6). It stays in `plans/` because source files and a released migration cite this path.  
 **Source:** design input 2026-08-26 (static reading of `origin/next` @ `ef6bd85`); built 2026-08-27.  
 **Supplements:** [`archive/bizapps-orders-master.md`](archive/bizapps-orders-master.md) D27, §13, §16, §18.
 
@@ -37,7 +37,7 @@ D27 settled the **write** side and deferred the **read** side to a poll:
 
 > Downstream apps poll grants (MJ Scheduled Job + Record-Set-Processing…) — no bespoke webhook/notification system. Provisioning/enforcement engine is later.
 
-§13 froze grant **shape** pending Ethan's answers to Robert's four questions: grant granularity · lifecycle coupling · **read contract** · team beneficiary semantics.
+§13 froze grant **shape** pending the LXP team's answers to four questions: grant granularity · lifecycle coupling · **read contract** · team beneficiary semantics.
 
 §18 still lists “entitlement read/notify poll” as outstanding. The poll was never built. This is not fighting a bad decision; it is opening a decision that was left until a real consumer existed. **The LXP is that consumer.**
 
@@ -133,7 +133,7 @@ Bulk list is an optimisation for UI and sync, **not** a second source of truth f
 
 ### 4.5 Open question that blocks a full spec — team beneficiaries
 
-`BeneficiaryOrganizationID` exists, so a site licence is expressible — but nothing says whether John Doe inherits access from his organisation's grant, and if so via what membership relation, with what seat accounting against `Quantity`. This is Robert's fourth question, still unanswered, and the check API cannot be fully specified without it.
+`BeneficiaryOrganizationID` exists, so a site licence is expressible — but nothing says whether John Doe inherits access from his organisation's grant, and if so via what membership relation, with what seat accounting against `Quantity`. This is the fourth of the questions listed in §1 (team beneficiary semantics), still unanswered, and the check API cannot be fully specified without it.
 
 **v1 default to propose:** if the LXP sells only to individuals at launch, **scope v1 to person grants**. That is a fine answer, but it must be a decision rather than a silence.
 
@@ -171,7 +171,7 @@ v1 shipped on `an-dev-13` (branch from `origin/next` @ #116; rebase after #117 m
 | 1 | Poll vs ask as source of truth | Ask. Bulk list optional. |
 | 2 | Fail mode when Orders is unreachable | Fail closed for paid content |
 | 3 | Person key | PersonID authoritative; email convenience, ambiguous-if-duplicate |
-| 4 | Does LXP have its own user id? | Ask Ethan before adding ExternalUserID |
+| 4 | Does LXP have its own user id? | Ask the LXP team before adding ExternalUserID |
 | 5 | Team / org inheritance | Person grants only unless LXP sells site licences at launch |
 | 6 | Entitlement code registry | Convention `APP_AREA_TIER` now; lookup table if codes proliferate |
 | 7 | Client `AsOf` | Diagnostics only; future values rejected; CacheUntil always from wall-clock now |
@@ -179,6 +179,8 @@ v1 shipped on `an-dev-13` (branch from `origin/next` @ #116; rebase after #117 m
 ---
 
 ## 8. How these operations reach a host
+
+> **Since v5.3.x** a release `Metadata_Sync` migration carries these rows: `migrations/V202609020400__v5.3.x__Metadata_Sync.sql` inserts `Orders.CheckEntitlement` and `Orders.ListEntitlements`, so a host installed from migrations has both. The rest of this section describes the state before that migration.
 
 The metadata JSON in this repo (`metadata/remote-operations/`) is the source of the Remote Operation rows. `mj-app.json`'s `metadata.directory` is a **dev-time pointer**, not something `mj app install` applies. There is no `*Metadata_Sync*.sql` in `migrations/`, and no migration inserts a `RemoteOperation` row.
 

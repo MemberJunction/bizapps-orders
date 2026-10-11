@@ -1,6 +1,15 @@
 # Bill.com Integration Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status (2026-10-11): shipped** in release 5.20.0; [`docs/billcom-invoice-rail.md`](../../billcom-invoice-rail.md)
+> describes what is built. This is the implementation plan as written from 2026-09-20 to 2026-09-22 (its
+> migration guidance was aligned with the no-guards rule on 2026-10-09). Its checkboxes and
+> the Status table below were not kept up to date, and the code differs from the file table and the
+> snippets in many places, so read the code instead. What did not go as planned: the integration check
+> bundles (`external-invoicing.checks.ts`, `external-payments.checks.ts`) were never written, and unit
+> tests cover the pure rules and parts of the operations instead; the migrations shipped as
+> `V202609291000` to `V202609291003`, not under the file names below. Task 20's metadata migration and
+> changesets shipped (`V202609291003__v5.20.0__BillCom_Metadata_Sync.sql`, release 5.20.0); its host
+> wiring is a deployment step outside this repo.
 
 **Goal:** When a billing unit (a confirmed schedule-less order per selling company, or an `Invoiced` instalment) becomes invoiceable, create its invoice in Bill.com and record the reference; poll Bill.com for cleared receivable payments and capture each exactly once through `Orders.CapturePayment`; let Finance cancel an unpaid Bill.com invoice.
 
@@ -22,10 +31,10 @@
 - `metadata/` is dev-time only (`mj sync push`). Rows reach a host only via a `*__Metadata_Sync.sql` migration at release (phase 4).
 - Spelling in code follows PR #220: `Instalment`.
 - Build/test commands: `pnpm run build:packages`, `pnpm run test:unit` (vitest), `pnpm run test:integration` (needs a live dev DB), `pnpm run verify`.
-- **PR #208 (`feat/168-business-today`) and PR #220 (`aidp-24`) are merged INTO this branch** (2026-09-20) in that order, with the two reconciled: `OverdueSQL(alias, dueDateExpression, todayExpression)`, `OverdueViewSQL()` emitting `vwOrderHeaders` with both the `nd` CROSS APPLY (next unpaid instalment) and the `bt` CROSS JOIN (business day), and PR #220's `V202609211200` carrying that exact view text. When #208 and #220 land on `next` with the same resolution this branch merges cleanly; if Craig resolves differently, re-merge here.
+- **PR #208 (`feat/168-business-today`) and PR #220 (`aidp-24`) are merged INTO this branch** (2026-09-20) in that order, with the two reconciled: `OverdueSQL(alias, dueDateExpression, todayExpression)`, `OverdueViewSQL()` emitting `vwOrderHeaders` with both the `nd` CROSS APPLY (next unpaid instalment) and the `bt` CROSS JOIN (business day), and PR #220's `V202609211200` carrying that exact view text. When #208 and #220 land on `next` with the same resolution this branch merges cleanly; if #220's author resolves differently, re-merge here.
 - **Migration order is fixed:** `V202609211200`/`V202609211300` (#220) → `V202609221000`, `V202609241000`, `V202609261000` (this branch). `ExternalInvoice`'s FK to `OrderHeaderPaymentSchedule` is therefore plain, not conditional.
 - **Deploy order (from #208):** the bizapps-common migration that creates `[__mj_BizAppsCommon].[fnBusinessToday]()` must be applied before any migration that creates `vwOrderHeaders` (#208's `V202609161000` and #220's `V202609211200`), and the `BizApps.BusinessTimeZone` configuration row must be set or everything silently falls back to UTC.
-- **DDL style (Amith, via Andrew's review of #220):** plain `CREATE TABLE` / `ALTER TABLE` / `CREATE INDEX` / `sp_addextendedproperty`, GO-separated, no existence checks, no cursor or table variable — a cursor breaks the PostgreSQL conversion. This branch's three migrations follow it. **Ruled:** this is the repo rule; `CLAUDE.md` and `docs/database-migrations.md` no longer ask for idempotent migrations (#514).
+- **DDL style (from the review of #220):** plain `CREATE TABLE` / `ALTER TABLE` / `CREATE INDEX` / `sp_addextendedproperty`, GO-separated, no existence checks, no cursor or table variable — a cursor breaks the PostgreSQL conversion. This branch's three migrations follow it. **Ruled:** this is the repo rule; `CLAUDE.md` and `docs/database-migrations.md` no longer ask for idempotent migrations (#514).
 
 ---
 
@@ -34,43 +43,41 @@
 | Task | State |
 |---|---|
 | 1 spikes + harness | harness written (`test-harnesses/billcom-live.mjs`); spikes **not run** — need sandbox credentials |
-| 2 provider type + column | done; applied to `MJ_BizAppsSales_QA` 2026-09-21, CodeGen folded, metadata pushed |
+| 2 provider type + column | done; applied to the test database 2026-09-21, CodeGen folded, metadata pushed |
 | 3–6 driver, rail seam, resolver, gateway + rail | done, unit-tested |
-| 7 ExternalInvoice/ExternalCustomer | applied to QA; CodeGen (entities, views, CRUD, relationships) folded under the banner; the exactly-one-party CHECK was rewritten to valid T-SQL when the live run refused the original |
+| 7 ExternalInvoice/ExternalCustomer | applied to the test database; CodeGen (entities, views, CRUD, relationships) folded under the banner; the exactly-one-party CHECK was rewritten to valid T-SQL when the live run refused the original |
 | 8 ExternalInvoiceBehavior | done (in `packages/CoreEntitiesServer`, where `InvoiceDocument` lives), 20 tests |
 | 9 ExternalPaymentBehavior | done, 17 tests |
-| 10 operation contracts | done; metadata pushed to QA (`sync push --include payment-provider-types,remote-operations,actions,scheduled-jobs`), bases now regenerated by CodeGen and identical in effect to the hand-emitted ones |
+| 10 operation contracts | done; metadata pushed to the test database (`sync push --include payment-provider-types,remote-operations,actions,scheduled-jobs`), bases now regenerated by CodeGen and identical in effect to the hand-emitted ones |
 | 11–14 operations | done; **integration check bundles not written** (need the applied schema) |
 | 13 delivery exclusion | done, unit-tested (`DeliveryBehavior.test.ts`, externally-invoiced cases) |
-| 15, 18 Actions + jobs | done; pushed to QA, jobs Disabled + Preview |
-| 16 ExternalPayment/SyncState | applied to QA; CodeGen folded; `Refused` disposition in the CHECK |
+| 15, 18 Actions + jobs | done; pushed to the test database, jobs Disabled + Preview |
+| 16 ExternalPayment/SyncState | applied to the test database; CodeGen folded; `Refused` disposition in the CHECK |
 | 17 poller | done; `CapturePayment` allocations now accept `OrderHeaderPaymentScheduleID` (PR #220's column) |
 | webhook receiver (not in the original plan) | `BillComWebhookExtension` + `BillComWebhook.ts`, unit-tested, registered in manifest/package.json/mj.config |
 | adversarial review (2026-09-20) | 17 findings, 14 fixed, 3 deferred — spec §13.5. Contract changes: `Refused` disposition, `PART_PAID` result code, `BasePaymentProvider.CollectsAtCapture`, `BaseInvoiceRail.CheckConfiguration` |
 | 19 Angular | done 2026-09-22 — panel, queue page, rail column; one deviation, see Task 19 |
 | 20 release plumbing | **not started** |
 
-## QA environment (2026-09-21)
+## Test environment (2026-09-21)
 
-`MJ_BizAppsSales_QA` on Robert's local SQL Server 2022 container is the test database. It was brought to the
-latest of every app (tasks 1.5.0, accounting 0.10.0, sales 6.4.0, contracts 0.3.0, orders through the Bill.com
-migrations), the `connector-bill-com` seed migrations were applied (schema `mj_connector_bill_com`; the
-`Bill.com` integration, its 3 objects and the `Bill.com Session` credential type exist), and this repo's `.env`
-(git-ignored) points at it as `sa`. CodeGen ran without AI credentials, so generated descriptions/layouts from
-the AI pass are absent; the carve kept only this branch's entities and fields and left `next`'s committed
-generated code for everything else. Flyway checksums for the three folded migrations were realigned in the
-history table.
+A local test database was brought to the latest of every app (tasks 1.5.0, accounting 0.10.0, sales 6.4.0,
+contracts 0.3.0, orders through the Bill.com migrations), and the `connector-bill-com` seed migrations were
+applied (schema `mj_connector_bill_com`; the `Bill.com` integration, its 3 objects and the `Bill.com Session`
+credential type exist). CodeGen ran without AI credentials, so generated descriptions/layouts from the AI pass
+are absent; the carve kept only this branch's entities and fields and left `next`'s committed generated code
+for everything else.
 
-**Configured and probed (2026-09-21 evening).** MJAPI (`:4100`) and Explorer (`:4201`) run from the MJ core repo
-against the QA database (no open-app packages, so core entities only). Robert entered the `Bill.com Session`
-credential (`54B6C9C5-…`) and the Company Integration (`EAA2E453-FEA6-4DBD-B852-9148E482A162`) through
-Explorer; the `BillCom` PaymentProvider row (`B1C0FF5A-0001-4B11-9C0A-5E1F7B3C9A01`, IsLiveMode 0) went in by
-SQL. Spikes S1, S3, S4, S5 are answered in `docs/superpowers/specs/2026-09-20-billcom-spike-results.md`; S2 waits
+**Configured and probed (2026-09-21 evening).** MJAPI and Explorer ran from the MJ core repo against the test
+database (no open-app packages, so core entities only). The `Bill.com Session` credential and the Company
+Integration were entered through Explorer; the `BillCom` PaymentProvider row (IsLiveMode 0) went in by SQL.
+Spikes S1, S3, S4, S5 are answered in `docs/superpowers/specs/2026-09-20-billcom-spike-results.md`; S2 waits
 for a payment recorded in the sandbox UI. The live run found two connector defects (double `/v3` in every
 generic URL → 404; no archive verb, `PUT {archived:true}` is a 400) and one integration gap (engine object
-cache never loaded on the connector path). The QA database carries a metadata patch for the first; the gateway
-now loads the cache and archives through `POST /invoices/{id}/archive`. **Re-apply the `/v3` patch on any new
-database** until Integrations ships U3.
+cache never loaded on the connector path). The test database carries a metadata patch for the first; the
+gateway now loads the cache and archives through `POST /invoices/{id}/archive`. Both connector defects were
+fixed in connector 0.3.2 (U1, U3), which needs no `/v3` patch and archives through its own `ArchiveInvoice`
+(design §13.11).
 
 ## File structure
 
@@ -179,7 +186,7 @@ switch (process.env.BILLCOM_PROBE ?? 'login') {
 }
 ```
 
-- [x] **Step 2: Run the probes in order** — `login`, `customer`, `invoice` (record the id), `archive-put`, `payments`, `send-default`. Record a customer bank payment manually in the sandbox UI against the probe invoice, then re-run `payments` until it appears and again after it "clears" so both statuses are captured. *(2026-09-21: all run except the two `payments` re-runs, which wait on Robert recording a payment against `00e01DYPWKVDNSX9w76e`. A seventh probe, `archive-post`, was added when `archive-put` came back 400.)*
+- [x] **Step 2: Run the probes in order** — `login`, `customer`, `invoice` (record the id), `archive-put`, `payments`, `send-default`. Record a customer bank payment manually in the sandbox UI against the probe invoice, then re-run `payments` until it appears and again after it "clears" so both statuses are captured. *(2026-09-21: all run except the two `payments` re-runs, which wait on a payment being recorded by hand against the probe invoice. A seventh probe, `archive-post`, was added when `archive-put` came back 400.)*
 
 - [x] **Step 3: Write `docs/superpowers/specs/2026-09-20-billcom-spike-results.md`** with a table: spike, question, observed result, decision. Required entries:
   - S1 archive via `PUT {archived:true}` — **does not** (400, PUT is a full replace). `POST /invoices/{id}/archive` does, idempotently. `CancelInvoice` now uses it through `BillComGateway.archiveInvoice` (connector's session helpers) until U1 lands.
@@ -1153,8 +1160,8 @@ export class IssueExternalInvoiceOperation extends OrdersIssueExternalInvoiceOpe
 
 - [ ] **Step 1: Metadata_Sync migration** generated from a **fresh** database per `docs/database-migrations.md` (a push against a dev DB emits `spUpdate*`, which the generator refuses). It must carry: the `BillCom` provider type row, five remote operations, two Actions with params, two scheduled jobs — each guarded on ID **or** natural key (the V202609041700 pattern). Run `node scripts/check-release-seed-coverage.mjs` → zero undeclared.
 - [ ] **Step 2: Changesets** `minor` on entities, core-entities-server, server, ng; `pnpm run verify` green.
-- [ ] **Step 3: Host PR in `aidp-next`** (upstream ask U3): add `"@memberjunction/connector-bill-com": "0.3.1"` to `apps/MJAPI/package.json`; document the per-company setup runbook in `plans/`: create `MJ: Credentials` (type `Bill.com Session`, sandbox first), `MJ: Company Integrations` (Integration `Bill.com`, `CompanyID`), then the Orders `PaymentProvider` row (`BillCom`, `CompanyIntegrationID`, `IsLiveMode 0`), then enable the two jobs in Preview and read one run with Finance before flipping Preview.
-- [x] **Step 4: Upstream asks** filed as issues on `MemberJunction/Integrations`: [#391](https://github.com/MemberJunction/Integrations/issues/391) archive verb (S1 failed, so it was needed) and [#390](https://github.com/MemberJunction/Integrations/issues/390) the double `/v3` plus array-shaped errors, both fixed by PR [#392](https://github.com/MemberJunction/Integrations/pull/392) (CI green, awaiting review). U2 (watermark filter) is not filed — the full-scan fallback is adequate at current volumes. Linked from the spike results doc.
+- [ ] **Step 3: Host PR in `aidp-next`** (upstream ask U3): add `"@memberjunction/connector-bill-com": "0.3.1"` (0.3.2 or later since design §13.11) to `apps/MJAPI/package.json`; document the per-company setup runbook in `plans/`: create `MJ: Credentials` (type `Bill.com Session`, sandbox first), `MJ: Company Integrations` (Integration `Bill.com`, `CompanyID`), then the Orders `PaymentProvider` row (`BillCom`, `CompanyIntegrationID`, `IsLiveMode 0`), then enable the two jobs in Preview and read one run with Finance before flipping Preview.
+- [x] **Step 4: Upstream asks** filed as issues on `MemberJunction/Integrations`: [#391](https://github.com/MemberJunction/Integrations/issues/391) archive verb (S1 failed, so it was needed) and [#390](https://github.com/MemberJunction/Integrations/issues/390) the double `/v3` plus array-shaped errors, both fixed by PR [#392](https://github.com/MemberJunction/Integrations/pull/392) (merged, released in connector 0.3.2). U2 (watermark filter) is not filed — the full-scan fallback is adequate at current volumes. Linked from the spike results doc.
 - [ ] **Step 5: Commit** and open the Orders PR referencing golive #146, #147, #148, #242, with the spec, the spike results and the verification section (bundle counts, unit counts, sandbox end-to-end run log).
 
 ---
