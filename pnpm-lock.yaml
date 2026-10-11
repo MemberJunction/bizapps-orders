@@ -213,7 +213,7 @@ importers:
   packages/Angular:
     dependencies:
       '@mj-biz-apps/orders-entities':
-        specifier: 5.29.0
+        specifier: 5.30.0
         version: link:../Entities
       ag-grid-angular:
         specifier: ^35.0.1
@@ -316,7 +316,7 @@ importers:
   packages/CoreEntitiesServer:
     dependencies:
       '@mj-biz-apps/orders-entities':
-        specifier: 5.29.0
+        specifier: 5.30.0
         version: link:../Entities
     devDependencies:
       '@memberjunction/communication-engine':
@@ -402,13 +402,13 @@ importers:
   packages/IntegrationTests:
     dependencies:
       '@mj-biz-apps/orders-core-entities-server':
-        specifier: 5.29.0
+        specifier: 5.30.0
         version: link:../CoreEntitiesServer
       '@mj-biz-apps/orders-entities':
-        specifier: 5.29.0
+        specifier: 5.30.0
         version: link:../Entities
       '@mj-biz-apps/orders-server':
-        specifier: 5.29.0
+        specifier: 5.30.0
         version: link:../Server
     devDependencies:
       '@mj-biz-apps/accounting-engine-base':
@@ -436,13 +436,13 @@ importers:
   packages/Server:
     dependencies:
       '@mj-biz-apps/orders-actions':
-        specifier: 5.29.0
+        specifier: 5.30.0
         version: link:../Actions
       '@mj-biz-apps/orders-core-entities-server':
-        specifier: 5.29.0
+        specifier: 5.30.0
         version: link:../CoreEntitiesServer
       '@mj-biz-apps/orders-entities':
-        specifier: 5.29.0
+        specifier: 5.30.0
         version: link:../Entities
       body-parser:
         specifier: ^2.2.0
