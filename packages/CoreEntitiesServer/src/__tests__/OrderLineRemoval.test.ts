@@ -88,7 +88,10 @@ function dependentRow(label: string, log: string[], succeeds = true) {
 /** An order with the real prototype and only the removal seams supplied. */
 function orderWith(removed: FakeLine[], items: FakeLine[] = []) {
     const instance = Object.create(OrderEntityServer.prototype) as unknown as RemovalOrder;
-    Object.assign(instance, { Lines: { Removed: removed, Items: items, Dirty: true, IsLoaded: true } });
+    Object.assign(instance, {
+        Lines: { Removed: removed, Items: items, Dirty: true, IsLoaded: true },
+        CheckoutAnswers: { Items: [] },
+    });
     // `ProviderToUse` and `ContextCurrentUser` are getters on BaseEntity, so they are shadowed
     // rather than assigned.
     Object.defineProperty(instance, 'ProviderToUse', { value: {}, writable: true });
@@ -224,8 +227,9 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
         // vocabulary. The removal ORDER is what this file pins; the tagging is its own subject.
         stampLineDimensions: vi.fn().mockResolvedValue(undefined),
         savePriceComponents: vi.fn().mockResolvedValue(undefined),
-        // Replacing a draft's earlier tax rows is its own subject.
+        // Replacing a draft's earlier tax and promotion rows is its own subject.
         deleteTaxRecords: vi.fn().mockResolvedValue(undefined),
+        deletePromotionRecords: vi.fn().mockResolvedValue(undefined),
         refreshRolledUpTotals: vi.fn(async () => {
             log.push('refresh-rollups');
         }),
