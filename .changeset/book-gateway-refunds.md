@@ -1,0 +1,5 @@
+---
+'@mj-biz-apps/orders-core-entities-server': patch
+---
+
+A refund made at the payment gateway is booked in Orders without a manual step. On `charge.refunded` for a payment Orders opened, the charge's cumulative refunded amount is compared with the refunds Orders holds against the payment; the gateway's refunds not yet held (matched by refund id, or by amount for one recorded by hand without an id) are booked through `Orders.RefundPayment` with their refund ids, so a refund already recorded is never booked twice. What cannot be booked — the payment is not captured, more is refunded than was captured, the amounts do not match, or `Orders.RefundPayment` refuses — is raised as a `PROVIDER_REFUND_NOT_BOOKED` finance exception. A refund remains a concession: it does not cancel a subscription or remove access. New driver call `ListRefunds` (Stripe: `GET /v1/refunds`). New exports: `BookProviderRefunds`, `PlanProviderRefundBooking`, `UnmatchedGatewayRefunds`, `StripeRefundFromObject`, `AddCreatedRange` and the refund types.

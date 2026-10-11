@@ -4351,6 +4351,114 @@ export const mjBizAppsOrdersPaymentTypeSchema = z.object({
 export type mjBizAppsOrdersPaymentTypeEntityType = z.infer<typeof mjBizAppsOrdersPaymentTypeSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Payment Webhook Deliveries
+ */
+export const mjBizAppsOrdersPaymentWebhookDeliverySchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentProviderID: z.string().describe(`
+        * * Field Name: PaymentProviderID
+        * * Display Name: Payment Provider ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+        * * Description: The configured payment provider whose webhook endpoint received the delivery.`),
+    ProviderEventID: z.string().nullable().describe(`
+        * * Field Name: ProviderEventID
+        * * Display Name: Provider Event ID
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The gateway's own event id (for Stripe, evt_...). Unique per provider. Null only when the verified body could not be read or carried no id.`),
+    EventKind: z.string().nullable().describe(`
+        * * Field Name: EventKind
+        * * Display Name: Event Kind
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The gateway's event type, unmapped (for example payment_intent.succeeded or charge.refunded).`),
+    PaymentIntentID: z.string().nullable().describe(`
+        * * Field Name: PaymentIntentID
+        * * Display Name: Payment Intent ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Intents (vwPaymentIntents.ID)
+        * * Description: The payment intent Orders opened that this event is about. Null when the event names an intent Orders did not open, or no intent at all.`),
+    ProviderIntentID: z.string().nullable().describe(`
+        * * Field Name: ProviderIntentID
+        * * Display Name: Provider Intent ID
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The gateway's intent id as the event reported it (for Stripe, pi_...), kept even when Orders has no intent with that id.`),
+    ProviderChargeID: z.string().nullable().describe(`
+        * * Field Name: ProviderChargeID
+        * * Display Name: Provider Charge ID
+        * * SQL Data Type: nvarchar(100)
+        * * Description: The gateway's charge id as the event reported it (for Stripe, ch_... or py_...), when it named one.`),
+    Outcome: z.union([z.literal('AlreadyApplied'), z.literal('Applied'), z.literal('Failed'), z.literal('Ignored'), z.literal('Rejected')]).describe(`
+        * * Field Name: Outcome
+        * * Display Name: Outcome
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AlreadyApplied
+    *   * Applied
+    *   * Failed
+    *   * Ignored
+    *   * Rejected
+        * * Description: What Orders did with the latest delivery of this event. Applied: recorded against the intent. AlreadyApplied: a repeat or out-of-order event, answered without changing anything. Ignored: an event kind Orders does not act on, or an intent it did not open. Rejected: verified but unreadable or without an id. Failed: Orders could not record a valid event and asked the gateway to retry.`),
+    ReasonCode: z.string().nullable().describe(`
+        * * Field Name: ReasonCode
+        * * Display Name: Reason Code
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Short machine-readable reason for the outcome, for filtering: kind_not_handled, unknown_intent, no_event_id, unreadable, duplicate, out_of_order, apply_failed. Null when the event was applied.`),
+    Reason: z.string().nullable().describe(`
+        * * Field Name: Reason
+        * * Display Name: Reason
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: The reason for the outcome, in words.`),
+    OccurredAt: z.date().nullable().describe(`
+        * * Field Name: OccurredAt
+        * * Display Name: Occurred At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the gateway says the event happened (Stripe's created time). Null when the event did not say.`),
+    FirstReceivedAt: z.date().describe(`
+        * * Field Name: FirstReceivedAt
+        * * Display Name: First Received At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: When Orders first received this event.`),
+    LastReceivedAt: z.date().describe(`
+        * * Field Name: LastReceivedAt
+        * * Display Name: Last Received At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: When Orders last received this event. Differs from FirstReceivedAt when the gateway redelivered it.`),
+    DeliveryCount: z.number().describe(`
+        * * Field Name: DeliveryCount
+        * * Display Name: Delivery Count
+        * * SQL Data Type: int
+        * * Default Value: 1
+        * * Description: How many times the gateway delivered this event.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    PaymentProvider: z.string().describe(`
+        * * Field Name: PaymentProvider
+        * * Display Name: Payment Provider
+        * * SQL Data Type: nvarchar(200)`),
+    PaymentIntent: z.string().nullable().describe(`
+        * * Field Name: PaymentIntent
+        * * Display Name: Payment Intent
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersPaymentWebhookDeliveryEntityType = z.infer<typeof mjBizAppsOrdersPaymentWebhookDeliverySchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Price List Assignments
  */
 export const mjBizAppsOrdersPriceListAssignmentSchema = z.object({
@@ -19633,6 +19741,270 @@ export class mjBizAppsOrdersPaymentTypeEntity extends BaseEntity<mjBizAppsOrders
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Payment Webhook Deliveries - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: PaymentWebhookDelivery
+ * * Base View: vwPaymentWebhookDeliveries
+ * * @description One row per verified webhook delivery from a payment gateway, with what Orders decided to do with it and why. Written after the signature check; a delivery whose signature failed is not recorded. A redelivery of the same event updates its row.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Payment Webhook Deliveries')
+export class mjBizAppsOrdersPaymentWebhookDeliveryEntity extends BaseEntity<mjBizAppsOrdersPaymentWebhookDeliveryEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Payment Webhook Deliveries record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Payment Webhook Deliveries record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPaymentWebhookDeliveryEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentProviderID
+    * * Display Name: Payment Provider ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    * * Description: The configured payment provider whose webhook endpoint received the delivery.
+    */
+    get PaymentProviderID(): string {
+        return this.Get('PaymentProviderID');
+    }
+    set PaymentProviderID(value: string) {
+        this.Set('PaymentProviderID', value);
+    }
+
+    /**
+    * * Field Name: ProviderEventID
+    * * Display Name: Provider Event ID
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The gateway's own event id (for Stripe, evt_...). Unique per provider. Null only when the verified body could not be read or carried no id.
+    */
+    get ProviderEventID(): string | null {
+        return this.Get('ProviderEventID');
+    }
+    set ProviderEventID(value: string | null) {
+        this.Set('ProviderEventID', value);
+    }
+
+    /**
+    * * Field Name: EventKind
+    * * Display Name: Event Kind
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The gateway's event type, unmapped (for example payment_intent.succeeded or charge.refunded).
+    */
+    get EventKind(): string | null {
+        return this.Get('EventKind');
+    }
+    set EventKind(value: string | null) {
+        this.Set('EventKind', value);
+    }
+
+    /**
+    * * Field Name: PaymentIntentID
+    * * Display Name: Payment Intent ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Intents (vwPaymentIntents.ID)
+    * * Description: The payment intent Orders opened that this event is about. Null when the event names an intent Orders did not open, or no intent at all.
+    */
+    get PaymentIntentID(): string | null {
+        return this.Get('PaymentIntentID');
+    }
+    set PaymentIntentID(value: string | null) {
+        this.Set('PaymentIntentID', value);
+    }
+
+    /**
+    * * Field Name: ProviderIntentID
+    * * Display Name: Provider Intent ID
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The gateway's intent id as the event reported it (for Stripe, pi_...), kept even when Orders has no intent with that id.
+    */
+    get ProviderIntentID(): string | null {
+        return this.Get('ProviderIntentID');
+    }
+    set ProviderIntentID(value: string | null) {
+        this.Set('ProviderIntentID', value);
+    }
+
+    /**
+    * * Field Name: ProviderChargeID
+    * * Display Name: Provider Charge ID
+    * * SQL Data Type: nvarchar(100)
+    * * Description: The gateway's charge id as the event reported it (for Stripe, ch_... or py_...), when it named one.
+    */
+    get ProviderChargeID(): string | null {
+        return this.Get('ProviderChargeID');
+    }
+    set ProviderChargeID(value: string | null) {
+        this.Set('ProviderChargeID', value);
+    }
+
+    /**
+    * * Field Name: Outcome
+    * * Display Name: Outcome
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AlreadyApplied
+    *   * Applied
+    *   * Failed
+    *   * Ignored
+    *   * Rejected
+    * * Description: What Orders did with the latest delivery of this event. Applied: recorded against the intent. AlreadyApplied: a repeat or out-of-order event, answered without changing anything. Ignored: an event kind Orders does not act on, or an intent it did not open. Rejected: verified but unreadable or without an id. Failed: Orders could not record a valid event and asked the gateway to retry.
+    */
+    get Outcome(): 'AlreadyApplied' | 'Applied' | 'Failed' | 'Ignored' | 'Rejected' {
+        return this.Get('Outcome');
+    }
+    set Outcome(value: 'AlreadyApplied' | 'Applied' | 'Failed' | 'Ignored' | 'Rejected') {
+        this.Set('Outcome', value);
+    }
+
+    /**
+    * * Field Name: ReasonCode
+    * * Display Name: Reason Code
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Short machine-readable reason for the outcome, for filtering: kind_not_handled, unknown_intent, no_event_id, unreadable, duplicate, out_of_order, apply_failed. Null when the event was applied.
+    */
+    get ReasonCode(): string | null {
+        return this.Get('ReasonCode');
+    }
+    set ReasonCode(value: string | null) {
+        this.Set('ReasonCode', value);
+    }
+
+    /**
+    * * Field Name: Reason
+    * * Display Name: Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: The reason for the outcome, in words.
+    */
+    get Reason(): string | null {
+        return this.Get('Reason');
+    }
+    set Reason(value: string | null) {
+        this.Set('Reason', value);
+    }
+
+    /**
+    * * Field Name: OccurredAt
+    * * Display Name: Occurred At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the gateway says the event happened (Stripe's created time). Null when the event did not say.
+    */
+    get OccurredAt(): Date | null {
+        return this.Get('OccurredAt');
+    }
+    set OccurredAt(value: Date | null) {
+        this.Set('OccurredAt', value);
+    }
+
+    /**
+    * * Field Name: FirstReceivedAt
+    * * Display Name: First Received At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: When Orders first received this event.
+    */
+    get FirstReceivedAt(): Date {
+        return this.Get('FirstReceivedAt');
+    }
+    set FirstReceivedAt(value: Date) {
+        this.Set('FirstReceivedAt', value);
+    }
+
+    /**
+    * * Field Name: LastReceivedAt
+    * * Display Name: Last Received At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: When Orders last received this event. Differs from FirstReceivedAt when the gateway redelivered it.
+    */
+    get LastReceivedAt(): Date {
+        return this.Get('LastReceivedAt');
+    }
+    set LastReceivedAt(value: Date) {
+        this.Set('LastReceivedAt', value);
+    }
+
+    /**
+    * * Field Name: DeliveryCount
+    * * Display Name: Delivery Count
+    * * SQL Data Type: int
+    * * Default Value: 1
+    * * Description: How many times the gateway delivered this event.
+    */
+    get DeliveryCount(): number {
+        return this.Get('DeliveryCount');
+    }
+    set DeliveryCount(value: number) {
+        this.Set('DeliveryCount', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: PaymentProvider
+    * * Display Name: Payment Provider
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PaymentProvider(): string {
+        return this.Get('PaymentProvider');
+    }
+
+    /**
+    * * Field Name: PaymentIntent
+    * * Display Name: Payment Intent
+    * * SQL Data Type: nvarchar(100)
+    */
+    get PaymentIntent(): string | null {
+        return this.Get('PaymentIntent');
     }
 }
 

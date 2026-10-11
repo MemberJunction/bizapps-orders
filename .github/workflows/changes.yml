@@ -24,6 +24,11 @@ jobs:
       - name: Check every metadata folder is in directoryOrder
         run: ./.github/scripts/validate-metadata-directory-order.sh
 
+      - name: Generated forms put no field in the Details panel
+        run: |
+          node ./.github/scripts/check-form-details-panel.mjs --self-test
+          node ./.github/scripts/check-form-details-panel.mjs
+
       - name: Resolve current base branch tip
         id: base
         run: |
