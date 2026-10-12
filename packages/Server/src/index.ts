@@ -35,6 +35,7 @@ import {
     LoadCancelSubscriptionOperation,
     LoadAmendArrangementOperation,
     LoadSubscriptionTermEntityServer,
+    LoadProductPriceEntityServer,
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
     LoadOrderEntityServer,
@@ -71,10 +72,14 @@ import {
     LoadSpawnRenewalsOperation,
     LoadDetectOverlappingSubscriptionsOperation,
     LoadReconcilePaymentProviderChargesOperation,
+    LoadCreateOrderFromProviderPaymentOperation,
+    LoadResolveChargeExceptionOperation,
     LoadEmailDeliveryChannel,
     LoadStoredValuePaymentProvider,
     LoadBillComPaymentProvider,
     LoadBillComInvoiceRail,
+    LoadHubSpotPaymentsProvider,
+    LoadHubSpotPaymentsRail,
     LoadIssueExternalInvoiceOperation,
     LoadAdoptExternalInvoiceOperation,
     LoadCancelExternalInvoiceOperation,
@@ -155,6 +160,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOrderLineProgressMeasurementEntityServer(); // refuses a Posted observation the operation did not write
     LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
     LoadSubscriptionTermEntityServer();    // a booked term's dates change only through an approved extension
+    LoadProductPriceEntityServer();        // refuses a price rule that ties an existing one at write time (D69)
     InitConcessionApprovalListener();      // a decision on a concession's approval task decides that concession (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
@@ -179,6 +185,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadPollExternalPaymentsOperation();        // 'Orders.PollExternalPayments' — cleared Bill.com payments, captured once (golive #148)
     LoadDetectOverlappingSubscriptionsOperation(); // 'Orders.DetectOverlappingSubscriptions' — finance exception type 5 (golive #279)
     LoadReconcilePaymentProviderChargesOperation(); // 'Orders.ReconcilePaymentProviderCharges' — gateway charges vs payments (#477)
+    LoadCreateOrderFromProviderPaymentOperation(); // 'Orders.CreateOrderFromProviderPayment' — order from an unmatched provider payment (#481)
+    LoadResolveChargeExceptionOperation(); // 'Orders.ResolveChargeException' — book a charge-without-payment exception as an order and clear it (#567)
     LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
     LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator
     LoadAccessOverrideOperations();    // 'Orders.RequestAccessOverride' / 'Orders.RecordAccessOverrideDecision' (#268)
@@ -193,6 +201,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadManualPaymentProvider();       // cheque, wire, cash — no gateway to call
     LoadStoredValuePaymentProvider();  // gift cards and account credit, one driver (D38/D68)
     LoadBillComPaymentProvider();      // Bill.com — the AR rail; refuses every checkout verb (golive #146/#148)
+    LoadHubSpotPaymentsProvider();     // HubSpot Payments — read, never charged; refuses every checkout verb (#482)
     LoadEnvironmentSecretResolver();   // the default CredentialsRef -> env lookup; replaceable
 
     // Actions. Same tree-shaking hazard as the operations above: without the anchor the action row
@@ -216,6 +225,7 @@ export function LoadBizAppsOrdersServer(): void {
     // fallback rather than letting "nobody registered a channel" read as "the channel refused to send".
     LoadEmailDeliveryChannel();        // 'Email' — over MJ's communication framework
     LoadBillComInvoiceRail();          // 'BillCom' — the outbound invoice rail over the published connector (golive #146)
+    LoadHubSpotPaymentsRail();         // 'HubSpotPayments' — payments a HubSpot portal collected, read by the poll (#482)
 
     // Identity-claim drivers (guest checkout → account linking). Without these anchors the
     // @RegisterClass decorators are tree-shaken and MJ core's IdentityClaimEngine finds no

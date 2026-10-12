@@ -86,7 +86,7 @@ import { FindUnapprovedConcessions, type ConcessionLineFacts } from './Concessio
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
-import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
+import { MergeDerivedTags, MergeLineDimensions, type LineDimensionTag } from './LineDimensionMerge.js';
 import type { mjBizAppsOrdersOrderLineDimensionEntity } from '@mj-biz-apps/orders-entities';
 import type { DisplacedTermStartEventData } from '@mj-biz-apps/orders-entities';
 import { DisplacedStartEventData } from './displaced-start-event.js';
@@ -2647,9 +2647,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * what the line itself is.
      *
      * CHILD ROWS, NOT THE COLUMNS. `OrderLine.DimensionID` / `.DimensionValueID` hold one axis, so
-     * they cannot carry five. They stay the HUMAN OVERRIDE: `MergeLineDimensions` gives the column
-     * precedence over a child row naming the same axis when the factory builds the entry, so
-     * somebody who sets a tag by hand overrules what was derived for that one axis and nothing else.
+     * they cannot carry five. They stay the HUMAN OVERRIDE: somebody who sets a tag by hand overrules
+     * what was derived for that one axis and nothing else.
+     *
+     * THE OVERRIDE IS STORED, NOT ONLY BOOKED. The column used to win only inside the journal entry
+     * factory, so the child rows kept the derived value while the ledger carried the hand-set one,
+     * and the line's own record of its tags disagreed with what it booked. `reconcileLineDimensions`
+     * now applies the column before writing, so the child rows are exactly what the entry will carry.
+     * Clearing the column puts the derived value back on the next save.
      *
      * A RULE BEATS THE PRODUCT MAPPING. They normally address different axes — Venture, Product and
      * Event come from the mapping; ARR-Type and Vintage are facts about this line — but where both
@@ -2784,14 +2789,22 @@ export class OrderEntityServer extends OrderHeaderEntity {
         return out;
     }
 
-    /** Bring a line's stored tags in line with what was derived, touching only what differs. */
+    /**
+     * Bring a line's stored tags in line with what was derived plus the tag set on the line by hand,
+     * touching only what differs. The hand-set tag wins on its axis, the same rule the journal entry
+     * factory applies, so the stored rows and the booked entry cannot disagree.
+     */
     private async reconcileLineDimensions(
         line: mjBizAppsOrdersOrderLineEntity,
         derived: LineDimensionTag[],
         existing: mjBizAppsOrdersOrderLineDimensionEntity[],
         options?: EntitySaveOptions,
     ): Promise<void> {
-        const wanted = new Map(derived.map((tag) => [uuidKey(tag.DimensionID), tag]));
+        const stored = MergeLineDimensions(
+            { DimensionID: line.DimensionID, DimensionValueID: line.DimensionValueID },
+            derived,
+        );
+        const wanted = new Map(stored.map((tag) => [uuidKey(tag.DimensionID), tag]));
 
         for (const row of existing) {
             const key = uuidKey(row.DimensionID);

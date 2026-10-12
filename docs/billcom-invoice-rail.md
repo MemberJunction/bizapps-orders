@@ -107,7 +107,7 @@ needs `orders:read`, the others `orders:write`.
 | `Orders.AdoptExternalInvoice` | Resolves a `Sending` row by recording the invoice BILL already holds, if it is not archived, carries the unit's number and ties. |
 | `Orders.GetExternalInvoicingWorklist` | Units invoiceable and not yet sent, computed per request; `IncludeFailed` adds failed and in-flight units. |
 | `Orders.SendExternalInvoices` | The sweep: sends worklist units up to `MaxCount` (default 25) and retries transient failures, never cancelled or in-flight units. |
-| `Orders.PollExternalPayments` | Reads payments BILL changed since the stored watermark less one day, records each in `ExternalPayment`, and captures the cleared ones. `MaxCount` (default 100) caps new or changed payments per provider. The watermark moves only after a pass with no fault. |
+| `Orders.PollExternalPayments` | Reads payments BILL changed since the stored watermark less one day, records each in `ExternalPayment`, and captures the cleared ones. `MaxCount` (default 100) caps new or changed payments per provider. The watermark moves only after a pass with no fault. It also reads HubSpot Payments provider rows ([hubspot-payments.md](hubspot-payments.md)). |
 
 **Capture.** `PAID` is captured; `SCHEDULED` and unknown statuses are held; `VOID`, `CANCELED` and
 `ESCHEATED` never are (`BILLCOM_PAYMENT_STATUS`). Every invoice a payment is applied to must be a `Sent`
@@ -125,12 +125,22 @@ job notifies.
 - [`metadata/scheduled-jobs/.orders-billcom-scheduled-jobs.json`](../metadata/scheduled-jobs/.orders-billcom-scheduled-jobs.json)
   runs the send at `0 */30 13-23 * * 1-5` UTC (`MaxCount` 25) and the poll at `0 15 * * * *` UTC
   (`MaxCount` 100). Both ship `Disabled` with `Preview` true: enable a job, read one preview run, then
-  set `Preview` to false. The Invoicing queue page runs either with `Preview` false, whatever their state.
+  set `Preview` to false. The Invoicing queue page runs the send with `Preview` false, whatever its state.
+- **The poll job is the switch for recording cash, whoever runs the poll.** `Orders.PollExternalPayments`
+  reads the installed poll jobs before a run that would write, and gates each provider by the jobs
+  governing it: the jobs whose `PaymentProviderID` names that provider, or, when none does, the jobs
+  that name no provider (the shipped one). Among those the most restrictive wins. None installed or
+  not `Active` skips that provider with nothing recorded; in Preview that provider runs as a preview
+  and the message says so; `Active` and out of Preview records. The run fails only when every
+  provider was skipped. A run that asks for `Preview` is always allowed. The queue page's "Check for
+  payments now" follows the most permissive job: disabled while every job is off, labelled as a
+  preview while none is live, and asks for confirmation before a run that may record; when the jobs
+  differ its hint says some providers are previewed or skipped.
 - [`V202609291003__v5.20.0__BillCom_Metadata_Sync.sql`](../migrations/V202609291003__v5.20.0__BillCom_Metadata_Sync.sql)
   installs the provider type, the six operations, both Actions and both jobs on a host.
 - `POST /webhooks/billcom/:providerId` (declared in `packages/Server/package.json`) checks the
-  HMAC-SHA256 signature in `x-bill-sha-signature`, answers 202, and polls that provider only when every
-  installed poll job is `Active` and out of Preview.
+  HMAC-SHA256 signature in `x-bill-sha-signature`, answers 202, and polls that provider only when the
+  poll jobs governing it are `Active` and out of Preview.
 
 ## Tables
 
@@ -187,8 +197,9 @@ On `next`, with the connector (0.3.2) and integration engine (6.1.5) this repo i
   `ExternalInvoice` row (`refreshInvoices` pairs by position; cancel reads BILL directly). The
   instalment stamp and `ExternalDocumentNumber` are best effort, so `ExternalInvoice` is the record to
   trust. `PAYPAL`, `WALLET` and `UNDEFINED` are recorded as ACH. A zero-value unit cannot be sent.
-- **BILL words in shared code.** `BILLCOM_PAYMENT_STATUS`, `TenderFor` and some messages name Bill.com
-  in provider-neutral files (design §13.8).
+- **BILL words in shared code.** `TenderFor`, the invoice allocation and the re-application messages
+  name Bill.com in provider-neutral files (design §13.8). Status tables are per rail
+  (`PaymentStatusVocabularyFor`).
 
 ## Open questions
 

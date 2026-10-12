@@ -30,7 +30,7 @@ const refuse = (ResultCode: string, Message: string): ActionResultSimple => ({ S
 
 /**
  * Inputs: `PaymentProviderID`, `FromDate`, `ToDate`, `Preview` (all optional; Preview defaults to true).
- * Outputs: `Mismatches`, `Raised`, `Errors`.
+ * Outputs: `Mismatches`, `Raised`, `OrdersCreated`, `Errors`.
  */
 @RegisterClass(BaseAction, 'Orders.ReconcilePaymentProviderCharges')
 export class ReconcilePaymentProviderChargesAction extends BaseAction {
@@ -82,6 +82,7 @@ export class ReconcilePaymentProviderChargesAction extends BaseAction {
         const output = result.Output;
         setOutput(params, 'Mismatches', output.Mismatches);
         setOutput(params, 'Raised', output.Raised);
+        setOutput(params, 'OrdersCreated', output.OrdersCreated);
         setOutput(params, 'Errors', output.Errors);
         return {
             Success: output.Success,

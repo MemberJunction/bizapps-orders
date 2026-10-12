@@ -21,6 +21,7 @@ import {
     OrderLineEntity,
     OrdersCheckCoverageOverlapOperation,
     ClampLineQuantity,
+    ExtraSeatLinesNeeded,
     CanRestoreLineDefault,
     IsLinePriceOverridden,
     LineNeedsOverrideReason,
@@ -46,6 +47,8 @@ import {
     ContinuationStartFrom,
     GetCatalogOptions,
     GetDimensionOptions,
+    GetLineDimensionsForOrder,
+    GetCompanyDimensionValueIDs,
     GetDiscountAuthority,
     GetExistingHolding,
     GetSubscriptionContinuation,
@@ -56,11 +59,13 @@ import {
     type MJOProductOption,
 } from '../../data/orders-queries';
 import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
+import { BuildStampedTags, type MJOStampedTag } from './line-stamped-tags';
 import { MJOPricingScheduler, type MJOEngineDefault, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 
 import {
     ExtensionCollapsedHint,
     ExtensionToggleLabel,
+    DescribeSeatSplit,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
 import { AsDateValue, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
@@ -144,6 +149,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     private _order: OrderHeaderEntity | null = null;
     private readonly expandedLineIds = new Set<string>();
+    /** What the last per-seat split did, shown above the lines until the order is rebound. */
+    public SeatSplitNotice: string | null = null;
 
     @Input() public Provider: IMetadataProvider | null = null;
     @Input() public EditMode = true;
@@ -281,8 +288,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public Bump(line: mjBizAppsOrdersOrderLineEntity, delta: number): void {
         if (!this.EditMode) return;
         line.Quantity = this.clampQuantity(line, Number(line.Quantity ?? 0) + delta);
-        void this.refreshApplicable(line);
-        this.schedulePricing();
+        this.onQuantityChanged(line);
     }
 
     public SetQuantity(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -290,8 +296,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
         line.Quantity = this.clampQuantity(line, Number.parseFloat(target.value));
-        void this.refreshApplicable(line);
-        this.schedulePricing();
+        this.onQuantityChanged(line);
     }
 
     public QuantityAtMax(line: mjBizAppsOrdersOrderLineEntity): boolean {
@@ -1026,6 +1031,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      */
     private onOrderSaved(): void {
         void this.refreshCoverage();
+        void this.loadStampedTags();
         if (!this.stagedDiscounts.size) return;
         this.stagedDiscounts.clear();
         this.discountDrafts.clear();
@@ -1124,6 +1130,21 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     /** Every dimension a line may be tagged with, read once per bound order. */
     public DimensionCatalog: MJODimensionOption[] = [];
 
+    /**
+     * The tags each saved line books, keyed by line id, as of the last load or save. The server
+     * writes them on save, so they are re-read after every save rather than edited here.
+     */
+    private stampedTagsByLine = new Map<string, MJOStampedTag[]>();
+
+    /** The dimension values the order's company books under, for narrowing the panel's value list. */
+    public CompanyDimensionValueIDs: ReadonlySet<string> | null = null;
+
+    /** The stamped tags for the open line, or null for a line the server has not stamped yet. */
+    public StampedTagsFor(line: mjBizAppsOrdersOrderLineEntity | null): MJOStampedTag[] | null {
+        if (!line?.IsSaved) return null;
+        return this.stampedTagsByLine.get(line.ID.toLowerCase()) ?? [];
+    }
+
     public OpenDetails(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
         event.preventDefault();
         event.stopPropagation();
@@ -1147,7 +1168,13 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      */
     public DimensionSummary(line: mjBizAppsOrdersOrderLineEntity): string {
         if (!this.DimensionCatalog.length) return 'Details';
-        if (!line.DimensionID) return 'No dimension';
+        if (!line.DimensionID) {
+            // A line with no hand-set tag can still book stamped defaults; "No dimension" would
+            // say the opposite of what the ledger will get.
+            const stamped = this.StampedTagsFor(line)?.length ?? 0;
+            if (stamped === 0) return 'No dimension';
+            return stamped === 1 ? '1 default tag' : `${stamped} default tags`;
+        }
         const dimension = this.DimensionCatalog.find((d) => UUIDsEqual(d.ID, line.DimensionID ?? ''));
         const value = dimension?.Values.find((v) => UUIDsEqual(v.ID, line.DimensionValueID ?? ''));
         if (!dimension) return 'Tagged';
@@ -1167,6 +1194,49 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // `new Date()` is an instant the viewer's evening reads back as tomorrow.
         const asOf = AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue();
         this.DimensionCatalog = await GetDimensionOptions(asOf);
+        await this.loadCompanyDimensionValues();
+    }
+
+    /**
+     * Read which values the order's company uses. A failure or an order with no company leaves it
+     * null, which the panel reads as "offer every value" rather than an empty list.
+     */
+    private async loadCompanyDimensionValues(): Promise<void> {
+        const companyID = String(this._order?.CompanyID ?? '');
+        if (!companyID) {
+            this.CompanyDimensionValueIDs = null;
+            return;
+        }
+        try {
+            this.CompanyDimensionValueIDs = await GetCompanyDimensionValueIDs(companyID);
+        } catch (err) {
+            console.warn("[order-lines-editor] could not read the company's dimension values", err);
+            this.CompanyDimensionValueIDs = null;
+        }
+    }
+
+    /**
+     * Read the tags the server stamped on this order's saved lines.
+     *
+     * Each line's hand-set axis is read off the line NOW, while it matches what was saved: the stored
+     * rows already include that tag, and this is the only point at which it can be told apart from
+     * a derived one. A failed read leaves the map empty, which the panel shows as "no tags yet"
+     * rather than failing the editor.
+     */
+    private async loadStampedTags(): Promise<void> {
+        const lines = (this._order?.Lines.Items ?? []).filter((l) => l.IsSaved);
+        const next = new Map<string, MJOStampedTag[]>();
+        try {
+            const rows = await GetLineDimensionsForOrder(lines.map((l) => l.ID));
+            for (const line of lines) {
+                const mine = rows.filter((r) => UUIDsEqual(r.OrderLineID, line.ID));
+                next.set(line.ID.toLowerCase(), BuildStampedTags(mine, line.DimensionID, this.DimensionCatalog));
+            }
+        } catch (err) {
+            console.warn('[order-lines-editor] could not read the lines\' stamped tags', err);
+        }
+        this.stampedTagsByLine = next;
+        this.cdr.detectChanges();
     }
 
     public ngOnDestroy(): void {
@@ -1185,6 +1255,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             await this._order.Lines.Load();
         }
         await this.hydrateExtensions();
+        await this.loadStampedTags();
         await this.resolveOverrideKind();
         if (!this.DiscountAuthorityLoaded) await this.loadDiscountAuthority();
         // The staged rows are consumed by the SERVER's copy of the order, so the browser has to be
@@ -1212,7 +1283,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // effective-dated and this list was filtered against the PREVIOUS order's date, so reusing
         // it would offer one order the values that were live for another.
         this.DimensionCatalog = [];
+        this.stampedTagsByLine = new Map();
+        this.CompanyDimensionValueIDs = null;
         this.expandedLineIds.clear();
+        this.SeatSplitNotice = null;
         this.hydratingLineIds.clear();
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
         // a cached continuation date is only trustworthy for as long as one order is open.
@@ -1267,6 +1341,34 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
                 }
             }
         }
+    }
+
+    /**
+     * A line of an event that requires attendee information books only as one quantity-1 line per
+     * seat, so a quantity above 1 on such a line becomes that many lines, each opening on its own
+     * attendee block. Any other line just reprices.
+     */
+    private onQuantityChanged(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (ExtraSeatLinesNeeded(line) > 0) {
+            void this.splitIntoSeats(line);
+            return;
+        }
+        void this.refreshApplicable(line);
+        this.schedulePricing();
+    }
+
+    private async splitIntoSeats(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        if (!this._order) return;
+        const seats = Number(line.Quantity);
+        const keptDiscount = this.HasStagedDiscount(line) || this.discountDrafts.has(line.ID);
+        const added = await this._order.SplitLineIntoSeats(line);
+        if (added.length === 0) return;
+        this.expandedLineIds.add(line.ID);
+        for (const seat of added) this.expandedLineIds.add(seat.ID);
+        this.SeatSplitNotice = DescribeSeatSplit(this.ProductFor(line)?.Name ?? 'This event', seats, keptDiscount);
+        this.schedulePricing();
+        void this.refreshAllApplicable();
+        this.cdr.detectChanges();
     }
 
     private clampQuantity(line: mjBizAppsOrdersOrderLineEntity, quantity: number): number {

@@ -166,7 +166,7 @@ Results persist as line price-component / charge / adjustment children so the bo
 - Capture books Dr Cash (net) / Dr Processing Fee / Cr A/R (gross).
 - Refund and bank return are reversal payments: `Status = 'Refunded'`, positive `Amount`, negative lines, `ReversesPaymentHeaderID` set. Refund with `Orders.RefundPayment`; the ACH webhook writes bank returns. Nothing writes chargebacks yet.
 - Over-payment is a **negative Balance** — that *is* the account credit. Spend it with `Orders.ApplyAccountCredit`.
-- Providers: `BasePaymentProvider` + `@RegisterClass`, keyed by `PaymentProviderType.Code`. **Manual** always works. **Stripe** takes cards; **StripeACH** takes US bank debits, which settle late, so the webhook books the cash. **StoredValue** spends gift cards and account credit. **BillCom** is the outbound invoice rail and refuses checkout verbs ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)). Webhooks hit an unauthenticated Express route; idempotency is `ProviderEventID`.
+- Providers: `BasePaymentProvider` + `@RegisterClass`, keyed by `PaymentProviderType.Code`. **Manual** always works. **Stripe** takes cards; **StripeACH** takes US bank debits, which settle late, so the webhook books the cash. **StoredValue** spends gift cards and account credit. **BillCom** is the outbound invoice rail and refuses checkout verbs ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)). **HubSpotPayments** reads the payments a company's HubSpot portal collects through the same poll, and also refuses checkout verbs ([`hubspot-payments.md`](hubspot-payments.md)). Webhooks hit an unauthenticated Express route; idempotency is `ProviderEventID`.
 
 ---
 

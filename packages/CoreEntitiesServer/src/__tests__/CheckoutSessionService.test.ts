@@ -116,6 +116,7 @@ const mocks = vi.hoisted(() => {
         OrderHeaderID: string | null = null;
         BillToPersonID: string | null = null;
         BillToOrganizationID: string | null = null;
+        LastEventAt: Date | null = null;
         LatestResult = { Success: true, Message: '', CompleteMessage: '' };
         Load = mockIntentLoad;
         Save = mockIntentSave;
@@ -306,6 +307,8 @@ const mocks = vi.hoisted(() => {
         /** Existing Person rows the e-mail lookup finds, keyed by normalized e-mail. */
         peopleByEmail: {} as Record<string, string>,
         personLookups: 0,
+        /** Replaces the Event Order Lines fields the discovery reads, for one test. */
+        extensionFieldsOverride: undefined as Array<Record<string, unknown>> | undefined,
         subscriptionRunViewResults: [] as Array<{ ProductID: string; Product: string }>,
         eventProductsRequiringAttendees: [] as string[],
         subscriptionRunViewParams: [] as Array<{ ExtraFilter?: string }>,
@@ -322,12 +325,10 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-// The engine import moved to the local fallback module (see identityClaimContracts.ts);
-// partial-mock it so the real contracts stay live and only the engine is overridden.
-vi.mock('../identityClaimContracts.js', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('../identityClaimContracts.js')>()),
+vi.mock('@memberjunction/core-entities-server', () => ({
     IdentityClaimEngineServer: {
         Instance: {
+            Config: () => Promise.resolve(),
             CreateClaim: (params: unknown, user?: unknown) => mocks.mockClaimCreate(params, user)
         }
     }
@@ -420,6 +421,9 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 { Name: 'MJ_BizApps_Common: People', ID: 'entity-people-id', Fields: [] }
             ];
             EntityByName = vi.fn().mockImplementation((name: string) => {
+                if (mocks.extensionFieldsOverride && name === 'MJ_BizApps_Orders: Event Order Lines') {
+                    return { Name: name, Fields: mocks.extensionFieldsOverride, ParentEntityFieldNames: new Set<string>() };
+                }
                 return this.Entities.find((e: { Name: string }) => e.Name.toLowerCase() === name.toLowerCase());
             });
             GetEntityObject = vi.fn().mockImplementation((name: string) => {
@@ -571,6 +575,7 @@ describe('CheckoutSessionService', () => {
         mocks.mockPaymentIntentInstance.PaymentProviderID = 'pp-1';
         mocks.mockPaymentIntentInstance.OrderHeaderID = null;
         mocks.mockPaymentIntentInstance.BillToPersonID = null;
+        mocks.mockPaymentIntentInstance.LastEventAt = null;
         mocks.mockOrderInstance.AmountPaid = 0;
         mocks.mockIntentSave.mockResolvedValue(true);
         mocks.mockCaptureExecute.mockResolvedValue({
@@ -642,6 +647,59 @@ describe('CheckoutSessionService', () => {
             expect(names).toContain('dietaryPreferences');
             expect(names).toContain('comments');
             expect(names).toContain('customCount');
+        });
+
+        describe('field mapping (#583)', () => {
+            type Discovered = { name: string; type: string; required: boolean; options?: Array<{ label: string; value: string }> };
+            const discover = async (fields: Array<Record<string, unknown>>): Promise<Discovered[]> => {
+                mocks.extensionFieldsOverride = fields;
+                try {
+                    const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+                    return res.Configuration?.extensionFields as Discovered[];
+                } finally {
+                    mocks.extensionFieldsOverride = undefined;
+                }
+            };
+            const base = { AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false, AllowsNull: false };
+
+            it('sends a value-list field its values as options, in sequence order', async () => {
+                const fields = await discover([{
+                    ...base, Name: 'AttendanceStatus', Type: 'nvarchar', Length: 40, MaxLength: 20, ValueListType: 'List',
+                    EntityFieldValues: [
+                        { Value: 'Attended', Sequence: 2 },
+                        { Value: 'Registered', Sequence: 1 },
+                        { Value: 'No Show', Sequence: 3 },
+                    ],
+                }]);
+                const status = fields.find(f => f.name === 'attendanceStatus');
+                expect(status?.type).toBe('select');
+                expect(status?.options).toEqual([
+                    { label: 'Registered', value: 'Registered' },
+                    { label: 'Attended', value: 'Attended' },
+                    { label: 'No Show', value: 'No Show' },
+                ]);
+            });
+
+            it('does not require a NOT NULL field the database defaults', async () => {
+                const fields = await discover([
+                    { ...base, Name: 'AttendanceStatus', Type: 'nvarchar', MaxLength: 20, DefaultValue: 'Registered', HasDefaultValue: true },
+                    { ...base, Name: 'BadgeName', Type: 'nvarchar', MaxLength: 100, DefaultValue: null, HasDefaultValue: false },
+                ]);
+                expect(fields.find(f => f.name === 'attendanceStatus')?.required).toBe(false);
+                expect(fields.find(f => f.name === 'badgeName')?.required).toBe(true);
+            });
+
+            it('maps NVARCHAR(MAX) (Length -1) and long columns to a textarea, judged in characters', async () => {
+                const fields = await discover([
+                    { ...base, Name: 'Notes', Type: 'nvarchar', Length: -1, MaxLength: 0 },
+                    { ...base, Name: 'Bio', Type: 'nvarchar', Length: 1000, MaxLength: 500 },
+                    { ...base, Name: 'Nickname', Type: 'nvarchar', Length: 400, MaxLength: 200 },
+                ]);
+                expect(fields.find(f => f.name === 'notes')?.type).toBe('textarea');
+                expect(fields.find(f => f.name === 'bio')?.type).toBe('textarea');
+                expect(fields.find(f => f.name === 'nickname')?.type).toBe('text');
+                expect(fields.find(f => f.name === 'nickname')?.options).toBeUndefined();
+            });
         });
 
         it('writes a SKU-resolved productId onto Configuration so the public host can draft a line', async () => {
@@ -1501,6 +1559,95 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('CompleteCheckout — Persons after payment and per-unit details (#583)', () => {
+        const pricedAt = (amount: number) =>
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = amount;
+                    line.LineTotalGross = amount * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+        const snapshot = (lines: unknown[]) => JSON.stringify({ BillingAddress: BILLING, Lines: lines });
+        const attendee = { FirstName: 'Ada', LastName: 'Attendee', Email: 'ada@example.com' };
+
+        it('creates no Person when the payment is refused', async () => {
+            mocks.mockSessionInstance.Email = 'new-buyer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = null;
+            mocks.mockSessionInstance.MetadataJSON = snapshot([{ ProductID: 'prod-1', Quantity: 1, Units: [attendee] }]);
+            pricedAt(100);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+        });
+
+        it('creates the new payer and attendee once payment checks out, pricing the new buyer with no Person', async () => {
+            mocks.mockSessionInstance.Email = 'new-buyer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = snapshot([{ ProductID: 'prod-1', Quantity: 1, Units: [attendee] }]);
+            pricedAt(100);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const priceCtx = mocks.mockPricingPrice.mock.calls[0][0] as { BillToPersonID: string | null };
+            expect(priceCtx.BillToPersonID).toBeNull();
+            expect(mocks.mockPersonSave).toHaveBeenCalledTimes(2);
+            expect(mocks.mockOrderInstance.BillToPersonID).toBe('person-new-1');
+            expect(mocks.mockOrderInstance.ShipToPersonID).toBe('person-new-1');
+            const ext = mocks.mockOrderInstance.Lines.Items[0].extensionInstance;
+            expect(ext.Set).toHaveBeenCalledWith('PersonID', 'person-new-1');
+        });
+
+        it('prices an existing buyer with their Person and creates nothing', async () => {
+            mocks.peopleByEmail = { 'member@example.com': 'person-1', 'ada@example.com': 'person-ada' };
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = snapshot([{ ProductID: 'prod-1', Quantity: 1, Units: [attendee] }]);
+            pricedAt(100);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const priceCtx = mocks.mockPricingPrice.mock.calls[0][0] as { BillToPersonID: string | null };
+            expect(priceCtx.BillToPersonID).toBe('person-1');
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Lines.Items[0].extensionInstance.Set).toHaveBeenCalledWith('PersonID', 'person-ada');
+        });
+
+        it('refuses a per-unit line whose quantity differs from its sets of unit details', async () => {
+            mocks.mockProductTypeInstance.Configuration = JSON.stringify({ unitMode: 'perUnit' });
+            const lines = [{ ProductID: 'prod-1', Quantity: 3, Units: [attendee] }];
+
+            const draft = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', lines, BILLING);
+            expect(draft.Success).toBe(false);
+            expect(draft.ErrorMessage).toContain('each of the 3 items');
+
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.MetadataJSON = snapshot(lines);
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toContain('each of the 3 items');
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+        });
+
+        it('still splits a per-unit line whose quantity matches its sets of unit details', async () => {
+            mocks.mockProductTypeInstance.Configuration = JSON.stringify({ unitMode: 'perUnit' });
+            mocks.peopleByEmail = { 'member@example.com': 'person-1' };
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.MetadataJSON = snapshot([
+                { ProductID: 'prod-1', Quantity: 2, Units: [attendee, { ...attendee, FirstName: 'Bo', Email: 'bo@example.com' }] },
+            ]);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOrderInstance.Lines.Items.map((l) => l.Quantity)).toEqual([1, 1]);
+        });
+    });
+
     describe('CompleteCheckout', () => {
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', 'wrong-key');
@@ -1543,8 +1690,10 @@ describe('CheckoutSessionService', () => {
             expect(mocks.mockOrderInstance.ShipToPersonID).toBe('person-new-1');
             // The claim ships the entity GUID (not the entity name) and the buyer email
             expect(mocks.mockClaimCreate).toHaveBeenCalled();
-            const claimParams = mocks.mockClaimCreate.mock.calls[0][0] as { ClaimTypeName: string; EntityID: string; NormalizedEmail: string };
+            const claimParams = mocks.mockClaimCreate.mock.calls[0][0] as { ClaimTypeName: string; EntityID: string; NormalizedEmail: string; SendEmail: boolean };
             expect(claimParams.ClaimTypeName).toBe('GuestOrder');
+            // Claim e-mails stay off until a template and the portal base URL are configured (#583).
+            expect(claimParams.SendEmail).toBe(false);
             expect(claimParams.EntityID).toBe('entity-order-headers-id');
             expect(claimParams.NormalizedEmail).toBe('guest@example.com');
             expect(res.ClaimToken).toBe('claim-1');
@@ -1628,6 +1777,156 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(true);
             expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
             expect(describeMocks.mockSendOrderDescription).not.toHaveBeenCalled();
+        });
+
+        describe('VAT location evidence (#480)', () => {
+            const paidSession = () => {
+                mocks.mockSessionInstance.Email = 'payer@example.com';
+                mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+                mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                    BillingAddress: BILLING,
+                    Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+                });
+                mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+                mocks.mockPaymentIntentInstance.Amount = 100;
+                mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                    for (const line of ctx.Lines) {
+                        line.UnitPrice = 100;
+                        line.LineTotalGross = 100 * line.Quantity;
+                    }
+                    return Promise.resolve({});
+                });
+            };
+            const order = () => mocks.mockOrderInstance as unknown as { IPCountry: string | null; CardIssuingCountry: string | null };
+            let retrieve: ReturnType<typeof vi.fn>;
+
+            beforeEach(() => {
+                retrieve = vi.fn().mockResolvedValue({
+                    Success: true,
+                    Status: 'Succeeded',
+                    Instrument: { ProviderCustomerRef: null, ProviderInstrumentRef: 'pm_1', IssuingCountry: 'DE' },
+                });
+                renewalMocks.resolveProvider = async () => ({ RetrieveIntent: retrieve });
+            });
+            afterEach(() => {
+                renewalMocks.resolveProvider = null;
+            });
+
+            it('records the IP country the edge passed and the issuing country of the card that paid', async () => {
+                paidSession();
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser, { IPCountry: 'fr' });
+                expect(res.Success).toBe(true);
+                expect(order().IPCountry).toBe('FR');
+                expect(order().CardIssuingCountry).toBe('DE');
+                // The webhook had already settled the intent, so the gateway is read once, for the card.
+                expect(retrieve).toHaveBeenCalledTimes(1);
+                expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalled();
+            });
+
+            it('completes with both null when the IP country is unknown and the gateway reports no card country', async () => {
+                paidSession();
+                retrieve.mockResolvedValue({ Success: true, Status: 'Succeeded', Instrument: { ProviderCustomerRef: null, ProviderInstrumentRef: 'pm_1' } });
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser, { IPCountry: 'XX' });
+                expect(res.Success).toBe(true);
+                expect(order().IPCountry).toBeNull();
+                expect(order().CardIssuingCountry).toBeNull();
+            });
+
+            it('completes with no card country when the gateway read fails', async () => {
+                paidSession();
+                retrieve.mockRejectedValue(new Error('gateway down'));
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(order().IPCountry).toBeNull();
+                expect(order().CardIssuingCountry).toBeNull();
+            });
+
+            it('reuses the read that settled the intent rather than reading the gateway twice', async () => {
+                paidSession();
+                mocks.mockPaymentIntentInstance.Status = 'RequiresPayment';
+                retrieve.mockResolvedValue({
+                    Success: true,
+                    Status: 'Succeeded',
+                    Amount: 100,
+                    Instrument: { ProviderCustomerRef: null, ProviderInstrumentRef: 'pm_1', IssuingCountry: 'GB' },
+                });
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(order().CardIssuingCountry).toBe('GB');
+                // Once in the paid gate; the capture path finds the intent settled and does not read again.
+                expect(retrieve).toHaveBeenCalledTimes(1);
+            });
+        });
+
+        describe('gateway read stamps the intent (#475)', () => {
+            const unpaidSession = () => {
+                mocks.mockSessionInstance.Email = 'payer@example.com';
+                mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+                mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                    BillingAddress: BILLING,
+                    Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+                });
+                mocks.mockPaymentIntentInstance.Status = 'RequiresPayment';
+                mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                    for (const line of ctx.Lines) {
+                        line.UnitPrice = 100;
+                        line.LineTotalGross = 100 * line.Quantity;
+                    }
+                    return Promise.resolve({});
+                });
+            };
+            const intent = () => mocks.mockPaymentIntentInstance as unknown as { Status: string; LastEventAt: Date | null };
+            let retrieve: ReturnType<typeof vi.fn>;
+
+            beforeEach(() => {
+                retrieve = vi.fn();
+                renewalMocks.resolveProvider = async () => ({ RetrieveIntent: retrieve });
+            });
+            afterEach(() => {
+                renewalMocks.resolveProvider = null;
+            });
+
+            it('saves a changed status with LastEventAt at or after the read, so an older webhook event cannot move it back', async () => {
+                unpaidSession();
+                retrieve.mockResolvedValue({ Success: true, Status: 'Succeeded', Amount: 100 });
+                const stampedAtSave: Array<Date | null> = [];
+                mocks.mockIntentSave.mockImplementation(async () => {
+                    stampedAtSave.push(intent().LastEventAt);
+                    return true;
+                });
+                const before = new Date();
+
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                expect(res.Success).toBe(true);
+                expect(intent().Status).toBe('Succeeded');
+                expect(stampedAtSave[0]).toBeInstanceOf(Date);
+                expect(stampedAtSave[0]!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+            });
+
+            it('does not save or stamp when the gateway reports the same status and no amount', async () => {
+                unpaidSession();
+                retrieve.mockResolvedValue({ Success: true, Status: 'RequiresPayment' });
+
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                expect(res.Success).toBe(false);
+                expect(retrieve).toHaveBeenCalled();
+                expect(mocks.mockIntentSave).not.toHaveBeenCalled();
+                expect(intent().LastEventAt).toBeNull();
+            });
+
+            it('leaves the intent unchanged when the gateway read fails', async () => {
+                unpaidSession();
+                retrieve.mockRejectedValue(new Error('gateway down'));
+
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                expect(res.Success).toBe(false);
+                expect(intent().Status).toBe('RequiresPayment');
+                expect(intent().LastEventAt).toBeNull();
+                expect(mocks.mockIntentSave).not.toHaveBeenCalled();
+            });
         });
 
         it('still confirms the order when CapturePayment fails after commit', async () => {

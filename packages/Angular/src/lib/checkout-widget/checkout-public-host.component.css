@@ -169,3 +169,10 @@
 .mj-checkout-account--actions {
     margin-top: 0.75rem;
 }
+
+/* Cloudflare Turnstile renders here only when it needs the buyer to interact (#592). */
+.mj-checkout-public__turnstile {
+    display: flex;
+    justify-content: center;
+    margin-top: 0.75rem;
+}

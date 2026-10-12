@@ -63,7 +63,6 @@ export interface InvoiceOrderFacts {
     AmountPaid: number;
     Balance: number;
     DueDate: string | null;
-    PaymentStatus: string | null;
     /** The customer's own PO/reference, printed so their AP department can match it. */
     ExternalDocumentNumber: string | null;
     /** Set when this order reverses another — the document is then a credit memo. */
