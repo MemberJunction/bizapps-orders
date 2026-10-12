@@ -46,6 +46,7 @@ import {
     ContinuationStartFrom,
     GetCatalogOptions,
     GetDimensionOptions,
+    GetLineDimensionsForOrder,
     GetDiscountAuthority,
     GetExistingHolding,
     GetSubscriptionContinuation,
@@ -56,6 +57,7 @@ import {
     type MJOProductOption,
 } from '../../data/orders-queries';
 import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
+import { BuildStampedTags, type MJOStampedTag } from './line-stamped-tags';
 import { MJOPricingScheduler, type MJOEngineDefault, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 
 import {
@@ -1026,6 +1028,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      */
     private onOrderSaved(): void {
         void this.refreshCoverage();
+        void this.loadStampedTags();
         if (!this.stagedDiscounts.size) return;
         this.stagedDiscounts.clear();
         this.discountDrafts.clear();
@@ -1124,6 +1127,18 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     /** Every dimension a line may be tagged with, read once per bound order. */
     public DimensionCatalog: MJODimensionOption[] = [];
 
+    /**
+     * The tags each saved line books, keyed by line id, as of the last load or save. The server
+     * writes them on save, so they are re-read after every save rather than edited here.
+     */
+    private stampedTagsByLine = new Map<string, MJOStampedTag[]>();
+
+    /** The stamped tags for the open line, or null for a line the server has not stamped yet. */
+    public StampedTagsFor(line: mjBizAppsOrdersOrderLineEntity | null): MJOStampedTag[] | null {
+        if (!line?.IsSaved) return null;
+        return this.stampedTagsByLine.get(line.ID.toLowerCase()) ?? [];
+    }
+
     public OpenDetails(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
         event.preventDefault();
         event.stopPropagation();
@@ -1147,7 +1162,13 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      */
     public DimensionSummary(line: mjBizAppsOrdersOrderLineEntity): string {
         if (!this.DimensionCatalog.length) return 'Details';
-        if (!line.DimensionID) return 'No dimension';
+        if (!line.DimensionID) {
+            // A line with no hand-set tag can still book stamped defaults; "No dimension" would
+            // say the opposite of what the ledger will get.
+            const stamped = this.StampedTagsFor(line)?.length ?? 0;
+            if (stamped === 0) return 'No dimension';
+            return stamped === 1 ? '1 default tag' : `${stamped} default tags`;
+        }
         const dimension = this.DimensionCatalog.find((d) => UUIDsEqual(d.ID, line.DimensionID ?? ''));
         const value = dimension?.Values.find((v) => UUIDsEqual(v.ID, line.DimensionValueID ?? ''));
         if (!dimension) return 'Tagged';
@@ -1169,6 +1190,30 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.DimensionCatalog = await GetDimensionOptions(asOf);
     }
 
+    /**
+     * Read the tags the server stamped on this order's saved lines.
+     *
+     * Each line's hand-set axis is read off the line NOW, while it matches what was saved: the stored
+     * rows already include that tag, and this is the only point at which it can be told apart from
+     * a derived one. A failed read leaves the map empty, which the panel shows as "no tags yet"
+     * rather than failing the editor.
+     */
+    private async loadStampedTags(): Promise<void> {
+        const lines = (this._order?.Lines.Items ?? []).filter((l) => l.IsSaved);
+        const next = new Map<string, MJOStampedTag[]>();
+        try {
+            const rows = await GetLineDimensionsForOrder(lines.map((l) => l.ID));
+            for (const line of lines) {
+                const mine = rows.filter((r) => UUIDsEqual(r.OrderLineID, line.ID));
+                next.set(line.ID.toLowerCase(), BuildStampedTags(mine, line.DimensionID, this.DimensionCatalog));
+            }
+        } catch (err) {
+            console.warn('[order-lines-editor] could not read the lines\' stamped tags', err);
+        }
+        this.stampedTagsByLine = next;
+        this.cdr.detectChanges();
+    }
+
     public ngOnDestroy(): void {
         this.unbindOrder();
         this.pricing.CancelPending();
@@ -1185,6 +1230,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             await this._order.Lines.Load();
         }
         await this.hydrateExtensions();
+        await this.loadStampedTags();
         await this.resolveOverrideKind();
         if (!this.DiscountAuthorityLoaded) await this.loadDiscountAuthority();
         // The staged rows are consumed by the SERVER's copy of the order, so the browser has to be
@@ -1212,6 +1258,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // effective-dated and this list was filtered against the PREVIOUS order's date, so reusing
         // it would offer one order the values that were live for another.
         this.DimensionCatalog = [];
+        this.stampedTagsByLine = new Map();
         this.expandedLineIds.clear();
         this.hydratingLineIds.clear();
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
