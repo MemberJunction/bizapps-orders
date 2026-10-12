@@ -106,7 +106,7 @@ export interface CheckedTermExtension {
     AcknowledgerIDs: string[];
 }
 
-interface TermRow {
+export interface TermRow {
     ID: string;
     SubscriptionID: string;
     TermNumber: number;
@@ -139,7 +139,7 @@ export async function CheckTermExtension(
         return `Term ${term.TermNumber} is ${term.Status}; only a Scheduled or Active term can be extended.`;
     }
 
-    const renewal = await renewalAlreadyPlaced(term, ctx);
+    const renewal = await RenewalAlreadyPlaced(term, ctx);
     if (renewal) return renewal;
 
     const subscription = (
@@ -171,7 +171,7 @@ export async function CheckTermExtension(
         })
     )[0];
 
-    const acknowledgers = await acknowledgerIDs(request.RequestedByUserID, ctx);
+    const acknowledgers = await AcknowledgerIDs(request.RequestedByUserID, ctx);
     if (typeof acknowledgers === 'string') return acknowledgers;
 
     const currentEnd = asDay(term.EndDate);
@@ -179,8 +179,8 @@ export async function CheckTermExtension(
     const effective = await CalendarDayOrToday(undefined, ctx.Provider, ctx.User);
     const label = `term ${term.TermNumber} of ${subscription.SubscriptionNumber} extended to ${isoDay(newEnd)}`;
 
-    const recognition = await recognitionFor(term, subscription.SubscriptionTypeID, ctx);
-    const entries = recognition ? await stagedEntries(term.ID, ctx) : [];
+    const recognition = await TermRecognition(term, subscription.SubscriptionTypeID, ctx);
+    const entries = recognition ? await StagedRecognitionEntries(term.ID, ctx) : [];
     const plan = PlanTermExtension({
         Entries: entries,
         EffectiveDate: effective,
@@ -256,7 +256,7 @@ export async function ApplyTermExtension(concession: ApprovedDurationConcession,
 // ─── Checks ─────────────────────────────────────────────────────────────────
 
 /** A later term, or a renewal line that has not booked one yet, means this term's renewal is already placed. */
-async function renewalAlreadyPlaced(term: TermRow, ctx: ApprovalTaskContext): Promise<string | null> {
+export async function RenewalAlreadyPlaced(term: TermRow, ctx: ApprovalTaskContext): Promise<string | null> {
     const subscriptionID = RequireUUID(term.SubscriptionID, 'SubscriptionID');
     const later = await view<{ ID: string }>(ctx, {
         EntityName: SUBSCRIPTION_TERM_ENTITY,
@@ -277,12 +277,12 @@ async function renewalAlreadyPlaced(term: TermRow, ctx: ApprovalTaskContext): Pr
     if (later.length === 0 && pendingRenewal.length === 0) return null;
     return (
         `Term ${term.TermNumber}'s renewal order has already been placed, and it was priced and dated from the ` +
-        `term's current end. Reverse the renewal first, then extend the term.`
+        `term's current end and amount. Reverse the renewal first, then amend the term.`
     );
 }
 
 /** Every active holder of the acknowledgment role except the requester, or why there are none. */
-async function acknowledgerIDs(requesterID: string, ctx: ApprovalTaskContext): Promise<string[] | string> {
+export async function AcknowledgerIDs(requesterID: string, ctx: ApprovalTaskContext): Promise<string[] | string> {
     await OrdersSettings.Load(ctx.Provider, ctx.User);
     const roleName = OrdersSettings.AmendmentAcknowledgmentRole;
     if (!roleName) {
@@ -316,7 +316,7 @@ async function acknowledgerIDs(requesterID: string, ctx: ApprovalTaskContext): P
 // ─── Recognition ────────────────────────────────────────────────────────────
 
 /** The term's driver and cadence, or null when its recognition type defers nothing. */
-async function recognitionFor(
+export async function TermRecognition(
     term: TermRow,
     subscriptionTypeID: string,
     ctx: ApprovalTaskContext,
@@ -343,7 +343,7 @@ async function recognitionFor(
 }
 
 /** Every `RevenueRecognition` entry linked to the term, with its lines and their dimensions. */
-async function stagedEntries(termID: string, ctx: ApprovalTaskContext): Promise<StagedEntry[]> {
+export async function StagedRecognitionEntries(termID: string, ctx: ApprovalTaskContext): Promise<StagedEntry[]> {
     const type = (
         await view<{ ID: string }>(ctx, {
             EntityName: JE_TYPE_ENTITY,

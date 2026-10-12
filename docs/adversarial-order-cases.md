@@ -469,18 +469,20 @@ case probes, on ORD-WORLD data rather than the case's own numbers.
 | C12 | `arithmetic-edges.AE6` | A large line keeps its precision through to the stored totals. |
 | C13 | `volume.VL13` | Sixty lines of one product book sixty separate entries. |
 | C14 | `revenue-recognition.RR2` | Releases sum to the line amount, on an amount that divides evenly; where a remainder lands is not checked. |
-| C16 | `subscriptions.SB8`, `volume.VL7`, `line-subscriber.LS6` | `RejectDuplicate` across separate orders, and the seat type's refusal when no person resolves. |
-| C17 | `subscriptions.SB7`, `volume.VL6` | Extension across separate orders (orders A and B). |
+| C15 | `subscriptions.SB27` | Two lines of one `ExtendExisting` product for one subscriber on one order make one subscription with contiguous terms. |
+| C16 | `subscriptions.SB8`, `subscriptions.SB28`, `volume.VL7`, `line-subscriber.LS6` | `RejectDuplicate` across separate orders (SB8) and between two lines of one order (SB28), and the seat type's refusal when no person resolves. |
+| C17 | `subscriptions.SB7`, `volume.VL6`, `subscriptions.SB29` | Extension across separate orders (orders A and B), and order C's two lines taking the next two term numbers in sequence (SB29). |
 | C19 | `events.EV10` | Deferral and release in each line's company, for event lines. No check sells a subscription on a mixed-company order; `payment-deposit.PM11` confirms Harbor House's membership on its own order and asserts nothing about the subscription. |
 | C20 | `order-booking.OB2` | Each entry books in its line's company, with two companies rather than three. |
-| C21 | `intercompany.IC2`, `intercompany.IC3`, `intercompany.IC6`, `intercompany.IC5` | IC2 and IC3 are the control, IC6 the partial payment. IC5 targets the missing pair, but its company has no GL links in ORD-WORLD, so the confirm is refused before any allocation. |
+| C21 | `intercompany.IC2`, `intercompany.IC3`, `intercompany.IC6`, `intercompany.IC5` | IC2 and IC3 are the control, IC6 the partial payment. IC5 confirms an order with a line of a GL-linked company that has no pair with the collector, and asserts the payment is refused naming the missing `IntercompanyAccountMatch`; two companies rather than three. |
 | C23 | `order-booking.OB9`, `order-booking.OB7`, `order-booking.OB8` | OB9 is case (a); OB7 and OB8 are case (b): a good line beside an unlinked company's line is refused and books nothing. |
 | C24, C24b, C26 (availability) | `pricing.PC17`, `pricing.PC18`, `pricing.PC19` | A product that is not `Active`, or an order dated outside the product's window, is refused with and without a stated price; an order back-dated into the window books. |
 | C25 | `events.EV1`, `events.EV3`, `events.EV8` | Dates from the event, one release on its end date, and quantity scaling the deferral. Not capacity or attendee capture. |
 | C26 | `order-booking.OB14` | A back-dated order keeps the date it states; the entry's date and its fiscal-year numbering are not checked. |
 
-No integration check covers C4, C5, C7, C8, C9, C15, C18 or C22, nor two lines of one
-subscription product for the same subscriber on one order (C15, C16, and order C of C17).
+No integration check covers C4, C5, C7, C8, C9, C18 or C22. Two lines of one subscription
+product for the same subscriber on one order are covered by `subscriptions.SB27` (C15),
+`subscriptions.SB28` (C16) and `subscriptions.SB29` (order C of C17).
 `line-subscriber.LS4` and `LS8` put several lines of one seat product on one order, each for a
 different person, and `subscriptions.SB19` refuses two bands of one family on one order.
 

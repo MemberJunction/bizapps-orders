@@ -12,7 +12,7 @@ service layer.
 | Folder | What it holds |
 |---|---|
 | `generated/` | A CodeGen form per entity, driven by the same metadata that produces the entity classes, including field descriptions lifted from the migration's extended properties. Do not edit; see the Entities package README for the regeneration cycle. |
-| `custom/` | Hand-written form components, one folder per entity. Four replace the generated form: `OrderHeader`, `PaymentHeader` and `EventOrderLine`, plus `Product` through `product-save-guard-form.component.ts`, each with `@RegisterClass` at an explicit priority; `custom-forms.module.ts` loads after the generated module. The `PriceList`, `Promotion`, `Subscription` and `SubscriptionTerm` components, and `product-form.component.ts`, are declared but not registered, so they do not render as the entity's form. |
+| `custom/` | Hand-written form components, one folder per entity. Four replace the generated form: `OrderHeader`, `PaymentHeader` and `EventOrderLine`, plus `Product` through `product-save-guard-form.component.ts`, each with `@RegisterClass` at an explicit priority; `custom-forms.module.ts` loads after the generated module. `Product/widgets/` holds the Product widgets the form panels mount. |
 | `form-panels/` | Panels contributed to forms by entity (`@RegisterClassEx(BaseFormPanel, …)`), including the orders sections on bizapps-common's Person and Organization forms. |
 | `sections/` | The four Explorer tabs (Orders, Payments, Receivables, Catalog) and the shell that gives each its left rail. Each registers under the `DriverClass` the Orders application's nav items name. |
 | `pages/` | The screens inside those tabs, one folder per tab. |
@@ -21,7 +21,6 @@ service layer.
 | `data/` | Entity names, the reads the list and detail screens make (`orders-queries.ts`), and grid view and column state. |
 | `checkout-widget/` | The checkout widget and the public host page behind `GET /checkout/:slug`. |
 | `styles/orders-kit.css` | This app's own component CSS, for classes MJ does not ship. The mockups import the same file. |
-| `transfer-pending/` | Components parked for `@memberjunction/ng-ui-components`; see its README. |
 
 `src/public-api.ts` loads the forms, form panels and sections so their decorators fire, and exports
 the rest. `LoadBizAppsOrdersClient()` is the `startupExport` that `mj-app.json` names for MJExplorer.
