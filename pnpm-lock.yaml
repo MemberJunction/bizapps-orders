@@ -505,6 +505,12 @@ importers:
       '@mj-biz-apps/accounting-server':
         specifier: 0.21.2
         version: 0.21.2(419a8eba6c9f6616b5765aa6442dca62)
+      '@mj-biz-apps/common-entities':
+        specifier: 5.52.0
+        version: 5.52.0(@memberjunction/core@6.1.5)(@memberjunction/global@6.1.5)
+      '@mj-biz-apps/common-server':
+        specifier: 5.52.0
+        version: 5.52.0(9a56a9306e4fae28bb5566158ca8ea24)
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
