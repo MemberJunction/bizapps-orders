@@ -56,7 +56,7 @@ import {
     HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
 } from '@mj-biz-apps/orders-core-entities-server';
-import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap } from '../CheckoutServerExtension.js';
+import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap, TURNSTILE_UNSUPPORTED_MESSAGE } from '../CheckoutServerExtension.js';
 
 type RouteMap = {
     get: Record<string, (req: Request, res: Response) => void>;
@@ -435,6 +435,60 @@ describe('CheckoutServerExtension', () => {
         expect(await hit('/checkout/account/password')).toBe(200);
         expect(await hit('/checkout/account/password')).toBe(200);
         expect(await hit('/checkout/account/password')).toBe(429);
+    });
+
+    describe('requireTurnstile is refused until the built-in clients send a token (#583)', () => {
+        type Guarded = {
+            settings: Record<string, unknown>;
+            resolveEdgePolicy(req: Request): Promise<unknown>;
+            guardAndRun(req: Request, res: Response, handler: (req: Request, res: Response) => Promise<void>): Promise<void>;
+        };
+        const guarded = (policy: unknown) => {
+            const ext = new CheckoutServerExtension() as unknown as Guarded;
+            ext.settings = { TurnstileSecretEnvVar: 'CHECKOUT_TURNSTILE_SECRET' };
+            ext.resolveEdgePolicy = async () => policy;
+            return ext;
+        };
+        const post = async (ext: Guarded, path: string, handler = vi.fn(async (_req: Request, res: Response) => { res.status(200).json({ Success: true }); })) => {
+            const res = mockRes();
+            await ext.guardAndRun(
+                { path, body: { slug: 'summit-2027', turnstileToken: 'tok' }, headers: {}, socket: { remoteAddress: '10.0.0.9' } } as unknown as Request,
+                res as unknown as Response,
+                handler,
+            );
+            return { res, handler };
+        };
+
+        it.each(['/checkout/initialize', '/checkout/draft', '/checkout/complete'])('answers %s with a 500 naming the setting, without running the handler', async (path) => {
+            const { res, handler } = await post(guarded({ requireTurnstile: true }), path);
+            expect(res.statusCode).toBe(500);
+            expect(JSON.parse(res.body).ErrorMessage).toBe(TURNSTILE_UNSUPPORTED_MESSAGE);
+            expect(TURNSTILE_UNSUPPORTED_MESSAGE).toContain('requireTurnstile');
+            expect(handler).not.toHaveBeenCalled();
+        });
+
+        it('leaves a widget without the setting alone', async () => {
+            const { res, handler } = await post(guarded({ requireTurnstile: false }), '/checkout/initialize');
+            expect(res.statusCode).toBe(200);
+            expect(handler).toHaveBeenCalledOnce();
+        });
+
+        it('fails the GET host page with the same message', async () => {
+            mockRunView
+                .mockResolvedValueOnce({ Success: true, Results: [{ ID: 'dist-1' }] })
+                .mockResolvedValueOnce({ Success: true, Results: [{ ID: 'dist-1', CheckoutWidgetID: 'widget-1' }] })
+                .mockResolvedValueOnce({ Success: true, Results: [{ ID: 'widget-1', Configuration: JSON.stringify({ requireTurnstile: true }) }] });
+            const { app, routes } = mockApp();
+            await new CheckoutServerExtension().Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+            const res = mockRes();
+            await routes.get['/checkout/:slug'](
+                { params: { slug: 'summit-2027' }, headers: {}, socket: { remoteAddress: '127.0.0.1' } } as unknown as Request,
+                res as unknown as Response,
+            );
+            expect(res.statusCode).toBe(500);
+            expect(res.body).toContain('requireTurnstile');
+            expect(CheckoutSessionService.ReapExpiredOpenSessions).not.toHaveBeenCalled();
+        });
     });
 
     describe('outbound dispatch after completion (#293)', () => {

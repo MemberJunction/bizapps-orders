@@ -28,10 +28,12 @@
  *    configured, any origin is allowed — the distribution slug remains the access control.
  *    The element bundle (`GET {RootPath}/element/main.js`) is the exception: it is public
  *    static code, served to every origin (`setElementAssetCorsHeaders`).
- * 4. TURNSTILE — when the widget sets `requireTurnstile`, session initialization and
- *    completion demand a Cloudflare Turnstile token, verified server-side against the secret
- *    named by `Settings.TurnstileSecretEnvVar`. Required-but-unconfigured verifies as a 503,
- *    never as a silent pass.
+ * 4. TURNSTILE — not supported yet. Neither built-in client (`<mj-orders-checkout>` nor the
+ *    fallback page) sends a Turnstile token, so a widget that sets `requireTurnstile` is refused
+ *    as misconfigured (500 naming the setting, on the host page and every POST) instead of
+ *    answering every buyer 403. `verifyTurnstile` stays for the client that adds a token: it
+ *    checks the token server-side against the secret named by `Settings.TurnstileSecretEnvVar`,
+ *    and required-but-unconfigured verifies as a 503, never as a silent pass.
  *
  * ═══ THE PRICING-INPUT RULE HOLDS AT THIS BOUNDARY ═══
  * The request bodies accepted here carry NO amount, price, product resolution or provider.
@@ -137,6 +139,17 @@ const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distrib
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+
+/**
+ * Whether the built-in checkout clients send `turnstileToken` on initialize and complete. They
+ * do not (#583), so `requireTurnstile` is refused as a configuration error. Set this to true in
+ * the change that adds the token to both clients; `verifyTurnstile` then runs as before.
+ */
+const BUILT_IN_CLIENTS_SEND_TURNSTILE_TOKEN = false;
+
+/** Shown to the buyer and logged when a widget sets `requireTurnstile` before the clients support it. */
+export const TURNSTILE_UNSUPPORTED_MESSAGE =
+    'This checkout is misconfigured: its widget Configuration sets requireTurnstile, which the built-in checkout clients do not support yet. The site operator must remove requireTurnstile from the widget.';
 
 interface CheckoutEdgeSettings {
     /** Email of the named checkout service principal; falls back to the system user. */
@@ -288,6 +301,12 @@ export class CheckoutServerExtension extends BaseServerExtension {
                 return; // refused; response already written
             }
 
+            if (policy.requireTurnstile && !BUILT_IN_CLIENTS_SEND_TURNSTILE_TOKEN) {
+                this.logTurnstileUnsupported(req);
+                res.status(500).json({ Success: false, ErrorMessage: TURNSTILE_UNSUPPORTED_MESSAGE });
+                return;
+            }
+
             if (policy.requireTurnstile && this.isTurnstileGatedPath(req)) {
                 const turnstileFailure = await this.verifyTurnstile(req);
                 if (turnstileFailure) {
@@ -411,6 +430,11 @@ export class CheckoutServerExtension extends BaseServerExtension {
         res.setHeader('Access-Control-Max-Age', '600');
     }
 
+    private logTurnstileUnsupported(req: Request): void {
+        const target = this.requestSlug(req) || (typeof req.body?.sessionId === 'string' ? `session ${req.body.sessionId}` : 'unknown widget');
+        LogError(`[OrdersCheckoutEdge] Refusing ${req.path ?? 'request'} for ${target}: ${TURNSTILE_UNSUPPORTED_MESSAGE}`);
+    }
+
     /** Turnstile applies to the abuse-sensitive endpoints: initialize and complete. */
     private isTurnstileGatedPath(req: Request): boolean {
         return req.path.endsWith('/initialize') || req.path.endsWith('/complete');
@@ -476,6 +500,14 @@ export class CheckoutServerExtension extends BaseServerExtension {
             const exists = await this.activeDistributionExists(slug, user);
             if (!exists) {
                 this.sendHostError(res, 404, 'This checkout is not available.');
+                return;
+            }
+            // The host page is the first thing an operator opens to try a link, so a widget the
+            // built-in clients cannot drive fails here, before a buyer starts filling it in.
+            const policy = await this.resolveEdgePolicy(req);
+            if (policy?.requireTurnstile && !BUILT_IN_CLIENTS_SEND_TURNSTILE_TOKEN) {
+                this.logTurnstileUnsupported(req);
+                this.sendHostError(res, 500, TURNSTILE_UNSUPPORTED_MESSAGE);
                 return;
             }
             this.maybeReapExpiredSessions(user);

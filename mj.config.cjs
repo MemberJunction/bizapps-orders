@@ -226,11 +226,12 @@ module.exports = {
        * The anonymous checkout edge (CheckoutServerExtension): the public transport in front
        * of CheckoutSessionService, mounted pre-auth like the webhook. Access control is the
        * distribution slug + per-session client key, layered with rate limiting, a per-widget
-       * origin allowlist (`Configuration.allowedOrigins`), and optional Cloudflare Turnstile
-       * (`Configuration.requireTurnstile` + the secret named by TurnstileSecretEnvVar).
+       * origin allowlist (`Configuration.allowedOrigins`). Cloudflare Turnstile
+       * (`Configuration.requireTurnstile`) is not supported by the built-in clients yet; the
+       * edge refuses a widget that sets it.
        * Settings:
        *   ServiceUserEmail      — named checkout principal for writes (falls back to system user)
-       *   TurnstileSecretEnvVar — env var holding the Turnstile secret (e.g. 'CHECKOUT_TURNSTILE_SECRET')
+       *   TurnstileSecretEnvVar — env var holding the Turnstile secret, for when the clients support it
        *   RateLimitWindowMs / RateLimitMax — fixed-window limits per client IP (defaults 60000 / 30)
        */
       Enabled: true,

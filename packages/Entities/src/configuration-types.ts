@@ -188,9 +188,10 @@ export interface CheckoutWidgetConfiguration {
      */
     allowedOrigins?: string[];
     /**
-     * When true, the anonymous checkout edge requires a Cloudflare Turnstile token on
-     * session initialization and completion (the edge must also be configured with a
-     * Turnstile secret for verification to run — fail-closed when it is not).
+     * Not supported yet: the built-in checkout clients send no Turnstile token, so the
+     * anonymous checkout edge refuses a widget that sets this (500 naming the setting).
+     * Once they do, true will require a Cloudflare Turnstile token on session initialization
+     * and completion, verified against the edge's configured Turnstile secret.
      */
     requireTurnstile?: boolean;
     /**
