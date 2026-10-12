@@ -520,6 +520,7 @@ export {
 export type { HeldRefund, RefundBookingPlan, ProviderRefundOutcome } from './ProviderRefundBooking.js';
 export { StripeACHPaymentProvider, LoadStripeACHPaymentProvider } from './StripeACHPaymentProvider.js';
 export { BillComPaymentProvider, LoadBillComPaymentProvider } from './BillComPaymentProvider.js';
+export { HubSpotPaymentsProvider, LoadHubSpotPaymentsProvider } from './HubSpotPaymentsProvider.js';
 export { BaseInvoiceRail, LoadBaseInvoiceRail } from './BaseInvoiceRail.js';
 export type {
     RailCustomerFacts,
@@ -536,10 +537,28 @@ export {
     FindInvoiceRailForCompany,
     FindInvoiceRailProviderID,
     ListInvoiceRailProviderIDs,
+    ListPaymentSourceProviderIDs,
     InvoiceRailNotConfiguredError,
     INVOICE_RAIL_TYPE_CODES,
+    PAYMENT_SOURCE_TYPE_CODES,
 } from './InvoiceRailResolver.js';
 export { BillComInvoiceRail, LoadBillComInvoiceRail, NormalizeReceivablePayment, BILLCOM_TRANSIENT } from './BillComInvoiceRail.js';
+export {
+    HubSpotPaymentsRail,
+    LoadHubSpotPaymentsRail,
+    NormalizeHubSpotPayment,
+    HubSpotSetAsideReason,
+    HUBSPOT_PAYMENT_PROPERTIES,
+    HUBSPOT_TRANSIENT,
+} from './HubSpotPaymentsRail.js';
+export {
+    HubSpotPaymentsGateway,
+    UseHubSpotPaymentsGatewaySeams,
+    DefaultHubSpotPaymentsGateway,
+    HUBSPOT_PAYMENTS_OBJECT,
+    HUBSPOT_PAYMENTS_FIRST_WATERMARK,
+    type HubSpotPaymentsGatewaySeams,
+} from './HubSpotPaymentsGateway.js';
 export { BillComGateway, DefaultBillComGateway, UseBillComGatewaySeams, CurrentBillComGatewaySeams } from './BillComGateway.js';
 export type { BillComGatewaySeams } from './BillComGateway.js';
 export { BILLCOM_SIGNATURE_HEADER, SignBillComPayload, VerifyBillComSignature, ParseBillComWebhookEvent, IsPaymentRelevant } from './BillComWebhook.js';

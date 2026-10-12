@@ -33,6 +33,7 @@ import {
     AllocateInvoicePayments,
     DecideExternalPayment,
     ExternalPaymentIdempotencyKey,
+    PaymentStatusVocabularyFor,
     TenderFor,
     OrdersCapturePaymentOperation,
     OrdersPollExternalPaymentsOperation as OrdersPollExternalPaymentsOperationBase,
@@ -51,7 +52,7 @@ import {
     PAYMENT_LINE_ENTITY,
     PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
 } from './entity-names.js';
-import { ListInvoiceRailProviderIDs, ResolveInvoiceRail } from './InvoiceRailResolver.js';
+import { ListPaymentSourceProviderIDs, ResolveInvoiceRail } from './InvoiceRailResolver.js';
 import { LoadExternalInvoicesByRef, updateExternalInvoice } from './IssueExternalInvoiceOperation.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
@@ -121,9 +122,9 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         try {
             const providers = input?.PaymentProviderID
                 ? [{ ID: RequireUUID(input.PaymentProviderID, 'PaymentProviderID'), CompanyID: '' }]
-                : await ListInvoiceRailProviderIDs(provider, user);
+                : await ListPaymentSourceProviderIDs(provider, user);
             if (!providers.length) {
-                return { ...out, ResultCode: 'NO_PROVIDERS', Message: 'No active external invoice rail is configured for any company; nothing to poll.' };
+                return { ...out, ResultCode: 'NO_PROVIDERS', Message: 'No active external payment source (invoice rail or HubSpot portal) is configured for any company; nothing to poll.' };
             }
             const faults: string[] = [];
             for (const p of providers) {
@@ -264,20 +265,32 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         // skipped otherwise. `Reapplied` is included as well as `Captured`: the comparison is what
         // lets a raised exception CLEAR itself once a person has corrected the allocation, and
         // without it the row would report a difference that no longer exists for ever.
+        const vocabulary = PaymentStatusVocabularyFor(rail.Config.TypeCode);
+        // A rail that reports no invoice applications (HubSpot) cannot have re-applied anything, and
+        // comparing its empty list against our payment lines would flag every captured payment.
         const applicationsChanged =
-            (prior?.Disposition === 'Captured' || prior?.Disposition === 'Reapplied') && prior.PaymentHeaderID
+            vocabulary.ReportsInvoiceApplications && (prior?.Disposition === 'Captured' || prior?.Disposition === 'Reapplied') && prior.PaymentHeaderID
                 ? await applicationsDiffer(String(prior.PaymentHeaderID), p, providerID, provider, user)
                 : undefined;
+
+        const record = async (disposition: ExternalPaymentDisposition, reason: string, paymentHeaderID: string | null = prior?.PaymentHeaderID ?? null) => {
+            if (!preview) await upsertExternalPayment(provider, user, providerID, p, prior, disposition, reason, paymentHeaderID);
+        };
+
+        // Money this rail only records, collected and booked through another path. Never captured
+        // here; a payment already captured keeps its row and its header.
+        if (p.SetAsideReason && !prior?.PaymentHeaderID) {
+            await record('Ignored', p.SetAsideReason, null);
+            return { ...base, Disposition: 'Ignored', Reason: p.SetAsideReason };
+        }
+
         const decision = DecideExternalPayment({
             ExternalPaymentRef: p.ExternalPaymentRef,
             Status: p.Status,
             PriorDisposition: prior?.Disposition ?? null,
             ApplicationsChanged: applicationsChanged,
+            Vocabulary: vocabulary,
         });
-
-        const record = async (disposition: ExternalPaymentDisposition, reason: string, paymentHeaderID: string | null = prior?.PaymentHeaderID ?? null) => {
-            if (!preview) await upsertExternalPayment(provider, user, providerID, p, prior, disposition, reason, paymentHeaderID);
-        };
 
         if (decision.Action === 'Ignore') {
             // A person's reason for setting a row aside outlives our automatic one.
@@ -306,6 +319,12 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         if (decision.Action === 'ReversalNeeded') {
             await record('ReversalNeeded', decision.Reason);
             return { ...base, Disposition: 'ReversalNeeded', Reason: decision.Reason, PaymentHeaderID: prior?.PaymentHeaderID ?? null };
+        }
+
+        // The rail already knows nothing here matches it (HubSpot: no deal link to read yet).
+        if (p.UnmatchedReason) {
+            await record('Unmatched', p.UnmatchedReason);
+            return { ...base, Disposition: 'Unmatched', Reason: p.UnmatchedReason };
         }
 
         // Capture: every invoice on the payment must be one we issued.
@@ -346,7 +365,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             return { ...base, Disposition: 'Refused', Reason: reason };
         }
 
-        const notes = [`Bill.com receivable payment ${p.ExternalPaymentRef}`];
+        const notes = [vocabulary.ReportsInvoiceApplications ? `${vocabulary.RailName} receivable payment ${p.ExternalPaymentRef}` : `${vocabulary.RailName} payment ${p.ExternalPaymentRef}`];
         if (p.UnappliedAmount > 0) notes.push(`${money(p.UnappliedAmount).toFixed(2)} left unapplied on the rail (customer credit there, not here).`);
 
         const capture = await new OrdersCapturePaymentOperation().Execute(
@@ -355,7 +374,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 ReceivingCompanyID: rail.Config.CompanyID,
                 BillToOrganizationID: allocation.Payer.BillToOrganizationID,
                 BillToPersonID: allocation.Payer.BillToPersonID,
-                TenderCode: TenderFor(p),
+                TenderCode: p.TenderCode ?? TenderFor(p),
                 PaymentDate: p.PaymentDate?.slice(0, 10) ?? Today(),
                 Reference: p.ExternalPaymentRef,
                 Notes: notes.join(' '),
