@@ -308,7 +308,6 @@ export async function BuildInvoiceDocuments(
         AmountPaid: num(order.AmountPaid),
         Balance: num(order.Balance),
         DueDate: ToISODate(order.DueDate),
-        PaymentStatus: str(order.PaymentStatus),
         ExternalDocumentNumber: str(order.ExternalDocumentNumber),
         ReversesOrderHeaderID: str(order.ReversesOrderHeaderID),
         ReversesOrderNumber: str(order.ReversesOrderHeader),
