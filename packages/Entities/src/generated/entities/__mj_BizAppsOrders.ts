@@ -1237,6 +1237,10 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: Person
         * * Display Name: Person
         * * SQL Data Type: nvarchar(201)`),
+    ExtendedAmount: z.number().nullable().describe(`
+        * * Field Name: ExtendedAmount
+        * * Display Name: Extended Amount
+        * * SQL Data Type: decimal(18, 2)`),
 });
 
 export type mjBizAppsOrdersEventOrderLineEntityType = z.infer<typeof mjBizAppsOrdersEventOrderLineSchema>;
@@ -3268,6 +3272,11 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 0
         * * Description: True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`),
+    ExtendedAmount: z.number().nullable().describe(`
+        * * Field Name: ExtendedAmount
+        * * Display Name: Extended Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The amount the price rule set for this line before any discount, exactly as the rule computed it. A Flat price that does not divide by the quantity cannot be rebuilt from Quantity x UnitPrice (Flat 100.00 at quantity 3 has a unit price of 33.33), so the line total, the invoice and the journal entry read this instead. NULL when no rule priced the line, such as a stated unit price; Quantity x UnitPrice is then the amount.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -10379,6 +10388,19 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     get Person(): string {
         return this.Get('Person');
     }
+
+    /**
+    * * Field Name: ExtendedAmount
+    * * Display Name: Extended Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ExtendedAmount(): number | null {
+        return this.Get('ExtendedAmount');
+    }
+    set ExtendedAmount(value: number | null) {
+        this.Set('ExtendedAmount', value);
+    }
 }
 
 
@@ -16603,6 +16625,19 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set AcknowledgesCoverageOverlap(value: boolean) {
         this.Set('AcknowledgesCoverageOverlap', value);
+    }
+
+    /**
+    * * Field Name: ExtendedAmount
+    * * Display Name: Extended Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The amount the price rule set for this line before any discount, exactly as the rule computed it. A Flat price that does not divide by the quantity cannot be rebuilt from Quantity x UnitPrice (Flat 100.00 at quantity 3 has a unit price of 33.33), so the line total, the invoice and the journal entry read this instead. NULL when no rule priced the line, such as a stated unit price; Quantity x UnitPrice is then the amount.
+    */
+    get ExtendedAmount(): number | null {
+        return this.Get('ExtendedAmount');
+    }
+    set ExtendedAmount(value: number | null) {
+        this.Set('ExtendedAmount', value);
     }
 
     /**
