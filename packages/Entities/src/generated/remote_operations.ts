@@ -200,6 +200,8 @@ export interface AmendArrangementInput {
     NewPaymentTermsTypeID?: string;
     /** A change of amount. Not supported yet; refused. */
     NewAmount?: number;
+    /** A term extension earned by a referral: the program that approves it. Requires ReasonCategory 'Referral'. */
+    ReferralProgramID?: string;
     ReasonCategory: AmendmentReasonCategory;
     Reason: string;
     /** Return what the amendment would do without writing anything. */
@@ -238,6 +240,9 @@ export interface AmendArrangementOutput {
     DaysChange?: number;
     CurrentDueDate?: string | null;
     NewDueDate?: string | null;
+    /** With a referral program: its name, and whether it approves the extension (false: routed for approval). */
+    ReferralProgram?: string;
+    ApprovedByReferralProgram?: boolean;
     /** Set when recorded: the concession, and whether it is Approved (applied) or Pending (awaiting approval). */
     OrderConcessionID?: string;
     Status?: string;

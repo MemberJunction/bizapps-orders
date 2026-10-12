@@ -2281,6 +2281,12 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * Display Name: Signed Amendment Reference
         * * SQL Data Type: nvarchar(500)
         * * Description: Where the signed contract amendment for this concession is kept: a document number or a link. Set once the customer has signed; may be set or corrected after the concession is decided. NULL while no signed amendment is on file.`),
+    ReferralProgramID: z.string().nullable().describe(`
+        * * Field Name: ReferralProgramID
+        * * Display Name: Referral Program ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Referral Programs (vwReferralPrograms.ID)
+        * * Description: For a Duration concession granted under a referral program, the program. Set by the requester when recording it; the program approves the concession when it is in program (see ReferralProgram.DaysPerReferral).`),
     PriorStartDate: z.date().nullable().describe(`
         * * Field Name: PriorStartDate
         * * Display Name: Prior Start Date
@@ -2324,6 +2330,10 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
     NewPaymentTermsType: z.string().nullable().describe(`
         * * Field Name: NewPaymentTermsType
         * * Display Name: New Payment Terms Type
+        * * SQL Data Type: nvarchar(200)`),
+    ReferralProgram: z.string().nullable().describe(`
+        * * Field Name: ReferralProgram
+        * * Display Name: Referral Program
         * * SQL Data Type: nvarchar(200)`),
 });
 
@@ -5796,6 +5806,60 @@ export const mjBizAppsOrdersPromotionSchema = z.object({
 });
 
 export type mjBizAppsOrdersPromotionEntityType = z.infer<typeof mjBizAppsOrdersPromotionSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Referral Programs
+ */
+export const mjBizAppsOrdersReferralProgramSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    CompanyID: z.string().describe(`
+        * * Field Name: CompanyID
+        * * Display Name: Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+        * * Description: The company that runs the program. A concession may name the program only on that company's orders.`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(200)
+        * * Description: The program's name, unique within its company.`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The program's terms as the customer was told them.`),
+    DaysPerReferral: z.number().describe(`
+        * * Field Name: DaysPerReferral
+        * * Display Name: Days Per Referral
+        * * SQL Data Type: int
+        * * Description: Days one referral earns. A Duration concession naming this program is approved by the program when it adds no more than this to a term bought by a renewal line; a larger one is routed for approval like any other concession. Must be a whole number above zero.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Only an active program approves a concession. Deactivate a program rather than deleting it: approved concessions keep naming it.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Company: z.string().describe(`
+        * * Field Name: Company
+        * * Display Name: Company
+        * * SQL Data Type: nvarchar(50)`),
+});
+
+export type mjBizAppsOrdersReferralProgramEntityType = z.infer<typeof mjBizAppsOrdersReferralProgramSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Revenue Recognition Types
@@ -13775,6 +13839,20 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: ReferralProgramID
+    * * Display Name: Referral Program ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Referral Programs (vwReferralPrograms.ID)
+    * * Description: For a Duration concession granted under a referral program, the program. Set by the requester when recording it; the program approves the concession when it is in program (see ReferralProgram.DaysPerReferral).
+    */
+    get ReferralProgramID(): string | null {
+        return this.Get('ReferralProgramID');
+    }
+    set ReferralProgramID(value: string | null) {
+        this.Set('ReferralProgramID', value);
+    }
+
+    /**
     * * Field Name: PriorStartDate
     * * Display Name: Prior Start Date
     * * SQL Data Type: date
@@ -13878,6 +13956,15 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     */
     get NewPaymentTermsType(): string | null {
         return this.Get('NewPaymentTermsType');
+    }
+
+    /**
+    * * Field Name: ReferralProgram
+    * * Display Name: Referral Program
+    * * SQL Data Type: nvarchar(200)
+    */
+    get ReferralProgram(): string | null {
+        return this.Get('ReferralProgram');
     }
 }
 
@@ -24186,6 +24273,147 @@ export class mjBizAppsOrdersPromotionEntity extends BaseEntity<mjBizAppsOrdersPr
     * * SQL Data Type: nvarchar(50)
     */
     get Company(): string | null {
+        return this.Get('Company');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Referral Programs - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ReferralProgram
+ * * Base View: vwReferralPrograms
+ * * @description A program that grants a customer extra subscription time for a referral. The time is applied on the renewal order, as a Duration concession on the renewed term, never to the current term, and lapses if the customer does not renew.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Referral Programs')
+export class mjBizAppsOrdersReferralProgramEntity extends BaseEntity<mjBizAppsOrdersReferralProgramEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Referral Programs record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Referral Programs record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersReferralProgramEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: CompanyID
+    * * Display Name: Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    * * Description: The company that runs the program. A concession may name the program only on that company's orders.
+    */
+    get CompanyID(): string {
+        return this.Get('CompanyID');
+    }
+    set CompanyID(value: string) {
+        this.Set('CompanyID', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(200)
+    * * Description: The program's name, unique within its company.
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The program's terms as the customer was told them.
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: DaysPerReferral
+    * * Display Name: Days Per Referral
+    * * SQL Data Type: int
+    * * Description: Days one referral earns. A Duration concession naming this program is approved by the program when it adds no more than this to a term bought by a renewal line; a larger one is routed for approval like any other concession. Must be a whole number above zero.
+    */
+    get DaysPerReferral(): number {
+        return this.Get('DaysPerReferral');
+    }
+    set DaysPerReferral(value: number) {
+        this.Set('DaysPerReferral', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Only an active program approves a concession. Deactivate a program rather than deleting it: approved concessions keep naming it.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Company
+    * * Display Name: Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get Company(): string {
         return this.Get('Company');
     }
 }

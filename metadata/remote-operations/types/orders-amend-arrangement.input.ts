@@ -16,6 +16,8 @@ export interface AmendArrangementInput {
     NewPaymentTermsTypeID?: string;
     /** A change of amount. Not supported yet; refused. */
     NewAmount?: number;
+    /** A term extension earned by a referral: the program that approves it. Requires ReasonCategory 'Referral'. */
+    ReferralProgramID?: string;
     ReasonCategory: AmendmentReasonCategory;
     Reason: string;
     /** Return what the amendment would do without writing anything. */
