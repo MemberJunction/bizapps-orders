@@ -78,6 +78,7 @@ export const TASK_DECISION_ENTITY = 'MJ_BizApps_Tasks: Task Decisions';
 export const GL_ACCOUNT_ENTITY = 'MJ_BizApps_Accounting: GL Accounts';
 export const GL_ACCOUNT_ROLE_ENTITY = 'MJ_BizApps_Accounting: GL Account Roles';
 export const GL_ACCOUNT_LINK_ENTITY = 'MJ_BizApps_Accounting: GL Account Links';
+export const FINANCE_EXCEPTION_TYPE_ENTITY = 'MJ_BizApps_Accounting: Finance Exception Types';
 export const INTERCOMPANY_ACCOUNT_MATCH_ENTITY = 'MJ_BizApps_Accounting: Intercompany Account Matches';
 export const INTERCOMPANY_ACCOUNT_MATCH_DIMENSION_ENTITY =
     'MJ_BizApps_Accounting: Intercompany Account Match Dimensions';
@@ -147,6 +148,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     GL_ACCOUNT_ENTITY,
     GL_ACCOUNT_ROLE_ENTITY,
     GL_ACCOUNT_LINK_ENTITY,
+    FINANCE_EXCEPTION_TYPE_ENTITY,
     INTERCOMPANY_ACCOUNT_MATCH_ENTITY,
     INTERCOMPANY_ACCOUNT_MATCH_DIMENSION_ENTITY,
     COMPANY_TAX_NEXUS_ENTITY,

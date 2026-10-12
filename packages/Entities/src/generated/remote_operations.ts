@@ -2230,6 +2230,55 @@ export interface RequestAccessOverrideOutput {
 }
 
 /**
+ * Input for `Orders.ResolveChargeException`.
+ *
+ * Books the gateway charge a charge-without-payment finance exception names as a paid order, then
+ * clears the exception. The provider and charge come from the exception; the caller names the product
+ * and the buyer.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersResolveChargeExceptionInput {
+    /** The PROVIDER_CHARGE_MISMATCH finance exception to resolve. */
+    FinanceExceptionID: string;
+    /** The product the order's one line carries, priced at the charge's amount. */
+    ProductID: string;
+    /** The buyer. */
+    BillToPersonID: string;
+    /** The buyer's organization, when the order is billed to one. */
+    BillToOrganizationID?: string | null;
+}
+
+/**
+ * Output for `Orders.ResolveChargeException`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersResolveChargeExceptionOutput {
+    /** True when the order is booked and the exception cleared. */
+    Success: boolean;
+    Message: string;
+    /**
+     * Why it did not finish, when Success is false: BadInput, NotAuthorized, ExceptionNotFound, NotOpen,
+     * WrongType, WrongKind, OpenedByOrders, UnreadableKey, ClearRefused, or a code from
+     * Orders.CreateOrderFromProviderPayment. Only ClearRefused leaves a booked order behind.
+     */
+    Code?: string;
+    /** True when the exception was cleared. */
+    Cleared: boolean;
+    /** The gateway charge the exception names. */
+    ProviderChargeID?: string | null;
+    /** True when an earlier call already booked the order for this charge. */
+    WasExisting?: boolean;
+    OrderHeaderID?: string | null;
+    OrderNumber?: string | null;
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    /** The charge's gross amount. */
+    Amount?: number | null;
+}
+
+/**
  * Input for `Orders.SendExternalInvoices`.
  *
  * The sweep: read the external invoicing worklist and send each unit through
@@ -2845,6 +2894,22 @@ export class OrdersReplayCheckoutStepOperation extends BaseRemotableOperation<Or
  */
 export class OrdersRequestAccessOverrideOperation extends BaseRemotableOperation<RequestAccessOverrideInput, RequestAccessOverrideOutput> {
     public readonly OperationKey = "Orders.RequestAccessOverride";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ResolveChargeException — Resolve Charge Exception
+// ============================================================
+/**
+ * Resolve Charge Exception
+ * Book a charge-without-payment finance exception as a paid order and clear it. Reads the payment provider and gateway charge from the exception, books the order through Orders.CreateOrderFromProviderPayment with the product and buyer the caller names, then clears the exception as Corrected with a note naming the order and payment. Requires the authorization to clear finance exceptions, checked before anything is booked. Refuses an exception that is not Open, is not a PROVIDER_CHARGE_MISMATCH of kind ChargeWithoutPayment, or names a charge Orders opened. A repeat call returns the order already booked and clears the exception if that had failed.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ResolveChargeException'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersResolveChargeExceptionOperation extends BaseRemotableOperation<OrdersResolveChargeExceptionInput, OrdersResolveChargeExceptionOutput> {
+    public readonly OperationKey = "Orders.ResolveChargeException";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
