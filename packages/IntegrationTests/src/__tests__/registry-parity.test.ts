@@ -70,6 +70,7 @@ import '../checks/progress-measurement.checks.js';
 import '../checks/outbound-events.checks.js';
 import '../checks/concessions.checks.js';
 import '../checks/term-extension.checks.js';
+import '../checks/amount-change.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -86,7 +87,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'catalog-world': 1,
     'order-booking': 30,
     'revenue-recognition': 8,
-    subscriptions: 26,
+    subscriptions: 29,
     'subscription-cancellation': 11,
     'subscription-renewal': 30,
     'payments-rollups': 9,
@@ -96,7 +97,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'line-subscriber': 17,
     'account-credit': 11,
     pricing: 16,
-    promotions: 27,
+    promotions: 30,
     charges: 15,
     tax: 17,
     composition: 10,
@@ -114,7 +115,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     volume: 13,
     entitlements: 32,
     'entitlement-read': 7,
-    'payment-providers': 12,
+    'payment-providers': 18,
     'ach-settlement': 17,
     'embedded-payment-detail': 17,
     'payment-schedule': 23,
@@ -123,8 +124,9 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'party-roster': 2,
     'progress-measurement': 25,
     'outbound-events': 7,
-    concessions: 27,
+    concessions: 34,
     'term-extension': 9,
+    'amount-change': 4,
 };
 
 /**
