@@ -87,7 +87,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'order-booking': 30,
     'revenue-recognition': 8,
     subscriptions: 26,
-    'subscription-cancellation': 10,
+    'subscription-cancellation': 11,
     'subscription-renewal': 30,
     'payments-rollups': 9,
     'payment-ledger': 12,
