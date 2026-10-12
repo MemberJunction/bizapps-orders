@@ -47,6 +47,7 @@ import {
     GetCatalogOptions,
     GetDimensionOptions,
     GetLineDimensionsForOrder,
+    GetCompanyDimensionValueIDs,
     GetDiscountAuthority,
     GetExistingHolding,
     GetSubscriptionContinuation,
@@ -1133,6 +1134,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      */
     private stampedTagsByLine = new Map<string, MJOStampedTag[]>();
 
+    /** The dimension values the order's company books under, for narrowing the panel's value list. */
+    public CompanyDimensionValueIDs: ReadonlySet<string> | null = null;
+
     /** The stamped tags for the open line, or null for a line the server has not stamped yet. */
     public StampedTagsFor(line: mjBizAppsOrdersOrderLineEntity | null): MJOStampedTag[] | null {
         if (!line?.IsSaved) return null;
@@ -1188,6 +1192,25 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // `new Date()` is an instant the viewer's evening reads back as tomorrow.
         const asOf = AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue();
         this.DimensionCatalog = await GetDimensionOptions(asOf);
+        await this.loadCompanyDimensionValues();
+    }
+
+    /**
+     * Read which values the order's company uses. A failure or an order with no company leaves it
+     * null, which the panel reads as "offer every value" rather than an empty list.
+     */
+    private async loadCompanyDimensionValues(): Promise<void> {
+        const companyID = String(this._order?.CompanyID ?? '');
+        if (!companyID) {
+            this.CompanyDimensionValueIDs = null;
+            return;
+        }
+        try {
+            this.CompanyDimensionValueIDs = await GetCompanyDimensionValueIDs(companyID);
+        } catch (err) {
+            console.warn("[order-lines-editor] could not read the company's dimension values", err);
+            this.CompanyDimensionValueIDs = null;
+        }
     }
 
     /**
@@ -1259,6 +1282,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // it would offer one order the values that were live for another.
         this.DimensionCatalog = [];
         this.stampedTagsByLine = new Map();
+        this.CompanyDimensionValueIDs = null;
         this.expandedLineIds.clear();
         this.hydratingLineIds.clear();
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
