@@ -54,6 +54,7 @@ import {
     type UpdateIntentResult,
     type WebhookEvent,
 } from './BasePaymentProvider.js';
+import { ToIsoCountryCode } from './VatLocationEvidence.js';
 import {
     FromMinorUnits,
     MapStripeIntentStatus,
@@ -703,6 +704,8 @@ export function StripeInstrumentFromIntent(intent: Record<string, unknown>): Ret
     if (Number.isInteger(card.exp_month)) instrument.ExpiryMonth = card.exp_month as number;
     if (Number.isInteger(card.exp_year)) instrument.ExpiryYear = card.exp_year as number;
     if (typeof billing.name === 'string' && billing.name) instrument.HolderName = billing.name;
+    const issuingCountry = ToIsoCountryCode(card.country);
+    if (issuingCountry) instrument.IssuingCountry = issuingCountry;
     return instrument;
 }
 

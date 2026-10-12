@@ -46,6 +46,7 @@ export * from './CustomerPaymentMethodEntity';
 export * from './PaymentHeaderEntity';
 export * from './save-populated-fields';
 export * from './InitialPaymentIntentCompanion';
+export * from './KeptPartyOrganizationsCompanion';
 
 /**
  * Forces the generated entity subclasses to be loaded. Without an explicit

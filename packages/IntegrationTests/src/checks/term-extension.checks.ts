@@ -372,8 +372,8 @@ export const TermExtensionChecks: NamedCheck[] = [
         AssertEqual(done.Status, "Approved", "inside authority it applies in the same call");
         await assertApplied(ctx, Term, 90);
 
-        const amount = await amend(ctx, { ...input, NewAmount: 900 });
-        Assert(!amount.Success && /amount/.test(amount.Message ?? ""), "a change of amount is refused for now");
+        const both = await amend(ctx, { ...input, NewAmount: 900 });
+        Assert(!both.Success && /amended separately/.test(both.Message ?? ""), "a change of amount is not combined with a new end");
       }),
   },
   {
