@@ -6,8 +6,8 @@
  * previous person's employer, so the new person's employer can be stamped. A writer that means to
  * keep it calls `OrderHeaderEntity.KeepPartyOrganization`, which reaches the server only as the
  * `KeptPartyOrganizations` companion in the save payload. `OrderHeaderPartyClear.test.ts` drives
- * the entity in one process; these save through MJAPI, so KP2 fails if the companion does not
- * cross the wire, and KP3 is its control (the same save without the keep).
+ * the entity in one process; these save through MJAPI, so KP1 fails if the companion does not
+ * cross the wire, and KP2 is its control (the same save without the keep).
  *
  * Each order is a Draft loaded fresh before the replacement, so the server sees the saved person
  * as the previous one. Saves are COMMITTED (no transaction on this transport); Notes =
@@ -37,7 +37,10 @@ async function loadOrder(ctx: IntegrationCheckContext, id: string): Promise<Orde
     return order;
 }
 
-/** A Draft billed to person A, saved over the wire; the server stamps A's employer. */
+/**
+ * A Draft billed to person A with A's employer, saved over the wire. The organization is set here
+ * rather than left to the server's employer stamp, which does not fire on a new record.
+ */
 async function draftForA(ctx: IntegrationCheckContext, label: string): Promise<OrderHeaderEntity> {
     const world = ClientWorldState();
     const order = await ctx.Provider.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
@@ -48,6 +51,7 @@ async function draftForA(ctx: IntegrationCheckContext, label: string): Promise<O
     order.CompanyID = world.Companies.BCP;
     order.Notes = `KP-WIRE:${runId}:${label}`;
     order.BillToPersonID = world.People[PERSON_A];
+    order.BillToOrganizationID = world.Organizations.RIV;
     Assert(await order.Save(), `draft save: ${order.LatestResult?.CompleteMessage ?? 'unknown'}`);
     return loadOrder(ctx, order.ID);
 }
@@ -73,32 +77,14 @@ async function removeOrder(order: OrderHeaderEntity | null): Promise<void> {
 const checks: NamedCheck[] = [
     {
         Id: 'wire-party-keep.KP1',
-        Name: "KP1 — a GraphQL save of a Draft billed to a person stamps that person's employer",
+        Name: "KP1 — replacing the bill-to person with KeepPartyOrganization keeps the previous person's employer",
         RequiresMutation: true,
         Fn: async (ctx) => {
             const world = ClientWorldState();
             let order: OrderHeaderEntity | null = null;
             try {
                 order = await draftForA(ctx, 'KP1');
-                Assert(
-                    UUIDsEqual(order.BillToOrganizationID, world.Organizations.RIV),
-                    `bill-to organization is A's employer (got ${order.BillToOrganizationID ?? 'null'})`,
-                );
-            } finally {
-                await removeOrder(order);
-            }
-        },
-    },
-    {
-        Id: 'wire-party-keep.KP2',
-        Name: "KP2 — replacing the bill-to person with KeepPartyOrganization keeps the previous person's employer",
-        RequiresMutation: true,
-        Fn: async (ctx) => {
-            const world = ClientWorldState();
-            let order: OrderHeaderEntity | null = null;
-            try {
-                order = await draftForA(ctx, 'KP2');
-                Assert(UUIDsEqual(order.BillToOrganizationID, world.Organizations.RIV), 'precondition: A\'s employer stamped');
+                Assert(UUIDsEqual(order.BillToOrganizationID, world.Organizations.RIV), 'precondition: A\'s employer saved');
                 order = await replaceWithB(ctx, order.ID, true);
                 Assert(UUIDsEqual(order.BillToPersonID, world.People[PERSON_B]), 'bill-to person is B');
                 Assert(
@@ -112,15 +98,15 @@ const checks: NamedCheck[] = [
         },
     },
     {
-        Id: 'wire-party-keep.KP3',
-        Name: "KP3 — replacing the bill-to person without a keep swaps in the new person's employer",
+        Id: 'wire-party-keep.KP2',
+        Name: "KP2 — replacing the bill-to person without a keep swaps in the new person's employer",
         RequiresMutation: true,
         Fn: async (ctx) => {
             const world = ClientWorldState();
             let order: OrderHeaderEntity | null = null;
             try {
-                order = await draftForA(ctx, 'KP3');
-                Assert(UUIDsEqual(order.BillToOrganizationID, world.Organizations.RIV), 'precondition: A\'s employer stamped');
+                order = await draftForA(ctx, 'KP2');
+                Assert(UUIDsEqual(order.BillToOrganizationID, world.Organizations.RIV), 'precondition: A\'s employer saved');
                 order = await replaceWithB(ctx, order.ID, false);
                 Assert(
                     UUIDsEqual(order.BillToOrganizationID, world.Organizations.SUM),
