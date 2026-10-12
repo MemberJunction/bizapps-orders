@@ -486,6 +486,7 @@
         [ProductSKU]="DetailsLine ? (ProductFor(DetailsLine)?.SKU ?? '') : ''"
         [ProductType]="DetailsLine ? (ProductFor(DetailsLine)?.TypeName ?? '') : ''"
         [Dimensions]="DimensionCatalog"
+        [StampedTags]="StampedTagsFor(DetailsLine)"
         [EditMode]="EditMode"
         (Closed)="CloseDetails()">
     </mjo-order-line-details-panel>

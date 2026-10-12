@@ -44,6 +44,31 @@
                     </p>
                 }
 
+                @if (Dimensions.length > 0) {
+                    <div class="mjo-ldp__stamped">
+                        <span class="mjo-ldp__label">Tags this line books</span>
+                        @if (StampedTags === null) {
+                            <p class="mjo-ldp__note">
+                                Defaults for this product are assigned when the order is saved.
+                            </p>
+                        } @else if (StampedTags.length === 0) {
+                            <p class="mjo-ldp__note">No tags yet. Set one below.</p>
+                        } @else {
+                            <ul class="mjo-ldp__stamped-list">
+                                @for (tag of StampedTags; track tag.DimensionID) {
+                                    <li class="mjo-ldp__stamped-row">
+                                        <span class="mjo-ldp__stamped-axis">{{ tag.DimensionLabel }}</span>
+                                        <span class="mjo-ldp__stamped-value">{{ tag.ValueLabel }}</span>
+                                        <span class="mjo-ldp__stamped-source">
+                                            {{ tag.Source === 'line' ? 'Set on this line' : 'Default' }}
+                                        </span>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
+
                 @if (Dimensions.length === 0) {
                     <p class="mjo-ldp__note">
                         No dimensions are defined. They arrive from Business Central through
@@ -79,6 +104,26 @@
                                     <option [value]="value.ID">{{ value.Code }} — {{ value.Name }}</option>
                                 }
                             </select>
+
+                            @if (StampedOnSelected; as stamped) {
+                                <span class="mjo-ldp__note">
+                                    {{ stamped.Source === 'line' ? 'Set on this line' : 'Default' }}:
+                                    {{ stamped.ValueLabel }}
+                                </span>
+                            }
+
+                            @if (PendingReplace; as pending) {
+                                <div class="mjo-ldp__confirm" role="alertdialog" aria-labelledby="mjo-ldp-confirm-text">
+                                    <p class="mjo-ldp__confirm-text" id="mjo-ldp-confirm-text">
+                                        Replace the default {{ pending.Replaces.ValueLabel }} with
+                                        {{ pending.ValueLabel }}? The line will book the new value.
+                                    </p>
+                                    <div class="mjo-ldp__confirm-actions">
+                                        <button type="button" class="mjo-ldp__done" (click)="ConfirmReplace()">Replace</button>
+                                        <button type="button" class="mjo-ldp__clear" (click)="KeepDefault()">Keep default</button>
+                                    </div>
+                                </div>
+                            }
 
                             @if (ValuesForSelectedDimension.length === 0) {
                                 <span class="mjo-ldp__note">
