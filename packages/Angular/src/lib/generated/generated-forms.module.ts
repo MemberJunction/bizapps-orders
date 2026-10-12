@@ -53,6 +53,7 @@ import { mjBizAppsOrdersPaymentHeaderFormComponent } from "./Entities/mjBizAppsO
 import { mjBizAppsOrdersPaymentIntentFormComponent } from "./Entities/mjBizAppsOrdersPaymentIntent/mjbizappsorderspaymentintent.form.component";
 import { mjBizAppsOrdersPaymentLineFormComponent } from "./Entities/mjBizAppsOrdersPaymentLine/mjbizappsorderspaymentline.form.component";
 import { mjBizAppsOrdersPaymentProviderFormComponent } from "./Entities/mjBizAppsOrdersPaymentProvider/mjbizappsorderspaymentprovider.form.component";
+import { mjBizAppsOrdersPaymentProviderPriceFormComponent } from "./Entities/mjBizAppsOrdersPaymentProviderPrice/mjbizappsorderspaymentproviderprice.form.component";
 import { mjBizAppsOrdersPaymentProviderSyncStateFormComponent } from "./Entities/mjBizAppsOrdersPaymentProviderSyncState/mjbizappsorderspaymentprovidersyncstate.form.component";
 import { mjBizAppsOrdersPaymentProviderTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentProviderType/mjbizappsorderspaymentprovidertype.form.component";
 import { mjBizAppsOrdersPaymentSequenceFormComponent } from "./Entities/mjBizAppsOrdersPaymentSequence/mjbizappsorderspaymentsequence.form.component";
@@ -396,7 +397,8 @@ export class GeneratedForms_SubModule_18 { }
 declarations: [
     mjBizAppsOrdersCheckoutWidgetFormComponent,
     mjBizAppsOrdersOrderChargeFormComponent,
-    mjBizAppsOrdersOrderConcessionFormComponent
+    mjBizAppsOrdersOrderConcessionFormComponent,
+    mjBizAppsOrdersPaymentProviderPriceFormComponent
 ],
 imports: [
     CommonModule,
