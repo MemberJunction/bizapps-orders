@@ -75,6 +75,12 @@ export interface AmountChangePlan {
     Replaced: number;
     /** What the new schedule recognises: `Replaced − (Reduction − CatchUp)`. */
     Remaining: number;
+    /**
+     * The catch-up as an entry on the effective day: revenue debited and deferred revenue credited, on the
+     * accounts the earned entries used. Null when nothing was earned yet, and when no entries were staged at all
+     * (the term was recognised when booked, so there is no deferred balance to take it from).
+     */
+    CatchUpEntry: JEDraft | null;
 }
 
 /** Plan the recognition side of an amount reduction, or say why it cannot be made. */
@@ -96,7 +102,7 @@ export function PlanAmountChange(input: AmountChangeInput): AmountChangePlan | s
 
     // Nothing staged: the term's revenue was recognised when it was booked, so the whole reduction is earned.
     if (input.Entries.length === 0) {
-        return { Reduction: reduction, Recognized: current, CatchUp: reduction, Targets: [], Offsets: [], Respread: [], Replaced: 0, Remaining: 0 };
+        return { Reduction: reduction, Recognized: current, CatchUp: reduction, Targets: [], Offsets: [], Respread: [], Replaced: 0, Remaining: 0, CatchUpEntry: null };
     }
 
     const batched = targets.filter((t) => t.Status !== 'Pending' || t.JournalEntryBatchID);
@@ -125,6 +131,20 @@ export function PlanAmountChange(input: AmountChangeInput): AmountChangePlan | s
 
     const catchUp = money((reduction * recognized) / current);
     const remaining = money(replaced - (reduction - catchUp));
+    const catchUpEntry: JEDraft | null =
+        before && catchUp > 0
+            ? {
+                  EffectiveDate: effective,
+                  EntryType: 'RevenueRecognition',
+                  Description: `Catch-up: ${input.Label}`,
+                  LinkedEntityID: input.LinkedEntityID,
+                  LinkedRecordID: input.LinkedRecordID,
+                  Lines: [
+                      { GLAccountID: before.Credit.GLAccountID, DebitAmount: catchUp, Description: `Revenue taken back — ${input.ProductName}`, Dimensions: before.Credit.Dimensions },
+                      { GLAccountID: before.Debit.GLAccountID, CreditAmount: catchUp, Description: `Deferred revenue — ${input.ProductName}`, Dimensions: before.Debit.Dimensions },
+                  ],
+              }
+            : null;
 
     const offsets = targets.map((t) => ({
         EffectiveDate: dayKey(t.EffectiveDate),
@@ -136,7 +156,7 @@ export function PlanAmountChange(input: AmountChangeInput): AmountChangePlan | s
     }));
 
     if (remaining === 0 || !after) {
-        return { Reduction: reduction, Recognized: recognized, CatchUp: catchUp, Targets: targets, Offsets: offsets, Respread: [], Replaced: replaced, Remaining: 0 };
+        return { Reduction: reduction, Recognized: recognized, CatchUp: catchUp, Targets: targets, Offsets: offsets, Respread: [], Replaced: replaced, Remaining: 0, CatchUpEntry: catchUpEntry };
     }
     if (!input.Driver) return 'This term has staged recognition entries but its recognition type defers nothing.';
 
@@ -164,7 +184,7 @@ export function PlanAmountChange(input: AmountChangeInput): AmountChangePlan | s
     if (scheduled !== remaining) {
         return `The new schedule sums to ${scheduled}, not the ${remaining} left to recognise; nothing was planned.`;
     }
-    return { Reduction: reduction, Recognized: recognized, CatchUp: catchUp, Targets: targets, Offsets: offsets, Respread: respread, Replaced: replaced, Remaining: remaining };
+    return { Reduction: reduction, Recognized: recognized, CatchUp: catchUp, Targets: targets, Offsets: offsets, Respread: respread, Replaced: replaced, Remaining: remaining, CatchUpEntry: catchUpEntry };
 }
 
 function mirrorLine(line: StagedLine): JELineDraft {
@@ -348,4 +368,54 @@ function changeFor(row: ReductionInstalment, changes: Map<string, InstalmentChan
         changes.set(row.ID, change);
     }
     return change;
+}
+
+// ─── Instalment invoices after a change ─────────────────────────────────────
+
+/** The amounts of one line an instalment invoice slices, as ./InstalmentInvoiceEntry.ts reads them. */
+export interface SlicedLineAmounts {
+    ID: string;
+    Net: number;
+    Tax: number;
+    Charges: number;
+    Gross: number;
+    ChargeCredits: Array<{ GLAccountID: string; Amount: number; Label: string }>;
+}
+
+/**
+ * A line as its instalment invoices bill it once approved amount changes have lowered it: net and gross less
+ * the reductions, tax less their tax, and each tax credit lowered in proportion so the credits still sum to the
+ * line's tax. The lowered instalments then tie to the lowered line. A line with no change comes back unchanged.
+ *
+ * Only tax follows a reduction; recording one is refused on a line that carries any other charge, so every
+ * charge credit here is tax.
+ */
+export function ReduceLineAmounts<T extends SlicedLineAmounts>(line: T, reductions: Array<{ OrderLineID: string; Net: number; Tax: number }>): T {
+    const mine = reductions.filter((r) => r.OrderLineID.toLowerCase() === line.ID.toLowerCase());
+    if (mine.length === 0) return line;
+    const net = money(mine.reduce((s, r) => s + r.Net, 0));
+    const tax = money(mine.reduce((s, r) => s + r.Tax, 0));
+    if (net > line.Net + 0.005 || tax > line.Tax + 0.005) {
+        throw new Error(`Line ${line.ID} has been lowered by more than its own amount; its instalments cannot be billed.`);
+    }
+    const credited = cents(line.ChargeCredits.reduce((s, c) => s + c.Amount, 0));
+    const keep = cents(line.Tax) === 0 ? 1 : 1 - tax / line.Tax;
+    // Cumulative rounding, so the lowered credits sum to exactly their share.
+    let through = 0;
+    let given = 0;
+    const target = Math.round(credited * keep);
+    const credits = line.ChargeCredits.map((c) => {
+        through += cents(c.Amount);
+        const upTo = credited === 0 ? 0 : Math.round((target * through) / credited);
+        const piece = upTo - given;
+        given = upTo;
+        return { ...c, Amount: piece / 100 };
+    });
+    return {
+        ...line,
+        Net: money(line.Net - net),
+        Tax: money(line.Tax - tax),
+        Gross: money(line.Gross - net),
+        ChargeCredits: credits.filter((c) => c.Amount !== 0),
+    };
 }

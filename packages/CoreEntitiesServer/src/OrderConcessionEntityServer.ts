@@ -22,6 +22,12 @@
  * the approval's own transaction by ./TermExtension.ts: the term's end, the recognition schedule, access and an
  * acknowledgment task for accounting. If the extension cannot be applied, the approval does not happen.
  *
+ * AN APPROVED AMOUNT CHANGE LOWERS ITS TERM'S AMOUNT (#506). A Price concession carrying `NewAmount` names a
+ * booked term and its new, lower amount. It is valued as the reduction, checked when recorded, and applied in the
+ * approval's own transaction by ./AmountChange.ts: the catch-up and re-cut entries, the term's amount, the
+ * instalments not yet invoiced, and accounting's acknowledgment task. `ScheduleReduction` is set when it is
+ * approved: what it took off the instalments, which the order's balance and schedule check subtract.
+ *
  * AN APPROVED TERMS CONCESSION CHANGES A CONFIRMED ORDER'S PAYMENT TERMS (#309). It records the prior and new
  * terms, and its value is the change in days to payment rather than a currency figure. It always goes to
  * approval, whatever the requester's authority, and the requester cannot decide it even when they hold the
@@ -69,6 +75,7 @@
  *   READS:  ./ConcessionGate.ts (authority, rule, line price) · Subscription Terms · Order Lines
  *   TASKS:  ./ConcessionApprovalTask.ts (raise, close) · ./ConcessionApprovalListener.ts (decide from task)
  *   APPLY:  ./TermExtension.ts (a Duration concession reaching Approved)
+ *           ./AmountChange.ts (a Price concession with NewAmount reaching Approved)
  *           ./PaymentTermsChange.ts (a Terms concession reaching Approved)
  *           ./TermShift.ts (a Shift concession reaching Approved)
  *   GATE:   OrderEntityServer (confirm) and the send-document action refuse while one is Pending
@@ -119,6 +126,7 @@ import {
     OrderNetTotal,
     ProductsRequiringSaleApproval,
 } from './ConcessionGate.js';
+import { ApplyAmountChange, CheckAmountChange, CreditMemoRefusal, type ApprovedAmountChange } from './AmountChange.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RaiseConcessionAcknowledgment } from './ConcessionAcknowledgment.js';
 import { ApplyTermsChange, CheckTermsChange } from './PaymentTermsChange.js';
@@ -149,6 +157,9 @@ const AUTHORED_FIELDS = [
     'PriorEndDate',
     'NewStartDate',
     'NewEndDate',
+    'NewAmount',
+    'AppliesToPaymentScheduleID',
+    'ScheduleReduction',
     'ComputedValue',
     'OrderNetTotal',
     'CumulativeShare',
@@ -211,13 +222,27 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const changingTerms = this.DeliveryForm === 'Terms' && this.Status === 'Approved' && deciding;
         // An approved Shift concession moves its term the same way (#507).
         const shifting = this.DeliveryForm === 'Shift' && this.Status === 'Approved' && (recording || deciding);
+        // An approved amount change lowers its term in the same transaction (#506).
+        const changingAmount = this.IsAmountChange && this.Status === 'Approved' && (recording || deciding);
         // A decision made through the task leaves the task to the tasks app, which closes it itself.
         const closing =
             deciding && !this.DecidedThroughTask && (this.Status === 'Approved' || this.Status === 'Rejected') ? this.Status : null;
-        // Every other approval is acknowledged by accounting too (golive #268); an extension's own task carries its schedule.
+        // Every other approval is acknowledged by accounting too (golive #268); an extension's, a shift's and an
+        // amount change's own task carries its schedule.
         const acknowledging =
-            this.Status === 'Approved' && (recording || deciding) && this.DeliveryForm !== 'Duration' && this.DeliveryForm !== 'Shift';
-        if (extending || changingTerms || shifting || closing || acknowledging) {
+            this.Status === 'Approved' &&
+            (recording || deciding) &&
+            this.DeliveryForm !== 'Duration' &&
+            this.DeliveryForm !== 'Shift' &&
+            !this.IsAmountChange;
+        if (changingAmount) {
+            const problem = await this.stampScheduleReduction();
+            if (problem) {
+                this.RegisterResultHistoryEntry(this.buildRejection(problem));
+                return false;
+            }
+        }
+        if (extending || changingTerms || shifting || changingAmount || closing || acknowledging) {
             return this.withApprovalTask(recording ? 'create' : 'update', () => super.Save(options), async (ctx) => {
                 // Closed first: closing completes every open task linked to the concession, and the acknowledgment
                 // raised below must stay open.
@@ -225,6 +250,15 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
                 if (extending) await ApplyTermExtension(this.asApprovedExtension(), ctx);
                 if (shifting) await ApplyTermShift(this.asApprovedShift(), ctx);
                 if (acknowledging) await RaiseConcessionAcknowledgment(this.asApprovedFacts(), ctx);
+                if (changingAmount) {
+                    const applied = await ApplyAmountChange(this.asApprovedAmountChange(), ctx);
+                    if (applied.ScheduleReduction !== Number(this.ScheduleReduction)) {
+                        throw new Error(
+                            `The amount change would take ${applied.ScheduleReduction.toFixed(2)} off the instalments, not the ` +
+                                `${Number(this.ScheduleReduction).toFixed(2)} recorded on approval; the order changed meanwhile. Try again.`,
+                        );
+                    }
+                }
                 if (changingTerms) {
                     await ApplyTermsChange(
                         {
@@ -279,6 +313,47 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             Reason: this.Reason,
             ComputedValue: Number(this.ComputedValue),
         };
+    }
+
+    /** A Price concession that lowers a booked term's amount rather than a draft line's price. */
+    public get IsAmountChange(): boolean {
+        return this.DeliveryForm === 'Price' && this.NewAmount != null;
+    }
+
+    private asApprovedAmountChange(): ApprovedAmountChange {
+        return {
+            ID: this.ID,
+            SubscriptionTermID: this.SubscriptionTermID!,
+            NewAmount: Number(this.NewAmount),
+            AppliesToPaymentScheduleID: this.AppliesToPaymentScheduleID,
+            RequestedByUserID: this.RequestedByUserID,
+            ReasonCategory: this.ReasonCategory,
+            Reason: this.Reason,
+            ComputedValue: Number(this.ComputedValue),
+        };
+    }
+
+    /**
+     * Record on the approved row what the change takes off the uninvoiced instalments, read as the order stands
+     * at the approval. The application then checks it took exactly that.
+     */
+    private async stampScheduleReduction(): Promise<string | null> {
+        const user = this.ContextCurrentUser;
+        if (!user?.ID) return 'An amount change must be attributable to a user, and no user was supplied.';
+        const checked = await CheckAmountChange(
+            {
+                SubscriptionTermID: this.SubscriptionTermID!,
+                NewAmount: Number(this.NewAmount),
+                AppliesToInvoiceID: this.AppliesToPaymentScheduleID,
+                RequestedByUserID: this.RequestedByUserID,
+            },
+            { Provider: this.provider(), User: user },
+        );
+        if (typeof checked === 'string') return checked;
+        const memo = CreditMemoRefusal(checked);
+        if (memo) return memo;
+        this.ScheduleReduction = checked.ScheduleReduction > 0 ? checked.ScheduleReduction : null;
+        return null;
     }
 
     /** Set only by ConcessionApprovalListener, when the decision was recorded on the concession's approval task. */
@@ -610,6 +685,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             case 'Duration':
                 return this.valueDuration(user);
             case 'Price':
+                return this.NewAmount != null ? this.valueAmountChange(user) : this.valueLinePrice(user);
             case 'Scope':
                 return this.valueLinePrice(user);
             case 'Seats':
@@ -663,6 +739,32 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             TermDays: InclusiveDays(new Date(term.StartDate), new Date(term.EndDate)),
             AddedDays: days,
         });
+    }
+
+    /**
+     * A booked term's amount lowered: worth the reduction, as a share of the term's current amount. Refused now
+     * what could never be applied, including a reduction that would need a credit memo.
+     */
+    private async valueAmountChange(user: UserInfo): Promise<ConcessionValuation | string> {
+        if (!this.SubscriptionTermID) return 'An amount change must name the term whose amount it lowers.';
+        const checked = await CheckAmountChange(
+            {
+                SubscriptionTermID: this.SubscriptionTermID,
+                NewAmount: Number(this.NewAmount),
+                AppliesToInvoiceID: this.AppliesToPaymentScheduleID,
+                RequestedByUserID: user.ID,
+            },
+            { Provider: this.provider(), User: user },
+        );
+        if (typeof checked === 'string') return checked;
+        const memo = CreditMemoRefusal(checked);
+        if (memo) return memo;
+
+        this.OrderHeaderID = checked.OrderHeaderID;
+        this.OrderLineID = checked.OrderLineID;
+        this.ScheduleReduction = null;
+        const reduction = checked.Recognition.Reduction;
+        return { Value: reduction, Percent: checked.CurrentAmount > 0 ? reduction / checked.CurrentAmount : null };
     }
 
     /**

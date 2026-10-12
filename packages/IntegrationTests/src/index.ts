@@ -42,7 +42,7 @@
  *   contract-reversal    RV1–RV10  reversing a scheduled order: withdraw, credit back, or refuse (D92 §6)
  *   concessions          CS1–CS25  concessions valued in any form, approved before the customer sees them
  *   term-extension       TX1–TX9   a booked term extended at no charge, with recognition, access and renewal following
- *   amount-change        AC1–AC4   previewing a lower amount on a booked term: catch-up, re-spread, instalments, credit (#506)
+ *   amount-change        AC1–AC7   lowering a booked term's amount: preview, record, approve and apply; credit-memo cases refused (#506)
  *   term-shift           TS1–TS6   a booked term's start and end moved together, with recognition, access and instalments following
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
  *   progress-measurement PM1–PM14   percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
