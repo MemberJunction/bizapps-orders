@@ -21,6 +21,7 @@ import {
     OrderLineEntity,
     OrdersCheckCoverageOverlapOperation,
     ClampLineQuantity,
+    ExtraSeatLinesNeeded,
     CanRestoreLineDefault,
     IsLinePriceOverridden,
     LineNeedsOverrideReason,
@@ -61,6 +62,7 @@ import { MJOPricingScheduler, type MJOEngineDefault, type MJOLinePrice, type MJO
 import {
     ExtensionCollapsedHint,
     ExtensionToggleLabel,
+    DescribeSeatSplit,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
 import { AsDateValue, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
@@ -144,6 +146,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     private _order: OrderHeaderEntity | null = null;
     private readonly expandedLineIds = new Set<string>();
+    /** What the last per-seat split did, shown above the lines until the order is rebound. */
+    public SeatSplitNotice: string | null = null;
 
     @Input() public Provider: IMetadataProvider | null = null;
     @Input() public EditMode = true;
@@ -281,8 +285,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public Bump(line: mjBizAppsOrdersOrderLineEntity, delta: number): void {
         if (!this.EditMode) return;
         line.Quantity = this.clampQuantity(line, Number(line.Quantity ?? 0) + delta);
-        void this.refreshApplicable(line);
-        this.schedulePricing();
+        this.onQuantityChanged(line);
     }
 
     public SetQuantity(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -290,8 +293,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
         line.Quantity = this.clampQuantity(line, Number.parseFloat(target.value));
-        void this.refreshApplicable(line);
-        this.schedulePricing();
+        this.onQuantityChanged(line);
     }
 
     public QuantityAtMax(line: mjBizAppsOrdersOrderLineEntity): boolean {
@@ -1213,6 +1215,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // it would offer one order the values that were live for another.
         this.DimensionCatalog = [];
         this.expandedLineIds.clear();
+        this.SeatSplitNotice = null;
         this.hydratingLineIds.clear();
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
         // a cached continuation date is only trustworthy for as long as one order is open.
@@ -1267,6 +1270,34 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
                 }
             }
         }
+    }
+
+    /**
+     * A line of an event that requires attendee information books only as one quantity-1 line per
+     * seat, so a quantity above 1 on such a line becomes that many lines, each opening on its own
+     * attendee block. Any other line just reprices.
+     */
+    private onQuantityChanged(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (ExtraSeatLinesNeeded(line) > 0) {
+            void this.splitIntoSeats(line);
+            return;
+        }
+        void this.refreshApplicable(line);
+        this.schedulePricing();
+    }
+
+    private async splitIntoSeats(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        if (!this._order) return;
+        const seats = Number(line.Quantity);
+        const keptDiscount = this.HasStagedDiscount(line) || this.discountDrafts.has(line.ID);
+        const added = await this._order.SplitLineIntoSeats(line);
+        if (added.length === 0) return;
+        this.expandedLineIds.add(line.ID);
+        for (const seat of added) this.expandedLineIds.add(seat.ID);
+        this.SeatSplitNotice = DescribeSeatSplit(this.ProductFor(line)?.Name ?? 'This event', seats, keptDiscount);
+        this.schedulePricing();
+        void this.refreshAllApplicable();
+        this.cdr.detectChanges();
     }
 
     private clampQuantity(line: mjBizAppsOrdersOrderLineEntity, quantity: number): number {
