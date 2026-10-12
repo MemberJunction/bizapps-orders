@@ -41,7 +41,7 @@ import type { PriceResolutionContext, ResolvedPrice } from './PriceResolver.js';
 import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngine.js';
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { AsDateValue, TodayAsDateValue } from '../date-cell';
-import { RunCharges, SplitChargesByLine } from './ChargeEngine.js';
+import { RunCharges, SplitChargesByLine, StatesTaxCharge } from './ChargeEngine.js';
 import { PriceResolutionError, ResolvePrice } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
@@ -519,8 +519,9 @@ export class OrderPricingService {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<RequestedCharge[]> {
-        // A stated tax charge wins, exactly as a stated UnitPrice does.
-        if (this.ctx.Charges.some((c) => /tax/i.test(c.Code))) return [];
+        // A stated tax charge wins, exactly as a stated UnitPrice does. A tax is a charge type in the
+        // 'Tax' category, whatever its code: `VAT` is one too.
+        if (await StatesTaxCharge(this.ctx.Charges.map((c) => c.Code), provider, user)) return [];
 
         const out: RequestedCharge[] = [];
         const settled = this.ctx.SettledTax;
