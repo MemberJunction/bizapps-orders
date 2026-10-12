@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB26).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB29).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -34,6 +34,9 @@
  *   SB24  a band inside a bundle is previewed on its own line; acknowledging it there confirms
  *   SB25  acknowledging the bundle line covers the band inside it, in a one-step confirm
  *   SB26  cancelling a held Immediate band first is offered, and a start after its access ends confirms (#470)
+ *   SB27  two lines of one ExtendExisting product on ONE order make one subscription with contiguous terms
+ *   SB28  two lines of one RejectDuplicate product on ONE order refuse the whole confirm
+ *   SB29  two such lines on an order after two earlier extensions take the next two term numbers, in sequence
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -158,6 +161,23 @@ async function subscriptionsFor(ctx: IntegrationCheckContext, productKey: string
          WHERE ProductID = '${f.Products[productKey]}'
            AND HolderOrganizationID = '${f.Customers.OrganizationID}'`,
     );
+}
+
+/** The subscriptions an order's lines point at, distinct. */
+async function subscriptionIDsForOrder(ctx: IntegrationCheckContext, orderID: string): Promise<string[]> {
+    const rows = await TxQuery<{ SubscriptionID: string }>(
+        ctx,
+        `SELECT DISTINCT SubscriptionID FROM ${ORDERS_SCHEMA}.OrderLine
+         WHERE OrderHeaderID = '${orderID}' AND SubscriptionID IS NOT NULL`,
+    );
+    return rows.map((r) => r.SubscriptionID);
+}
+
+/** The day after a term ends: where the next contiguous term must start. */
+function dayAfter(end: string | Date): string {
+    const d = new Date(end);
+    d.setDate(d.getDate() + 1);
+    return isoDate(d);
 }
 
 /** Run a remote operation the way the client does, returning its payload. */
@@ -1072,6 +1092,102 @@ export const SubscriptionChecks: NamedCheck[] = [
                 Assert(after.Saved, `a band starting 31 days after an Immediate cancellation must confirm: ${after.Message}`);
                 const [term2] = await termsForOrder(ctx, after.Order.ID as string);
                 AssertEqual(isoDate(term2.StartDate), '2026-08-01', 'the new band starts the day after access ends');
+            }),
+    },
+    {
+        // Adversarial case C15 (docs/adversarial-order-cases.md): the extend-or-create decision is
+        // made for every line before any subscription is written, so the second line used to see
+        // nothing in the database and create a duplicate with the same term.
+        Id: 'subscriptions.SB27',
+        Name: 'SB27: two lines of one ExtendExisting product on ONE order make one subscription with contiguous terms',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const line = { ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 };
+                const result = await buySubscription(ctx, 'SubRolling', 1200, { Lines: [line, { ...line }] });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const subs = await subscriptionIDsForOrder(ctx, result.Order.ID as string);
+                AssertEqual(subs.length, 1, 'both lines point at ONE subscription, not two');
+
+                const terms = await termsForOrder(ctx, result.Order.ID as string);
+                AssertEqual(terms.length, 2, 'one term per line');
+                const [first, second] = terms;
+                Assert(SameID(first.SubscriptionID, second.SubscriptionID), 'both terms belong to the same subscription');
+                AssertEqual(Number(second.TermNumber), Number(first.TermNumber) + 1, 'the second line takes the next term number');
+                AssertEqual(isoDate(second.StartDate), dayAfter(first.EndDate), 'the second term starts the day after the first ends');
+            }),
+    },
+    {
+        // Adversarial case C16, within one order: RejectDuplicate must see the sibling line, not
+        // only subscriptions already in the database.
+        Id: 'subscriptions.SB28',
+        Name: 'SB28: two lines of one RejectDuplicate product on ONE order refuse the whole confirm',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // Without this the refusal could come from a subscription already in the database,
+                // which SB8 covers, and this check would pass without proving the within-order case.
+                const held = (await subscriptionsFor(ctx, 'SubFiscal')).filter((s) => s.Status === 'Active');
+                AssertEqual(held.length, 0, 'precondition: the customer holds no active SubFiscal subscription');
+
+                // SubFiscal's engine price, so the stated 900 is not a concession the confirm gate holds.
+                await CreateProductPrice(ctx, f.Products.SubFiscal, 900);
+                const line = { ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 900 };
+                const result = await buySubscription(ctx, 'SubFiscal', 900, { Lines: [line, { ...line }] });
+                Assert(!result.Saved, 'a second line of a RejectDuplicate product on the same order must be refused');
+                Assert(
+                    /second concurrent subscription/i.test(result.Message),
+                    `the refusal should name the concurrency rule, got: ${result.Message}`,
+                );
+
+                // The refusal fails the WHOLE confirm: neither line leaves a subscription or a term.
+                AssertEqual((await subscriptionsFor(ctx, 'SubFiscal')).length, 0, 'no subscription written');
+                if (result.Order.ID) {
+                    AssertEqual((await termsForOrder(ctx, result.Order.ID as string)).length, 0, 'no term written');
+                }
+            }),
+    },
+    {
+        // Adversarial case C17, order C: after orders A and B, one order with two lines. Both lines
+        // used to read the same latest term end and number, giving two terms with one number and
+        // one start.
+        Id: 'subscriptions.SB29',
+        Name: 'SB29: two lines after two earlier extensions take the next two term numbers, in sequence',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const orderA = await buySubscription(ctx, 'SubMonthly', 24);
+                Assert(orderA.Saved, `order A failed: ${orderA.Message}`);
+                const orderB = await buySubscription(ctx, 'SubMonthly', 24);
+                Assert(orderB.Saved, `order B failed: ${orderB.Message}`);
+                const [termB] = await termsForOrder(ctx, orderB.Order.ID as string);
+
+                const line = { ProductID: f.Products.SubMonthly, Quantity: 1, UnitPrice: 24 };
+                const orderC = await buySubscription(ctx, 'SubMonthly', 24, { Lines: [line, { ...line }] });
+                Assert(orderC.Saved, `order C failed: ${orderC.Message}`);
+                const termsC = await termsForOrder(ctx, orderC.Order.ID as string);
+                AssertEqual(termsC.length, 2, 'one term per line of order C');
+                const [c1, c2] = termsC;
+
+                for (const t of termsC) {
+                    Assert(SameID(t.SubscriptionID, termB.SubscriptionID), 'order C extends the subscription A and B built');
+                }
+                AssertEqual(Number(c1.TermNumber), Number(termB.TermNumber) + 1, 'order C\'s first term follows B\'s');
+                AssertEqual(Number(c2.TermNumber), Number(termB.TermNumber) + 2, 'order C\'s second term follows its first');
+                AssertEqual(isoDate(c1.StartDate), dayAfter(termB.EndDate), 'C\'s first term starts the day after B\'s ends');
+                AssertEqual(isoDate(c2.StartDate), dayAfter(c1.EndDate), 'C\'s second term starts the day after its first ends');
+
+                const dupes = await TxQuery<{ TermNumber: number }>(
+                    ctx,
+                    `SELECT TermNumber FROM ${ORDERS_SCHEMA}.SubscriptionTerm
+                     WHERE SubscriptionID = '${termB.SubscriptionID}'
+                     GROUP BY TermNumber HAVING COUNT(*) > 1`,
+                );
+                AssertEqual(dupes.length, 0, 'no term number appears twice on the subscription');
             }),
     },
 ];

@@ -67,6 +67,7 @@ import {
     memberDiscountNotice,
     stripeConfirmAlreadyCollected,
 } from './checkout-draft-line';
+import { PostWithTurnstile, TurnstileError, TurnstileWidget, type TurnstileState } from './checkout-turnstile';
 
 export { buildCheckoutDraftLine } from './checkout-draft-line';
 
@@ -174,6 +175,9 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     }
 
     private stripe: StripeInstance | null = null;
+    /** Turnstile for a widget that sets `requireTurnstile` (#592); idle until the edge asks for it. */
+    private readonly turnstile = new TurnstileWidget(() => this.turnstileContainer());
+    private readonly turnstileState: TurnstileState = { siteKey: null };
     private card: StripeCard | null = null;
     private cardMounted = false;
     private destroyed = false;
@@ -210,7 +214,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
         this.setState('LOADING');
         try {
-            const init = await this.post('/initialize', {
+            const init = await this.postGated('/initialize', {
                 slug: this.slug,
                 clientSessionKey: this.sessionKey,
             });
@@ -232,8 +236,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             }
             this.config = cfg;
             this.setState('CHECKOUT');
-        } catch {
-            this.loadError = 'Checkout is temporarily unavailable. Please try again.';
+        } catch (err) {
+            this.loadError = err instanceof TurnstileError ? err.message : 'Checkout is temporarily unavailable. Please try again.';
         } finally {
             if (this.loadError) this.reportError(this.loadError);
             this.cdr.detectChanges();
@@ -256,6 +260,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     public ngOnDestroy(): void {
         this.destroyed = true;
+        this.turnstile.Destroy();
         (this.hostEl?.nativeElement as HTMLElement | undefined)?.removeEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);
         try {
             this.card?.unmount?.();
@@ -541,7 +546,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     private async finish(): Promise<void> {
         // Remembered before completing, so a reload after payment returns to the account step.
         this.rememberCompleting(this.sessionId);
-        const done = await this.post('/complete', {
+        const done = await this.postGated('/complete', {
             sessionId: this.sessionId,
             clientSessionKey: this.sessionKey,
         });
@@ -562,8 +567,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 productId: this.config?.productId,
                 totalGross: done.TotalGross,
                 currency: this.config?.currency,
-                // The applied promotion code, once the checkout takes one.
-                coupon: null,
+                coupon: this.appliedPromotion?.code ?? null,
             })
         );
         this.cdr.detectChanges();
@@ -911,6 +915,33 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         const json = (await res.json()) as Record<string, unknown>;
         json._httpStatus = res.status;
         return json;
+    }
+
+    /** `/initialize` and `/complete`: sends a Turnstile token when the widget requires one. */
+    private postGated(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+        return PostWithTurnstile(
+            (p, b) => this.post(p, b),
+            path,
+            body,
+            (siteKey) => this.turnstile.Token(siteKey),
+            this.turnstileState,
+        );
+    }
+
+    /** Where Turnstile renders: outside the template's state branches, so it survives every redraw. */
+    private turnstileContainer(): HTMLElement | null {
+        const el = this.hostEl?.nativeElement as HTMLElement | undefined;
+        if (!el) {
+            return null;
+        }
+        const existing = el.querySelector<HTMLElement>('.mj-checkout-public__turnstile');
+        if (existing) {
+            return existing;
+        }
+        const created = document.createElement('div');
+        created.className = 'mj-checkout-public__turnstile';
+        el.appendChild(created);
+        return created;
     }
 
     private str(value: unknown, fallback = ''): string {

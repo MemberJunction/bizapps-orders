@@ -17,6 +17,13 @@
  * TWO LAYERS, DO NOT CONFUSE THEM
  *   - `BasePriceResolver` subclasses are PLUGINS, registered by ClassFactory key. A company with
  *     genuinely bespoke pricing registers one for its ID and owns the whole decision.
+ *   - Which plugin applies is named in METADATA first: `PricingDriverClass` on the product, its
+ *     category chain, its type, or the company's OrderCompanyPolicy (most specific wins). That is
+ *     `ResolvePricingDriver`'s walk — the same one the browser runs to decide whether it may price
+ *     locally — so both tiers agree on the plugin. A named key with no registered resolver is
+ *     refused (D5's tripwire), never priced by the default. After the named key, the ID-key
+ *     convention (`Product:<id>`, `Category:<id>`, `Company:<id>`) still applies, so plugins
+ *     registered before the column existed keep working.
  *   - `DefaultPriceResolver` is the data-driven one everybody else gets: resolve the customer's
  *     price list, find the applicable `ProductPrice` rules, pick by priority, compute.
  *
@@ -46,6 +53,7 @@ import {
 import { priceApplies, type FilterEvalContext } from './applicability.js';
 import { collapseInheritedPrices } from './inheritPrices.js';
 import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
+import { ResolvePricingDriver } from '../PricingDriverResolver.js';
 
 const PRICE_LIST_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assignments';
@@ -115,11 +123,14 @@ export interface ResolvedPrice {
 }
 
 /**
- * Base class for pricing plugins. Register a subclass to take over pricing for a product, a
- * category, a company, or globally:
+ * Base class for pricing plugins. Register a subclass under any key and name that key in
+ * `PricingDriverClass` on the product, category, type or company policy it should price:
  *
- *     @RegisterClass(BasePriceResolver, `Company:${someCompanyId}`)
- *     export class AcmeResolver extends BasePriceResolver { ... }
+ *     @RegisterClass(BasePriceResolver, 'EventTicketPricing')
+ *     export class EventTicketResolver extends BasePriceResolver { ... }
+ *
+ * The older ID-key convention (`Product:<id>`, `Category:<id>`, `Company:<id>`) still resolves,
+ * but the browser cannot see it — set `PricingDriverClass` to that key too so clients escalate.
  *
  * Return `null` to decline and let the walk continue to the next level.
  */
@@ -506,23 +517,35 @@ export async function ResolvePriceListForCustomer(
 }
 
 /**
- * Run the resolver walk: product → category → ancestors → company → default.
+ * Run the resolver walk: the metadata-named driver (`PricingDriverClass`), then the ID keys
+ * product → category → ancestors → company, then the default.
  *
- * The first resolver returning a price ends it. Nothing resolving is the caller's decision to
- * refuse or to accept a directly-entered price — this function reports, it does not decide.
+ * The first resolver returning a price ends it; a plugin returning null declines and the walk
+ * continues. Nothing resolving is the caller's decision to refuse or to accept a directly-entered
+ * price — this function reports, it does not decide.
+ *
+ * @throws PriceResolutionError when `PricingDriverClass` names a key with no registered resolver,
+ *   or when the driver lookup itself could not be read.
  */
 export async function ResolvePrice(
     ctx: PriceResolutionContext,
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<ResolvedPrice | null> {
-    const keys: string[] = [`Product:${ctx.ProductID}`];
+    const keys: string[] = [];
+    const named = await namedDriverKey(ctx, provider, user);
+    if (named) keys.push(named);
+    keys.push(`Product:${ctx.ProductID}`);
     for (const cat of await categoryChain(ctx.ProductCategoryID, provider, user)) {
         keys.push(`Category:${cat}`);
     }
     keys.push(`Company:${ctx.CompanyID}`);
 
+    const tried = new Set<string>();
     for (const key of keys) {
+        // A named driver may BE an ID key (`Company:<id>` is the documented convention) — ask once.
+        if (tried.has(key.toLowerCase())) continue;
+        tried.add(key.toLowerCase());
         // Probe first. CreateInstance falls back to the no-key default and warns when the
         // Product/Category/Company key has no plugin — which is the common case.
         if (!isRegistered(key)) continue;
@@ -532,9 +555,61 @@ export async function ResolvePrice(
         if (hit) return { ...hit, ResolvedBy: key };
     }
 
-    const fallback = MJGlobal.Instance.ClassFactory.CreateInstance<BasePriceResolver>(BasePriceResolver);
+    const fallback = defaultResolver();
     if (!fallback) return null;
     return fallback.Resolve(ctx, provider, user);
+}
+
+/**
+ * The no-key registration — `DefaultPriceResolver` unless a host overrides it.
+ *
+ * Not `CreateInstance(BasePriceResolver)`: with no key, ClassFactory matches EVERY registration and
+ * returns the highest priority, which on equal priorities is the last registered. Any keyed plugin
+ * loaded after this module would then become the "default" for products it was never named for.
+ */
+function defaultResolver(): BasePriceResolver | null {
+    const unkeyed = (MJGlobal.Instance.ClassFactory.GetAllRegistrations(BasePriceResolver) ?? []).filter(
+        (r) => !r.Key?.trim(),
+    );
+    if (!unkeyed.length) return null;
+    const top = Math.max(...unkeyed.map((r) => r.Priority));
+    const reg = unkeyed.filter((r) => r.Priority === top).pop();
+    return reg ? (new reg.SubClass() as BasePriceResolver) : null;
+}
+
+/**
+ * The resolver key `PricingDriverClass` names for this line, or null when no level names one.
+ *
+ * Uses `ResolvePricingDriver`, the walk the browser runs before pricing locally, so the server
+ * invokes exactly the plugin whose presence made the browser escalate. A name with no registration
+ * is refused rather than skipped: it is misconfiguration, and the default resolver's answer would
+ * be a confident wrong price (the GL walk's tripwire, D5). A failed lookup is refused for the same
+ * reason — it cannot be told apart from "no driver".
+ */
+async function namedDriverKey(
+    ctx: PriceResolutionContext,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string | null> {
+    const verdict = await ResolvePricingDriver(
+        ctx.ProductID,
+        ctx.CompanyID,
+        provider as unknown as IRunViewProvider,
+        user,
+    );
+    if (verdict.Unresolved) {
+        throw new PriceResolutionError(ctx.ProductID, `Could not determine the pricing driver: ${verdict.Unresolved}`);
+    }
+    const key = verdict.DriverClass?.trim();
+    if (!key) return null;
+    if (!isRegistered(key)) {
+        throw new PriceResolutionError(
+            ctx.ProductID,
+            `PricingDriverClass '${key}' (set on the ${verdict.Level}) names no registered BasePriceResolver. ` +
+                `Register a resolver under that key on the server, or clear the column.`,
+        );
+    }
+    return key;
 }
 
 /** Whether a ClassFactory registration exists for this exact key. */
