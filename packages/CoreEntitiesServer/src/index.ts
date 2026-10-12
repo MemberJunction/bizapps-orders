@@ -482,6 +482,9 @@ export type {
     ListRefundsRequest,
     ListRefundsResult,
     GatewayCharge,
+    GatewayChargeItem,
+    ListChargeItemsRequest,
+    ListChargeItemsResult,
     ListChargesRequest,
     ListChargesResult,
     RetrieveChargeRequest,
@@ -530,6 +533,20 @@ export {
     CreateOrderFromGatewayCharge,
     LoadCreateOrderFromProviderPaymentOperation,
 } from './CreateOrderFromProviderPaymentOperation.js';
+export {
+    BuyerFromCharge,
+    ChooseProductForCharge,
+    PriceMapLookup,
+    SplitBuyerName,
+} from './UnmatchedChargeRules.js';
+export type { ChargeBuyer, ProviderPriceMapRow, UnmatchedChargeUnresolved, UnmatchedChargeUnresolvedCode } from './UnmatchedChargeRules.js';
+export {
+    CreateOrderForUnmatchedCharge,
+    IsUnmatchedCharge,
+    LoadProviderPriceMap,
+    PAYMENT_PROVIDER_PRICE_ENTITY,
+} from './UnmatchedChargeOrders.js';
+export type { UnmatchedChargeOutcome } from './UnmatchedChargeOrders.js';
 export {
     BookProviderRefunds,
     PlanProviderRefundBooking,

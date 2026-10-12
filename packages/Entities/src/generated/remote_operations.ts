@@ -1937,7 +1937,21 @@ export interface PaymentProviderReconciliationResult {
     ChargesRead: number;
     RefundsRead: number;
     Mismatches: number;
+    /** Orders created from this provider's unmatched charges. Zero in preview. */
+    OrdersCreated: number;
     Message?: string;
+}
+
+/** A paid order created from a charge that matched no Orders payment (#481). */
+export interface PaymentProviderUnmatchedChargeOrder {
+    PaymentProviderID: string;
+    ProviderChargeID: string;
+    OrderHeaderID: string;
+    OrderNumber?: string | null;
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    /** The charge's gross amount, major units. */
+    Amount: number;
 }
 
 export interface PaymentProviderReconciliationError {
@@ -1959,6 +1973,11 @@ export interface OrdersReconcilePaymentProviderChargesOutput {
     Raised: number;
     /** Mismatches that already had an exception from an earlier run. */
     AlreadyRaised: number;
+    /**
+     * Charges without a payment that became paid orders: the provider's price map named the product
+     * and the charge's e-mail named the buyer. They are not in Mismatches. Empty in preview.
+     */
+    OrdersCreated: PaymentProviderUnmatchedChargeOrder[];
     Errors: PaymentProviderReconciliationError[];
 }
 
