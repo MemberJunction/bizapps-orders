@@ -999,10 +999,15 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return !!f && f.Dirty && f.Value == null && f.OldValue != null;
     }
 
-    /** True when this save sets `field` to a value it did not have on disk. */
+    /**
+     * True when this save sets `field` to a value it did not have on disk. On a new record every
+     * value counts: MemberJunction records the first value set on a fresh field as its old value,
+     * so `Dirty` is false for a field set once before the first save.
+     */
     private isChangedThisSave(field: string): boolean {
         const f = this.GetFieldByName(field);
-        return !!f && f.Dirty && f.Value != null;
+        if (!f || f.Value == null) return false;
+        return f.Dirty || !this.IsSaved;
     }
 
     /**
