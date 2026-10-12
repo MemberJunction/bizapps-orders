@@ -1,6 +1,8 @@
 -- One-row party lifetime for the Person / Organization form header.
 -- PartyKind is only used in Nunjucks branches — it never touches SQL text.
 -- PartyID is quoted via sqlString.
+-- Years are counted to the BUSINESS day (fnBusinessToday), not the UTC one, which turns the year
+-- over on Dec 31 evening for anyone west of Greenwich.
 SELECT
     ISNULL(o.OrderCount, 0) AS OrderCount,
     ISNULL(o.OpenCount, 0) AS OpenCount,
@@ -9,10 +11,11 @@ SELECT
     o.FirstOrderDate,
     CASE
         WHEN o.FirstOrderDate IS NULL THEN NULL
-        ELSE DATEDIFF(year, o.FirstOrderDate, SYSUTCDATETIME())
+        ELSE DATEDIFF(year, o.FirstOrderDate, bt.Today)
     END AS YearsAsCustomer,
     ISNULL(s.ActiveSubCount, 0) AS ActiveSubCount
 FROM (SELECT 1 AS OneRow) AS seed
+CROSS JOIN [__mj_BizAppsCommon].[fnBusinessToday]() AS bt
 OUTER APPLY (
     SELECT
         COUNT(*) AS OrderCount,
