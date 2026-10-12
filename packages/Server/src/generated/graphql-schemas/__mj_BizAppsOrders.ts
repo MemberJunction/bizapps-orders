@@ -5798,11 +5798,11 @@ export class mjBizAppsOrdersOrderConcession_ {
     @MaxLength(36)
     SubscriptionTermID?: string;
         
-    @Field({nullable: true, description: `How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).`}) 
+    @Field({nullable: true, description: `How the value was given: Price (a lower price than the price engine's, or a booked term's amount lowered when NewAmount is set), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).`}) 
     @MaxLength(20)
     DeliveryForm?: string;
         
-    @Field({nullable: true, description: `Why it was granted: Retention, Referral or Other. Retention concessions and referral credits have different economics and are reported separately.`}) 
+    @Field({nullable: true, description: `Why it was granted: Retention, Referral, Dispute (a reduction agreed on a disputed charge) or Other. Each has different economics and is reported separately.`}) 
     @MaxLength(20)
     ReasonCategory?: string;
         
@@ -5883,6 +5883,16 @@ export class mjBizAppsOrdersOrderConcession_ {
         
     @Field({nullable: true, description: `For a Shift or Shorten concession, the term's end date once it is approved and applied.`}) 
     NewEndDate?: Date;
+        
+    @Field(() => Float, {nullable: true, description: `For an amount change, the term's new amount: net of discount, before tax, and lower than its amount when recorded. NULL for every other concession.`}) 
+    NewAmount?: number;
+        
+    @Field({nullable: true, description: `For an amount change about one invoice, the invoiced instalment it is about. NULL spreads the reduction over the instalments not yet invoiced.`}) 
+    @MaxLength(36)
+    AppliesToPaymentScheduleID?: string;
+        
+    @Field(() => Float, {nullable: true, description: `For an approved amount change, the reduction and its tax taken off the order's instalments not yet invoiced. The order's balance and its schedule check subtract it from the booked lines. Set by the server when the change is applied.`}) 
+    ScheduleReduction?: number;
         
     @Field({nullable: true}) 
     @MaxLength(40)
@@ -6003,6 +6013,15 @@ export class CreatemjBizAppsOrdersOrderConcessionInput {
     @Field({ nullable: true })
     NewEndDate: Date | null;
 
+    @Field(() => Float, { nullable: true })
+    NewAmount: number | null;
+
+    @Field({ nullable: true })
+    AppliesToPaymentScheduleID: string | null;
+
+    @Field(() => Float, { nullable: true })
+    ScheduleReduction: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6093,6 +6112,15 @@ export class UpdatemjBizAppsOrdersOrderConcessionInput {
 
     @Field({ nullable: true })
     NewEndDate?: Date | null;
+
+    @Field(() => Float, { nullable: true })
+    NewAmount?: number | null;
+
+    @Field({ nullable: true })
+    AppliesToPaymentScheduleID?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    ScheduleReduction?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
