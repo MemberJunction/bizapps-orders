@@ -3295,7 +3295,25 @@ export class OrderEntityServer extends OrderHeaderEntity {
              * external veto, so outside booking this loop has to let the line be asked.
              */
             serverLine.BypassExternalEditVeto = this.bookingInFlight;
-            await line.Save(options);
+            // Checked like the term save above: a refused save here left the line's link and service
+            // period unwritten while the confirm reported success.
+            if (!(await line.Save(options))) {
+                throw new Error(
+                    `Failed to link order line ${line.LineNumber} to its subscription: ` +
+                        `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+
+            // `lines` were loaded for booking, so they are separate objects from `this.Lines`. Booking
+            // later saves the `this.Lines` copy (journal entry and running-total stamps), and an update
+            // writes every column, so that copy has to carry what was just written or it puts the
+            // link and the service period back to their pre-confirm values.
+            const inMemory = this.Lines.Items.find((l) => l !== line && UUIDsEqual(l.ID, line.ID));
+            if (inMemory) {
+                inMemory.SubscriptionID = line.SubscriptionID;
+                inMemory.ServicePeriodStart = line.ServicePeriodStart;
+                inMemory.ServicePeriodEnd = line.ServicePeriodEnd;
+            }
         }
 
         return out;
