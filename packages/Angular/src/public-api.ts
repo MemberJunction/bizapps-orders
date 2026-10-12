@@ -17,6 +17,8 @@ import './lib/generated/generated-forms.module';
 import './lib/custom/custom-forms.module';
 import { LoadCustomForms } from './lib/custom/custom-forms.module';
 import './lib/form-panels/party-headers.module';
+// Staff section contributor (Common's Organization form): importing fires @RegisterClass.
+import './lib/form-panels/organization-staff-orders.contributor';
 import './lib/form-panels/document-forms.module';
 
 // Import generated class registrations manifest
@@ -60,6 +62,7 @@ export { BizAppsSubscriptionTermFormComponent } from './lib/custom/SubscriptionT
 export { BizAppsPaymentHeaderFormComponent } from './lib/custom/PaymentHeader/payment-header-form.component';
 
 export { OrdersPartyHeadersModule } from './lib/form-panels/party-headers.module';
+export { OrdersStaffContributor, BuildStaffOrderContribution, QuotedStaffIDs, type StaffOrderRow, type StaffSubscriptionRow } from './lib/form-panels/organization-staff-orders.contributor';
 export { PersonOrdersOverviewPanel } from './lib/form-panels/person-orders-overview.panel';
 export { OrganizationOrdersOverviewPanel } from './lib/form-panels/organization-orders-overview.panel';
 export { PartyOrdersOverviewComponent } from './lib/panels/party-orders-overview.component';
