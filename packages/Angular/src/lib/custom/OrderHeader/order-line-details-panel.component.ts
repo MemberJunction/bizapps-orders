@@ -60,6 +60,15 @@ export class MJOOrderLineDetailsPanelComponent {
      */
     @Input() public StampedTags: MJOStampedTag[] | null = null;
 
+    /**
+     * The values the order's company books under, lower-cased: those its own Dimension Defaults use.
+     * Null or empty means no scoping is available and every value is offered.
+     */
+    @Input() public CompanyValueIDs: ReadonlySet<string> | null = null;
+
+    /** Offer every value of the axis rather than only the company's. */
+    public ShowAllValues = false;
+
     /** A choice waiting on "replace the default?" — held here, not written to the line, until answered. */
     public PendingReplace: { DimensionID: string; ValueID: string; ValueLabel: string; Replaces: MJOStampedTag } | null =
         null;
@@ -85,6 +94,7 @@ export class MJOOrderLineDetailsPanelComponent {
 
     public Close(): void {
         this.PendingReplace = null;
+        this.ShowAllValues = false;
         this.Closed.emit();
     }
 
@@ -101,9 +111,48 @@ export class MJOOrderLineDetailsPanelComponent {
         return this.Line?.DimensionValueID ?? '';
     }
 
-    /** The values selectable right now — those of the chosen dimension, or none until one is chosen. */
+    /**
+     * The values selectable right now — those of the chosen dimension the order's company uses, or
+     * all of them when "show all" is on.
+     *
+     * The value already on the line and the one stamped on the axis are always kept, or the picker
+     * would show a blank for a tag the line really carries. An axis the company uses no value of
+     * offers everything: an empty list would leave nothing to pick and no reason shown.
+     */
     public get ValuesForSelectedDimension(): Array<{ ID: string; Code: string; Name: string }> {
-        return this.SelectedDimension?.Values ?? [];
+        const all = this.SelectedDimension?.Values ?? [];
+        const scoped = this.companyScoped(all);
+        return scoped ?? all;
+    }
+
+    /** True when the list is narrowed to the company's values and "show all" would add more. */
+    public get IsValueListScoped(): boolean {
+        return this.companyScoped(this.SelectedDimension?.Values ?? []) !== null;
+    }
+
+    /** True when the toggle has something to switch between. */
+    public get CanToggleValueScope(): boolean {
+        return this.IsValueListScoped || this.ShowAllValues;
+    }
+
+    public ToggleShowAllValues(): void {
+        this.ShowAllValues = !this.ShowAllValues;
+        this.cdr.detectChanges();
+    }
+
+    /** The company's values on this axis, or null when scoping does not apply or removes nothing. */
+    private companyScoped(
+        all: Array<{ ID: string; Code: string; Name: string }>,
+    ): Array<{ ID: string; Code: string; Name: string }> | null {
+        const scope = this.CompanyValueIDs;
+        if (this.ShowAllValues || !scope?.size || !all.length) return null;
+        const keep = new Set([...scope]);
+        if (this.SelectedValueID) keep.add(this.SelectedValueID.toLowerCase());
+        const stamped = this.StampedOnSelected;
+        if (stamped) keep.add(stamped.ValueID.toLowerCase());
+        const scoped = all.filter((v) => keep.has(v.ID.toLowerCase()));
+        if (!scoped.length || scoped.length === all.length) return null;
+        return scoped;
     }
 
     /** The value already stamped on the chosen axis, shown under the value picker. */
@@ -120,7 +169,7 @@ export class MJOOrderLineDetailsPanelComponent {
     public get SelectedValueLabel(): string {
         const valueID = this.SelectedValueID;
         if (!valueID) return '';
-        const hit = this.ValuesForSelectedDimension.find((v) => UUIDsEqual(v.ID, valueID));
+        const hit = (this.SelectedDimension?.Values ?? []).find((v) => UUIDsEqual(v.ID, valueID));
         return hit ? `${hit.Code} — ${hit.Name}` : valueID;
     }
 
@@ -150,6 +199,7 @@ export class MJOOrderLineDetailsPanelComponent {
         this.Line.DimensionID = target.value || null;
         this.Line.DimensionValueID = null;
         this.PendingReplace = null;
+        this.ShowAllValues = false;
         this.cdr.detectChanges();
     }
 
@@ -166,7 +216,7 @@ export class MJOOrderLineDetailsPanelComponent {
         const valueID = target.value || '';
         const replaces = DefaultReplacedBy(this.StampedTags ?? [], this.SelectedDimensionID, valueID);
         if (replaces) {
-            const option = this.ValuesForSelectedDimension.find((v) => UUIDsEqual(v.ID, valueID));
+            const option = (this.SelectedDimension?.Values ?? []).find((v) => UUIDsEqual(v.ID, valueID));
             this.PendingReplace = {
                 DimensionID: this.SelectedDimensionID,
                 ValueID: valueID,

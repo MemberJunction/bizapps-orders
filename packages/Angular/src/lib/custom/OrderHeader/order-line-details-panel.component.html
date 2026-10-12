@@ -105,6 +105,15 @@
                                 }
                             </select>
 
+                            @if (CanToggleValueScope) {
+                                <span class="mjo-ldp__note">
+                                    {{ ShowAllValues ? 'Showing every value.' : "Showing values this order's company uses." }}
+                                    <button type="button" class="mjo-ldp__clear" (click)="ToggleShowAllValues()">
+                                        {{ ShowAllValues ? "Only this company's" : 'Show all' }}
+                                    </button>
+                                </span>
+                            }
+
                             @if (StampedOnSelected; as stamped) {
                                 <span class="mjo-ldp__note">
                                     {{ stamped.Source === 'line' ? 'Set on this line' : 'Default' }}:
