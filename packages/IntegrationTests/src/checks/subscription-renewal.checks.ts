@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR21).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR31).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -51,6 +51,8 @@
  *   SR28  a successor that is not Active is not renewed onto
  *   SR29  a renewal priced below today's list books without a concession hold
  *   SR30  a monthly term that crosses no anniversary renews with no increase
+ *
+ *   SR31  a prorated 10-seat first term renews at 10 seats, not the line's prorated quantity (#589)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -1149,6 +1151,46 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 const c = out.Candidates[0];
                 AssertEqual(Number(c.IncreasePercent), 0, 'February is not an anniversary');
                 AssertEqual(Number(c.UnitPrice), 24, 'the prior price');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR31',
+        Name: 'SR31: a prorated 10-seat first term renews at 10 seats, not the prorated line quantity',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // Mid-year on a Jan-1-anchored type, so the first term is prorated and the line's
+                // stored quantity is 10 × ~0.5. The renewal used to take its quantity from there.
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 10, UnitPrice: 1200 }],
+                });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+                const term = await TxOne<{ SubscriptionID: string; EndDate: string; Quantity: number; IsProrated: boolean }>(
+                    ctx,
+                    `SELECT st.SubscriptionID, st.EndDate, st.Quantity, st.IsProrated
+                     FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+                     JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+                     WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+                );
+                Assert(term.IsProrated, 'precondition: the first term is prorated');
+                AssertEqual(Number(term.Quantity), 10, 'the first term records 10 seats');
+
+                const out = await spawnRenewals(ctx, { SubscriptionID: term.SubscriptionID, AsOfDate: daysBefore(term.EndDate, 10) });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Message} ${out.Candidates[0]?.SkippedReason ?? ''}`);
+                const line = await TxOne<{ Quantity: number }>(
+                    ctx,
+                    `SELECT Quantity FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${out.Candidates[0].OrderID}'`,
+                );
+                AssertEqual(Number(line.Quantity), 10, 'the renewal line buys 10 seats');
+                const [, renewed] = await TxQuery<{ Quantity: number }>(
+                    ctx,
+                    `SELECT Quantity FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE SubscriptionID = '${term.SubscriptionID}' ORDER BY TermNumber`,
+                );
+                AssertEqual(Number(renewed.Quantity), 10, 'term 2 records 10 seats');
             }),
     },
 ];

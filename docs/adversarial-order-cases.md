@@ -409,7 +409,7 @@ held up under all of it. Everything below is a DOMAIN failure the ledger cannot 
 | C24b | **A product available from 2030-01-01 sold today**, at 85.00. | ORD-000052 | **Fixed when the engine prices the line; no test yet.** `assertProductSellable` in `packages/Entities/src/pricing/OrderPricingService.ts` refuses a line when the order's date is outside `AvailableFrom` / `AvailableTo`, or the product is not `Active`. It runs only for a line with no stated `UnitPrice`, so a hand-priced line of the same product still sells. |
 | C26 | **A product whose availability window closed 2021-12-31 sold today**, at 80.00. | ORD-000054 | **Fixed when the engine prices the line; no test yet.** Same check and same gap as C24b. |
 | C25 | **An event with `Capacity = 1` sold 5 seats** — and `RequiresAttendeeInfo` is true with no attendee rows. | ORD-000053 | **Open: #33.** Capacity is deliberately not enforced until there is a seat count or a reservation model (`docs/HOW_THE_SYSTEM_WORKS.md` §13, `plans/archive/bizapps-orders-master.md` §21b). `RequiresAttendeeInfo` is not enforced either: the product form edits it, and no order code reads it. |
-| C18 | **A subscription bought with quantity 10 records no seat count.** The line says 10 and bills 10,000; the subscription is one coverage window with no notion of how many seats it covers. | ORD-000049 → SUB-000007 | **Open.** `Subscription` and `SubscriptionTerm` still have no quantity column. The decision it waits on is in `plans/archive/bizapps-orders-master.md` §21c. |
+| C18 | **A subscription bought with quantity 10 records no seat count.** The line says 10 and bills 10,000; the subscription is one coverage window with no notion of how many seats it covers. | ORD-000049 → SUB-000007 | **Fixed (#589).** `SubscriptionTerm.Quantity` records the seats bought, taken before proration scales the line's quantity. Entitlement grants and renewals read it. A fractional quantity (the 2.5 variant) is refused. Tests: `subscriptions.SB30`, `SB31`, `subscription-renewal.SR31`, `entitlements.EN15`. |
 
 The availability pair (C24b/C26) is one gap, not two: `Status = 'Discontinued'` **is**
 enforced (C24 was correctly refused), but `AvailableFrom` / `AvailableTo` are not
@@ -472,6 +472,7 @@ case probes, on ORD-WORLD data rather than the case's own numbers.
 | C15 | `subscriptions.SB27` | Two lines of one `ExtendExisting` product for one subscriber on one order make one subscription with contiguous terms. |
 | C16 | `subscriptions.SB8`, `subscriptions.SB28`, `volume.VL7`, `line-subscriber.LS6` | `RejectDuplicate` across separate orders (SB8) and between two lines of one order (SB28), and the seat type's refusal when no person resolves. |
 | C17 | `subscriptions.SB7`, `volume.VL6`, `subscriptions.SB29` | Extension across separate orders (orders A and B), and order C's two lines taking the next two term numbers in sequence (SB29). |
+| C18 | `subscriptions.SB30`, `subscriptions.SB31`, `subscription-renewal.SR31`, `entitlements.EN15` | Seats on a prorated and an unprorated term, the 2.5 variant refused, two seats on a one-person type, a renewal and a grant at the seat count. |
 | C19 | `events.EV10` | Deferral and release in each line's company, for event lines. No check sells a subscription on a mixed-company order; `payment-deposit.PM11` confirms Harbor House's membership on its own order and asserts nothing about the subscription. |
 | C20 | `order-booking.OB2` | Each entry books in its line's company, with two companies rather than three. |
 | C21 | `intercompany.IC2`, `intercompany.IC3`, `intercompany.IC6`, `intercompany.IC5` | IC2 and IC3 are the control, IC6 the partial payment. IC5 confirms an order with a line of a GL-linked company that has no pair with the collector, and asserts the payment is refused naming the missing `IntercompanyAccountMatch`; two companies rather than three. |
@@ -479,7 +480,7 @@ case probes, on ORD-WORLD data rather than the case's own numbers.
 | C25 | `events.EV1`, `events.EV3`, `events.EV8` | Dates from the event, one release on its end date, and quantity scaling the deferral. Not capacity or attendee capture. |
 | C26 | `order-booking.OB14` | A back-dated order keeps the date it states; the entry's date and its fiscal-year numbering are not checked. |
 
-No integration check covers C4, C5, C7, C8, C9, C18, C22 or C24. Two lines of one subscription
+No integration check covers C4, C5, C7, C8, C9, C22 or C24. Two lines of one subscription
 product for the same subscriber on one order are covered by `subscriptions.SB27` (C15),
 `subscriptions.SB28` (C16) and `subscriptions.SB29` (order C of C17).
 `line-subscriber.LS4` and `LS8` put several lines of one seat product on one order, each for a
