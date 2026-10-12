@@ -734,6 +734,7 @@ export class CheckoutSessionService {
             type: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select';
             required: boolean;
             placeholder?: string;
+            options?: Array<{ label: string; value: string }>;
         }> = [];
 
         // Check if extension links to a Person
@@ -774,9 +775,16 @@ export class CheckoutSessionService {
                 fieldType = 'date';
             } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(sqlType)) {
                 fieldType = 'number';
-            } else if (['ntext', 'text', 'nvarchar(max)', 'varchar(max)'].includes(sqlType) || (f.Length && f.Length > 255)) {
+            } else if (['ntext', 'text'].includes(sqlType) || f.Length === -1 || f.MaxLength > 255) {
+                // MJ stores NVARCHAR(MAX) as Type 'nvarchar' with Length -1. Length is bytes;
+                // MaxLength is characters, which is what the 255 threshold means.
                 fieldType = 'textarea';
             }
+            const options = fieldType === 'select'
+                ? [...(f.EntityFieldValues ?? [])]
+                    .sort((a, b) => a.Sequence - b.Sequence)
+                    .map(v => ({ label: v.Value, value: v.Value }))
+                : undefined;
 
             const camelName = f.Name.charAt(0).toLowerCase() + f.Name.slice(1);
             const label = f.DisplayName?.trim() || f.Name.replace(/([a-z])([A-Z])/g, '$1 $2');
@@ -785,8 +793,10 @@ export class CheckoutSessionService {
                 name: camelName,
                 label,
                 type: fieldType,
-                required: !f.AllowsNull,
-                placeholder: f.Description || label
+                // A column with a default is filled by the database when the buyer leaves it blank.
+                required: !f.AllowsNull && !f.HasDefaultValue,
+                placeholder: f.Description || label,
+                ...(options ? { options } : {})
             });
         }
 
