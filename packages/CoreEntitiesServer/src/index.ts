@@ -193,6 +193,8 @@ export type {
     CancellableTerm,
     CancellationContext,
     CancellationDecision,
+    LaterTermBilling,
+    LaterTermCancellationContext,
 } from './SubscriptionBehavior.js';
 
 export { CancelSubscriptionOperation, LoadCancelSubscriptionOperation } from './CancelSubscriptionOperation.js';
