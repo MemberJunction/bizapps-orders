@@ -42,6 +42,7 @@ import {
     type OrdersPollExternalPaymentsOutput,
     type UnitRef,
     Today,
+    LoadPollJobState,
 } from '@mj-biz-apps/orders-entities';
 
 import type { BaseInvoiceRail, RailPaymentRecord } from './BaseInvoiceRail.js';
@@ -102,7 +103,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<OrdersPollExternalPaymentsOutput> {
-        const preview = !!input?.Preview;
+        let preview = !!input?.Preview;
         const maxCount = Math.max(1, Math.floor(Number(input?.MaxCount ?? DEFAULT_MAX)));
         const out: OrdersPollExternalPaymentsOutput = {
             Success: true,
@@ -118,7 +119,29 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             NewWatermarks: [],
             PreviewedOnly: preview,
         };
+        // THE SCHEDULED JOB IS THE SWITCH FOR THE WHOLE RAIL (#583). A run that would write follows the
+        // poll job's state whoever calls it — the scheduler, the webhook, the queue page's button:
+        // Disabled or not installed refuses, Preview runs as a preview, only Live records cash. A run
+        // that asked for a preview writes nothing and needs no permission.
+        let previewNote = '';
         try {
+            if (!preview) {
+                const job = await LoadPollJobState(user, provider as unknown as IRunViewProvider);
+                if (job.State === 'NotInstalled' || job.State === 'Inactive') {
+                    return {
+                        ...out,
+                        Success: false,
+                        ResultCode: 'ERROR',
+                        Message: `Nothing was polled or recorded: ${job.Why}. Payments are recorded only while the scheduled poll job is Active and out of Preview.`,
+                    };
+                }
+                if (job.State === 'Preview') {
+                    preview = true;
+                    out.ResultCode = 'PREVIEWED';
+                    out.PreviewedOnly = true;
+                    previewNote = `Ran as a preview because ${job.Why}; nothing was recorded. `;
+                }
+            }
             const providers = input?.PaymentProviderID
                 ? [{ ID: RequireUUID(input.PaymentProviderID, 'PaymentProviderID'), CompanyID: '' }]
                 : await ListInvoiceRailProviderIDs(provider, user);
@@ -142,7 +165,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 else out.Ignored++;
             }
             if (faults.length) {
-                return { ...out, Success: false, ResultCode: 'ERROR', Message: `The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
+                return { ...out, Success: false, ResultCode: 'ERROR', Message: `${previewNote}The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
             }
             if (!preview && out.Unmatched + out.Refused + out.Reapplied + out.ReversalNeeded > 0) {
                 return {
@@ -153,7 +176,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 };
             }
             out.Message = preview
-                ? `Would capture ${out.Outcomes.filter((o) => o.Disposition === 'Captured').length} payment(s); ${out.Held} held, ${out.Unmatched} unmatched.`
+                ? `${previewNote}Would capture ${out.Outcomes.filter((o) => o.Disposition === 'Captured').length} payment(s); ${out.Held} held, ${out.Unmatched} unmatched.`
                 : `${out.Captured} payment(s) captured, ${out.Held} held, ${out.Ignored} already known.`;
             return out;
         } catch (err) {
