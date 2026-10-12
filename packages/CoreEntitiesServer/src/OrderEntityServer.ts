@@ -100,9 +100,12 @@ import {
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
 import { PaymentTermsChangeGranted } from './PaymentTermsSanction.js';
-import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { ExplainShortfalls, ScheduleCoverage, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { LowerInstalments } from './AmountChange.js';
+import { PlanReduction } from './AmountChangePlan.js';
+import { OrderStillToBill, ReturnScheduleReduction } from './ReversalScheduleReduction.js';
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
-import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
+import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { CheckOrderBillToName, LoadBillToName } from './RailCustomerNameLimit.js';
 import { Today, AllocateProRata, AuthorizeManualDiscount, DeletePromotionAdjustments, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ReadStandingDiscounts, ReadStatedTaxCharges, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
@@ -898,6 +901,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
                 // And the mirror: a returned line takes its access with it.
                 await this.revokeEntitlementsForReversals(lines, reversals, options);
+
+                // What a return had not yet been invoiced for comes off the origin's instalments
+                // (#661). Before the cancel below, which withdraws them all on a whole-order return:
+                // the reductions are measured against the instalments as they stand.
+                await this.reduceOriginSchedules(lines, reversals, options);
 
                 // A reversed order stops billing (D92 §6). Inside, for the same reason as the two
                 // above: an order that credits the customer back and keeps invoicing them every
@@ -2237,6 +2245,164 @@ export class OrderEntityServer extends OrderHeaderEntity {
             });
         }
         return memos;
+    }
+
+    /**
+     * Take what each returning line had not yet been invoiced for off its origin's instalments (#661).
+     *
+     * A returning line whose origin is billed by instalment records `ScheduleReduction`: the returned
+     * units' share of what the origin line's uninvoiced instalments still bill (see
+     * `ReversalScheduleReduction`). The credit memo booked the other part, what was invoiced and not
+     * yet earned. The origin's balance, its schedule check and each later instalment invoice take the
+     * reduction off the origin's lines.
+     *
+     * A PARTIAL RETURN LOWERS THE INSTALMENTS pro rata, the way an amount change does, so what is
+     * still invoiced is what the customer still owes. A return that takes back the whole order leaves
+     * the instalments to `cancelOriginInstalments`, which withdraws every uninvoiced one; its
+     * reductions are still recorded, so the origin's balance agrees.
+     *
+     * Every returning line of one origin is measured against ONE reading of it, before anything is
+     * lowered, and against the quantity left before this order: two lines returning from the same
+     * origin line take shares that add up to what one line returning both would take.
+     */
+    private async reduceOriginSchedules(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const ctx = { Provider: provider, User: user };
+
+        const byOrigin = new Map<string, Array<{ line: mjBizAppsOrdersOrderLineEntity; context: ReversalContext }>>();
+        for (const line of lines) {
+            const context = reversals.get(uuidKey(line.ID));
+            if (!context?.OriginScheduled) continue;
+            const originOrder = uuidKey(context.Origin.OrderHeaderID ?? '');
+            if (!originOrder) continue;
+            byOrigin.set(originOrder, [...(byOrigin.get(originOrder) ?? []), { line, context }]);
+        }
+
+        for (const [originOrder, returning] of byOrigin) {
+            const stillToBill = await OrderStillToBill(originOrder, ctx);
+            const reductions = returning.map(({ line, context }) => ({
+                line,
+                originCompanyID: String(context.Origin.CompanyID ?? ''),
+                gross: ReturnScheduleReduction(
+                    stillToBill.get(String(context.Origin.ID).toLowerCase()) ?? { Net: 0, Tax: 0 },
+                    Number(line.Quantity ?? 0),
+                    context.Origin.Quantity - context.AlreadyReversed,
+                ),
+            }));
+
+            if (!(await IsWholeOrderReversed(originOrder, provider, user))) {
+                await this.lowerOriginInstalments(originOrder, reductions, ctx, options);
+            }
+
+            for (const { line, gross } of reductions) {
+                // The copy booking stamped its journal entry on: this.Lines when it holds the line, else a
+                // fresh load. Writing any other copy would send its stale JournalEntryID back.
+                let current = this.Lines.Items.find((l) => UUIDsEqual(l.ID, line.ID));
+                if (!current) {
+                    current = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+                    if (!(await current.Load(line.ID))) throw new Error(`Return line ${line.LineNumber} could not be reloaded.`);
+                }
+                const stampTarget = this.resolveOrderLineForStamp(current);
+                MarkAsOrdersOwnWrite(stampTarget);
+                stampTarget.ScheduleReduction = gross;
+                const saveOptions = new EntitySaveOptions();
+                if (options) Object.assign(saveOptions, options);
+                saveOptions.IsParentEntitySave = true;
+                if (!(await stampTarget.Save(saveOptions))) {
+                    throw new Error(
+                        `Failed to record what return line ${stampTarget.LineNumber} took off its origin's instalments: ${ExtractEntityErrorMessage(stampTarget)}`,
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Lower one origin order's uninvoiced instalments by what its returning lines take, spread pro
+     * rata over each covering company's instalments as an amount change spreads its reduction.
+     * Refuses what only a credit memo could give back: more than the uninvoiced instalments bill, or
+     * an instalment lowered below what is already paid on it.
+     */
+    private async lowerOriginInstalments(
+        originOrder: string,
+        reductions: Array<{ originCompanyID: string; gross: number }>,
+        ctx: { Provider: IMetadataProvider; User: UserInfo },
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const rv = new RunView(ctx.Provider as unknown as IRunViewProvider);
+        const [order, rows] = await Promise.all([
+            rv.RunView<{ OrderNumber: string | null; CompanyID: string }>(
+                { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${RequireUUID(originOrder, 'OrderHeaderID')}'`, Fields: ['OrderNumber', 'CompanyID'], ResultType: 'simple' },
+                ctx.User,
+            ),
+            rv.RunView<{ ID: string; CompanyID: string; InstallmentNumber: number; DueDate: Date | string; Amount: number; AmountPaid: number | null; Balance: number | null; Status: string; DocumentNumber: string | null }>(
+                {
+                    EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+                    ExtraFilter: `OrderHeaderID = '${RequireUUID(originOrder, 'OrderHeaderID')}'`,
+                    Fields: ['ID', 'CompanyID', 'InstallmentNumber', 'DueDate', 'Amount', 'AmountPaid', 'Balance', 'Status', 'DocumentNumber'],
+                    OrderBy: 'InstallmentNumber',
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                ctx.User,
+            ),
+        ]);
+        const origin = order.Results?.[0];
+        if (!order.Success || !rows.Success || !origin) {
+            throw new Error(`The order a return takes back from (${originOrder}) could not be read to lower its instalments.`);
+        }
+        const schedule = rows.Results ?? [];
+        const coverage = ScheduleCoverage(
+            schedule.map((r) => ({ CompanyID: r.CompanyID, Amount: Number(r.Amount), Status: r.Status })),
+            reductions.map((r) => r.originCompanyID),
+            origin.CompanyID,
+        );
+        const byCovering = new Map<string, number>();
+        for (const r of reductions) {
+            const covering = coverage.get(r.originCompanyID.toLowerCase()) ?? origin.CompanyID.toLowerCase();
+            byCovering.set(covering, (byCovering.get(covering) ?? 0) + r.gross);
+        }
+
+        for (const [covering, gross] of byCovering) {
+            if (!(Math.round(gross * 100) > 0)) continue;
+            const instalments = schedule.filter((r) => String(r.CompanyID).toLowerCase() === covering);
+            const plan = PlanReduction({
+                GrossReduction: gross,
+                Instalments: instalments.map((i) => ({
+                    ID: i.ID,
+                    InstallmentNumber: Number(i.InstallmentNumber),
+                    DueDate: new Date(i.DueDate).toISOString().slice(0, 10),
+                    Amount: Number(i.Amount),
+                    Balance: Number(i.Balance ?? i.Amount),
+                    Status: i.Status,
+                    DocumentNumber: i.DocumentNumber,
+                })),
+                OrderBalance: 0,
+            });
+            const label = `order ${origin.OrderNumber ?? originOrder}`;
+            if (typeof plan === 'string') throw new Error(`The instalments of ${label} could not be lowered for the return: ${plan}`);
+            if (plan.CreditMemo > 0) {
+                throw new Error(
+                    `The return takes ${gross.toFixed(2)} off the instalments of ${label}, but they bill only ` +
+                        `${(gross - plan.CreditMemo).toFixed(2)} not yet invoiced. The rest needs a credit memo this return cannot issue.`,
+                );
+            }
+            for (const change of plan.Instalments) {
+                const paid = Number(instalments.find((r) => r.ID === change.ID)?.AmountPaid ?? 0);
+                if (change.NewAmount < paid) {
+                    throw new Error(
+                        `Instalment ${change.InstallmentNumber} of ${label} has ${paid.toFixed(2)} paid on it and the return would ` +
+                            `lower it to ${change.NewAmount.toFixed(2)}. Giving back money already paid needs a credit memo this return cannot issue.`,
+                    );
+                }
+            }
+            await LowerInstalments(plan.Instalments, 'the return was confirmed', ctx, options);
+        }
     }
 
     /**
