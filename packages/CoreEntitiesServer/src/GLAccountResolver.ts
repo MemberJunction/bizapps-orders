@@ -16,11 +16,18 @@
  * Most specific wins; the first link found at any level ends the walk. Nothing resolves → we
  * FAIL LOUDLY (plan D5: "fail loudly" — never silently book to a default account).
  *
- * COMPANY INVARIANT (plan D6): the resolved account MUST belong to the order line's company.
- * Accounting derives a JE's company from `GLAccount.CompanyID` and takes no CompanyID in its
- * contract (their CH-2), so a mis-resolved account would silently book revenue to the wrong
+ * COMPANY INVARIANT (plan D6): the resolved account MUST belong to the order line company's
+ * LEGAL ENTITY — the company itself, unless it is a Division, Department or Branch, which uses the
+ * books of the first company above it of any other type (`AccountingEngineBase.LegalEntityFor`,
+ * golive #313). Accounting derives a JE's company from `GLAccount.CompanyID` and takes no CompanyID
+ * in its contract (their CH-2), so a mis-resolved account would silently book revenue to the wrong
  * legal entity with nothing downstream to catch it. This class is therefore the ONLY place that
- * invariant can be enforced, and it hard-blocks — cross-company mapping is refused entirely.
+ * invariant can be enforced, and it hard-blocks — mapping across legal entities is refused entirely.
+ *
+ * A Division owns no accounts, so every lookup is scoped to its legal entity's accounts, and the
+ * company-level default is looked for on the Division's own company record first, then on its legal
+ * entity's. Its entries therefore carry the legal entity's accounts, and the line's dimension tags
+ * keep its revenue separable.
  *
  * CONNECTS TO:
  *   PRIMITIVE: AccountingEngineBase.ResolveLinkedAccount (@mj-biz-apps/accounting-engine-base)
@@ -341,6 +348,12 @@ export class GLAccountResolver {
             /** When given, only links whose ACCOUNT belongs to this company are considered (D71). */
             forCompanyID?: string,
         ) => LinkedAccountHit | null,
+        /**
+         * The company whose books a company uses (`AccountingEngineBase.LegalEntityFor`). Throws,
+         * naming the company, when a Division's setup is incomplete. Defaults to the company itself,
+         * which is every company until its profile says otherwise.
+         */
+        private readonly _legalEntityFor: (companyID: string) => string = (companyID) => companyID,
     ) {}
 
     /** Every successful resolution since the last {@link TakeResolved}, for the dimension check. */
@@ -388,45 +401,78 @@ export class GLAccountResolver {
         asOf: Date,
         productTypeID?: string | null,
     ): Promise<string> {
-        const company = expectedCompanyID;
+        // The accounts must be the legal entity's: a Division books on its parent's books.
+        const books = this._legalEntityFor(expectedCompanyID);
         const hit: LinkedAccountHit | null =
-            (productID ? this._resolveLink(this._entityIDs.Product, productID, role, asOf, company) : null) ??
-            (await this.resolveUpCategoryTree(role, productCategoryID, asOf, company)) ??
+            (productID ? this._resolveLink(this._entityIDs.Product, productID, role, asOf, books) : null) ??
+            (await this.resolveUpCategoryTree(role, productCategoryID, asOf, books)) ??
             (productTypeID
-                ? this._resolveLink(this._entityIDs.ProductType, productTypeID, role, asOf, company)
+                ? this._resolveLink(this._entityIDs.ProductType, productTypeID, role, asOf, books)
                 : null) ??
-            this._resolveLink(this._entityIDs.Company, expectedCompanyID, role, asOf, company);
+            this.resolveCompanyDefault(role, expectedCompanyID, books, asOf);
 
         if (!hit) {
+            const where = UUIDsEqual(books, expectedCompanyID)
+                ? `company ${expectedCompanyID}`
+                : `company ${expectedCompanyID} or its legal entity ${books}`;
             throw new GLAccountResolutionError(
                 role,
                 productID,
                 'NotLinked',
                 productID
                     ? `No GL account is linked for role '${role}'. Checked the product, its category ` +
-                      `tree, its product type, and the company default for company ${expectedCompanyID}. ` +
+                      `tree, its product type, and the company default for ${where}. ` +
                       `Link an account for this role (product, category, product type, or company) before booking.`
-                    : `No GL account is linked for role '${role}' at the company level for company ` +
-                      `${expectedCompanyID}. This role is resolved company-wide (there is no product ` +
-                      `involved), so link an account to the company before booking.`,
+                    : `No GL account is linked for role '${role}' at the company level for ${where}. ` +
+                      `This role is resolved company-wide (there is no product involved), so link an ` +
+                      `account to the company before booking.`,
             );
         }
 
-        // Plan D6 — hard block. Accounting takes no CompanyID; the account IS the company.
-        if (!UUIDsEqual(hit.CompanyID, expectedCompanyID)) {
-            throw new GLAccountResolutionError(
-                role,
-                productID,
-                'CrossCompany',
-                `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ` +
-                    `${hit.CompanyID}, but this books to company ${expectedCompanyID}. ` +
-                    `Cross-company account mapping is refused — the journal entry would book revenue ` +
-                    `to the wrong legal entity.`,
-            );
-        }
-
+        this.refuseOtherBooks(hit, role, productID, expectedCompanyID, books);
         this.record(role, hit);
         return hit.GLAccountID;
+    }
+
+    /**
+     * The company default: the line company's own record, then, for a Division, its legal entity's.
+     * Both are scoped to the legal entity's accounts.
+     */
+    private resolveCompanyDefault(
+        role: GLRole,
+        companyID: string,
+        books: string,
+        asOf: Date,
+    ): LinkedAccountHit | null {
+        const own = this._resolveLink(this._entityIDs.Company, companyID, role, asOf, books);
+        if (own || UUIDsEqual(books, companyID)) return own;
+        return this._resolveLink(this._entityIDs.Company, books, role, asOf, books);
+    }
+
+    /**
+     * Plan D6 — hard block. Accounting takes no CompanyID; the account IS the company, so an account
+     * outside the line company's legal entity would post to the wrong books.
+     */
+    private refuseOtherBooks(
+        hit: { GLAccountID: string; CompanyID: string },
+        role: string,
+        productID: string | null,
+        expectedCompanyID: string,
+        books: string,
+    ): void {
+        if (UUIDsEqual(hit.CompanyID, books)) return;
+        const target = UUIDsEqual(books, expectedCompanyID)
+            ? `company ${expectedCompanyID}`
+            : `company ${expectedCompanyID}, whose legal entity is ${books}`;
+        throw new GLAccountResolutionError(
+            role,
+            productID,
+            'CrossCompany',
+            `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ` +
+                `${hit.CompanyID}, but this books to ${target}. ` +
+                `Cross-company account mapping is refused — the journal entry would book revenue ` +
+                `to the wrong legal entity.`,
+        );
     }
 
     /**
@@ -447,17 +493,10 @@ export class GLAccountResolver {
         expectedCompanyID: string,
         asOf: Date,
     ): Promise<string | null> {
-        const hit = this._resolveLink(entityID, recordID, role, asOf, expectedCompanyID);
+        const books = this._legalEntityFor(expectedCompanyID);
+        const hit = this._resolveLink(entityID, recordID, role, asOf, books);
         if (!hit) return null;
-        if (!UUIDsEqual(hit.CompanyID, expectedCompanyID)) {
-            throw new GLAccountResolutionError(
-                role,
-                recordID,
-                'CrossCompany',
-                `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ${hit.CompanyID}, ` +
-                    `but this books to company ${expectedCompanyID}. Cross-company account mapping is refused.`,
-            );
-        }
+        this.refuseOtherBooks(hit, role, recordID, expectedCompanyID, books);
         this.record(role, hit);
         return hit.GLAccountID;
     }

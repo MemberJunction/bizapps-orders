@@ -37,7 +37,7 @@
  *
  * CONNECTS TO:
  *   CODE: CapturePaymentOperation · PaymentHeaderEntityServer.Lines · PaymentLineEntityServer
- *   DOC:  docs/spec-capture-payment-operation.md · plans/archive/bizapps-orders-master.md D68
+ *   DOC:  plans/archive/spec-capture-payment-operation.md · plans/archive/bizapps-orders-master.md D68
  */
 import { randomUUID } from "node:crypto";
 import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";

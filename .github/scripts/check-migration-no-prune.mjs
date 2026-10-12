@@ -23,7 +23,8 @@
  * CodeGen marks these calls `isRecurringScript: true`, and `omitRecurringScriptsFromLog: true`
  * suppresses them from emitted migration logs. They must remain live-CodeGen-only.
  *
- * See plans/entityfield-prune-replay-defect.md.
+ * See https://github.com/MemberJunction/MJ/blob/next/plans/entityfield-prune-replay-defect.md
+ * (the plan lives in the MJ repo; the heal migration V202609101800 cites it by its MJ path).
  *
  * ── SCOPE ───────────────────────────────────────────────────────────────────────
  * CI form (`<base> <head>`): migration files added, modified, copied or renamed between
@@ -277,7 +278,7 @@ spDeleteUnneededEntityFields is a live-reconciler and must never be emitted into
 replayable versioned migrations (it deletes fields on clean replay).
 Ensure omitRecurringScriptsFromLog: true is set in mj.config.cjs and CodeGenLib.
 
-See plans/entityfield-prune-replay-defect.md for details.`);
+See https://github.com/MemberJunction/MJ/blob/next/plans/entityfield-prune-replay-defect.md for details.`);
         process.exit(1);
     }
 

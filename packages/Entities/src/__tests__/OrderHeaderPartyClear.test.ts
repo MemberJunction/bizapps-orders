@@ -6,11 +6,15 @@
  * party defaults then copied the ship-to person straight back into the bill-to, so the clear
  * never reached the database.
  *
+ * On a saved order nothing records which organization a default stamped, so the cleared
+ * person's employer is cleared by the rule that stamps it, and the form offers an undo
+ * (bizapps-orders#356).
+ *
  * Each test drives the real entity methods in the order the form and the server call them:
  * pick → (clear | replace) → server save.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { OrderHeaderEntity } from '../OrderHeaderEntity';
+import { DescribeClearedEmployers, OrderHeaderEntity, type PartyOrganizationClear } from '../OrderHeaderEntity';
 
 const PERSON = 'aaaaaaaa-0000-4000-8000-000000000001';
 const OTHER_PERSON = 'aaaaaaaa-0000-4000-8000-000000000002';
@@ -57,12 +61,13 @@ function order(options: { onDisk?: Values; employers?: Record<string, string> } 
 }
 
 /** What the order form does when the user changes a person field (MJ's form field has already set it). */
-async function changePerson(o: OrderHeaderEntity, side: 'BillTo' | 'ShipTo', personID: string | null) {
+async function changePerson(o: OrderHeaderEntity, side: 'BillTo' | 'ShipTo', personID: string | null): Promise<PartyOrganizationClear[]> {
     const old = o.Get(`${side}PersonID`) as string | null;
     o.Set(`${side}PersonID`, personID);
     o.Set(`${side}Person`, personID ? `Name of ${personID}` : '');
-    o.ClearPersonParty(side, old);
+    const cleared = await o.ClearPersonParty(side, old);
     if (personID) await o.ApplyPersonPartyDefaults(side);
+    return cleared;
 }
 
 /** What `OrderEntityServer.Save()` runs before writing. */
@@ -141,12 +146,57 @@ describe('clearing the bill-to person on a saved order', () => {
         expect(values).toMatchObject({ BillToPersonID: null, ShipToPersonID: null });
     });
 
-    it('keeps the organizations, since nothing records that they were filled in', async () => {
+    it('clears the organizations that are the person\'s employer, and reports them for undo (#356)', async () => {
         const { o, values } = order({ onDisk: saved });
-        await changePerson(o, 'BillTo', null);
+        const cleared = await changePerson(o, 'BillTo', null);
         await serverSave(o);
 
-        expect(values).toMatchObject({ BillToOrganizationID: EMPLOYER, ShipToOrganizationID: EMPLOYER });
+        expect(values).toMatchObject({ BillToOrganizationID: null, ShipToOrganizationID: null });
+        expect(cleared).toEqual([
+            { Field: 'BillToOrganizationID', OrganizationID: EMPLOYER },
+            { Field: 'ShipToOrganizationID', OrganizationID: EMPLOYER },
+        ]);
+    });
+
+    it('keeps an organization that is not the person\'s employer', async () => {
+        const { o, values } = order({ onDisk: { ...saved, BillToOrganizationID: CHOSEN_ORG } });
+        const cleared = await changePerson(o, 'BillTo', null);
+
+        expect(values.BillToOrganizationID).toBe(CHOSEN_ORG);
+        expect(cleared).toEqual([{ Field: 'ShipToOrganizationID', OrganizationID: EMPLOYER }]);
+    });
+
+    it('keeps the ship-to organization while the ship-to holds someone else', async () => {
+        const { o, values } = order({
+            onDisk: { ...saved, ShipToPersonID: OTHER_PERSON, ShipToOrganizationID: EMPLOYER },
+            employers: { [PERSON]: EMPLOYER, [OTHER_PERSON]: EMPLOYER },
+        });
+        await changePerson(o, 'BillTo', null);
+
+        expect(values).toMatchObject({ ShipToPersonID: OTHER_PERSON, ShipToOrganizationID: EMPLOYER, BillToOrganizationID: null });
+    });
+
+    it('undo puts the organizations back, and the server save keeps them', async () => {
+        const { o, values } = order({ onDisk: saved });
+        const cleared = await changePerson(o, 'BillTo', null);
+        o.RestorePartyOrganizations(cleared);
+        await serverSave(o);
+
+        expect(values).toMatchObject({ BillToPersonID: null, BillToOrganizationID: EMPLOYER, ShipToOrganizationID: EMPLOYER });
+    });
+});
+
+describe('the cleared-employer notice', () => {
+    const names = { BillToOrganizationID: 'Example Co', ShipToOrganizationID: 'Example Co' };
+
+    it('names the organization and the sides it left', () => {
+        expect(DescribeClearedEmployers([{ Field: 'BillToOrganizationID', OrganizationID: EMPLOYER }], names)).toBe(
+            "Removed Example Co as the bill-to organization: it is the previous person's employer.",
+        );
+        expect(DescribeClearedEmployers([
+            { Field: 'BillToOrganizationID', OrganizationID: EMPLOYER },
+            { Field: 'ShipToOrganizationID', OrganizationID: EMPLOYER },
+        ], names)).toBe("Removed Example Co as the bill-to and ship-to organization: it is the previous person's employer.");
     });
 });
 
@@ -235,6 +285,14 @@ describe('replacing the bill-to person on a saved order', () => {
         await serverSave(o);
 
         expect(values).toMatchObject({ BillToPersonID: OTHER_PERSON, ShipToPersonID: OTHER_PERSON });
+    });
+
+    it('bills the new person\'s employer, not the previous person\'s (#356)', async () => {
+        const { o, values } = order({ onDisk: { ...saved, BillToOrganizationID: EMPLOYER, ShipToOrganizationID: EMPLOYER } });
+        await changePerson(o, 'BillTo', OTHER_PERSON);
+        await serverSave(o);
+
+        expect(values).toMatchObject({ BillToOrganizationID: OTHER_EMPLOYER, ShipToOrganizationID: OTHER_EMPLOYER });
     });
 
     it('copies the new person when the old one is cleared first', async () => {

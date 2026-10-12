@@ -119,6 +119,15 @@ export interface OrderPricingContext {
      */
     SettledTax?: ReadonlyMap<mjBizAppsOrdersOrderLineEntity, ReadonlyArray<Omit<RequestedCharge, 'TargetLineID'>>>;
     /**
+     * For a saved order whose promotions this walk RE-DECIDES: each saved line's discount that is not
+     * a promotion's (manual discounts, a stated amount), read from the database.
+     *
+     * A line named here takes this walk's promotion figure plus this, replacing what it stored, and
+     * the saver replaces the earlier promotion rows to match. A line not named keeps its stored
+     * discount as before. Absent on every path that does not re-decide a saved order's promotions.
+     */
+    StandingDiscounts?: ReadonlyMap<mjBizAppsOrdersOrderLineEntity, number>;
+    /**
      * Force this list, ignoring customer assignment — PreviewPrice "what if" and tests.
      * `undefined` means resolve from the bill-to; explicit `null` means base price only.
      */
@@ -306,7 +315,18 @@ export class OrderPricingService {
         // Keyed off the VALUE rather than off `IsSaved`, so the preview walks agree with the booking
         // walk: they price copies that were never saved, and hand them the stored discount to start
         // from. A genuinely new line carries zero and is unaffected either way.
+        //
+        // A SAVED LINE WHOSE PROMOTIONS ARE RE-DECIDED starts from what it holds that is not a
+        // promotion's, so the promotion is replaced rather than added and a manual discount granted on
+        // the draft is not dropped. Its total is assigned even when it comes to zero: a code that no
+        // longer applies takes its discount with it, and the saver removes its rows.
+        const standing = this.ctx.StandingDiscounts;
         for (const l of lines) {
+            const kept = standing?.get(l.Entity);
+            if (kept !== undefined) {
+                run.PerLine.set(l.ID, Money((run.PerLine.get(l.ID) ?? 0) + kept));
+                continue;
+            }
             if (run.PerLine.has(l.ID)) continue;
             const stored = Money(Number(l.Entity.DiscountAmount ?? 0));
             if (stored > 0) run.PerLine.set(l.ID, stored);
@@ -366,7 +386,7 @@ export class OrderPricingService {
         // Stamp the lines while they are still unsaved.
         for (const l of lines) {
             const total = run.PerLine.get(l.ID);
-            if (total) l.Entity.DiscountAmount = total;
+            if (total || standing?.has(l.Entity)) l.Entity.DiscountAmount = total ?? 0;
         }
         return run;
     }
@@ -458,14 +478,20 @@ export class OrderPricingService {
         // taxable, and whether the buyer is exempt. A caller-supplied rate still wins — the same
         // rule as a stated UnitPrice.
         const resolvedTax = await this.resolveTaxCharges(chargeable, provider, user);
-        if (!this.ctx.Charges.length && !resolvedTax.length) return null;
-        const result = await RunCharges([...this.ctx.Charges, ...resolvedTax], chargeable, provider, user);
-        const split = SplitChargesByLine(result);
+        const result =
+            this.ctx.Charges.length || resolvedTax.length
+                ? await RunCharges([...this.ctx.Charges, ...resolvedTax], chargeable, provider, user)
+                : null;
+        const split = result ? SplitChargesByLine(result) : new Map<string, { Tax: number; Other: number }>();
         for (let i = 0; i < this.ctx.Lines.length; i++) {
             const share = split.get(String(i));
-            if (!share) continue;
-            if (share.Tax) this.ctx.Lines[i].LineTax = share.Tax;
-            if (share.Other) {
+            // TAX IS ASSIGNED, ZERO INCLUDED. It is re-resolved on every walk and the saver replaces
+            // the tax rows to match, so a saved draft re-priced to no tax (an exempt address, say)
+            // must lose its old figure too — or the line shows tax that no row backs and the booking
+            // entry debits it with no credit. Other charges are requested once and never restated,
+            // so a walk that did not see them leaves `ChargeAmount` alone.
+            this.ctx.Lines[i].LineTax = share?.Tax ?? 0;
+            if (share?.Other) {
                 this.ctx.Lines[i].ChargeAmount = share.Other;
             }
         }

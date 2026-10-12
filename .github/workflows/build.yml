@@ -5,11 +5,11 @@ permissions:
 
 on:
   workflow_dispatch:
+  # Every merge to `next` rebuilds and re-tests it, with no `paths` filter: tests read migrations/
+  # and metadata/ as well as packages/, so a filtered push let a merge that touched only those
+  # land on `next` without a post-merge run.
   push:
     branches: [next]
-    paths:
-      - 'pnpm-lock.yaml'
-      - 'packages/**'
   pull_request:
     # `ready_for_review` is NOT in the default type set (opened/synchronize/reopened),
     # and the job below skips while the PR is a draft — without it, marking a PR ready
@@ -58,6 +58,11 @@ jobs:
 
       - name: Validate repository.url in packages
         run: ./.github/scripts/validate-package-repository.sh
+
+      # Also runs in publish.yml. Here it catches a package that drops its `files` field on the PR
+      # that dropped it, and on the release PR (this check is required on `main`), not at publish.
+      - name: Validate packages restrict what they ship
+        run: ./.github/scripts/validate-package-files.sh
 
       # Runs on every PR, not only at publish. validate-package-lock-case.sh is a release gate, so
       # a bug in the GATE would otherwise be discovered during a release — the one-level-up form of

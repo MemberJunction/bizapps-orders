@@ -51,11 +51,13 @@ export {
     FindConcessionLimitRule,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
+    LineConcessionTerms,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
     OrderConcessionTotal,
     OrderNetTotal,
     type ConcessionLineFacts,
+    type LineConcessionFacts,
     type LinePriceConcession,
     type UncoveredLinePrice,
 } from './ConcessionGate.js';
@@ -190,7 +192,7 @@ export type {
 
 export { CancelSubscriptionOperation, LoadCancelSubscriptionOperation } from './CancelSubscriptionOperation.js';
 export { AmendArrangementOperation, LoadAmendArrangementOperation } from './AmendArrangementOperation.js';
-export type { AmendArrangementInput, AmendArrangementOutput } from './AmendArrangementOperation.js';
+export type { AmendArrangementInput, AmendArrangementOutput } from '@mj-biz-apps/orders-entities';
 export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './CancelSubscriptionOperation.js';
 
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
@@ -236,6 +238,7 @@ export type {
     DimensionSlice,
     IntercompanyPair,
     IntercompanyLookup,
+    LegalEntityLookup,
     PaymentLineAllocationContext,
     PaymentAllocationResult,
 } from './PaymentAllocationFactory.js';
@@ -295,6 +298,8 @@ export {
     FirstPaymentAmount,
     ReconcileGrantStatus,
     IsPaymentSuspension,
+    IsSuspensionReason,
+    ReadTimeAccessCutoffDay,
     ReadTimeCutoffSuspension,
     ReadTimeWaiverExpirySuspension,
     PAYMENT_GATED_TIMINGS,
@@ -304,6 +309,7 @@ export {
     CacheUntilFor,
     ShouldRevokeGrantsOnCancel,
     ENTITLEMENT_CHECK_TTL_MS,
+    AccessOverrideApprovers,
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
@@ -327,6 +333,8 @@ export type {
     TermAccessFacts,
     GrantAccessEvaluation,
     RankableAccess,
+    AccessOverrideApproverFacts,
+    AccessOverrideApproverResult,
 } from './EntitlementBehavior.js';
 export {
     CreateEntitlementGrants,
@@ -434,6 +442,8 @@ export {
     SignaturesMatch,
     MapStripeIntentStatus,
     DecideWebhookAction,
+    IsOutOfOrderIntentEvent,
+    SETTLED_INTENT_STATUSES,
     SplitCapturedAmount,
     AchFeeEstimate,
     DecideSettlement,
@@ -443,6 +453,7 @@ export type {
     SignatureVerification,
     WebhookAction,
     WebhookDecision,
+    WebhookReasonCode,
     SettlementAction,
     SettlementDecision,
 } from './PaymentProviderBehavior.js';
@@ -462,9 +473,51 @@ export type {
     UpdateIntentRequest,
     UpdateIntentResult,
     WebhookEvent,
+    GatewayRefund,
+    ListRefundsRequest,
+    ListRefundsResult,
+    GatewayCharge,
+    ListChargesRequest,
+    ListChargesResult,
+    RetrieveChargeRequest,
+    RetrieveChargeResult,
+    GatewayWebhookEndpoint,
+    ListWebhookEndpointsResult,
 } from './BasePaymentProvider.js';
 
-export { StripePaymentProvider, LoadStripePaymentProvider, ToFormBody } from './StripePaymentProvider.js';
+export {
+    StripePaymentProvider,
+    LoadStripePaymentProvider,
+    ToFormBody,
+    AddCreatedRange,
+    StripeRefundFromObject,
+    StripeChargeFromObject,
+} from './StripePaymentProvider.js';
+export {
+    CheckPaymentWebhookEndpoints,
+    CheckWebhookEndpointDrift,
+    EndpointServesProvider,
+} from './PaymentWebhookEndpointCheck.js';
+export type { WebhookEndpointCheckResult } from './PaymentWebhookEndpointCheck.js';
+export {
+    FindChargeMismatches,
+    ChargeMismatchDedupeKey,
+    GatewayWindow,
+    CreatedInWindow,
+} from './ChargeReconciliation.js';
+export type { ChargeMismatch, ChargeMismatchKind, ReconcilablePayment } from './ChargeReconciliation.js';
+export {
+    ReconcilePaymentProviderChargesOperation,
+    LoadReconcilePaymentProviderChargesOperation,
+    PROVIDER_CHARGE_MISMATCH_TYPE_CODE,
+} from './ReconcilePaymentProviderChargesOperation.js';
+export {
+    BookProviderRefunds,
+    PlanProviderRefundBooking,
+    UnmatchedGatewayRefunds,
+    PROVIDER_REFUND_NOT_BOOKED_TYPE_CODE,
+} from './ProviderRefundBooking.js';
+export type { HeldRefund, RefundBookingPlan, ProviderRefundOutcome } from './ProviderRefundBooking.js';
 export { StripeACHPaymentProvider, LoadStripeACHPaymentProvider } from './StripeACHPaymentProvider.js';
 export { BillComPaymentProvider, LoadBillComPaymentProvider } from './BillComPaymentProvider.js';
 export { BaseInvoiceRail, LoadBaseInvoiceRail } from './BaseInvoiceRail.js';
@@ -565,6 +618,13 @@ export { ResolveDeliveryChannel, DeliveryChannelNotConfiguredError } from './Del
 export { LoadOrderDeliveryContacts, LoadOrderStatus, LoadExternallyInvoiced } from './DeliveryRecipientResolver.js';
 
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
+export { DeliveryOutcomeFor, FindPriorDelivery, RecordWebhookDelivery } from './PaymentWebhookDeliveryLog.js';
+export type {
+    PriorDelivery,
+    WebhookDeliveryOutcome,
+    WebhookDeliveryReasonCode,
+    WebhookDeliveryRecord,
+} from './PaymentWebhookDeliveryLog.js';
 export { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 export type { OpenIntentRequest, OpenIntentResult } from './PaymentIntentService.js';
 export { SettlePaymentForEvent } from './PaymentSettlement.js';

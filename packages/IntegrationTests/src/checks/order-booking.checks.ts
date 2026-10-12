@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB28).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB30).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -35,6 +35,9 @@
  *   OB27 a draft line for a product this process never cached (written by raw SQL, so no entity
  *        event) saves with the product's company instead of failing on a null CompanyID (golive #301)
  *   OB28 …and an order of such a product confirms and books under the product's company (golive #301)
+ *   OB29 a taxed order saved as a draft and then confirmed books balanced entries whose receivable is
+ *        the order's gross, with one set of tax rows per line (#484)
+ *   OB30 …and keeps one price breakdown per line, not one per save
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -1039,6 +1042,126 @@ export const OrderBookingChecks: NamedCheck[] = [
                 );
                 Assert(SameID(line.CompanyID, product.CompanyID), `the line takes the product's company, got ${line.CompanyID}`);
                 Assert(!!line.JournalEntryID, 'the line is booked');
+            }),
+    },
+    {
+        Id: 'order-booking.OB29',
+        Name: 'OB29: a taxed draft, then confirmed, books balanced entries for the order\'s gross (#484)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // THE PATH A REP TAKES whenever something has to be recorded before confirm: save the
+                // draft, then confirm it. Both saves run the pricing walk and both resolve the tax.
+                // The confirm used to ADD its tax rows beside the draft's, so booking credited the
+                // tax twice against a receivable that carried it once and refused the entry. OB10
+                // confirms in one save and could not see it.
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 50);
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    ShipToAddressID: f.Tax.AddressIDs.get('SantaClara'),
+                    Lines: [
+                        { ProductID: f.Products.WidgetA, Quantity: 3, UnitPrice: 100 },
+                        { ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 50 },
+                    ],
+                });
+                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+                draft.Order.Status = 'Confirmed';
+                Assert(
+                    await draft.Order.Save(),
+                    `confirm-after-draft must book: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`,
+                );
+                const orderID = draft.Order.ID;
+
+                // One set of tax rows: each line's tax allocations add up to its LineTax, once.
+                const lines = await TxQuery<{ LineNumber: number; LineTax: number; Allocated: number }>(
+                    ctx,
+                    `SELECT ol.LineNumber, ol.LineTax,
+                            (SELECT ISNULL(SUM(a.Amount),0)
+                               FROM ${ORDERS_SCHEMA}.OrderChargeAllocation a
+                               JOIN ${ORDERS_SCHEMA}.OrderCharge c ON c.ID = a.OrderChargeID
+                               JOIN ${ORDERS_SCHEMA}.ChargeType t ON t.ID = c.ChargeTypeID
+                              WHERE a.OrderLineID = ol.ID AND t.Category = 'Tax') AS Allocated
+                       FROM ${ORDERS_SCHEMA}.OrderLine ol WHERE ol.OrderHeaderID = '${orderID}'`,
+                );
+                AssertEqual(lines.length, 2, 'order lines');
+                Assert(lines.every((l) => Number(l.LineTax) > 0), `the fixture address taxes both lines: ${JSON.stringify(lines)}`);
+                Assert(
+                    lines.every((l) => Number(l.Allocated) === Number(l.LineTax)),
+                    `each line's tax rows must sum to its LineTax once: ${JSON.stringify(lines)}`,
+                );
+
+                const balances = await TxQuery<{ D: number; C: number }>(
+                    ctx,
+                    `SELECT SUM(jel.DebitAmount) AS D, SUM(jel.CreditAmount) AS C
+                       FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+                      WHERE jel.JournalEntryID IN (
+                            SELECT ol.JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine ol
+                             WHERE ol.OrderHeaderID = '${orderID}' AND ol.JournalEntryID IS NOT NULL)
+                      GROUP BY jel.JournalEntryID`,
+                );
+                AssertEqual(balances.length, 2, 'one entry per line');
+                Assert(
+                    balances.every((b) => Number(b.D) === Number(b.C)),
+                    `unbalanced entry: ${JSON.stringify(balances)}`,
+                );
+
+                const header = await TxOne<{ TotalGross: number }>(
+                    ctx,
+                    `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
+                );
+                const ar = await TxOne<{ Net: number }>(
+                    ctx,
+                    `SELECT ISNULL(SUM(jel.DebitAmount),0) - ISNULL(SUM(jel.CreditAmount),0) AS Net
+                       FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+                       JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                      WHERE gl.Code = '11201'
+                        AND jel.JournalEntryID IN (
+                            SELECT ol.JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine ol
+                             WHERE ol.OrderHeaderID = '${orderID}' AND ol.JournalEntryID IS NOT NULL)`,
+                );
+                AssertEqual(
+                    Math.round(Number(ar.Net) * 100) / 100,
+                    Math.round(Number(header.TotalGross) * 100) / 100,
+                    'the receivable the ledger raised must equal what the order says is owed',
+                );
+            }),
+    },
+    {
+        Id: 'order-booking.OB30',
+        Name: 'OB30: a draft, then confirmed, keeps one price breakdown per line',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The breakdown is written after every pricing walk, like the tax rows OB29 covers.
+                // A second set on the line would describe the price twice to whoever audits it.
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2 }],
+                });
+                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+                const count = async () =>
+                    (
+                        await TxOne<{ N: number }>(
+                            ctx,
+                            `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderLinePriceComponent pc
+                               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = pc.OrderLineID
+                              WHERE ol.OrderHeaderID = '${draft.Order.ID}'`,
+                        )
+                    ).N;
+                const afterDraft = Number(await count());
+                Assert(afterDraft > 0, 'the draft save records a breakdown');
+
+                draft.Order.Status = 'Confirmed';
+                Assert(
+                    await draft.Order.Save(),
+                    `confirm-after-draft must book: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`,
+                );
+                AssertEqual(Number(await count()), afterDraft, 'price breakdown rows after the confirm');
             }),
     },
 ];

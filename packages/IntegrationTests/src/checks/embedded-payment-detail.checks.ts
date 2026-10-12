@@ -11,7 +11,8 @@
  *
  * Confirm COPIES the order's snapshot onto the payment (D39). These checks prove
  * the embed save invert (peer first, stamp owner FK), Load, dirty rollup, Clear+delete,
- * uniqueness, and that confirm still copies rather than shares.
+ * uniqueness, that confirm still copies rather than shares, and that correcting a saved
+ * draft's company or tender replaces its detail instead of editing it.
  *
  * Instrument fields are immutable after insert (`trg_PaymentDetail_Immutable`).
  * Dirty rollup therefore edits Notes, which the trigger leaves writable.
@@ -88,6 +89,73 @@ async function newPendingPayment(ctx: IntegrationCheckContext): Promise<PaymentH
     payment.Status = 'Pending';
     payment.PaymentDate = TodayAsDateValue();
     return payment;
+}
+
+function checkType(): string {
+    const id = Fx().PaymentTypeIDs.get('Check');
+    Assert(id != null, "PaymentType 'Check' missing — push the orders app metadata");
+    return id!;
+}
+
+/**
+ * A saved detail is a snapshot the database will not let change (`trg_PaymentDetail_Immutable`).
+ * Correcting the company or tender of a saved draft must give the payment a new detail with the
+ * same instrument fields, leave the saved row as it was, and still capture and book.
+ *
+ * The draft is saved with `draftCompanyID` and a Cash reference; `change` corrects it. The order
+ * belongs to company A, so the corrected payment always captures to A.
+ */
+async function assertDetailReplacedOnCapture(
+    ctx: IntegrationCheckContext,
+    label: string,
+    draftCompanyID: string,
+    change: (payment: PaymentHeaderEntity) => void,
+): Promise<void> {
+    const f = Fx();
+    const order = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 45 }],
+    });
+    Assert(order.Saved, `${label}: confirm failed — ${order.Message}`);
+
+    const reference = `REF-${label}`;
+    const draft = await CreatePayment(ctx.User, {
+        PaymentNumber: `PD-${Date.now().toString(36)}`,
+        ReceivingCompanyID: draftCompanyID,
+        PaymentTypeID: cashType(),
+        Amount: 45,
+        Status: 'Pending',
+        NewPaymentDetail: { CompanyID: draftCompanyID, PaymentTypeID: cashType(), ReferenceNumber: reference },
+        Allocations: [{ OrderHeaderID: order.Order.ID as string, Amount: 45 }],
+    });
+    Assert(draft.Saved, `${label}: draft save failed — ${draft.Message}`);
+    const savedDetailID = draft.Payment.PaymentDetailID as string;
+
+    const payment = await ctx.Provider.GetEntityObject<PaymentHeaderEntity>(PAYMENT_HEADER_ENTITY, ctx.User);
+    Assert(await payment.Load(draft.Payment.ID), `${label}: reload failed`);
+    change(payment);
+    Assert(await payment.SaveStatus('Captured'), `${label}: capture failed — ${payment.LatestResult?.CompleteMessage}`);
+
+    Assert(!SameID(payment.PaymentDetailID, savedDetailID), `${label}: the payment must point at a new detail`);
+    const rows = await TxOne<{ OldCompany: string; OldType: string; NewCompany: string; NewType: string; NewRef: string | null }>(
+        ctx,
+        `SELECT o.CompanyID AS OldCompany, o.PaymentTypeID AS OldType,
+                n.CompanyID AS NewCompany, n.PaymentTypeID AS NewType, n.ReferenceNumber AS NewRef
+           FROM ${ORDERS_SCHEMA}.PaymentDetail o, ${ORDERS_SCHEMA}.PaymentDetail n
+          WHERE o.ID = '${savedDetailID}' AND n.ID = '${payment.PaymentDetailID}'`,
+    );
+    Assert(SameID(rows.OldCompany, draftCompanyID) && SameID(rows.OldType, cashType()), `${label}: the saved detail must be unchanged`);
+    Assert(SameID(rows.NewCompany, payment.ReceivingCompanyID), `${label}: new detail company follows the payment`);
+    Assert(SameID(rows.NewType, payment.PaymentTypeID), `${label}: new detail tender follows the payment`);
+    AssertEqual(rows.NewRef?.trim(), reference, `${label}: instrument fields carried to the new detail`);
+
+    const booked = await TxOne<{ N: number }>(
+        ctx,
+        `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.PaymentLine
+          WHERE PaymentHeaderID = '${payment.ID}' AND BookedAt IS NOT NULL`,
+    );
+    AssertEqual(Number(booked.N), 1, `${label}: the allocation booked`);
 }
 
 async function detailRow(ctx: IntegrationCheckContext, id: string) {
@@ -399,6 +467,28 @@ export const EmbeddedPaymentDetailChecks: NamedCheck[] = [
                     `SELECT ReferenceNumber FROM ${ORDERS_SCHEMA}.PaymentDetail WHERE ID = '${paid.Payment.PaymentDetailID}'`,
                 );
                 AssertEqual(row.ReferenceNumber?.trim(), 'WIRE-PD15', 'PD15: the detail was written');
+            }),
+    },
+    {
+        Id: 'embedded-payment-detail.PD16',
+        Name: 'PD16: changing Receiving Company on a saved draft gives the payment a new detail, and capture books',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                await assertDetailReplacedOnCapture(ctx, 'PD16', Fx().CoB.ID, (payment) => {
+                    payment.ReceivingCompanyID = Fx().CoA.ID;
+                });
+            }),
+    },
+    {
+        Id: 'embedded-payment-detail.PD17',
+        Name: 'PD17: changing the tender on a saved draft gives the payment a new detail, and capture books',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                await assertDetailReplacedOnCapture(ctx, 'PD17', Fx().CoA.ID, (payment) => {
+                    payment.PaymentTypeID = checkType();
+                });
             }),
     },
 ];

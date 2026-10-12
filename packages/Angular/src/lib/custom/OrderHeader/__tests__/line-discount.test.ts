@@ -147,6 +147,12 @@ describe('who may discount', () => {
         expect(instance.DiscountUnavailableReason).toMatch(/Sales Authority/i);
     });
 
+    it('says a below-list price holds confirm, not that save refuses it', () => {
+        const reason = component({ authority: false }).DiscountUnavailableReason ?? '';
+        expect(reason).toMatch(/cannot be confirmed until a concession/i);
+        expect(reason).not.toMatch(/refused at save/i);
+    });
+
     it('shows a booked line read-only, because its money is frozen', () => {
         const stub: Stub = { booked: true, quantity: 1, unitPrice: 1200 };
         const instance = component(stub);

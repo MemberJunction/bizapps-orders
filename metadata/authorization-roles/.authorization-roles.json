@@ -54,5 +54,25 @@
       "lastModified": "2026-10-03T21:47:06.219Z",
       "checksum": "25bbaa1c928af178bace82394419c622255f3320a367382fe4aae3e8878f123b"
     }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Access.Override",
+      "RoleID": "@lookup:MJ: Roles.Name=Account Director",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "44FE8CEE-E5F8-42AA-AF76-0B541112839E"
+    }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Access.Override",
+      "RoleID": "@lookup:MJ: Roles.Name=Finance",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "9A313BB3-9226-4358-AA86-7B0268D1185D"
+    }
   }
 ]

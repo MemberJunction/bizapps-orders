@@ -128,6 +128,88 @@ describe('FindUnapprovedConcessions — line prices', () => {
 });
 
 /**
+ * A `DiscountPct` gives value away as surely as a lower price (golive #305). A deal's Discount %, the
+ * API and an import all write it straight onto the line, so the gate counts it whoever set it.
+ */
+describe('FindUnapprovedConcessions — DiscountPct', () => {
+    const atEngine = { EngineUnitPrice: 100, IsEnginePrice: true, IsNamedListPick: false };
+    const discounted = { ...apiLine, UnitPrice: 100, DiscountPct: 0.1 };
+
+    beforeEach(() => mockStanding.mockResolvedValue(atEngine));
+
+    it('holds a line at its engine price that carries a discount', async () => {
+        database([], [discounted]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/line 1 is discounted 10%, a concession worth 20.00 with no approved Price/),
+        ]);
+    });
+
+    it('asks for the discount on the persisted line it reads', async () => {
+        database([], [discounted]);
+        await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        const lineQuery = mockRunView.mock.calls.find((c) => (c[0] as { EntityName: string }).EntityName.endsWith('Order Lines'));
+        expect((lineQuery?.[0] as { Fields: string[] }).Fields).toEqual(expect.arrayContaining(['DiscountPct', 'RenewsSubscriptionID']));
+    });
+
+    it('clears the line once an approved Price concession covers the discount', async () => {
+        database([{ Status: 'Approved', DeliveryForm: 'Price', ReasonCategory: 'Other', ComputedValue: 20, OrderLineID: LINE_ID }], [discounted]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('is not cleared by a Pending concession', async () => {
+        database([{ Status: 'Pending', DeliveryForm: 'Price', ReasonCategory: 'Other', ComputedValue: 20, OrderLineID: LINE_ID }], [discounted]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+        expect(problems).toEqual([expect.stringMatching(/awaiting approval/), expect.stringMatching(/discounted 10%/)]);
+    });
+
+    it('counts the discount on a named list pick, which is not itself a concession', async () => {
+        database([], [{ ...discounted, UnitPrice: 80 }]);
+        mockStanding.mockResolvedValue({ EngineUnitPrice: 100, IsEnginePrice: false, IsNamedListPick: true });
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/line 1 is discounted 10%, a concession worth 16.00/),
+        ]);
+    });
+
+    it('adds a discount on a below-engine price to the price concession, so one approval covers both', async () => {
+        database([], [{ ...discounted, UnitPrice: 60 }]);
+        mockStanding.mockResolvedValue(engineAt100);
+
+        // (100 - 60) x 2 = 80 by price, plus 60 x 2 x 10% = 12 by discount.
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/priced at 60.00 against an engine price of 100.00 and discounted 10%, a concession worth 92.00/),
+        ]);
+    });
+
+    it('values an unsaved line whose price the engine has yet to fill at the engine price', async () => {
+        database([], []);
+        const blank = { ...discounted, ID: null, UnitPrice: null, PriceStated: false };
+
+        expect(await FindUnapprovedConcessions(null, [blank], true, provider, user)).toEqual([
+            expect.stringMatching(/discounted 10%, a concession worth 20.00. Save the order/),
+        ]);
+    });
+
+    it('leaves the discount a renewal carries forward from the line it renews', async () => {
+        database([], [{ ...discounted, RenewsSubscriptionID: '3f2504e0-4f89-41d3-9a0c-0305e82c3305' }]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('still skips a reversal that carries its origin line\'s discount', async () => {
+        const reversal = { ...discounted, ReversesOrderLineID: '3f2504e0-4f89-41d3-9a0c-0305e82c3304', Quantity: -1 };
+        database([], [reversal]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+        expect(mockStanding).not.toHaveBeenCalled();
+    });
+});
+
+/**
  * A concession's share of the order is measured when it is recorded (#306). A draft that loses lines
  * afterwards gives away a larger share than the approval on the rep's own authority covered, so the
  * confirm gate measures the order again.

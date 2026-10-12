@@ -9,6 +9,30 @@ This is an **open app** built on top of the [MemberJunction](https://github.com/
 [`MJ/CLAUDE.md`](https://github.com/MemberJunction/MJ/blob/next/CLAUDE.md). When this app is
 dev-linked into an MJ instance it sits three levels up, at `../../../CLAUDE.md`.
 
+## Commands
+
+Run from the repo root; the package manager is pnpm. Copy `.env.example` to `.env` (gitignored)
+first: the MJ CLI, `scripts/` and `test-harnesses/` read their database settings from it.
+
+| Command | What it does |
+|---|---|
+| `pnpm install` | Install the workspace. |
+| `pnpm run build` | Build every `@mj-biz-apps/*` package with Turborepo. |
+| `pnpm run test:unit` | Vitest over `packages/*/src/**/*.test.ts`. No database, but build first: tests load the other workspace packages from `dist/`. |
+| `pnpm run test:integration` | The integration suite (`test-harnesses/integration.mjs`) against the database in `.env`, using the built packages, so build first. Each check's orders, journal entries, payments and subscription terms roll back; the shared ORD-WORLD catalog and the catalog rows a bundle's Setup adds are committed. |
+| `pnpm run verify` | Unit tests, build, integration suite, then `scripts/assert-check-count.mjs`, which fails when any check failed or fewer ran than `registry-parity.test.ts` declares. |
+| `pnpm run mj:migrate` | Apply `migrations/` to the `__mj_BizAppsOrders` schema. |
+| `pnpm run mj:codegen` | Run MJ CodeGen against the database in `.env`. Needs an AI key; see "CodeGen output must be reproducible from this repo" below. |
+| `scripts/append-codegen.sh migrations/V<new>.sql` | Put CodeGen's SQL below a new migration's banner. Refuses a migration already on `origin/next`. |
+
+## Where docs go
+
+[`docs/README.md`](docs/README.md) indexes the docs. `docs/` describes what is built; when the system
+changes, update the doc that describes it, starting with
+[`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md). Plans and specs for work not yet
+started go in `plans/`, including ones a tool or plugin writes. `docs/superpowers/` keeps the
+Bill.com plan and specs because code and metadata cite their paths; never add files there.
+
 ## UI architecture — READ BEFORE TOUCHING ANGULAR
 
 **[`docs/ui-architecture.md`](docs/ui-architecture.md) is binding for this repo.**
@@ -35,17 +59,19 @@ database as part of ordinary development.
 
 Editing the baseline was correct while the schema changed constantly and nothing depended on it.
 That phase is over: an edit to the baseline is invisible to any database that already ran it — the
-column never appears and nothing reports a problem — and flyway checksums the script, so every
-existing database refuses to migrate until someone repairs it by hand. `scripts/rebuild-db.sh`
-remains only for standing up a brand-new empty database; it is not a development loop.
+column never appears and nothing reports a problem — while every new database gets the edited
+version. `scripts/rebuild-db.sh` remains only for standing up a brand-new empty database; it is not
+a development loop.
 
 **Once a migration is merged to `next` it is LOCKED — no edits, no renames, no deletions.** Fix it
-forward in a new file. Every database that ran it recorded its checksum, so a change makes those
-databases refuse to migrate while the ones that never ran it get different SQL; the two diverge and
-nothing reports it. A rename is not a lesser change: the runner keys on the twelve-digit version in
-the filename, so a renamed migration is one nobody has run, and it executes again against objects
-that already exist. Renumbering an **unmerged** migration is ordinary and stays allowed — that is the
-normal answer when `next` gains a higher timestamp while your branch is open.
+forward in a new file. Every database that ran it has recorded it as applied and never runs it
+again, so a change never reaches those databases while the ones that never ran it get different
+SQL; the two diverge and nothing reports it. A rename is not a lesser change: the runner keys on
+the twelve-digit version in the filename, so a renamed migration is one nobody has run: it executes
+again against objects that already exist, or, when its new version sorts below the newest one the
+database has applied, `mj migrate` refuses the whole run as out of order. Renumbering an
+**unmerged** migration is ordinary and stays allowed — that is the normal answer when `next` gains a
+higher timestamp while your branch is open.
 
 CI enforces this (`.github/scripts/check-migrations-locked.mjs`), and **reviewers should treat it as a
 blocking finding, not a nit.** It has been merged past: `V202609221500` was edited a PR after it
@@ -53,10 +79,15 @@ landed, and `V202609061900` twice, with the check red. If a change to a merged m
 unavoidable, it needs saying explicitly in the PR description and a second reviewer — never a quiet
 merge over a failing gate.
 
-Write migrations idempotently (`IF NOT EXISTS`, `IF COL_LENGTH(...) IS NULL`) and assume the database
-already has data. A migration that reads `__mj.Entity` must skip cleanly when the row is absent —
-CodeGen runs *after* migrations — and if the change is really about metadata (field categories,
-form layout), its home is `metadata/` and `mj sync push` **during development**.
+Migrations run once, in timestamp order, so write plain DDL: no `IF NOT EXISTS` /
+`IF COL_LENGTH(...) IS NULL` / `IF OBJECT_ID` existence guards, and add each column with its
+constraints inline in one `ALTER TABLE`. A guard turns a mismatch into silence: where the object already
+exists, the migration records itself as applied while the object keeps whatever shape it had. Assume the database already has data: give a new `NOT NULL` column a default, or
+backfill it before adding the constraint. A migration holds schema DDL plus the CodeGen output
+captured below its banner, which is what registers the `__mj.Entity` / `__mj.EntityField` rows. Do
+not hand-write `INSERT` or `UPDATE` against `__mj.*` metadata tables (entity settings, field
+categories, form layout) in a migration: that belongs in `metadata/`, applied **during development**
+as `pnpm run mj:migrate` → `mj sync push` → `pnpm run mj:codegen`.
 
 **But `metadata/` ships to nobody.** MJ's manifest schema calls `mj-app.json`'s `metadata.directory`
 a dev-time pointer (`packages/OpenApp/Engine/src/manifest/manifest-schema.ts`), and `mj app install`
@@ -92,10 +123,10 @@ schema and runs `pnpm run mj:migrate`, do they get exactly the schema this branc
 
 AIDP Next runs MemberJunction's 6.1 LTS line, pinned exactly in `aidp-next/package.json`. This repo builds, tests and runs CodeGen against that same version, so what passes here is what runs there (bc-aidp-next-golive#298).
 
-- **Declared ranges.** Every `@memberjunction/*` range in `dependencies`, `devDependencies` and `peerDependencies` is `~6.1.N`, where 6.1.N is the version AIDP Next runs: the 6.1 line, capped below 6.2. Never an edge or prerelease range (`6.1.0-edge.x` sorts *before* 6.1.0 and has none of the LTS fixes), and never `^`, which admits 6.2. Packages MJ versions separately (`@memberjunction/connector-*`, `@memberjunction/skyway-*`) keep their own ranges.
-- **`pnpm.overrides`.** `@memberjunction/core` and `@memberjunction/global` are pinned **exactly** to AIDP Next's version (for example `"6.1.5"`), not to a range. A range override can still leave two copies of `core`, and two copies split the ClassFactory: registrations land in one factory while the resolver reads the other, and nothing errors. Overrides are workspace-local and never published. Do not exact-pin sibling `@mj-biz-apps/*` packages here; how the apps declare each other is bc-aidp-next-golive#265.
+- **Declared ranges.** In a published package, `@memberjunction/*` (and any other app's `@mj-biz-apps/*`) is a **peer** with a caret range, `^6.1.N` (`>=0.X.Y` for a 0.x app such as accounting, where a caret would pin the minor), and never appears in `dependencies`: the host installs one copy, and a `~6.1.N` or exact peer makes every 6.2 host install a second 6.1 tree, which splits the ClassFactory. Each peer also has a `devDependencies` entry in the same package: the same caret floor for MJ, `^6.1.N`, where 6.1.N is the version AIDP Next runs, and an exact version for another app's package. The lockfile resolves MJ to that LTS release, so builds, tests and CodeGen run against what AIDP Next runs. Never an edge or prerelease range (`6.1.0-edge.x` sorts *before* 6.1.0 and has none of the LTS fixes). `.github/scripts/check-dependency-model.mjs` enforces this in CI. Packages MJ versions separately (`@memberjunction/connector-*`, `@memberjunction/skyway-*`) keep their own ranges.
+- **`pnpm.overrides`.** `@memberjunction/core` and `@memberjunction/global` carry the same caret floor as every other MJ range, `^6.1.N` (for example `"^6.1.5"`), so every request in the graph resolves to one copy. Two copies of `core` split the ClassFactory: registrations land in one factory while the resolver reads the other, and nothing errors. Overrides are workspace-local and never published. Do not exact-pin sibling `@mj-biz-apps/*` packages here; how the apps declare each other is bc-aidp-next-golive#265.
 - **One copy of each.** After any install, `pnpm why @memberjunction/core` must show a single version. A sibling app package that exact-pins an old MJ build brings a second copy in (for example `@mj-biz-apps/common-ng@5.37.0` pinned edge.3 packages); fix it by raising that package's floor, not with more overrides.
-- **Bumping to a new 6.1.N**, when AIDP Next moves: update every `~6.1.N` floor and both overrides; `pnpm install`; confirm one copy; `mjVersionRange` in `mj-app.json` follows in the Version Packages PR (`ci/sync-mj-app-version.mjs`); rebuild the database from migrations on MJ core `v6.1.N` and regenerate (below); run the full test suite; add a `patch` changeset; commit the lockfile. If CI then fails on the lockfile although a clean local install works, GitHub is testing the merge with `next`: merge `next` in, run `pnpm install --no-frozen-lockfile`, and commit the lockfile.
+- **Bumping to a new 6.1.N**, when AIDP Next moves: raise every `^6.1.N` floor, in peers, devDependencies and both overrides; `pnpm install`; confirm one copy; `mjVersionRange` in `mj-app.json` follows in the Version Packages PR (`ci/sync-mj-app-version.mjs`); rebuild the database from migrations on MJ core `v6.1.N` (`MJ_CORE_VERSION` in `.env` and `.env.example`) and regenerate (below); run the full test suite; add a `patch` changeset; commit the lockfile. If CI then fails on the lockfile although a clean local install works, GitHub is testing the merge with `next`: merge `next` in, run `pnpm install --no-frozen-lockfile`, and commit the lockfile.
 - **Never patch MemberJunction.** No `pnpm patch`, `patchedDependencies`, patch-package or `sed` against `@memberjunction/*` `dist/`. That is AIDP Next's hard rule (`.github/workflows/MJ_PATCH_REGISTER.md` in aidp-next). Fix MJ on its `next` branch and bring the fix to the line with the `backport lts/6.1` label, or with a hand-port PR against `lts/6.1` when the fix can't be isolated; then wait for the patch release.
 
 ### CodeGen output must be reproducible from this repo
@@ -107,3 +138,19 @@ Generated files are committed, and AIDP Next ships them as they are: it excludes
 - Never hand-edit generated files, and never paste in generated output from another toolchain or another database. That is how OrderLine lost `OrderHeader`'s `@Field` (bc-aidp-next-golive#295).
 - Review what AI wrote. Validators, names and descriptions are not deterministic between runs.
 - If CodeGen has to create metadata in the database that the generated code depends on (fields, value lists, relationships, validator code), ship it in a migration in the same PR. Otherwise every host installed from migrations drifts from the code.
+
+## Filing issues (pilot of the BizApps issue system)
+- **Never work around a bug in this repo or in MJ silently.** File it with the `/report-issue` skill
+  (`.claude/skills/report-issue/`), which picks the repo where the fix lives, captures the
+  environment, searches for duplicates, and writes the same headings as the web form
+  (`.github/ISSUE_TEMPLATE/bug.yml`). If the bug already exists, it posts an occurrence comment on
+  the original instead of a new issue.
+- Filing from the web: **New issue → Bug report**. Every bug lands as `needs-triage`; a second
+  person reproduces it before it is `confirmed`. Confidence is a field, not a gate — say what you
+  actually did.
+- Not filed during the pilot: nits (cosmetic, no user impact) go in a local `BUGS.md`, not GitHub.
+  An agent files only with a minimal repro or after seeing the same failure twice, at most five
+  per session, and never closes, relabels, transfers or assigns anything.
+- MJ-core bugs go to `MemberJunction/MJ` (always pass `--repo`); mjdev-tool bugs to
+  `MemberJunction/MJDev`. Say which repo you chose and why under "Duplicate search".
+

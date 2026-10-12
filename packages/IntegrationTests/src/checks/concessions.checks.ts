@@ -36,6 +36,12 @@
  *   CS24      approving one changes the terms and due date; the approval cannot be replayed by direct SQL
  *   CS25      Orders.AmendArrangement previews a change of terms without writing, then records it Pending
  *
+ * A line's DiscountPct gives value away like a lower price, and is written by a deal, the API or an import
+ * without passing the manual-discount check (golive #305):
+ *
+ *   CS26      a DiscountPct holds the confirm until a Price concession covers it; inside authority it is Approved
+ *   CS27      with no SalesAuthority the same concession is Pending, and the confirm stays held
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -1069,6 +1075,61 @@ export const ConcessionChecks: NamedCheck[] = [
 
         const second = await amendTerms(ctx, input);
         Assert(!second.Success && /awaiting approval/.test(second.Message ?? ""), `a second change must wait: ${second.Message}`);
+      }),
+  },
+  {
+    Id: "concessions.CS26",
+    Name: "CS26: a DiscountPct holds the confirm until a Price concession covers it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxPct: 0.25, maxValue: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2, DiscountPct: 0.1 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "a line discounted with no concession must hold the confirm");
+        Assert(/line 1 is discounted 10%, a concession worth 20\.00/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should name the discount, got: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID });
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        AssertEqual(Number(c.Entity.ComputedValue), 20, "100 × 2 × 10%");
+        AssertEqual(c.Entity.Status, "Approved", "10% is inside a 25% cap and a 1000 limit");
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `with the concession approved, confirm should pass: ${built.Order.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS27",
+    Name: "CS27: with no SalesAuthority a discount's concession is Pending and the confirm stays held",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, DiscountPct: 0.1 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID });
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        AssertEqual(c.Entity.Status, "Pending", "no authority covers any discount");
+
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "a Pending concession must hold the confirm");
       }),
   },
 ];

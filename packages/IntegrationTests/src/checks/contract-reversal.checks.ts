@@ -51,7 +51,7 @@ import {
     TxQuery,
 } from '../fixture.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from '../entity-names.js';
-import { BuildOrder, ConfirmOrder } from '../order-builder.js';
+import { ApproveLineDiscounts, BuildOrder, ConfirmOrder } from '../order-builder.js';
 import { issue } from './payment-schedule.checks.js';
 import type { RequestedCharge } from '@mj-biz-apps/orders-core-entities-server';
 
@@ -145,6 +145,8 @@ async function confirmedOrder(ctx: IntegrationCheckContext, spec: SaleSpec) {
     });
     Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
     const orderID = draft.Order.ID as string;
+    // A discounted line is a concession the confirm gate holds; these checks are about reversals.
+    if (spec.discountPct) await ApproveLineDiscounts(ctx.User, orderID);
 
     const ids: string[] = [];
     for (const row of spec.instalments) {

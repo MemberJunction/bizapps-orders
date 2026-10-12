@@ -1,6 +1,24 @@
 # Spec: `Orders.CapturePayment` remote operation
 
-**Status:** requested by the front end, not yet built.
+**Status:** Shipped 2026-07-31 as `Orders.CapturePayment`; archived. This is the request as
+written before the build, and parts of it no longer hold:
+- Code: `packages/CoreEntitiesServer/src/CapturePaymentOperation.ts`. Checks:
+  `packages/IntegrationTests/src/checks/capture-payment.checks.ts`.
+- The built contract is `OrdersCapturePaymentInput` / `OrdersCapturePaymentOutput` in
+  `packages/Entities/src/generated/remote_operations.ts`. The input adds `PaymentIntentID`,
+  `IdempotencyKey`, an allocation's `OrderHeaderPaymentScheduleID` and the detail's
+  `InstrumentDate`, and makes `PaymentDate` optional; the output adds `WasPreview`, `WasRetry`,
+  `IdempotencyKey` and each order effect's `HasCredit`.
+- §1's premise is gone: Payment Lines is now a related-record collection on Payment Header, so a
+  browser `payment.Save()` writes the allocations, and the server's save settles with the
+  provider. The operation remains the one-call path: it resolves `TenderCode`, refuses allocations
+  that do not sum to the amount (D68), returns the original payment for a repeated
+  `IdempotencyKey`, runs `Preview` as a rolled-back capture, and reports each order's balance and
+  credit.
+- `payment-entry.page.ts` was deleted, and `AWAITING_OPERATION` in `output-wiring.test.ts` is
+  empty. `Orders.SaveOrder`, `Orders.PreviewOrder` and `Orders.PreviewConfirm`, which this spec
+  compares against, were retired (`migrations/V202608091500__v0.1.x__Retire_draft_operations.sql`).
+
 **Owner:** backend.
 **Why the front end cannot do this itself:** below.
 
@@ -187,7 +205,7 @@ back. I will delete the local calculation the day this lands.
 
 **Idempotency.** A double-clicked Capture must not take the money twice. Whatever
 key you choose — a client-supplied token, or `ProviderChargeID` when a provider
-is involved — please state it in the output so the UI can be honest about a
+is involved — please state it in the output so the UI can report a retry as a
 retry rather than guessing.
 
 **Over-payment.** D68 says a payment may exceed what is owed and the surplus
