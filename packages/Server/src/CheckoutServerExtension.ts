@@ -30,8 +30,11 @@
  *    static code, served to every origin (`setElementAssetCorsHeaders`).
  * 4. TURNSTILE — when the widget sets `requireTurnstile`, session initialization and
  *    completion demand a Cloudflare Turnstile token, verified server-side against the secret
- *    named by `Settings.TurnstileSecretEnvVar`. Required-but-unconfigured verifies as a 503,
- *    never as a silent pass.
+ *    named by `Settings.TurnstileSecretEnvVar`. A missing or refused token answers 403 with
+ *    `TurnstileRequired` and the public `Settings.TurnstileSiteKey`: the configuration only
+ *    reaches the browser in the reply to initialize, so this refusal is how a client learns
+ *    which challenge to render before retrying. Required-but-unconfigured (no secret or no
+ *    site key) verifies as a 503, never as a silent pass.
  *
  * ═══ THE PRICING-INPUT RULE HOLDS AT THIS BOUNDARY ═══
  * The request bodies accepted here carry NO amount, price, product resolution or provider.
@@ -78,7 +81,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isValidCheckoutSlug, originAllowed as originIsAllowed, resolveClientIp } from './checkout-edge-policy.js';
+import { isValidCheckoutSlug, originAllowed as originIsAllowed, resolveClientIp, resolveIpCountryHeader } from './checkout-edge-policy.js';
 import { checkoutHostSecurityHeaders, renderCheckoutHostErrorPage, renderCheckoutHostPage } from './checkout-host-page.js';
 
 /** Checkout request bodies are small; anything larger is abuse, not commerce. */
@@ -143,6 +146,12 @@ interface CheckoutEdgeSettings {
     ServiceUserEmail?: string;
     /** Name of the env var holding the Cloudflare Turnstile secret. */
     TurnstileSecretEnvVar?: string;
+    /**
+     * Public Cloudflare Turnstile site key paired with that secret. Sent to the browser on a
+     * Turnstile refusal so the checkout clients can render the challenge. One per edge, because
+     * Cloudflare accepts a token only under the secret of the site key that issued it.
+     */
+    TurnstileSiteKey?: string;
     /** Rate-limit window in ms (default 60000). */
     RateLimitWindowMs?: number;
     /** Max requests per window per client key (default 30). */
@@ -158,6 +167,14 @@ interface CheckoutEdgeSettings {
      * client-supplied and must not key rate limits or Turnstile.
      */
     TrustedProxyHops?: number;
+    /**
+     * Name of the request header carrying the buyer's IP country as a two-letter code, set by the
+     * proxy or CDN in front of MJAPI (for example `CF-IPCountry`). A completed checkout records it
+     * on the order as VAT location evidence (#480); the IP address itself is never stored. Unset
+     * (the default) records no IP country. Name only a header the proxy sets and overwrites on
+     * every request: anything else is whatever the browser sent.
+     */
+    IPCountryHeader?: string;
     /**
      * When true, GET `{root}/element/main.js.map` is registered. Default off —
      * the map is original TypeScript on an unauthenticated payment route.
@@ -178,6 +195,28 @@ export function shouldServeCheckoutElementSourceMap(
         return false;
     }
     return env.CHECKOUT_ELEMENT_SOURCEMAP === '1';
+}
+
+/**
+ * Which Turnstile edge setting is missing, or null when the site key and the secret both resolve.
+ * The startup warning and the per-request 503 share it, so they always name the same gap.
+ */
+export function turnstileConfigGap(
+    settings: Pick<CheckoutEdgeSettings, 'TurnstileSecretEnvVar' | 'TurnstileSiteKey'>,
+    env: NodeJS.ProcessEnv = process.env,
+): string | null {
+    const envVar = settings.TurnstileSecretEnvVar;
+    if (!envVar || !env[envVar]) {
+        return `Settings.TurnstileSecretEnvVar${envVar ? `='${envVar}' resolved empty` : ' unset'}`;
+    }
+    return settings.TurnstileSiteKey?.trim() ? null : 'Settings.TurnstileSiteKey unset';
+}
+
+/** The body of a Turnstile refusal; a 403 also names the challenge the client must render. */
+interface TurnstileRefusal {
+    ErrorMessage: string;
+    TurnstileRequired?: true;
+    TurnstileSiteKey?: string;
 }
 
 interface WidgetEdgePolicy {
@@ -238,6 +277,12 @@ export class CheckoutServerExtension extends BaseServerExtension {
         app.get(hostPath, (req: Request, res: Response) => this.handleGetHost(req, res));
 
         LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete,account,account/password,access-status}`);
+        // Widgets can't be read here (the user cache may not be loaded yet), so this names the gap
+        // for every widget: one that sets requireTurnstile answers 503 until the edge is configured.
+        const turnstileGap = turnstileConfigGap(this.settings);
+        if (turnstileGap) {
+            LogStatus(`[OrdersCheckoutEdge] Turnstile is not configured (${turnstileGap}): a widget that sets requireTurnstile answers 503 on initialize and complete. Setup: docs/checkout-widget-and-session-architecture.md#turnstile`);
+        }
         return {
             Success: true,
             Message: 'Orders anonymous checkout edge mounted (public GET host, rate-limited POSTs, origin-gated, optional Turnstile).',
@@ -291,8 +336,8 @@ export class CheckoutServerExtension extends BaseServerExtension {
             if (policy.requireTurnstile && this.isTurnstileGatedPath(req)) {
                 const turnstileFailure = await this.verifyTurnstile(req);
                 if (turnstileFailure) {
-                    const [status, message] = turnstileFailure;
-                    res.status(status).json({ Success: false, ErrorMessage: message });
+                    const [status, body] = turnstileFailure;
+                    res.status(status).json({ Success: false, ...body });
                     return;
                 }
             }
@@ -417,20 +462,30 @@ export class CheckoutServerExtension extends BaseServerExtension {
     }
 
     /**
-     * Verifies the Cloudflare Turnstile token. Returns null on success, or [status, message]
-     * on refusal. A widget that REQUIRES Turnstile with no secret configured fails closed
-     * with a 503 — a silent pass would advertise protection that is not running.
+     * Verifies the Cloudflare Turnstile token. Returns null on success, or [status, body] on
+     * refusal. A widget that REQUIRES Turnstile with no secret or site key configured fails
+     * closed with a 503 — a silent pass would advertise protection that is not running, and
+     * without a site key no client can render the challenge. A missing or refused token is a
+     * 403 carrying the site key, which the clients answer by rendering the challenge and
+     * retrying once with a fresh token (tokens are single-use).
      */
-    private async verifyTurnstile(req: Request): Promise<[number, string] | null> {
+    private async verifyTurnstile(req: Request): Promise<[number, TurnstileRefusal] | null> {
+        const missing = turnstileConfigGap(this.settings);
         const envVar = this.settings.TurnstileSecretEnvVar;
         const secret = envVar ? process.env[envVar] : undefined;
-        if (!secret) {
-            LogError(`[OrdersCheckoutEdge] Widget requires Turnstile but no secret is configured (Settings.TurnstileSecretEnvVar${envVar ? `='${envVar}' resolved empty` : ' unset'})`);
-            return [503, 'Checkout verification is not configured — contact the site operator.'];
+        const siteKey = this.settings.TurnstileSiteKey?.trim();
+        // turnstileConfigGap already rules out an empty secret or site key; the extra checks narrow the types.
+        if (missing || !secret || !siteKey) {
+            LogError(`[OrdersCheckoutEdge] Widget requires Turnstile but it is not configured (${missing})`);
+            return [503, { ErrorMessage: 'Checkout verification is not configured — contact the site operator.' }];
         }
+        const challenge = (message: string): [number, TurnstileRefusal] => [
+            403,
+            { ErrorMessage: message, TurnstileRequired: true, TurnstileSiteKey: siteKey },
+        ];
         const token = typeof req.body?.turnstileToken === 'string' ? req.body.turnstileToken : '';
         if (!token) {
-            return [403, 'Human verification is required for this checkout.'];
+            return challenge('Human verification is required for this checkout.');
         }
         try {
             const params = new URLSearchParams({ secret, response: token, remoteip: this.clientIp(req) });
@@ -440,11 +495,11 @@ export class CheckoutServerExtension extends BaseServerExtension {
                 body: params.toString(),
             });
             const outcome = (await verifyRes.json()) as { success?: boolean };
-            return outcome?.success === true ? null : [403, 'Human verification failed — please try again.'];
+            return outcome?.success === true ? null : challenge('Human verification failed — please try again.');
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             LogError(`[OrdersCheckoutEdge] Turnstile verification call failed: ${msg}`);
-            return [503, 'Human verification is temporarily unavailable — please try again.'];
+            return [503, { ErrorMessage: 'Human verification is temporarily unavailable — please try again.' }];
         }
     }
 
@@ -610,7 +665,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
-        const result = await CheckoutSessionService.CompleteCheckout(sessionId, clientSessionKey, user);
+        const result = await CheckoutSessionService.CompleteCheckout(sessionId, clientSessionKey, user, {
+            IPCountry: resolveIpCountryHeader(req, this.settings.IPCountryHeader),
+        });
         if (!result.Success) {
             res.status(409).json(result);
             return;

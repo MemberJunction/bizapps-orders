@@ -155,10 +155,14 @@ export class RooftopResolver extends BaseTaxJurisdictionResolver { /* ... */ }
 ```
 
 A price plugin is server code, so the browser cannot run it. Set `PricingDriverClass` to the plugin's
-key at the level it is registered for — the product, the category, or the company's
-`OrderCompanyPolicy`. `CanPriceOrderLocally` then reports that the order cannot be priced locally,
-and `MJOPricingScheduler`, the pricing service behind the order screens, sends it to
-`Orders.PriceOrder` instead, as it does for any order carrying a promotion code.
+key on the product, the category (inherited by child categories), the product type, or the company's
+`OrderCompanyPolicy`; the most specific non-empty level wins. `ResolvePrice` invokes the resolver
+registered under that key first, then falls back to the `Product:<id>`, `Category:<id>` and
+`Company:<id>` keys. A key with no registered resolver refuses the line with a `PriceResolutionError`
+naming the key, rather than pricing it by the default. `CanPriceOrderLocally` reads the same walk and
+reports that the order cannot be priced locally, and `MJOPricingScheduler`, the pricing service
+behind the order screens, sends it to `Orders.PriceOrder` instead, as it does for any order carrying
+a promotion code.
 
 If you must edit an engine: put the arithmetic in the pure half with a unit test, and keep the
 database half to finding rows.

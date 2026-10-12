@@ -1426,6 +1426,79 @@ export async function GetDimensionOptions(
     }));
 }
 
+/** The MJ entity a company-level Dimension Default hangs off. */
+const COMPANY_ENTITY_NAME = 'MJ: Companies';
+
+/** The fields of a Dimension Default row the company scoping reads. */
+export interface MJODimensionDefaultScopeRow {
+    Entity: string;
+    RecordID: string;
+    DimensionValueID: string;
+}
+
+/**
+ * The dimension values a company's own Dimension Defaults use.
+ *
+ * WHY THIS IS THE SOURCE. Dimensions and their values are shared by every company — accounting has
+ * no company on either — so there is nothing on a value that says which company sells under it. The
+ * defaults do: each hangs off a company, or a product or category that belongs to one. A value one
+ * of those uses is a value that company books under.
+ *
+ * PRODUCT TYPES ARE LEFT OUT. A type is shared by every company, so a default on one says nothing
+ * about which company's lines it is meant for.
+ */
+export function CompanyDimensionValueIDs(
+    defaults: readonly MJODimensionDefaultScopeRow[],
+    companyID: string,
+    companyProductIDs: readonly string[],
+    companyCategoryIDs: readonly string[],
+): Set<string> {
+    const key = (id: string) => id.toLowerCase();
+    const products = new Set(companyProductIDs.map(key));
+    const categories = new Set(companyCategoryIDs.map(key));
+    const company = key(companyID);
+
+    const out = new Set<string>();
+    for (const row of defaults) {
+        const record = key(row.RecordID);
+        const belongs =
+            (row.Entity === COMPANY_ENTITY_NAME && record === company) ||
+            (row.Entity === MJO_ENTITIES.Product && products.has(record)) ||
+            (row.Entity === MJO_ENTITIES.ProductCategory && categories.has(record));
+        if (belongs) out.add(key(row.DimensionValueID));
+    }
+    return out;
+}
+
+/**
+ * Read the dimension values the given company's active Dimension Defaults use, lower-cased.
+ * An id that is not a UUID returns an empty set rather than reaching a filter.
+ */
+export async function GetCompanyDimensionValueIDs(companyID: string, user?: UserInfo): Promise<Set<string>> {
+    const company = uuidList([companyID]);
+    if (!company) return new Set();
+
+    const [defaults, products, categories] = await Promise.all([
+        runRows<MJODimensionDefaultScopeRow>(
+            MJO_ENTITIES.DimensionDefault,
+            [`Status = 'Active'`],
+            'Entity',
+            5000,
+            user,
+            ['Entity', 'RecordID', 'DimensionValueID'],
+        ),
+        runRows<{ ID: string }>(MJO_ENTITIES.Product, [`CompanyID = ${company}`], 'ID', 5000, user, ['ID']),
+        runRows<{ ID: string }>(MJO_ENTITIES.ProductCategory, [`CompanyID = ${company}`], 'ID', 5000, user, ['ID']),
+    ]);
+
+    return CompanyDimensionValueIDs(
+        defaults,
+        companyID,
+        products.map((p) => p.ID),
+        categories.map((c) => c.ID),
+    );
+}
+
 /** Dimension tags on an order's lines — the analysis axes a line was filed under. */
 export async function GetLineDimensionsForOrder(
     orderLineIDs: string[],

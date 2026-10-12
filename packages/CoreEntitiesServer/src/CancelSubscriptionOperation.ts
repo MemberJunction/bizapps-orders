@@ -66,8 +66,10 @@ import {
     SubscriptionBehavior,
     type CancellableTerm,
     type CancellationDecision,
+    type LaterTermBilling,
     type SubscriptionTypeRules,
 } from './SubscriptionBehavior.js';
+import { InstalmentsToCancel } from './ContractBalance.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 
@@ -230,17 +232,32 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         // A later term would otherwise stay booked and billed after the subscription it belongs to
         // has ended (#406). One that starts on or before the effective date overlaps the cancelled
         // term's coverage and is not decided here.
-        const later: TermCancellation[] = openTerms
+        const laterRows = openTerms
             .filter((t) => t.ID !== term.ID && new Date(t.StartDate).getTime() > decision.EffectiveDate.getTime())
-            .sort((a, b) => a.TermNumber - b.TermNumber)
-            .map((t) => ({
-                Term: t,
-                Decision: behavior.DecideLaterTermCancellation({
-                    Rules: rules,
-                    Term: this.cancellableTerm(t),
-                    CoverageEndsDate: decision.EffectiveDate,
-                }),
-            }));
+            .sort((a, b) => a.TermNumber - b.TermNumber);
+        const later: TermCancellation[] = [];
+        for (const t of laterRows) {
+            const billing = await this.laterTermBilling(provider, user, t);
+            const laterDecision = behavior.DecideLaterTermCancellation({
+                Rules: rules,
+                Term: this.cancellableTerm(t),
+                CoverageEndsDate: decision.EffectiveDate,
+                Billing: billing,
+            });
+            // Keeping what was invoiced means withdrawing only the instalments still to come, which
+            // nothing books yet: the only path that withdraws them is a reversal of the whole term,
+            // and that credits the invoiced part back too (#560).
+            if (billing === 'PartInvoiced' && laterDecision.ReversalFraction === 0 && Number(t.Amount) > 0) {
+                return {
+                    Success: false,
+                    Message:
+                        `Term ${t.TermNumber} has been partly invoiced and this subscription type does not refund, so ` +
+                        `its invoiced amount is kept and its remaining instalments would have to be withdrawn on their own. ` +
+                        `That is not supported yet. Reverse the order line that sold the term instead.`,
+                };
+            }
+            later.push({ Term: t, Decision: laterDecision });
+        }
         const laterTerms: CanceledLaterTerm[] = later.map((l) => ({
             SubscriptionTermID: l.Term.ID,
             TermNumber: l.Term.TermNumber,
@@ -379,6 +396,22 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             .filter((t) => new Date(t.StartDate).getTime() > at)
             .sort((a, b) => new Date(a.StartDate).getTime() - new Date(b.StartDate).getTime());
         return upcoming[0] ?? terms[0];
+    }
+
+    /**
+     * How much of a later term has been invoiced, read from the order that sold it (#560). An order
+     * with no payment schedule was invoiced in full at confirm. On a scheduled one, an instalment
+     * was invoiced when it carries a document number, which is frozen at invoicing.
+     */
+    private async laterTermBilling(provider: IMetadataProvider, user: UserInfo, term: TermRow): Promise<LaterTermBilling> {
+        const context = await LoadReversalContext(term.OrderLineID, provider, user);
+        // A missing line is read as nothing kept: the reversal then refuses it by name.
+        if (!context) return 'NotInvoiced';
+        if (!context.OriginScheduled) return 'Invoiced';
+        const invoiced = context.ScheduleRows.some((r) => r.DocumentNumber);
+        const toCome = InstalmentsToCancel(context.ScheduleRows).length > 0;
+        if (!invoiced) return 'NotInvoiced';
+        return toCome ? 'PartInvoiced' : 'Invoiced';
     }
 
     private cancellableTerm(term: TermRow): CancellableTerm {

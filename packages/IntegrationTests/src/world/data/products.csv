@@ -22,3 +22,4 @@ IMPL-PROJ,Implementation Project (percent complete),BCP,SERVICES,Service,Percent
 MEM-TIER-STD,Tiered Membership — Standard,BCP,MEM-INDIV,Membership,EvenOverTime,AnnualRolling,SubTierStandard,MEM-TIER
 MEM-TIER-PRE,Tiered Membership — Premium,BCP,MEM-INDIV,Membership,EvenOverTime,AnnualRolling,SubTierPremium,MEM-TIER
 MEM-TIER-BAS,Tiered Membership — Basic,BCP,MEM-INDIV,Membership,EvenOverTime,CalendarYear,SubTierBasic,MEM-TIER
+UNPAIRED-SKU,Unpaired Service,UNPAIRED,MISC,Service,UpFront,,WidgetD,

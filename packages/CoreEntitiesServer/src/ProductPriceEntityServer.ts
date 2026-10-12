@@ -116,3 +116,8 @@ export class ProductPriceEntityServer extends mjBizAppsOrdersProductPriceEntity 
         return result;
     }
 }
+
+/** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */
+export function LoadProductPriceEntityServer(): void {
+    // intentionally empty
+}

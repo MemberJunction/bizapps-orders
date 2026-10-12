@@ -35,6 +35,7 @@ import {
     LoadCancelSubscriptionOperation,
     LoadAmendArrangementOperation,
     LoadSubscriptionTermEntityServer,
+    LoadProductPriceEntityServer,
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
     LoadOrderEntityServer,
@@ -71,6 +72,8 @@ import {
     LoadSpawnRenewalsOperation,
     LoadDetectOverlappingSubscriptionsOperation,
     LoadReconcilePaymentProviderChargesOperation,
+    LoadCreateOrderFromProviderPaymentOperation,
+    LoadResolveChargeExceptionOperation,
     LoadEmailDeliveryChannel,
     LoadStoredValuePaymentProvider,
     LoadBillComPaymentProvider,
@@ -157,6 +160,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOrderLineProgressMeasurementEntityServer(); // refuses a Posted observation the operation did not write
     LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
     LoadSubscriptionTermEntityServer();    // a booked term's dates change only through an approved extension
+    LoadProductPriceEntityServer();        // refuses a price rule that ties an existing one at write time (D69)
     InitConcessionApprovalListener();      // a decision on a concession's approval task decides that concession (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
@@ -181,6 +185,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadPollExternalPaymentsOperation();        // 'Orders.PollExternalPayments' — cleared Bill.com payments, captured once (golive #148)
     LoadDetectOverlappingSubscriptionsOperation(); // 'Orders.DetectOverlappingSubscriptions' — finance exception type 5 (golive #279)
     LoadReconcilePaymentProviderChargesOperation(); // 'Orders.ReconcilePaymentProviderCharges' — gateway charges vs payments (#477)
+    LoadCreateOrderFromProviderPaymentOperation(); // 'Orders.CreateOrderFromProviderPayment' — order from an unmatched provider payment (#481)
+    LoadResolveChargeExceptionOperation(); // 'Orders.ResolveChargeException' — book a charge-without-payment exception as an order and clear it (#567)
     LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
     LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator
     LoadAccessOverrideOperations();    // 'Orders.RequestAccessOverride' / 'Orders.RecordAccessOverrideDecision' (#268)

@@ -20,6 +20,10 @@ export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from '
 export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
 export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
 export { NetRelease, PlanTermExtension } from './TermExtensionPlan.js';
+export { CheckAmountChange } from './AmountChange.js';
+export type { AmountChangeRequest, CheckedAmountChange } from './AmountChange.js';
+export { PlanAmountChange, PlanReduction } from './AmountChangePlan.js';
+export type { AmountChangeInput, AmountChangePlan, CreditApplication, InstalmentChange, ReductionInput, ReductionInstalment, ReductionPlan } from './AmountChangePlan.js';
 export type { StagedEntry, StagedLine, TermExtensionInput, TermExtensionPlan } from './TermExtensionPlan.js';
 // Each Pending concession is routed to its approvers as its own tasks-app approval task (golive #274).
 export {
@@ -48,7 +52,8 @@ export {
     type ConcessionDecisionResult,
 } from './ConcessionApprovalListener.js';
 export {
-    FindConcessionLimitRule,
+    FindConcessionTier,
+    LoadConcessionTiers,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
     LineConcessionTerms,
@@ -188,6 +193,8 @@ export type {
     CancellableTerm,
     CancellationContext,
     CancellationDecision,
+    LaterTermBilling,
+    LaterTermCancellationContext,
 } from './SubscriptionBehavior.js';
 
 export { CancelSubscriptionOperation, LoadCancelSubscriptionOperation } from './CancelSubscriptionOperation.js';
@@ -257,7 +264,7 @@ export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './
 export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPriceOperation.js';
 export { PriceOrderOperation, LoadPriceOrderOperation } from './PriceOrderOperation.js';
 export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
-export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
+export { ProductPriceEntityServer, LoadProductPriceEntityServer } from './ProductPriceEntityServer.js';
 export {
     ProductEntityServer,
     SubscriptionFamilyEntityServer,
@@ -477,6 +484,9 @@ export type {
     ListRefundsRequest,
     ListRefundsResult,
     GatewayCharge,
+    GatewayChargeItem,
+    ListChargeItemsRequest,
+    ListChargeItemsResult,
     ListChargesRequest,
     ListChargesResult,
     RetrieveChargeRequest,
@@ -511,6 +521,57 @@ export {
     LoadReconcilePaymentProviderChargesOperation,
     PROVIDER_CHARGE_MISMATCH_TYPE_CODE,
 } from './ReconcilePaymentProviderChargesOperation.js';
+export {
+    CheckChargeForOrder,
+    CheckProviderPaymentInput,
+    ProviderPaymentIdempotencyKey,
+    ProviderPaymentLineReason,
+    PROVIDER_PAYMENT_ORDER_ORIGIN,
+    MAX_PROVIDER_CHARGE_ID_LENGTH,
+} from './ProviderPaymentOrder.js';
+export type { ProviderPaymentRefusal, ProviderPaymentRefusalCode, ProviderPaymentOrderRequest, CheckedProviderPaymentRequest } from './ProviderPaymentOrder.js';
+export {
+    CreateOrderFromProviderPaymentOperation,
+    CreateOrderFromGatewayCharge,
+    LoadCreateOrderFromProviderPaymentOperation,
+} from './CreateOrderFromProviderPaymentOperation.js';
+export {
+    ParseChargeMismatchDedupeKey,
+    CheckChargeExceptionForOrder,
+    CheckResolveChargeExceptionInput,
+    ChargeExceptionResolutionNote,
+} from './ChargeExceptionResolution.js';
+export type {
+    ChargeExceptionRow,
+    ChargeExceptionTarget,
+    ChargeExceptionRefusal,
+    ChargeExceptionRefusalCode,
+    ParsedChargeMismatchKey,
+    ResolveChargeExceptionRequest,
+    CheckedResolveChargeExceptionRequest,
+} from './ChargeExceptionResolution.js';
+export {
+    ResolveChargeExceptionOperation,
+    ResolveChargeException,
+    UserCanClearFinanceExceptions,
+    FINANCE_EXCEPTIONS_CLEAR_AUTH,
+    LoadResolveChargeExceptionOperation,
+} from './ResolveChargeExceptionOperation.js';
+export type { BookExceptionCharge } from './ResolveChargeExceptionOperation.js';
+export {
+    BuyerFromCharge,
+    ChooseProductForCharge,
+    PriceMapLookup,
+    SplitBuyerName,
+} from './UnmatchedChargeRules.js';
+export type { ChargeBuyer, ProviderPriceMapRow, UnmatchedChargeUnresolved, UnmatchedChargeUnresolvedCode } from './UnmatchedChargeRules.js';
+export {
+    CreateOrderForUnmatchedCharge,
+    IsUnmatchedCharge,
+    LoadProviderPriceMap,
+    PAYMENT_PROVIDER_PRICE_ENTITY,
+} from './UnmatchedChargeOrders.js';
+export type { UnmatchedChargeOutcome } from './UnmatchedChargeOrders.js';
 export {
     BookProviderRefunds,
     PlanProviderRefundBooking,
@@ -886,6 +947,8 @@ export type {
     OpenSessionPaymentIntentResult,
     BookCheckoutPaymentResult,
 } from './CheckoutSessionService.js';
+export { ToIsoCountryCode } from './VatLocationEvidence.js';
+export type { CheckoutLocationEvidence } from './VatLocationEvidence.js';
 // The host seam for refusing a checkout (#323): subclass and register `CheckoutPrePurchaseCheck`.
 export { ALREADY_SUBSCRIBED_REASON, CheckoutPrePurchaseCheck, RunPrePurchaseChecks } from './CheckoutPrePurchaseCheck.js';
 export type {

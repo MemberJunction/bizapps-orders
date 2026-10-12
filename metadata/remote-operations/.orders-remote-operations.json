@@ -617,7 +617,7 @@
       "Name": "Amend Arrangement",
       "OperationKey": "Orders.AmendArrangement",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
-      "Description": "Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount is refused until its credit-memo path exists.",
+      "Description": "Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount (NewAmount, optionally AppliesToInvoiceID) can be previewed: the catch-up on revenue already earned, the staged entries it offsets and the new schedule, the uninvoiced instalments it reduces and the credit memo; recording one is refused until its application exists.",
       "InputTypeName": "AmendArrangementInput",
       "InputTypeDefinition": "@file:types/orders-amend-arrangement.input.ts",
       "InputTypeIsArray": false,
@@ -635,8 +635,8 @@
       "ID": "6B24D4FD-3DD2-4E28-841C-3B64535DADDC"
     },
     "sync": {
-      "lastModified": "2026-10-08T18:14:06.268Z",
-      "checksum": "d880ee24e47812db4eea3a34823a98e70215e9518b31cbbbbbdbda0294c8706a"
+      "lastModified": "2026-10-09T23:55:07.190Z",
+      "checksum": "748e6522cadd5cf35155854f62ceaad85e0ffb9610c266b07bbf30c1ad296de0"
     }
   },
   {
