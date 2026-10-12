@@ -78,6 +78,8 @@ import {
     LoadStoredValuePaymentProvider,
     LoadBillComPaymentProvider,
     LoadBillComInvoiceRail,
+    LoadHubSpotPaymentsProvider,
+    LoadHubSpotPaymentsRail,
     LoadIssueExternalInvoiceOperation,
     LoadAdoptExternalInvoiceOperation,
     LoadCancelExternalInvoiceOperation,
@@ -199,6 +201,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadManualPaymentProvider();       // cheque, wire, cash — no gateway to call
     LoadStoredValuePaymentProvider();  // gift cards and account credit, one driver (D38/D68)
     LoadBillComPaymentProvider();      // Bill.com — the AR rail; refuses every checkout verb (golive #146/#148)
+    LoadHubSpotPaymentsProvider();     // HubSpot Payments — read, never charged; refuses every checkout verb (#482)
     LoadEnvironmentSecretResolver();   // the default CredentialsRef -> env lookup; replaceable
 
     // Actions. Same tree-shaking hazard as the operations above: without the anchor the action row
@@ -222,6 +225,7 @@ export function LoadBizAppsOrdersServer(): void {
     // fallback rather than letting "nobody registered a channel" read as "the channel refused to send".
     LoadEmailDeliveryChannel();        // 'Email' — over MJ's communication framework
     LoadBillComInvoiceRail();          // 'BillCom' — the outbound invoice rail over the published connector (golive #146)
+    LoadHubSpotPaymentsRail();         // 'HubSpotPayments' — payments a HubSpot portal collected, read by the poll (#482)
 
     // Identity-claim drivers (guest checkout → account linking). Without these anchors the
     // @RegisterClass decorators are tree-shaken and MJ core's IdentityClaimEngine finds no
