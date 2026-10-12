@@ -7,7 +7,9 @@ import {
     OrdersIssueExternalInvoiceOperation,
     OrdersPollExternalPaymentsOperation,
     OrdersSendExternalInvoicesOperation,
+    LoadPollJobState,
     type ExternalInvoicingWorklistRow,
+    type PollJobState,
 } from '@mj-biz-apps/orders-entities';
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
@@ -140,10 +142,10 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
                 (RowClicked)="SelectedInvoice = $event" />
         } @else {
             <div class="row mjo-xq__actions">
-                <button type="button" mjButton variant="outline" [disabled]="Busy" (click)="RunPoll()">
-                    <i class="fa-solid fa-rotate" aria-hidden="true"></i> {{ Busy ? 'Working…' : 'Check for payments now' }}
+                <button type="button" mjButton variant="outline" [disabled]="Busy || PollBlocked" (click)="RunPoll()">
+                    <i class="fa-solid fa-rotate" aria-hidden="true"></i> {{ Busy ? 'Working…' : PollJob?.State === 'Preview' ? 'Preview payment check' : 'Check for payments now' }}
                 </button>
-                <span class="small muted">Captured payments are not listed — only what the poll could not finish.</span>
+                <span class="small muted">{{ PollHint }}</span>
             </div>
 
             <mjo-worklist-table
@@ -228,6 +230,8 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     public Preset = 'all';
 
     public Exceptions: PaymentExceptionRow[] = [];
+    /** The scheduled poll job's state, which decides what the button may do. Null when it could not be read. */
+    public PollJob: PollJobState | null = null;
 
     public readonly InvoiceColumns: MJOColumn<ExternalInvoicingWorklistRow>[] = [
         { Key: 'DocumentNumber', Label: 'Document', Kind: 'mono', Width: '150px', Secondary: (r) => (r.InstallmentNumber ? `instalment ${r.InstallmentNumber}` : 'whole order') },
@@ -287,6 +291,25 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
         const reversals = this.Exceptions.filter((e) => e.Disposition === 'ReversalNeeded').length;
         if (!this.Exceptions.length) return 'Nothing waiting';
         return reversals ? `${reversals} needing a reversal` : 'Money the poll could not place';
+    }
+
+    /** The poll job is off or missing: the server would refuse, so the button does not offer it. */
+    public get PollBlocked(): boolean {
+        return this.PollJob?.State === 'NotInstalled' || this.PollJob?.State === 'Inactive';
+    }
+
+    public get PollHint(): string {
+        switch (this.PollJob?.State) {
+            case 'NotInstalled':
+            case 'Inactive':
+                return `Recording payments is off: ${this.PollJob.Why}.`;
+            case 'Preview':
+                return 'The scheduled poll job is in Preview, so a check here records nothing.';
+            case 'Live':
+                return 'Captured payments are not listed — only what the poll could not finish.';
+            default:
+                return 'The poll job could not be read; the server decides whether a check records anything.';
+        }
     }
 
     /* ── Actions ────────────────────────────────────────────────────────── */
@@ -359,14 +382,35 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
         });
     }
 
-    /** The poll, by hand. Reports ATTENTION as a warning, because that means money is still waiting. */
+    /**
+     * The poll, by hand, following the scheduled job: off → not offered; Preview → a preview, no
+     * confirmation since nothing is written; live (or unreadable) → confirm, because this records cash.
+     * The operation applies the same rule on the server, so this only decides what to ask and say.
+     * Reports ATTENTION as a warning, because that means money is still waiting.
+     */
     public async RunPoll(): Promise<void> {
-        if (this.Busy) return;
+        if (this.Busy || this.PollBlocked) return;
+        const preview = this.PollJob?.State === 'Preview';
+        if (!preview) {
+            const proceed = await this.confirm.Confirm({
+                title: 'Record payments now?',
+                message: 'This reads the payments the rail reported since the last poll and records each cleared one as cash against its orders.',
+                detail: 'The scheduled poll would do this on its own at its next run.',
+                type: 'warning',
+                confirmText: 'Record payments',
+                cancelText: 'Not yet',
+            });
+            if (!proceed) return;
+        }
+
         await this.run(async () => {
-            const result = await new OrdersPollExternalPaymentsOperation().Execute({ Preview: false });
+            const result = await new OrdersPollExternalPaymentsOperation().Execute({ Preview: preview });
             const out = result.Output;
             if (!result.Success || !out) {
                 return { Tone: 'error' as const, Text: result.ErrorMessage?.trim() || 'The payment check could not run.' };
+            }
+            if (preview && out.Success) {
+                return { Tone: 'success' as const, Text: `Preview only, nothing was recorded. ${out.Message ?? ''}`.trim() };
             }
             return { Tone: out.Success ? ('success' as const) : ('warning' as const), Text: out.Message ?? `${out.Captured} payment(s) recorded.` };
         });
@@ -390,7 +434,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     /* ── Loading ────────────────────────────────────────────────────────── */
 
     private async load(): Promise<void> {
-        await Promise.all([this.loadInvoices(), this.loadExceptions()]);
+        await Promise.all([this.loadInvoices(), this.loadExceptions(), this.loadPollJob()]);
         this.cdr.detectChanges();
     }
 
@@ -427,6 +471,16 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             ResultType: 'simple',
         });
         this.Exceptions = result.Success ? (result.Results ?? []) : [];
+        this.cdr.detectChanges();
+    }
+
+    private async loadPollJob(): Promise<void> {
+        try {
+            this.PollJob = await LoadPollJobState();
+        } catch {
+            // A user who cannot read Scheduled Jobs still gets the button; the operation decides.
+            this.PollJob = null;
+        }
         this.cdr.detectChanges();
     }
 

@@ -125,7 +125,13 @@ job notifies.
 - [`metadata/scheduled-jobs/.orders-billcom-scheduled-jobs.json`](../metadata/scheduled-jobs/.orders-billcom-scheduled-jobs.json)
   runs the send at `0 */30 13-23 * * 1-5` UTC (`MaxCount` 25) and the poll at `0 15 * * * *` UTC
   (`MaxCount` 100). Both ship `Disabled` with `Preview` true: enable a job, read one preview run, then
-  set `Preview` to false. The Invoicing queue page runs either with `Preview` false, whatever their state.
+  set `Preview` to false. The Invoicing queue page runs the send with `Preview` false, whatever its state.
+- **The poll job is the switch for recording cash, whoever runs the poll.** `Orders.PollExternalPayments`
+  reads the installed poll jobs (the most restrictive wins) before a run that would write: none
+  installed or not `Active` refuses with nothing recorded; in Preview the run becomes a preview and its
+  message says so; `Active` and out of Preview records. A run that asks for `Preview` is always allowed.
+  The queue page's "Check for payments now" follows the same state: disabled while the job is off,
+  labelled as a preview while the job previews, and asks for confirmation before a live run.
 - [`V202609291003__v5.20.0__BillCom_Metadata_Sync.sql`](../migrations/V202609291003__v5.20.0__BillCom_Metadata_Sync.sql)
   installs the provider type, the six operations, both Actions and both jobs on a host.
 - `POST /webhooks/billcom/:providerId` (declared in `packages/Server/package.json`) checks the
