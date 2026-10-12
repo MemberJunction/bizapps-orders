@@ -36,5 +36,72 @@
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Product Prices&Name=Name"
     }
+  },
+  {
+    "_comments": [
+      "Payment Webhook Deliveries list columns: when a delivery arrived, what Orders did with it and why, and the Stripe ids to find it in the dashboard. CodeGen's AI picks DefaultInView only for an entity or field it creates; on a database built from migrations this entity already exists, so the AI never runs for it and every field stayed off."
+    ],
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=FirstReceivedAt"
+    }
+  },
+  {
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=LastReceivedAt"
+    }
+  },
+  {
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=Outcome"
+    }
+  },
+  {
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=ReasonCode"
+    }
+  },
+  {
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=EventKind"
+    }
+  },
+  {
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=ProviderEventID"
+    }
+  },
+  {
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=ProviderIntentID"
+    }
+  },
+  {
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=ProviderChargeID"
+    }
   }
 ]
