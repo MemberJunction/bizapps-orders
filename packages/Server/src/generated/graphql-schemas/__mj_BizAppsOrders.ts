@@ -2833,16 +2833,22 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @Field(() => Boolean, {nullable: true}) 
     AcknowledgesCoverageOverlap?: boolean;
         
+    @Field(() => Float, {nullable: true}) 
+    ExtendedAmount?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(1000)
     CoverageOverlapReason?: string;
         
+    @Field(() => Float, {nullable: true}) 
+    ScheduleReduction?: number;
+        
+    @Field(() => Float, {nullable: true}) 
+    CreditMemoAmount?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
-        
-    @Field(() => Float, {nullable: true}) 
-    ExtendedAmount?: number;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
@@ -3016,6 +3022,12 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     @Field({ nullable: true })
     CoverageOverlapReason: string | null;
 
+    @Field(() => Float, { nullable: true })
+    ScheduleReduction: number | null;
+
+    @Field(() => Float, { nullable: true })
+    CreditMemoAmount: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3187,6 +3199,12 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     CoverageOverlapReason?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    ScheduleReduction?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    CreditMemoAmount?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -8127,6 +8145,12 @@ export class mjBizAppsOrdersOrderLine_ {
     @MaxLength(1000)
     CoverageOverlapReason?: string;
         
+    @Field(() => Float, {nullable: true, description: `On a returning line whose origin is billed by instalment: the returned units' share of what the origin line's instalments had not yet invoiced, tax included. It is taken off those instalments, and the origin's balance and schedule check subtract it from the origin's lines. Set by the server when the return is confirmed. NULL on every other line.`}) 
+    ScheduleReduction?: number;
+        
+    @Field(() => Float, {nullable: true, description: `On a returning line whose origin is billed by instalment: the credit memo the return booked, the returned units' share of what was invoiced and not yet earned. Zero when nothing was credited. The return order's balance is this, not the value of its lines. Set by the server when the return is confirmed. NULL on every other line.`}) 
+    CreditMemoAmount?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(40)
     OrderHeader?: string;
@@ -8317,6 +8341,12 @@ export class CreatemjBizAppsOrdersOrderLineInput {
     @Field({ nullable: true })
     CoverageOverlapReason: string | null;
 
+    @Field(() => Float, { nullable: true })
+    ScheduleReduction: number | null;
+
+    @Field(() => Float, { nullable: true })
+    CreditMemoAmount: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -8446,6 +8476,12 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field({ nullable: true })
     CoverageOverlapReason?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    ScheduleReduction?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    CreditMemoAmount?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

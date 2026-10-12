@@ -3716,5 +3716,57 @@
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=ExtendedAmount"
     }
+  },
+  {
+    "fields": {
+      "Category": "Pricing and Financials",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=ScheduleReduction"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T23:47:33.978Z",
+      "checksum": "4eda51dbc86e63680e43b89bbd8dff729a11d1f522db605fbfde383980c00dc8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing and Financials",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=CreditMemoAmount"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T23:47:34.010Z",
+      "checksum": "4eda51dbc86e63680e43b89bbd8dff729a11d1f522db605fbfde383980c00dc8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=ScheduleReduction"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T23:47:34.042Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=CreditMemoAmount"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T23:47:34.066Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
   }
 ]

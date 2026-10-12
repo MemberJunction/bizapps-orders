@@ -1233,18 +1233,26 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: AcknowledgesCoverageOverlap
         * * Display Name: Acknowledges Coverage Overlap
         * * SQL Data Type: bit`),
-    CoverageOverlapReason: z.string().nullable().describe(`
-        * * Field Name: CoverageOverlapReason
-        * * Display Name: Coverage Overlap Reason
-        * * SQL Data Type: nvarchar(1000)`),
-    Person: z.string().describe(`
-        * * Field Name: Person
-        * * Display Name: Person
-        * * SQL Data Type: nvarchar(201)`),
     ExtendedAmount: z.number().nullable().describe(`
         * * Field Name: ExtendedAmount
         * * Display Name: Extended Amount
         * * SQL Data Type: decimal(18, 2)`),
+    CoverageOverlapReason: z.string().nullable().describe(`
+        * * Field Name: CoverageOverlapReason
+        * * Display Name: Coverage Overlap Reason
+        * * SQL Data Type: nvarchar(1000)`),
+    ScheduleReduction: z.number().nullable().describe(`
+        * * Field Name: ScheduleReduction
+        * * Display Name: Schedule Reduction
+        * * SQL Data Type: decimal(18, 2)`),
+    CreditMemoAmount: z.number().nullable().describe(`
+        * * Field Name: CreditMemoAmount
+        * * Display Name: Credit Memo Amount
+        * * SQL Data Type: decimal(18, 2)`),
+    Person: z.string().describe(`
+        * * Field Name: Person
+        * * Display Name: Person
+        * * SQL Data Type: nvarchar(201)`),
 });
 
 export type mjBizAppsOrdersEventOrderLineEntityType = z.infer<typeof mjBizAppsOrdersEventOrderLineSchema>;
@@ -3354,6 +3362,16 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Display Name: Coverage Overlap Reason
         * * SQL Data Type: nvarchar(1000)
         * * Description: Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.`),
+    ScheduleReduction: z.number().nullable().describe(`
+        * * Field Name: ScheduleReduction
+        * * Display Name: Schedule Reduction
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: On a returning line whose origin is billed by instalment: the returned units' share of what the origin line's instalments had not yet invoiced, tax included. It is taken off those instalments, and the origin's balance and schedule check subtract it from the origin's lines. Set by the server when the return is confirmed. NULL on every other line.`),
+    CreditMemoAmount: z.number().nullable().describe(`
+        * * Field Name: CreditMemoAmount
+        * * Display Name: Credit Memo Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: On a returning line whose origin is billed by instalment: the credit memo the return booked, the returned units' share of what was invoiced and not yet earned. Zero when nothing was credited. The return order's balance is this, not the value of its lines. Set by the server when the return is confirmed. NULL on every other line.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -10621,6 +10639,19 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
+    * * Field Name: ExtendedAmount
+    * * Display Name: Extended Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ExtendedAmount(): number | null {
+        return this.Get('ExtendedAmount');
+    }
+    set ExtendedAmount(value: number | null) {
+        this.Set('ExtendedAmount', value);
+    }
+
+    /**
     * * Field Name: CoverageOverlapReason
     * * Display Name: Coverage Overlap Reason
     * * SQL Data Type: nvarchar(1000)
@@ -10634,25 +10665,38 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
+    * * Field Name: ScheduleReduction
+    * * Display Name: Schedule Reduction
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ScheduleReduction(): number | null {
+        return this.Get('ScheduleReduction');
+    }
+    set ScheduleReduction(value: number | null) {
+        this.Set('ScheduleReduction', value);
+    }
+
+    /**
+    * * Field Name: CreditMemoAmount
+    * * Display Name: Credit Memo Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get CreditMemoAmount(): number | null {
+        return this.Get('CreditMemoAmount');
+    }
+    set CreditMemoAmount(value: number | null) {
+        this.Set('CreditMemoAmount', value);
+    }
+
+    /**
     * * Field Name: Person
     * * Display Name: Person
     * * SQL Data Type: nvarchar(201)
     */
     get Person(): string {
         return this.Get('Person');
-    }
-
-    /**
-    * * Field Name: ExtendedAmount
-    * * Display Name: Extended Amount
-    * * SQL Data Type: decimal(18, 2)
-    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
-    */
-    get ExtendedAmount(): number | null {
-        return this.Get('ExtendedAmount');
-    }
-    set ExtendedAmount(value: number | null) {
-        this.Set('ExtendedAmount', value);
     }
 }
 
@@ -17182,6 +17226,32 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set CoverageOverlapReason(value: string | null) {
         this.Set('CoverageOverlapReason', value);
+    }
+
+    /**
+    * * Field Name: ScheduleReduction
+    * * Display Name: Schedule Reduction
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: On a returning line whose origin is billed by instalment: the returned units' share of what the origin line's instalments had not yet invoiced, tax included. It is taken off those instalments, and the origin's balance and schedule check subtract it from the origin's lines. Set by the server when the return is confirmed. NULL on every other line.
+    */
+    get ScheduleReduction(): number | null {
+        return this.Get('ScheduleReduction');
+    }
+    set ScheduleReduction(value: number | null) {
+        this.Set('ScheduleReduction', value);
+    }
+
+    /**
+    * * Field Name: CreditMemoAmount
+    * * Display Name: Credit Memo Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: On a returning line whose origin is billed by instalment: the credit memo the return booked, the returned units' share of what was invoiced and not yet earned. Zero when nothing was credited. The return order's balance is this, not the value of its lines. Set by the server when the return is confirmed. NULL on every other line.
+    */
+    get CreditMemoAmount(): number | null {
+        return this.Get('CreditMemoAmount');
+    }
+    set CreditMemoAmount(value: number | null) {
+        this.Set('CreditMemoAmount', value);
     }
 
     /**
