@@ -1280,3 +1280,9 @@ Raised 2026-08-04. Orders wants the tokenized tabbed-workspace look that
 **Next step:** promote the card to `ng-ui-components` (already filed in `MJ-UPSTREAM.md`
 with the stat-card work), then revisit (2) as a feature. Do not cross-import from
 accounting in the meantime.
+
+**Status (2026-10, #583):** done upstream. `@memberjunction/ng-ui-components` 6.1.5 exports the
+workspace-tabs framework (`MJWorkspaceCardComponent`, the tab strip, tab store, types and tip
+directive), so the copy orders parked in `packages/Angular/src/lib/transfer-pending/` and its
+purity test are removed. Nothing in orders used it. Want (2) imports from `ng-ui-components`
+when it is built.
