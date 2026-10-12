@@ -2841,6 +2841,9 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(201)
     Person?: string;
         
+    @Field(() => Float, {nullable: true}) 
+    ExtendedAmount?: number;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
         
@@ -3006,6 +3009,9 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
 
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
+
+    @Field(() => Float, { nullable: true })
+    ExtendedAmount: number | null;
 
     @Field({ nullable: true })
     CoverageOverlapReason: string | null;
@@ -3175,6 +3181,9 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
+
+    @Field(() => Float, { nullable: true })
+    ExtendedAmount?: number | null;
 
     @Field({ nullable: true })
     CoverageOverlapReason?: string | null;
@@ -8083,6 +8092,9 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field(() => Boolean, {nullable: true, description: `True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`}) 
     AcknowledgesCoverageOverlap?: boolean;
         
+    @Field(() => Float, {nullable: true, description: `The amount the price rule set for this line before any discount, exactly as the rule computed it. A Flat price that does not divide by the quantity cannot be rebuilt from Quantity x UnitPrice (Flat 100.00 at quantity 3 has a unit price of 33.33), so the line total, the invoice and the journal entry read this instead. NULL when no rule priced the line, such as a stated unit price; Quantity x UnitPrice is then the amount.`}) 
+    ExtendedAmount?: number;
+        
     @Field({nullable: true, description: `Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.`}) 
     @MaxLength(1000)
     CoverageOverlapReason?: string;
@@ -8271,6 +8283,9 @@ export class CreatemjBizAppsOrdersOrderLineInput {
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
 
+    @Field(() => Float, { nullable: true })
+    ExtendedAmount: number | null;
+
     @Field({ nullable: true })
     CoverageOverlapReason: string | null;
 
@@ -8397,6 +8412,9 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
+
+    @Field(() => Float, { nullable: true })
+    ExtendedAmount?: number | null;
 
     @Field({ nullable: true })
     CoverageOverlapReason?: string | null;
