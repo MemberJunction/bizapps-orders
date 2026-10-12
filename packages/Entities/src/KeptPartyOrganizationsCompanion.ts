@@ -14,7 +14,7 @@
  *
  * @module @mj-biz-apps/orders-entities
  */
-import { EntityCompanion, type EntityCompanionDeserializeMode } from '@memberjunction/core';
+import { EntityCompanion, type EntityCompanionDeserializeMode, type EntitySavePlan } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 
 export type KeptPartyOrganizationField = 'BillToOrganizationID' | 'ShipToOrganizationID';
@@ -74,5 +74,25 @@ export class KeptPartyOrganizationsCompanion extends EntityCompanion<KeptPartyOr
      */
     public override get Dirty(): boolean {
         return this.kept.some((k) => this.Owner.GetFieldByName(PERSON_FIELD[k.Field])?.Dirty === true);
+    }
+
+    /**
+     * Sends a save that carries a kept organization to the server as a graph save, the only save
+     * that carries companions.
+     *
+     * A client save whose plan holds only the order's own row takes the plain GraphQL update,
+     * which sends field values and nothing else (MemberJunction 6.1.5 `BaseEntity.Save` takes the
+     * graph path only when the plan has more than one node). The entry would not
+     * reach the server, and the server save would clear the organization the writer kept. A
+     * second node makes the client route the save through `MJ.SaveEntityGraph`, which restores
+     * companions before saving. The client never runs the plan's nodes; the server builds its
+     * own plan, where this companion adds nothing and the order saves once.
+     *
+     * Not added on a provider with entity transactions: that save runs here, where the entry is
+     * already in memory, and the node would save the order a second time.
+     */
+    public override ContributeSaveWork(plan: EntitySavePlan): void {
+        if (!this.Dirty || this.Owner.ProviderToUse?.SupportsEntityTransactions === true) return;
+        plan.Add({ Entity: this.Owner, Operation: 'Save', Label: `${this.Name} (routes the save through the graph)`, SelfOnly: true });
     }
 }
