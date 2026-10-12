@@ -10,16 +10,14 @@
 
 import { RegisterClass } from '@memberjunction/global';
 // Local fallback — see sql-guards.ts. Restore to '@memberjunction/global' once published.
-import { EscapeSQLString } from './sql-guards.js';
-import { Metadata, RunView, UserInfo, IRunViewProvider } from '@memberjunction/core';
-// Local fallback contracts — see identityClaimContracts.ts. Restore this import to
-// '@memberjunction/core-entities' once MJ publishes these exports.
+import { EscapeSQLString, RequireUUID } from './sql-guards.js';
+import { LogError, Metadata, RunView, UserInfo, IRunViewProvider } from '@memberjunction/core';
 import {
     BaseIdentityClaimDriver,
     type ClaimContext,
     type ClaimRedeemContext,
     type ClaimResult,
-} from './identityClaimContracts.js';
+} from '@memberjunction/core-entities';
 import {
     IsBooked,
     mjBizAppsOrdersOrderHeaderEntity,
@@ -126,14 +124,19 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
         try {
             const runViewProvider = (provider && 'RunView' in provider) ? (provider as unknown as IRunViewProvider) : null;
             const rv = new RunView(runViewProvider);
-            const escapedOrderID = EscapeSQLString(orderID);
+            const escapedOrderID = EscapeSQLString(RequireUUID(order.ID, 'OrderHeaderID'));
             const grantResult = await rv.RunView<{ ID: string; Status: string }>({
                 EntityName: ENTITLEMENT_GRANT_ENTITY,
-                ExtraFilter: `OrderLineID IN (SELECT ID FROM vwOrderLines WHERE OrderID = '${escapedOrderID}')`,
+                ExtraFilter: `OrderLineID IN (SELECT ID FROM [__mj_BizAppsOrders].[vwOrderLines] WHERE OrderHeaderID = '${escapedOrderID}')`,
                 ResultType: 'simple'
             }, User);
 
-            if (grantResult.Success && grantResult.Results && grantResult.Results.length > 0) {
+            if (!grantResult.Success) {
+                const message = `Could not read the entitlement grants of order ${order.ID}: ${grantResult.ErrorMessage ?? 'unknown error'}`;
+                LogError(`[GuestOrderClaimDriver] ${message}`);
+                return { Success: false, ErrorMessage: message };
+            }
+            if (grantResult.Results && grantResult.Results.length > 0) {
                 for (const row of grantResult.Results) {
                     const grant = await md.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(
                         ENTITLEMENT_GRANT_ENTITY,
@@ -155,8 +158,11 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
                     }
                 }
             }
-        } catch {
-            // Entitlement grant cascade failure should not block overall order link
+        } catch (err) {
+            // The order is linked; a retry re-runs the cascade (OnClaim is idempotent).
+            const message = `Could not move the entitlement grants of order ${order.ID}: ${err instanceof Error ? err.message : String(err)}`;
+            LogError(`[GuestOrderClaimDriver] ${message}`);
+            return { Success: false, ErrorMessage: message };
         }
 
         return {
