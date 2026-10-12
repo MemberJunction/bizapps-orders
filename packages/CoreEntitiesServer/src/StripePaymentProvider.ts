@@ -38,6 +38,9 @@ import {
     type EnsureCustomerResult,
     type GatewayCharge,
     type GatewayRefund,
+    type GatewayChargeItem,
+    type ListChargeItemsRequest,
+    type ListChargeItemsResult,
     type ListChargesRequest,
     type ListChargesResult,
     type ListWebhookEndpointsResult,
@@ -371,6 +374,30 @@ export class StripePaymentProvider extends BasePaymentProvider {
         return { Success: false, NotFound: code === 'resource_missing', Reason: result.Reason };
     }
 
+    /**
+     * The Checkout Session behind the intent and its line items. Payment links and hosted checkout both
+     * create one; a charge made in the dashboard or through the API has none, and answers no items.
+     */
+    public override async ListChargeItems(request: ListChargeItemsRequest): Promise<ListChargeItemsResult> {
+        if (this.useStub) return { Success: true, Items: [] };
+        const sessions = await this.listAll('/checkout/sessions', { payment_intent: request.ProviderIntentID });
+        if (!sessions.Ok) return { Success: false, Reason: sessions.Reason };
+        if (sessions.Items.length === 0) return { Success: true, Items: [] };
+        if (sessions.Items.length > 1) {
+            return { Success: false, Reason: `Stripe has ${sessions.Items.length} checkout sessions for intent ${request.ProviderIntentID}; expected one.` };
+        }
+        const session = sessions.Items[0];
+        const lines = await this.listAll(`/checkout/sessions/${encodeURIComponent(String(session.id))}/line_items`, {});
+        if (!lines.Ok) return { Success: false, Reason: lines.Reason };
+        const details = (session.customer_details ?? {}) as Record<string, unknown>;
+        return {
+            Success: true,
+            Items: lines.Items.map(StripeChargeItemFromLineItem).filter((i): i is GatewayChargeItem => i !== null),
+            BuyerEmail: NonEmpty(details.email),
+            BuyerName: NonEmpty(details.name),
+        };
+    }
+
     public override async ListWebhookEndpoints(): Promise<ListWebhookEndpointsResult> {
         if (this.useStub) return { Success: false, Reason: 'The stub has no webhook endpoints.' };
         const listed = await this.listAll('/webhook_endpoints', {});
@@ -650,6 +677,7 @@ export function StripeChargeFromObject(object: Record<string, unknown>): Gateway
     const currency = ((object.currency as string) ?? 'usd').toUpperCase();
     const created = Number(object.created);
     const intent = object.payment_intent;
+    const billing = (object.billing_details ?? {}) as Record<string, unknown>;
     return {
         ProviderChargeID: String(object.id),
         ProviderIntentID:
@@ -659,7 +687,31 @@ export function StripeChargeFromObject(object: Record<string, unknown>): Gateway
         CurrencyCode: currency,
         Status: String(object.status ?? ''),
         CreatedAt: Number.isFinite(created) && created > 0 ? new Date(created * 1000) : undefined,
+        BuyerEmail: NonEmpty(billing.email) ?? NonEmpty(object.receipt_email),
+        BuyerName: NonEmpty(billing.name),
     };
+}
+
+/** A Checkout Session line item as a `GatewayChargeItem`, or null for a line with no price. */
+export function StripeChargeItemFromLineItem(object: Record<string, unknown>): GatewayChargeItem | null {
+    const price = object.price;
+    const priceID = typeof price === 'string' ? price : ((price as Record<string, unknown> | null)?.id as string | undefined);
+    if (!priceID) return null;
+    const product = typeof price === 'object' && price ? (price as Record<string, unknown>).product : undefined;
+    const currency = ((object.currency as string) ?? 'usd').toUpperCase();
+    const quantity = Number(object.quantity ?? 1);
+    return {
+        ProviderPriceID: priceID,
+        ProviderProductID:
+            typeof product === 'string' ? product : ((product as Record<string, unknown> | null | undefined)?.id as string | undefined) ?? null,
+        Quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+        Amount: FromMinorUnits(Number(object.amount_total ?? 0), currency),
+    };
+}
+
+/** A trimmed string, or null for anything empty or not a string. */
+function NonEmpty(value: unknown): string | null {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 /** A Stripe refund object as a `GatewayRefund`. */
