@@ -1,0 +1,6 @@
+---
+"@mj-biz-apps/orders-entities": minor
+"@mj-biz-apps/orders-core-entities-server": minor
+---
+
+A booked term's start and end can be moved together, at the same price (#507). `Orders.AmendArrangement` takes a `NewStartDate`; the end follows it unless given. It records a Shift `OrderConcession` valued at zero, which goes through under the `TermShiftReviewDays` setting and at or above it waits for the finance acknowledgment role (`AmendmentAcknowledgmentRole`); the requester cannot decide it. A holder of that role can escalate it to the ConcessionLimit tier it meets with `EscalateOrderConcessionID` (or `OrderConcessionEntityServer.EscalateShift`). An approved shift moves the term, the selling line's service period, the subscription's start when it started with the term, access, and the instalments not yet invoiced when the term's line is all the order bills. Recognition offsets every staged entry dated on or after the effective day, re-spreads the term's whole amount from the new start with a full first period, and corrects periods already behind the effective day with one catch-up or reversal dated that day (`PlanTermShift`). A `Rescheduled` subscription event and the re-cut acknowledgment task record it. A shortening, and a shift combined with an extension, are refused. New check bundle `term-shift` (TS1–TS6).

@@ -1054,7 +1054,8 @@ export const OrderBookingChecks: NamedCheck[] = [
                 // draft, then confirm it. Both saves run the pricing walk and both resolve the tax.
                 // The confirm used to ADD its tax rows beside the draft's, so booking credited the
                 // tax twice against a receivable that carried it once and refused the entry. OB10
-                // confirms in one save and could not see it.
+                // takes this path too, because its discounted line needs a concession before
+                // confirm; this check covers it without a discount or a concession.
                 const f = Fx();
                 await CreateProductPrice(ctx, f.Products.WidgetA, 50);
                 const draft = await BuildOrder(ctx.User, {

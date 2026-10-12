@@ -122,7 +122,7 @@ export function PlanTermExtension(input: TermExtensionInput): TermExtensionPlan 
         Description: `Offset of ${t.EntryNumber}: ${input.Label}`,
         LinkedEntityID: input.LinkedEntityID,
         LinkedRecordID: input.LinkedRecordID,
-        Lines: t.Lines.map(mirrorLine),
+        Lines: t.Lines.map(MirrorLine),
     }));
 
     if (release.Amount === 0) {
@@ -158,7 +158,7 @@ export function PlanTermExtension(input: TermExtensionInput): TermExtensionPlan 
     return { Targets: targets, Offsets: offsets, Respread: respread, Remaining: release.Amount, RespreadStart: start };
 }
 
-interface NetSide {
+export interface NetSide {
     GLAccountID: string;
     Dimensions: StagedDimension[];
 }
@@ -171,7 +171,7 @@ export function NetRelease(targets: StagedEntry[]): { Amount: number; Debit: Net
     const sides = new Map<string, NetSide & { Net: number }>();
     for (const target of targets) {
         for (const line of target.Lines) {
-            const key = sideKey(line);
+            const key = SideKey(line);
             const side = sides.get(key) ?? { GLAccountID: line.GLAccountID, Dimensions: line.Dimensions, Net: 0 };
             side.Net = money(side.Net + Number(line.CreditAmount ?? 0) - Number(line.DebitAmount ?? 0));
             sides.set(key, side);
@@ -194,7 +194,8 @@ export function NetRelease(targets: StagedEntry[]): { Amount: number; Debit: Net
     return { Amount: credits[0].Net, Debit: debits[0], Credit: credits[0] };
 }
 
-function sideKey(line: StagedLine): string {
+/** The account and dimensions a line posts to, as a key: lines with the same key net against each other. */
+export function SideKey(line: StagedLine): string {
     const dims = [...line.Dimensions]
         .map((d) => `${d.DimensionID.toLowerCase()}=${d.DimensionValueID.toLowerCase()}`)
         .sort()
@@ -202,7 +203,8 @@ function sideKey(line: StagedLine): string {
     return `${line.GLAccountID.toLowerCase()}|${dims}`;
 }
 
-function mirrorLine(line: StagedLine): JELineDraft {
+/** A staged line with debit and credit swapped: the line that cancels it. */
+export function MirrorLine(line: StagedLine): JELineDraft {
     const debit = Number(line.CreditAmount ?? 0);
     const credit = Number(line.DebitAmount ?? 0);
     return {

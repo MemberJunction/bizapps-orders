@@ -166,7 +166,7 @@ Results persist as line price-component / charge / adjustment children so the bo
 - Capture books Dr Cash (net) / Dr Processing Fee / Cr A/R (gross).
 - Refund and bank return are reversal payments: `Status = 'Refunded'`, positive `Amount`, negative lines, `ReversesPaymentHeaderID` set. Refund with `Orders.RefundPayment`; the ACH webhook writes bank returns. Nothing writes chargebacks yet.
 - Over-payment is a **negative Balance** — that *is* the account credit. Spend it with `Orders.ApplyAccountCredit`.
-- Providers: `BasePaymentProvider` + `@RegisterClass`, keyed by `PaymentProviderType.Code`. **Manual** always works. **Stripe** takes cards; **StripeACH** takes US bank debits, which settle late, so the webhook books the cash. **StoredValue** spends gift cards and account credit. **BillCom** is the outbound invoice rail and refuses checkout verbs ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)). Webhooks hit an unauthenticated Express route; idempotency is `ProviderEventID`.
+- Providers: `BasePaymentProvider` + `@RegisterClass`, keyed by `PaymentProviderType.Code`. **Manual** always works. **Stripe** takes cards; **StripeACH** takes US bank debits, which settle late, so the webhook books the cash. **StoredValue** spends gift cards and account credit. **BillCom** is the outbound invoice rail and refuses checkout verbs ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)). **HubSpotPayments** reads the payments a company's HubSpot portal collects through the same poll, and also refuses checkout verbs ([`hubspot-payments.md`](hubspot-payments.md)). Webhooks hit an unauthenticated Express route; idempotency is `ProviderEventID`.
 
 ---
 
@@ -177,7 +177,7 @@ Results persist as line price-component / charge / adjustment children so the bo
 - Annual billed annually = one order, deferred, recognized ratably (forward-dated JEs at booking).
 - Monthly billed monthly = one renewal Order Header per cycle (`Orders.SpawnRenewals` places Drafts at lead time; a human confirms).
 - Cancel is `Orders.CancelSubscription` (policy → reversal).
-- **Event products** (`EventProduct` IsA, shared UUID with Product) stamp `ServicePeriodStart`/`End` from the event unless the line already set them. `EventOrderLine` holds the attendee. Capacity is **not** enforced on confirm.
+- **Event products** (`EventProduct` IsA, shared UUID with Product) stamp `ServicePeriodStart`/`End` from the event unless the line already set them. `EventOrderLine` holds the attendee, one per line. When `EventProduct.RequiresAttendeeInfo` is set, the order refuses to book unless each line of that event is quantity 1 with an attendee row, and checkout refuses to open a payment intent until each ticket has an attendee with an e-mail (`AttendeeRequirement.ts`). Reversals and bundle components are exempt. Capacity is **not** enforced on confirm.
 
 Revenue recognition is **real forward-dated JEs written at booking**. A 12-month $1,200 subscription writes 12 × $100 Dr Deferred / Cr Revenue dated on the monthly anniversaries. Accounting's batch sweep by date is what "fires" recognition. Staged entries are never edited; corrections are reversing orders.
 

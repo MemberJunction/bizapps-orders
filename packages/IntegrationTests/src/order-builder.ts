@@ -103,6 +103,8 @@ export interface OrderSpec {
     ShipToAddressID?: string;
     /** The order this one reverses — a return names it, and takes its addresses from it. */
     ReversesOrderHeaderID?: string;
+    /** The order's searchable memo (D29). The review-data seeder opens it with its run marker. */
+    Description?: string;
     /** D42 initial-payment intent, captured at order entry and turned into a real payment at confirm. */
     InitialPaymentTypeID?: string;
     InitialPaymentAmount?: number;
@@ -192,6 +194,7 @@ export async function BuildOrder(
     if (spec.ShipToPersonID) order.ShipToPersonID = spec.ShipToPersonID;
     if (spec.ShipToAddressID) order.ShipToAddressID = spec.ShipToAddressID;
     if (spec.ReversesOrderHeaderID) order.ReversesOrderHeaderID = spec.ReversesOrderHeaderID;
+    if (spec.Description) order.Description = spec.Description;
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;
 
     // A REFERENCE-REQUIRING TENDER GETS AN INSTRUMENT, because a real one always would.
