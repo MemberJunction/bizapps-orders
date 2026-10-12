@@ -46,6 +46,7 @@
  *   term-shift           TS1–TS6   a booked term's start and end moved together, with recognition, access and instalments following
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
  *   progress-measurement PM1–PM14   percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
+ *   billcom-rail         BR1–BR20  the Bill.com invoice rail through its gateway seam: send, cancel, poll, webhook, job gate (#591)
  *
  * Note that `events` and `line-subscriber` are listed out of order above because that is the order
  * they were written in; the runner's order is presentational — each bundle owns its own fixture.
@@ -122,6 +123,7 @@ export * from './checks/concessions.checks.js';
 export * from './checks/term-extension.checks.js';
 export * from './checks/amount-change.checks.js';
 export * from './checks/term-shift.checks.js';
+export * from './checks/billcom-rail.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

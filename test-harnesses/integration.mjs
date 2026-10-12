@@ -134,6 +134,7 @@ const ALL_BUNDLES = [
     'party-roster',
     'progress-measurement',
     'outbound-events',
+    'billcom-rail',
     'volume',
 ];
 

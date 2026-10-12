@@ -91,8 +91,11 @@ added to `INVOICE_RAIL_TYPE_CODES` and the two Angular copies (`RAIL_TYPE_CODES`
 | Native email refusal (`EXTERNALLY_INVOICED`) | [`DeliveryBehavior.ts`](../packages/CoreEntitiesServer/src/DeliveryBehavior.ts), `DeliveryRecipientResolver.ts`, `packages/Server/src/custom/send-document.action.ts` |
 | Order form panel, Invoicing queue, Send/Cancel rules, Billing worklist "Then sends via" column | [`external-invoices.panel.ts`](../packages/Angular/src/lib/form-panels/external-invoices.panel.ts), [`external-invoicing-queue.page.ts`](../packages/Angular/src/lib/pages/receivables/external-invoicing-queue.page.ts), `panels/external-invoice-view.ts`, `pages/receivables/billing.page.ts` |
 
-Screens take their labels from `PaymentProvider.Name`. Tests are unit tests only, in the `__tests__`
-folders beside this code; [`billcom-live.mjs`](../test-harnesses/billcom-live.mjs) probes a BILL sandbox by hand.
+Screens take their labels from `PaymentProvider.Name`. Unit tests sit in the `__tests__` folders beside
+this code. The `billcom-rail` integration bundle
+([`billcom-rail.checks.ts`](../packages/IntegrationTests/src/checks/billcom-rail.checks.ts)) runs the
+send, cancel, poll and webhook paths against a real database with Bill.com stubbed behind the gateway
+seam. [`billcom-live.mjs`](../test-harnesses/billcom-live.mjs) probes a BILL sandbox by hand.
 
 ## Remote operations
 
