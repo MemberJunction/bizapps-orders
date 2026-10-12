@@ -91,5 +91,16 @@
     "primaryKey": {
       "ID": "790CAE86-689A-4984-AF17-3200CE72D36B"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "RenewalPaymentLinkBaseUrl",
+      "Value": "",
+      "Comments": "The public address of this host's checkout edge, for example https://shop.example.org/checkout (the OrdersCheckoutEdge RootPath on the public host name). When a renewal card is first declined, or the bank asks the absent buyer to authenticate, the buyer is e-mailed a link built on it, <address>/renew/<token>, that pays the renewal with a new card (#289). Empty sends no link. The link-signing secret is not a setting: the server reads it from the ORDERS_RENEWAL_LINK_SECRET environment variable."
+    },
+    "primaryKey": {
+      "ID": "C3CA57CB-0C3B-450E-A294-25500B9BF3F0"
+    }
   }
 ]

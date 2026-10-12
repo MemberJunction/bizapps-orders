@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR44).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR48).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -73,6 +73,13 @@
  *   SR43  a later settled-payment webhook for the charged intent books nothing more
  *   SR44  one order's fault does not stop the pass: the next order is still charged
  *
+ *   The update-card link (#289):
+ *   SR45  an order's first failed charge sends the link through the charge Action; its second does not
+ *   SR46  the link opens a session on the renewal order that pays it: no new order, the balance
+ *         cleared through the ordinary capture, and the session confirmed on the renewal order
+ *   SR47  the link is refused once the renewal is paid, and a tampered link is refused outright
+ *   SR48  a pay-renewal session cannot be drafted, so the renewal is never re-priced
+ *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
 import { BaseAction } from '@memberjunction/actions';
@@ -105,10 +112,13 @@ import {
     upsertViaEntity,
 } from '../fixture.js';
 import {
+    CHECKOUT_WIDGET_DISTRIBUTION_ENTITY,
+    CHECKOUT_WIDGET_ENTITY,
     CUSTOMER_PAYMENT_METHOD_ENTITY,
     GL_ACCOUNT_LINK_ENTITY,
     ORDER_COMPANY_POLICY_ENTITY,
     PAYMENT_DETAIL_ENTITY,
+    PAYMENT_INTENT_ENTITY,
     PAYMENT_PROVIDER_ENTITY,
     PAYMENT_PROVIDER_TYPE_ENTITY,
     PRODUCT_CATEGORY_ENTITY,
@@ -120,6 +130,9 @@ import { BuildOrder, ConfirmOrder } from '../order-builder.js';
 import {
     ChargeRenewals,
     CheckoutSessionService,
+    ConfigureRenewalPaymentLinks,
+    OrdersSettings,
+    SignRenewalPaymentToken,
     type ChargeRenewalsOutput,
 } from '@mj-biz-apps/orders-core-entities-server';
 
@@ -1600,6 +1613,129 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
 
+    // ─── The update-card link (#289) ──────────────────────────────────────────────────────────
+    {
+        Id: 'subscription-renewal.SR45',
+        Name: "SR45: an order's first failed charge sends the update-card link, and its second does not",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () =>
+                withRenewalLinks(async () => {
+                    const { SubscriptionID, OrderID, TermStart } = await renewWithCard(ctx, 'pm_card_chargeDeclined');
+                    const first = await chargeRenewalsViaAction(ctx, { SubscriptionID, AsOfDate: TermStart, Preview: 'false' });
+                    AssertEqual(first.Failed, 1, `the first charge failed: ${first.Message}`);
+                    const a1 = first.Attempts.find((a) => SameID(a.OrderID, OrderID));
+                    AssertEqual(a1?.FirstFailure, true, 'it is the first failure');
+                    Assert(typeof a1?.PaymentLinkSent === 'boolean', `a send was attempted: ${JSON.stringify(a1)}`);
+                    // The suite's database has no mail provider, so the send itself may fail; everything
+                    // before it — the secret, the link address, the recipient and both templates — must not.
+                    Assert(
+                        a1?.PaymentLinkSent === true || !/secret|RenewalPaymentLinkBaseUrl|templates are not installed|no bill-to person|did not render/.test(a1?.PaymentLinkReason ?? ''),
+                        `the link was built and rendered: ${a1?.PaymentLinkReason}`,
+                    );
+
+                    const second = await chargeRenewalsViaAction(ctx, { SubscriptionID, AsOfDate: daysBefore(TermStart, -3), Preview: 'false' });
+                    AssertEqual(second.Failed, 1, 'the retry failed too');
+                    const a2 = second.Attempts.find((a) => SameID(a.OrderID, OrderID));
+                    Assert(!a2?.FirstFailure, 'the retry is not a first failure');
+                    AssertEqual(a2?.PaymentLinkSent, undefined, 'and sends no second link');
+                }),
+            ),
+    },
+    {
+        Id: 'subscription-renewal.SR46',
+        Name: 'SR46: the update-card link pays the open renewal order, with no new order',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () =>
+                withRenewalLinks(async () => {
+                    const r = await renewWithCard(ctx, 'pm_card_chargeDeclined');
+                    await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart });
+                    await soldThroughCheckout(ctx, r.SourceOrderID, r.ProviderID);
+                    const orders = async () => Number((await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderHeader`)).N);
+                    const before = await orders();
+
+                    const key = `it-renew-${r.OrderID.slice(0, 8)}`;
+                    const init = await CheckoutSessionService.InitializeRenewalPaymentSession(await linkToken(r.OrderID, r.SubscriptionID), key, ctx.User);
+                    Assert(init.Success, `the link opens a session: ${init.ErrorMessage}`);
+                    AssertEqual(init.RenewalPayment?.Amount, 1200, 'for the open balance');
+                    const sessionID = init.SessionID!;
+
+                    const intent = await CheckoutSessionService.OpenPaymentIntentForSession(sessionID, key, ctx.User);
+                    Assert(intent.Success, `an intent opens: ${intent.ErrorMessage}`);
+                    AssertEqual(intent.Amount, 1200, 'for the balance');
+                    await settleSessionIntent(ctx, sessionID);
+
+                    const done = await CheckoutSessionService.CompleteCheckout(sessionID, key, ctx.User);
+                    Assert(done.Success, `the payment completes: ${done.ErrorMessage}`);
+                    Assert(SameID(done.OrderID, r.OrderID), 'on the renewal order');
+                    AssertEqual(await orders(), before, 'and no order was created');
+
+                    const order = await TxOne<{ Balance: number }>(ctx, `SELECT Balance FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${r.OrderID}'`);
+                    AssertEqual(Number(order.Balance), 0, 'the renewal is paid');
+                    const payments = await paymentsFor(ctx, r.OrderID);
+                    AssertEqual(payments.length, 1, 'by one payment');
+                    AssertEqual(payments[0].Status, 'Captured', 'captured through the ordinary path');
+                    const session = await TxOne<{ Status: string; DraftOrderID: string }>(ctx, `SELECT Status, DraftOrderID FROM ${ORDERS_SCHEMA}.CheckoutSession WHERE ID = '${sessionID}'`);
+                    AssertEqual(session.Status, 'Confirmed', 'the session is confirmed');
+                    Assert(SameID(session.DraftOrderID, r.OrderID), 'on the renewal order');
+
+                    const later = await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: daysBefore(r.TermStart, -3) });
+                    AssertEqual(later.Considered, 0, 'the paid renewal is no longer charged');
+                }),
+            ),
+    },
+    {
+        Id: 'subscription-renewal.SR47',
+        Name: 'SR47: the update-card link is refused once the renewal is paid, and when tampered with',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () =>
+                withRenewalLinks(async () => {
+                    const r = await renewWithCard(ctx, 'pm_card_visa');
+                    await soldThroughCheckout(ctx, r.SourceOrderID, r.ProviderID);
+                    const token = await linkToken(r.OrderID, r.SubscriptionID);
+
+                    const [payload, signature] = token.split('.');
+                    const tampered = `${payload}.${signature.slice(0, -2)}${signature.endsWith('AA') ? 'BB' : 'AA'}`;
+                    const forged = await CheckoutSessionService.InitializeRenewalPaymentSession(tampered, 'it-renew-forged', ctx.User);
+                    AssertEqual(forged.Success, false, 'a tampered link opens nothing');
+                    AssertEqual(forged.ErrorMessage, 'This payment link is not valid.', 'and says only that it is not valid');
+
+                    await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart });
+                    const paid = await CheckoutSessionService.InitializeRenewalPaymentSession(token, 'it-renew-paid', ctx.User);
+                    AssertEqual(paid.Success, false, 'a paid renewal opens nothing');
+                    AssertEqual(paid.ErrorMessage, 'This renewal is already paid.', 'and says so');
+                }),
+            ),
+    },
+    {
+        Id: 'subscription-renewal.SR48',
+        Name: 'SR48: a pay-renewal session cannot be drafted, so the renewal is never re-priced',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () =>
+                withRenewalLinks(async () => {
+                    const r = await renewWithCard(ctx, 'pm_card_chargeDeclined');
+                    await soldThroughCheckout(ctx, r.SourceOrderID, r.ProviderID);
+                    const key = 'it-renew-draft';
+                    const init = await CheckoutSessionService.InitializeRenewalPaymentSession(await linkToken(r.OrderID, r.SubscriptionID), key, ctx.User);
+                    Assert(init.Success, `the link opens a session: ${init.ErrorMessage}`);
+                    const draft = await CheckoutSessionService.UpdateDraft(
+                        init.SessionID!,
+                        key,
+                        'buyer@example.com',
+                        [{ ProductID: Fx().Products.SubRolling, Quantity: 3 }],
+                        { Country: 'US', StateProvince: 'IL', PostalCode: '60601' },
+                        ctx.User,
+                    );
+                    AssertEqual(draft.Success, false, 'the draft is refused');
+                    const line = await renewalLine(ctx, r.OrderID);
+                    AssertEqual(Number(line.UnitPrice), 1200, 'and the renewal keeps its price');
+                }),
+            ),
+    },
+
 ];
 
 /** A 20%-off promotion and its code, with `AppliesToRenewals` as given; returns the code. */
@@ -1738,12 +1874,12 @@ async function renewWithCard(
     ctx: IntegrationCheckContext,
     instrumentRef: string,
     opts: { inactiveProvider?: boolean; organizationID?: string } = {},
-): Promise<{ SubscriptionID: string; OrderID: string; TermStart: string }> {
+): Promise<{ SubscriptionID: string; OrderID: string; TermStart: string; SourceOrderID: string; ProviderID: string }> {
     const f = Fx();
     // A second subscription in one check needs a second holder: AnnualRolling is ExtendExisting, so the
     // same holder buying again extends the first subscription instead of starting another.
     const holder = opts.organizationID ?? f.Customers.OrganizationID;
-    const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, holder);
+    const { SubscriptionID, Term, OrderID: SourceOrderID } = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, holder);
     const providerID = await stubStripeProvider(ctx, !opts.inactiveProvider);
     const tenderID = f.PaymentTypeIDs.get('CreditCard');
     Assert(tenderID != null, 'precondition: a CreditCard payment type');
@@ -1766,7 +1902,7 @@ async function renewWithCard(
 
     const placed = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
     AssertEqual(placed.Placed, 1, `the renewal is placed: ${placed.Message}`);
-    return { SubscriptionID, OrderID: placed.Candidates[0].OrderID!, TermStart: isoDate(daysBefore(Term.EndDate, -1)) };
+    return { SubscriptionID, OrderID: placed.Candidates[0].OrderID!, TermStart: isoDate(daysBefore(Term.EndDate, -1)), SourceOrderID, ProviderID: providerID };
 }
 
 /** `ChargeRenewals` as the Action calls it. */
@@ -1778,7 +1914,7 @@ async function chargeRenewals(ctx: IntegrationCheckContext, input: { Subscriptio
 async function chargeRenewalsViaAction(
     ctx: IntegrationCheckContext,
     inputs: Record<string, string>,
-): Promise<{ Success: boolean; ResultCode?: string; Message?: string; Charged: number; Attempts: ChargeRenewalsOutput['Attempts'] }> {
+): Promise<{ Success: boolean; ResultCode?: string; Message?: string; Charged: number; Failed: number; Attempts: ChargeRenewalsOutput['Attempts'] }> {
     const resolved = MJGlobal.Instance.ClassFactory.TryCreateInstance<BaseAction>(BaseAction, CHARGE_ACTION_DRIVER_CLASS);
     Assert(resolved.Resolved && resolved.Instance != null, `'${CHARGE_ACTION_DRIVER_CLASS}' is not registered — the Load anchor is missing`);
     const params = {
@@ -1795,6 +1931,7 @@ async function chargeRenewalsViaAction(
         ResultCode: result.ResultCode,
         Message: result.Message,
         Charged: Number(output<number>('Charged') ?? 0),
+        Failed: Number(output<number>('Failed') ?? 0),
         Attempts: output<ChargeRenewalsOutput['Attempts']>('Attempts') ?? [],
     };
 }
@@ -1824,6 +1961,57 @@ const chargeEventsOf = (ctx: IntegrationCheckContext, orderID: string) =>
          WHERE RelatedOrderHeaderID = '${orderID}' AND EventType IN ('PaymentSucceeded','PaymentFailed')
          ORDER BY __mj_CreatedAt, ID`,
     );
+
+
+// ─── Update-card link helpers (#289) ──────────────────────────────────────────────────────────
+
+/** A secret for the checks only: links are signed and checked with it while a check runs. */
+const TEST_LINK_SECRET = 'integration-check-renewal-link-secret-0123456789';
+
+/** Run `body` with renewal links switched on (a secret and a link address), and off again after. */
+async function withRenewalLinks<T>(body: () => Promise<T>): Promise<T> {
+    ConfigureRenewalPaymentLinks({ Secret: TEST_LINK_SECRET });
+    OrdersSettings.SetOverride('RenewalPaymentLinkBaseUrl', 'https://checkout.example.test/checkout');
+    try {
+        return await body();
+    } finally {
+        ConfigureRenewalPaymentLinks({ Secret: null });
+        OrdersSettings.SetOverride('RenewalPaymentLinkBaseUrl', undefined);
+    }
+}
+
+/**
+ * The checkout that sold the subscription: an active widget on the renewal card's provider, with a
+ * distribution, named as the source of the subscription's first order. The update-card page is shown
+ * in it.
+ */
+async function soldThroughCheckout(ctx: IntegrationCheckContext, sourceOrderID: string, providerID: string): Promise<string> {
+    const f = Fx();
+    const widgetID = await createViaEntity(ctx, CHECKOUT_WIDGET_ENTITY, {
+        Name: `${f.Run} renewal checkout`,
+        CompanyID: f.CoA.ID,
+        Status: 'Active',
+        Configuration: JSON.stringify({ paymentProviderId: providerID, currency: 'USD' }),
+    });
+    await createViaEntity(ctx, CHECKOUT_WIDGET_DISTRIBUTION_ENTITY, {
+        CheckoutWidgetID: widgetID,
+        Slug: `${f.Run.toLowerCase()}-renew-${widgetID.slice(0, 8).toLowerCase()}`,
+        Status: 'Active',
+    });
+    await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET SourceCheckoutWidgetID = '${widgetID}' WHERE ID = '${sourceOrderID}'`);
+    return widgetID;
+}
+
+/** A link token for a renewal, valid for a day. */
+const linkToken = (orderID: string, subscriptionID: string) =>
+    SignRenewalPaymentToken({ OrderID: orderID, SubscriptionID: subscriptionID, ExpiresAt: new Date(Date.now() + 86_400_000) }, TEST_LINK_SECRET);
+
+/** Mark the session's intent paid, as the gateway's webhook would once the buyer confirms. */
+async function settleSessionIntent(ctx: IntegrationCheckContext, sessionID: string): Promise<void> {
+    const row = await TxOne<{ PaymentIntentID: string }>(ctx, `SELECT PaymentIntentID FROM ${ORDERS_SCHEMA}.CheckoutSession WHERE ID = '${sessionID}'`);
+    Assert(!!row.PaymentIntentID, 'precondition: the session has an intent');
+    await upsertViaEntity(ctx, PAYMENT_INTENT_ENTITY, row.PaymentIntentID, { Status: 'Succeeded' });
+}
 
 for (const check of SubscriptionRenewalChecks) {
     IntegrationCheckRegistry.Instance.Register(check);

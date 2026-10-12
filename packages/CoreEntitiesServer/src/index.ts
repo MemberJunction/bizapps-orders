@@ -363,6 +363,30 @@ export type {
     EnforcePaymentGatedAccessInput,
     EnforcePaymentGatedAccessOutput,
 } from './PaymentGatedAccess.js';
+// Paying a renewal through the checkout — the update-card link (#289).
+export {
+    ConfigureRenewalPaymentLinks,
+    LoadRenewalPaymentOrder,
+    RENEWAL_LINK_DAYS_WITHOUT_CUTOFF,
+    RENEWAL_LINK_GRACE_DAYS,
+    RENEWAL_LINK_MIN_SECRET_LENGTH,
+    RenewalPaymentAlreadyConfirmed,
+    RenewalPaymentLinkExpiresAt,
+    RenewalPaymentLinkSecret,
+    RenewalPaymentLinkUrl,
+    RenewalPaymentRefusal,
+    RenewalPaymentTokenMessage,
+    SignRenewalPaymentToken,
+    VerifyRenewalPaymentToken,
+} from './CheckoutRenewalPayment.js';
+export type {
+    RenewalPaymentOrder,
+    RenewalPaymentTokenAccepted,
+    RenewalPaymentTokenCheck,
+    RenewalPaymentTokenClaims,
+    RenewalPaymentTokenFailure,
+    RenewalPaymentTokenRefused,
+} from './CheckoutRenewalPayment.js';
 // Charging the renewal card (#289) — the daily pass that collects a renewal order off-session.
 export {
     ChargeRenewals,
@@ -376,6 +400,7 @@ export {
     RenewalChargeIdempotencyKey,
 } from './RenewalCharging.js';
 export type {
+    ChargeRenewalsHooks,
     ChargeRenewalsInput,
     ChargeRenewalsOutput,
     RenewalChargeAttempt,
@@ -965,6 +990,7 @@ export type {
     CheckoutLineInput,
     CheckoutLineSummary,
     InitSessionResult,
+    RenewalPaymentSummary,
     UpdateDraftResult,
     CompleteCheckoutResult,
     OpenSessionPaymentIntentResult,

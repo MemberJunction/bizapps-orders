@@ -50,7 +50,8 @@ import {
     type CheckoutChoicesCheck,
     type CheckoutChoicesInput
 } from '@mj-biz-apps/orders-entities';
-import { EscapeText, IsUUID } from './sql-guards.js';
+import { EscapeText, IsUUID, RequireUUID } from './sql-guards.js';
+import type { mjBizAppsCommonPersonEntity } from '@mj-biz-apps/common-entities';
 import { RunPrePurchaseChecks, type CheckoutRefusal, type PrePurchaseRefusal } from './CheckoutPrePurchaseCheck.js';
 import { ExplainMissingCheckoutAttendees, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { ResolvePersonByEmail } from './PersonByEmail.js';
@@ -78,6 +79,15 @@ import {
     isTerminalCapturePrecheck,
 } from './checkoutCaptureRetry.js';
 import { DescribeCheckoutSnapshot, SendOrderDescriptionToGateway } from './IntentDescription.js';
+import {
+    LoadRenewalPaymentOrder,
+    RenewalPaymentAlreadyConfirmed,
+    RenewalPaymentLinkSecret,
+    RenewalPaymentRefusal,
+    RenewalPaymentTokenMessage,
+    VerifyRenewalPaymentToken,
+    type RenewalPaymentOrder,
+} from './CheckoutRenewalPayment.js';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
@@ -120,6 +130,20 @@ export interface InitSessionResult {
     CustomCSS?: string | null;
     CustomJS?: string | null;
     ExpiresAt?: string;
+    /** Set when the session pays an open renewal order through the update-card link (#289). */
+    RenewalPayment?: RenewalPaymentSummary;
+}
+
+/** What the pay-renewal page shows: the order being paid, never anything about the buyer. */
+export interface RenewalPaymentSummary {
+    OrderNumber: string;
+    /** The amount due, in major units. */
+    Amount: number;
+    /** What the order renews: its renewal lines' product names. */
+    Description: string;
+    SubscriptionNumber: string | null;
+    /** `YYYY-MM-DD`. */
+    DueDate: string | null;
 }
 
 export interface CheckoutAttendeeInput {
@@ -472,6 +496,143 @@ export class CheckoutSessionService {
             CustomJS: configObj.customUI.js || widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString()
         };
+    }
+
+    /**
+     * Mint a session that pays an open renewal order — the update-card link (#289).
+     *
+     * The token is the credential: signed by this server, naming the renewal order and the
+     * subscription, and expiring with the access cutoff plus a grace. The session is shown in the
+     * checkout widget that sold the subscription, and its `DraftOrderID` is the renewal order, which
+     * is what puts every later call (`OpenPaymentIntentForSession`, `CompleteCheckout`) in the
+     * pay-renewal mode. Refused once the order is paid or a session has already paid it.
+     */
+    public static async InitializeRenewalPaymentSession(
+        token: string,
+        clientSessionKey: string,
+        contextUser?: UserInfo
+    ): Promise<InitSessionResult> {
+        if (!clientSessionKey) {
+            return { Success: false, ErrorMessage: 'ClientSessionKey is required' };
+        }
+        const provider = Metadata.Provider as IMetadataProvider | undefined;
+        if (!contextUser || !provider) {
+            return { Success: false, ErrorMessage: 'Renewal payment is not available at the moment.' };
+        }
+        const check = await VerifyRenewalPaymentToken(token, RenewalPaymentLinkSecret());
+        if (check.Valid === false) {
+            return { Success: false, ErrorMessage: RenewalPaymentTokenMessage(check.Reason) };
+        }
+
+        const order = await LoadRenewalPaymentOrder(check.OrderID, provider, contextUser);
+        const refusal = RenewalPaymentRefusal(
+            order,
+            check.SubscriptionID,
+            order ? await RenewalPaymentAlreadyConfirmed(order.OrderID, provider, contextUser) : false
+        );
+        if (refusal || !order) {
+            return { Success: false, ErrorMessage: refusal ?? 'This renewal could not be found.' };
+        }
+        if (!order.SourceCheckoutWidgetID) {
+            return { Success: false, ErrorMessage: 'This renewal was not sold through a checkout, so it cannot be paid here.' };
+        }
+
+        const md = new Metadata();
+        const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
+        if (!(await widget.Load(order.SourceCheckoutWidgetID)) || widget.Status !== 'Active') {
+            return { Success: false, ErrorMessage: 'The checkout for this renewal is currently unavailable' };
+        }
+
+        const rv = new RunView();
+        const escapedKey = EscapeText(clientSessionKey.trim());
+        const nowUtc = new Date().toISOString();
+        const existing = await rv.RunView<mjBizAppsOrdersCheckoutSessionEntity>({
+            EntityName: CHECKOUT_SESSION_ENTITY,
+            ExtraFilter:
+                `CheckoutWidgetID = '${widget.ID}' AND ClientSessionKey = '${escapedKey}' AND Status = 'Open' ` +
+                `AND DraftOrderID = '${RequireUUID(order.OrderID, 'OrderHeaderID')}' AND ExpiresAt > '${nowUtc}'`,
+            ResultType: 'entity_object'
+        }, contextUser);
+
+        let session: mjBizAppsOrdersCheckoutSessionEntity;
+        if (existing.Success && existing.Results?.length) {
+            session = existing.Results[0];
+        } else {
+            session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
+            session.NewRecord();
+            session.CheckoutWidgetID = widget.ID;
+            session.ClientSessionKey = clientSessionKey;
+            session.Status = 'Open';
+            session.DraftOrderID = order.OrderID;
+            if (order.BillToPersonID) {
+                session.PersonID = order.BillToPersonID;
+                const person = await md.GetEntityObject<mjBizAppsCommonPersonEntity>(PERSON_ENTITY, contextUser);
+                if ((await person.Load(order.BillToPersonID)) && person.Email?.trim()) {
+                    session.Email = person.Email.trim();
+                }
+            }
+            // The same two-hour window as any checkout, never past the link's own expiry.
+            const expires = new Date();
+            expires.setHours(expires.getHours() + 2);
+            session.ExpiresAt = expires.getTime() < check.ExpiresAt.getTime() ? expires : check.ExpiresAt;
+            if (!(await session.Save())) {
+                return { Success: false, ErrorMessage: 'Failed to initialize checkout session record' };
+            }
+        }
+
+        let configObj: CheckoutWidgetConfiguration = {};
+        try {
+            const parsed: unknown = widget.Configuration ? JSON.parse(widget.Configuration) : {};
+            configObj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as CheckoutWidgetConfiguration) : {};
+        } catch {
+            configObj = {};
+        }
+        if (!configObj.customUI) configObj.customUI = {};
+        if (widget.CustomCSS && !configObj.customUI.css) configObj.customUI.css = widget.CustomCSS;
+
+        return {
+            Success: true,
+            SessionID: session.ID,
+            ClientSessionKey: session.ClientSessionKey,
+            WidgetID: widget.ID,
+            WidgetName: widget.Name,
+            CompanyID: widget.CompanyID,
+            Configuration: this.sanitizeConfigurationForClient(configObj),
+            CustomCSS: configObj.customUI.css || widget.CustomCSS,
+            CustomJS: configObj.customUI.js || widget.CustomJS,
+            ExpiresAt: session.ExpiresAt.toISOString(),
+            RenewalPayment: {
+                OrderNumber: order.OrderNumber,
+                Amount: Math.round(order.Balance * 100) / 100,
+                Description: order.Description,
+                SubscriptionNumber: order.SubscriptionNumber,
+                DueDate: order.NextDueDate,
+            },
+        };
+    }
+
+    /**
+     * The renewal order a pay-renewal session pays, or null when the session is an ordinary checkout.
+     * The mode is read from the order: only a renewal order has a line naming the subscription it
+     * renews, and a checkout never writes one.
+     */
+    private static async renewalOrderFor(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        contextUser: UserInfo | undefined
+    ): Promise<RenewalPaymentOrder | null> {
+        const provider = Metadata.Provider as IMetadataProvider | undefined;
+        if (!session.DraftOrderID || !contextUser || !provider) return null;
+        try {
+            const order = await LoadRenewalPaymentOrder(session.DraftOrderID, provider, contextUser);
+            return order && order.SubscriptionIDs.length > 0 ? order : null;
+        } catch (err) {
+            // Unreadable reads as "not a renewal": an ordinary checkout's capture must not fail on it.
+            LogError(
+                `[CheckoutSessionService] Session ${session.ID}: could not read order ${session.DraftOrderID} as a renewal: ` +
+                    `${err instanceof Error ? err.message : String(err)}`
+            );
+            return null;
+        }
     }
 
     /**
@@ -1220,6 +1381,11 @@ export class CheckoutSessionService {
         if (!(await this.enforceSessionExpiry(session))) {
             return failed('Checkout session has expired.');
         }
+        // A session that pays an existing renewal order has nothing to draft: the order is already
+        // priced and booked, and paying it must not re-price it (#289).
+        if (session.DraftOrderID) {
+            return failed('This checkout pays an existing renewal order and cannot be changed.');
+        }
 
         const locationCheck = CheckBillingLocation(billingAddress);
         if (locationCheck.Valid === false) {
@@ -1671,6 +1837,9 @@ export class CheckoutSessionService {
         if (!(await this.enforceSessionExpiry(session))) {
             return failed('Checkout session has expired.');
         }
+        if (session.DraftOrderID) {
+            return this.openRenewalPaymentIntent(session, contextUser);
+        }
 
         // The amount is the session's own server-priced snapshot — never a caller input.
         let snapshotTotal = 0;
@@ -1855,6 +2024,120 @@ export class CheckoutSessionService {
         return typeof email === 'string' ? email : null;
     }
 
+    /**
+     * The intent for a pay-renewal session (#289): the open balance of the renewal order, on the
+     * widget's provider, keeping the card the buyer enters. The new card joins the gateway customer
+     * the old renewal card belongs to when it is the same provider, else the buyer's own; no new
+     * order, no re-pricing.
+     */
+    private static async openRenewalPaymentIntent(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        contextUser: UserInfo
+    ): Promise<OpenSessionPaymentIntentResult> {
+        const failed = (message: string): OpenSessionPaymentIntentResult => ({ Success: false, ErrorMessage: message, SessionID: session.ID });
+        const mdProvider = Metadata.Provider as IMetadataProvider | undefined;
+        if (!mdProvider) {
+            return failed('No metadata provider is available to open a payment intent.');
+        }
+        const order = await this.renewalOrderFor(session, contextUser);
+        const refusal = RenewalPaymentRefusal(
+            order,
+            order?.SubscriptionIDs[0] ?? '',
+            order ? await RenewalPaymentAlreadyConfirmed(order.OrderID, mdProvider, contextUser) : false
+        );
+        if (refusal || !order) {
+            return failed(refusal ?? 'This renewal could not be found.');
+        }
+
+        const md = new Metadata();
+        const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
+        if (!(await widget.Load(session.CheckoutWidgetID))) {
+            return failed('The checkout widget for this session could not be loaded.');
+        }
+        let paymentProviderId: string | undefined;
+        let currencyCode: string | undefined;
+        try {
+            const configObj = JSON.parse(widget.Configuration ?? '{}') as CheckoutWidgetConfiguration;
+            paymentProviderId = typeof configObj.paymentProviderId === 'string' ? configObj.paymentProviderId : undefined;
+            currencyCode = typeof configObj.currency === 'string' ? configObj.currency : undefined;
+        } catch {
+            paymentProviderId = undefined;
+        }
+        if (!paymentProviderId) {
+            return failed(`Checkout widget '${widget.Name}' has no paymentProviderId configured — a paid checkout requires one.`);
+        }
+
+        const amount = Math.round(order.Balance * 100) / 100;
+        const customer = await this.renewalPaymentCustomer(session, order, paymentProviderId, mdProvider, contextUser);
+        const keepKey = customer ? `-k${await this.keyDigest(customer)}` : '';
+        const openResult = await OpenPaymentIntent({
+            PaymentProviderID: paymentProviderId,
+            Amount: amount,
+            CurrencyCode: currencyCode ?? SUPPORTED_PAYMENT_CURRENCY,
+            OrderHeaderID: order.OrderID,
+            BillToPersonID: order.BillToPersonID ?? undefined,
+            BillToOrganizationID: order.BillToPersonID ? undefined : order.BillToOrganizationID ?? undefined,
+            ProviderCustomerRef: customer ?? undefined,
+            SaveInstrumentForReuse: !!customer,
+            IdempotencyKey: `renewal-pay-${session.ID}-${Math.round(amount * 100)}${keepKey}`,
+            Metadata: { CheckoutSessionID: session.ID, Purpose: 'RenewalPayment' },
+        }, mdProvider, contextUser);
+        if (!openResult.Success || !openResult.PaymentIntentID) {
+            return failed(openResult.Reason ?? 'The payment provider refused to open an intent.');
+        }
+
+        session.PaymentIntentID = openResult.PaymentIntentID;
+        if (!(await session.Save())) {
+            return failed(`Failed to attach the payment intent to the session: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+        }
+        return {
+            Success: true,
+            SessionID: session.ID,
+            PaymentIntentID: openResult.PaymentIntentID,
+            ClientSecret: openResult.ClientSecret,
+            Status: openResult.Status,
+            Amount: amount,
+        };
+    }
+
+    /**
+     * The gateway customer the new renewal card is kept under: the old renewal card's, when it is on
+     * the same provider; otherwise the buyer's existing customer, or a new one. Null when none can be
+     * had — logged, and the renewal is still paid, only without keeping the card.
+     */
+    private static async renewalPaymentCustomer(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        order: RenewalPaymentOrder,
+        paymentProviderId: string,
+        mdProvider: IMetadataProvider,
+        contextUser: UserInfo
+    ): Promise<string | null> {
+        if (order.RenewalCardProviderCustomerRef && this.idsEqual(order.RenewalCardPaymentProviderID, paymentProviderId)) {
+            return order.RenewalCardProviderCustomerRef;
+        }
+        try {
+            const driver = await ResolvePaymentProvider(paymentProviderId, mdProvider, contextUser);
+            const owner = order.BillToPersonID ?? order.BillToOrganizationID;
+            if (!owner) return null;
+            const customer = await driver.EnsureCustomer({
+                ExistingProviderCustomerRef: order.BillToPersonID
+                    ? await FindReusableProviderCustomerRef(order.BillToPersonID, paymentProviderId, contextUser)
+                    : null,
+                Email: session.Email?.trim().toLowerCase() || null,
+                BillToPersonID: order.BillToPersonID,
+                BillToOrganizationID: order.BillToPersonID ? null : order.BillToOrganizationID,
+                IdempotencyKey: `customer-${owner}-${paymentProviderId}`,
+            });
+            return customer.Success && customer.ProviderCustomerRef ? customer.ProviderCustomerRef : null;
+        } catch (err) {
+            LogError(
+                `[CheckoutSessionService] Session ${session.ID}: no gateway customer for the new renewal card: ` +
+                    `${err instanceof Error ? err.message : String(err)}`
+            );
+            return null;
+        }
+    }
+
     /** Re-runs the pre-purchase checks against the lines the session's draft stored. */
     private static async recheckDraftedPurchase(
         session: mjBizAppsOrdersCheckoutSessionEntity,
@@ -2005,6 +2288,9 @@ export class CheckoutSessionService {
                 SessionID: sessionID,
                 Status: 'Expired'
             };
+        }
+        if (session.DraftOrderID) {
+            return this.completeRenewalPayment(session, md, contextUser);
         }
 
         // Atomically latch status to Processing to prevent concurrent duplicate checkout processing
@@ -2514,6 +2800,57 @@ export class CheckoutSessionService {
      * link is logged and tolerated — the order still references the Address; only the buyer's
      * address book misses it.
      */
+    /**
+     * Complete a pay-renewal session (#289): the payment must have settled and cover the open
+     * balance; then the session is stamped Confirmed against the renewal order and the payment is
+     * booked through the ordinary checkout capture, which also replaces the renewal card. No order is
+     * created or confirmed here — the renewal order already is.
+     */
+    private static async completeRenewalPayment(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<CompleteCheckoutResult> {
+        const refuse = (message: string, status: string = session.Status): CompleteCheckoutResult => ({
+            Success: false,
+            ErrorMessage: message,
+            SessionID: session.ID,
+            Status: status,
+        });
+        const renewal = await this.renewalOrderFor(session, contextUser);
+        if (!renewal) {
+            return refuse('This renewal could not be found.');
+        }
+        if (renewal.Status !== 'Confirmed') {
+            return refuse('This renewal can no longer be paid here.');
+        }
+        const { Refusal: paymentProblem } = await this.verifySessionPayment(session, renewal.Balance, md, contextUser);
+        if (paymentProblem) {
+            return refuse(paymentProblem.Message);
+        }
+        if (!(await this.latchSessionProcessingAtomic(session.ID, md, contextUser))) {
+            return refuse('Session is not in an Open status or was concurrently processed', 'Unknown');
+        }
+        if (!(await this.stampSessionConfirmedAtomic(session.ID, renewal.OrderID, md, contextUser))) {
+            await this.revertSessionOpenAtomic(session.ID, md, contextUser);
+            return refuse('The renewal payment could not be recorded. Please try again.', 'Open');
+        }
+        session.Status = 'Confirmed';
+
+        const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
+        if (await order.Load(renewal.OrderID)) {
+            await this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Checkout' });
+        }
+        return {
+            Success: true,
+            SessionID: session.ID,
+            Status: 'Confirmed',
+            OrderID: renewal.OrderID,
+            OrderNumber: renewal.OrderNumber,
+            TotalGross: renewal.TotalGross,
+        };
+    }
+
     private static async recordBillingAddress(
         location: BillingLocation,
         personID: string,
@@ -2698,11 +3035,14 @@ export class CheckoutSessionService {
         if (!session.PaymentIntentID) {
             return { Attempted: false, Booked: false };
         }
-        const due = Number(order.TotalGross ?? 0);
-        if (!(due > 0)) {
+        // What is still owed: the whole order for a checkout's own new order, and the open balance for
+        // a renewal order paid through the update-card link (#289), which may be part-paid.
+        const total = Number(order.TotalGross ?? 0);
+        if (!(total > 0)) {
             return { Attempted: false, Booked: false };
         }
-        if (Number(order.AmountPaid ?? 0) + 0.005 >= due) {
+        const due = Math.round((total - Number(order.AmountPaid ?? 0)) * 100) / 100;
+        if (!(due > 0.005)) {
             // Paid, possibly by another path after an earlier capture attempt failed. A record
             // left Failed or Running would keep the session in the review queue.
             await CheckoutStepLog.CloseIfOpen(session.ID, 'Capture', contextUser);
@@ -2802,14 +3142,20 @@ export class CheckoutSessionService {
             // The money has moved; now keep the card for any subscription that renews on its own.
             // Fail-soft by contract, so this cannot turn a booked capture into a failed one.
             if (intent.PaymentProviderID && intent.ProviderIntentID) {
+                // A renewal order paid through the update-card link replaces the subscription's
+                // renewal card with the one just used (#289); a checkout's own order fills new
+                // subscriptions that have none.
+                const renewal = await this.renewalOrderFor(session, contextUser);
                 await SaveCheckoutInstrumentForRenewals(
                     {
                         OrderHeaderID: order.ID,
                         CompanyID: order.CompanyID,
                         OwnerPersonID: order.BillToPersonID ?? null,
+                        OwnerOrganizationID: order.BillToOrganizationID ?? null,
                         PaymentProviderID: intent.PaymentProviderID,
                         ProviderIntentID: intent.ProviderIntentID,
                         TenderCode: tenderCode,
+                        ReplaceCardOnSubscriptionIDs: renewal?.SubscriptionIDs,
                     },
                     mdProvider,
                     contextUser
