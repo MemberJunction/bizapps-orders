@@ -1396,14 +1396,14 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: RenewalIncreasePercent
         * * Display Name: Renewal Increase Percent
         * * SQL Data Type: decimal(7, 4)`),
-    VenueAddress: z.string().nullable().describe(`
-        * * Field Name: VenueAddress
-        * * Display Name: Venue Address Details
-        * * SQL Data Type: nvarchar(255)`),
     RequiresSaleApproval: z.boolean().nullable().describe(`
         * * Field Name: RequiresSaleApproval
         * * Display Name: Requires Sale Approval
         * * SQL Data Type: bit`),
+    VenueAddress: z.string().nullable().describe(`
+        * * Field Name: VenueAddress
+        * * Display Name: Venue Address Details
+        * * SQL Data Type: nvarchar(255)`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -11013,15 +11013,6 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     }
 
     /**
-    * * Field Name: VenueAddress
-    * * Display Name: Venue Address Details
-    * * SQL Data Type: nvarchar(255)
-    */
-    get VenueAddress(): string | null {
-        return this.Get('VenueAddress');
-    }
-
-    /**
     * * Field Name: RequiresSaleApproval
     * * Display Name: Requires Sale Approval
     * * SQL Data Type: bit
@@ -11032,6 +11023,15 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     }
     set RequiresSaleApproval(value: boolean | null) {
         this.Set('RequiresSaleApproval', value);
+    }
+
+    /**
+    * * Field Name: VenueAddress
+    * * Display Name: Venue Address Details
+    * * SQL Data Type: nvarchar(255)
+    */
+    get VenueAddress(): string | null {
+        return this.Get('VenueAddress');
     }
 }
 
