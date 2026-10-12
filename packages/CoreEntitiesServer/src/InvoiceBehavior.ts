@@ -87,6 +87,9 @@ export interface InvoiceLineFacts {
     CompanyName: string;
     Quantity: number;
     UnitPrice: number;
+    /** What the price rule set for the line before discount; null when no rule priced it, or on a line written before the column existed. */
+    ExtendedAmount: number | null;
+    DiscountPct: number;
     DiscountAmount: number;
     LineTotalNet: number;
     ChargeAmount: number;
@@ -554,10 +557,28 @@ export function BuildRows(lines: InvoiceLineFacts[]): InvoiceRow[] {
  * well inflates the subtotal by a whole bundle. The discount line below would then absorb the
  * difference and the ladder would still reach the right total, while showing the customer a
  * fictional list price and a fictional saving.
+ *
+ * THE LINE'S OWN GROSS, NOT `Quantity × UnitPrice`. A Flat price that does not divide by the quantity
+ * stores a rounded unit rate — Flat 100.00 at quantity 3 is 33.33 — and re-multiplying it lists the
+ * line at 99.99, so the discount derived below comes out −0.01 and the ladder prints a one-cent
+ * Adjustment nobody gave (#579). The rule's figure is stored on the line, and the line's total was
+ * computed from it, so the invoice lists that.
+ *
+ * A line written before that figure was stored has none. When it records no discount and its net is
+ * within rounding of quantity × unit price, the net is its list amount: a unit price rounded to
+ * cents is off by at most half a cent per unit, so a gap that small is the rounding, not a saving. A
+ * larger gap is a discount the columns do not show (see {@link LineDiscountOf}), and quantity × unit
+ * price stays the list amount so the ladder still prints it.
  */
 export function ListAmountOf(line: InvoiceLineFacts): number {
     if (line.IsRollupParent) return 0;
-    return Money(Number(line.Quantity) * Number(line.UnitPrice));
+    if (line.ExtendedAmount !== null && line.ExtendedAmount !== undefined) return Money(Number(line.ExtendedAmount));
+    const fromRate = Money(Number(line.Quantity) * Number(line.UnitPrice));
+    const net = Money(Number(line.LineTotalNet ?? 0));
+    const undiscounted = !Number(line.DiscountPct ?? 0) && !Number(line.DiscountAmount ?? 0);
+    // In whole cents, so a gap of exactly half a cent per unit is not lost to floating point.
+    if (undiscounted && Math.round(Math.abs(fromRate - net) * 100) <= 0.5 * Math.abs(Number(line.Quantity))) return net;
+    return fromRate;
 }
 
 /**

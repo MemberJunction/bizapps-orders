@@ -1420,11 +1420,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * The exact extended amount a price rule computed for this line, if one did.
      *
      * `_priceComponents` is populated by the pricing pass in this same save, so this
-     * is the authority while the line is still in flight; the line itself carries the
-     * same figure for its own totals hook, which runs outside this class.
+     * is the authority for a line priced now. A line priced on an earlier save carries
+     * its figure in `ExtendedAmount`, which the pricing walk has already cleared if the
+     * line was edited past it.
      */
     private resolvedExtendedFor(line: mjBizAppsOrdersOrderLineEntity): number | null {
-        return this._priceComponents.get(line)?.ExtendedAmount ?? null;
+        return this._priceComponents.get(line)?.ExtendedAmount ?? line.ExtendedAmount ?? null;
     }
 
     /** Persist priced lines and the component/charge rows that need their IDs. */
