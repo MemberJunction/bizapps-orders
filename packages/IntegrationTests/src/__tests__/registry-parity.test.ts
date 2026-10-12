@@ -13,7 +13,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { IntegrationCheckRegistry } from '@memberjunction/testing-integration';
 import * as entityNames from '../entity-names.js';
 import {
@@ -28,6 +28,10 @@ import {
 // packages to register the code under test. Those pull in @memberjunction/server's config loader and
 // would need a full server environment for what is a pure wiring test. `index.ts` is verified by
 // reading it instead, below.
+//
+// `billcom-rail` drives the webhook through `HandleBillComWebhook`, which lives in the server
+// package; importing it loads that same config. Registration never calls it, so a stub stands in.
+vi.mock('@mj-biz-apps/orders-server', () => ({ HandleBillComWebhook: vi.fn() }));
 import '../checks/catalog-world.checks.js';
 import '../checks/order-booking.checks.js';
 import '../checks/revenue-recognition.checks.js';

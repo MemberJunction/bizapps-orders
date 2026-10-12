@@ -17163,6 +17163,9 @@ export class mjBizAppsOrdersSubscriptionTerm_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field(() => Int, {nullable: true, description: `How many seats this term covers: the quantity the order line bought, before any proration. A prorated first period scales the order line's Quantity to price the short period, so the line cannot be read for the seat count; entitlement grants and renewals read this instead. Whole seats only, at least 1.`}) 
+    Quantity?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(40)
     Subscription?: string;
@@ -17220,6 +17223,9 @@ export class CreatemjBizAppsOrdersSubscriptionTermInput {
     @Field({ nullable: true })
     CancellationEffectiveDate: Date | null;
 
+    @Field(() => Int, { nullable: true })
+    Quantity?: number;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -17268,6 +17274,9 @@ export class UpdatemjBizAppsOrdersSubscriptionTermInput {
 
     @Field({ nullable: true })
     CancellationEffectiveDate?: Date | null;
+
+    @Field(() => Int, { nullable: true })
+    Quantity?: number;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

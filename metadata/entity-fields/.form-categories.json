@@ -3668,5 +3668,14 @@
       "lastModified": "2026-10-12T22:02:51.961Z",
       "checksum": "805c369aa0ed78c7c8eb5d36b5ed4fbdc5f6e8b1ffe33079d435b96673e70e92"
     }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=ExtendedAmount"
+    }
   }
 ]

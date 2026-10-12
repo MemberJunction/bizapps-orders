@@ -6610,6 +6610,12 @@ export const mjBizAppsOrdersSubscriptionTermSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    Quantity: z.number().describe(`
+        * * Field Name: Quantity
+        * * Display Name: Quantity
+        * * SQL Data Type: int
+        * * Default Value: 1
+        * * Description: How many seats this term covers: the quantity the order line bought, before any proration. A prorated first period scales the order line's Quantity to price the short period, so the line cannot be read for the seat count; entitlement grants and renewals read this instead. Whole seats only, at least 1.`),
     Subscription: z.string().describe(`
         * * Field Name: Subscription
         * * Display Name: Subscription
@@ -26864,6 +26870,20 @@ export class mjBizAppsOrdersSubscriptionTermEntity extends BaseEntity<mjBizAppsO
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Quantity
+    * * Display Name: Quantity
+    * * SQL Data Type: int
+    * * Default Value: 1
+    * * Description: How many seats this term covers: the quantity the order line bought, before any proration. A prorated first period scales the order line's Quantity to price the short period, so the line cannot be read for the seat count; entitlement grants and renewals read this instead. Whole seats only, at least 1.
+    */
+    get Quantity(): number {
+        return this.Get('Quantity');
+    }
+    set Quantity(value: number) {
+        this.Set('Quantity', value);
     }
 
     /**
