@@ -72,7 +72,7 @@ import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
-import { InheritedTerms, MirroredTaxCharges, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
+import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
@@ -2465,10 +2465,23 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // order-level promotion — 350 actually paid — refunds 400, and the difference is simply given
         // away against a perfectly balanced journal entry. `DiscountPct` was carried through from the
         // start and this was not, which is why RT7 passed while the defect was live.
+        //
+        // Recomputed on each save until booking, so a draft return whose quantity changes carries
+        // the new quantity's share, while a discount the caller set is kept (#668) — see
+        // `RefreshedDiscountAmount`.
         const amountField = line.GetFieldByName('DiscountAmount');
-        if (!(amountField?.Dirty === true || (line.DiscountAmount ?? 0) > 0)) {
-            line.DiscountAmount = terms.DiscountAmount;
-        }
+        const previousQuantity = line.GetFieldByName('Quantity')?.OldValue;
+        const discount = RefreshedDiscountAmount({
+            Stored: line.DiscountAmount,
+            SetThisSave: amountField?.Dirty === true,
+            MoneyLocked: this.MoneyLocked,
+            PreviousShare:
+                previousQuantity === null || previousQuantity === undefined
+                    ? null
+                    : InheritedTerms(context.Origin, Number(previousQuantity), context.AlreadyReversed + siblingsBefore).DiscountAmount,
+            CurrentShare: terms.DiscountAmount,
+        });
+        if (discount !== line.DiscountAmount) line.DiscountAmount = discount as number;
 
         // THE COVERAGE WINDOW, for the same reason as the price: only the origin knows it.
         //

@@ -237,6 +237,40 @@ export function InheritedTerms(
 }
 
 /**
+ * The allocated `DiscountAmount` a reversal line should carry after this save (#668).
+ *
+ * RECOMPUTED UNTIL THE MONEY IS LOCKED. The share depends on the line's quantity, and a draft return
+ * can be re-saved with a different one: filled only once, a return of 4 units of a line sold 4 × 100
+ * less 50 kept all 50 after it was cut to 2, refunding −150.00 instead of −175.00.
+ *
+ * A DISCOUNT THE CALLER SET STAYS. Set in this save, it is kept as stated. Set in an earlier save,
+ * it no longer looks dirty, so it is told apart by value: an inherited one equals the share the
+ * line's PREVIOUS quantity took, within a cent (cumulative rounding can move a slice by one cent
+ * when another return of the same origin changes in between). Anything else is someone's decision.
+ *
+ * Once the money is locked, only a blank is filled, as before.
+ */
+export function RefreshedDiscountAmount(args: {
+    /** The value on the line now. */
+    Stored: number | null | undefined;
+    /** The caller set `DiscountAmount` in this save. */
+    SetThisSave: boolean;
+    /** The order's money is frozen. */
+    MoneyLocked: boolean;
+    /** The share the line's quantity before this save inherited; null when it had none. */
+    PreviousShare: number | null;
+    /** The share the line's current quantity inherits. */
+    CurrentShare: number;
+}): number | null | undefined {
+    const stored = Number(args.Stored ?? 0);
+    if (args.SetThisSave) return args.Stored;
+    if (stored <= 0) return args.CurrentShare;
+    if (args.MoneyLocked) return args.Stored;
+    if (args.PreviousShare !== null && Math.abs(stored - args.PreviousShare) <= 0.01 + 1e-9) return args.CurrentShare;
+    return args.Stored;
+}
+
+/**
  * The origin's exact pre-discount amount, or null when quantity × unit price already is it.
  *
  * The stored `ExtendedAmount` when there is one. A line booked before that column existed has none,
