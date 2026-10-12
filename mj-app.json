@@ -48,6 +48,10 @@
       {
         "name": "@mj-biz-apps/orders-core-entities-server",
         "role": "library"
+      },
+      {
+        "name": "@mj-biz-apps/orders-actions",
+        "role": "library"
       }
     ],
     "client": [
@@ -60,10 +64,6 @@
     "shared": [
       {
         "name": "@mj-biz-apps/orders-entities",
-        "role": "library"
-      },
-      {
-        "name": "@mj-biz-apps/orders-actions",
         "role": "library"
       }
     ]
