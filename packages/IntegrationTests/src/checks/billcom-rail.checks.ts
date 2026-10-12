@@ -406,6 +406,7 @@ async function configureRail(ctx: IntegrationCheckContext, opts: { live?: boolea
   const companyIntegrationID = await createViaEntity(ctx, COMPANY_INTEGRATION_ENTITY, {
     CompanyID: f.CoA.ID,
     IntegrationID: integrationID,
+    Name: "IT Bill.com connection",
     IsActive: true,
   });
   // `BillCom` is shipped by the V…BillCom_Metadata_Sync migration; a database without it is not one
@@ -447,6 +448,15 @@ async function sellOnRail(ctx: IntegrationCheckContext, amount = 300): Promise<{
  * (#583, item 25). Inside the check's transaction, so the committed job is untouched.
  */
 async function allowLivePoll(ctx: IntegrationCheckContext): Promise<void> {
+  await setPollJob(ctx, { Status: "Active", Preview: false });
+}
+
+/**
+ * Set the installed poll job's Status and Preview param. The poll operation reads this job on every
+ * run that would write, whoever calls it, so this is the switch BR19 turns. Inside the check's
+ * transaction, so the committed job is untouched.
+ */
+async function setPollJob(ctx: IntegrationCheckContext, state: { Status: string; Preview: boolean }): Promise<void> {
   const job = await TxMaybeOne<{ ID: string; Configuration: string }>(
     ctx,
     `SELECT ID, Configuration FROM __mj.ScheduledJob WHERE Configuration LIKE '%${POLL_ACTION_ID}%'`,
@@ -454,9 +464,9 @@ async function allowLivePoll(ctx: IntegrationCheckContext): Promise<void> {
   if (!job) return;
   const config = JSON.parse(job.Configuration) as { Params?: Array<{ ActionParamID: string; Value: unknown }> };
   for (const p of config.Params ?? []) {
-    if (SameID(p.ActionParamID, POLL_PREVIEW_PARAM_ID)) p.Value = "false";
+    if (SameID(p.ActionParamID, POLL_PREVIEW_PARAM_ID)) p.Value = state.Preview ? "true" : "false";
   }
-  await upsertViaEntity(ctx, SCHEDULED_JOB_ENTITY, job.ID, { Status: "Active", Configuration: JSON.stringify(config) });
+  await upsertViaEntity(ctx, SCHEDULED_JOB_ENTITY, job.ID, { Status: state.Status, Configuration: JSON.stringify(config) });
 }
 
 /** The scheduler adapters' Action and `Preview` param ids, as `metadata/scheduled-jobs` names them. */
@@ -1086,6 +1096,72 @@ export const BillComRailChecks: NamedCheck[] = [
           const preview = params.find((p) => SameID(p.ActionParamID, previewParamID));
           AssertEqual(String(preview?.Value ?? "").toLowerCase(), "true", `and the ${label} job is set to Preview`);
         }
+      }),
+  },
+  {
+    Id: "billcom-rail.BR19",
+    Name: "BR19: a poll asked to record cash follows the poll job: Disabled records nothing, Preview only previews",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      withBillCom(ctx, async (bill) => {
+        // The operation reads the job itself (#583), so the scheduler, the webhook and the queue page's
+        // button all get the same answer. These calls ask for Preview: false and go straight to the
+        // operation, without `poll()`, which would turn the job on first.
+        const rail = await configureRail(ctx);
+        const order = await sellOnRail(ctx, 300);
+        const unit = await sent(ctx, order.ID);
+        const ref = bill.ReceivePayment({ Status: "PAID", Applied: [{ InvoiceRef: unit.Ref, Amount: 300 }] });
+        const run = async () => {
+          const r = await new OrdersPollExternalPaymentsOperation().Execute({ PaymentProviderID: rail.ProviderID, Preview: false }, opContext(ctx));
+          Assert(r.Output != null, `Orders.PollExternalPayments did not execute: ${r.ErrorMessage ?? "no output"}`);
+          return r.Output!;
+        };
+
+        await setPollJob(ctx, { Status: "Disabled", Preview: false });
+        const disabled = await run();
+        AssertEqual(disabled.ResultCode, "ERROR", `with the job Disabled the run is refused: ${disabled.Message}`);
+        Assert(!bill.Calls.some((c) => c.Verb === "fetch"), "and Bill.com is not read");
+
+        await setPollJob(ctx, { Status: "Active", Preview: true });
+        const previewed = await run();
+        AssertEqual(previewed.ResultCode, "PREVIEWED", `with the job in Preview the run only previews: ${previewed.Message}`);
+        AssertEqual(previewed.PreviewedOnly, true, "and says so");
+        AssertEqual(previewed.Outcomes.find((o) => o.ExternalPaymentRef === ref)?.Disposition, "Captured", "it reports the capture it would make");
+
+        AssertEqual((await paymentsFor(ctx, rail)).length, 0, "no payment was recorded by either run");
+        AssertEqual(await externalPayment(ctx, rail, ref), null, "no external payment row was written");
+        AssertEqual(Number((await orderMoney(ctx, order.ID)).Balance), 300, "and the order still owes its full amount");
+      }),
+  },
+  {
+    Id: "billcom-rail.BR20",
+    Name: "BR20: after one payment across two invoices, each invoice row is refreshed with its own due amount",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      withBillCom(ctx, async (bill) => {
+        // Different part payments on each invoice, so a refresh that paired rows with Bill.com's
+        // invoices by position would write one invoice's due amount onto the other's row (#580).
+        const rail = await configureRail(ctx);
+        const one = await sellOnRail(ctx, 300);
+        const two = await sellOnRail(ctx, 200);
+        const a = await sent(ctx, one.ID);
+        const b = await sent(ctx, two.ID);
+        bill.ReceivePayment({
+          Status: "PAID",
+          Applied: [
+            { InvoiceRef: a.Ref, Amount: 100 },
+            { InvoiceRef: b.Ref, Amount: 50 },
+          ],
+        });
+        const out = await poll(ctx, rail);
+        AssertEqual(out.Captured, 1, `the payment is captured: ${out.Message}`);
+        const rows = await externalInvoices(ctx, rail);
+        const rowA = rows.find((r) => SameID(r.ID, a.ExternalInvoiceID))!;
+        const rowB = rows.find((r) => SameID(r.ID, b.ExternalInvoiceID))!;
+        AssertEqual(Number(rowA.ExternalDueAmount), 200, "the first invoice shows 200 still due");
+        AssertEqual(Number(rowB.ExternalDueAmount), 150, "the second shows 150 still due");
+        AssertEqual(Number((await orderMoney(ctx, one.ID)).Balance), 200, "the first order owes 200");
+        AssertEqual(Number((await orderMoney(ctx, two.ID)).Balance), 150, "and the second owes 150");
       }),
   },
 ];
