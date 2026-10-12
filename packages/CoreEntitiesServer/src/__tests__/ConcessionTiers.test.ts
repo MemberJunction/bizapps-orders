@@ -70,6 +70,7 @@ function seatsConcession(opts: { value?: number; user?: { ID: string }; saved?: 
         CumulativeShare: null,
         DecidedByUserID: null,
         DecidedAt: null,
+        ReferralProgramID: null,
     };
     for (const name of Object.keys(values)) {
         Object.defineProperty(row, name, { get: () => values[name], set: (v) => (values[name] = v) });

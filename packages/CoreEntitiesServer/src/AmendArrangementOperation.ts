@@ -8,6 +8,10 @@
  * approved, in the approval's own transaction (see ./TermExtension.ts). A requester within their own authority
  * is approved on save, so the extension applies in this call.
  *
+ * A referral extension (#529) names its `ReferralProgramID`, with the reason category Referral. The program approves
+ * it when it is in program (see ./ReferralProgram.ts); `Preview` says whether it would, and the extension applies in
+ * this call when it does. More days than the program grants are recorded Pending, like any other concession.
+ *
  * A change of amount (case A) is refused until its credit-memo path exists.
  *
  * A confirmed order's payment terms (#309): the caller names the order and its new terms instead of a term. It
@@ -17,6 +21,7 @@
  *
  * CONNECTS TO:
  *   PLAN:    ./TermExtension.ts (CheckTermExtension) · ./PaymentTermsChange.ts (CheckTermsChange)
+ *            · ./ReferralProgram.ts (CheckReferralProgram)
  *   RECORDS: OrderConcessionEntityServer (value, approval, application)
  */
 import {
@@ -34,9 +39,10 @@ import {
     InclusiveDays,
     type mjBizAppsOrdersOrderConcessionEntity,
 } from '@mj-biz-apps/orders-entities';
-import { ORDER_CONCESSION_ENTITY } from './entity-names.js';
+import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RequireOptionalDay, RequireUUID } from './sql-guards.js';
 import { CheckTermsChange } from './PaymentTermsChange.js';
+import { CheckReferralProgram, type ReferralProgramVerdict } from './ReferralProgram.js';
 import { CheckTermExtension } from './TermExtension.js';
 
 export type AmendmentReasonCategory = 'Retention' | 'Referral' | 'Other';
@@ -52,6 +58,8 @@ export interface AmendArrangementInput {
     NewPaymentTermsTypeID?: string;
     /** A change of amount. Not supported yet; refused. */
     NewAmount?: number;
+    /** A term extension earned by a referral: the program that approves it. Requires ReasonCategory 'Referral'. */
+    ReferralProgramID?: string;
     ReasonCategory: AmendmentReasonCategory;
     Reason: string;
     /** Return what the amendment would do without writing anything. */
@@ -85,6 +93,9 @@ export interface AmendArrangementOutput {
     DaysChange?: number;
     CurrentDueDate?: string | null;
     NewDueDate?: string | null;
+    /** With a referral program: its name, and whether it approves the extension (false: routed for approval). */
+    ReferralProgram?: string;
+    ApprovedByReferralProgram?: boolean;
     /** Set when recorded: the concession, and whether it is Approved (applied) or Pending (awaiting approval). */
     OrderConcessionID?: string;
     Status?: string;
@@ -104,8 +115,11 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         }
         if (!input.Reason?.trim()) return { Success: false, Message: 'An amendment must state its reason.' };
         if (input.NewPaymentTermsTypeID != null || input.OrderHeaderID != null) {
-            if (input.SubscriptionTermID != null || input.NewEndDate != null || input.NewAmount != null) {
-                return { Success: false, Message: 'A change of payment terms is amended on its own, without a term, end date or amount.' };
+            if (input.SubscriptionTermID != null || input.NewEndDate != null || input.NewAmount != null || input.ReferralProgramID != null) {
+                return {
+                    Success: false,
+                    Message: 'A change of payment terms is amended on its own, without a term, end date, amount or referral program.',
+                };
             }
             return this.amendPaymentTerms(input, provider, user);
         }
@@ -114,6 +128,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         try {
             RequireUUID(input.SubscriptionTermID as string, 'SubscriptionTermID');
             newEnd = AsDateValue(RequireOptionalDay(input.NewEndDate, 'NewEndDate'));
+            if (input.ReferralProgramID != null) RequireUUID(input.ReferralProgramID, 'ReferralProgramID');
         } catch (e) {
             return { Success: false, Message: String((e as Error).message) };
         }
@@ -133,8 +148,26 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         );
         if (typeof checked === 'string') return { Success: false, Message: checked };
 
+        let program: ReferralProgramVerdict | null = null;
+        if (input.ReferralProgramID != null) {
+            const verdict = await CheckReferralProgram(
+                {
+                    ReferralProgramID: input.ReferralProgramID,
+                    DeliveryForm: 'Duration',
+                    ReasonCategory: input.ReasonCategory,
+                    AddedDays: addedDays,
+                    OrderHeaderID: checked.OrderHeaderID,
+                    RenewsSubscriptionID: await this.renewsSubscription(checked.OrderLineID, provider, user),
+                },
+                { Provider: provider, User: user },
+            );
+            if (typeof verdict === 'string') return { Success: false, Message: verdict };
+            program = verdict;
+        }
+
         const summary: AmendArrangementOutput = {
             Success: true,
+            ...(program ? { ReferralProgram: program.ProgramName, ApprovedByReferralProgram: program.InProgram } : {}),
             CurrentEndDate: day(checked.CurrentEndDate),
             NewEndDate: day(checked.NewEndDate),
             EffectiveDate: day(checked.EffectiveDate),
@@ -153,7 +186,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
             NewSchedule: checked.Plan.Respread.map((d) => ({ EffectiveDate: d.EffectiveDate, Amount: d.Lines[0].DebitAmount ?? 0 })),
         };
         if (input.Preview) {
-            return { ...summary, Message: `Term would end ${summary.NewEndDate} instead of ${summary.CurrentEndDate}.` };
+            return { ...summary, Message: `Term would end ${summary.NewEndDate} instead of ${summary.CurrentEndDate}.${programNote(program)}` };
         }
 
         const concession = await provider.GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, user);
@@ -163,6 +196,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         concession.AddedDays = addedDays;
         concession.ReasonCategory = input.ReasonCategory;
         concession.Reason = input.Reason.trim();
+        if (input.ReferralProgramID != null) concession.ReferralProgramID = input.ReferralProgramID;
         if (!(await concession.Save())) {
             return { Success: false, Message: concession.LatestResult?.CompleteMessage ?? 'The amendment could not be recorded.' };
         }
@@ -230,6 +264,22 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         };
     }
 
+    /** The subscription the line that bought the term renews, or null when that line is not a renewal. */
+    private async renewsSubscription(lineID: string, provider: IMetadataProvider, user: UserInfo): Promise<string | null> {
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ RenewsSubscriptionID: string | null }>(
+            {
+                EntityName: ORDER_LINE_ENTITY,
+                ExtraFilter: `ID = '${RequireUUID(lineID, 'OrderLineID')}'`,
+                Fields: ['RenewsSubscriptionID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        );
+        return res?.Results?.[0]?.RenewsSubscriptionID ?? null;
+    }
+
     private async currentEnd(termID: string, provider: IMetadataProvider, user: UserInfo): Promise<Date | string> {
         const rv = new RunView(provider as unknown as IRunViewProvider);
         const res = await rv.RunView<{ EndDate: Date | string }>(
@@ -247,6 +297,14 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         const d = new Date(term.EndDate);
         return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
     }
+}
+
+function programNote(program: ReferralProgramVerdict | null): string {
+    if (!program) return '';
+    return program.InProgram
+        ? ` Referral program '${program.ProgramName}' would approve it.`
+        : ` It is more than referral program '${program.ProgramName}' grants (${program.DaysPerReferral} days), or the ` +
+              `program is inactive, so it would be routed for approval.`;
 }
 
 function day(d: Date): string {
