@@ -108,12 +108,14 @@ say "7/8  Seed metadata"
 # both (a company profile names a functional currency; the resolver looks up roles by name), so a
 # rebuild that stops at the migrations produces a database where every confirm fails at fixture time.
 # Common's query categories come first because this app's queries look up 'Party Signals' by name.
+# Accounting's roles and authorizations come along so the suite can clear a finance exception, which
+# requires MJ.BizApps.Accounting.FinanceExceptions.Clear (held by the Finance role).
 #
 # Only these folders are pushed from the dependencies. Pushing their whole metadata/ fails on a fresh
 # database: https://github.com/MemberJunction/bizapps-accounting/issues/222 (ML folders out of order)
 # and https://github.com/MemberJunction/bizapps-common/issues/196 (Tag records without DisplayName).
 $MJ sync push --ci --dir "$COMMON_REPO/metadata" --include query-categories
-$MJ sync push --ci --dir "$ACCOUNTING_REPO/metadata" --include currencies,gl-account-roles
+$MJ sync push --ci --dir "$ACCOUNTING_REPO/metadata" --include currencies,gl-account-roles,roles,authorizations,authorization-roles
 $MJ sync push --ci --dir "$ROOT/metadata"
 
 say "8/8  Integration-suite users"
@@ -122,6 +124,8 @@ say "8/8  Integration-suite users"
 #     creates one at first sign-in; a database built here has only System and Anonymous.
 #   - the price-override grant. Its fixtures place lines at stated prices, and only Account
 #     Director holds MJ.BizApps.Orders.Price.OverrideAny.
+#   - the Finance role, which holds the authorization to clear a finance exception
+#     (payment-providers PV17-PV18 resolve one).
 $SQLCMD -b -d "${DB_DATABASE}" -Q "
     SET NOCOUNT ON;
     INSERT INTO __mj.[User] (Name, FirstName, LastName, Email, Type, IsActive, LinkedRecordType)
@@ -129,7 +133,11 @@ $SQLCMD -b -d "${DB_DATABASE}" -Q "
     INSERT INTO __mj.UserRole (UserID, RoleID)
     SELECT u.ID, r.ID FROM __mj.[User] u CROSS JOIN __mj.Role r
     WHERE u.Type = N'Owner' AND r.Name = N'Account Director';
-    IF @@ROWCOUNT <> 1 THROW 50000, 'expected one Owner and one Account Director role', 1;"
+    IF @@ROWCOUNT <> 1 THROW 50000, 'expected one Owner and one Account Director role', 1;
+    INSERT INTO __mj.UserRole (UserID, RoleID)
+    SELECT u.ID, r.ID FROM __mj.[User] u CROSS JOIN __mj.Role r
+    WHERE u.Type = N'Owner' AND r.Name = N'Finance';
+    IF @@ROWCOUNT <> 1 THROW 50000, 'expected one Owner and one Finance role', 1;"
 
 say "Done"
 cat <<'NEXT'

@@ -525,6 +525,29 @@ export {
     LoadCreateOrderFromProviderPaymentOperation,
 } from './CreateOrderFromProviderPaymentOperation.js';
 export {
+    ParseChargeMismatchDedupeKey,
+    CheckChargeExceptionForOrder,
+    CheckResolveChargeExceptionInput,
+    ChargeExceptionResolutionNote,
+} from './ChargeExceptionResolution.js';
+export type {
+    ChargeExceptionRow,
+    ChargeExceptionTarget,
+    ChargeExceptionRefusal,
+    ChargeExceptionRefusalCode,
+    ParsedChargeMismatchKey,
+    ResolveChargeExceptionRequest,
+    CheckedResolveChargeExceptionRequest,
+} from './ChargeExceptionResolution.js';
+export {
+    ResolveChargeExceptionOperation,
+    ResolveChargeException,
+    UserCanClearFinanceExceptions,
+    FINANCE_EXCEPTIONS_CLEAR_AUTH,
+    LoadResolveChargeExceptionOperation,
+} from './ResolveChargeExceptionOperation.js';
+export type { BookExceptionCharge } from './ResolveChargeExceptionOperation.js';
+export {
     BookProviderRefunds,
     PlanProviderRefundBooking,
     UnmatchedGatewayRefunds,

@@ -72,6 +72,7 @@ import {
     LoadDetectOverlappingSubscriptionsOperation,
     LoadReconcilePaymentProviderChargesOperation,
     LoadCreateOrderFromProviderPaymentOperation,
+    LoadResolveChargeExceptionOperation,
     LoadEmailDeliveryChannel,
     LoadStoredValuePaymentProvider,
     LoadBillComPaymentProvider,
@@ -181,6 +182,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadDetectOverlappingSubscriptionsOperation(); // 'Orders.DetectOverlappingSubscriptions' — finance exception type 5 (golive #279)
     LoadReconcilePaymentProviderChargesOperation(); // 'Orders.ReconcilePaymentProviderCharges' — gateway charges vs payments (#477)
     LoadCreateOrderFromProviderPaymentOperation(); // 'Orders.CreateOrderFromProviderPayment' — order from an unmatched provider payment (#481)
+    LoadResolveChargeExceptionOperation(); // 'Orders.ResolveChargeException' — book a charge-without-payment exception as an order and clear it (#567)
     LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
     LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator
     LoadAccessOverrideOperations();    // 'Orders.RequestAccessOverride' / 'Orders.RecordAccessOverrideDecision' (#268)
