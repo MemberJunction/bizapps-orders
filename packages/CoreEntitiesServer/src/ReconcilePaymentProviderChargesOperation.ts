@@ -6,6 +6,11 @@
  * `PaymentIntent` and the captured `PaymentHeader` by intent and charge id. It reports three kinds of
  * mismatch (see `ChargeReconciliation.ts`) and corrects none of them.
  *
+ * A CHARGE NOBODY BOOKED BECOMES AN ORDER (#481). On a real run, a charge without a payment on an
+ * intent Orders did not open is turned into a paid order when the provider's price map names its
+ * product and its e-mail names a buyer (`UnmatchedChargeOrders.ts`). It is then no longer a mismatch.
+ * One the rules cannot decide is raised as before, with the reason added. Preview creates nothing.
+ *
  * PREVIEW REPORTS, A REAL RUN RAISES. With `Preview`, the mismatches come back in the output and
  * nothing is written. Without it, each is raised as a `PROVIDER_CHARGE_MISMATCH` finance exception —
  * finance already works that list, and a report nobody opens is what the audit criticised. The raise
@@ -22,6 +27,7 @@
  *   PURE:    ./ChargeReconciliation.ts
  *   DRIVER:  ./BasePaymentProvider.ts `ListCharges`, `ListRefunds`, `RetrieveCharge`
  *   REVIEW:  ./AccountingBridge.ts
+ *   ORDERS:  ./UnmatchedChargeOrders.ts (charges without a payment the price map resolves)
  *   ACTION:  packages/Server/src/custom/reconcile-payment-provider-charges.action.ts
  */
 import {
@@ -40,7 +46,7 @@ import {
     type OrdersReconcilePaymentProviderChargesOutput,
 } from '@mj-biz-apps/orders-entities';
 import { GetActiveFinanceExceptionType, RaiseFinanceExceptions, type FinanceExceptionToRaise } from './AccountingBridge.js';
-import type { BasePaymentProvider, GatewayCharge } from './BasePaymentProvider.js';
+import type { BasePaymentProvider, GatewayCharge, PaymentProviderConfig } from './BasePaymentProvider.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import {
     ChargeMismatchDedupeKey,
@@ -52,6 +58,8 @@ import {
 } from './ChargeReconciliation.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import { EscapeSQLString, RequireOptionalDay, RequireUUID } from './sql-guards.js';
+import { CreateOrderForUnmatchedCharge, IsUnmatchedCharge, LoadProviderPriceMap } from './UnmatchedChargeOrders.js';
+import { NotCreatedNote } from './UnmatchedChargeRules.js';
 
 export const PROVIDER_CHARGE_MISMATCH_TYPE_CODE = 'PROVIDER_CHARGE_MISMATCH';
 const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
@@ -90,6 +98,7 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
             Mismatches: [],
             Raised: 0,
             AlreadyRaised: 0,
+            OrdersCreated: [],
             Errors: [],
         };
         if (fromDate > toDate) {
@@ -99,7 +108,15 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
         }
 
         for (const row of await this.loadProviders(input.PaymentProviderID ?? null, provider, user)) {
-            const result: ProviderResult = { PaymentProviderID: row.ID, PaymentProviderName: row.Name, Status: 'Checked', ChargesRead: 0, RefundsRead: 0, Mismatches: 0 };
+            const result: ProviderResult = {
+                PaymentProviderID: row.ID,
+                PaymentProviderName: row.Name,
+                Status: 'Checked',
+                ChargesRead: 0,
+                RefundsRead: 0,
+                Mismatches: 0,
+                OrdersCreated: 0,
+            };
             try {
                 const config = await LoadPaymentProviderConfig(row.ID, provider, user);
                 if (!config.IsLiveMode) {
@@ -109,7 +126,8 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
                     continue;
                 }
                 const driver = await BuildPaymentProvider(config, provider, user);
-                const mismatches = await this.reconcileOne(driver, row.ID, config.CompanyID, fromDate, toDate, result, provider, user);
+                const found = await this.reconcileOne(driver, row.ID, config.CompanyID, fromDate, toDate, result, provider, user);
+                const mismatches = preview ? found.Mismatches : await this.createOrders(found, driver, config, row.ID, result, out, provider, user);
                 result.Mismatches = mismatches.length;
                 out.Mismatches.push(...mismatches.map((m) => ({ ...m, PaymentProviderID: row.ID })));
             } catch (err) {
@@ -128,7 +146,9 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
         out.Message =
             `${out.Mismatches.length} mismatch(es) between ${fromDate} and ${toDate} across ` +
             `${out.Providers.filter((p) => p.Status === 'Checked').length} provider(s)` +
-            (preview ? ' (preview: nothing raised).' : `: ${out.Raised} raised, ${out.AlreadyRaised} already raised.`) +
+            (preview
+                ? ' (preview: nothing raised or created).'
+                : `: ${out.Raised} raised, ${out.AlreadyRaised} already raised, ${out.OrdersCreated.length} order(s) created from unmatched charges.`) +
             (out.Errors.length ? ` ${out.Errors.length} error(s) — see Errors.` : '');
         LogStatus(`Orders.ReconcilePaymentProviderCharges: ${out.Message}`);
         return out;
@@ -143,7 +163,7 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
         result: ProviderResult,
         provider: IMetadataProvider,
         user: UserInfo,
-    ): Promise<ChargeMismatch[]> {
+    ): Promise<{ Mismatches: ChargeMismatch[]; Charges: Map<string, GatewayCharge> }> {
         const window = GatewayWindow(fromDate, toDate, GATEWAY_PAD_DAYS);
         const listed = await driver.ListCharges({ CreatedFrom: window.From, CreatedTo: window.To });
         if (!listed.Success) throw new Error(`Could not list the gateway's charges: ${listed.Reason}`);
@@ -180,7 +200,7 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
             provider,
             user,
         );
-        return FindChargeMismatches({
+        const mismatches = FindChargeMismatches({
             FromDate: fromDate,
             ToDate: toDate,
             Charges: [...charges.values()],
@@ -189,6 +209,56 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
             ConfirmedMissing: confirmedMissing,
             IntentIDs: intentIDs,
         }).map((m) => ({ ...m, CompanyID: m.CompanyID ?? providerCompanyID }));
+        return { Mismatches: mismatches, Charges: charges };
+    }
+
+    /**
+     * Turn each unmatched charge the price map resolves into a paid order (#481), and return the
+     * mismatches left to raise. A provider with no mapped price is not read: nothing changes for it.
+     */
+    private async createOrders(
+        found: { Mismatches: ChargeMismatch[]; Charges: Map<string, GatewayCharge> },
+        driver: BasePaymentProvider,
+        config: PaymentProviderConfig,
+        paymentProviderID: string,
+        result: ProviderResult,
+        out: OrdersReconcilePaymentProviderChargesOutput,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<ChargeMismatch[]> {
+        const unmatched = found.Mismatches.filter(IsUnmatchedCharge);
+        if (unmatched.length === 0) return found.Mismatches;
+        const priceMap = await LoadProviderPriceMap(paymentProviderID, provider, user);
+        if (priceMap.size === 0) return found.Mismatches;
+
+        const left: ChargeMismatch[] = [];
+        for (const m of found.Mismatches) {
+            const charge = IsUnmatchedCharge(m) ? found.Charges.get(m.ProviderChargeID!) : undefined;
+            if (!charge) {
+                left.push(m);
+                continue;
+            }
+            const outcome = await CreateOrderForUnmatchedCharge(
+                { Driver: driver, Config: config, PaymentProviderID: paymentProviderID, Charge: charge, PriceMap: priceMap },
+                provider,
+                user,
+            );
+            if ('Code' in outcome) {
+                left.push({ ...m, Detail: m.Detail + NotCreatedNote(`${outcome.Code}: ${outcome.Message}`) });
+            } else {
+                result.OrdersCreated++;
+                out.OrdersCreated.push({
+                    PaymentProviderID: paymentProviderID,
+                    ProviderChargeID: charge.ProviderChargeID,
+                    OrderHeaderID: outcome.OrderHeaderID,
+                    OrderNumber: outcome.OrderNumber,
+                    PaymentHeaderID: outcome.PaymentHeaderID,
+                    PaymentNumber: outcome.PaymentNumber,
+                    Amount: m.Amount,
+                });
+            }
+        }
+        return left;
     }
 
     private async raise(

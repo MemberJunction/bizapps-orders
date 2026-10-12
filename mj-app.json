@@ -4,7 +4,7 @@
   "name": "mj-bizapps-orders",
   "displayName": "BizApps Orders",
   "description": "Unified order management for MemberJunction — products, orders, payments, subscriptions. The Order is the transactional substrate and the A/R primitive; payments and subscriptions are aspects of the same business event. Emits balanced journal entries into BizApps Accounting.",
-  "version": "5.29.0",
+  "version": "5.30.0",
   "license": "BUSL-1.1",
   "icon": "fa-solid fa-cart-shopping",
   "publisher": {
@@ -23,7 +23,7 @@
       "repository": "https://github.com/MemberJunction/bizapps-accounting"
     },
     "mj-bizapps-tasks": {
-      "version": ">=1.4.0 <2.0.0",
+      "version": ">=1.7.0 <2.0.0",
       "repository": "https://github.com/MemberJunction/bizapps-tasks"
     }
   },
@@ -48,6 +48,10 @@
       {
         "name": "@mj-biz-apps/orders-core-entities-server",
         "role": "library"
+      },
+      {
+        "name": "@mj-biz-apps/orders-actions",
+        "role": "library"
       }
     ],
     "client": [
@@ -60,10 +64,6 @@
     "shared": [
       {
         "name": "@mj-biz-apps/orders-entities",
-        "role": "library"
-      },
-      {
-        "name": "@mj-biz-apps/orders-actions",
         "role": "library"
       }
     ]

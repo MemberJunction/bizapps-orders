@@ -2,7 +2,7 @@
 /**
  * Syncs `mj-app.json`'s `version` and `mjVersionRange` from the packages.
  *
- * Runs as part of `version:ci`, i.e. INSIDE the Version Packages PR. This used to happen
+ * Runs as part of `version:prepare`, i.e. INSIDE the Version Packages PR. This used to happen
  * in publish.yml, but publish no longer writes anything back to the repo except the tag —
  * so if the manifest were not synced here it would never be synced at all, and every
  * release would ship an mj-app.json still claiming the previous version.

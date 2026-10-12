@@ -181,6 +181,11 @@ export interface CoverageOverlap {
     /** The `ConcurrencyMode` and code of the other band's subscription type. */
     ConcurrencyMode: SubscriptionTypeRules['ConcurrencyMode'];
     SubscriptionTypeCode: string;
+    /** The other band's type's `CancellationMode` and `GracePeriodDays`: when cancelling it would end its coverage. */
+    CancellationMode: SubscriptionTypeRules['CancellationMode'];
+    GracePeriodDays: number;
+    /** True when that subscription can still be cancelled: it exists and is not already Canceled. */
+    Cancelable: boolean;
 }
 
 export interface CoverageOverlapContext {
@@ -353,6 +358,25 @@ function strictestMode(
 function describeOverlap(o: CoverageOverlap): string {
     const who = o.SubscriptionNumber ?? 'another line of this order';
     return `${who} (${o.ProductName}, ${isoDay(o.CoverageStart)} to ${isoDay(o.CoverageEnd)})`;
+}
+
+/**
+ * The cancel-first way out, or null when cancelling would not let the line confirm.
+ *
+ * Only an `Immediate` type ends coverage on the cancellation date; `EndOfTerm` and
+ * `EndOfBillingPeriod` keep it running, and that coverage still counts. Grace extends access past
+ * the cancellation, and access is what the overlap check reads, so the new band starts after it.
+ * Every overlapping band must qualify: one that keeps running still blocks the line.
+ */
+function cancelFirstHint(overlaps: CoverageOverlap[]): string | null {
+    if (!overlaps.every((o) => o.Cancelable && o.CancellationMode === 'Immediate')) return null;
+    const numbers = overlaps.map((o) => o.SubscriptionNumber ?? o.SubscriptionID).join(', ');
+    const grace = Math.max(0, ...overlaps.map((o) => o.GracePeriodDays ?? 0));
+    const when =
+        grace > 0
+            ? `${grace + 1} days after the cancellation date, once its ${grace}-day grace period ends`
+            : 'the day after the cancellation date';
+    return `cancel ${numbers} first and start it ${when}`;
 }
 
 @RegisterClass(SubscriptionBehavior, 'Default')
@@ -676,9 +700,10 @@ export class SubscriptionBehavior {
      * the holder twice. So it refuses unless the line says the overlap is intended.
      *
      * The way out the message offers is a start after the existing coverage, or (where the mode
-     * permits) marking the line to run alongside it. It does not offer cancelling the existing
-     * subscription: a cancelled subscription keeps its coverage through its end date, and that
-     * coverage still counts.
+     * permits) marking the line to run alongside it. It offers cancelling the existing subscription
+     * first only when that would clear the overlap: a cancelled subscription keeps its coverage
+     * through its end date, and that coverage still counts, so only an `Immediate` type, which ends
+     * coverage on the cancellation date, qualifies.
      */
     public DecideCoverageOverlap(ctx: CoverageOverlapContext): CoverageOverlapDecision {
         if (ctx.Overlaps.length === 0) return { Outcome: 'None', Message: null };
@@ -691,6 +716,7 @@ export class SubscriptionBehavior {
             `${ctx.ProductName} overlaps coverage this holder already has in subscription family ` +
             `${ctx.Family}: ${ctx.Overlaps.map(describeOverlap).join('; ')}.`;
         const startAfter = isoDay(new Date(Math.max(...ctx.Overlaps.map((o) => utcDay(o.CoveredThrough).getTime()))));
+        const cancelFirst = cancelFirstHint(ctx.Overlaps);
 
         switch (governing.Mode) {
             case 'AllowMultiple':
@@ -703,7 +729,9 @@ export class SubscriptionBehavior {
                     Outcome: 'Refused',
                     Message:
                         `${what} Subscription type ${governing.Code} does not allow concurrent subscriptions. ` +
-                        `Start this band after ${startAfter}.`,
+                        (cancelFirst
+                            ? `Start this band after ${startAfter}, or ${cancelFirst}.`
+                            : `Start this band after ${startAfter}.`),
                 };
             case 'ExtendExisting':
                 return ctx.Acknowledged
@@ -715,7 +743,9 @@ export class SubscriptionBehavior {
                           Outcome: 'NeedsAck',
                           Message:
                               `${what} A different band does not extend the existing subscription, so both would be billed. ` +
-                              `Start this band after ${startAfter}, or mark the line to run alongside it.`,
+                              (cancelFirst
+                                  ? `Start this band after ${startAfter}, ${cancelFirst}, or mark the line to run alongside it.`
+                                  : `Start this band after ${startAfter}, or mark the line to run alongside it.`),
                       };
         }
     }
@@ -905,6 +935,10 @@ export interface FamilyCoverageTerm {
     /** The `ConcurrencyMode` and code of that band's subscription type. */
     ConcurrencyMode: SubscriptionTypeRules['ConcurrencyMode'];
     SubscriptionTypeCode: string;
+    /** That band's type's cancellation rules, and whether its subscription can still be cancelled. See {@link CoverageOverlap}. */
+    CancellationMode: SubscriptionTypeRules['CancellationMode'];
+    GracePeriodDays: number;
+    Cancelable: boolean;
 }
 
 /**
@@ -950,6 +984,9 @@ export function OverlappingCoverage(terms: FamilyCoverageTerm[], start: Date, en
                 CoveredThrough: new Date(coveredThrough.get(key)!),
                 ConcurrencyMode: term.ConcurrencyMode,
                 SubscriptionTypeCode: term.SubscriptionTypeCode,
+                CancellationMode: term.CancellationMode,
+                GracePeriodDays: term.GracePeriodDays,
+                Cancelable: term.Cancelable,
             });
         }
     });

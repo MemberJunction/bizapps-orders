@@ -137,6 +137,14 @@ describe('CheckoutPublicHostComponent events', () => {
         expect(JSON.stringify(seen)).not.toContain('jane');
     });
 
+    it('reports the applied promotion code as the coupon (#583)', async () => {
+        responses['/draft'] = { Success: true, RequiresPayment: false, AppliedPromotionCodes: ['SPRING10'], Discount: 0, TotalGross: 0 };
+        const c = create();
+        await c.ngOnInit();
+        await c.onSubmitted({ ...submission(), promotionCode: 'spring10' } as CheckoutSubmissionEvent);
+        expect((seen.find((e) => e.type === 'checkout-complete')?.detail as { coupon: string | null }).coupon).toBe('SPRING10');
+    });
+
     it('falls back to the widget title when there is no product name', async () => {
         responses['/initialize'] = { Success: true, SessionID: 'sess-1', Configuration: { ...CONFIG, productName: undefined } };
         const c = create();

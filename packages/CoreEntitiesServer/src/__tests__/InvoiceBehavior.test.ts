@@ -51,7 +51,6 @@ const order = (over: Partial<InvoiceOrderFacts> = {}): InvoiceOrderFacts => ({
     AmountPaid: 0,
     Balance: 0,
     DueDate: null,
-    PaymentStatus: 'Unpaid',
     ExternalDocumentNumber: null,
     ReversesOrderHeaderID: null,
     ReversesOrderNumber: null,

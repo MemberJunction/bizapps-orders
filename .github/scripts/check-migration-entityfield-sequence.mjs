@@ -177,11 +177,14 @@ export function scanContent(source) {
 
 // ─── Git ───────────────────────────────────────────────────────────────────────────────────────
 
-/** git anchored at the repository root, with the hardenings the sibling guards carry. */
+/** git anchored at the repository root, with the hardenings the sibling guards carry. `opts`
+ *  merges over the defaults, e.g. to capture rather than inherit stderr on a call whose failure
+ *  is expected and handled. */
 function makeGit(root) {
-    return (args) => execFileSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], {
+    return (args, opts = {}) => execFileSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], {
         encoding: 'utf8',
         maxBuffer: GIT_MAX_BUFFER,
+        ...opts,
     }).trim();
 }
 
@@ -394,7 +397,20 @@ function main(argv) {
         if (argv.length >= 2) {
             [base, head] = argv;
         } else {
-            base = git(['merge-base', process.env.BASE_REF || 'origin/next', 'HEAD']);
+            const baseRef = process.env.BASE_REF || 'origin/next';
+            try {
+                // stdio: capture git's stderr instead of inheriting it -- otherwise its "fatal:"
+                // line prints live to this process's stderr AND gets re-printed below, twice.
+                base = git(['merge-base', baseRef, 'HEAD'], { stdio: ['ignore', 'pipe', 'pipe'] });
+            } catch (err) {
+                // Sibling of check-migration-no-prune.mjs's gh-1 fix: an unresolved ref must not
+                // surface as a raw, unhandled stack trace on a documented local-form usage path.
+                // On stderr (console.error), not stdout: an error belongs on stderr, matching gh-1.
+                console.error(`${RED}✗ could not resolve base ref '${baseRef}'${NC}`);
+                console.error(`  ${err.stderr?.toString().trim() || err.message}`);
+                console.error(`  Fetch it (e.g. \`git fetch origin next\`), or set BASE_REF to a ref that resolves.`);
+                return 1;
+            }
         }
         entries = changedMigrations(git, base, head);
     }

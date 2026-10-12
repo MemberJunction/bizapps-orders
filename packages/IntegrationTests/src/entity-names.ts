@@ -51,6 +51,7 @@ export const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assig
 
 export const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 export const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
+export const REFERRAL_PROGRAM_ENTITY = 'MJ_BizApps_Orders: Referral Programs';
 export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
 
 export const CUSTOMER_TAX_EXEMPTION_ENTITY = 'MJ_BizApps_Orders: Customer Tax Exemptions';
@@ -64,6 +65,7 @@ export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order He
 export const ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY = 'MJ_BizApps_Orders: Order Line Progress Measurements';
 export const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 export const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
+export const PAYMENT_PROVIDER_PRICE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Prices';
 export const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
 export const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
@@ -127,6 +129,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PRICE_LIST_ASSIGNMENT_ENTITY,
     SALES_AUTHORITY_ENTITY,
     SALES_RULE_ENTITY,
+    REFERRAL_PROGRAM_ENTITY,
     ORDER_CONCESSION_ENTITY,
     CUSTOMER_TAX_EXEMPTION_ENTITY,
     CUSTOMER_PAYMENT_TERMS_ENTITY,
@@ -138,6 +141,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY,
     PAYMENT_DETAIL_ENTITY,
     PAYMENT_PROVIDER_ENTITY,
+    PAYMENT_PROVIDER_PRICE_ENTITY,
     PAYMENT_PROVIDER_TYPE_ENTITY,
     PAYMENT_INTENT_ENTITY,
     ORDER_LINE_DIMENSION_ENTITY,

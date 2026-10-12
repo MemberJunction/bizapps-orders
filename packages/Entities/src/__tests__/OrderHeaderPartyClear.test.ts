@@ -17,6 +17,7 @@
  * pick → (clear | replace) → server save.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { EntitySavePlan } from '@memberjunction/core';
 import { DescribeClearedEmployers, OrderHeaderEntity, type PartyOrganizationClear } from '../OrderHeaderEntity';
 import { KeptPartyOrganizationsCompanion } from '../KeptPartyOrganizationsCompanion';
 
@@ -425,6 +426,32 @@ describe('the kept-organizations companion', () => {
 
         commit();
         expect(o.KeptPartyOrganizations.Dirty).toBe(false);
+    });
+
+    it('routes a client save that carries a keep through the graph save, the one that carries companions', () => {
+        const { o } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        const plan = new EntitySavePlan(o);
+        plan.AddSave(o, 'root', undefined, true);
+
+        o.KeptPartyOrganizations.ContributeSaveWork(plan);
+        expect(plan.NodeCount).toBe(1);
+
+        o.KeepPartyOrganization('BillToOrganizationID');
+        o.KeptPartyOrganizations.ContributeSaveWork(plan);
+        expect(plan.NodeCount).toBe(2);
+    });
+
+    it('adds no node where the save runs in this process, so the order saves once', () => {
+        const { o } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        Object.assign(o.ProviderToUse, { SupportsEntityTransactions: true });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        o.KeepPartyOrganization('BillToOrganizationID');
+        const plan = new EntitySavePlan(o);
+        plan.AddSave(o, 'root', undefined, true);
+
+        o.KeptPartyOrganizations.ContributeSaveWork(plan);
+        expect(plan.NodeCount).toBe(1);
     });
 
     it('reads back what it wrote and drops entries it cannot read', async () => {

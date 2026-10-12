@@ -29,7 +29,11 @@
  * PV13–PV16 cover an order created from a charge that matched nothing (#481): the stub has no charges
  * to read, so each check hands `CreateOrderFromGatewayCharge` the charge the gateway would report.
  *
- * PV17–PV18 cover resolving the finance exception reconciliation raises for such a charge (#567): the
+ * PV17–PV18 cover the reconciliation's automatic path for the same charges: the product from the
+ * provider's price map and the buyer from the charge's e-mail. A driver double answers
+ * `ListChargeItems` with the checkout lines the gateway would report.
+ *
+ * PV19–PV20 cover resolving the finance exception reconciliation raises for such a charge (#567): the
  * exception is raised through accounting's real operation, and booking goes through the same
  * `CreateOrderFromGatewayCharge` with the charge supplied.
  */
@@ -45,6 +49,7 @@ import {
 import {
   CreateProductPrice,
   ACCT_SCHEMA,
+  COMMON_SCHEMA,
   CreateOrdersFixture,
   createViaEntity,
   Fx,
@@ -59,17 +64,22 @@ import {
   FINANCE_EXCEPTION_TYPE_ENTITY,
   PAYMENT_INTENT_ENTITY,
   PAYMENT_PROVIDER_ENTITY,
+  PAYMENT_PROVIDER_PRICE_ENTITY,
   PAYMENT_PROVIDER_TYPE_ENTITY,
 } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 // STATIC, per the repo rule — no dynamic import()/require() anywhere.
 import {
   ChargeMismatchDedupeKey,
+  CreateOrderForUnmatchedCharge,
   CreateOrderFromGatewayCharge,
   LoadPaymentProviderConfig,
+  LoadProviderPriceMap,
   PROVIDER_CHARGE_MISMATCH_TYPE_CODE,
   RaiseFinanceExceptions,
   ResolveChargeException,
+  type BasePaymentProvider,
+  type GatewayChargeItem,
   ResolvePaymentProvider,
   type BookExceptionCharge,
   type ChargeMismatchKind,
@@ -250,6 +260,37 @@ async function orderFromCharge(ctx: IntegrationCheckContext, providerID: string,
     ctx.User,
   );
 }
+
+/**
+ * Run the reconciliation's per-charge step for a charge whose checkout sold `items`, with the
+ * provider's real price map. The driver is a double: the stub has no checkout sessions to read.
+ */
+async function autoOrderFromCharge(ctx: IntegrationCheckContext, providerID: string, charge: GatewayCharge, items: GatewayChargeItem[]) {
+  const config = await LoadPaymentProviderConfig(providerID, ctx.Provider, ctx.User);
+  const booksIn = await TxOne<{ Code: string }>(ctx,
+    `SELECT FunctionalCurrencyCode AS Code FROM ${ACCT_SCHEMA}.AccountingCompanyProfile WHERE ID='${config.CompanyID}'`);
+  const driver = { ListChargeItems: async () => ({ Success: true, Items: items }) } as unknown as BasePaymentProvider;
+  return CreateOrderForUnmatchedCharge(
+    {
+      Driver: driver,
+      Config: config,
+      PaymentProviderID: providerID,
+      Charge: { ...charge, CurrencyCode: booksIn.Code },
+      PriceMap: await LoadProviderPriceMap(providerID, ctx.Provider, ctx.User),
+    },
+    ctx.Provider,
+    ctx.User,
+  );
+}
+
+/** Map a gateway price to a product for the provider. */
+const mapPrice = (ctx: IntegrationCheckContext, providerID: string, priceID: string, productID: string, active = true) =>
+  createViaEntity(ctx, PAYMENT_PROVIDER_PRICE_ENTITY, {
+    PaymentProviderID: providerID,
+    ProviderPriceID: priceID,
+    ProductID: productID,
+    IsActive: active ? 1 : 0,
+  });
 
 /** Rows a charge's order left behind, by the gateway intent it carried. */
 const rowsForIntent = (ctx: IntegrationCheckContext, providerIntentID: string) =>
@@ -776,7 +817,76 @@ export const PaymentProvidersChecks: NamedCheck[] = [
   },
   {
     Id: "payment-providers.PV17",
-    Name: "PV17: a charge-without-payment exception is booked as a paid order and cleared as Corrected, naming the order",
+    Name: "PV17: a charge whose checkout price is mapped becomes a paid order, its buyer created from the payment and matched after",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 300);
+        const providerID = await makeProvider(ctx, "Stripe");
+        const priceID = `price_it_${randomUUID().slice(0, 8)}`;
+        await mapPrice(ctx, providerID, priceID, f.Products.WidgetA);
+        const email = `it-${randomUUID().slice(0, 8)}@example.com`;
+        const items = [{ ProviderPriceID: priceID, Quantity: 1, Amount: 300 }];
+
+        const first = unmatchedCharge(300, { BuyerEmail: email, BuyerName: "Ada Buyer" });
+        const out = await autoOrderFromCharge(ctx, providerID, first, items);
+        Assert(out.Created, `the order is created: ${"Message" in out ? out.Message : ""}`);
+        const order = await TxOne<{ ProductID: string; BillToPersonID: string; Origin: string; Balance: number }>(ctx,
+          `SELECT ol.ProductID, oh.BillToPersonID, oh.Origin, oh.Balance
+             FROM ${ORDERS_SCHEMA}.OrderHeader oh JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.OrderHeaderID = oh.ID
+            WHERE oh.ID='${"OrderHeaderID" in out ? out.OrderHeaderID : ""}'`);
+        Assert(order.ProductID.toLowerCase() === f.Products.WidgetA.toLowerCase(), "the line carries the mapped product");
+        AssertEqual(order.Origin, "ProviderPayment", "marked as created from a payment");
+        AssertEqual(Number(order.Balance), 0, "and paid");
+        const person = await TxOne<{ ID: string; FirstName: string; LastName: string }>(ctx,
+          `SELECT ID, FirstName, LastName FROM ${COMMON_SCHEMA}.Person WHERE Email='${email}'`);
+        Assert(person.ID.toLowerCase() === order.BillToPersonID.toLowerCase(), "billed to a Person created from the payment");
+        AssertEqual(`${person.FirstName} ${person.LastName}`, "Ada Buyer", "named as the payment names them");
+
+        const second = unmatchedCharge(300, { BuyerEmail: email.toUpperCase(), BuyerName: "Someone Else" });
+        const again = await autoOrderFromCharge(ctx, providerID, second, items);
+        Assert(again.Created, `a second charge from the same buyer is created: ${"Message" in again ? again.Message : ""}`);
+        const people = await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${COMMON_SCHEMA}.Person WHERE Email='${email}'`);
+        AssertEqual(Number(people.N), 1, "against the same Person, found by e-mail; none is created twice");
+      }),
+  },
+  {
+    Id: "payment-providers.PV18",
+    Name: "PV18: an unmapped or inactive price, two products, or no e-mail leaves the charge to a person and writes nothing",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 300);
+        const providerID = await makeProvider(ctx, "Stripe");
+        const tag = randomUUID().slice(0, 8);
+        await mapPrice(ctx, providerID, `price_a_${tag}`, f.Products.WidgetA);
+        await mapPrice(ctx, providerID, `price_b_${tag}`, f.Products.WidgetB);
+        await mapPrice(ctx, providerID, `price_off_${tag}`, f.Products.WidgetA, false);
+        const buyer = { BuyerEmail: `it-${tag}@example.com`, BuyerName: "Ada Buyer" };
+
+        const cases: Array<[string, GatewayChargeItem[], Partial<GatewayCharge>]> = [
+          ["PriceNotMapped", [{ ProviderPriceID: `price_x_${tag}`, Quantity: 1, Amount: 300 }], buyer],
+          ["PriceNotMapped", [{ ProviderPriceID: `price_off_${tag}`, Quantity: 1, Amount: 300 }], buyer],
+          ["SeveralProducts", [{ ProviderPriceID: `price_a_${tag}`, Quantity: 1, Amount: 150 }, { ProviderPriceID: `price_b_${tag}`, Quantity: 1, Amount: 150 }], buyer],
+          ["NoCheckoutItems", [], buyer],
+          ["NoBuyerEmail", [{ ProviderPriceID: `price_a_${tag}`, Quantity: 1, Amount: 300 }], { BuyerEmail: null, BuyerName: "Ada Buyer" }],
+        ];
+        for (const [code, items, over] of cases) {
+          const charge = unmatchedCharge(300, over);
+          const out = await autoOrderFromCharge(ctx, providerID, charge, items);
+          Assert("Code" in out && out.Code === code, `expected ${code}, got ${"Code" in out ? `${out.Code}: ${out.Message}` : "an order"}`);
+          const rows = await rowsForIntent(ctx, charge.ProviderIntentID!);
+          AssertEqual(Number(rows.Intents) + Number(rows.Orders), 0, `${code} writes no intent and no order`);
+        }
+        const people = await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${COMMON_SCHEMA}.Person WHERE Email='${buyer.BuyerEmail}'`);
+        AssertEqual(Number(people.N), 0, "and no Person is created for a charge left to a person");
+      }),
+  },
+  {
+    Id: "payment-providers.PV19",
+    Name: "PV19: a charge-without-payment exception is booked as a paid order and cleared as Corrected, naming the order",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -818,8 +928,8 @@ export const PaymentProvidersChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "payment-providers.PV18",
-    Name: "PV18: another kind of mismatch, a charge Orders opened, or a refused booking leaves the exception open and books nothing",
+    Id: "payment-providers.PV20",
+    Name: "PV20: another kind of mismatch, a charge Orders opened, or a refused booking leaves the exception open and books nothing",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {

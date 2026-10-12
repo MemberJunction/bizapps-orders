@@ -1,5 +1,65 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.30.0
+
+### Minor Changes
+
+- ac78d0d: Access override approvals are assigned and guarded (bizapps-orders#360). A `WaivePaymentHold` or `DeferCutoff` request's approval task goes to the order company's `ApprovalCFOUserID`, or, when that user is the requester, to the role named by the new `AccessOverrideFallbackApproverRole` setting; a request nobody could approve is refused. Only an assignee may decide, never the requester, and an approval after the override's last day is refused. Account Director and Finance may request either override.
+- 23d9f7f: A line's `DiscountPct` is now a concession. The confirm gate holds an order whose lines carry a `DiscountPct` until an Approved Price concession covers it, the same as a price below the engine's; one concession covers both on the same line. Recording a Price concession values the discount (gross × `DiscountPct`), so it is Approved inside the requester's Sales Authority and Pending otherwise. A renewal line's carried-forward discount, bundle components and reversals are not counted. The price-below-engine finance exception reports discounts on the same terms. New exports: `LineConcessionTerms`, `LineConcessionFacts`.
+- 7fe01d1: `Orders.CheckEntitlement` and `Orders.ListEntitlements` say why access is held and when a past-due renewal loses it (#269). A `Suspended` answer now carries `SuspensionReason`: `AwaitingPayment` (a new purchase waiting for its first payment), `PastDue` (a renewal past the cutoff) or `AwaitingActivation`, or null for a suspension with no recorded reason. While a renewal is past due but still has access, `AccessCutoffDate` is the last day it keeps it, the overdue worklist's `GraceThroughDate`, or an approved cutoff deferral's last day when later. `Decision` is unchanged, so callers matching `Suspended` keep working.
+- d8efa9f: Another app can now refuse an order's confirm, through a seam beside the one that refuses a line edit.
+
+  Confirming is where an order stops being a proposal: journal entries are written, a subscription may be created, recognition follows. Orders enforces its own rules — a legal status, a bill-to party, at least one line, a service period where one is needed — but it cannot know that an app upstream has a reason to say "not yet".
+
+  The case this exists for (bc-aidp-next-golive#323): Sales closes a deal Won, which mints the order; the deal is then reopened to Open; the order is confirmed from the order screen and books anyway, leaving an Open deal sitting on a booked order. Sales already refuses the reverse.
+
+  Nothing registers into this on the day it ships, and it cannot: Sales resolves this package from the registry and cannot call a function that has not been published. `HostOrderConfirmVeto()` returns null until something registers, the check returns early, and no host behaves differently.
+
+- ba20d3e: The `OrderConfirmed` outbound event carries the buyer's checkout answers as `CheckoutAnswers[]` (`QuestionKey`, `QuestionLabel`, `Answer`, `OtherText`), empty when the checkout asked nothing (#322). Confirming an order now writes the answers attached to it: the booking save skipped the order's related collections so it could price the lines first, and that skip also left the answers unwritten. The "Other" text of a select question is capped at the question's own `maxLength`, as the answer is.
+
+### Patch Changes
+
+- 557b6b3: The order form's access overrides panel offers Approve and Reject only to an assignee of the approval task who is not the requester, and Approve only on or before the override's last day (bizapps-orders#517). Everyone else sees whom the request is waiting on. The decision rule (`AccessOverrideDecisionRefusal`) and the assignee read (`LoadAccessOverrideAssignees`) move to `@mj-biz-apps/orders-entities` so the browser and the server share them.
+- 573ff96: `Orders.AmendArrangement`'s generated input and output types now match the operation: `OrderHeaderID` and `NewPaymentTermsTypeID` for a change of payment terms, `SubscriptionTermID` and `NewEndDate` optional, and the payment-terms fields of the output. The input interface is declared once, and the server operation uses the generated types.
+- 5cd3382: A band-overlap refusal at confirm (and from `Orders.CheckCoverageOverlap`) now offers cancelling the held band first when that would let the line confirm: every overlapping band is an existing subscription that is not already cancelled, and its type's `CancellationMode` is `Immediate`. The message says when to start the new band: the day after the cancellation date, or after the type's grace period when it has one, since grace keeps access and access is what the check reads. Under `EndOfTerm` and `EndOfBillingPeriod`, coverage runs on after a cancellation, so the option is not offered. `FamilyCoverageTerm` and `CoverageOverlap` carry the band's `CancellationMode`, `GracePeriodDays` and whether it can still be cancelled.
+- c89ac1b: A refund made at the payment gateway is booked in Orders without a manual step. On `charge.refunded` for a payment Orders opened, the charge's cumulative refunded amount is compared with the refunds Orders holds against the payment; the gateway's refunds not yet held (matched by refund id, or by amount for one recorded by hand without an id) are booked through `Orders.RefundPayment` with their refund ids, so a refund already recorded is never booked twice. What cannot be booked — the payment is not captured, more is refunded than was captured, the amounts do not match, or `Orders.RefundPayment` refuses — is raised as a `PROVIDER_REFUND_NOT_BOOKED` finance exception. A refund remains a concession: it does not cancel a subscription or remove access. New driver call `ListRefunds` (Stripe: `GET /v1/refunds`). New exports: `BookProviderRefunds`, `PlanProviderRefundBooking`, `UnmatchedGatewayRefunds`, `StripeRefundFromObject`, `AddCreatedRange` and the refund types.
+- 063bb40: A bundle line is expanded once. Saving a draft again after its lines changed used to add a second set of component lines, doubling the order, and the new set carried none of the edits made to the first, so an overlap acknowledged on a band inside a bundle came back unacknowledged and confirm refused it. A bundle line that already has children now updates them to its current quantity and price instead (a child whose quantity or price was set by hand keeps it). An overlap acknowledgment on the bundle line is copied to its component lines, so a bundle confirmed in one step can acknowledge a band inside it.
+- 0db962e: MemberJunction and other BizApps packages are peer dependencies with caret ranges (`^6.1.5` for
+  MemberJunction, `^5.49.0` for common, `>=0.21.0` for accounting; no `~`, nothing in
+  `dependencies`), so a 6.2 host keeps one copy of each instead of installing a second tree. MemberJunction
+  devDependencies and the root `pnpm.overrides` use the same `^6.1.5` floor. Adds `check-dependency-model` to CI.
+- 0c4815c: Confirming a saved draft that carries a promotion code records the promotion once. The code rides the order, so the confirm re-decides it, and it used to write a second set of adjustment rows beside the draft's. A save that re-decides a saved order's promotions now removes the earlier promotion rows for those lines first and keeps each line's manual discount. A requested manual discount is consumed by the save that applies it, so saving the same order object again no longer grants it twice, and a single-use code a draft already took is no longer counted against the same order at confirm.
+- 036923f: A tax rate, amount or override stated on a draft is kept when the draft is confirmed. The request lived only in memory, so a confirm from a reloaded draft resolved tax from the ship-to address and replaced the stated rows. The walk now reads a saved order's stated tax charges back as requests, and a restated override keeps its reason and the user who made it. A re-price also removes the order's zero-amount tax rows, which have no allocation to reach them by. Requested charges are consumed once the save commits, so confirming the same order object no longer writes them a second time.
+- 5d531bf: Confirming a saved draft with taxed lines books balanced entries. Each pricing save re-resolves tax, and the confirm used to add its tax charge rows beside the draft's, so booking credited the tax twice and refused the entry as unbalanced. A save of an unbooked order now removes the earlier tax rows for the lines it re-priced before writing the new ones, and a line re-priced to no tax has its `LineTax` cleared.
+- 6c5e3e2: Intercompany is between legal entities, not companies (golive #313). A Division, Department or Branch uses the books of its legal entity (`AccountingEngineBase.LegalEntityFor`, bizapps-accounting 0.21.0).
+
+  - Payment allocation: cash collected for a line of a company on the same legal entity books no Due To / Due From. The line's receivable is credited in the collector's entry, tagged with the line's dimensions. Between different legal entities the `IntercompanyAccountMatch` is looked up by the legal-entity pair, so the match rows for the legal entities cover every company under them.
+  - Account resolution: a Division's line resolves its legal entity's GL accounts. The company default is looked for on the Division's own company record, then on its legal entity's, and the D6 cross-company check compares against the legal entity.
+  - A Division with no parent, a parent with no profile, or a loop refuses booking with a message naming the company.
+  - The "intercompany entries will be created" hints on the allocation grid and the account-credit page count legal entities.
+
+  Requires BizApps Accounting >= 0.21.0: every `@mj-biz-apps/accounting-*` dependency is `>=0.21.0`, so one copy of `accounting-engine-base` loads.
+
+- d0c3fa6: Two checks of Orders against the payment gateway. A webhook endpoint drift check finds each live provider's endpoint at the gateway (the one whose URL ends in the provider's id) and reports one that is missing, disabled, or does not send every event kind the driver handles; it runs once at server start and as the `Orders.CheckPaymentWebhookEndpoints` Action, and drift is logged as an error and fails the run. A charge reconciliation, the `Orders.ReconcilePaymentProviderCharges` remote operation and Action, matches the gateway's charges and refunds for a window of business days to Orders' intents and captured payments and reports a charge with no payment, a payment with no charge, and a refunded charge whose payment carries fewer refunds; with `Preview` false each is raised as a `PROVIDER_CHARGE_MISMATCH` finance exception. It corrects nothing. Both scheduled jobs ship disabled, the reconciliation in preview. New driver calls: `ListCharges`, `RetrieveCharge`, `ListWebhookEndpoints`, `ListsCharges`. A restricted gateway key needs read access to webhook endpoints, charges and refunds.
+- ff4e795: Every verified payment webhook delivery is now recorded in `PaymentWebhookDelivery`, including the ones Orders does not apply: an event kind it does not act on (`kind_not_handled`), an intent it did not open (`unknown_intent`, for example a payment taken in the gateway's dashboard), an unreadable body, a duplicate, an out-of-order event, or one it failed to apply. A redelivery updates its row. The duplicate check now also reads this table, so an event applied earlier is recognised even after a later event replaced the id stamped on the intent. Recording never changes the response the gateway gets. A shared default view, "Payment Webhook Deliveries: Not Applied", lists the skipped and failed deliveries without the kinds Orders does not act on. New exports: `RecordWebhookDelivery`, `FindPriorDelivery`, `DeliveryOutcomeFor`, `WebhookReasonCode` and the delivery types.
+- 307859d: A payment webhook event older than the one that set an intent's current status no longer moves the status backwards. `PaymentIntent.LastEventAt` now holds the gateway's time of that event (Stripe `created`) rather than the time Orders received it, and a status-bearing event created before it is answered as already applied and changes nothing; on a same-second tie a settled status (Succeeded, Canceled) is kept. A checkout's gateway read stamps `LastEventAt` too. New exports: `IsOutOfOrderIntentEvent`, `SETTLED_INTENT_STATUSES`.
+- Updated dependencies [557b6b3]
+- Updated dependencies [573ff96]
+- Updated dependencies [9647922]
+- Updated dependencies [0db962e]
+- Updated dependencies [0c4815c]
+- Updated dependencies [036923f]
+- Updated dependencies [5d531bf]
+- Updated dependencies [7fe01d1]
+- Updated dependencies [de9be4d]
+- Updated dependencies [d8efa9f]
+- Updated dependencies [ba20d3e]
+- Updated dependencies [330c0e5]
+- Updated dependencies [a1810fd]
+- Updated dependencies [f22d329]
+- Updated dependencies [d0c3fa6]
+  - @mj-biz-apps/orders-entities@5.30.0
+
 ## 5.29.0
 
 ### Minor Changes
@@ -674,8 +734,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                  The INSERT statement conflicted with the FOREIGN KEY constraint
-                                  "FK_EntityFieldValue_EntityField"
+                                    The INSERT statement conflicted with the FOREIGN KEY constraint
+                                    "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
