@@ -52,7 +52,7 @@ import {
     PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
 } from './entity-names.js';
 import { ListInvoiceRailProviderIDs, ResolveInvoiceRail } from './InvoiceRailResolver.js';
-import { LoadExternalInvoicesByRef, updateExternalInvoice } from './IssueExternalInvoiceOperation.js';
+import { LoadExternalInvoicesByRef, updateExternalInvoice, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
 const RAIL_OBJECT = 'receivable-payments';
@@ -381,7 +381,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         }
         const reason = `Captured as ${cap.PaymentNumber ?? '(preview)'} for ${allocation.Total.toFixed(2)} across ${allocation.Allocations.length} order(s).`;
         await record('Captured', reason, cap.PaymentHeaderID ?? null);
-        if (!preview) await refreshInvoices(rail, invoices.map((i) => i.ID), refs, provider, user);
+        if (!preview) await refreshInvoices(rail, invoices, provider, user);
         return { ...base, Disposition: 'Captured', Reason: reason, PaymentNumber: cap.PaymentNumber ?? null, PaymentHeaderID: cap.PaymentHeaderID ?? null };
     }
 }
@@ -554,16 +554,23 @@ async function applicationsDiffer(
     }
 }
 
-/** Best effort: refresh the rail's view of the invoices a payment touched. A failure here is logged, never fatal. */
-async function refreshInvoices(rail: BaseInvoiceRail, ids: readonly string[], refs: readonly string[], provider: IMetadataProvider, user: UserInfo): Promise<void> {
-    for (let i = 0; i < ids.length && i < refs.length; i++) {
+/**
+ * Best effort: refresh the rail's view of the invoices a payment touched. A failure here is logged, never fatal.
+ *
+ * Each row is fetched by its own `ExternalInvoiceRef`. The rows come from an unordered query that also
+ * leaves out invoices no longer `Sent`, so they cannot be paired with the payment's refs by position:
+ * doing so wrote one invoice's status and due amount onto another's row (#580).
+ */
+export async function refreshInvoices(rail: BaseInvoiceRail, rows: readonly ExternalInvoiceRow[], provider: IMetadataProvider, user: UserInfo): Promise<void> {
+    for (const row of rows) {
+        if (!row.ExternalInvoiceRef) continue;
         try {
-            const snap = await rail.GetInvoice(refs[i]);
+            const snap = await rail.GetInvoice(row.ExternalInvoiceRef);
             if (snap.Success && snap.Value) {
-                await updateExternalInvoice(provider, user, ids[i], { ExternalDueAmount: money(snap.Value.DueAmount), ExternalStatus: snap.Value.Status, LastSyncedAt: new Date() });
+                await updateExternalInvoice(provider, user, row.ID, { ExternalDueAmount: money(snap.Value.DueAmount), ExternalStatus: snap.Value.Status, LastSyncedAt: new Date() });
             }
         } catch (err) {
-            LogError(`External invoice ${refs[i]} could not be refreshed after capture: ${err}`);
+            LogError(`External invoice ${row.ExternalInvoiceRef} could not be refreshed after capture: ${err}`);
         }
     }
 }
