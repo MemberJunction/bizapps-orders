@@ -3,7 +3,7 @@
  *
  * NO import statements — definitions are emitted verbatim.
  */
-export type AmendmentReasonCategory = 'Retention' | 'Referral' | 'Other';
+export type AmendmentReasonCategory = 'Retention' | 'Referral' | 'Dispute' | 'Other';
 
 export interface AmendArrangementInput {
     /** The booked term to amend. Not given with `NewPaymentTermsTypeID`. */
@@ -16,7 +16,8 @@ export interface AmendArrangementInput {
     NewPaymentTermsTypeID?: string;
     /**
      * The term's new amount, net of discount and before tax. Lower than the current amount and more than zero.
-     * Given with `SubscriptionTermID` and without `NewEndDate`. Only `Preview` is supported so far.
+     * Given with `SubscriptionTermID` and without `NewEndDate`. Recorded only when the instalments not yet invoiced
+     * absorb the whole reduction and its tax; one that needs a credit memo can be previewed but not recorded yet.
      */
     NewAmount?: number;
     /**
@@ -24,7 +25,10 @@ export interface AmendArrangementInput {
      * amount, and the rest comes off the instalments not yet invoiced. Blank: it all comes off those.
      */
     AppliesToInvoiceID?: string;
-    /** With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment. */
+    /**
+     * With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment.
+     * Previewed only: a refund needs a credit memo, which cannot be recorded yet.
+     */
     RefundRequested?: boolean;
     ReasonCategory: AmendmentReasonCategory;
     Reason: string;

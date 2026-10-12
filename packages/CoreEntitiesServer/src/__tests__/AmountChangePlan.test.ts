@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PlanAmountChange, PlanReduction, type AmountChangeInput, type ReductionInput, type ReductionInstalment } from '../AmountChangePlan';
+import { PlanAmountChange, PlanReduction, ReduceLineAmounts, type AmountChangeInput, type ReductionInput, type ReductionInstalment } from '../AmountChangePlan';
 import { RevenueRecognitionDriver, type RevRecContext, type RevRecSchedule } from '../RevenueRecognition';
 import type { StagedEntry } from '../TermExtensionPlan';
 
@@ -269,5 +269,65 @@ describe('PlanReduction — an order billed as a whole', () => {
 
     it('refuses an "applies to invoice", since there are no instalments to name', () => {
         expect(PlanReduction({ GrossReduction: 330, Instalments: [], OrderBalance: 500, AppliesToInvoiceID: ID(1) })).toMatch(/billed as a whole/);
+    });
+});
+
+describe('PlanAmountChange — the catch-up entry', () => {
+    it('debits revenue and credits deferred revenue on the effective day, on the accounts the earned slices used', () => {
+        const p = plan();
+        expect(p.CatchUpEntry).not.toBeNull();
+        expect(p.CatchUpEntry!.EffectiveDate).toBe('2026-05-01');
+        expect(p.CatchUpEntry!.Lines).toEqual([
+            expect.objectContaining({ GLAccountID: REVENUE, DebitAmount: 100, Dimensions: DIM }),
+            expect.objectContaining({ GLAccountID: DEFERRED, CreditAmount: 100, Dimensions: DIM }),
+        ]);
+    });
+
+    it('is absent before anything is earned', () => {
+        expect(plan({ EffectiveDate: day('2026-01-01'), Driver: new MonthlyDriver(12, '2026-01') }).CatchUpEntry).toBeNull();
+    });
+
+    it('is absent for a term recognised at booking, which has no deferred balance to take it from', () => {
+        const p = plan({ Entries: [] });
+        expect(p.CatchUp).toBe(300);
+        expect(p.CatchUpEntry).toBeNull();
+    });
+});
+
+describe('ReduceLineAmounts — a line as its later instalments bill it', () => {
+    const line = {
+        ID: 'LINE-1',
+        Net: 1200,
+        Tax: 96,
+        Charges: 0,
+        Gross: 1200,
+        ChargeCredits: [
+            { GLAccountID: 'STATE', Amount: 72, Label: 'State tax' },
+            { GLAccountID: 'COUNTY', Amount: 24, Label: 'County tax' },
+        ],
+    };
+
+    it('takes the reduction and its tax off, lowering each tax credit in proportion', () => {
+        const reduced = ReduceLineAmounts(line, [{ OrderLineID: 'line-1', Net: 300, Tax: 24 }]);
+        expect(reduced).toMatchObject({ Net: 900, Tax: 72, Gross: 900 });
+        expect(reduced.ChargeCredits.map((c) => c.Amount)).toEqual([54, 18]);
+    });
+
+    it('adds up two changes on the same line, and the credits still sum to the tax', () => {
+        const reduced = ReduceLineAmounts(line, [
+            { OrderLineID: 'LINE-1', Net: 100, Tax: 8 },
+            { OrderLineID: 'LINE-1', Net: 133.33, Tax: 10.67 },
+        ]);
+        expect(reduced.Net).toBe(966.67);
+        expect(reduced.Tax).toBe(77.33);
+        expect(reduced.ChargeCredits.reduce((s, c) => s + c.Amount, 0)).toBeCloseTo(77.33, 2);
+    });
+
+    it('leaves a line with no change as it was', () => {
+        expect(ReduceLineAmounts(line, [{ OrderLineID: 'LINE-2', Net: 300, Tax: 24 }])).toBe(line);
+    });
+
+    it('refuses a reduction larger than the line', () => {
+        expect(() => ReduceLineAmounts(line, [{ OrderLineID: 'LINE-1', Net: 1300, Tax: 0 }])).toThrow(/more than its own amount/);
     });
 });

@@ -496,6 +496,32 @@ export async function RaiseAmendmentAcknowledgment(
     concession: ApprovedDurationConcession,
     ctx: ApprovalTaskContext,
 ): Promise<string> {
+    return RaiseAcknowledgmentTask(
+        {
+            Name: `Confirm the recognition re-cut: ${label(checked)}`,
+            Description: acknowledgmentDescription(checked, concession),
+            TermID: checked.TermID,
+            OrderConcessionID: concession.ID,
+            OrderHeaderID: checked.OrderHeaderID,
+            AcknowledgerIDs: checked.AcknowledgerIDs,
+        },
+        ctx,
+    );
+}
+
+/** What an amendment's acknowledgment task says and links. */
+export interface AcknowledgmentTask {
+    Name: string;
+    Description: string;
+    TermID: string;
+    OrderConcessionID: string;
+    OrderHeaderID: string;
+    /** Every active holder of the acknowledgment role except the requester. */
+    AcknowledgerIDs: string[];
+}
+
+/** One acknowledgment task for an applied amendment, linked to its term, concession and order. Returns its ID. */
+export async function RaiseAcknowledgmentTask(ack: AcknowledgmentTask, ctx: ApprovalTaskContext): Promise<string> {
     const types = await view<mjBizAppsTasksTaskTypeEntity>(ctx, {
         EntityName: TASK_TYPE_ENTITY,
         ExtraFilter: `Code = '${EscapeText(ACKNOWLEDGMENT_TASK_TYPE_CODE)}'`,
@@ -509,19 +535,19 @@ export async function RaiseAmendmentAcknowledgment(
     requireSubclass(task, TASK_ENTITY);
     task.NewRecord();
     task.TypeID = typeID;
-    task.Name = `Confirm the recognition re-cut: ${label(checked)}`;
-    task.Description = acknowledgmentDescription(checked, concession);
+    task.Name = ack.Name;
+    task.Description = ack.Description;
     task.Priority = 'High';
     task.Status = 'Open';
     if (!(await task.Save())) {
-        throw new Error(`The acknowledgment task for ${label(checked)} could not be created: ${task.LatestResult?.CompleteMessage}`);
+        throw new Error(`The acknowledgment task '${ack.Name}' could not be created: ${task.LatestResult?.CompleteMessage}`);
     }
 
-    await EnsureTaskLink(task.ID, EntityIDFor(SUBSCRIPTION_TERM_ENTITY), checked.TermID, ctx);
-    await EnsureTaskLink(task.ID, EntityIDFor(ORDER_CONCESSION_ENTITY), concession.ID, ctx);
-    await EnsureTaskLink(task.ID, EntityIDFor(ORDER_HEADER_ENTITY), checked.OrderHeaderID, ctx);
+    await EnsureTaskLink(task.ID, EntityIDFor(SUBSCRIPTION_TERM_ENTITY), ack.TermID, ctx);
+    await EnsureTaskLink(task.ID, EntityIDFor(ORDER_CONCESSION_ENTITY), ack.OrderConcessionID, ctx);
+    await EnsureTaskLink(task.ID, EntityIDFor(ORDER_HEADER_ENTITY), ack.OrderHeaderID, ctx);
     const userEntityID = EntityIDFor(USER_ENTITY);
-    for (const userID of checked.AcknowledgerIDs) {
+    for (const userID of ack.AcknowledgerIDs) {
         await EnsureTaskAssignment(task.ID, userEntityID, userID, ctx);
     }
     return task.ID;

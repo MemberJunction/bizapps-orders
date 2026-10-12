@@ -10,8 +10,10 @@
  *
  * A change of amount (case A, #506): the caller names a term and its new, lower amount, optionally the invoice the
  * reduction is about. `Preview` returns the plan from ./AmountChange.ts: the catch-up, the staged entries offset and
- * the new schedule, the instalments reduced and the credit memo. Recording one is refused until its application
- * (the credit-memo document, the entries, the instalment rewrite and accounting's task) exists.
+ * the new schedule, the instalments reduced and any credit memo. Otherwise it records a Price `OrderConcession`
+ * carrying `NewAmount`, valued as the reduction and routed for approval like any other; the change applies when that
+ * concession is approved. Only a reduction the uninvoiced instalments absorb in full can be recorded for now: one
+ * that needs a credit memo, or a refund, is refused.
  *
  * A confirmed order's payment terms (#309): the caller names the order and its new terms instead of a term. It
  * records a Terms `OrderConcession`, which always waits for someone other than the requester to approve it; the
@@ -42,11 +44,11 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY } from './entity-names.js';
 import { RequireOptionalDay, RequireUUID } from './sql-guards.js';
-import { CheckAmountChange } from './AmountChange.js';
+import { CheckAmountChange, CreditMemoRefusal } from './AmountChange.js';
 import { CheckTermsChange } from './PaymentTermsChange.js';
 import { CheckTermExtension } from './TermExtension.js';
 
-const REASON_CATEGORIES: readonly string[] = ['Retention', 'Referral', 'Other'];
+const REASON_CATEGORIES: readonly string[] = ['Retention', 'Referral', 'Dispute', 'Other'];
 
 @RegisterClass(BaseRemotableOperation, 'Orders.AmendArrangement')
 export class AmendArrangementOperation extends OrdersAmendArrangementOperationBase {
@@ -192,20 +194,43 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
             Refund: billing.Refund,
             OpenCredit: billing.OpenCredit,
         };
-        if (!input.Preview) {
+        if (input.Preview) {
+            return {
+                ...summary,
+                Message:
+                    `Term ${checked.TermNumber} of ${checked.SubscriptionNumber} would go from ${checked.CurrentAmount.toFixed(2)} to ` +
+                    `${checked.NewAmount.toFixed(2)}: ${plan.CatchUp.toFixed(2)} taken back from revenue already earned, ` +
+                    `${billing.CreditMemo.toFixed(2)} credited on a credit memo.`,
+            };
+        }
+        if (input.RefundRequested) {
             return {
                 Success: false,
-                Message:
-                    'Recording a change of amount is not available yet: only its preview is. Run it again with Preview set ' +
-                    'to see what it would do, and correct the order with a correcting order meanwhile.',
+                Message: 'A refund needs a credit memo, which an amount change cannot issue yet. Correct it with a correcting order.',
             };
+        }
+        const memo = CreditMemoRefusal(checked);
+        if (memo) return { Success: false, Message: memo };
+
+        const concession = await provider.GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, user);
+        concession.NewRecord();
+        concession.DeliveryForm = 'Price';
+        concession.SubscriptionTermID = checked.TermID;
+        concession.NewAmount = checked.NewAmount;
+        concession.AppliesToPaymentScheduleID = input.AppliesToInvoiceID ?? null;
+        concession.ReasonCategory = input.ReasonCategory;
+        concession.Reason = (input.Reason ?? '').trim();
+        if (!(await concession.Save())) {
+            return { Success: false, Message: concession.LatestResult?.CompleteMessage ?? 'The amendment could not be recorded.' };
         }
         return {
             ...summary,
+            OrderConcessionID: concession.ID,
+            Status: concession.Status,
             Message:
-                `Term ${checked.TermNumber} of ${checked.SubscriptionNumber} would go from ${checked.CurrentAmount.toFixed(2)} to ` +
-                `${checked.NewAmount.toFixed(2)}: ${plan.CatchUp.toFixed(2)} taken back from revenue already earned, ` +
-                `${billing.CreditMemo.toFixed(2)} credited on a credit memo.`,
+                concession.Status === 'Approved'
+                    ? `Term ${checked.TermNumber} lowered to ${checked.NewAmount.toFixed(2)}. Accounting has been asked to confirm the re-cut.`
+                    : `Lowering term ${checked.TermNumber} to ${checked.NewAmount.toFixed(2)} is awaiting approval; it takes effect when approved.`,
         };
     }
 

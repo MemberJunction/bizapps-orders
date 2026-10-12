@@ -187,7 +187,7 @@ export interface BlockerResult {
  *
  * NO import statements — definitions are emitted verbatim.
  */
-export type AmendmentReasonCategory = 'Retention' | 'Referral' | 'Other';
+export type AmendmentReasonCategory = 'Retention' | 'Referral' | 'Dispute' | 'Other';
 
 export interface AmendArrangementInput {
     /** The booked term to amend. Not given with `NewPaymentTermsTypeID`. */
@@ -200,7 +200,8 @@ export interface AmendArrangementInput {
     NewPaymentTermsTypeID?: string;
     /**
      * The term's new amount, net of discount and before tax. Lower than the current amount and more than zero.
-     * Given with `SubscriptionTermID` and without `NewEndDate`. Only `Preview` is supported so far.
+     * Given with `SubscriptionTermID` and without `NewEndDate`. Recorded only when the instalments not yet invoiced
+     * absorb the whole reduction and its tax; one that needs a credit memo can be previewed but not recorded yet.
      */
     NewAmount?: number;
     /**
@@ -208,7 +209,10 @@ export interface AmendArrangementInput {
      * amount, and the rest comes off the instalments not yet invoiced. Blank: it all comes off those.
      */
     AppliesToInvoiceID?: string;
-    /** With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment. */
+    /**
+     * With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment.
+     * Previewed only: a refund needs a credit memo, which cannot be recorded yet.
+     */
     RefundRequested?: boolean;
     ReasonCategory: AmendmentReasonCategory;
     Reason: string;
@@ -2348,7 +2352,7 @@ export class OrdersAdvanceOrderStateOperation extends BaseRemotableOperation<Ord
 // ============================================================
 /**
  * Amend Arrangement
- * Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount (NewAmount, optionally AppliesToInvoiceID) can be previewed: the catch-up on revenue already earned, the staged entries it offsets and the new schedule, the uninvoiced instalments it reduces and the credit memo; recording one is refused until its application exists.
+ * Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount (NewAmount, optionally AppliesToInvoiceID) is previewed the same way: the catch-up on revenue already earned, the staged entries it offsets and the new schedule, the uninvoiced instalments it reduces and any credit memo. Otherwise it records a Price concession carrying NewAmount, routed for approval; when approved, the catch-up and re-cut are posted, the term's amount and the uninvoiced instalments are lowered, and accounting is asked to confirm. A change that needs a credit memo or a refund is refused for now.
  * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
  * under 'Orders.AmendArrangement'. This generated base provides the typed contract only (client-safe).
  */
