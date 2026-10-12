@@ -761,7 +761,7 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         const order = await TxOne<{ ProductID: string; BillToPersonID: string; Origin: string; Balance: number }>(ctx,
           `SELECT ol.ProductID, oh.BillToPersonID, oh.Origin, oh.Balance
              FROM ${ORDERS_SCHEMA}.OrderHeader oh JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.OrderHeaderID = oh.ID
-            WHERE oh.ID='${out.Created ? out.OrderHeaderID : ""}'`);
+            WHERE oh.ID='${"OrderHeaderID" in out ? out.OrderHeaderID : ""}'`);
         Assert(order.ProductID.toLowerCase() === f.Products.WidgetA.toLowerCase(), "the line carries the mapped product");
         AssertEqual(order.Origin, "ProviderPayment", "marked as created from a payment");
         AssertEqual(Number(order.Balance), 0, "and paid");
@@ -802,7 +802,7 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         for (const [code, items, over] of cases) {
           const charge = unmatchedCharge(300, over);
           const out = await autoOrderFromCharge(ctx, providerID, charge, items);
-          Assert(!out.Created && out.Code === code, `expected ${code}, got ${out.Created ? "an order" : `${out.Code}: ${out.Message}`}`);
+          Assert("Code" in out && out.Code === code, `expected ${code}, got ${"Code" in out ? `${out.Code}: ${out.Message}` : "an order"}`);
           const rows = await rowsForIntent(ctx, charge.ProviderIntentID!);
           AssertEqual(Number(rows.Intents) + Number(rows.Orders), 0, `${code} writes no intent and no order`);
         }

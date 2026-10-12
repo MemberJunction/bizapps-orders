@@ -243,7 +243,9 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
                 provider,
                 user,
             );
-            if (outcome.Created) {
+            if ('Code' in outcome) {
+                left.push({ ...m, Detail: m.Detail + NotCreatedNote(`${outcome.Code}: ${outcome.Message}`) });
+            } else {
                 result.OrdersCreated++;
                 out.OrdersCreated.push({
                     PaymentProviderID: paymentProviderID,
@@ -254,8 +256,6 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
                     PaymentNumber: outcome.PaymentNumber,
                     Amount: m.Amount,
                 });
-            } else {
-                left.push({ ...m, Detail: m.Detail + NotCreatedNote(`${outcome.Code}: ${outcome.Message}`) });
             }
         }
         return left;
