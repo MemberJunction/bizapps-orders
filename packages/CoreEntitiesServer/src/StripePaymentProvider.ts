@@ -34,10 +34,24 @@ import {
     type CaptureResult,
     type CreateIntentRequest,
     type CreateIntentResult,
+    type EnsureCustomerRequest,
+    type EnsureCustomerResult,
+    type GatewayCharge,
+    type GatewayRefund,
+    type ListChargesRequest,
+    type ListChargesResult,
+    type ListWebhookEndpointsResult,
+    type RetrieveChargeRequest,
+    type RetrieveChargeResult,
+    type ListRefundsRequest,
+    type ListRefundsResult,
     type RefundRequest,
     type RefundResult,
     type RetrieveIntentRequest,
     type RetrieveIntentResult,
+    type RetrievedInstrument,
+    type UpdateIntentRequest,
+    type UpdateIntentResult,
     type WebhookEvent,
 } from './BasePaymentProvider.js';
 import {
@@ -49,6 +63,9 @@ import {
 } from './PaymentProviderBehavior.js';
 
 const STRIPE_API = 'https://api.stripe.com/v1';
+
+/** Pages of 100 a list read follows before refusing. */
+const MAX_LIST_PAGES = 50;
 
 /** Stripe's own event names, kept as strings because they are Stripe's vocabulary and not ours. */
 const HANDLED = [
@@ -133,10 +150,17 @@ export class StripePaymentProvider extends BasePaymentProvider {
             // confirmation that will never come.
             confirm: request.ProviderInstrumentRef ? 'true' : 'false',
         };
+        if (request.Description) body.description = request.Description;
         if (request.ProviderCustomerRef) body.customer = request.ProviderCustomerRef;
+        if (request.ReceiptEmail) body.receipt_email = request.ReceiptEmail;
         if (request.ProviderInstrumentRef) {
             body.payment_method = request.ProviderInstrumentRef;
             body.off_session = 'true';
+        } else if (request.SaveInstrumentForReuse && request.ProviderCustomerRef) {
+            // Stripe attaches the card the customer confirms to `customer` and records the mandate
+            // to charge it again without them present. Without a customer there is nothing to
+            // attach it to, so the flag alone is not sent.
+            body.setup_future_usage = 'off_session';
         }
         for (const [k, v] of Object.entries(request.Metadata ?? {})) body[`metadata[${k}]`] = v;
         if (request.OrderHeaderID) body['metadata[OrderHeaderID]'] = request.OrderHeaderID;
@@ -153,6 +177,23 @@ export class StripePaymentProvider extends BasePaymentProvider {
         };
     }
 
+    public override async UpdateIntent(request: UpdateIntentRequest): Promise<UpdateIntentResult> {
+        if (!request.ProviderIntentID) {
+            return { Success: false, Reason: 'A Stripe update needs a provider intent id.' };
+        }
+        const body: Record<string, string> = {};
+        if (request.Description) body.description = request.Description;
+        for (const [k, v] of Object.entries(request.Metadata ?? {})) body[`metadata[${k}]`] = v;
+        if (this.useStub || Object.keys(body).length === 0) return { Success: true };
+
+        const result = await this.call(
+            'POST',
+            `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}`,
+            body,
+        );
+        return result.Ok ? { Success: true } : { Success: false, Reason: result.Reason };
+    }
+
     public override async RetrieveIntent(request: RetrieveIntentRequest): Promise<RetrieveIntentResult> {
         if (!request.ProviderIntentID) {
             return { Success: false, Reason: 'A Stripe retrieve needs a provider intent id.' };
@@ -164,7 +205,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         }
         const result = await this.call(
             'GET',
-            `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}`,
+            `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}?expand[]=payment_method`,
         );
         if (!result.Ok) {
             return { Success: false, Reason: result.Reason };
@@ -175,7 +216,35 @@ export class StripePaymentProvider extends BasePaymentProvider {
             Success: true,
             Status: MapStripeIntentStatus(result.Body.status as string),
             Amount: Number.isFinite(minor) && minor > 0 ? FromMinorUnits(minor, currency) : undefined,
+            Instrument: StripeInstrumentFromIntent(result.Body),
         };
+    }
+
+    // ─── Customer ──────────────────────────────────────────────────────────────
+
+    public override async EnsureCustomer(request: EnsureCustomerRequest): Promise<EnsureCustomerResult> {
+        if (request.ExistingProviderCustomerRef) {
+            return { Success: true, ProviderCustomerRef: request.ExistingProviderCustomerRef, WasExisting: true };
+        }
+        const owner = request.BillToPersonID ?? request.BillToOrganizationID ?? request.CheckoutSessionID;
+        if (!owner) {
+            return { Success: false, Reason: 'A Stripe customer needs the person, organization or checkout it belongs to.' };
+        }
+
+        if (this.useStub) {
+            return { Success: true, ProviderCustomerRef: `cus_stub_${owner.replace(/-/g, '').slice(0, 24)}`, WasExisting: false };
+        }
+
+        const body: Record<string, string> = {};
+        if (request.Email) body.email = request.Email;
+        if (request.Name) body.name = request.Name;
+        if (request.BillToPersonID) body['metadata[PersonID]'] = request.BillToPersonID;
+        if (request.BillToOrganizationID) body['metadata[OrganizationID]'] = request.BillToOrganizationID;
+        if (request.CheckoutSessionID) body['metadata[CheckoutSessionID]'] = request.CheckoutSessionID;
+
+        const result = await this.call('POST', '/customers', body, request.IdempotencyKey);
+        if (!result.Ok) return { Success: false, Reason: result.Reason };
+        return { Success: true, ProviderCustomerRef: String(result.Body.id), WasExisting: false };
     }
 
     // ─── Capture ───────────────────────────────────────────────────────────────
@@ -263,6 +332,55 @@ export class StripePaymentProvider extends BasePaymentProvider {
             Success: true,
             Amount: FromMinorUnits(Number(result.Body.amount ?? 0), currency),
             ProviderRefundID: String(result.Body.id),
+        };
+    }
+
+    public override async ListRefunds(request: ListRefundsRequest): Promise<ListRefundsResult> {
+        // The stub has no gateway behind it, so it has no refunds Orders did not make itself.
+        if (this.useStub) return { Success: true, Refunds: [] };
+
+        const query: Record<string, string> = {};
+        if (request.ProviderChargeID) query.charge = request.ProviderChargeID;
+        AddCreatedRange(query, request.CreatedFrom, request.CreatedTo);
+        const listed = await this.listAll('/refunds', query);
+        if (!listed.Ok) return { Success: false, Reason: listed.Reason };
+        return { Success: true, Refunds: listed.Items.map(StripeRefundFromObject) };
+    }
+
+    // ─── Reconciliation reads (#477) ───────────────────────────────────────────
+
+    public override get ListsCharges(): boolean {
+        return true;
+    }
+
+    public override async ListCharges(request: ListChargesRequest): Promise<ListChargesResult> {
+        if (this.useStub) return { Success: true, Charges: [] };
+        const query: Record<string, string> = {};
+        AddCreatedRange(query, request.CreatedFrom, request.CreatedTo);
+        const listed = await this.listAll('/charges', query);
+        if (!listed.Ok) return { Success: false, Reason: listed.Reason };
+        return { Success: true, Charges: listed.Items.map(StripeChargeFromObject) };
+    }
+
+    public override async RetrieveCharge(request: RetrieveChargeRequest): Promise<RetrieveChargeResult> {
+        if (this.useStub) return { Success: false, NotFound: true, Reason: 'The stub has no charges.' };
+        const result = await this.call('GET', `/charges/${encodeURIComponent(request.ProviderChargeID)}`);
+        if (result.Ok) return { Success: true, Charge: StripeChargeFromObject(result.Body) };
+        const code = String(((result.Body.error ?? {}) as Record<string, unknown>).code ?? '');
+        return { Success: false, NotFound: code === 'resource_missing', Reason: result.Reason };
+    }
+
+    public override async ListWebhookEndpoints(): Promise<ListWebhookEndpointsResult> {
+        if (this.useStub) return { Success: false, Reason: 'The stub has no webhook endpoints.' };
+        const listed = await this.listAll('/webhook_endpoints', {});
+        if (!listed.Ok) return { Success: false, Reason: listed.Reason };
+        return {
+            Success: true,
+            Endpoints: listed.Items.map((e) => ({
+                Url: String(e.url ?? ''),
+                Status: String(e.status ?? ''),
+                EnabledEvents: ((e.enabled_events as unknown[]) ?? []).map(String),
+            })),
         };
     }
 
@@ -400,6 +518,35 @@ export class StripePaymentProvider extends BasePaymentProvider {
     }
 
     /**
+     * Every object of a Stripe list endpoint, following `has_more` pages of 100.
+     *
+     * Stops with a refusal past `MAX_LIST_PAGES` rather than reading without bound: a caller asking
+     * for more than that wants a narrower window, not a slower answer.
+     */
+    protected async listAll(
+        path: string,
+        query: Record<string, string>,
+    ): Promise<{ Ok: boolean; Reason?: string; Items: Array<Record<string, unknown>> }> {
+        const items: Array<Record<string, unknown>> = [];
+        let startingAfter: string | undefined;
+        for (let page = 0; page < MAX_LIST_PAGES; page++) {
+            const params = new URLSearchParams({ ...query, limit: '100' });
+            if (startingAfter) params.set('starting_after', startingAfter);
+            const result = await this.call('GET', `${path}?${params.toString()}`);
+            if (!result.Ok) return { Ok: false, Reason: result.Reason, Items: items };
+            const data = (result.Body.data as Array<Record<string, unknown>> | undefined) ?? [];
+            items.push(...data);
+            if (!result.Body.has_more || data.length === 0) return { Ok: true, Items: items };
+            startingAfter = String(data[data.length - 1].id);
+        }
+        return {
+            Ok: false,
+            Reason: `Stripe ${path} returned more than ${MAX_LIST_PAGES * 100} objects; ask for a narrower window.`,
+            Items: items,
+        };
+    }
+
+    /**
      * Map a Succeeded Stripe PaymentIntent body onto our CaptureResult. Shared by a real
      * POST /capture and by the already-captured retrieve fallback so both paths stamp the
      * same charge id and fee.
@@ -489,6 +636,74 @@ export function stripeCaptureAlreadyCollected(
         msg.includes('already been captured') ||
         msg.includes('already succeeded')
     );
+}
+
+/** Stripe's `created[gte]` / `created[lte]` filter, in unix seconds. */
+export function AddCreatedRange(query: Record<string, string>, from?: Date, to?: Date): void {
+    if (from) query['created[gte]'] = String(Math.floor(from.getTime() / 1000));
+    if (to) query['created[lte]'] = String(Math.floor(to.getTime() / 1000));
+}
+
+/** A Stripe charge object as a `GatewayCharge`. */
+export function StripeChargeFromObject(object: Record<string, unknown>): GatewayCharge {
+    const currency = ((object.currency as string) ?? 'usd').toUpperCase();
+    const created = Number(object.created);
+    const intent = object.payment_intent;
+    return {
+        ProviderChargeID: String(object.id),
+        ProviderIntentID:
+            typeof intent === 'string' ? intent : ((intent as Record<string, unknown> | null)?.id as string | undefined) ?? null,
+        Amount: FromMinorUnits(Number(object.amount ?? 0), currency),
+        AmountRefunded: FromMinorUnits(Number(object.amount_refunded ?? 0), currency),
+        CurrencyCode: currency,
+        Status: String(object.status ?? ''),
+        CreatedAt: Number.isFinite(created) && created > 0 ? new Date(created * 1000) : undefined,
+    };
+}
+
+/** A Stripe refund object as a `GatewayRefund`. */
+export function StripeRefundFromObject(object: Record<string, unknown>): GatewayRefund {
+    const currency = ((object.currency as string) ?? 'usd').toUpperCase();
+    const created = Number(object.created);
+    const charge = object.charge;
+    return {
+        ProviderRefundID: String(object.id),
+        ProviderChargeID:
+            typeof charge === 'string' ? charge : ((charge as Record<string, unknown> | null)?.id as string | undefined) ?? null,
+        Amount: FromMinorUnits(Number(object.amount ?? 0), currency),
+        CurrencyCode: currency,
+        Status: String(object.status ?? ''),
+        CreatedAt: Number.isFinite(created) && created > 0 ? new Date(created * 1000) : undefined,
+    };
+}
+
+/**
+ * The instrument behind an intent retrieved with `expand[]=payment_method`, or undefined when the
+ * intent has no payment method yet. `customer` and `payment_method` are ids on an unexpanded read and
+ * objects on an expanded one, so both shapes are read.
+ */
+export function StripeInstrumentFromIntent(intent: Record<string, unknown>): RetrievedInstrument | undefined {
+    const idOf = (value: unknown): string | null => {
+        if (typeof value === 'string') return value;
+        if (value && typeof value === 'object') return ((value as Record<string, unknown>).id as string) ?? null;
+        return null;
+    };
+    const instrumentRef = idOf(intent.payment_method);
+    if (!instrumentRef) return undefined;
+
+    const method = (typeof intent.payment_method === 'object' ? intent.payment_method : {}) as Record<string, unknown>;
+    const card = (method.card ?? {}) as Record<string, unknown>;
+    const billing = (method.billing_details ?? {}) as Record<string, unknown>;
+    const instrument: RetrievedInstrument = {
+        ProviderCustomerRef: idOf(intent.customer) ?? idOf(method.customer),
+        ProviderInstrumentRef: instrumentRef,
+    };
+    if (typeof card.brand === 'string') instrument.Brand = card.brand;
+    if (typeof card.last4 === 'string') instrument.Last4 = card.last4;
+    if (Number.isInteger(card.exp_month)) instrument.ExpiryMonth = card.exp_month as number;
+    if (Number.isInteger(card.exp_year)) instrument.ExpiryYear = card.exp_year as number;
+    if (typeof billing.name === 'string' && billing.name) instrument.HolderName = billing.name;
+    return instrument;
 }
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */

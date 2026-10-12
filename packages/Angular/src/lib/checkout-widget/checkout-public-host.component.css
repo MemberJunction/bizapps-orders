@@ -70,6 +70,17 @@
     color: #334155;
 }
 
+/* Whether the buyer's access is ready yet (#325). */
+.mj-checkout-success__access {
+    margin: 0.75rem 0 0;
+    color: #334155;
+    font-size: 0.95rem;
+}
+
+.mj-checkout-success__access.is-failed {
+    color: #991b1b;
+}
+
 /* Post-payment account step: set a password for the account the host created (#292). */
 .mj-checkout-account {
     margin: 1.5rem auto 0;

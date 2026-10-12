@@ -335,6 +335,49 @@ export function NetAfterDiscount(gross: number, discountPct: number, discountAmo
     return g < 0 ? Money(Math.min(0, discounted)) : Money(Math.max(0, discounted));
 }
 
+/** One line's money as a pricing walk left it, read back off the unsaved line entity. */
+export interface PricedLineAmounts {
+    UnitPrice: number;
+    /** The line's WHOLE discount — the percentage concession and the allocated amount together. */
+    DiscountAmount: number;
+    ChargeAmount: number;
+    LineTax: number;
+    LineTotalNet: number;
+    /** Net plus charges plus tax — what the customer pays for this line. */
+    LineTotalGross: number;
+}
+
+/**
+ * Read a priced line's amounts back off the entity `OrderPricingService.Price` just stamped.
+ *
+ * `Orders.PriceOrder` and the browser's local pricing path both run the same walk and then read its
+ * answer back. Each wrote that read-back out by hand, and they drifted: the browser's copy never
+ * read `ChargeAmount` or `LineTax`, so its gross was the net and the order header's Total left out
+ * tax and charges that Balance included (#405). One function, so both paths report the same figures.
+ */
+export function ReadPricedLineAmounts(line: {
+    Quantity?: number | null;
+    UnitPrice?: number | null;
+    DiscountPct?: number | null;
+    DiscountAmount?: number | null;
+    ChargeAmount?: number | null;
+    LineTax?: number | null;
+}): PricedLineAmounts {
+    const gross = Money(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0));
+    const pct = Math.round(Number(line.DiscountPct ?? 0) * 1e4) / 1e4;
+    const net = NetAfterDiscount(gross, pct, Number(line.DiscountAmount ?? 0));
+    const charge = Number(line.ChargeAmount ?? 0);
+    const tax = Number(line.LineTax ?? 0);
+    return {
+        UnitPrice: Number(line.UnitPrice ?? 0),
+        DiscountAmount: Money(gross - net),
+        ChargeAmount: charge,
+        LineTax: tax,
+        LineTotalNet: net,
+        LineTotalGross: Money(net + charge + tax),
+    };
+}
+
 /** Tiers sorted and bounded, so tier maths never depends on how they were stored. */
 function orderedTiers(rule: PriceRule): PriceTierRule[] {
     return [...(rule.Tiers ?? [])].sort(

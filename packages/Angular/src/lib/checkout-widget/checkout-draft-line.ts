@@ -53,3 +53,48 @@ export function stripeConfirmAlreadyCollected(error: { code?: string; message?: 
 export function formatStripeError(error: { message?: string } | null | undefined): string {
     return error?.message?.trim() || 'Payment failed.';
 }
+
+/**
+ * Detail of the `checkout-already-subscribed` DOM event. Product ids and where the refusal came
+ * from — never the buyer's e-mail or any other personal data, because the host page may forward
+ * the event to analytics.
+ */
+export interface CheckoutAlreadySubscribedDetail {
+    productIds: string[];
+    source: 'built-in' | 'host';
+}
+
+/**
+ * The event detail when a checkout response refused the purchase because the buyer already
+ * subscribes, or null for any other response.
+ */
+export function alreadySubscribedDetail(response: Record<string, unknown> | null | undefined): CheckoutAlreadySubscribedDetail | null {
+    const refusal = response?.['Refusal'];
+    if (!refusal || typeof refusal !== 'object') {
+        return null;
+    }
+    const { Code, Source, ProductIDs } = refusal as { Code?: unknown; Source?: unknown; ProductIDs?: unknown };
+    if (Code !== 'AlreadySubscribed') {
+        return null;
+    }
+    return {
+        productIds: Array.isArray(ProductIDs) ? ProductIDs.filter((id): id is string => typeof id === 'string') : [],
+        source: Source === 'host' ? 'host' : 'built-in',
+    };
+}
+
+/**
+ * The notice to stop on before payment when a member token earned no discount (#324), or null to
+ * carry on. Shown once: the buyer sees why the member price is not used, and submitting again pays
+ * the price shown — the standard rate, or the buyer's own code when it was priced instead (#358).
+ * A buyer with no token, or whose discount applied, never stops here.
+ */
+export function memberDiscountNotice(draft: Record<string, unknown> | null | undefined, alreadyShown: boolean): string | null {
+    const message = draft?.['MemberDiscountMessage'];
+    if (alreadyShown || typeof message !== 'string' || !message) {
+        return null;
+    }
+    const applied = draft?.['AppliedPromotionCodes'];
+    const typedCodePriced = Array.isArray(applied) && applied.length > 0;
+    return typedCodePriced ? `${message} Submit again to continue.` : `${message} Submit again to continue at the standard rate.`;
+}

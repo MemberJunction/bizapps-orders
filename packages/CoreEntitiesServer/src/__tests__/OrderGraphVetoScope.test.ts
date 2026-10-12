@@ -66,6 +66,7 @@ function realLine(calls: { asked: number }) {
         Fields: [],
         Quantity: 1,
         ReversesOrderLineID: null,
+        ParentOrderLineID: null,
         // Read by the dimension-pair check in ValidateAsync. Shadowed like the fields above
         // because Object.create leaves the generated accessors unusable on a bare prototype.
         DimensionID: null,
@@ -116,7 +117,7 @@ function orderWith(line: unknown, booking: boolean) {
         Object.defineProperty(order, k, { value: v, writable: true });
     }
     // Everything after the line loop is someone else's subject.
-    for (const m of ['saveTaxReasons', 'stampLineDimensions', 'writePromotionRecords', 'writeChargeRecords']) {
+    for (const m of ['saveTaxReasons', 'stampLineDimensions', 'deletePromotionRecords', 'writePromotionRecords', 'deleteTaxRecords', 'writeChargeRecords']) {
         Object.defineProperty(order, m, { value: async () => undefined, writable: true });
     }
     return order;

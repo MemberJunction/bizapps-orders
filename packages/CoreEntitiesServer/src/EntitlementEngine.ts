@@ -41,6 +41,8 @@ import {
     ResolveGrantQuantity,
     ResolveValidityWindow,
     ShouldRevokeGrantsOnCancel,
+    TemplateAppliesToLineChoices,
+    type LineChoiceKey,
     type GrantTiming,
     type OrderPaymentFacts,
     type PolicyCategoryLevel,
@@ -54,6 +56,7 @@ const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
 const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+const ORDER_LINE_CHOICE_ENTITY = 'MJ_BizApps_Orders: Order Line Choices';
 
 const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${i}'`))].join(',');
@@ -68,6 +71,12 @@ export interface GrantableLine {
     ShipToOrganizationID?: string | null;
     /** Set on a renewal line. An `OnFirstPayment` renewal starts Active; a new purchase waits for cash. */
     RenewsSubscriptionID?: string | null;
+    /**
+     * The options the buyer chose for this line (Order Line Choices), which decide the conditional
+     * entitlements. Undefined means "not known here": they are read from the database, and only
+     * when a template on the order is conditional.
+     */
+    Choices?: ReadonlyArray<LineChoiceKey>;
 }
 
 /** The order facts. `Payment` decides whether a payment-gated grant starts Active. */
@@ -132,6 +141,8 @@ export async function CreateEntitlementGrants(
         AccessLeadHours: number | null;
         AccessLagHours: number | null;
         IsActive: boolean;
+        ChoiceGroupKey: string | null;
+        ChoiceOptionValue: string | null;
     }>(
         {
             EntityName: PRODUCT_ENTITLEMENT_ENTITY,
@@ -164,6 +175,8 @@ export async function CreateEntitlementGrants(
         user,
     );
     const eventByProduct = new Map((events?.Results ?? []).map((e) => [key(e.ID), e]));
+
+    const choicesByLine = await loadLineChoices(grantable, templateRows, rv, user);
 
     // NORMALISE THE CALLER'S KEYS. `materializeSubscriptions` keys `TermsByLine` by the raw line ID
     // as SQL returned it — uppercase — and a lowercased lookup here found nothing, so EVERY
@@ -208,6 +221,8 @@ export async function CreateEntitlementGrants(
         const term = termsByLineKey.get(key(line.ID)) ?? null;
 
         for (const template of forThisProduct) {
+            if (!TemplateAppliesToLineChoices(template, choicesByLine.get(key(line.ID)) ?? [])) continue;
+
             const resolved = ResolveEntitlementPolicy(
                 inputs.Product,
                 inputs.CategoryChain,
@@ -285,6 +300,48 @@ export async function CreateEntitlementGrants(
         }
     }
 
+    return out;
+}
+
+/**
+ * The chosen options of every line that could meet a conditional template, keyed by line.
+ *
+ * A caller that holds the line's choices in memory passes them — a checkout or a renewal adds them
+ * to the line in the same graph as the confirm, so they are the truth even before they commit. Only
+ * lines that arrive without them are read, and only when some template on the order is conditional:
+ * an order of unconditional products pays nothing for this.
+ */
+async function loadLineChoices(
+    lines: GrantableLine[],
+    templates: ReadonlyArray<{ ProductID: string; ChoiceGroupKey: string | null }>,
+    rv: RunView,
+    user: UserInfo,
+): Promise<Map<string, ReadonlyArray<LineChoiceKey>>> {
+    const out = new Map<string, ReadonlyArray<LineChoiceKey>>();
+    const conditionalProducts = new Set(templates.filter((t) => t.ChoiceGroupKey).map((t) => key(t.ProductID)));
+    if (!conditionalProducts.size) return out;
+
+    const unknown: string[] = [];
+    for (const line of lines) {
+        if (!conditionalProducts.has(key(line.ProductID))) continue;
+        if (line.Choices) out.set(key(line.ID), line.Choices);
+        else unknown.push(line.ID);
+    }
+    if (!unknown.length) return out;
+
+    const rows = await rv.RunView<{ OrderLineID: string; GroupKey: string; OptionValue: string }>(
+        {
+            EntityName: ORDER_LINE_CHOICE_ENTITY,
+            ExtraFilter: `OrderLineID IN (${quote(unknown)})`,
+            Fields: ['OrderLineID', 'GroupKey', 'OptionValue'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    for (const id of unknown) out.set(key(id), []);
+    for (const r of rows?.Results ?? []) {
+        (out.get(key(r.OrderLineID)) as LineChoiceKey[]).push({ GroupKey: r.GroupKey, OptionValue: r.OptionValue });
+    }
     return out;
 }
 

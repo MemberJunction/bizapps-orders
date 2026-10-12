@@ -29,6 +29,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
+import type { ExternalFieldTarget } from '@mj-biz-apps/common-entities';
 
 /** The bill-to party, flattened to what a rail's customer record needs. */
 export interface RailCustomerFacts {
@@ -137,6 +138,24 @@ export class BaseInvoiceRail {
      */
     public async CheckConfiguration(): Promise<RailResult<true>> {
         return { Success: true, Value: true };
+    }
+
+    /**
+     * The external fields a customer's name is written to, named as the connectors' integration
+     * metadata names them. The name is checked against the smallest of their lengths before the
+     * customer is created and when an order is saved (bc-aidp-next-golive#280). Empty — no check —
+     * for a rail that declares none. Called after `ExternalFieldLimitEngine` is configured.
+     */
+    public CustomerNameTargets(): ExternalFieldTarget[] {
+        return [];
+    }
+
+    /**
+     * The external fields an invoice's document number is written to. Checked before the invoice is
+     * sent, like {@link CustomerNameTargets}; empty for a rail that declares none.
+     */
+    public InvoiceNumberTargets(): ExternalFieldTarget[] {
+        return [];
     }
 
     public async EnsureCustomer(_facts: RailCustomerFacts): Promise<RailResult<{ ExternalCustomerRef: string }>> {

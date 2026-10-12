@@ -34,10 +34,12 @@ import { BaseAction } from '@memberjunction/actions';
 import type { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { Metadata, type IMetadataProvider } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { IsEditable } from '@mj-biz-apps/orders-entities';
 import {
     BuildSubject,
     DecideDelivery,
     DeliveryIdempotencyKey,
+    FindUnapprovedConcessions,
     LoadOrderDeliveryContacts,
     LoadOrderStatus,
     LoadExternallyInvoiced,
@@ -192,6 +194,8 @@ export class SendDocumentAction extends BaseAction {
             : await LoadOrderDeliveryContacts(orderID, provider, user);
 
         const orderStatus = (await LoadOrderStatus(orderID, provider, user)) ?? '';
+        // Line prices are only still open to question on an order that has not booked.
+        const unapprovedConcessions = await FindUnapprovedConcessions(orderID, [], IsEditable(orderStatus), provider, user);
 
         // ── 3. Decide, then 4. Deliver — per document ──────────────────────
         const driver = ResolveDeliveryChannel(channel);
@@ -206,7 +210,11 @@ export class SendDocumentAction extends BaseAction {
             const facts = this.toFacts(doc, orderStatus);
             // A unit invoiced through Bill.com must not also go out natively (golive #146 AC5).
             facts.ExternallyInvoiced = await LoadExternallyInvoiced(orderID, doc.CompanyID, provider, user);
-            const decision = DecideDelivery({ Document: facts, Recipients: contacts });
+            const decision = DecideDelivery({
+                Document: facts,
+                Recipients: contacts,
+                UnapprovedConcessions: unapprovedConcessions,
+            });
 
             if (decision.Verdict === 'Refuse') {
                 outcomes.push({

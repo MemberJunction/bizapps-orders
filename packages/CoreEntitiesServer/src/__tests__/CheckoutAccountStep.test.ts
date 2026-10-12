@@ -129,7 +129,7 @@ describe('checkout account step', () => {
                     SessionCreatedAt: new Date('2026-09-29T12:00:00Z'),
                 })
             );
-            expect(res.Account).toEqual({ Outcome: 'Created', Message: undefined, CanSetPassword: true, VerificationRequired: false });
+            expect(res.Account).toEqual({ Outcome: 'Created', Message: undefined, CanSetPassword: true, VerificationRequired: true });
             expect(stored()).toMatchObject({ Outcome: 'Created', PasswordSet: false, PasswordAttempts: 0 });
             // What the checkout stored before is kept.
             expect(JSON.parse(mocks.session.MetadataJSON ?? '{}').Lines).toEqual([{ ProductID: 'p', Quantity: 1 }]);
@@ -141,8 +141,12 @@ describe('checkout account step', () => {
             expect(res.Account).toEqual({ Outcome: 'Exists', Message: 'Sign in on our website.', CanSetPassword: false, VerificationRequired: false });
         });
 
-        it('records that the host will send a verification link, for a created account only', async () => {
-            host.ensure.mockResolvedValue({ Outcome: 'Created', VerificationRequired: true });
+        it.each([
+            { Outcome: 'Created' as const },
+            { Outcome: 'Created' as const, VerificationRequired: false },
+            { Outcome: 'Created' as const, VerificationRequired: true },
+        ])('requires verification for every created account, whatever the host flag says (#395): %o', async (answer) => {
+            host.ensure.mockResolvedValue(answer);
             expect((await EnsureCheckoutAccount(SID, KEY)).Account?.VerificationRequired).toBe(true);
             expect(stored().VerificationRequired).toBe(true);
             expect((await EnsureCheckoutAccount(SID, KEY)).Account?.VerificationRequired).toBe(true);

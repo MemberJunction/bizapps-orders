@@ -10,6 +10,13 @@ if (typeof globalThis.window === 'undefined') {
     (globalThis as unknown as { window: Record<string, unknown> }).window = globalThis as unknown as Record<string, unknown>;
 }
 
+/** A complete billing location — required before the form is valid. */
+function fillLocation(c: MJCheckoutWidgetComponent): void {
+    c.onBillingCountryChange('US');
+    c.onBillingRegionChange('IL');
+    c.onBillingPostalCodeChange('60601');
+}
+
 describe('MJCheckoutWidgetComponent', () => {
     let component: MJCheckoutWidgetComponent;
 
@@ -145,6 +152,7 @@ describe('MJCheckoutWidgetComponent', () => {
             component.email.set('test@competitor.com');
             component.firstName.set('John');
             component.lastName.set('Doe');
+            fillLocation(component);
             component.syncUnits();
 
             const emitSpy = vi.spyOn(component.submitted, 'emit');
@@ -165,6 +173,7 @@ describe('MJCheckoutWidgetComponent', () => {
             component.email.set('jane@example.com');
             component.firstName.set('Jane');
             component.lastName.set('Doe');
+            fillLocation(component);
             component.syncUnits();
 
             const emitSpy = vi.spyOn(component.submitted, 'emit');
@@ -183,6 +192,7 @@ describe('MJCheckoutWidgetComponent', () => {
             component.email.set('jane@example.com');
             component.firstName.set('Jane');
             component.lastName.set('Doe');
+            fillLocation(component);
 
             expect(component.isFormValid()).toBe(true);
         });
@@ -192,6 +202,7 @@ describe('MJCheckoutWidgetComponent', () => {
             component.email.set('jane@example.com');
             component.firstName.set('Jane');
             component.lastName.set('Doe');
+            fillLocation(component);
             component.isPaymentReady = false;
 
             expect(component.isFormValid()).toBe(false);
@@ -199,6 +210,87 @@ describe('MJCheckoutWidgetComponent', () => {
             component.isPaymentReady = true;
 
             expect(component.isFormValid()).toBe(true);
+        });
+
+        it('holds Pay until the buyer ticks the automatic-renewal agreement, and reports the tick', () => {
+            component.config = { unitPrice: 599, autoRenewConsentText: 'Renews every year until cancelled.' } as CheckoutWidgetConfig;
+            component.email.set('jane@example.com');
+            component.firstName.set('Jane');
+            component.lastName.set('Doe');
+            fillLocation(component);
+            component.isPaymentReady = true;
+
+            expect(component.autoRenewConsentText()).toBe('Renews every year until cancelled.');
+            expect(component.isFormValid()).toBe(false);
+
+            component.autoRenewConsent.set(true);
+            expect(component.isFormValid()).toBe(true);
+
+            const emitSpy = vi.spyOn(component.submitted, 'emit');
+            component.handleSubmit();
+            expect(emitSpy.mock.calls[0][0].autoRenewConsent).toBe(true);
+        });
+
+        it('shows no agreement for a free checkout or when the widget sets no wording', () => {
+            component.config = { unitPrice: 0, autoRenewConsentText: 'Renews every year.' } as CheckoutWidgetConfig;
+            expect(component.autoRenewConsentText()).toBeNull();
+            component.config = { unitPrice: 599 } as CheckoutWidgetConfig;
+            expect(component.autoRenewConsentText()).toBeNull();
+        });
+
+        it('offers a promotion-code field only on a paid widget that takes codes', () => {
+            component.config = { unitPrice: 599, allowCoupons: true } as CheckoutWidgetConfig;
+            expect(component.allowsPromotionCodes()).toBe(true);
+            component.config = { unitPrice: 599 } as CheckoutWidgetConfig;
+            expect(component.allowsPromotionCodes()).toBe(false);
+            component.config = { unitPrice: 0, allowCoupons: true } as CheckoutWidgetConfig;
+            expect(component.allowsPromotionCodes()).toBe(false);
+        });
+
+        it('Apply sends the form with the typed code, and ignores an empty field', () => {
+            component.config = { unitPrice: 599, allowCoupons: true } as CheckoutWidgetConfig;
+            component.email.set('jane@example.com');
+            const spy = vi.spyOn(component.promotionCodeApplied, 'emit');
+
+            component.applyPromotionCode();
+            expect(spy).not.toHaveBeenCalled();
+
+            component.promotionCodeInput.set('  SAVE10 ');
+            component.applyPromotionCode();
+            expect(spy).toHaveBeenCalledTimes(1);
+            expect(spy.mock.calls[0][0].promotionCode).toBe('SAVE10');
+            expect(spy.mock.calls[0][0].email).toBe('jane@example.com');
+        });
+
+        it('shows the server-priced total while the quantity matches, and drops it when the quantity changes', () => {
+            component.config = { unitPrice: 599, allowCoupons: true, allowQuantity: true } as CheckoutWidgetConfig;
+            component.appliedPromotion = { code: 'SAVE10', discount: 59.9, total: 539.1, quantity: 1 };
+            expect(component.totalGross()).toBe(539.1);
+
+            component.quantity.set(2);
+            expect(component.activePromotion()).toBeNull();
+            expect(component.totalGross()).toBe(1198);
+        });
+
+        it('shows the total the server priced (a member discount) while the quantity matches', () => {
+            component.config = { unitPrice: 599, allowQuantity: true } as CheckoutWidgetConfig;
+            component.serverPricedTotal = { total: 499, quantity: 1 };
+            expect(component.totalGross()).toBe(499);
+
+            component.quantity.set(2);
+            expect(component.totalGross()).toBe(1198);
+        });
+
+        it('carries the typed code on submission only when the widget takes codes', () => {
+            component.config = { unitPrice: 0 } as CheckoutWidgetConfig;
+            component.email.set('jane@example.com');
+            component.firstName.set('Jane');
+            component.lastName.set('Doe');
+            fillLocation(component);
+            component.promotionCodeInput.set('SAVE10');
+            const spy = vi.spyOn(component.submitted, 'emit');
+            component.handleSubmit();
+            expect(spy.mock.calls[0][0].promotionCode).toBeUndefined();
         });
 
         it('mounts custom JS exactly once during component initialization and ngOnChanges cycle', () => {
@@ -226,6 +318,7 @@ describe('MJCheckoutWidgetComponent', () => {
             component.email.set('jane@example.com');
             component.firstName.set('Jane');
             component.lastName.set('Doe');
+            fillLocation(component);
 
             const emitSpy = vi.spyOn(component.submitted, 'emit');
             
@@ -254,6 +347,7 @@ describe('MJCheckoutWidgetComponent', () => {
                 component.email.set('jane@example.com');
                 component.firstName.set('Jane');
                 component.lastName.set('Doe');
+                fillLocation(component);
             };
 
             it('keeps Pay disabled until a required question is answered', () => {
@@ -281,12 +375,126 @@ describe('MJCheckoutWidgetComponent', () => {
             });
         });
 
+        describe('choice groups (#291)', () => {
+            const DEPARTMENTS = {
+                key: 'department',
+                label: 'Choose your departments',
+                options: ['Marketing', 'Membership', 'Finance'],
+                min: 2,
+                max: 2,
+            };
+            const TRACK = { key: 'track', label: 'Choose a track', options: ['Online', 'In person'], min: 1, max: 1 };
+            const fillBuyer = (choiceGroups: unknown[]) => {
+                component.config = { unitPrice: 0, choiceGroups } as CheckoutWidgetConfig;
+                component.email.set('jane@example.com');
+                component.firstName.set('Jane');
+                component.lastName.set('Doe');
+                fillLocation(component);
+            };
+
+            it('keeps Pay disabled until each group has its minimum', () => {
+                fillBuyer([DEPARTMENTS]);
+                expect(component.isFormValid()).toBe(false);
+                component.toggleChoice(DEPARTMENTS, 'Marketing');
+                expect(component.isFormValid()).toBe(false);
+                component.toggleChoice(DEPARTMENTS, 'Finance');
+                expect(component.isFormValid()).toBe(true);
+            });
+
+            it('stops a group at its maximum and disables the rest until one is unpicked', () => {
+                fillBuyer([DEPARTMENTS]);
+                component.toggleChoice(DEPARTMENTS, 'Marketing');
+                component.toggleChoice(DEPARTMENTS, 'Finance');
+                component.toggleChoice(DEPARTMENTS, 'Membership');
+                expect(component.choices()).toEqual({ department: ['Marketing', 'Finance'] });
+                expect(component.isGroupFull(DEPARTMENTS)).toBe(true);
+                component.toggleChoice(DEPARTMENTS, 'Marketing');
+                expect(component.choices()).toEqual({ department: ['Finance'] });
+                expect(component.isGroupFull(DEPARTMENTS)).toBe(false);
+            });
+
+            it('swaps the pick in a group of one', () => {
+                fillBuyer([TRACK]);
+                component.toggleChoice(TRACK, 'Online');
+                component.toggleChoice(TRACK, 'In person');
+                expect(component.choices()).toEqual({ track: ['In person'] });
+                expect(component.isFormValid()).toBe(true);
+            });
+
+            it('sends the picks with the submission', () => {
+                fillBuyer([DEPARTMENTS]);
+                component.toggleChoice(DEPARTMENTS, 'Membership');
+                component.toggleChoice(DEPARTMENTS, 'Finance');
+                const emitSpy = vi.spyOn(component.submitted, 'emit');
+                component.handleSubmit();
+                expect(emitSpy.mock.calls[0][0].choices).toEqual({ department: ['Membership', 'Finance'] });
+            });
+        });
+
         it('generates a unique per-instance widgetInstanceId', () => {
             const comp1 = new MJCheckoutWidgetComponent();
             const comp2 = new MJCheckoutWidgetComponent();
             expect(comp1.widgetInstanceId).toBeDefined();
             expect(comp2.widgetInstanceId).toBeDefined();
             expect(comp1.widgetInstanceId).not.toBe(comp2.widgetInstanceId);
+        });
+    });
+
+    describe('billing location (bc-aidp-next-golive#264)', () => {
+        const fillBuyer = (c: MJCheckoutWidgetComponent) => {
+            c.config = { unitPrice: 0, isEvent: false } as CheckoutWidgetConfig;
+            c.email.set('jane@example.com');
+            c.firstName.set('Jane');
+            c.lastName.set('Doe');
+        };
+
+        it('is invalid without a country, and for the US without a state', () => {
+            fillBuyer(component);
+            expect(component.isFormValid()).toBe(false);
+
+            component.onBillingCountryChange('US');
+            component.onBillingPostalCodeChange('60601');
+            expect(component.isFormValid()).toBe(false);
+
+            component.onBillingRegionChange('IL');
+            expect(component.isFormValid()).toBe(true);
+        });
+
+        it('offers subdivisions only for countries that require one', () => {
+            component.onBillingCountryChange('CA');
+            expect(component.billingRegions().map((r) => r.Code)).toContain('ON');
+            component.onBillingCountryChange('GB');
+            expect(component.billingRegions()).toHaveLength(0);
+            expect(component.billingPostalRequired()).toBe(false);
+        });
+
+        it('clears the region when the country changes, and tells the host its quote is stale', () => {
+            const invalidated = vi.spyOn(component.quoteInvalidated, 'emit');
+            component.onBillingCountryChange('US');
+            component.onBillingRegionChange('WA');
+            component.onBillingCountryChange('CA');
+            expect(component.billingRegion()).toBe('');
+            expect(invalidated).toHaveBeenCalledTimes(3);
+        });
+
+        it('submits the location as codes', () => {
+            fillBuyer(component);
+            fillLocation(component);
+            const emitSpy = vi.spyOn(component.submitted, 'emit');
+            component.handleSubmit();
+            expect(emitSpy).toHaveBeenCalledWith(expect.objectContaining({
+                billingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' }
+            }));
+        });
+
+        it('shows the server-quoted total, including tax, in place of the pre-tax subtotal', () => {
+            component.config = { unitPrice: 100 } as CheckoutWidgetConfig;
+            expect(component.totalGross()).toBe(100);
+            component.quotedTotal = 107.25;
+            component.quotedTax = 7.25;
+            expect(component.totalGross()).toBe(107.25);
+            component.quotedTotal = null;
+            expect(component.totalGross()).toBe(100);
         });
     });
 

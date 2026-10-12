@@ -66,7 +66,7 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
-import { BuildGLAccountResolver, BuildIntercompanyLookup, EntityIDFor } from './AccountingBridge.js';
+import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
@@ -160,13 +160,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             // they have to be set before `super.Save()` persists it. Calling this afterwards computed
             // the right fee and threw it away — the row kept its zero, and the only reason anyone
             // noticed was that PV4 asserted the fee rather than just the status.
-            const giftCardID = entering
-                ? await LoadGiftCardAccountID(
-                      this.ProviderToUse as unknown as IRunViewProvider,
-                      this.ContextCurrentUser as UserInfo,
-                      this.PaymentDetailID,
-                  )
-                : null;
+            const giftCardID = entering ? await this.giftCardAccountID() : null;
             if (capturing) await this.settleWithProvider(giftCardID);
 
             // COMPLETE THE ALLOCATIONS BEFORE THE HEADER SAVE, because `Lines` is a companion and MJ
@@ -303,6 +297,24 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         if (!this.IsSaved) return true;
         const previousStatus = this.GetFieldByName('Status')?.OldValue as string | undefined;
         return previousStatus !== this.Status;
+    }
+
+    /**
+     * The gift card this payment was tendered with, or null. Runs before `super.Save()`, which is
+     * what writes an embedded `PaymentDetail`: a detail created or edited on this save is not in the
+     * database yet (its ID is already stamped on the header), so it is read from memory. Only an
+     * unchanged, saved detail is read from the database.
+     */
+    private async giftCardAccountID(): Promise<string | null> {
+        const detail = this.PaymentDetailID_Object;
+        if (detail && (!detail.IsSaved || detail.Dirty)) {
+            return detail.StoredValueAccountID || null;
+        }
+        return LoadGiftCardAccountID(
+            this.ProviderToUse as unknown as IRunViewProvider,
+            this.ContextCurrentUser as UserInfo,
+            this.PaymentDetailID,
+        );
     }
 
     /**
@@ -509,6 +521,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             resolver,
             await BuildIntercompanyLookup(provider, user),
             EntityIDFor(PAYMENT_LINE_ENTITY),
+            await BuildLegalEntityLookup(provider, user),
         );
 
         const allDrafts: PaymentJEDraft[] = [];

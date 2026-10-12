@@ -36,6 +36,7 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { OrdersRefundPaymentOperation as OrdersRefundPaymentOperationBase } from '@mj-biz-apps/orders-entities';
 import { RequireUUID } from './sql-guards.js';
 import {
     BuildUnapplyLines,
@@ -86,9 +87,7 @@ interface PaymentRow {
 const money = (v: number): number => Math.round((v + Number.EPSILON) * 100) / 100;
 
 @RegisterClass(BaseRemotableOperation, 'Orders.RefundPayment')
-export class RefundPaymentOperation extends BaseRemotableOperation<RefundPaymentInput, RefundPaymentOutput> {
-    public OperationKey = 'Orders.RefundPayment';
-
+export class RefundPaymentOperation extends OrdersRefundPaymentOperationBase {
     protected async InternalExecute(
         input: RefundPaymentInput,
         provider: IMetadataProvider,

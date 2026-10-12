@@ -47,6 +47,20 @@ export const ORDERS_SETTING = {
      * A whole number of 0 or more; `off` disables the cutoff.
      */
     RenewalAccessCutoffDaysPastDue: 'RenewalAccessCutoffDaysPastDue',
+    /**
+     * The NAME of the MJ role whose active holders acknowledge an amendment to a booked arrangement
+     * (bc-aidp-next-golive#221). Every holder but the amendment's requester is assigned the task that
+     * confirms the recognition re-cut. Unset or empty refuses every amendment: a change nobody in
+     * accounting is told about is the failure the acknowledgment exists to prevent.
+     */
+    AmendmentAcknowledgmentRole: 'AmendmentAcknowledgmentRole',
+    /**
+     * The NAME of the MJ role whose active holders approve an access override when its requester is
+     * the order company's `ApprovalCFOUserID`, who would otherwise approve it (bizapps-orders#360).
+     * Every holder but the requester is assigned. Unset or empty refuses such a request: nobody may
+     * approve their own override.
+     */
+    AccessOverrideFallbackApproverRole: 'AccessOverrideFallbackApproverRole',
 } as const;
 
 /**
@@ -180,6 +194,18 @@ export class OrdersSettings {
             this.raw(ORDERS_SETTING.OrganizationAffiliationRelationshipTypes),
             DEFAULTS.OrganizationAffiliationRelationshipTypes,
         );
+    }
+
+    /** The role that acknowledges amendments, or `null` when none is configured. */
+    public static get AmendmentAcknowledgmentRole(): string | null {
+        const value = this.raw(ORDERS_SETTING.AmendmentAcknowledgmentRole)?.trim();
+        return value ? value : null;
+    }
+
+    /** The role that approves an access override its company's CFO approver requested, or `null` when none is configured. */
+    public static get AccessOverrideFallbackApproverRole(): string | null {
+        const value = this.raw(ORDERS_SETTING.AccessOverrideFallbackApproverRole)?.trim();
+        return value ? value : null;
     }
 
     /** Days past due at which a renewal loses access, or `null` when the cutoff is switched off. */

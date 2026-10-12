@@ -201,7 +201,7 @@
       "DefaultIsTaxable": 1,
       "DefaultSubscriptionTypeID": "@lookup:MJ_BizApps_Orders: Subscription Types.Code=AnnualRolling",
       "IsActive": 1,
-      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementGrantTiming": "OnFirstPayment",
       "DefaultEntitlementQuantityMode": "Flat",
       "DefaultEntitlementValidityMode": "SubscriptionTerm"
     },
@@ -209,8 +209,8 @@
       "ID": "D9EBF401-B286-4077-8181-13DD5892512C"
     },
     "sync": {
-      "lastModified": "2026-09-02T03:26:25.887Z",
-      "checksum": "8d6ffe12e00825bc19e45617cd2a755780c1c7f35bc6161946b67b6937634283"
+      "lastModified": "2026-10-06T23:21:25.092Z",
+      "checksum": "66d5a6901f789d1fade429363fe8482d2ce8164f5061c19f70bd8427f428db03"
     }
   },
   {
@@ -243,7 +243,7 @@
       "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=PercentComplete",
       "DefaultIsTaxable": 1,
       "IsActive": 1,
-      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementGrantTiming": "OnFirstPayment",
       "DefaultEntitlementQuantityMode": "Flat",
       "DefaultEntitlementValidityMode": "Perpetual"
     },
@@ -251,8 +251,8 @@
       "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F10"
     },
     "sync": {
-      "lastModified": "2026-09-20T20:17:10.259Z",
-      "checksum": "ac712eac13935d6216078dacf5bb70e1b8fef9d5f91f1f0af39492e4a80a1d57"
+      "lastModified": "2026-10-06T23:21:25.117Z",
+      "checksum": "36a75895366f0765e07cdccf09a483dc68236314f5e54d030d20014883ce7d67"
     }
   }
 ]

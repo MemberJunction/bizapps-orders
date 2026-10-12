@@ -1,0 +1,44 @@
+[
+  {
+    "_comments": [
+      "The non-percentage concession limits sit with MaxDiscountPct: together they are what a rep may grant unaided."
+    ],
+    "fields": {
+      "Category": "Authority Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Authorities&Name=MaxConcessionValue"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.470Z",
+      "checksum": "a2020041d20f1c33e5df46755f45fe508eef234af24bed5f2ba8bd159c849629"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Authority Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Authorities&Name=MaxTermExtensionDays"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.496Z",
+      "checksum": "a2020041d20f1c33e5df46755f45fe508eef234af24bed5f2ba8bd159c849629"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Authority Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Authorities&Name=MaxConcessionPctOfContract"
+    },
+    "sync": {
+      "lastModified": "2026-10-08T21:17:19.521Z",
+      "checksum": "a2020041d20f1c33e5df46755f45fe508eef234af24bed5f2ba8bd159c849629"
+    }
+  }
+]

@@ -6,8 +6,8 @@
  * re-teach every consumer the evaluator, and the two would drift. The LXP asks; this answers.
  *
  * Asked by `ProductEntitlement.Code`, not SKU — a bundle, an upgrade and a grandfathered
- * tier can all confer the same capability. PersonID is authoritative; email is convenience
- * and is refused when it matches more than one person. v1 evaluates person grants only.
+ * tier can all confer the same capability. PersonID is authoritative; email is convenience,
+ * resolved by `ResolvePersonByEmail` when several Persons share it. v1 evaluates person grants only.
  *
  * Fail closed. Unknown person and known-person-without-access share one response shape.
  *
@@ -18,6 +18,7 @@
  */
 import { BaseRemotableOperation, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { OrdersCheckEntitlementOperation as OrdersCheckEntitlementOperationBase } from '@mj-biz-apps/orders-entities';
 import {
     CheckPersonEntitlement,
     type CheckEntitlementInput,
@@ -25,12 +26,7 @@ import {
 } from './EntitlementRead.js';
 
 @RegisterClass(BaseRemotableOperation, 'Orders.CheckEntitlement')
-export class CheckEntitlementOperation extends BaseRemotableOperation<
-    CheckEntitlementInput,
-    CheckEntitlementOutput
-> {
-    public OperationKey = 'Orders.CheckEntitlement';
-
+export class CheckEntitlementOperation extends OrdersCheckEntitlementOperationBase {
     protected async InternalExecute(
         input: CheckEntitlementInput,
         provider: IMetadataProvider,

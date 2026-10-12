@@ -1,0 +1,178 @@
+[
+  {
+    "_comments": [
+      "CHARGE RECONCILIATION (#477). MJ's scheduler dispatches Actions, not operations, so this row is the",
+      "adapter to `Orders.ReconcilePaymentProviderCharges`; the class behind it holds no matching logic.",
+      "SAFE TO SHIP `Active`: nothing invokes it until the ScheduledJob is enabled, and in Preview it writes nothing."
+    ],
+    "fields": {
+      "Name": "Reconcile Payment Provider Charges",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Match the payment gateway's charges and refunds to Orders' payments for a window of business days and report the mismatches. Runs the Orders.ReconcilePaymentProviderCharges operation; this Action only reads parameters and reports the result. With Preview false, mismatches are raised as finance exceptions. A provider that could not be read fails the run.",
+      "Type": "Custom",
+      "DriverClass": "Orders.ReconcilePaymentProviderCharges",
+      "IconClass": "fa-solid fa-scale-balanced",
+      "UserPrompt": "Compare the payment gateway's charges and refunds with Orders' payments and list what does not match.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "6E75392C-9267-4C29-8CEC-11F2A1058C57"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PaymentProviderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "One provider to reconcile. Omit for every active, live provider whose gateway lists charges."
+          },
+          "primaryKey": {
+            "ID": "0548BCF5-C76D-4A8C-BB0D-738AD1DF0AD7"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "FromDate",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "First business day of the window (YYYY-MM-DD). Omit for seven days ending on ToDate."
+          },
+          "primaryKey": {
+            "ID": "7CA8642E-2306-4047-90B2-1387781BA6E1"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ToDate",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Last business day of the window (YYYY-MM-DD). Omit for today in the business time zone."
+          },
+          "primaryKey": {
+            "ID": "689BB5A3-DB0B-441D-BA90-F83350A7AD8A"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Preview",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True (the default) reports the mismatches without raising them; false raises each as a PROVIDER_CHARGE_MISMATCH finance exception. The scheduled job ships with true."
+          },
+          "primaryKey": {
+            "ID": "53FF7BB9-A0A3-4BDC-A20A-821976F3B07D"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Mismatches",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every mismatch found, with its kind, ids, amount and detail."
+          },
+          "primaryKey": {
+            "ID": "F58C2C3F-8875-4B86-9403-01B87CC8687E"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Raised",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Finance exceptions this run created. Zero in preview."
+          },
+          "primaryKey": {
+            "ID": "D54E88E4-64DA-4332-A0F9-9FD6B74F6478"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Errors",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every provider that could not be read and every mismatch that could not be raised. Non-empty means the run failed."
+          },
+          "primaryKey": {
+            "ID": "DFB854C8-456E-483E-B957-6F558EE865C1"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "_comments": [
+      "WEBHOOK ENDPOINT DRIFT CHECK (#477). Compares each live provider's handled event kinds with the",
+      "events its webhook endpoint at the gateway sends. Drift is a configuration fault: it is logged as an",
+      "error and fails the run, and is not raised on finance's review list. Reads only."
+    ],
+    "fields": {
+      "Name": "Check Payment Webhook Endpoints",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "For each active, live payment provider that takes webhooks, find the gateway webhook endpoint whose URL ends in the provider's id and check that it is enabled and sends every event kind Orders acts on. Any drift, missing or disabled endpoint, or unreadable gateway fails the run and is named in Results.",
+      "Type": "Custom",
+      "DriverClass": "Orders.CheckPaymentWebhookEndpoints",
+      "IconClass": "fa-solid fa-plug-circle-exclamation",
+      "UserPrompt": "Check that the payment gateway's webhook endpoints still send every event Orders handles.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "EAF4DCF5-D9CE-4114-9EA5-78E4D1991714"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PaymentProviderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "One provider to check. Omit for every active provider."
+          },
+          "primaryKey": {
+            "ID": "285D41A8-AECD-40FD-B76B-9A2F4532A3FB"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Results",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "One result per provider: OK, Drift, Missing, Disabled, Skipped (test mode) or Error, with the missing event kinds."
+          },
+          "primaryKey": {
+            "ID": "F89A9733-EFC1-428D-AE90-89E984E3015A"
+          }
+        }
+      ]
+    }
+  }
+]

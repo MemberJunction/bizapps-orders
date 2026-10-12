@@ -1,0 +1,160 @@
+[
+  {
+    "_comments": [
+      "THE NIGHTLY OVERLAPPING-SUBSCRIPTION CHECK (golive #279, finance exception type 5). MJ's scheduler",
+      "dispatches Actions, not operations, so this row is the adapter to `Orders.DetectOverlappingSubscriptions`;",
+      "the class behind it holds no detection logic.",
+      "",
+      "SAFE TO SHIP `Active`: nothing invokes it until the ScheduledJob in `metadata/scheduled-jobs/` is",
+      "enabled, and a run by hand only adds review items, never changes an order or a subscription."
+    ],
+    "fields": {
+      "Name": "Detect Overlapping Subscriptions",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Raise a finance exception for each pair of live subscriptions for one holder whose terms overlap. Runs the Orders.DetectOverlappingSubscriptions operation, which reads the OVERLAPPING_SUBSCRIPTION exception type's settings, runs the Overlapping Subscriptions query and raises through accounting; this Action only reads parameters and reports the result. A pair that could not be raised fails the run and is named in Errors.",
+      "Type": "Custom",
+      "DriverClass": "Orders.DetectOverlappingSubscriptions",
+      "IconClass": "fa-solid fa-clone",
+      "UserPrompt": "Check for subscriptions that overlap for the same holder and raise them for finance review.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "7FD8AD28-698E-4D69-85C2-190885D5664D"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AsOfDate",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The business day the exceptions are dated to (YYYY-MM-DD). Omit for today in the business time zone, which is what the schedule uses. A value that cannot be parsed is refused rather than replaced with today."
+          },
+          "primaryKey": {
+            "ID": "AC0DAF63-86DA-4AB3-B643-AAD23E1B2FBC"
+          },
+          "sync": {
+            "lastModified": "2026-09-28T13:40:39.975Z",
+            "checksum": "ca42437b425b8930471c4c97ec263174d71447483b54daac59a6809fb81f6821"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "TypeActive",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "False when the OVERLAPPING_SUBSCRIPTION exception type is missing or inactive, in which case nothing was checked."
+          },
+          "primaryKey": {
+            "ID": "D4BEC947-7215-4292-AE74-C6FFEB68DBA0"
+          },
+          "sync": {
+            "lastModified": "2026-09-28T13:40:40.002Z",
+            "checksum": "82c682a99036e33b2b3f846bb1de5325a10fe0f2ab3a4dc9163209110132be51"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ExceptionDate",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The business day the exceptions were dated to."
+          },
+          "primaryKey": {
+            "ID": "153A4C2B-C5D5-40D5-9E68-2A907029467D"
+          },
+          "sync": {
+            "lastModified": "2026-09-28T13:40:40.022Z",
+            "checksum": "09e1cee900a4df1013bfc491f1f14cda556a5b4294cd62c44352cef50557dd57"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PairsFound",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Overlapping pairs the query returned, before the IncludeSameCategory setting is applied."
+          },
+          "primaryKey": {
+            "ID": "DC0F3849-7F03-4A68-A834-C76825F0370D"
+          },
+          "sync": {
+            "lastModified": "2026-09-28T13:40:40.040Z",
+            "checksum": "488c24a87fd1a2b6111436dd8071aa57ee2529d3ac7ac013aa83282668193bdf"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Created",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Finance exceptions this run created."
+          },
+          "primaryKey": {
+            "ID": "F0369034-8298-4B0E-9BB4-956FCEC9CBB9"
+          },
+          "sync": {
+            "lastModified": "2026-09-28T13:40:40.060Z",
+            "checksum": "9a1865bf9c9a34ae45554954cdea3f35d1ac098effd329a7bf88ebfb67e0274b"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AlreadyRaised",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Pairs that already had an exception from an earlier run, in any status. They are left unchanged."
+          },
+          "primaryKey": {
+            "ID": "629A0C68-4A21-4A29-93FD-47C70112825B"
+          },
+          "sync": {
+            "lastModified": "2026-09-28T13:40:40.082Z",
+            "checksum": "d73f885a4e2fc24d2dd2422c8e7f227b5d63544db29786493cdb427da085007b"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Errors",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every pair that could not be raised, with the reason. Non-empty means the run failed."
+          },
+          "primaryKey": {
+            "ID": "D10490D9-869E-4DDB-BAAA-E0FCA9014454"
+          },
+          "sync": {
+            "lastModified": "2026-09-28T13:40:40.101Z",
+            "checksum": "9c29bab4178a4fc8b0af3cee730129d715ced7e7d8cbf80ca1c7977ba4ebd23b"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-09-28T13:40:39.934Z",
+      "checksum": "dae1cb08a0117e5759e1ad594ce26c2bb622672500630681eeba8a0384ebb060"
+    }
+  }
+]

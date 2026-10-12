@@ -21,9 +21,12 @@
  * call. `@RegisterForStartup` loads the cache with MJAPI so the first confirm does not pay the
  * catalog query.
  *
- * THE ONE THING THAT DEFEATS IT IS A RAW `UPDATE`. A statement outside the entity layer fires no
- * event. `ChargeEngine` deliberately does NOT read charge types from here when `Basis` may change
- * in the same transaction.
+ * THE ONE THING THAT DEFEATS IT IS A WRITE THIS PROCESS NEVER SEES. A raw `INSERT`/`UPDATE`, a
+ * loader running in another process, or another API replica without Redis invalidation fires no
+ * event here. `ChargeEngine` deliberately does NOT read charge types from here when `Basis` may
+ * change in the same transaction. For products, server lookups that cannot proceed without the row
+ * go through {@link OrdersEngine.EnsureProducts} / {@link OrdersEngine.RequireProduct}, which
+ * reload the catalog once on a miss (golive #301).
  *
  * Misses that would be fatal (`PaymentProviderResolver`) still fall through to a query.
  *
@@ -76,6 +79,8 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     private _productPrices: mjBizAppsOrdersProductPriceEntity[] = [];
     private _productCategories: mjBizAppsOrdersProductCategoryEntity[] = [];
     private _eventProducts: mjBizAppsOrdersEventProductEntity[] = [];
+    /** The reload in flight, so concurrent misses share one query. See {@link EnsureProducts}. */
+    private _productReload: Promise<void> | null = null;
 
     /**
      * Load (or refresh) the cache.
@@ -200,6 +205,71 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
     public ProductByID(id: string | null | undefined): mjBizAppsOrdersProductEntity | undefined {
         return byID(this.Products, id);
+    }
+
+    /**
+     * Make sure every given product is in the cache, reloading the catalog ONCE if any is missing.
+     *
+     * WHY. The cache loads once per process and then only learns of rows saved through this
+     * process's entity layer (or a Redis remote-invalidate). A product written anywhere else — a
+     * catalog loader, raw SQL, another replica — is invisible until a restart, and every
+     * synchronous lookup treats it as absent: the order line saves with no company, the service
+     * period source reads `NotRequired`, the recognition type reads null (golive #301).
+     *
+     * One reload per call, not a retry loop: a product still missing afterwards does not exist (or
+     * cannot be read), and the caller decides whether that is fatal. Concurrent misses share the
+     * reload in flight. A call where every product is already cached costs no query.
+     */
+    public async EnsureProducts(
+        productIDs: ReadonlyArray<string | null | undefined>,
+        contextUser?: UserInfo,
+        provider?: IMetadataProvider,
+    ): Promise<void> {
+        await this.Config(false, contextUser, provider);
+        if (!productIDs.some((id) => !!id && !this.ProductByID(id))) return;
+        if (!this._productReload) {
+            this._productReload = this.reloadProducts().finally(() => {
+                this._productReload = null;
+            });
+        }
+        await this._productReload;
+    }
+
+    /**
+     * The product, from the cache or from one reload on a miss; throws naming the product when it
+     * still is not there. For server paths that cannot proceed without the row. See {@link EnsureProducts}.
+     */
+    public async RequireProduct(
+        productID: string,
+        contextUser?: UserInfo,
+        provider?: IMetadataProvider,
+    ): Promise<mjBizAppsOrdersProductEntity> {
+        await this.EnsureProducts([productID], contextUser, provider);
+        const product = this.ProductByID(productID);
+        if (!product) {
+            throw new Error(
+                `Product ${productID} was not found in the product catalog, even after reloading it from the database.`,
+            );
+        }
+        return product;
+    }
+
+    /**
+     * Re-read Products straight from the database (`bypassCache`), leaving the rest of the cache
+     * alone. Products only: Event Products rows are read by the server from the database when it
+     * stamps an event line, and the price tables are not what a missing product breaks.
+     */
+    private async reloadProducts(): Promise<void> {
+        const config = this.Configs.find((c) => c.PropertyName === '_products');
+        if (!config) {
+            throw new Error('OrdersEngine has no Products config to reload; was Config() called?');
+        }
+        await this.LoadSingleConfig(config, this.ContextUser, true);
+        // A failed read leaves the old rows in place and only logs; say so here rather than let the
+        // caller report the product as missing when the catalog could not be read at all.
+        if (!this.configLoadedSuccessfully('_products')) {
+            throw new Error('Could not reload the product catalog from the database; see the server log for the cause.');
+        }
     }
 
     public ProductBySKU(sku: string | null | undefined): mjBizAppsOrdersProductEntity | undefined {

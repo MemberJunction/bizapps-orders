@@ -1,18 +1,45 @@
 # `@mj-biz-apps/orders-ng`
 
-**Angular components for BizApps Orders** — generated entity forms plus any hand-authored UI.
+**Angular components for BizApps Orders** — the Orders application in MJ Explorer, its entity forms,
+and the public checkout widget.
 
-## Status: generated forms only
+The rules for UI work here are in [`docs/ui-architecture.md`](../../docs/ui-architecture.md), and
+they are binding: components bind to entities and remote operations directly, with no data-access
+service layer.
 
-`src/lib/generated/` contains a CodeGen form component per entity, driven by the same metadata that
-produces the entity classes — including field descriptions lifted from the migration's extended
-properties. Do not edit them; see the Entities package README for the regeneration cycle.
+## Layout of `src/lib/`
 
-No bespoke components ship yet. The back-end engine came first by explicit sequencing: pricing,
-promotions, charges, tax, subscriptions, payments and the ledger are built and covered by 177
-integration checks, and the UX pass follows.
+| Folder | What it holds |
+|---|---|
+| `generated/` | A CodeGen form per entity, driven by the same metadata that produces the entity classes, including field descriptions lifted from the migration's extended properties. Do not edit; see the Entities package README for the regeneration cycle. |
+| `custom/` | Hand-written form components, one folder per entity. Four replace the generated form: `OrderHeader`, `PaymentHeader` and `EventOrderLine`, plus `Product` through `product-save-guard-form.component.ts`, each with `@RegisterClass` at an explicit priority; `custom-forms.module.ts` loads after the generated module. The `PriceList`, `Promotion`, `Subscription` and `SubscriptionTerm` components, and `product-form.component.ts`, are declared but not registered, so they do not render as the entity's form. |
+| `form-panels/` | Panels contributed to forms by entity (`@RegisterClassEx(BaseFormPanel, …)`), including the orders sections on bizapps-common's Person and Organization forms. |
+| `sections/` | The four Explorer tabs (Orders, Payments, Receivables, Catalog) and the shell that gives each its left rail. Each registers under the `DriverClass` the Orders application's nav items name. |
+| `pages/` | The screens inside those tabs, one folder per tab. |
+| `panels/` | The shared panel library the screens are built from: worklist table, stat tile, money strip, status stepper, decomposition ladder and others. |
+| `services/` | `MJOPricingScheduler`, which prices a draft as the user types, and save-error formatting. |
+| `data/` | Entity names, the reads the list and detail screens make (`orders-queries.ts`), and grid view and column state. |
+| `checkout-widget/` | The checkout widget and the public host page behind `GET /checkout/:slug`. |
+| `styles/orders-kit.css` | This app's own component CSS, for classes MJ does not ship. The mockups import the same file. |
+| `transfer-pending/` | Components parked for `@memberjunction/ng-ui-components`; see its README. |
 
-## When you do build UI here
+`src/public-api.ts` loads the forms, form panels and sections so their decorators fire, and exports
+the rest. `LoadBizAppsOrdersClient()` is the `startupExport` that `mj-app.json` names for MJExplorer.
+
+## Build
+
+`pnpm run build` in this package, or the root build, runs:
+
+1. `ngc`, then `tsc-alias -f`, compiling into `dist/`.
+2. `build:styles` — copies `src/lib/styles/orders-kit.css` into `dist/lib/styles/`, because `ngc`
+   compiles TypeScript only. Exported as `@mj-biz-apps/orders-ng/styles/orders-kit.css`.
+3. `build:checkout-element` — `scripts/build-checkout-element.mjs` bundles the
+   `<mj-orders-checkout>` Angular Element into `dist/checkout-element/main.js` with esbuild and the
+   Angular linker, so the payment page needs no JIT and no `unsafe-eval`. Exported as
+   `@mj-biz-apps/orders-ng/checkout-element`; the checkout edge serves it at
+   `GET /checkout/element/main.js` for the `GET /checkout/:slug` page.
+
+## When you build UI here
 
 Three things this app's rules make non-optional:
 
@@ -28,8 +55,12 @@ that shows only the number is hiding the answer to the question the user is abou
 charges, tax, each with a running total and a link to what produced it. Any "why is this £847.32?"
 affordance should read that rather than recompute.
 
-## Preview before you commit
+## Price through the engine, never beside it
 
-`Orders.PreviewPrice` runs the **real** pricing pipeline without writing. Use it for quotes and
-"what would this customer pay" screens rather than estimating client-side — a preview that diverges
-from the invoice is worse than no preview, because people trust it.
+`OrderPricingService` is the pricing walk `Save()` runs, and it lives in
+`@mj-biz-apps/orders-entities`, so a screen can run it too. `MJOPricingScheduler` prices a draft in
+the browser when it can, and sends the whole order to `Orders.PriceOrder` when a pricing plugin or a
+promotion code is involved; neither path writes anything. `Orders.PreviewPrice` answers for one
+product — its unit price and how it resolved — not for what an order comes to. Do not estimate
+client-side with arithmetic of your own: a preview that diverges from the invoice is worse than no
+preview, because people trust it.

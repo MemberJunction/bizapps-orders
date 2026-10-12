@@ -35,6 +35,7 @@ import {
     PlanBundleExpansion,
     type BundleComponent,
     type BundleLineFacts,
+    type PlannedBundleChild,
 } from './BundleBehavior.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
@@ -53,7 +54,11 @@ const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${i}'`))].
  * Was a structural duck-type built on `Get`/`Set` — which meant every field this module touched
  * was a string literal the compiler could not check. It is the order-line entity; say so.
  */
-export type ExpandableLine = mjBizAppsOrdersOrderLineEntity;
+/**
+ * An order line as expansion handles it. `WrittenByBundleExpansion` is the server line's transient
+ * mark that expansion wrote its parent (see `OrderLineEntityServer.refuseParentNotFromExpansion`).
+ */
+export type ExpandableLine = mjBizAppsOrdersOrderLineEntity & { WrittenByBundleExpansion?: boolean };
 
 export interface BundleExpansionOutcome {
     /** How many parent lines were expanded. */
@@ -66,6 +71,9 @@ export interface BundleExpansionOutcome {
 
 /**
  * Expand every bundle line in `lines`, appending children to the same collection.
+ *
+ * A bundle line that already has children (a draft saved before) is not expanded again; its
+ * children are updated to the parent's current quantity and price instead.
  *
  * `makeLine` creates a fresh, unsaved order-line entity — supplied by the caller so this module does
  * not need to know how the host builds one. Returns what happened rather than throwing when there is
@@ -173,15 +181,31 @@ export async function ExpandBundleLines(
         line.ChargeAmount = 0;
         line.LineTax = 0;
 
+        // A BUNDLE IS EXPANDED ONCE. Every save of a draft whose lines changed comes through here,
+        // and a parent saved earlier already has its children. Appending a fresh set each time
+        // doubled the order on the second save, and the copies carried none of the edits made to
+        // the first set — an acknowledged band came back unacknowledged, so confirm refused it.
+        // A parent with children has its children brought up to date instead. Nothing is added to
+        // it: the set was fixed when it was first expanded (see SNAPSHOT above).
+        const existing = originals.filter((l) => key(l.ParentOrderLineID) === key(line.ID));
+        if (existing.length) {
+            refreshChildren(line, existing, plan.Children);
+            continue;
+        }
+
         for (const child of plan.Children) {
             const row = await makeLine();
             row.ProductID = child.ComponentProductID;
             row.Quantity = child.Quantity;
             row.UnitPrice = child.UnitPrice;
             row.ParentOrderLineID = line.ID;
+            row.WrittenByBundleExpansion = true;
             row.SourceBundleProductID = line.ProductID;
             row.IsRollupParent = false;
             row.IsQuantityOverridden = false;
+            // The overlap acknowledgment is made on the line the rep entered, which for a band sold
+            // inside a bundle is the bundle line. The band's own line does not exist until now.
+            row.AcknowledgesCoverageOverlap = !!line.AcknowledgesCoverageOverlap;
             lines.push(row);
             out.ChildrenCreated++;
         }
@@ -199,6 +223,26 @@ export async function ExpandBundleLines(
         );
     }
     return out;
+}
+
+/**
+ * Bring a bundle line's existing children in line with its current plan.
+ *
+ * The parent's quantity or price may have changed since the last save. A child whose quantity or
+ * price was set by hand keeps it. An acknowledgment made on the bundle line reaches every child.
+ */
+function refreshChildren(parent: ExpandableLine, existing: ExpandableLine[], planned: PlannedBundleChild[]): void {
+    const unmatched = [...existing];
+    for (const child of planned) {
+        const i = unmatched.findIndex((e) => key(e.ProductID) === key(child.ComponentProductID));
+        if (i < 0) continue;
+        const [row] = unmatched.splice(i, 1);
+        if (!row.IsQuantityOverridden) row.Quantity = child.Quantity;
+        if (!row.PriceOverridden) row.UnitPrice = child.UnitPrice;
+    }
+    if (parent.AcknowledgesCoverageOverlap) {
+        for (const row of existing) row.AcknowledgesCoverageOverlap = true;
+    }
 }
 
 /**

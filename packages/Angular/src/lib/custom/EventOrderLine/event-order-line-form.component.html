@@ -9,6 +9,22 @@
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="before-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 
     <div class="mjo-eol-form">
+        <!-- 0. The event this line is for (read-only; the line's product is the event) -->
+        @if (EventLookupDone) {
+            @if (LineEvent; as ev) {
+            <div class="mjo-eol-event" data-testid="eol-event">
+                <i class="fa-solid fa-calendar-day" aria-hidden="true"></i>
+                <span class="mjo-eol-event__name">{{ ev.Name }}</span>
+                <span class="mjo-eol-event__dates">{{ ev.Dates }}</span>
+            </div>
+            } @else {
+            <div class="mjo-eol-event mjo-eol-event--missing" data-testid="eol-event-missing">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                <span>This product has no event record, so there are no event dates for this line.</span>
+            </div>
+            }
+        }
+
         <!-- 1. Essential / Primary Fields (Always Visible) -->
         <div class="mjo-eol-primary-grid">
             <div class="mjo-eol-field mjo-eol-field--attendee">

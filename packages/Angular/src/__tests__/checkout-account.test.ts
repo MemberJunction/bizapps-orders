@@ -23,7 +23,7 @@ describe('ReadCheckoutAccount', () => {
             Outcome: 'Created',
             Message: undefined,
             CanSetPassword: true,
-            VerificationRequired: false,
+            VerificationRequired: true,
         });
         expect(ReadCheckoutAccount({ Outcome: 'Exists', Message: 'Sign in.', CanSetPassword: 'yes' })).toEqual({
             Outcome: 'Exists',
@@ -33,8 +33,10 @@ describe('ReadCheckoutAccount', () => {
         });
     });
 
-    it('reads the verification flag for a created account only', () => {
+    it('requires verification for every created account, whatever the flag says, and for no other', () => {
         expect(ReadCheckoutAccount({ Outcome: 'Created', CanSetPassword: true, VerificationRequired: true })?.VerificationRequired).toBe(true);
+        expect(ReadCheckoutAccount({ Outcome: 'Created', CanSetPassword: true })?.VerificationRequired).toBe(true);
+        expect(ReadCheckoutAccount({ Outcome: 'Created', CanSetPassword: true, VerificationRequired: false })?.VerificationRequired).toBe(true);
         expect(ReadCheckoutAccount({ Outcome: 'Exists', VerificationRequired: true })?.VerificationRequired).toBe(false);
     });
 });
@@ -42,6 +44,13 @@ describe('ReadCheckoutAccount', () => {
 describe('AccountMessage', () => {
     it('confirms a password that was set', () => {
         expect(AccountMessage({ Outcome: 'Created', CanSetPassword: false }, true)).toContain('password is set');
+    });
+
+    it('never tells the buyer to sign in before verifying, for a Created answer without the flag (#395)', () => {
+        const msg = AccountMessage(ReadCheckoutAccount({ Outcome: 'Created', CanSetPassword: true })!, true);
+        expect(msg).toContain('verify your account');
+        expect(msg).not.toContain('You can now sign in');
+        expect(AccountMessage({ Outcome: 'Created', CanSetPassword: false }, true)).toContain('verify your account');
     });
 
     it('prefers the host message', () => {
@@ -67,9 +76,10 @@ describe('AccountMessage', () => {
 });
 
 describe('VerificationNote', () => {
-    it('is shown only when the host will send a link', () => {
+    it('is shown for a created account', () => {
         expect(VerificationNote({ Outcome: 'Created', CanSetPassword: true, VerificationRequired: true })).toContain('link to your e-mail');
-        expect(VerificationNote({ Outcome: 'Created', CanSetPassword: true })).toBeNull();
+        expect(VerificationNote(ReadCheckoutAccount({ Outcome: 'Created', CanSetPassword: true }))).toContain('link to your e-mail');
+        expect(VerificationNote(ReadCheckoutAccount({ Outcome: 'Exists', CanSetPassword: false }))).toBeNull();
         expect(VerificationNote(null)).toBeNull();
     });
 });

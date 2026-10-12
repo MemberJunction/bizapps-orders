@@ -25,9 +25,10 @@ import {
     type UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { OrdersPriceOrderOperation as OrdersPriceOrderOperationBase } from '@mj-biz-apps/orders-entities';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
-import { NetAfterDiscount, OrderPricingService, type ResolvedPrice } from '@mj-biz-apps/orders-entities';
+import { OrderPricingService, ReadPricedLineAmounts, type ResolvedPrice } from '@mj-biz-apps/orders-entities';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
@@ -77,9 +78,7 @@ interface PriceOrderOutput {
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.PriceOrder')
-export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput, PriceOrderOutput> {
-    public OperationKey = 'Orders.PriceOrder';
-
+export class PriceOrderOperation extends OrdersPriceOrderOperationBase {
     protected async InternalExecute(
         input: PriceOrderInput,
         provider: IMetadataProvider,
@@ -153,41 +152,26 @@ export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput,
                 IncludeDefaultsForStatedLines: true,
             });
 
-            const priced: PricedLine[] = lines.map((line, i) => {
-                const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
+            const priced: PricedLine[] = lines.map((line, i) => ({
+                ProductID: line.ProductID,
+                Quantity: Number(line.Quantity ?? 0),
                 // BOTH discount fields, through the SAME function the line and the journal entry use.
                 //
                 // This read `gross - DiscountAmount` and ignored `DiscountPct` outright, so a line
                 // carrying a percentage concession was quoted on screen at a figure the ledger would
                 // never book — `OrderLineEntityServer.computeTotals` applies the percentage, and the
-                // journal entry mirrors it. The two could only disagree, and nothing reported it:
-                // the entry still balances, the order still saves, and only the number the customer
-                // was shown is wrong. Converted orders carry the field today, so this was already
-                // live before anything in the product could set it.
-                const pct = Math.round(Number(line.DiscountPct ?? 0) * 1e4) / 1e4;
-                const charge = Number(line.ChargeAmount ?? 0);
-                const tax = Number(line.LineTax ?? 0);
-                const net = NetAfterDiscount(gross, pct, Number(line.DiscountAmount ?? 0));
-                const discount = Math.round((gross - net) * 100) / 100;
-                return {
-                    ProductID: line.ProductID,
-                    Quantity: Number(line.Quantity ?? 0),
-                    UnitPrice: Number(line.UnitPrice ?? 0),
-                    DiscountAmount: discount,
-                    ChargeAmount: charge,
-                    LineTax: tax,
-                    LineTotalNet: net,
-                    LineTotalGross: Math.round((net + charge + tax) * 100) / 100,
-                    Components: result.PriceComponents.get(line)?.Components?.map((c) => ({
-                        Kind: String((c as { ComponentType?: string }).ComponentType ?? ''),
-                        Label: String((c as { Label?: string }).Label ?? ''),
-                        Amount: Number((c as { Amount?: number }).Amount ?? 0),
-                    })),
-                    TaxExemptReason: result.TaxReasons.get(i) ?? null,
-                    ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
-                    Default: engineDefault(result.EngineDefaults.get(line)),
-                };
-            });
+                // journal entry mirrors it. The browser's local path reads back through the same
+                // helper, so the two cannot report different figures for the same walk.
+                ...ReadPricedLineAmounts(line),
+                Components: result.PriceComponents.get(line)?.Components?.map((c) => ({
+                    Kind: String((c as { ComponentType?: string }).ComponentType ?? ''),
+                    Label: String((c as { Label?: string }).Label ?? ''),
+                    Amount: Number((c as { Amount?: number }).Amount ?? 0),
+                })),
+                TaxExemptReason: result.TaxReasons.get(i) ?? null,
+                ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
+                Default: engineDefault(result.EngineDefaults.get(line)),
+            }));
 
             const sum = (pick: (l: PricedLine) => number) =>
                 Math.round(priced.reduce((t, l) => t + pick(l), 0) * 100) / 100;

@@ -2,7 +2,7 @@
 
 Committed integration-test catalog. **Not** app metadata.
 
-Types (Product Type, Charge Type, Rev Rec, Subscription, Payment, Organization Type, Relationship Type, GL Account Role) live in `metadata/` and are **looked up**. Missing metadata fails the load loudly.
+Types (Product Type, Charge Type, Rev Rec, Subscription, Payment, Organization Type, Relationship Type, GL Account Role) are metadata and are **looked up**: this app's `metadata/`, or bizapps-common's and bizapps-accounting's for the last three. Missing metadata fails the load loudly.
 
 Everything else in this folder is tenant/world data: selling companies, GL, people, organizations, catalog, prices, tax geography. The suite and Explorer share it.
 

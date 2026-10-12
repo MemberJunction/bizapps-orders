@@ -32,6 +32,7 @@ import {
 } from '../generated/entity_subclasses';
 import { MJGlobal } from '@memberjunction/global';
 import { AllocateProRata, Money } from './PricingBehavior.js';
+import { AssessConcession } from './ConcessionBehavior.js';
 import {
     ApplyPromotions,
     type ApplyPromotionsResult,
@@ -46,11 +47,15 @@ const PROMOTION_TARGET_ENTITY = 'MJ_BizApps_Orders: Promotion Targets';
 const PROMOTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Promotion Types';
 const ORDER_ADJUSTMENT_ENTITY = 'MJ_BizApps_Orders: Order Adjustments';
 const ORDER_ADJUSTMENT_ALLOCATION_ENTITY = 'MJ_BizApps_Orders: Order Adjustment Allocations';
+const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
+
+/** A database-issued key, so it can go into a filter as it is. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class PromotionError extends Error {
     constructor(message: string) {
@@ -264,21 +269,29 @@ async function targetsFor(
     return out;
 }
 
-/** Redemption counts, read from what actually happened rather than a stored counter. */
+/**
+ * Redemption counts, read from what actually happened rather than a stored counter.
+ *
+ * The order being priced is left out. A saved draft already holds the rows its own walk wrote, and
+ * the confirm re-decides the same promotion and replaces them, so counting them would find a
+ * single-use code used up by the order that is using it.
+ */
 async function redemptionCounts(
     promotionIDs: string[],
     organizationID: string | null,
     personID: string | null,
+    orderHeaderID: string | null,
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<Map<string, { total: number; customer: number }>> {
     const out = new Map<string, { total: number; customer: number }>();
     if (!promotionIDs.length) return out;
     const rv = new RunView(provider as unknown as IRunViewProvider);
+    const notThisOrder = UUID_PATTERN.test(orderHeaderID ?? '') ? ` AND OrderHeaderID <> '${orderHeaderID}'` : '';
     const res = await rv.RunView<{ PromotionID: string; OrderHeaderID: string }>(
         {
             EntityName: ORDER_ADJUSTMENT_ENTITY,
-            ExtraFilter: `PromotionID IN (${promotionIDs.map((i) => `'${i}'`).join(',')})`,
+            ExtraFilter: `PromotionID IN (${promotionIDs.map((i) => `'${i}'`).join(',')})${notThisOrder}`,
             Fields: ['PromotionID', 'OrderHeaderID'],
             ResultType: 'simple',
             BypassCache: true,
@@ -428,6 +441,7 @@ export async function RunPromotions(
         qualified.map((p) => p.ID),
         input.OrganizationID,
         input.PersonID,
+        input.OrderHeaderID,
         provider,
         user,
     );
@@ -618,7 +632,12 @@ export async function AuthorizeManualDiscount(
     }
 
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const res = await rv.RunView<{ ID: string; MaxDiscountPct: number | null; MaxOrderValue: number | null }>(
+    const res = await rv.RunView<{
+        ID: string;
+        MaxDiscountPct: number | null;
+        MaxConcessionValue: number | null;
+        MaxOrderValue: number | null;
+    }>(
         {
             EntityName: SALES_AUTHORITY_ENTITY,
             ExtraFilter: `SalesRepUserID = '${userID}' AND IsActive = 1`,
@@ -638,12 +657,18 @@ export async function AuthorizeManualDiscount(
         };
     }
 
-    const pct = baseAmount > 0 ? amount / baseAmount : 1;
-    if (authority.MaxDiscountPct == null || pct <= Number(authority.MaxDiscountPct) + 1e-9) {
+    // Judged on BOTH the percentage and the absolute value: a small percentage of a large line is
+    // still a large concession, and escalates on the value limit when one is set.
+    const assessment = AssessConcession(
+        'Price',
+        { Value: amount, Percent: baseAmount > 0 ? amount / baseAmount : 1 },
+        { ...authority, MaxTermExtensionDays: null, MaxConcessionPctOfContract: null },
+    );
+    if (assessment.WithinAuthority) {
         return { AuthorityID: authority.ID, NeedsApproval: false, ApprovedByUserID: null };
     }
 
-    // ── OVER THE CAP ──────────────────────────────────────────────────────────
+    // ── OUTSIDE AUTHORITY ─────────────────────────────────────────────────────
     // This used to return `NeedsApproval: true` and nothing read it, so an over-cap discount applied
     // SILENTLY — the cap was decorative. Escalation now actually resolves: a `SalesRule` of type
     // DiscountLimit names the role that may approve, and the discount is permitted only when the
@@ -652,28 +677,27 @@ export async function AuthorizeManualDiscount(
     // Approving one's own over-cap discount is legitimate here: holding the approver role IS the
     // authority. What matters is that it is recorded — `ApprovedByUserID` makes the exception
     // visible rather than indistinguishable from an ordinary discount.
-    const cap = Number(authority.MaxDiscountPct);
+    const breaches = `This discount of ${amount} on ${baseAmount} is outside this user's SalesAuthority: ` +
+        `${assessment.Breaches.join('; ')}.`;
     const rule = await findDiscountLimitRule(provider, user);
     if (!rule?.ApprovalRequiredRoleID) {
         return {
             AuthorityID: authority.ID,
             NeedsApproval: true,
             Refusal:
-                `This discount is ${(pct * 100).toFixed(1)}% of ${baseAmount}, above the ${(cap * 100).toFixed(1)}% ` +
-                `cap on this user's SalesAuthority. No SalesRule of type 'DiscountLimit' names an approving role, ` +
-                `so there is no one who could authorize it. Either lower the discount, raise the cap, or configure ` +
-                `a DiscountLimit rule with an ApprovalRequiredRoleID.`,
+                `${breaches} No SalesRule of type 'DiscountLimit' names an approving role, so there is no one ` +
+                `who could authorize it. Either lower the discount, raise the limit, or configure a DiscountLimit ` +
+                `rule with an ApprovalRequiredRoleID.`,
         };
     }
 
-    if (!(await userHoldsRole(rule.ApprovalRequiredRoleID, provider, user, userID))) {
+    if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, provider, user, userID))) {
         return {
             AuthorityID: authority.ID,
             NeedsApproval: true,
             Refusal:
-                `This discount is ${(pct * 100).toFixed(1)}% of ${baseAmount}, above the ${(cap * 100).toFixed(1)}% ` +
-                `cap on this user's SalesAuthority. It needs approval from someone holding the role named by ` +
-                `SalesRule '${rule.Name}'. Have an approver apply it, or lower the discount to the cap.`,
+                `${breaches} It needs approval from someone holding the role named by SalesRule '${rule.Name}'. ` +
+                `Have an approver apply it, or lower the discount to within the limit.`,
         };
     }
 
@@ -700,7 +724,7 @@ async function findDiscountLimitRule(
 }
 
 /** Does this user hold the named MJ role? */
-async function userHoldsRole(
+export async function UserHoldsRole(
     roleID: string,
     provider: IMetadataProvider,
     user: UserInfo,
@@ -786,6 +810,155 @@ export async function WriteAdjustments(
             );
         }
     }
+}
+
+/**
+ * Per saved line, the discount it carries that is NOT a promotion's: its stored `DiscountAmount`
+ * less what the order's promotion allocations give it. Keyed by lowercased line ID.
+ *
+ * A walk that re-decides promotions on a saved order replaces the promotion's share and has to keep
+ * the rest, which is manual discounts and any amount stated on the line. Both figures are read from
+ * the database rather than from the line in memory, which may already carry a stamp from a save
+ * that did not complete.
+ */
+export async function ReadStandingDiscounts(
+    orderHeaderID: string,
+    lineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (!lineIDs.length) return out;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+
+    const stored = await rv.RunView<{ ID: string; DiscountAmount: number | null }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND ID IN (${quoted(lineIDs)})`,
+            Fields: ['ID', 'DiscountAmount'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!stored?.Success) {
+        throw new PromotionError(`Could not read the order's line discounts: ${stored?.ErrorMessage ?? 'unknown error'}`);
+    }
+    for (const row of stored.Results) out.set(uuidKey(row.ID), Money(Number(row.DiscountAmount ?? 0)));
+
+    const promotional = await promotionAllocations(orderHeaderID, lineIDs, provider, user);
+    for (const a of promotional.Allocations) {
+        const key = uuidKey(a.OrderLineID);
+        if (!out.has(key)) continue;
+        out.set(key, Money((out.get(key) ?? 0) - Number(a.Amount ?? 0)));
+    }
+    for (const [key, amount] of out) if (amount < 0) out.set(key, 0);
+    return out;
+}
+
+/**
+ * Remove the promotion adjustment rows an earlier walk wrote for these lines, allocations first.
+ *
+ * The companion of {@link ReadStandingDiscounts}: the walk that re-decides promotions writes its own
+ * rows with {@link WriteAdjustments}, so the earlier ones go first or the trail records the
+ * discount twice while the line shows it once. Manual discount rows (no `PromotionID`) are left
+ * alone, as they are not re-decided.
+ *
+ * Scoped to the lines the walk priced. An adjustment with an allocation on one of them goes whole.
+ * Only for an order whose money is not yet frozen; the caller owns that rule.
+ */
+export async function DeletePromotionAdjustments(
+    orderHeaderID: string,
+    lineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<void> {
+    if (!lineIDs.length) return;
+    const promotional = await promotionAllocations(orderHeaderID, lineIDs, provider, user);
+    if (!promotional.AdjustmentIDs.length) return;
+
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const allocations = await rv.RunView<mjBizAppsOrdersOrderAdjustmentAllocationEntity>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ALLOCATION_ENTITY,
+            ExtraFilter: `OrderAdjustmentID IN (${quoted(promotional.AdjustmentIDs)})`,
+            ResultType: 'entity_object',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!allocations?.Success) {
+        throw new PromotionError(`Could not read the promotion allocations: ${allocations?.ErrorMessage ?? 'unknown error'}`);
+    }
+    const adjustments = await rv.RunView<mjBizAppsOrdersOrderAdjustmentEntity>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ENTITY,
+            ExtraFilter: `ID IN (${quoted(promotional.AdjustmentIDs)})`,
+            ResultType: 'entity_object',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!adjustments?.Success) {
+        throw new PromotionError(`Could not read the promotion adjustments: ${adjustments?.ErrorMessage ?? 'unknown error'}`);
+    }
+
+    for (const row of [...allocations.Results, ...adjustments.Results]) {
+        if (!(await row.Delete())) {
+            throw new PromotionError(
+                `Could not remove the previous promotion on this order: ${row.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+    }
+}
+
+/** The order's promotion adjustments touching these lines, and their allocations on them. */
+async function promotionAllocations(
+    orderHeaderID: string,
+    lineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<{ AdjustmentIDs: string[]; Allocations: Array<{ OrderLineID: string; Amount: number | null }> }> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const promotions = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND PromotionID IS NOT NULL`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!promotions?.Success) {
+        throw new PromotionError(`Could not read the order's promotion adjustments: ${promotions?.ErrorMessage ?? 'unknown error'}`);
+    }
+    if (!promotions.Results.length) return { AdjustmentIDs: [], Allocations: [] };
+
+    const allocations = await rv.RunView<{ OrderAdjustmentID: string; OrderLineID: string; Amount: number | null }>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ALLOCATION_ENTITY,
+            ExtraFilter:
+                `OrderAdjustmentID IN (${quoted(promotions.Results.map((p) => p.ID))})` +
+                ` AND OrderLineID IN (${quoted(lineIDs)})`,
+            Fields: ['OrderAdjustmentID', 'OrderLineID', 'Amount'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!allocations?.Success) {
+        throw new PromotionError(`Could not read the promotion allocations: ${allocations?.ErrorMessage ?? 'unknown error'}`);
+    }
+    return {
+        AdjustmentIDs: [...new Set(allocations.Results.map((a) => uuidKey(a.OrderAdjustmentID)))],
+        Allocations: allocations.Results,
+    };
+}
+
+/** Database-issued IDs as a SQL `IN` list, each once. */
+function quoted(ids: string[]): string {
+    return [...new Set(ids.map(uuidKey))].map((id) => `'${id}'`).join(',');
 }
 
 /** Tree-shaking anchor for the qualifier base registration. */

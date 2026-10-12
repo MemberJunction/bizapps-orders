@@ -38,7 +38,7 @@
  *   PT11  inactive terms are ignored
  *   PT12  the most recently started terms win among equally specific ones
  *   PT13  a confirmed order's DueDate is corrected without approval, and every correction is recorded
- *   PT14  a change to a confirmed order's PaymentTermsTypeID is recorded
+ *   PT14  a change to a confirmed order's PaymentTermsTypeID, made by approving a Terms concession, is recorded
  *
  * PT13 and PT14 rely on MJ's own change tracking: `Order Headers` has `TrackRecordChanges` on, so
  * every header save writes a `MJ: Record Changes` row carrying the old and new value of each changed
@@ -73,8 +73,13 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import { OrderHeaderEntity } from "@mj-biz-apps/orders-entities";
-import { CUSTOMER_PAYMENT_TERMS_ENTITY, ORDER_HEADER_ENTITY } from "../entity-names.js";
+import { OrderHeaderEntity, type mjBizAppsOrdersOrderConcessionEntity } from "@mj-biz-apps/orders-entities";
+import {
+  CUSTOMER_PAYMENT_TERMS_ENTITY,
+  ORDER_CONCESSION_ENTITY,
+  ORDER_HEADER_ENTITY,
+  SALES_RULE_ENTITY,
+} from "../entity-names.js";
 import { ConfirmOrder, type OrderSpec } from "../order-builder.js";
 
 /** A seeded terms row by code — these come from metadata, so they are committed and stable. */
@@ -476,18 +481,42 @@ export const PaymentTermsChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        // Asserts the RECORD, not the permission. A direct edit to a booked order's terms still saves
-        // today; #309 will require an approved Terms concession for it, and this check then moves to
-        // that path. Whichever path applies the change, the change has to be on record.
+        // Asserts the RECORD. A booked order's terms change only by approving a Terms concession
+        // (#309), which applies the change to the header in the approval's own transaction; that
+        // save has to be on record like any other. The concession is recorded by another user, since
+        // its requester cannot decide it, and this user approves it as a holder of the rule's role.
         const net30 = await termsID(ctx, "Net30");
         const net60 = await termsID(ctx, "Net60");
         const order = await sell(ctx, { PaymentTermsTypeID: net30 } as Partial<OrderSpec>);
         const orderID = order.Order.ID as string;
         const before = (await headerChanges(ctx, orderID)).length;
 
-        const header = await reloadHeader(ctx, orderID);
-        header.PaymentTermsTypeID = net60;
-        Assert(await header.Save(), `the terms change saves: ${header.LatestResult?.CompleteMessage ?? ""}`);
+        const role = await TxOne<{ RoleID: string }>(ctx,
+          `SELECT TOP 1 RoleID FROM __mj.UserRole WHERE UserID = '${ctx.User.ID}'`);
+        Assert(role?.RoleID != null, "this user holds no roles");
+        const ruleID = await createViaEntity(ctx, SALES_RULE_ENTITY, {
+          Name: "ConcessionLimit approval",
+          RuleType: "ConcessionLimit",
+          Scope: "Global",
+          ApprovalRequiredRoleID: role.RoleID,
+          IsActive: 1,
+        });
+        const requester = await TxOne<{ ID: string }>(ctx,
+          `SELECT TOP 1 ID FROM __mj.[User] WHERE IsActive = 1 AND ID <> '${ctx.User.ID}'`);
+        const recorded = await TxOne<{ ID: string }>(ctx,
+          `DECLARE @id TABLE (ID UNIQUEIDENTIFIER);
+           INSERT INTO ${ORDERS_SCHEMA}.OrderConcession
+             (OrderHeaderID, DeliveryForm, ReasonCategory, Reason, AddedDays, ComputedValue, Status,
+              RequestedByUserID, SalesRuleID, PriorPaymentTermsTypeID, NewPaymentTermsTypeID)
+           OUTPUT inserted.ID INTO @id
+           VALUES ('${orderID}', 'Terms', 'Other', 'customer request', 30, 0, 'Pending',
+                   '${requester.ID}', '${ruleID}', '${net30}', '${net60}');
+           SELECT ID FROM @id;`);
+
+        const concession = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
+        Assert(await concession.Load(recorded.ID), "the Terms concession did not load");
+        concession.Status = "Approved";
+        Assert(await concession.Save(), `approving the terms change saves: ${concession.LatestResult?.CompleteMessage ?? ""}`);
 
         const termsChanges = (await headerChanges(ctx, orderID))
           .slice(before)

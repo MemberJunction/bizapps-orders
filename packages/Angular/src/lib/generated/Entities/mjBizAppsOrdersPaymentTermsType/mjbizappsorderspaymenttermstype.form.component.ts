@@ -19,7 +19,9 @@ export class mjBizAppsOrdersPaymentTermsTypeFormComponent extends BaseFormCompon
             { sectionKey: 'paymentTermsConfiguration', sectionName: 'Payment Terms Configuration', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderHeaders', sectionName: 'Order Headers', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersCustomerPaymentTerms', sectionName: 'Customer Payment Terms', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersCustomerPaymentTerms', sectionName: 'Customer Payment Terms', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderConcessionsPriorPaymentTermsTypeID', sectionName: 'Order Concessions (Prior Payment Terms Type ID)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderConcessionsNewPaymentTermsTypeID', sectionName: 'Order Concessions (New Payment Terms Type ID)', isExpanded: false }
         ]);
     }
 }

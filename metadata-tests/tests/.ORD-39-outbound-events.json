@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-39 - Outbound Events",
+    "Description": "The outbound hook (#293): order confirmations and entitlement grant changes recorded as outbound events inside the transaction that caused them, and delivered to registered consumers after it. Proves one OrderConfirmed event and one GrantStatusChanged per grant with a delivery each, that nothing is sent inside the booking, that dispatch delivers each event once and a second pass sends nothing, that a consumer outage is recorded and retried after its backoff, that a re-save of a confirmed order records nothing new while a grant status change records both statuses, that a rolled-back confirm leaves no event, and that a return records no OrderConfirmed while its grant revocations record GrantStatusChanged.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A WidgetA confirm records 3 events (OrderConfirmed + 2 GrantStatusChanged) each with one Pending delivery marked GatesAccess; the first dispatch delivers all 3 and a second claims 0; a failing consumer leaves 3 Pending rows with Attempts 1 and a future NextAttemptAt, none claimed early, all Delivered on the retry; a re-save adds no event and an Active to Suspended change adds one; a confirm that cannot book leaves the event count unchanged; a Return of the sale records no event under its own order and 2 GrantStatusChanged to Revoked under the sale."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "outbound-events"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "A59D1271-660A-43AF-AD6B-70CFE6EF5CA4"
+  }
+}

@@ -1,7 +1,8 @@
 /**
  * Public checkout host page — a self-contained HTML document that drives
- * `OrdersCheckoutEdge` POSTs from a browser with no Explorer shell and no
- * custom-element bundle.
+ * `OrdersCheckoutEdge` POSTs from a browser with no Explorer shell. When the
+ * `<mj-orders-checkout>` Angular Element bundle is available (`elementSrc`), the
+ * page hosts that element; otherwise it renders a vanilla fallback form.
  *
  * All per-request values reach the boot script via HTML-escaped `data-*`
  * attributes (Forms host-page XSS rule): nothing attacker-controlled is
@@ -457,7 +458,17 @@ const BOOT_SCRIPT = `
         ok.textContent = config.successMessage || ('Thank you. Order ' + (done.OrderNumber || '') + ' is confirmed.');
         host.appendChild(ok);
         if (config.redirectUrl) {
-          window.location.href = config.redirectUrl;
+          // The landing page learns which order completed from ?order= (#295). Only the order
+          // number: a URL lands in history, logs and referrers.
+          var target = config.redirectUrl;
+          if (done.OrderNumber) {
+            try {
+              var u = new URL(target, window.location.href);
+              u.searchParams.set('order', String(done.OrderNumber));
+              target = u.toString();
+            } catch (e) { /* unreadable URL: redirect unchanged */ }
+          }
+          window.location.href = target;
         }
       }).catch(function (err) {
         status.textContent = '';

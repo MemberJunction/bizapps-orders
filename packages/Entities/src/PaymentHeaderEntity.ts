@@ -90,16 +90,39 @@ export class PaymentHeaderEntity extends mjBizAppsOrdersPaymentHeaderEntity {
      * only when the detail is first created (golive #283). The detail is created by the first
      * instrument field typed; a reference entered before the Receiving Company was chosen left
      * the detail's `CompanyID` null for good, and the save failed on the detail.
+     *
+     * A saved detail is never edited (golive #303). The database refuses any change to a saved
+     * detail's company or tender, because a detail is a point-in-time snapshot that an order's
+     * payment intent may share. When either differs, the payment gets a new detail carrying the
+     * same instrument fields, and the saved one is left as it was.
      */
     public SyncPaymentDetailFromHeader(): void {
-        const detail = this.PaymentDetailID_Object;
+        let detail = this.PaymentDetailID_Object;
         if (!detail) return;
-        if (this.ReceivingCompanyID && !UUIDsEqual(detail.CompanyID, this.ReceivingCompanyID)) {
-            detail.CompanyID = this.ReceivingCompanyID;
+        const companyChanged = Boolean(this.ReceivingCompanyID) && !UUIDsEqual(detail.CompanyID, this.ReceivingCompanyID);
+        const tenderChanged = Boolean(this.PaymentTypeID) && !UUIDsEqual(detail.PaymentTypeID, this.PaymentTypeID);
+        if (!companyChanged && !tenderChanged) return;
+        if (detail.IsSaved) detail = this.replacePaymentDetail(detail);
+        if (companyChanged) detail.CompanyID = this.ReceivingCompanyID;
+        if (tenderChanged) detail.PaymentTypeID = this.PaymentTypeID;
+    }
+
+    /**
+     * Swap a saved detail for a new one with the same writable fields. `Clear()` then
+     * `PaymentDetailID_EnsureObject()` resets the same object to a new record, so the values are
+     * read before and written back after. The saved row stays in the database untouched.
+     */
+    private replacePaymentDetail(saved: mjBizAppsOrdersPaymentDetailEntity): mjBizAppsOrdersPaymentDetailEntity {
+        const values: Record<string, unknown> = {};
+        for (const field of saved.Fields) {
+            if (!field.ReadOnly) values[field.Name] = field.Value;
         }
-        if (this.PaymentTypeID && !UUIDsEqual(detail.PaymentTypeID, this.PaymentTypeID)) {
-            detail.PaymentTypeID = this.PaymentTypeID;
+        this.ClearPaymentDetail();
+        const replacement = this.PaymentDetailID_EnsureObject();
+        for (const [name, value] of Object.entries(values)) {
+            replacement.Set(name, value);
         }
+        return replacement;
     }
 
     public override Validate(): ValidationResult {

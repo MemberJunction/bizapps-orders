@@ -19,7 +19,8 @@ export class mjBizAppsOrdersSalesAuthorityFormComponent extends BaseFormComponen
             { sectionKey: 'salesRepAssignment', sectionName: 'Sales Rep Assignment', isExpanded: true },
             { sectionKey: 'authorityLimits', sectionName: 'Authority Limits', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderConcessions', sectionName: 'Order Concessions', isExpanded: false }
         ]);
     }
 }

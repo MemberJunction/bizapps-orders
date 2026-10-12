@@ -27,6 +27,8 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
     /** Resolved by id — the record's virtual name fields are unreliable (Pin 28). */
     public Lookups: ProductLookupNames = { Type: '—', Category: '—', RevRec: '—', Successor: '—' };
     private listPriceFor: string | null = null;
+    /** The ids `Lookups` was resolved for; a change re-resolves, so the header follows edits. */
+    private lookupsFor: string | null = null;
     private cdr = inject(ChangeDetectorRef, { optional: true });
 
     public get Title(): string {
@@ -34,11 +36,11 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
     }
 
     public async ngOnInit(): Promise<void> {
-        this.Lookups = await LoadProductLookupNames(this.Record);
-        this.cdr?.markForCheck();
+        await this.refreshLookups();
     }
 
     public get TypeName(): string {
+        this.refreshLookupsIfChanged();
         return this.Lookups.Type;
     }
 
@@ -65,6 +67,25 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
     }
 
     public get RevRec(): string {
+        this.refreshLookupsIfChanged();
         return this.Lookups.RevRec;
+    }
+
+    private lookupsKey(): string {
+        const r = this.Record;
+        return [r?.ProductTypeID, r?.ProductCategoryID, r?.RevenueRecognitionTypeID, r?.SuccessorProductID].join('|');
+    }
+
+    private refreshLookupsIfChanged(): void {
+        if (this.lookupsFor !== null && this.lookupsFor !== this.lookupsKey()) void this.refreshLookups();
+    }
+
+    private async refreshLookups(): Promise<void> {
+        const key = this.lookupsKey();
+        this.lookupsFor = key;
+        const lookups = await LoadProductLookupNames(this.Record);
+        if (this.lookupsFor !== key) return; // a newer edit started its own resolve
+        this.Lookups = lookups;
+        this.cdr?.markForCheck();
     }
 }

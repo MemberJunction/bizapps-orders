@@ -1,8 +1,10 @@
 import { Component } from '@angular/core';
+import { LogError } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
-import type { mjBizAppsOrdersEventOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { OrdersEngine, type mjBizAppsOrdersEventOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersEventOrderLineFormComponent } from '../../generated/Entities/mjBizAppsOrdersEventOrderLine/mjbizappsorderseventorderline.form.component';
+import { DescribeLineEvent, type LineEventSummary } from './line-event-summary';
 
 /**
  * Custom Event Order Line form component with Progressive Disclosure.
@@ -24,6 +26,28 @@ export class BizAppsEventOrderLineFormComponent extends mjBizAppsOrdersEventOrde
 
     /** Tracks whether the progressive disclosure details drawer is expanded. */
     public DetailsExpanded = false;
+
+    /** True once the OrdersEngine cache has been asked for, so the panel can say "no event record". */
+    public EventLookupDone = false;
+
+    override async ngOnInit(): Promise<void> {
+        await super.ngOnInit();
+        try {
+            await OrdersEngine.Instance.EnsureLoaded();
+        } catch (e) {
+            LogError(`Event order line could not load OrdersEngine to show the line's event: ${e}`);
+        }
+        this.EventLookupDone = true;
+        this.cdr.markForCheck();
+    }
+
+    /**
+     * The event this line is for. The line's product is the event: its Event Products row shares
+     * the product's ID and holds the event's dates. Null when the product has no such row.
+     */
+    public get LineEvent(): LineEventSummary | null {
+        return DescribeLineEvent(OrdersEngine.Instance.EventProductByID(this.record?.ProductID));
+    }
 
     public ToggleDetails(): void {
         this.DetailsExpanded = !this.DetailsExpanded;

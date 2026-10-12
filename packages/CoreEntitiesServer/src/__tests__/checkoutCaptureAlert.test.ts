@@ -44,6 +44,7 @@ import {
     CHECKOUT_CAPTURE_TASK_TYPE_CODE,
     CHECKOUT_CAPTURE_TASK_TYPE_ENTITY,
     raiseCheckoutCaptureTerminalAlert,
+    raiseCheckoutSettledNotBookedAlert,
 } from '../checkoutCaptureAlert.js';
 import { CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER } from '../checkoutCaptureRetry.js';
 
@@ -107,6 +108,30 @@ describe('raiseCheckoutCaptureTerminalAlert', () => {
         expect(mockTask.TypeID).toBe(GENERAL_TYPE_ID);
         expect(mockTask.Status).toBe('Open');
         expect(mockTask.Name).toContain('order-9');
+        expect(mockTask.Save).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('raiseCheckoutSettledNotBookedAlert', () => {
+    it('logs the marker with the session and no order, even when no user can write a Task', async () => {
+        await raiseCheckoutSettledNotBookedAlert('sess-3', 'pi-3', 'total rose on re-price');
+        const logged = String(mockLogError.mock.calls[0][0]);
+        expect(logged).toContain(CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER);
+        expect(logged).toContain('sess-3');
+        expect(logged).toContain('no order was booked');
+        expect(logged).not.toContain('confirmed checkout order');
+        expect(mockGetEntityObject).not.toHaveBeenCalled();
+    });
+
+    it('raises a typed Task naming the session and payment intent for a refund', async () => {
+        await raiseCheckoutSettledNotBookedAlert('sess-4', 'pi-4', 'member code declined', user);
+
+        expect(mockTask.TypeID).toBe(GENERAL_TYPE_ID);
+        expect(mockTask.Status).toBe('Open');
+        expect(mockTask.Name).toContain('sess-4');
+        expect(mockTask.Description).toContain('no order was created');
+        expect(mockTask.Description).toContain('Payment intent: pi-4');
+        expect(mockTask.Description).toContain('member code declined');
         expect(mockTask.Save).toHaveBeenCalledTimes(1);
     });
 });

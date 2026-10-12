@@ -16,7 +16,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { NetAfterDiscount } from '@mj-biz-apps/orders-entities';
-import { RemainingReturnable, ValidateReversal, InheritedTerms } from '../ReversalBehavior.js';
+import { RemainingReturnable, ValidateReversal, InheritedTerms, MirroredTaxCharges } from '../ReversalBehavior.js';
 
 const origin = (over: Partial<Parameters<typeof ValidateReversal>[1]> = {}) => ({
     ID: 'origin-1',
@@ -267,5 +267,59 @@ describe('InheritedTerms — the coverage window, which is what let a subscripti
         const terms = InheritedTerms(origin({ UnitPrice: 100 }), -1);
         expect(terms.ServicePeriodStart).toBeFalsy();
         expect(terms.ServicePeriodEnd).toBeFalsy();
+    });
+});
+
+describe('MirroredTaxCharges — a return refunds the tax the sale collected, where it collected it', () => {
+    const STATE = { Code: 'SalesTax', Amount: 29, TaxJurisdictionID: 'jur-state', TaxRateID: 'rate-state' };
+    const CITY = { Code: 'SalesTax', Amount: 11, TaxJurisdictionID: 'jur-city', TaxRateID: 'rate-city' };
+
+    it('refunds every jurisdiction in full on a full return, negated', () => {
+        expect(MirroredTaxCharges({ Quantity: 4, LineTax: 40 }, [STATE, CITY], 0, -4)).toEqual([
+            { Code: 'SalesTax', Amount: -29, TaxJurisdictionID: 'jur-state', TaxRateID: 'rate-state' },
+            { Code: 'SalesTax', Amount: -11, TaxJurisdictionID: 'jur-city', TaxRateID: 'rate-city' },
+        ]);
+    });
+
+    it('refunds a partial return in proportion to the quantity coming back', () => {
+        expect(MirroredTaxCharges({ Quantity: 4, LineTax: 40 }, [STATE], 0, -1).map((c) => c.Amount)).toEqual([-7.25]);
+    });
+
+    it('refunds exactly what was collected across a series of partial returns', () => {
+        const tax = { Code: 'SalesTax', Amount: 1, TaxJurisdictionID: null, TaxRateID: null };
+        const slices = [0, 1, 2].map((before) => MirroredTaxCharges({ Quantity: 3, LineTax: 1 }, [tax], before, -1)[0].Amount);
+        expect(slices).toEqual([-0.33, -0.34, -0.33]);
+        expect(Math.round(slices.reduce((a, b) => a + b, 0) * 100) / 100).toBe(-1);
+    });
+
+    it('never refunds past what the origin sold', () => {
+        expect(MirroredTaxCharges({ Quantity: 4, LineTax: 40 }, [STATE], 3, -5).map((c) => c.Amount)).toEqual([-7.25]);
+        expect(MirroredTaxCharges({ Quantity: 4, LineTax: 40 }, [STATE], 4, -1)).toEqual([]);
+    });
+
+    it('refunds a series of partial returns exactly, in every jurisdiction', () => {
+        const state = { Code: 'SalesTax', Amount: 8.25, TaxJurisdictionID: 'jur-state', TaxRateID: null };
+        const city = { Code: 'SalesTax', Amount: 1, TaxJurisdictionID: 'jur-city', TaxRateID: null };
+        const slices = [0, 1, 2].map((before) => MirroredTaxCharges({ Quantity: 3, LineTax: 9.25 }, [state, city], before, -1));
+        expect(slices.map((s) => s.map((c) => c.Amount))).toEqual([
+            [-2.75, -0.33],
+            [-2.75, -0.34],
+            [-2.75, -0.33],
+        ]);
+        expect(slices.map((s) => s.map((c) => c.TaxJurisdictionID))).toEqual(Array(3).fill(['jur-state', 'jur-city']));
+    });
+
+    it('falls back to the line tax, unattributed, when the origin has no tax charge rows', () => {
+        expect(MirroredTaxCharges({ Quantity: 2, LineTax: 10 }, [], 0, -1)).toEqual([
+            { Code: 'SalesTax', Amount: -5, TaxJurisdictionID: null, TaxRateID: null },
+        ]);
+    });
+
+    it('refunds no tax when the sale charged none', () => {
+        expect(MirroredTaxCharges({ Quantity: 2, LineTax: 0 }, [], 0, -2)).toEqual([]);
+    });
+
+    it('a zero-quantity origin refunds nothing rather than dividing by zero', () => {
+        expect(MirroredTaxCharges({ Quantity: 0, LineTax: 10 }, [STATE], 0, -1)).toEqual([]);
     });
 });

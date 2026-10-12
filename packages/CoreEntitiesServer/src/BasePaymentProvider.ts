@@ -74,8 +74,26 @@ export interface CreateIntentRequest {
     /** A saved instrument to charge, when the customer has one on file. */
     ProviderCustomerRef?: string | null;
     ProviderInstrumentRef?: string | null;
+    /**
+     * Ask the gateway to keep the instrument the customer is about to enter, so it can be charged
+     * later without them present — the first purchase of an auto-renewing subscription. Needs a
+     * `ProviderCustomerRef`: a saved instrument belongs to a gateway customer, and without one the
+     * gateway has nothing to attach it to. Ignored when `ProviderInstrumentRef` is set, since that
+     * instrument is already saved.
+     */
+    SaveInstrumentForReuse?: boolean;
     /** Free-form, echoed back on webhooks. Useful for reconciliation, never load-bearing. */
     Metadata?: Record<string, string>;
+    /**
+     * What the gateway's dashboard shows for this charge — see `FormatIntentDescription`. Display
+     * only, like `Metadata`: nothing reads it back.
+     */
+    Description?: string | null;
+    /**
+     * Where the gateway sends its own receipt for this charge, when the caller wants one. Omitted, the
+     * gateway sends none. A driver whose gateway has no receipts ignores it.
+     */
+    ReceiptEmail?: string | null;
     /**
      * OUR idempotency key. Sent to gateways that support one so a retried create does not open a
      * second intent — and therefore does not charge the customer twice.
@@ -92,6 +110,22 @@ export interface CreateIntentResult {
     ClientSecret?: string;
     /** For a hosted-checkout flow — where to send the customer. */
     HostedUrl?: string;
+}
+
+/**
+ * Details attached to an intent after it was opened. Checkout opens its intent before the order exists,
+ * so the order number and id can only reach the gateway afterwards (#327).
+ */
+export interface UpdateIntentRequest {
+    ProviderIntentID: string;
+    Description?: string | null;
+    /** Merged into what the intent already carries; keys not named here are left alone. */
+    Metadata?: Record<string, string>;
+}
+
+export interface UpdateIntentResult {
+    Success: boolean;
+    Reason?: string;
 }
 
 export interface CaptureRequest {
@@ -113,6 +147,50 @@ export interface RetrieveIntentResult {
     Status?: IntentStatus;
     /** Major units as the gateway currently reports them. */
     Amount?: number;
+    /**
+     * The instrument the intent was paid with, when the gateway reports one. Token references and
+     * display fields only — never a card number. Present so a caller can put a saved card in the
+     * wallet after the first payment.
+     */
+    Instrument?: RetrievedInstrument;
+}
+
+/** The instrument behind a paid intent, as the gateway describes it. */
+export interface RetrievedInstrument {
+    /** The gateway customer the instrument is attached to; null when it is not saved to one. */
+    ProviderCustomerRef: string | null;
+    ProviderInstrumentRef: string;
+    Brand?: string;
+    Last4?: string;
+    ExpiryMonth?: number;
+    ExpiryYear?: number;
+    HolderName?: string;
+}
+
+/** A gateway customer to reuse or create — the owner of any instrument saved for later charges. */
+export interface EnsureCustomerRequest {
+    /** The customer already on file for this person with this provider, when there is one. */
+    ExistingProviderCustomerRef?: string | null;
+    Email?: string | null;
+    Name?: string | null;
+    /** Ours, echoed into the gateway's record so the two can be matched. */
+    BillToPersonID?: string | null;
+    BillToOrganizationID?: string | null;
+    /**
+     * Ours: the checkout the customer is opened for, when the buyer has no person record yet. The
+     * person that checkout's completion creates owns the card filed against this customer.
+     */
+    CheckoutSessionID?: string | null;
+    /** Sent to gateways that support one, so a retried call does not create a second customer. */
+    IdempotencyKey?: string;
+}
+
+export interface EnsureCustomerResult {
+    Success: boolean;
+    Reason?: string;
+    ProviderCustomerRef?: string;
+    /** True when `ExistingProviderCustomerRef` was reused rather than a new customer created. */
+    WasExisting?: boolean;
 }
 
 export interface CaptureResult {
@@ -146,6 +224,83 @@ export interface RefundResult {
     Reason?: string;
     Amount?: number;
     ProviderRefundID?: string;
+}
+
+/** One refund as the gateway reports it. */
+export interface GatewayRefund {
+    ProviderRefundID: string;
+    ProviderChargeID?: string | null;
+    /** Major units, positive. */
+    Amount: number;
+    CurrencyCode: string;
+    /** The gateway's own status, unmapped (Stripe: pending, requires_action, succeeded, failed, canceled). */
+    Status: string;
+    CreatedAt?: Date;
+}
+
+/** Which refunds to list. Every condition given must hold. */
+export interface ListRefundsRequest {
+    ProviderChargeID?: string;
+    CreatedFrom?: Date;
+    CreatedTo?: Date;
+}
+
+export interface ListRefundsResult {
+    Success: boolean;
+    Reason?: string;
+    Refunds?: GatewayRefund[];
+}
+
+/** One charge as the gateway reports it. */
+export interface GatewayCharge {
+    ProviderChargeID: string;
+    ProviderIntentID?: string | null;
+    /** Major units. */
+    Amount: number;
+    /** Major units refunded so far, cumulative. */
+    AmountRefunded: number;
+    CurrencyCode: string;
+    /** The gateway's own status, unmapped (Stripe: succeeded, pending, failed). */
+    Status: string;
+    CreatedAt?: Date;
+}
+
+export interface ListChargesRequest {
+    CreatedFrom?: Date;
+    CreatedTo?: Date;
+}
+
+export interface ListChargesResult {
+    Success: boolean;
+    Reason?: string;
+    Charges?: GatewayCharge[];
+}
+
+export interface RetrieveChargeRequest {
+    ProviderChargeID: string;
+}
+
+export interface RetrieveChargeResult {
+    Success: boolean;
+    Reason?: string;
+    /** True when the gateway answered that no such charge exists, as opposed to failing to answer. */
+    NotFound?: boolean;
+    Charge?: GatewayCharge;
+}
+
+/** One webhook endpoint configured at the gateway. */
+export interface GatewayWebhookEndpoint {
+    Url: string;
+    /** The gateway's own status (Stripe: enabled, disabled). */
+    Status: string;
+    /** The event kinds it sends; `*` means every kind. */
+    EnabledEvents: string[];
+}
+
+export interface ListWebhookEndpointsResult {
+    Success: boolean;
+    Reason?: string;
+    Endpoints?: GatewayWebhookEndpoint[];
 }
 
 /** A gateway event, reduced to the facts this application acts on. */
@@ -258,8 +413,56 @@ export class BasePaymentProvider {
         return { Success: false, Reason: this.notImplemented('retrieving a payment intent') };
     }
 
+    /** Attach display details to an intent already opened. Moves no money and changes no status. */
+    public async UpdateIntent(_request: UpdateIntentRequest): Promise<UpdateIntentResult> {
+        return { Success: false, Reason: this.notImplemented('updating a payment intent') };
+    }
+
     public async Refund(_request: RefundRequest): Promise<RefundResult> {
         return { Success: false, Reason: this.notImplemented('refunding a payment') };
+    }
+
+    /**
+     * The refunds the gateway holds, for a charge or a time window.
+     *
+     * Read-only. Used to book a refund made at the gateway (#476): the refund event carries only the
+     * charge's cumulative refunded amount, and the individual refund ids come from here.
+     */
+    public async ListRefunds(_request: ListRefundsRequest): Promise<ListRefundsResult> {
+        return { Success: false, Reason: this.notImplemented('listing refunds') };
+    }
+
+    /**
+     * Whether this driver can list the gateway's charges, which is what the charge reconciliation
+     * reads (#477). False for a rail with no charges of its own to list.
+     */
+    public get ListsCharges(): boolean {
+        return false;
+    }
+
+    /** The gateway's charges in a time window. Read-only. */
+    public async ListCharges(_request: ListChargesRequest): Promise<ListChargesResult> {
+        return { Success: false, Reason: this.notImplemented('listing charges') };
+    }
+
+    /** One charge by id. Read-only. */
+    public async RetrieveCharge(_request: RetrieveChargeRequest): Promise<RetrieveChargeResult> {
+        return { Success: false, Reason: this.notImplemented('reading a charge') };
+    }
+
+    /** The webhook endpoints configured at the gateway, for the drift check (#477). Read-only. */
+    public async ListWebhookEndpoints(): Promise<ListWebhookEndpointsResult> {
+        return { Success: false, Reason: this.notImplemented('listing webhook endpoints') };
+    }
+
+    /**
+     * Reuse or create the gateway customer that a saved instrument will belong to.
+     *
+     * Refuses by default, like every other operation here: a driver that cannot keep an instrument
+     * for later must say so, not hand back an id nothing will accept.
+     */
+    public async EnsureCustomer(_request: EnsureCustomerRequest): Promise<EnsureCustomerResult> {
+        return { Success: false, Reason: this.notImplemented('keeping a customer for saved instruments') };
     }
 
     /**

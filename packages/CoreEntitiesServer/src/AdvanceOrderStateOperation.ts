@@ -32,6 +32,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    OrdersAdvanceOrderStateOperation as OrdersAdvanceOrderStateOperationBase,
     LoadOrdersEngine,
     OrdersEngine,
     mjBizAppsOrdersOrderHeaderEntity,
@@ -78,12 +79,7 @@ interface AdvanceOrderStateOutput {
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.AdvanceOrderState')
-export class AdvanceOrderStateOperation extends BaseRemotableOperation<
-    AdvanceOrderStateInput,
-    AdvanceOrderStateOutput
-> {
-    public OperationKey = 'Orders.AdvanceOrderState';
-
+export class AdvanceOrderStateOperation extends OrdersAdvanceOrderStateOperationBase {
     protected async InternalExecute(
         input: AdvanceOrderStateInput,
         provider: IMetadataProvider,

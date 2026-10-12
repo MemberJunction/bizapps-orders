@@ -27,6 +27,8 @@
  *   BN10  the database refuses a rollup parent that carries money
  *   BN11  an ordinary product is untouched by any of this
  *   BN12  a bundle inside a bundle is refused rather than expanded
+ *   BN13  only expansion gives a line a parent; one set through the API is refused
+ *   BN14  re-saving a draft does not expand its bundle again; the children follow the parent
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -42,6 +44,8 @@ import {
   type IntegrationCheckContext,
   type NamedCheck,
 } from "@memberjunction/testing-integration";
+import { Metadata } from "@memberjunction/core";
+import type { mjBizAppsOrdersOrderLineEntity } from "@mj-biz-apps/orders-entities";
 import {
   ACCT_SCHEMA,
   CreateBundleItem,
@@ -54,7 +58,8 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { ORDER_LINE_ENTITY } from "../entity-names.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 
 interface LineRow {
   ID: string;
@@ -106,6 +111,8 @@ async function defineBundle(
 
 async function sellBundle(ctx: IntegrationCheckContext, qty = 1, price = 100) {
   const f = Fx();
+  // The bundle's engine price, so selling it at `price` is not a concession the confirm gate holds.
+  await CreateProductPrice(ctx, f.Products.BundleA, price);
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
     BillToOrganizationID: f.Customers.OrganizationID,
@@ -272,6 +279,8 @@ export const BundleChecks: NamedCheck[] = [
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
         await defineBundle(ctx);
+        // The lower of the two bundle prices, so neither is a concession the confirm gate holds.
+        await CreateProductPrice(ctx, f.Products.BundleA, 60);
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,
@@ -417,6 +426,7 @@ export const BundleChecks: NamedCheck[] = [
         await CreateProductPrice(ctx, f.Products.WidgetB, 10);
         await CreateBundleItem(ctx, f.Products.BundlePartX, f.Products.WidgetB, { SortOrder: 10 });
 
+        await CreateProductPrice(ctx, f.Products.BundleA, 100);
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,
@@ -438,6 +448,75 @@ export const BundleChecks: NamedCheck[] = [
             `if it refuses, it should say why: ${result.Message}`,
           );
         }
+      }),
+  },
+  {
+    // The concession confirm gate does not re-price a line with a parent, because a component is
+    // priced at its share of the bundle. A parent set any other way would let an ordinary line carry
+    // a price below the engine's past that gate (bc-aidp-next-golive#292).
+    Id: "bundles.BN13",
+    Name: "BN13: only bundle expansion gives a line a parent; one set through the API is refused",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await CreateProductPrice(ctx, f.Products.WidgetB, 100);
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 1 },
+            { ProductID: f.Products.WidgetB, Quantity: 1 },
+          ],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const [first, second] = await linesOf(ctx, built.Order.ID as string);
+
+        const line = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ctx.User);
+        Assert(await line.Load(second.ID), "the second line did not load");
+        line.ParentOrderLineID = first.ID;
+        Assert(!(await line.Save()), "an ordinary line must not be given a parent");
+        Assert(/only by bundle expansion/.test(line.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should say why, got: ${line.LatestResult?.CompleteMessage}`);
+
+        const stored = await TxOne<{ ParentOrderLineID: string | null }>(ctx,
+          `SELECT ParentOrderLineID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${second.ID}'`);
+        AssertEqual(stored.ParentOrderLineID, null, "and the line keeps no parent");
+      }),
+  },
+  {
+    Id: "bundles.BN14",
+    Name: "BN14: re-saving a draft does not expand its bundle again; the children follow the parent",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await defineBundle(ctx);
+        await CreateProductPrice(ctx, f.Products.BundleA, 100);
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.BundleA, Quantity: 1, UnitPrice: 100 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const before = await linesOf(ctx, built.Order.ID as string);
+        AssertEqual(before.filter((l) => l.ParentOrderLineID).length, 2, "the draft save expanded the bundle");
+
+        // Any edit to the lines sends the save down the full walk, which is where expansion runs.
+        const parent = built.Order.Lines.Items.find((l) => same(l.ProductID, f.Products.BundleA))!;
+        parent.Quantity = 2;
+        Assert(await built.Order.Save(), `the re-save failed: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const after = await linesOf(ctx, built.Order.ID as string);
+        const children = after.filter((l) => l.ParentOrderLineID);
+        AssertEqual(children.length, 2, "the same two children, not a second set");
+        Assert(children.every((c) => before.some((b) => same(b.ID, c.ID))), "the children are the rows the first save wrote");
+        Assert(children.every((c) => Number(c.Quantity) === 2), "each child follows the parent's new quantity");
+        AssertEqual(
+          Math.round(children.reduce((s, c) => s + Number(c.LineTotalNet), 0) * 100) / 100,
+          200,
+          "the children total two bundles, once",
+        );
       }),
   },
 ];

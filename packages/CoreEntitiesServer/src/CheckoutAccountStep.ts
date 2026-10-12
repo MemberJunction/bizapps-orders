@@ -68,8 +68,8 @@ export interface CheckoutAccountResult {
     /** Shown to the buyer. Worded for the buyer, never containing secrets. */
     Message?: string;
     /**
-     * With `Created`: the host has sent, or will send, a verification e-mail, and the widget tells
-     * the buyer to use it before signing in.
+     * @deprecated Ignored. Every `Created` account must stay unable to sign in until the host has
+     * verified the e-mail, so the widget always tells the buyer to use the verification link (#395).
      */
     VerificationRequired?: boolean;
 }
@@ -161,7 +161,7 @@ export interface CheckoutAccountStatus {
     Message?: string;
     /** True while the buyer may still set a password: the outcome was `Created` and none is set yet. */
     CanSetPassword: boolean;
-    /** True when the host will e-mail the buyer a link to verify the account before it signs in. */
+    /** True for every `Created` account: the buyer must verify the e-mail before the account signs in. */
     VerificationRequired: boolean;
 }
 
@@ -259,7 +259,7 @@ function toStatus(state: StoredAccountState & { Outcome: CheckoutAccountOutcome 
             !state.PasswordPendingSince &&
             (state.PasswordAttempts ?? 0) < MAX_CHECKOUT_PASSWORD_ATTEMPTS &&
             withinPasswordWindow(state, step),
-        VerificationRequired: state.Outcome === 'Created' && state.VerificationRequired === true,
+        VerificationRequired: state.Outcome === 'Created',
     };
 }
 
@@ -387,7 +387,7 @@ async function ensureAccount(
         Outcome: outcome,
         Message: result?.Message ?? (outcome === 'Failed' ? GENERIC_FAILURE : undefined),
         DecidedAt: new Date().toISOString(),
-        VerificationRequired: outcome === 'Created' && result?.VerificationRequired === true,
+        VerificationRequired: outcome === 'Created',
         PasswordSet: false,
         PasswordAttempts: 0,
     };

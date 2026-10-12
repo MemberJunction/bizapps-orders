@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB24).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB30).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -30,6 +30,14 @@
  *   OB22 the database refuses a booked header's OrderDate change, however it is reached (51013)
  *   OB23 the database refuses a booked order leaving Confirmed (51014)
  *   OB24 the database refuses a booked line's CompanyID change (51003)
+ *   OB25 the database refuses clearing a booked line's JournalEntryID (51008, #262)
+ *   OB26 the database refuses re-pointing a booked line at another journal entry (51008, #262)
+ *   OB27 a draft line for a product this process never cached (written by raw SQL, so no entity
+ *        event) saves with the product's company instead of failing on a null CompanyID (golive #301)
+ *   OB28 …and an order of such a product confirms and books under the product's company (golive #301)
+ *   OB29 a taxed order saved as a draft and then confirmed books balanced entries whose receivable is
+ *        the order's gross, with one set of tax rows per line (#484)
+ *   OB30 …and keeps one price breakdown per line, not one per save
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -53,8 +61,9 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
+import { randomUUID } from 'node:crypto';
 import { Metadata } from '@memberjunction/core';
-import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OrderHeaderEntity, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from '../entity-names.js';
 
@@ -64,6 +73,8 @@ const UNBILLED_CODE = '11300';
 /** The three-line multi-company order OB1–OB6 all read from — built once per check, inside its tx. */
 async function confirmMultiCompanyOrder(ctx: IntegrationCheckContext) {
     const f = Fx();
+    // WidgetB's engine price, so its stated 50 is not a concession the confirm gate would hold.
+    await CreateProductPrice(ctx, f.Products.WidgetB, 50);
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         Lines: [
@@ -124,6 +135,41 @@ async function lineEntries(ctx: IntegrationCheckContext, orderID: string) {
          LEFT JOIN ${ACCT_SCHEMA}.vwJournalEntries je ON je.ID = ol.JournalEntryID
          WHERE ol.OrderHeaderID = '${orderID}'`,
     );
+}
+
+/**
+ * A product written the way a catalog loader or another process writes one: a raw INSERT, which
+ * fires no entity event, so this process's `OrdersEngine` never hears of it (golive #301). Copies
+ * the classification of `like` so booking resolves the same GL accounts, and adds NO price row.
+ */
+async function productCachedNowhere(ctx: IntegrationCheckContext, like: string): Promise<{ ID: string; CompanyID: string }> {
+    // Warm the cache FIRST, as MJAPI does at startup. A cache that first loads after the INSERT
+    // simply reads the new row, and the check would pass without exercising the stale cache at all.
+    await OrdersEngine.Instance.Config(false, ctx.User, ctx.Provider);
+    Assert(OrdersEngine.Instance.Products.length > 0, 'precondition: the engine cache is loaded');
+    const id = randomUUID();
+    const sku = `G301-${id.slice(0, 8)}`;
+    await TxQuery(
+        ctx,
+        `INSERT INTO ${ORDERS_SCHEMA}.Product (ID, Name, SKU, ProductTypeID, ProductCategoryID, CompanyID, RevenueRecognitionTypeID)
+         SELECT '${id}', '${sku}', '${sku}', ProductTypeID, ProductCategoryID, CompanyID, RevenueRecognitionTypeID
+           FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${like}'`,
+    );
+    Assert(!OrdersEngine.Instance.ProductByID(id), 'precondition: the raw INSERT must not reach the engine cache');
+    const row = await TxOne<{ CompanyID: string }>(ctx, `SELECT CompanyID FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${id}'`);
+    return { ID: id, CompanyID: row.CompanyID };
+}
+
+/**
+ * Run a check that pulls an uncommitted product into the engine, then drop it from the cache again:
+ * the rollback removes the row, and the shared rollback helper only reloads prices.
+ */
+async function withUncachedProduct(ctx: IntegrationCheckContext, body: () => Promise<void>): Promise<void> {
+    try {
+        await InRolledBackTransaction(ctx, body);
+    } finally {
+        await OrdersEngine.Instance.RefreshItem('_products');
+    }
 }
 
 export const OrderBookingChecks: NamedCheck[] = [
@@ -239,7 +285,8 @@ export const OrderBookingChecks: NamedCheck[] = [
                 // what the ledger says we are owed, or the two records of the same fact disagree —
                 // which is the one thing a general ledger exists to prevent.
                 const f = Fx();
-                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                // The lower of the two stated prices, so neither is a concession the confirm gate holds.
+                await CreateProductPrice(ctx, f.Products.WidgetA, 50);
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     BillToOrganizationID: f.Customers.OrganizationID,
@@ -916,6 +963,205 @@ export const OrderBookingChecks: NamedCheck[] = [
                 const orderID = await confirmedOrderID(ctx);
                 const refusal = await refusedBy(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderLine SET CompanyID = '${f.CoB.ID}' WHERE OrderHeaderID = '${orderID}'`);
                 Assert(/selling company cannot be changed/.test(refusal), `refused by 51003: ${refusal}`);
+            }),
+    },
+    {
+        Id: 'order-booking.OB25',
+        Name: "OB25: the database refuses clearing a booked line's JournalEntryID (51008)",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const orderID = await confirmedOrderID(ctx);
+                const refusal = await refusedBy(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderLine SET JournalEntryID = NULL WHERE OrderHeaderID = '${orderID}'`);
+                Assert(/JournalEntryID cannot be cleared or replaced/.test(refusal), `refused by 51008: ${refusal}`);
+            }),
+    },
+    {
+        Id: 'order-booking.OB26',
+        Name: 'OB26: the database refuses re-pointing a booked line at another journal entry (51008)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The replacement is a real entry, booked by a second order, so the foreign key
+                // accepts it and only the trigger stands in the way.
+                const orderID = await confirmedOrderID(ctx);
+                const otherOrderID = await confirmedOrderID(ctx);
+                const refusal = await refusedBy(
+                    ctx,
+                    `UPDATE ${ORDERS_SCHEMA}.OrderLine
+                        SET JournalEntryID = (SELECT TOP 1 JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine
+                                               WHERE OrderHeaderID = '${otherOrderID}' AND JournalEntryID IS NOT NULL)
+                      WHERE OrderHeaderID = '${orderID}'`,
+                );
+                Assert(/JournalEntryID cannot be cleared or replaced/.test(refusal), `refused by 51008: ${refusal}`);
+            }),
+    },
+    {
+        Id: 'order-booking.OB27',
+        Name: "OB27: a draft line for a product the engine never cached saves with the product's company (golive #301)",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            withUncachedProduct(ctx, async () => {
+                const f = Fx();
+                // The header's company is not the product's, so the line's company can only have come
+                // from the product. A stated price stands in for the custom amount: there is no price row.
+                const product = await productCachedNowhere(ctx, f.Products.WidgetB);
+                const header = SameID(product.CompanyID, f.CoA.ID) ? f.CoB.ID : f.CoA.ID;
+                const built = await BuildOrder(ctx.User, {
+                    CompanyID: header,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: product.ID, Quantity: 1, UnitPrice: 250 }],
+                });
+                built.Order.Status = 'Draft';
+                const saved = await built.Order.Save();
+                Assert(saved, `the draft should save: ${built.Order.LatestResult?.CompleteMessage}`);
+                const line = await TxOne<{ CompanyID: string }>(
+                    ctx,
+                    `SELECT CompanyID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${built.Order.ID}'`,
+                );
+                Assert(SameID(line.CompanyID, product.CompanyID), `the line takes the product's company, got ${line.CompanyID}`);
+            }),
+    },
+    {
+        Id: 'order-booking.OB28',
+        Name: "OB28: an order of a product the engine never cached confirms and books under the product's company (golive #301)",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            withUncachedProduct(ctx, async () => {
+                const f = Fx();
+                const product = await productCachedNowhere(ctx, f.Products.WidgetA);
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: product.ID, Quantity: 1, UnitPrice: 250 }],
+                });
+                Assert(result.Saved, `the confirm should book: ${result.Message}`);
+                const line = await TxOne<{ CompanyID: string; JournalEntryID: string | null }>(
+                    ctx,
+                    `SELECT CompanyID, JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${result.Order.ID}'`,
+                );
+                Assert(SameID(line.CompanyID, product.CompanyID), `the line takes the product's company, got ${line.CompanyID}`);
+                Assert(!!line.JournalEntryID, 'the line is booked');
+            }),
+    },
+    {
+        Id: 'order-booking.OB29',
+        Name: 'OB29: a taxed draft, then confirmed, books balanced entries for the order\'s gross (#484)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // THE PATH A REP TAKES whenever something has to be recorded before confirm: save the
+                // draft, then confirm it. Both saves run the pricing walk and both resolve the tax.
+                // The confirm used to ADD its tax rows beside the draft's, so booking credited the
+                // tax twice against a receivable that carried it once and refused the entry. OB10
+                // confirms in one save and could not see it.
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 50);
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    ShipToAddressID: f.Tax.AddressIDs.get('SantaClara'),
+                    Lines: [
+                        { ProductID: f.Products.WidgetA, Quantity: 3, UnitPrice: 100 },
+                        { ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 50 },
+                    ],
+                });
+                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+                draft.Order.Status = 'Confirmed';
+                Assert(
+                    await draft.Order.Save(),
+                    `confirm-after-draft must book: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`,
+                );
+                const orderID = draft.Order.ID;
+
+                // One set of tax rows: each line's tax allocations add up to its LineTax, once.
+                const lines = await TxQuery<{ LineNumber: number; LineTax: number; Allocated: number }>(
+                    ctx,
+                    `SELECT ol.LineNumber, ol.LineTax,
+                            (SELECT ISNULL(SUM(a.Amount),0)
+                               FROM ${ORDERS_SCHEMA}.OrderChargeAllocation a
+                               JOIN ${ORDERS_SCHEMA}.OrderCharge c ON c.ID = a.OrderChargeID
+                               JOIN ${ORDERS_SCHEMA}.ChargeType t ON t.ID = c.ChargeTypeID
+                              WHERE a.OrderLineID = ol.ID AND t.Category = 'Tax') AS Allocated
+                       FROM ${ORDERS_SCHEMA}.OrderLine ol WHERE ol.OrderHeaderID = '${orderID}'`,
+                );
+                AssertEqual(lines.length, 2, 'order lines');
+                Assert(lines.every((l) => Number(l.LineTax) > 0), `the fixture address taxes both lines: ${JSON.stringify(lines)}`);
+                Assert(
+                    lines.every((l) => Number(l.Allocated) === Number(l.LineTax)),
+                    `each line's tax rows must sum to its LineTax once: ${JSON.stringify(lines)}`,
+                );
+
+                const balances = await TxQuery<{ D: number; C: number }>(
+                    ctx,
+                    `SELECT SUM(jel.DebitAmount) AS D, SUM(jel.CreditAmount) AS C
+                       FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+                      WHERE jel.JournalEntryID IN (
+                            SELECT ol.JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine ol
+                             WHERE ol.OrderHeaderID = '${orderID}' AND ol.JournalEntryID IS NOT NULL)
+                      GROUP BY jel.JournalEntryID`,
+                );
+                AssertEqual(balances.length, 2, 'one entry per line');
+                Assert(
+                    balances.every((b) => Number(b.D) === Number(b.C)),
+                    `unbalanced entry: ${JSON.stringify(balances)}`,
+                );
+
+                const header = await TxOne<{ TotalGross: number }>(
+                    ctx,
+                    `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
+                );
+                const ar = await TxOne<{ Net: number }>(
+                    ctx,
+                    `SELECT ISNULL(SUM(jel.DebitAmount),0) - ISNULL(SUM(jel.CreditAmount),0) AS Net
+                       FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+                       JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                      WHERE gl.Code = '11201'
+                        AND jel.JournalEntryID IN (
+                            SELECT ol.JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine ol
+                             WHERE ol.OrderHeaderID = '${orderID}' AND ol.JournalEntryID IS NOT NULL)`,
+                );
+                AssertEqual(
+                    Math.round(Number(ar.Net) * 100) / 100,
+                    Math.round(Number(header.TotalGross) * 100) / 100,
+                    'the receivable the ledger raised must equal what the order says is owed',
+                );
+            }),
+    },
+    {
+        Id: 'order-booking.OB30',
+        Name: 'OB30: a draft, then confirmed, keeps one price breakdown per line',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The breakdown is written after every pricing walk, like the tax rows OB29 covers.
+                // A second set on the line would describe the price twice to whoever audits it.
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2 }],
+                });
+                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+                const count = async () =>
+                    (
+                        await TxOne<{ N: number }>(
+                            ctx,
+                            `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderLinePriceComponent pc
+                               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = pc.OrderLineID
+                              WHERE ol.OrderHeaderID = '${draft.Order.ID}'`,
+                        )
+                    ).N;
+                const afterDraft = Number(await count());
+                Assert(afterDraft > 0, 'the draft save records a breakdown');
+
+                draft.Order.Status = 'Confirmed';
+                Assert(
+                    await draft.Order.Save(),
+                    `confirm-after-draft must book: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`,
+                );
+                AssertEqual(Number(await count()), afterDraft, 'price breakdown rows after the confirm');
             }),
     },
 ];

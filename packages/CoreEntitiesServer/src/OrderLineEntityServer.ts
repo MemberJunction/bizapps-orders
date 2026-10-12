@@ -46,13 +46,13 @@ import {
     HostOrderLineEditVeto,
     IsBooked,
     LineGross,
-    LoadOrdersEngine,
     NetAfterDiscount,
     OrderLineEntity,
     OrdersEngine,
     PRICE_OVERRIDE_REASON_REQUIRED,
     ResolveOrderLineEditRefusal,
     priceOverrideReasonMissing,
+    type mjBizAppsOrdersProductEntity,
     type OrderLineEditKind,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
@@ -80,6 +80,16 @@ export class OrderLineEntityServer extends OrderLineEntity {
      * rate genuinely IS the authority — and the classic quantity × price applies.
      */
     public ResolvedExtendedAmount: number | null = null;
+
+    /**
+     * Set only by bundle expansion, on the component lines it writes (bc-aidp-next-golive#292).
+     *
+     * TRANSIENT, like `ResolvedExtendedAmount`. A line with a `ParentOrderLineID` is a bundle
+     * component, priced at its share of the bundle, and the concession confirm gate does not re-price
+     * it. Only expansion may make a line one: a parent set any other way would let an ordinary line
+     * skip the gate. See `refuseParentNotFromExpansion`.
+     */
+    public WrittenByBundleExpansion = false;
 
     /**
      * `BaseEntity` skips `ValidateAsync` unless a subclass opts in, so without this the checks
@@ -131,6 +141,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
         }
 
         this.refuseUnexplainedOverride(result);
+        this.refuseParentNotFromExpansion(result);
         await this.refuseNewLineOnBookedOrder(result);
         await this.refuseVetoedEdit(result, this.IsSaved ? 'update' : 'create');
 
@@ -159,6 +170,31 @@ export class OrderLineEntityServer extends OrderLineEntity {
                 'PriceOverrideReason',
                 PRICE_OVERRIDE_REASON_REQUIRED,
                 this.PriceOverrideReason,
+                ValidationErrorType.Failure,
+            ),
+        );
+    }
+
+    /**
+     * A parent line is written by bundle expansion and nothing else (bc-aidp-next-golive#292).
+     *
+     * The concession confirm gate skips a line with a `ParentOrderLineID`, because a bundle component
+     * is priced at its share of the bundle rather than at a concession. Set by an API caller on an
+     * ordinary line, the same field would carry a price below the engine's past the gate. So a parent
+     * is refused unless expansion wrote it. Clearing one is allowed: the line is then checked like any
+     * other. A saved component whose parent is not being changed is not affected.
+     */
+    private refuseParentNotFromExpansion(result: ValidationResult): void {
+        if (!this.ParentOrderLineID || this.WrittenByBundleExpansion) return;
+        if (this.IsSaved && !this.FieldIsDirty('ParentOrderLineID')) return;
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo(
+                'ParentOrderLineID',
+                'ParentOrderLineID is set only by bundle expansion, which writes each component of a bundle ' +
+                    'line at its share of the bundle price. Leave it empty, and sell the bundle product to get ' +
+                    'its components.',
+                this.ParentOrderLineID,
                 ValidationErrorType.Failure,
             ),
         );
@@ -414,12 +450,26 @@ export class OrderLineEntityServer extends OrderLineEntity {
      *
      * The status is only read when the product's company actually differs from the line's, so the
      * common save — nothing moved — costs no extra query.
+     *
+     * A PRODUCT THIS PROCESS HAS NOT CACHED IS RELOADED, NOT SKIPPED (golive #301). Returning on a
+     * cache miss left `CompanyID` null for any product written outside this process after it
+     * started, and the save failed on "Company cannot be null", which names neither the product nor
+     * the cache. `RequireProduct` reloads the catalog once and throws naming the product if it is
+     * still not there.
      */
     private async stampCompanyFromProduct(): Promise<void> {
         if (!this.ProductID) return;
-        await LoadOrdersEngine(this.ProviderToUse as never, this.ContextCurrentUser);
-        const product = OrdersEngine.Instance.ProductByID(this.ProductID);
-        if (!product?.CompanyID || product.CompanyID === this.CompanyID) return;
+        let product: mjBizAppsOrdersProductEntity;
+        try {
+            product = await OrdersEngine.Instance.RequireProduct(
+                this.ProductID,
+                this.ContextCurrentUser,
+                this.ProviderToUse as unknown as IMetadataProvider,
+            );
+        } catch (err) {
+            throw new Error(`Order line ${this.LineNumber}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (!product.CompanyID || product.CompanyID === this.CompanyID) return;
         if (this.IsSaved && this.CompanyID && IsBooked((await this.storedOrderStatus()) ?? '')) return;
         this.CompanyID = product.CompanyID;
     }

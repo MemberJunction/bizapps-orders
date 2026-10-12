@@ -55,6 +55,8 @@ vi.mock('../InvoiceRailResolver.js', () => ({
     FindInvoiceRailForCompany: async () => ({
         Config: { PaymentProviderID: PROVIDER, Name: 'Bill.com Sandbox', TypeCode: 'BillCom', CompanyID: COMPANY },
         CheckConfiguration: async () => ({ Success: true }),
+        CustomerNameTargets: () => [],
+        InvoiceNumberTargets: () => [],
         IssueInvoice: async () =>
             mocks.railRefuses ? { Success: false, Transient: false, Reason: 'duplicate invoice number' } : { Success: true, Value: { ExternalInvoiceRef: '00e0NEW' } },
         GetInvoice: async () => ({ Success: true, Value: { ExternalInvoiceRef: '00e0NEW', InvoiceNumber: 'ORD-1234', Total: 600, DueAmount: 600, ScheduledAmount: 0, Status: 'OPEN', Archived: false } }),

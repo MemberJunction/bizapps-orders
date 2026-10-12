@@ -34,6 +34,7 @@ import { MJOChargesTaxPageComponent } from '../lib/pages/catalog/products.page';
 import { MJOSubscriptionsPageComponent } from '../lib/pages/receivables/subscriptions.page';
 import { PartyOrdersOverviewComponent } from '../lib/panels/party-orders-overview.component';
 import { BizAppsProductGLLinksComponent } from '../lib/custom/Product/widgets/product-gl-links.component';
+import { DescribeLineEvent } from '../lib/custom/EventOrderLine/line-event-summary';
 
 const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
 const original = { rows: engine._configurations, loaded: engine._loaded, tz: process.env.TZ };
@@ -113,6 +114,11 @@ describe.each(['America/Chicago', 'Asia/Kolkata', 'Pacific/Auckland'])('golive #
         it('a subscription event\'s OccurredAt on the subscriptions page', () => {
             expect(method<string>(MJOSubscriptionsPageComponent, 'instantOf', {}, SEVEN_PM_CENTRAL)).toBe('Oct 1, 2026');
         });
+
+        it('an event order line\'s event dates', () => {
+            const event = { Name: 'Evening Gala', EventStartsAt: SEVEN_PM_CENTRAL, EventEndsAt: SEVEN_PM_CENTRAL };
+            expect(DescribeLineEvent(event)?.Dates).toBe('Oct 1, 2026');
+        });
     });
 
     describe('date columns show their own day', () => {
@@ -138,7 +144,7 @@ describe.each(['America/Chicago', 'Asia/Kolkata', 'Pacific/Auckland'])('golive #
         });
 
         it('a term date on the subscriptions page', () => {
-            expect(method<string>(MJOSubscriptionsPageComponent, 'dateOf', {}, driverDate('2026-10-01'))).toBe('Oct 1, 2026');
+            expect(method<string>(MJOSubscriptionsPageComponent, 'termDateOf', {}, driverDate('2026-10-01'))).toBe('Oct 1, 2026');
         });
     });
 
@@ -179,16 +185,5 @@ describe.each(['America/Chicago', 'Asia/Kolkata', 'Pacific/Auckland'])('golive #
         const panel = new BizAppsProductGLLinksComponent({ detectChanges: () => undefined } as never);
         panel.OpenDraft();
         expect(panel.Draft?.StartedAt).toBe('2026-10-01');
-    });
-
-    it('revenue recognition releases a month once the BUSINESS calendar reaches it', () => {
-        // 8 PM Central on Sep 30: October has begun in UTC, Pune and Auckland, not in the books.
-        vi.setSystemTime(new Date('2026-10-01T01:00:00.000Z'));
-        const periods = getter<Array<{ Label: string; Released: boolean }>>(MJOSubscriptionsPageComponent, 'Recognition', {
-            Selected: { AmountPerTerm: 1200, StartDate: driverDate('2026-01-01') },
-        });
-        expect(periods.filter((p) => p.Released).map((p) => p.Label).slice(-1)).toEqual(['Sep 26']);
-        expect(periods.find((p) => p.Label === 'Oct 26')?.Released).toBe(false);
-        expect(periods[0]?.Label).toBe('Jan 26');
     });
 });

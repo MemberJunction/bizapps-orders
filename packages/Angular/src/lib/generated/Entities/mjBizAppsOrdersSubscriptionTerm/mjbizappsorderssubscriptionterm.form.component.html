@@ -216,6 +216,31 @@
         }
     </mj-collapsible-panel>
 
+    <!-- Order Concessions Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderConcessions"
+        SectionName="Order Concessions"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderConcessions')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Concessions','SubscriptionTermID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Concessions','SubscriptionTermID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderConcessions')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderConcessions', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 </mj-record-form-container>
         

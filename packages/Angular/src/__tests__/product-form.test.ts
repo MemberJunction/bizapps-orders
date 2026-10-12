@@ -386,3 +386,87 @@ describe('Product lookup names (walkthrough Pin 28)', () => {
         }
     });
 });
+
+describe('Product header follows lookup edits (bc-aidp-next-golive#277)', () => {
+    const engine = {
+        EnsureLoaded: async () => undefined,
+        ProductTypeByID: (id: string) => (id === 'pt-sub' ? { Name: 'Subscription' } : undefined),
+        ProductCategoryByID: () => undefined,
+        RevenueRecognitionTypeByID: (id: string) => (id === 'rr-even' ? { Name: 'Even Over Time' } : undefined),
+        ProductByID: () => undefined,
+    };
+
+    it('re-resolves Type and Rev-rec after the ids change in the form', async () => {
+        const spy = vi.spyOn(OrdersEngine, 'Instance', 'get').mockReturnValue(engine as never);
+        try {
+            const panel = Object.create(ProductHeaderPanel.prototype) as ProductHeaderPanel;
+            const record = { ProductTypeID: null, ProductCategoryID: null, RevenueRecognitionTypeID: null, SuccessorProductID: null };
+            Object.assign(panel, { Record: record, Lookups: { Type: '—', Category: '—', RevRec: '—', Successor: '—' } });
+            await panel.ngOnInit();
+            expect(panel.RevRec).toBe('—');
+
+            record.ProductTypeID = 'pt-sub' as never;
+            record.RevenueRecognitionTypeID = 'rr-even' as never;
+            panel.RevRec; // a change-detection read starts the resolve
+            await new Promise((r) => setTimeout(r, 0));
+            expect(panel.TypeName).toBe('Subscription');
+            expect(panel.RevRec).toBe('Even Over Time');
+        } finally {
+            spy.mockRestore();
+        }
+    });
+});
+
+describe('BizAppsProductFormComponent reload rebinds the Event Products child', () => {
+    // A reload can attach a new Event Products object to the product. The section must follow it,
+    // or edits made after the first save go to an object the product no longer saves.
+    function eventProductForm() {
+        const oldChild = { name: 'old' };
+        const newChild = { name: 'new' };
+        const record = {
+            ProductTypeID: 'type-1',
+            RevenueRecognitionTypeID: null,
+            child: oldChild as object,
+            InnerLoad: vi.fn(async function (this: { child: object }) {
+                this.child = newChild;
+                return true;
+            }),
+            EnsureISAChild: vi.fn(async function (this: { child: object }) {
+                return this.child;
+            }),
+        };
+        const form = Object.create(BizAppsProductFormComponent.prototype) as BizAppsProductFormComponent;
+        form.record = record as unknown as mjBizAppsOrdersProductEntity;
+        form.ProductTypeRecord = {
+            ID: 'type-1',
+            ProductExtensionEntity: 'MJ_BizApps_Orders: Event Products',
+        } as unknown as import('@mj-biz-apps/orders-entities').mjBizAppsOrdersProductTypeEntity;
+        form.EventProductChild = oldChild as unknown as BizAppsProductFormComponent['EventProductChild'];
+        (form as unknown as { cdr: { detectChanges: () => void } }).cdr = { detectChanges: vi.fn() };
+        return { form, record, newChild };
+    }
+
+    it('binds the section to the child the product holds after a widget-triggered reload', async () => {
+        const { form, record, newChild } = eventProductForm();
+        (record as unknown as { Dirty: boolean }).Dirty = false;
+        (record as unknown as { PrimaryKey: unknown }).PrimaryKey = {};
+
+        await form.OnWidgetDataChanged();
+
+        expect(record.InnerLoad).toHaveBeenCalledOnce();
+        expect(form.EventProductChild).toBe(newChild);
+    });
+
+    it('keeps the current child when the reload fails', async () => {
+        const { form, record } = eventProductForm();
+        (record as unknown as { Dirty: boolean }).Dirty = false;
+        (record as unknown as { PrimaryKey: unknown }).PrimaryKey = {};
+        const current = form.EventProductChild;
+        record.InnerLoad.mockResolvedValueOnce(false);
+
+        await form.OnWidgetDataChanged();
+
+        expect(form.EventProductChild).toBe(current);
+        expect(record.EnsureISAChild).not.toHaveBeenCalled();
+    });
+});

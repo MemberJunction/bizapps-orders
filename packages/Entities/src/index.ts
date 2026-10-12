@@ -29,6 +29,7 @@ export * from './order-address-snapshot';
 export * from './field-dirty';
 export * from './line-quantity';
 export * from './order-line-edit-veto';
+export * from './order-confirm-veto';
 
 /**
  * `OrderHeaderEntity` — the shared (client + server) order subclass carrying every rule decidable
@@ -37,7 +38,9 @@ export * from './order-line-edit-veto';
  */
 export * from './OrderHeaderEntity';
 export * from './OrderLineEntity';
+export * from './SubscriptionTermEntity';
 export * from './ProductPriceEntity';
+export * from './ProductEntity';
 export * from './OrderLineExtensionCompanion';
 export * from './CustomerPaymentMethodEntity';
 export * from './PaymentHeaderEntity';
@@ -89,10 +92,12 @@ export * from './pricing/ChargeBehavior';
 export * from './pricing/PromotionBehavior';
 export * from './pricing/ChargeEngine';
 export * from './pricing/PromotionEngine';
+export * from './pricing/ConcessionBehavior';
 export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';
 export * from './pricing/inheritPrices';
 export * from './pricing/priceOverride';
+export * from './pricing/linePriceContext';
 // Access overrides (bizapps-orders#268) — the authorization names and who may request each type.
 export * from './accessOverride';
 export * from './pricing/linePricePick';
@@ -106,6 +111,9 @@ export * from './pricing/linePricePick';
  * the answer is to stop asking callers to know.
  */
 export * from './date-cell';
+export * from './displaced-term-start';
+// Whether a subscription line's subscriber already holds its product — the extend-or-new question.
+export * from './existing-holding';
 
 /**
  * `IsOverdue` / `DaysOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.
@@ -120,7 +128,16 @@ export * from './overdue';
 export * from './configuration-types';
 export * from './checkout-questions';
 export * from './checkout-attribution';
+export * from './checkout-choices';
 export * from './base-entity-augmentation';
 
+/**
+ * `CheckBillingLocation` and the ISO country/subdivision lists — the one definition of a valid
+ * billing location, read by the checkout widget's pickers and by the server that refuses payment
+ * without one.
+ */
+export * from './billing-location';
 // Pure decisions for money arriving on an external rail (Bill.com) — read by Orders.PollExternalPayments.
 export * from './ExternalPaymentBehavior.js';
+// What a subscription renews at: the lapsed discount, the annual increase and the successor move (golive #304).
+export * from './renewal-price.js';

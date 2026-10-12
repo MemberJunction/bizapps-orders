@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
     AddMonths,
     BuildPaymentSchedule,
+    CompanySlices,
     DefaultScheduleWeights,
     ExplainShortfalls,
     RenewalDueDate,
     RenewalScheduleRows,
+    ScheduleCoverage,
     ScheduleShortfalls,
     ScheduledCompanyIDs,
     type ScheduleTimingFacts,
@@ -13,6 +15,7 @@ import {
 
 const CO_A = '00000000-0000-0000-0000-00000000000a';
 const CO_B = '00000000-0000-0000-0000-00000000000b';
+const CO_C = '00000000-0000-0000-0000-00000000000c';
 
 describe('BuildPaymentSchedule', () => {
     it('ties by construction, front-loading the odd cent', () => {
@@ -69,35 +72,76 @@ describe('ScheduleShortfalls', () => {
     ];
 
     it('is empty with no rows — the implicit instalment needs nothing', () => {
-        expect(ScheduleShortfalls([], lines)).toEqual([]);
+        expect(ScheduleShortfalls([], lines, CO_A)).toEqual([]);
     });
 
-    it('is empty when every company ties, ignoring cancelled rows and case', () => {
+    it('accepts a pre-golive-#311 per-company schedule where every company ties, ignoring cancelled rows and case', () => {
         const rows = [
             { CompanyID: CO_A.toUpperCase(), Amount: 50, Status: 'Scheduled' },
             { CompanyID: CO_A, Amount: 50, Status: 'Invoiced' },
             { CompanyID: CO_A, Amount: 999, Status: 'Canceled' },
             { CompanyID: CO_B, Amount: 200, Status: 'Scheduled' },
         ];
-        expect(ScheduleShortfalls(rows, lines)).toEqual([]);
+        expect(ScheduleShortfalls(rows, lines, CO_A)).toEqual([]);
     });
 
-    it('names the company and the amount when it does not tie, including a company with no rows at all', () => {
+    it('ties the order company\'s rows to the whole order when no product company has rows of its own (golive #311)', () => {
+        const rows = [
+            { CompanyID: CO_C, Amount: 150, Status: 'Scheduled' },
+            { CompanyID: CO_C, Amount: 150, Status: 'Scheduled' },
+        ];
+        expect(ScheduleShortfalls(rows, lines, CO_C)).toEqual([]);
+        expect(ScheduleShortfalls(rows, lines, CO_C.toUpperCase())).toEqual([]);
+    });
+
+    it('names the order company and the whole order when its rows do not tie', () => {
         const rows = [{ CompanyID: CO_A, Amount: 90, Status: 'Scheduled' }];
-        const out = ScheduleShortfalls(rows, lines);
-        expect(out).toEqual([
-            { CompanyID: CO_A, Scheduled: 90, Lines: 100, Difference: 10 },
-            { CompanyID: CO_B, Scheduled: 0, Lines: 200, Difference: 200 },
-        ]);
+        const out = ScheduleShortfalls(rows, lines, CO_A);
+        expect(out).toEqual([{ CompanyID: CO_A, Scheduled: 90, Lines: 300, Difference: 210 }]);
         const text = ExplainShortfalls('ORD-7', out, (id) => (id === CO_A ? 'Acme' : 'Beta'));
         expect(text).toContain('ORD-7');
-        expect(text).toContain('Acme: 90.00 scheduled against 100.00 of lines (10.00 unscheduled)');
-        expect(text).toContain('Beta: 0.00 scheduled against 200.00 of lines (200.00 unscheduled)');
+        expect(text).toContain('Acme: 90.00 scheduled against 300.00 of lines (210.00 unscheduled)');
+    });
+
+    it('reports a product company\'s own rows that do not tie, and the order company\'s remainder', () => {
+        const rows = [
+            { CompanyID: CO_B, Amount: 150, Status: 'Invoiced' },
+            { CompanyID: CO_A, Amount: 100, Status: 'Scheduled' },
+        ];
+        expect(ScheduleShortfalls(rows, lines, CO_A)).toEqual([{ CompanyID: CO_B, Scheduled: 150, Lines: 200, Difference: 50 }]);
+    });
+
+    it('reports rows for a company that covers no lines', () => {
+        const rows = [
+            { CompanyID: CO_A, Amount: 300, Status: 'Scheduled' },
+            { CompanyID: CO_C, Amount: 5, Status: 'Scheduled' },
+        ];
+        expect(ScheduleShortfalls(rows, lines, CO_A)).toEqual([{ CompanyID: CO_C, Scheduled: 5, Lines: 0, Difference: -5 }]);
     });
 
     it('tolerates half a cent and nothing more', () => {
-        expect(ScheduleShortfalls([{ CompanyID: CO_B, Amount: 200.004, Status: 'Scheduled' }], lines.slice(2))).toEqual([]);
-        expect(ScheduleShortfalls([{ CompanyID: CO_B, Amount: 200.01, Status: 'Scheduled' }], lines.slice(2))).toHaveLength(1);
+        expect(ScheduleShortfalls([{ CompanyID: CO_B, Amount: 200.004, Status: 'Scheduled' }], lines.slice(2), CO_B)).toEqual([]);
+        expect(ScheduleShortfalls([{ CompanyID: CO_B, Amount: 200.01, Status: 'Scheduled' }], lines.slice(2), CO_B)).toHaveLength(1);
+    });
+});
+
+describe('ScheduleCoverage (golive #311)', () => {
+    it('puts every line company under the order company when only the order company has rows', () => {
+        const map = ScheduleCoverage([{ CompanyID: CO_C, Amount: 1, Status: 'Scheduled' }], [CO_A, CO_B.toUpperCase()], CO_C);
+        expect([...map]).toEqual([
+            [CO_A, CO_C],
+            [CO_B, CO_C],
+        ]);
+    });
+
+    it('leaves a product company with live rows of its own on them, and ignores its cancelled rows', () => {
+        const rows = [
+            { CompanyID: CO_B, Amount: 1, Status: 'Invoiced' },
+            { CompanyID: CO_A, Amount: 1, Status: 'Canceled' },
+        ];
+        const map = ScheduleCoverage(rows, [CO_A, CO_B], CO_C);
+        expect(map.get(CO_B)).toBe(CO_B);
+        expect(map.get(CO_A)).toBe(CO_C);
     });
 });
 
@@ -111,28 +155,33 @@ describe('ScheduledCompanyIDs', () => {
     });
 
     it('is EMPTY for no rows — which is what makes every order that exists today book unchanged', () => {
-        expect(ScheduledCompanyIDs([]).size).toBe(0);
+        expect(ScheduledCompanyIDs([], CO_A, [CO_A]).size).toBe(0);
     });
 
-    it('names each company that has a live row, lower-cased', () => {
-        const ids = ScheduledCompanyIDs([row(), row({ CompanyID: CO_B.toUpperCase() })]);
+    it('names each company that has a live row of its own, lower-cased (a pre-golive-#311 schedule)', () => {
+        const ids = ScheduledCompanyIDs([row(), row({ CompanyID: CO_B.toUpperCase() })], CO_A, [CO_A, CO_B]);
+        expect([...ids].sort()).toEqual([CO_A, CO_B]);
+    });
+
+    it('names every line company once the order company has a live row, even one with no lines itself (golive #311)', () => {
+        const ids = ScheduledCompanyIDs([row({ CompanyID: CO_C })], CO_C, [CO_A, CO_B.toUpperCase()]);
         expect([...ids].sort()).toEqual([CO_A, CO_B]);
     });
 
     it('counts a row live whatever its status, so long as it has not been cancelled', () => {
         for (const Status of ['Scheduled', 'Invoiced', 'Paid', 'WrittenOff']) {
-            expect(ScheduledCompanyIDs([row({ Status })]).has(CO_A)).toBe(true);
+            expect(ScheduledCompanyIDs([row({ Status })], CO_A, [CO_A]).has(CO_A)).toBe(true);
         }
     });
 
     it('ignores a Canceled row — a company whose only row was cancelled books normally', () => {
-        expect(ScheduledCompanyIDs([row({ Status: 'Canceled' })]).size).toBe(0);
-        expect(ScheduledCompanyIDs([row({ Status: 'Canceled' }), row()]).has(CO_A)).toBe(true);
+        expect(ScheduledCompanyIDs([row({ Status: 'Canceled' })], CO_A, [CO_A]).size).toBe(0);
+        expect(ScheduledCompanyIDs([row({ Status: 'Canceled' }), row()], CO_A, [CO_A]).has(CO_A)).toBe(true);
     });
 
     it('does NOT depend on the due date — D92 asks whether a company is billed by instalment, not when', () => {
-        const past = ScheduledCompanyIDs([row({ DueDate: '2020-01-01' })]);
-        const future = ScheduledCompanyIDs([row({ DueDate: '2099-01-01' })]);
+        const past = ScheduledCompanyIDs([row({ DueDate: '2020-01-01' })], CO_A, [CO_A]);
+        const future = ScheduledCompanyIDs([row({ DueDate: '2099-01-01' })], CO_A, [CO_A]);
         expect(past.has(CO_A)).toBe(true);
         expect(future.has(CO_A)).toBe(true);
     });
@@ -141,29 +190,96 @@ describe('ScheduledCompanyIDs', () => {
         // Both read LIVE_STATUSES, so a row that counts toward the tie also makes its company
         // scheduled. If these ever diverged, a company could tie yet book at confirm anyway.
         const rows = [row({ Status: 'Canceled' })];
-        expect(ScheduleShortfalls(rows, [{ CompanyID: CO_A, LineTotalGross: 0 }])).toEqual([]);
-        expect(ScheduledCompanyIDs(rows).size).toBe(0);
+        expect(ScheduleShortfalls(rows, [{ CompanyID: CO_A, LineTotalGross: 0 }], CO_A)).toEqual([]);
+        expect(ScheduledCompanyIDs(rows, CO_A, [CO_A]).size).toBe(0);
     });
 });
 
-describe('RenewalScheduleRows (#305)', () => {
-    it('writes one row per company for its whole gross, due on the invoice day, and ties', () => {
+describe('RenewalScheduleRows (#305, golive #311)', () => {
+    it('writes one row from the order company for the whole gross, due on the invoice day, and ties', () => {
         const lines = [
             { CompanyID: CO_A, LineTotalGross: 1000.01 },
             { CompanyID: CO_B, LineTotalGross: 40 },
             { CompanyID: CO_A, LineTotalGross: 199.99 },
         ];
-        const rows = RenewalScheduleRows(lines, '2026-12-21');
-        expect(rows).toEqual([
-            { CompanyID: CO_A, InstallmentNumber: 1, DueDate: '2026-12-21', Amount: 1200 },
-            { CompanyID: CO_B, InstallmentNumber: 1, DueDate: '2026-12-21', Amount: 40 },
-        ]);
-        expect(ScheduleShortfalls(rows.map((r) => ({ ...r, Status: 'Scheduled' })), lines)).toEqual([]);
+        const rows = RenewalScheduleRows(lines, '2026-12-21', CO_C);
+        expect(rows).toEqual([{ CompanyID: CO_C, InstallmentNumber: 1, DueDate: '2026-12-21', Amount: 1240 }]);
+        expect(ScheduleShortfalls(rows.map((r) => ({ ...r, Status: 'Scheduled' })), lines, CO_C)).toEqual([]);
     });
 
-    it('gives a zero-gross company no row, and that still ties', () => {
+    it('gives a zero-gross order no row, and that still ties', () => {
         const lines = [{ CompanyID: CO_A, LineTotalGross: 0 }];
-        expect(RenewalScheduleRows(lines, '2026-12-21')).toEqual([]);
+        expect(RenewalScheduleRows(lines, '2026-12-21', CO_A)).toEqual([]);
+    });
+});
+
+describe('CompanySlices (golive #311)', () => {
+    const lines = [
+        { CompanyID: CO_A, LineTotalGross: 1000 },
+        { CompanyID: CO_B, LineTotalGross: 250 },
+        { CompanyID: CO_B, LineTotalGross: 0.01 },
+    ];
+    const row = (ID: string, InstallmentNumber: number, Amount: number, over: Record<string, unknown> = {}) => ({
+        ID,
+        CompanyID: CO_C,
+        InstallmentNumber,
+        Amount,
+        AmountPaid: 0,
+        Status: 'Scheduled',
+        ...over,
+    });
+
+    it('divides each order-company row among the product companies, tying both ways', () => {
+        const rows = [row('r1', 1, 416.67), row('r2', 2, 416.67), row('r3', 3, 416.67)];
+        const out = CompanySlices(rows, lines, CO_C);
+        expect(out).toHaveLength(6);
+        for (const r of rows) {
+            const parts = out.filter((p) => p.ID === r.ID);
+            expect(parts.map((p) => p.CompanyID).sort()).toEqual([CO_A, CO_B]);
+            expect(Math.round(parts.reduce((s, p) => s + p.Amount, 0) * 100)).toBe(Math.round(r.Amount * 100));
+        }
+        const total = (company: string) => Math.round(out.filter((p) => p.CompanyID === company).reduce((s, p) => s + p.Amount, 0) * 100) / 100;
+        expect(total(CO_A)).toBe(1000);
+        expect(total(CO_B)).toBe(250.01);
+    });
+
+    it('keeps the row identity on every piece', () => {
+        const out = CompanySlices([row('r1', 1, 1250.01, { DocumentNumber: 'ORD-1', DueDate: '2027-01-01' })], lines, CO_C);
+        for (const p of out) {
+            expect(p).toMatchObject({ ID: 'r1', InstallmentNumber: 1, Status: 'Scheduled', DocumentNumber: 'ORD-1', DueDate: '2027-01-01' });
+        }
+    });
+
+    it('divides AmountPaid in proportion to the pieces', () => {
+        const out = CompanySlices([row('r1', 1, 1250.01, { AmountPaid: 625 })], lines, CO_C);
+        const paid = out.map((p) => p.AmountPaid);
+        expect(Math.round(paid.reduce((s, p) => s + p, 0) * 100)).toBe(62500);
+        expect(out.find((p) => p.CompanyID === CO_A)?.AmountPaid).toBe(500);
+    });
+
+    it('stamps the one company on an order that covers one, and leaves the amounts alone', () => {
+        const single = [{ CompanyID: CO_A, LineTotalGross: 300 }];
+        const rows = [row('r1', 1, 100, { AmountPaid: 40 }), row('r2', 2, 200)];
+        expect(CompanySlices(rows, single, CO_C)).toEqual(rows.map((r) => ({ ...r, CompanyID: CO_A })));
+        const own = rows.map((r) => ({ ...r, CompanyID: CO_A }));
+        expect(CompanySlices(own, single, CO_A)).toEqual(own);
+    });
+
+    it('passes cancelled rows and a product company\'s own rows through unchanged', () => {
+        const rows = [
+            row('cancelled', 1, 999, { Status: 'Canceled' }),
+            row('legacy', 1, 250.01, { CompanyID: CO_B, Status: 'Invoiced' }),
+            row('order', 2, 1000),
+        ];
+        const out = CompanySlices(rows, lines, CO_C);
+        expect(out.find((p) => p.ID === 'cancelled')).toEqual(rows[0]);
+        expect(out.filter((p) => p.ID === 'legacy')).toEqual([rows[1]]);
+        expect(out.filter((p) => p.ID === 'order')).toEqual([{ ...rows[2], CompanyID: CO_A }]);
+    });
+
+    it('splits by gross, still summing to each row, when the schedule does not tie', () => {
+        const out = CompanySlices([row('r1', 1, 100)], lines, CO_C);
+        expect(out.map((p) => p.Amount)).toEqual([80, 20]);
     });
 });
 

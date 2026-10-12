@@ -20,7 +20,7 @@
     "fields": {
       "Name": "Generate Invoice",
       "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
-      "Description": "Render an order as the document you send a customer: an invoice, a quote (for a draft or quoted order) or a credit memo (for a reversal). Returns self-contained HTML ready for a PDF renderer or an email body, plus the underlying figures so a caller can reconcile without parsing markup. Writes nothing. An order sold by more than one company produces one document per company, each billing only what that company is owed.",
+      "Description": "Render an order as the document you send a customer: an invoice, a quote (for a draft or quoted order) or a credit memo (for a reversal). Returns self-contained HTML ready for a PDF renderer or an email body, plus the underlying figures so a caller can reconcile without parsing markup. Writes nothing. An order produces one document, from the order's company, listing every line whatever company owns each product.",
       "Type": "Custom",
       "DriverClass": "Orders.GenerateInvoice",
       "IconClass": "fa-regular fa-file-lines",
@@ -59,14 +59,14 @@
             "ValueType": "Scalar",
             "IsArray": false,
             "IsRequired": false,
-            "Description": "Render only the document for this selling company. Omit to get every document the order produces. Narrowing does not renumber the others: the -A/-B suffix describes the order, not the size of the result."
+            "Description": "The order's company, which issues its document. Naming any other company is refused with NOT_ORDER_COMPANY. Omit to render the order's document."
           },
           "primaryKey": {
             "ID": "6F3C65E4-890A-446A-986F-3BCD857999C3"
           },
           "sync": {
-            "lastModified": "2026-09-02T03:26:27.345Z",
-            "checksum": "e083af16b3faad71999ea0e102341afc54920d4499f9d57098e624339cb1e0b9"
+            "lastModified": "2026-10-05T21:38:28.955Z",
+            "checksum": "ac6cecdd68b417f9e6e88a25e536d897c12a93edce79d4568d82ec4c9be6cfbd"
           }
         },
         {
@@ -221,14 +221,14 @@
             "ValueType": "Scalar",
             "IsArray": false,
             "IsRequired": false,
-            "Description": "The rendered document, for the overwhelmingly common single-company order. NULL when the order produced more than one — handing back the first of two as though it were the whole bill is the failure this deliberately refuses."
+            "Description": "The rendered document. NULL if a render ever produced more than one, rather than handing back the first as though it were the whole bill."
           },
           "primaryKey": {
             "ID": "8E24A600-C4AE-42BE-A392-8FBA8731B565"
           },
           "sync": {
-            "lastModified": "2026-09-02T03:26:27.559Z",
-            "checksum": "b6ab5795eaa6cea0927368e463c8623df454b2038af25f18c4edc0502b6c8b5d"
+            "lastModified": "2026-10-05T21:38:28.983Z",
+            "checksum": "36d5c37fbf522e9442bcdbdcab92d1589bec5e1a06aa9aae54616033db7b9afd"
           }
         },
         {
@@ -239,14 +239,14 @@
             "ValueType": "Scalar",
             "IsArray": false,
             "IsRequired": false,
-            "Description": "How many documents this order produced. Greater than one means the order was split by selling company, and the ResultCode says SPLIT_BY_COMPANY."
+            "Description": "How many documents this order produced: one, from the order's company."
           },
           "primaryKey": {
             "ID": "2BABEA0E-C323-453F-89DD-F0F3ED292998"
           },
           "sync": {
-            "lastModified": "2026-09-02T03:26:27.605Z",
-            "checksum": "049f3fe815ad2d6779a9f26c0550aaf0bd6132dfa025bc0c3c20f5ede71dd4a3"
+            "lastModified": "2026-10-05T21:38:29.005Z",
+            "checksum": "e24ad6a29d75464cdf0ea20f347c6089a483f06fd59421e4678b8d28ae9a83d7"
           }
         },
         {
@@ -270,8 +270,8 @@
       ]
     },
     "sync": {
-      "lastModified": "2026-09-02T03:26:27.134Z",
-      "checksum": "5873885b00c69ce712346725c5cc75c503d60bcb062c819036ace7a9d23c2d96"
+      "lastModified": "2026-10-05T21:38:28.920Z",
+      "checksum": "e3db54ebc8568fd02494fee68af272346da1e39c2e8f965bb3d9b9b380c33cef"
     }
   },
   {
@@ -779,6 +779,24 @@
           "sync": {
             "lastModified": "2026-09-02T03:26:28.297Z",
             "checksum": "61c55dba366e0d4659d28c475d7c2e92077b19a62cf85ae4e4e604f9f16b6692"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Description",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "What the gateway dashboard shows for this charge. When omitted and OrderHeaderID is set, it is built from the order: the first line's product, '+N more' for further lines, and the order number."
+          },
+          "primaryKey": {
+            "ID": "D917975D-1896-4157-AC5A-3A91C6EF63A1"
+          },
+          "sync": {
+            "lastModified": "2026-10-03T21:46:46.067Z",
+            "checksum": "980e7dcffcacf035d0056a707add098a6ebf6e180e87a78f77f9d0f0f56a7114"
           }
         },
         {
